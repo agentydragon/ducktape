@@ -60,8 +60,10 @@ silently does nothing. Making it work needs a writable, delegated cgroup v2 subt
 **Uncovered.** Hooks spawn via `/bin/sh` (`shell: true`), not `CLAUDE_CODE_SHELL`. Git, `rg` and
 other internal helpers spawn directly.
 
-Reverse-engineering record: gaffer-private `claude/re/2.1.252` spec modules
-`chunks/cli/shell/exec_command.yaml` and `chunks/toolCgroup/shell/tool_memory_cgroup.yaml`.
+Reverse-engineering record: gaffer-private `claude/re/2.1.252/spec/modules/chunks/`:
+`cli/shell/exec_command.yaml` (shell resolution, provider, prefix incl. its MCP use, command hooks),
+`toolCgroup/shell/tool_memory_cgroup.yaml` (the cgroup), and
+`hookServe/hooks/served_shell_prefix.yaml` (prefix for hooks served to a cloud session).
 
 ### Codex
 

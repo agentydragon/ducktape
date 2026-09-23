@@ -12,12 +12,6 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallStrategy,
     HelmReleaseSpecInstallStrategyName,
@@ -47,6 +41,7 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.authentik import db
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "authentik"
@@ -177,32 +172,22 @@ def _helm_release(chart: Chart) -> None:
         metadata=metadata(NAME, NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://charts.goauthentik.io"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="15m",
-            timeout="15m",
-            install=HelmReleaseSpecInstall(
-                strategy=HelmReleaseSpecInstallStrategy(name=HelmReleaseSpecInstallStrategyName.RETRY_ON_FAILURE)
-            ),
-            upgrade=HelmReleaseSpecUpgrade(
-                strategy=HelmReleaseSpecUpgradeStrategy(name=HelmReleaseSpecUpgradeStrategyName.RETRY_ON_FAILURE)
-            ),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="authentik",
-                    version="2026.8.2",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values=_values(),
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart="authentik",
+        version="2026.8.2",
+        interval="15m",
+        timeout="15m",
+        install=HelmReleaseSpecInstall(
+            strategy=HelmReleaseSpecInstallStrategy(name=HelmReleaseSpecInstallStrategyName.RETRY_ON_FAILURE)
         ),
+        upgrade=HelmReleaseSpecUpgrade(
+            strategy=HelmReleaseSpecUpgradeStrategy(name=HelmReleaseSpecUpgradeStrategyName.RETRY_ON_FAILURE)
+        ),
+        values=_values(),
     )
 
 

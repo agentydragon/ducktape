@@ -38,13 +38,6 @@ from cert_manager_crds.io.cert_manager import (
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
@@ -60,7 +53,8 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -80,30 +74,19 @@ _METRICS_PORT = 9090
 def _external_secrets(scope: Construct) -> None:
     forgejo_images_creds_external_secret(scope, "forgejo-images-creds", namespace=NAMESPACE)
     brave = "brave-search-api-key"
-    ExternalSecret(
+    add_external_secret(
         scope,
         "brave-search-api-key",
-        metadata=metadata(brave, NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1m",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-external-creds-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(
-                name=brave,
-                # The existing target is Reflector-created. Orphan lets ESO sync it without
-                # requiring an owner reference it does not currently have; the short interval
-                # recreates the target promptly when the old reflected source is pruned.
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="api-key", remote_ref=ExternalSecretSpecDataRemoteRef(key=brave, property="api-key")
-                )
-            ],
-        ),
+        name=brave,
+        namespace=NAMESPACE,
+        refresh="1m",
+        store=external_creds.STORE,
+        data=[remote_data(brave, "api-key")],
+        # The existing target is Reflector-created. Orphan lets ESO sync it without
+        # requiring an owner reference it does not currently have; the short interval
+        # recreates the target promptly when the old reflected source is pruned.
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
     # Consumer-owned referent identity for source-approved external credentials.
     k8s.KubeServiceAccount(

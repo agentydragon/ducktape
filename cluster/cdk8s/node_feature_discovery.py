@@ -7,22 +7,13 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-    HelmReleaseSpecUpgrade,
-)
+from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "node-feature-discovery"
@@ -46,39 +37,27 @@ def chart(app: App) -> Chart:
         metadata=metadata("nfd", NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://kubernetes-sigs.github.io/node-feature-discovery/charts"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="15m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            # The worker DaemonSet runs on the roaming laptops, which are often offline: waiting
-            # for every pod times the upgrade out, as for promtail (cluster/cdk8s/monitoring/loki.py).
-            upgrade=HelmReleaseSpecUpgrade(disable_wait=True),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=NAME,
-                    version="0.19.0",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                )
-            ),
-            values={
-                "worker": {
-                    "tolerations": [{"effect": "NoSchedule", "operator": "Exists"}],
-                    # Must exceed the roaming-node count, as for promtail (cluster/cdk8s/monitoring/loki.py);
-                    # enforced by //cluster/validation:test_roaming_daemonset_capacity.
-                    "updateStrategy": {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}},
-                    "config": {
-                        "sources": {"pci": {"deviceClassWhitelist": ["02", "03"], "deviceLabelFields": ["vendor"]}}
-                    },
-                }
-            },
-        ),
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart=NAME,
+        version="0.19.0",
+        interval="15m",
+        install=RETRY_FAILED_INSTALL,
+        # The worker DaemonSet runs on the roaming laptops, which are often offline: waiting
+        # for every pod times the upgrade out, as for promtail (cluster/cdk8s/monitoring/loki.py).
+        upgrade=HelmReleaseSpecUpgrade(disable_wait=True),
+        values={
+            "worker": {
+                "tolerations": [{"effect": "NoSchedule", "operator": "Exists"}],
+                # Must exceed the roaming-node count, as for promtail (cluster/cdk8s/monitoring/loki.py);
+                # enforced by //cluster/validation:test_roaming_daemonset_capacity.
+                "updateStrategy": {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}},
+                "config": {"sources": {"pci": {"deviceClassWhitelist": ["02", "03"], "deviceLabelFields": ["vendor"]}}},
+            }
+        },
     )
     return chart
 

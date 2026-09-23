@@ -1,4 +1,4 @@
-"""google-mcp: a standalone Gmail/Calendar MCP backend for agentplane-staging.
+"""google-mcp: a Gmail/Calendar MCP backend for agentplane-staging.
 
 Serves the Gmail/Calendar tool code in `haku/console/tools` (`x/google_mcp_server`) against a
 write-scoped Airlock provider (`cluster/k8s/agents/airlock/config.yaml`) whose access token is
@@ -52,14 +52,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
     ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
@@ -67,6 +60,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
@@ -105,29 +99,15 @@ def _bearer_credentials(scope: Construct) -> None:
         metadata=metadata(BEARER_SECRET_NAME, _NAME),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    ExternalSecret(
+    add_external_secret(
         scope,
         "bearer-external-secret",
-        metadata=metadata(BEARER_SECRET_NAME, _NAME),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-            target=ExternalSecretSpecTarget(
-                name=BEARER_SECRET_NAME,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(type="Opaque", data={BEARER_SECRET_KEY: "{{ .password }}"}),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=BEARER_SECRET_NAME,
-                        )
-                    )
-                )
-            ],
-        ),
+        name=BEARER_SECRET_NAME,
+        namespace=_NAME,
+        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+        data_from=[password_generator(BEARER_SECRET_NAME)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={BEARER_SECRET_KEY: "{{ .password }}"}),
     )
 
 
@@ -257,7 +237,7 @@ def google_mcp(
         flux_chart,
         _NAME,
         artifact,
-        description="Standalone Gmail/Calendar MCP backend for Agentplane staging.",
+        description="Gmail/Calendar MCP backend for Agentplane staging.",
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(external_secrets_operator, forgejo_images),
     )

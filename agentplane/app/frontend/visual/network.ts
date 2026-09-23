@@ -10,7 +10,12 @@
 export type Route = [
   method: string,
   pattern: RegExp,
-  answer: (match: RegExpMatchArray, query: URLSearchParams, signal: AbortSignal | undefined) => unknown,
+  answer: (
+    match: RegExpMatchArray,
+    query: URLSearchParams,
+    signal: AbortSignal | undefined,
+    body: string | undefined
+  ) => unknown,
 ];
 
 export const routes: Route[] = [];
@@ -29,6 +34,7 @@ const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | bo
     arguments_ref: { type: "jsonb" },
     cursor: { type: "int8", not_null: true },
     entity_id: { type: "text", not_null: true, pk_index: 3 },
+    entity_index: { type: "int8", not_null: true },
     entity_kind: { type: "text", not_null: true, pk_index: 2 },
     input_ref: { type: "jsonb" },
     output_ref: { type: "jsonb" },
@@ -53,9 +59,9 @@ const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | bo
 };
 
 /**
- * Build the same JSON and protocol headers consumed by `electricCollectionOptions` in production.
- * Visual thread scenes use this rather than an EventSource replay so the collection's column
- * mapping, typed rows, and catch-up boundary are exercised by the browser bundle.
+ * Build the same JSON and protocol headers Electric's `ShapeStream` consumes in production, so the
+ * thread store's column mapping, typed rows, and catch-up boundary are exercised by the browser
+ * bundle.
  */
 function relationSchema(rows: readonly ElectricShapeMessage[], fallback = "thread_entity") {
   const relation = rows[0]?.headers && "relation" in rows[0].headers ? rows[0].headers.relation[1] : fallback;
@@ -91,7 +97,7 @@ export function electricShape(rows: readonly ElectricShapeMessage[], handle: str
 
 /**
  * A valid live response whose body has not received a change yet. Fetch itself settles, while
- * Electric's body reader waits until the collection cancels it during teardown.
+ * Electric's body reader waits until the store closes the shape.
  */
 export function electricLongPoll(handle: string, relation?: string, signal?: AbortSignal): Response {
   const schema = ELECTRIC_SCHEMAS[relation ?? "thread_entity"];
@@ -119,12 +125,12 @@ export function electricLongPoll(handle: string, relation?: string, signal?: Abo
 }
 
 /**
- * Current-state bootstrap used by `syncMode: "on-demand"`: Electric returns operations in a
- * subset envelope rather than the append-only shape log. The snapshot mark links each row to the
- * PostgreSQL visibility metadata and lets the client discard overlapping streamed changes.
+ * A subset snapshot: Electric returns operations in a subset envelope rather than the append-only
+ * shape log. The snapshot mark links each row to the PostgreSQL visibility metadata and lets the
+ * client discard overlapping streamed changes.
  */
-export function electricSubset(rows: readonly ElectricShapeMessage[], handle: string): Response {
-  const schema = relationSchema(rows);
+export function electricSubset(rows: readonly ElectricShapeMessage[], handle: string, relation: string): Response {
+  const schema = relationSchema(rows, relation);
   const snapshotMark = 974_778_392;
   const data = rows.map((row) =>
     "relation" in row.headers ? { ...row, headers: { ...row.headers, snapshot_mark: snapshotMark } } : row
@@ -171,7 +177,8 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     for (const [routeMethod, pattern, answer] of routes) {
       const match = url.pathname.match(pattern);
       if (routeMethod !== method || !match) continue;
-      const body = answer(match, url.searchParams, signal);
+      const requestBody = typeof init?.body === "string" ? init.body : undefined;
+      const body = answer(match, url.searchParams, signal, requestBody);
       if (body instanceof Response) return body;
       if (body === undefined) return Response.json({ detail: `no such sandbox ${match[1]}` }, { status: 404 });
       return Response.json(body);
