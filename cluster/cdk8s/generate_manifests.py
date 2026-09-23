@@ -130,7 +130,10 @@ from cluster.cdk8s.openebs_lvm import (
 )
 from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
 from cluster.cdk8s.seaweedfs import flux_kustomizations as seaweedfs_flux_kustomizations
-from cluster.cdk8s.seaweedfs_csi import flux_kustomizations as seaweedfs_csi_flux_kustomizations
+from cluster.cdk8s.seaweedfs_csi import (
+    driver as seaweedfs_csi_driver,
+    flux_kustomizations as seaweedfs_csi_flux_kustomizations,
+)
 from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_controller_flux_kustomizations
 from cluster.cdk8s.ssh_mcp import generation as ssh_mcp_generation
 from cluster.cdk8s.sshpiper_crds import flux_kustomizations as sshpiper_crds_flux_kustomizations
@@ -218,6 +221,7 @@ def generate_manifests(root: Path) -> None:
     kube_api_proxy.write_manifests(root)
     vector_talos_logs.write_manifests(root)
     openebs_lvm_storage.write_manifests(root)
+    seaweedfs_csi_driver.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
