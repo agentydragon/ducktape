@@ -14,13 +14,6 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Namespace, Pods, Protocol, Service, ServicePort, ServiceType, k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
@@ -57,6 +50,8 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import external_creds
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -169,28 +164,17 @@ def _bazel_cache_claim(scope: Construct) -> None:
 
 def _buildbuddy_api_key(scope: Construct) -> None:
     name = _BUILDBUDDY_API_KEY
-    ExternalSecret(
+    add_external_secret(
         scope,
         "buildbuddy-api-key",
-        metadata=metadata(name, NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                name="kubernetes-external-creds-secret-store",
-            ),
-            target=ExternalSecretSpecTarget(
-                name=name,
-                # Reuse the existing Reflector mirror during the staged ownership handoff.
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="api-key", remote_ref=ExternalSecretSpecDataRemoteRef(key=name, property="api-key")
-                )
-            ],
-        ),
+        name=name,
+        namespace=NAMESPACE,
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[remote_data(name, "api-key")],
+        # Reuse the existing Reflector mirror during the staged ownership handoff.
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
 
 

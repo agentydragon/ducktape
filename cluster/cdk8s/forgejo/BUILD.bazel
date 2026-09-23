@@ -20,6 +20,7 @@ py_library(
         "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
         "//cluster/cdk8s/crd_bindings/seaweedfs:resourcereferencegrant",
         "//cluster/cdk8s/crd_bindings/seaweedfs:s3credentials",
+        "//cluster/cdk8s/external_secrets:external_secret",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

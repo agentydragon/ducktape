@@ -11,20 +11,11 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
-    ExternalSecretSpecTargetCreationPolicy,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecret, ExternalSecretSpecTargetCreationPolicy
 
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
 
 OUTPUT_DIR = "cluster/k8s/litellm/secrets"
 _NAME = "litellm-secrets"
@@ -45,23 +36,17 @@ def _external_secret(
     source_property: str,
     annotations: dict[str, str] | None = None,
 ) -> ExternalSecret:
-    return ExternalSecret(
+    return add_external_secret(
         chart,
         id,
-        metadata=metadata(name, _NAMESPACE, annotations=annotations),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name=store, kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE
-            ),
-            target=ExternalSecretSpecTarget(name=target, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key=secret_key,
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key=source, property=source_property),
-                )
-            ],
-        ),
+        name=name,
+        namespace=_NAMESPACE,
+        refresh="1h",
+        store=cluster_secret_store(store),
+        data=[remote_data(source, source_property, secret_key=secret_key)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        target_name=target,
+        annotations=annotations,
     )
 
 

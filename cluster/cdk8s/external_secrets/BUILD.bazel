@@ -42,3 +42,14 @@ py_library(
         "@pypi//cdk8s_plus_34",
     ],
 )
+
+py_library(
+    name = "external_secret",
+    srcs = ["external_secret.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "@pypi//constructs",
+    ],
+)

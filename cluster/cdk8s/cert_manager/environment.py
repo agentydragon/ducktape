@@ -8,16 +8,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
-    ExternalSecretSpecTargetCreationPolicy,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
@@ -25,6 +16,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import external_creds
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
@@ -32,7 +25,6 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.metadata import metadata
 
 NAME = "cert-manager-environment"
 NAMESPACE = "cert-manager"
@@ -45,26 +37,17 @@ def chart(app: App) -> Chart:
     chart = Chart(app, "environment", disable_resource_name_hashes=True)
     # Consumer-owned identity for reading approved canonical credentials.
     k8s.KubeServiceAccount(chart, "reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=NAMESPACE))
-    ExternalSecret(
+    add_external_secret(
         chart,
         "route53-credentials",
-        metadata=metadata(_ROUTE53_SECRET, NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name="kubernetes-external-creds-secret-store",
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_ROUTE53_SECRET, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key=key, remote_ref=ExternalSecretSpecDataRemoteRef(key=_ROUTE53_SOURCE, property=key)
-                )
-                for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
-            ],
-        ),
+        name=_ROUTE53_SECRET,
+        namespace=NAMESPACE,
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[
+            remote_data(_ROUTE53_SOURCE, key) for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
     return chart
 

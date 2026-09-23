@@ -15,21 +15,15 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
 )
 
+from cluster.cdk8s import external_creds
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
 
 NAME = "authentik-jwt-rotation"
 OUTPUT_DIR = "cluster/k8s/agents/authentik-jwt-rotation"
@@ -181,29 +175,17 @@ def chart(app: App) -> Chart:
     k8s.KubeServiceAccount(
         chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=NAMESPACE)
     )
-    ExternalSecret(
+    add_external_secret(
         chart,
         "github-pat",
-        metadata=metadata(_GITHUB_PAT, NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                name="kubernetes-external-creds-secret-store",
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_GITHUB_PAT,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(type="Opaque"),
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="token",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key="github-agentydragon-2", property="token"),
-                )
-            ],
-        ),
+        name=_GITHUB_PAT,
+        namespace=NAMESPACE,
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[remote_data("github-agentydragon-2", "token")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(type="Opaque"),
     )
     k8s.KubeServiceAccount(
         chart,

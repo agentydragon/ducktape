@@ -15,19 +15,13 @@ from cdk8s_plus_34 import k8s
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
 )
 
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -280,41 +274,27 @@ def _direct_token(scope: Construct) -> None:
         metadata=metadata(_DIRECT_TOKEN, _NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    ExternalSecret(
+    add_external_secret(
         scope,
         "direct-token",
-        metadata=metadata(_DIRECT_TOKEN, _NAMESPACE),
-        spec=ExternalSecretSpec(
-            # A direct-API credential is generated once, not periodically rotated.
-            refresh_interval="8760h",
-            target=ExternalSecretSpecTarget(
-                name=_DIRECT_TOKEN,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="Opaque",
-                    metadata=ExternalSecretSpecTargetTemplateMetadata(
-                        annotations={
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "claude-sandbox",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "claude-sandbox",
-                        }
-                    ),
-                    data={"token": "{{ .password }}"},
-                ),
+        name=_DIRECT_TOKEN,
+        namespace=_NAMESPACE,
+        # A direct-API credential is generated once, not periodically rotated.
+        refresh="8760h",
+        data_from=[password_generator(generator.name)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(
+            type="Opaque",
+            metadata=ExternalSecretSpecTargetTemplateMetadata(
+                annotations={
+                    "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
+                    "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "claude-sandbox",
+                    "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
+                    "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "claude-sandbox",
+                }
             ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=generator.name,
-                        )
-                    )
-                )
-            ],
+            data={"token": "{{ .password }}"},
         ),
     )
 
