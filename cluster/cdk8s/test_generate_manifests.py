@@ -145,6 +145,8 @@ _GENERATED_FILES = (
     "cluster/k8s/authentik/sso-providers-tf/kustomization.yaml",
     "cluster/k8s/agents/shared-rbac/agent-shared-rbac.k8s.yaml",
     "cluster/k8s/agents/shared-rbac/kustomization.yaml",
+    "cluster/k8s/agents/kubectl-passthrough-mcp/app/kubectl-passthrough-mcp.k8s.yaml",
+    "cluster/k8s/agents/kubectl-passthrough-mcp/app/kustomization.yaml",
     "cluster/k8s/website/website.k8s.yaml",
     "cluster/k8s/website/kustomization.yaml",
     "cluster/k8s/ollama/ollama.k8s.yaml",

@@ -24,6 +24,7 @@ from cluster.cdk8s import (
     google_mcp,
     ha_mcp,
     haku_openclaw_spike_config,
+    kubectl_passthrough_mcp,
     headlamp,
     hubble_ui,
     keda,
@@ -234,6 +235,7 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    kubectl_passthrough_mcp.write_manifests(root)
     agent_shared_rbac.write_manifests(root)
     website.write_manifests(root)
     ollama_app.write_manifests(root)
@@ -769,10 +771,8 @@ def generate_manifests(root: Path) -> None:
     vm_images_publisher_kustomization = vm_images_publisher_flux_kustomizations.vm_images_publisher(
         flux_chart, vm_images_publisher_artifact, seaweedfs_cluster_kustomization
     )
-    kubectl_passthrough_mcp_artifact = artifact(
-        "kubectl-passthrough-mcp", "cluster/k8s/agents/kubectl-passthrough-mcp/app"
-    )
-    agents_flux_kustomizations.kubectl_passthrough_mcp(flux_chart, kubectl_passthrough_mcp_artifact)
+    kubectl_passthrough_mcp_artifact = artifact("kubectl-passthrough-mcp", kubectl_passthrough_mcp.OUTPUT_DIR)
+    kubectl_passthrough_mcp.kubectl_passthrough_mcp(flux_chart, kubectl_passthrough_mcp_artifact)
     forgejo_artifact = artifact("forgejo", "cluster/k8s/forgejo")
     forgejo_kustomization = forgejo_flux_kustomizations.forgejo(
         flux_chart,

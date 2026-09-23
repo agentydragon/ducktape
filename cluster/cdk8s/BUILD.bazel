@@ -268,6 +268,22 @@ py_library(
 )
 
 py_library(
+    name = "kubectl_passthrough_mcp",
+    srcs = ["kubectl_passthrough_mcp.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":gateway",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "google_mcp",
     srcs = ["google_mcp.py"],
     deps = [
@@ -870,6 +886,7 @@ py_library(
         ":google_mcp",
         ":ha_mcp",
         ":haku_openclaw_spike_config",
+        ":kubectl_passthrough_mcp",
         ":headlamp",
         ":hubble_ui",
         ":keda",
@@ -1082,6 +1099,8 @@ py_test(
         "//cluster/k8s:agents/haku-openclaw-spike/app/haku-openclaw-spike.k8s.yaml",
         "//cluster/k8s:agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
         "//cluster/k8s:agents/haku-openclaw-spike/app/namespace.k8s.yaml",
+        "//cluster/k8s:agents/kubectl-passthrough-mcp/app/kubectl-passthrough-mcp.k8s.yaml",
+        "//cluster/k8s:agents/kubectl-passthrough-mcp/app/kustomization.yaml",
         "//cluster/k8s:agents/machine-access-tf/agent-machine-access.k8s.yaml",
         "//cluster/k8s:agents/machine-access-tf/kustomization.yaml",
         "//cluster/k8s:agents/mitmproxy/cnp-cloud-api-egress.k8s.yaml",
