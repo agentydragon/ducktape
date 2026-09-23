@@ -1,8 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - bucket.yaml
-  - iam.yaml
+  # cdk8s-generated (cluster/cdk8s/authentik/db_backups.py) -- see cluster/docs/cdk8s.md.
+  - db-backups.k8s.yaml
+  # Hand-written: no barman-cloud ObjectStore or CNPG ScheduledBackup CRD binding exists
+  # for cdk8s yet.
   - object-store.yaml
   - scheduled-backup.yaml
-  - seaweed-reference-grant.yaml
