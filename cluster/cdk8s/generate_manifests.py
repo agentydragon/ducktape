@@ -8,6 +8,7 @@ from cluster.cdk8s import (
     agent_machine_access,
     agent_shared_rbac,
     aiquota,
+    claude_sandbox_secrets,
     cnpg_flux_kustomizations,
     descheduler,
     dns_automation,
@@ -187,6 +188,7 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    claude_sandbox_secrets.write_manifests(root)
     kubectl_passthrough_mcp.write_manifests(root)
     agent_shared_rbac.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
@@ -600,8 +602,8 @@ def generate_manifests(root: Path) -> None:
         ntfy_kustomization,
         external_secrets_config_kustomization,
     )
-    claude_sandbox_secrets_artifact = artifact("claude-sandbox-secrets", "cluster/k8s/agents/claude-sandbox-secrets")
-    agents_flux_kustomizations.claude_sandbox_secrets(
+    claude_sandbox_secrets_artifact = artifact("claude-sandbox-secrets", claude_sandbox_secrets.OUTPUT_DIR)
+    claude_sandbox_secrets.claude_sandbox_secrets(
         flux_chart, claude_sandbox_secrets_artifact, claude_rbac_kustomization, external_secrets_operator_kustomization
     )
     haku_openclaw_spike_backup_artifact = artifact(
