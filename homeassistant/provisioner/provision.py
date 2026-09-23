@@ -1,4 +1,5 @@
-"""Orchestrate configured Home Assistant provisioning."""
+"""Orchestrate configured Home Assistant provisioning: `setup` installs components and onboards,
+`tokens` keeps other workloads' token Secrets valid."""
 
 from __future__ import annotations
 
@@ -7,10 +8,13 @@ from pathlib import Path
 
 import httpx2
 import kubernetes
+import typer
 from client import HomeAssistantClient, OnboardingStep
 from component_installer import install_components
-from settings import load_settings
+from settings import ProvisionerSettings, load_settings
 from tokens import provision_token
+
+app = typer.Typer(add_completion=False)
 
 
 async def provision(client: HomeAssistantClient, password: str) -> None:
@@ -40,27 +44,41 @@ async def provision(client: HomeAssistantClient, password: str) -> None:
     print("Home Assistant onboarding is complete")
 
 
-async def main() -> None:
-    """Install configured components, complete configured onboarding, then keep the configured
-    token Secrets valid."""
-    settings = load_settings()
-    config_dir = Path("/config")
+def _local_admin_password(settings: ProvisionerSettings) -> str:
+    if settings.local_admin_password is None:
+        raise ValueError("HOME_ASSISTANT_PROVISIONER_LOCAL_ADMIN_PASSWORD is required")
+    return settings.local_admin_password.get_secret_value()
+
+
+async def _setup(settings: ProvisionerSettings) -> None:
     async with httpx2.AsyncClient() as http_client:
-        await install_components(http_client, config_dir, settings.components)
-        if not settings.onboarding_enabled and settings.tokens is None:
-            return
-        if settings.local_admin_password is None:
-            raise ValueError("HOME_ASSISTANT_PROVISIONER_LOCAL_ADMIN_PASSWORD is required for onboarding and tokens")
-        password = settings.local_admin_password.get_secret_value()
-        client = HomeAssistantClient(http_client, settings)
+        await install_components(http_client, Path("/config"), settings.components)
         if settings.onboarding_enabled:
-            await provision(client, password)
-        if settings.tokens is not None:
-            kubernetes.config.load_incluster_config()
-            v1 = kubernetes.client.CoreV1Api()
-            for token in settings.tokens:
-                await provision_token(client, v1, token, password)
+            await provision(HomeAssistantClient(http_client, settings), _local_admin_password(settings))
+
+
+async def _keep_tokens(settings: ProvisionerSettings) -> None:
+    if settings.tokens is None:
+        raise ValueError("HOME_ASSISTANT_PROVISIONER_TOKENS is required")
+    kubernetes.config.load_incluster_config()
+    v1 = kubernetes.client.CoreV1Api()
+    async with httpx2.AsyncClient() as http_client:
+        client = HomeAssistantClient(http_client, settings)
+        for token in settings.tokens:
+            await provision_token(client, v1, token, _local_admin_password(settings))
+
+
+@app.command()
+def setup() -> None:
+    """Install configured components and complete configured onboarding."""
+    asyncio.run(_setup(load_settings()))
+
+
+@app.command()
+def tokens() -> None:
+    """Keep each configured Secret holding a long-lived token Home Assistant accepts."""
+    asyncio.run(_keep_tokens(load_settings()))
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    app()
