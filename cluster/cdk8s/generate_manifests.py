@@ -16,7 +16,6 @@ from cluster.cdk8s import (
     external_creds,
     forgejo_image_automation,
     forgejo_images,
-    forgejo_images_flux_kustomizations,
     gateway_flux_kustomizations,
     github_branch_protection,
     google_mcp,
@@ -795,7 +794,7 @@ def generate_manifests(root: Path) -> None:
         claude_rbac_kustomization,
     )
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
-    forgejo_images_kustomization = forgejo_images_flux_kustomizations.forgejo_images(
+    forgejo_images_kustomization = forgejo_images.forgejo_images(
         flux_chart,
         forgejo_images_artifact,
         external_secrets_config_kustomization,
