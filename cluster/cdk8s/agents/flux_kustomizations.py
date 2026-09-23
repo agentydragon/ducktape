@@ -205,43 +205,6 @@ def haku_openclaw_spike_app(
     )
 
 
-def haku_openclaw_spike_backup(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_operator: Kustomization,
-    volsync: Kustomization,
-) -> Kustomization:
-    name = "haku-openclaw-spike-backup"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            wait=True,
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(
-                # Backup/S3 wiring must converge even when the OpenClaw Deployment is down.
-                # The Bucket and S3Credentials remain app-owned, but their readiness is
-                # retried by the ExternalSecret rather than coupling this Kustomization to
-                # the app Deployment health check.
-                external_secrets_operator,
-                volsync,
-            ),
-        ),
-        description=(
-            "Restic/VolSync backup of the Haku OpenClaw spike state to its "
-            "dedicated private SeaweedFS S3 bucket, plus the one-shot restore "
-            "into the optiplex worker PVC that migrates the state off the control "
-            "plane."
-        ),
-    )
-
-
 def plaid_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,

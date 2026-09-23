@@ -801,10 +801,8 @@ def generate_manifests(root: Path) -> None:
     claude_sandbox_secrets.claude_sandbox_secrets(
         flux_chart, claude_sandbox_secrets_artifact, claude_rbac_kustomization, external_secrets_operator_kustomization
     )
-    haku_openclaw_spike_backup_artifact = artifact(
-        "haku-openclaw-spike-backup", "cluster/k8s/agents/haku-openclaw-spike/backup"
-    )
-    agents_flux_kustomizations.haku_openclaw_spike_backup(
+    haku_openclaw_spike_backup_artifact = artifact("haku-openclaw-spike-backup", haku_openclaw_spike_backup.OUTPUT_DIR)
+    haku_openclaw_spike_backup.haku_openclaw_spike_backup(
         flux_chart, haku_openclaw_spike_backup_artifact, external_secrets_operator_kustomization, volsync_kustomization
     )
     authentik_db_backups_artifact = artifact("authentik-db-backups", "cluster/k8s/authentik/db-backups")
