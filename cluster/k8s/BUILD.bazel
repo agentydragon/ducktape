@@ -443,7 +443,7 @@ filegroup(
     srcs = [
         "agentplane-staging/agentplane.k8s.yaml",
         "agents/agent-rbac-base/agent-rbac-base.k8s.yaml",
-        "agents/haku-egress-proxy/ccnp-haku-agent-egress.yaml",
+        "agents/haku-egress-proxy/haku-egress-proxy.k8s.yaml",
         "agents/public-coder-agent/app/agent-kubeconfig.yaml",
         "agents/public-coder-agent/devbox/virtualmachine.yaml",
         "agents/public-coder-agent/proxy/iron.yaml",
