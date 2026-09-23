@@ -62,6 +62,8 @@ async def _allowed_execution(store: ActionStore, *, idempotency_key: str) -> Any
             idempotency_key=idempotency_key, title=f"test title for {idempotency_key}", action=ACTION_ID, arguments={}
         ),
         CALLER,
+        request_id=uuid4(),
+        vote=None,
     )
     await store.decide(
         view.id,
