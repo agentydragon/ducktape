@@ -3,11 +3,5 @@ kind: Kustomization
 resources:
   - host-key.sops.yaml
   - devbox-key.sops.yaml
-  - serviceaccount.yaml
-  - rbac.yaml
-  - pvc.yaml
-  - deployment.yaml
-  - service.yaml
-  - cnp-ingress.yaml
-  - cnp-egress.yaml
+  - public-coder-agent-sshpiper.k8s.yaml
   - pipe-devbox.k8s.yaml

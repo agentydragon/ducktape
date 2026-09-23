@@ -1,14 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - forgejo-images-creds-eso.yaml
-  - activitywatch-read-token-eso.yaml
-  - external-creds-reader.yaml
-  - coinbase-api-credentials-eso.yaml
-  - sandboxtemplate-haku.yaml
+  # cdk8s-generated (cluster/cdk8s/haku/workspaces.py) -- see cluster/docs/cdk8s.md.
+  - haku-workspaces.k8s.yaml
+  # Hand-written: no SandboxWarmPool binding exists for cdk8s yet.
   - sandboxwarmpool-haku.yaml
-  - cleanuppolicy-haku-janitor.yaml
-  # Cross-namespace RBAC lives here rather than under a namespace-transforming
-  # workload kustomization. Console's exec-target sandbox bindings live in haku-sandbox.
-  - haku-console-sandbox-role.yaml
-  - haku-console-sandbox-rolebinding.yaml
+components:
+  - ./image-pins

@@ -1,0 +1,167 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: loki-read-proxy
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "false"
+  name: loki-read-proxy
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Read-only namespace-filtering Loki query proxy for agents. Exposes only GET query/query_range and requires an exact namespace matcher in every query; Loki itself is auth_enabled:false, so agents must never reach it directly. A request with a Kubernetes bearer token is authorized by that token's RBAC (SelfSubjectAccessReview for get pods/log in the namespace); an anonymous request by the static NAMESPACE_ALLOWLIST, fenced by the CiliumNetworkPolicy next to it.
+  labels:
+    app.kubernetes.io/name: loki-read-proxy
+  name: loki-read-proxy
+  namespace: loki-read-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loki-read-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: loki-read-proxy
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: NAMESPACE_ALLOWLIST
+              value: activitywatch,agentplane-index,agentplane-staging,agentplane-testing,airlock,analytics,authentik,cert-manager,clickhouse,cli-proxy-api,cnpg-system,cpap-sync,csi-proxmox,docker-ci,flux-system,gatus,grocy-sf,grocy-vallejo,haku-ci,kube-system,litellm,local-path-storage,loki,monitoring,node-feature-discovery,nvidia-device-plugin,oci-cache,openebs,plaid-mcp,proxmox-proxy,props,study-casino,tana-mcp
+            - name: UPSTREAM_URL
+              value: http://loki-read.loki.svc:3100
+            - name: KUBERNETES_CA_FILE
+              value: /var/run/kube-root-ca/ca.crt
+          image: git.allegedly.works/ducktape-ci/loki-read-proxy:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          name: proxy
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /var/run/kube-root-ca
+              name: kube-root-ca
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: kube-root-ca.crt
+          name: kube-root-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: loki-read-proxy
+  name: loki-read-proxy
+  namespace: loki-read-proxy
+spec:
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: http
+  selector:
+    app.kubernetes.io/name: loki-read-proxy
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  annotations:
+    description: Ingress to the Loki read proxy only from haku-sandbox pods; egress only to loki-read, kube-apiserver (SelfSubjectAccessReview for bearer requests) and kube-dns. This policy is the whole access control for anonymous (allowlist) requests.
+  name: loki-read-proxy
+  namespace: loki-read-proxy
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: read
+            app.kubernetes.io/name: loki
+            k8s:io.kubernetes.pod.namespace: loki
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: loki-read-proxy
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-sandbox
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP

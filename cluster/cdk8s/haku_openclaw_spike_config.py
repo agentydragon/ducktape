@@ -3,9 +3,7 @@ the gateway Deployment and everything around it.
 
 The image tag is the placeholder "unset"; the hand-written
 cluster/k8s/agents/haku-openclaw-spike/app/image-pins/kustomization.yaml overrides it at
-`kustomize build` time via Flux's image-automation marker. `seaweed.yaml` (the backup
-Bucket, S3Credentials and ResourceReferenceGrant) stays hand-written beside the generated
-files: no SeaweedFS CRD binding exists yet.
+`kustomize build` time via Flux's image-automation marker.
 """
 
 from __future__ import annotations
@@ -28,6 +26,28 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
+)
+from seaweed_bucket_crds.com.seaweedfs.seaweed import (
+    Bucket,
+    BucketSpec,
+    BucketSpecAccess,
+    BucketSpecAccessActions,
+    BucketSpecClusterRef,
+    BucketSpecReclaimPolicy,
+)
+from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
+    ResourceReferenceGrant,
+    ResourceReferenceGrantSpec,
+    ResourceReferenceGrantSpecFrom,
+    ResourceReferenceGrantSpecTo,
+)
+from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
+    S3Credentials,
+    S3CredentialsSpec,
+    S3CredentialsSpecIdentityRef,
+    S3CredentialsSpecReclaimPolicy,
+    S3CredentialsSpecSeaweedRef,
+    S3CredentialsSpecSecretRef,
 )
 
 from cluster.cdk8s.config_format import json5_config
@@ -602,8 +622,76 @@ def _network_policies(scope: Construct) -> None:
     )
 
 
+def _backup_bucket(scope: Construct) -> None:
+    """The VolSync backup bucket and the credentials Secret ../backup's SecretStore reads."""
+    bucket_name = "haku-openclaw-spike-backups"
+    seaweedfs = "seaweedfs"
+    Bucket(
+        scope,
+        "backup-bucket",
+        metadata=metadata(
+            bucket_name, _NAMESPACE, annotations={"description": "Haku OpenClaw spike VolSync backup bucket."}
+        ),
+        spec=BucketSpec(
+            name=bucket_name,
+            # The physical bucket is populated; adopt it instead of creating a second bucket
+            # during the Flux ownership handoff.
+            adopt_existing=True,
+            cluster_ref=BucketSpecClusterRef(name=seaweedfs, namespace=seaweedfs),
+            # Restic retention/pruning is managed by VolSync, not by Bucket deletion.
+            reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
+            access=[
+                BucketSpecAccess(
+                    user=bucket_name,
+                    actions=[
+                        BucketSpecAccessActions.READ,
+                        BucketSpecAccessActions.WRITE,
+                        BucketSpecAccessActions.LIST,
+                        BucketSpecAccessActions.TAGGING,
+                    ],
+                )
+            ],
+        ),
+    )
+    S3Credentials(
+        scope,
+        "backup-credentials",
+        metadata=metadata(
+            bucket_name, _NAMESPACE, annotations={"description": "Haku OpenClaw spike VolSync SeaweedFS credentials."}
+        ),
+        spec=S3CredentialsSpec(
+            seaweed_ref=S3CredentialsSpecSeaweedRef(name=seaweedfs, namespace=seaweedfs),
+            # The IAM username is cluster-global. Without a same-namespace S3Identity, the
+            # operator treats this as the existing identity named above.
+            identity_ref=S3CredentialsSpecIdentityRef(name=bucket_name),
+            # Generate credentials directly where the VolSync SecretStore reads them.
+            secret_ref=S3CredentialsSpecSecretRef(
+                name="haku-openclaw-spike-volsync-s3-credentials",
+                access_key_field="AWS_ACCESS_KEY_ID",
+                secret_key_field="AWS_SECRET_ACCESS_KEY",
+            ),
+            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
+        ),
+    )
+    # Permit only this app's tenant-local Bucket and S3Credentials to reference the SeaweedFS
+    # cluster in its namespace.
+    group = "seaweed.seaweedfs.com"
+    ResourceReferenceGrant(
+        scope,
+        "backup-reference-grant",
+        metadata=metadata(_NAME, seaweedfs),
+        spec=ResourceReferenceGrantSpec(
+            from_=[
+                ResourceReferenceGrantSpecFrom(group=group, kind="Bucket", namespace=_NAMESPACE),
+                ResourceReferenceGrantSpecFrom(group=group, kind="S3Credentials", namespace=_NAMESPACE),
+            ],
+            to=[ResourceReferenceGrantSpecTo(group=group, kind="Seaweed", name=seaweedfs)],
+        ),
+    )
+
+
 def app_chart(app: App) -> Chart:
-    """The gateway workload, its credentials, storage and network policy."""
+    """The gateway workload, its credentials, storage, network policy and backup bucket."""
     workload = Chart(app, _NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(workload, "forgejo-images-creds", namespace=_NAMESPACE)
     _gateway_password(workload)
@@ -611,6 +699,7 @@ def app_chart(app: App) -> Chart:
     _deployment(workload)
     _service(workload)
     _network_policies(workload)
+    _backup_bucket(workload)
     return workload
 
 

@@ -982,7 +982,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/external-secrets/external-secrets/v2.10.0/deploy/crds/bundle.yaml"],
 )
 
-# Match the sshpiper image tag in cluster/k8s/agents/public-coder-agent/sshpiper/.
+# Match the sshpiper image tag in cluster/cdk8s/public_coder_sshpiper.py.
 http_file(
     name = "sshpiper_pipe_crd",
     downloaded_file_path = "crd-pipes.yaml",
@@ -1047,7 +1047,7 @@ http_file(
     urls = ["https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v0.5.5/sandbox-with-extensions.yaml"],
 )
 
-# Match the seaweedfs-operator chart version in cluster/k8s/seaweedfs/operator/helmrelease.yaml;
+# Match the seaweedfs-operator chart version in cluster/cdk8s/seaweedfs/operator_release.py;
 # the chart's CRD template equals these per-kind files at the same tag.
 http_file(
     name = "seaweed_adminscript_crd",
@@ -1105,7 +1105,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml"],
 )
 
-# Match the grafana-operator release deployed by cluster/k8s/monitoring/grafana-operator/helmrelease.yaml
+# Match the grafana-operator release deployed by cluster/cdk8s/monitoring/grafana_operator.py
 # (chart `~5.22`, resolved to 5.22.2); the chart ships these CRD files unchanged.
 http_file(
     name = "grafana_grafana_crd",
@@ -1197,7 +1197,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kedacore/keda/v2.20.2/config/crd/bases/keda.sh_triggerauthentications.yaml"],
 )
 
-# Match the altinity-clickhouse-operator chart 0.27.3 in cluster/k8s/clickhouse/operator/helmrelease.yaml.
+# Match the altinity-clickhouse-operator chart 0.27.3 in cluster/cdk8s/clickhouse/operator.py.
 http_file(
     name = "clickhouse_installation_crd",
     downloaded_file_path = "CustomResourceDefinition-clickhouseinstallations.clickhouse.altinity.com.yaml",

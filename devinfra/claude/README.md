@@ -233,7 +233,7 @@ https://cache.allegedly.works/main` (+ trusted pubkeys from
    closures, so it substitutes even on the very first install of a fresh rootfs, before
    any session credential exists (see <../../cluster/docs/nix_cache.md> "Public
    bootstrap cache"). `main` is private — its per-principal reader JWT (rotated by
-   `cluster/k8s/nix-cache/cronjob.yaml`) is upserted into
+   the `attic-jwt-rotation` CronJob, `cluster/cdk8s/nix_cache/attic.py`) is upserted into
    `/nix/var/determinate/netrc` by `web_env.sh` at hook-daemon startup, so it stays
    anonymous (and unused, since `fallback = true` already got everything from `public`)
    until then; every later `nix` invocation substitutes from it too, with auth.

@@ -29,7 +29,7 @@ Relevant live placement during the follow-up investigation:
 | SSD volume                              | `seaweedfs-volume-ssd-1`           | `ovh-ns104952` |
 | SSD volume                              | `seaweedfs-volume-ssd-0`           | `ovh-ns104963` |
 
-Physical rack notes from `cluster/k8s/seaweedfs/cluster/seaweed.yaml`:
+Physical rack notes from `cluster/cdk8s/seaweedfs/cluster.py`:
 
 | Node           | Rack      |
 | -------------- | --------- |

@@ -1,0 +1,7 @@
+# Hand-written: carries the Flux image-automation marker the generated manifests cannot
+# (cluster/cdk8s/AGENTS.md § image-pins/kustomization.yaml).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: git.allegedly.works/ducktape-ci/stalwart
+    newTag: devel-20260913201038-76818c0 # {"$imagepolicy": "flux-system:stalwart:tag"}

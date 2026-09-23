@@ -22,33 +22,6 @@ from cluster.cdk8s.flux import (
 )
 
 
-def haku_forgejo_tea(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_rbac: Kustomization) -> Kustomization:
-    name = "haku-forgejo-tea"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            depends_on=[
-                # haku-sandbox ns the secret lives in
-                flux_kustomization_depends_on(haku_rbac)
-            ],
-        ),
-        description=(
-            "Forgejo API token Reflector mirrors into haku-ci's KEDA scaler. "
-            "Split out of haku/managed-agent so haku-ci doesn't depend on the "
-            "(parked) worker."
-        ),
-    )
-
-
 def haku_mailbox(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
@@ -87,37 +60,6 @@ def haku_mailbox(
                     )
                 ]
             ),  # ${LETSENCRYPT_ISSUER}
-        ),
-    )
-
-
-def haku_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    name = "haku-namespace"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="2m",
-        ),
-    )
-
-
-def haku_rbac(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_namespace: Kustomization) -> Kustomization:
-    name = "haku-rbac"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="2m",
-            depends_on=[flux_kustomization_depends_on(haku_namespace)],
         ),
     )
 

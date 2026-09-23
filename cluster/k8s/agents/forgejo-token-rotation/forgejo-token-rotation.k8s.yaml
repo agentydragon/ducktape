@@ -1,0 +1,77 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    description: Mints full-account Forgejo API tokens for agent service accounts, commits SOPS-encrypted raw-token files plus pod-ready tea config Secrets, then prunes older rotator-created tokens after the Git push succeeds.
+  name: forgejo-token-rotation
+  namespace: agents-infra
+spec:
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1800
+      backoffLimit: 2
+      template:
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - --config
+                - /config/tokens.yaml
+              image: git.allegedly.works/ducktape-ci/forgejo-token-rotation:unset
+              name: rotate
+              resources:
+                limits:
+                  memory: 256Mi
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - mountPath: /config
+                  name: rotations-config
+                  readOnly: true
+                - mountPath: /var/run/secrets/github-pat
+                  name: github-pat
+                  readOnly: true
+                - mountPath: /var/run/secrets/forgejo/haku
+                  name: haku-forgejo
+                  readOnly: true
+                - mountPath: /var/run/secrets/forgejo/claude
+                  name: claude-forgejo
+                  readOnly: true
+                - mountPath: /var/run/secrets/forgejo/agent-box-codex
+                  name: agent-box-codex-forgejo
+                  readOnly: true
+          imagePullSecrets:
+            - name: forgejo-images-creds
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: ""
+          volumes:
+            - configMap:
+                name: forgejo-token-rotations-config
+              name: rotations-config
+            - name: github-pat
+              secret:
+                secretName: github-secrets-sync-pat
+            - name: haku-forgejo
+              secret:
+                secretName: forgejo-token-mint-haku
+            - name: claude-forgejo
+              secret:
+                secretName: forgejo-token-mint-claude
+            - name: agent-box-codex-forgejo
+              secret:
+                secretName: forgejo-token-mint-agent-box-codex
+      ttlSecondsAfterFinished: 86400
+  schedule: 35 * * * *
+  successfulJobsHistoryLimit: 3

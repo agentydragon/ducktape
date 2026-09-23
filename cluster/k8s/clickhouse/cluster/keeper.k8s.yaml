@@ -1,0 +1,92 @@
+apiVersion: clickhouse-keeper.altinity.com/v1
+kind: ClickHouseKeeperInstallation
+metadata:
+  name: clickhouse-keeper
+  namespace: clickhouse
+spec:
+  defaults:
+    templates:
+      podTemplate: keeper
+      dataVolumeClaimTemplate: keeper-data
+  configuration:
+    settings:
+      keeper_server/coordination_settings/raft_logs_level: warning
+      listen_host: 0.0.0.0
+      logger/console: "true"
+      logger/level: information
+    clusters:
+      - name: keeper
+        layout:
+          replicas:
+            - name: "0"
+            - name: "1"
+            - name: "2"
+              templates:
+                dataVolumeClaimTemplate: keeper-data-control-plane
+  templates:
+    podTemplates:
+      - name: keeper
+        metadata:
+          labels:
+            app.kubernetes.io/instance: clickhouse-keeper
+            app.kubernetes.io/name: clickhouse-keeper
+        spec:
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/instance: clickhouse-keeper
+                      app.kubernetes.io/name: clickhouse-keeper
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - image: clickhouse/clickhouse-keeper:26.8.3.105@sha256:d9aced52deafda7ca716983bc80766641bcde30c23f3f7abdf6cacc9f244bd74
+              imagePullPolicy: IfNotPresent
+              name: clickhouse-keeper
+              resources:
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                runAsGroup: 101
+                runAsNonRoot: true
+                runAsUser: 101
+                seccompProfile:
+                  type: RuntimeDefault
+          nodeSelector:
+            storage.allegedly.works/tier: hdd
+            topology.kubernetes.io/zone: hil-ovh
+          securityContext:
+            fsGroup: 101
+            seccompProfile:
+              type: RuntimeDefault
+          tolerations:
+            - effect: NoSchedule
+              key: node-role.kubernetes.io/control-plane
+              operator: Exists
+    volumeClaimTemplates:
+      - name: keeper-data
+        reclaimPolicy: Retain
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 2Gi
+          storageClassName: local-path-ovh-hdd-retain
+      - name: keeper-data-control-plane
+        reclaimPolicy: Retain
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 2Gi
+          storageClassName: local-path-ovh-hdd-retain

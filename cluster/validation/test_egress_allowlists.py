@@ -34,7 +34,7 @@ from cdk8s import (
 )
 from more_itertools import one
 
-from cluster.cdk8s import egress_fences
+from cluster.cdk8s import egress_fences, public_coder_proxy
 
 
 def hosts(*names: str) -> frozenset[str]:
@@ -110,7 +110,7 @@ OPERATOR_DATA_FENCE = "allow-haku-cloud-api-egress"
 HAKU_CLAUDE_FENCE = "allow-haku-claude-oauth-proxy-egress"
 HAKU_OPENCLAW_DNS_FENCE = "allow-haku-openclaw-spike-proxy-egress"
 HAKU_OPENCLAW_FENCE = "agents/haku-egress-proxy/openclaw-spike-iron.yaml"
-PUBLIC_CODER_WAIVER = "agents/public-coder-agent/proxy/cnp-egress.yaml"
+PUBLIC_CODER_WAIVER = "allow-public-coder-agent-proxy-egress"
 
 
 def _cilium_hosts(document: dict[str, Any]) -> set[str]:
@@ -168,11 +168,15 @@ def allowlists(generated_fences: dict[str, dict[str, Any]], k8s_dir: Path) -> di
     }
 
 
-def test_public_coder_waiver_is_unconfined(k8s_dir: Path) -> None:
+def test_public_coder_waiver_is_unconfined() -> None:
     """The waiver is pinned: it reaches `world`, names no hosts and resolves anything, so
     restoring confinement is a visible change either way, and narrowing DNS alone would fence
     nothing while its `world` rule stands."""
-    document = _load(k8s_dir, PUBLIC_CODER_WAIVER)
+    document = one(
+        obj
+        for obj in Cdk8sTesting.synth(public_coder_proxy.chart(Cdk8sTesting.app()))
+        if obj["kind"] == "CiliumNetworkPolicy" and obj["metadata"]["name"] == PUBLIC_CODER_WAIVER
+    )
     assert _cilium_hosts(document) == set()
     assert "world" in _cilium_entities(document)
     assert _cilium_dns_names(document) == {"*"}

@@ -1,8 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - buildbuddy-api-key-eso.yaml
   - ssh-host-key.sops.yaml
-  - bazel-cache-pvc.yaml
   - virtualmachine.yaml
   - public-coder-devbox.k8s.yaml

@@ -55,7 +55,31 @@ py_library(
 )
 
 py_library(
-    name = "namespace",
-    srcs = ["namespace.py"],
-    deps = ["//cluster/cdk8s:generation"],
+    name = "installation",
+    srcs = ["installation.py"],
+    deps = [
+        ":client",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/clickhouse:clickhouseinstallation",
+        "//cluster/cdk8s/crd_bindings/clickhouse:clickhousekeeperinstallation",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "operator",
+    srcs = ["operator.py"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+    ],
 )

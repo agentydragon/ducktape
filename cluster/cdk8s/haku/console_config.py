@@ -271,7 +271,7 @@ def _mcp_servers() -> dict[str, Any]:
         # `sandbox` (haku/console/tools/sandbox.py): claim a warm Haku sandbox from the
         # `agent_sandbox` pool, bootstrap it, run bounded bash via pods/exec, dispose it.
         # Credential-free -- Console's own ServiceAccount holds the claim/exec RBAC
-        # (cluster/k8s/haku/workspaces/app/haku-console-sandbox-role.yaml). By operator
+        # (haku/workspaces.py). By operator
         # directive the whole surface in `haku_sandbox_control` auto-approves so Haku drives
         # its own box tap-free: exec_sandbox is arbitrary bash, but no more than the direct
         # `kubectl exec` Haku's SA can already run in haku-sandbox, and dispose_sandbox only

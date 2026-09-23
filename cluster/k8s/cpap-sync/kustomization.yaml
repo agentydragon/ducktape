@@ -1,11 +1,10 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - forgejo-images-creds-eso.yaml
-  - namespace.yaml
-  - serviceaccount.yaml
+  - namespace.k8s.yaml
   - cpap-ezshare.sops.yaml
-  - cronjob.yaml
+  - cpap-sync.k8s.yaml
+  # Hand-written: no KubeVirt VirtualMachine binding exists for cdk8s yet.
   - cpap-gateway-vm.yaml
-  - service.yaml
-  - cilium-network-policy.yaml
+components:
+  - ./image-pins

@@ -1,0 +1,352 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: home-assistant-config
+  namespace: home-assistant
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 32Gi
+  storageClassName: local-path-home-ssd
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: home-assistant
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: home-assistant-metrics-token
+  namespace: home-assistant
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: home-assistant-metrics-token
+  namespace: home-assistant
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: home-assistant-metrics-token
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    name: home-assistant-metrics-token
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: home-assistant
+  name: home-assistant
+  namespace: home-assistant
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: home-assistant
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: home-assistant
+    spec:
+      containers:
+        - env:
+            - name: TZ
+              value: America/Los_Angeles
+            - name: SETUP_PORT
+              value: "8124"
+          image: ghcr.io/home-assistant/home-assistant:2026.9.2
+          livenessProbe:
+            httpGet:
+              host: 127.0.0.1
+              path: /
+              port: backend
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          name: home-assistant
+          ports:
+            - containerPort: 8124
+              name: backend
+          readinessProbe:
+            httpGet:
+              host: 127.0.0.1
+              path: /
+              port: backend
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 2Gi
+            requests:
+              cpu: 250m
+              memory: 512Mi
+          volumeMounts:
+            - mountPath: /config
+              name: config
+            - mountPath: /config/configuration.yaml
+              name: configuration
+              readOnly: true
+              subPath: configuration.yaml
+        - env:
+            - name: METRICS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: home-assistant-metrics-token
+          image: caddy:2.11.4-alpine
+          name: caddy
+          ports:
+            - containerPort: 8123
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 20m
+              memory: 32Mi
+          volumeMounts:
+            - mountPath: /etc/caddy/Caddyfile
+              name: caddy-config
+              readOnly: true
+              subPath: Caddyfile
+      dnsPolicy: ClusterFirstWithHostNet
+      hostNetwork: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - /homeassistant/provisioner/provision_bin
+          env:
+            - name: HOME_ASSISTANT_PROVISIONER_CONFIG_FILE
+              value: /etc/homeassistant/provisioner.yaml
+            - name: HOME_ASSISTANT_PROVISIONER_ONBOARDING_ENABLED
+              value: "false"
+          image: git.allegedly.works/ducktape-ci/homeassistant-provisioner:unset
+          imagePullPolicy: Always
+          name: provision-components
+          volumeMounts:
+            - mountPath: /config
+              name: config
+            - mountPath: /etc/homeassistant/provisioner.yaml
+              name: provisioner-config
+              readOnly: true
+              subPath: provisioner.yaml
+      nodeSelector:
+        kubernetes.io/hostname: optiplex
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: home-assistant-config
+        - configMap:
+            name: home-assistant-configuration
+          name: configuration
+        - configMap:
+            name: home-assistant-provisioner-config
+          name: provisioner-config
+        - configMap:
+            name: home-assistant-caddy
+          name: caddy-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: home-assistant
+  name: home-assistant
+  namespace: home-assistant
+spec:
+  ports:
+    - name: http
+      port: 8123
+      targetPort: http
+  selector:
+    app.kubernetes.io/name: home-assistant
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+  name: home-assistant-onboarding
+  namespace: home-assistant
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      annotations:
+        home-assistant.allegedly.works/bootstrap-revision: "3"
+      labels:
+        app.kubernetes.io/name: home-assistant-onboarding
+    spec:
+      containers:
+        - command:
+            - /homeassistant/provisioner/provision_bin
+          env:
+            - name: HOME_ASSISTANT_PROVISIONER_CONFIG_FILE
+              value: /etc/homeassistant/provisioner.yaml
+            - name: HOME_ASSISTANT_PROVISIONER_LOCAL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: home-assistant-break-glass
+          image: git.allegedly.works/ducktape-ci/homeassistant-provisioner:unset
+          imagePullPolicy: Always
+          name: onboarding
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 20m
+              memory: 64Mi
+          volumeMounts:
+            - mountPath: /config
+              name: config
+            - mountPath: /etc/homeassistant/provisioner.yaml
+              name: provisioner-config
+              readOnly: true
+              subPath: provisioner.yaml
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        kubernetes.io/hostname: optiplex
+      restartPolicy: OnFailure
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: home-assistant-config
+        - configMap:
+            name: home-assistant-provisioner-config
+          name: provisioner-config
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: home-assistant
+  namespace: home-assistant
+spec:
+  hostnames:
+    - home.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: home-assistant
+          port: 8123
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: home-assistant-config-restic
+  namespace: home-assistant
+spec:
+  restic:
+    cacheAccessModes:
+      - ReadWriteOnce
+    cacheCapacity: 1Gi
+    cacheStorageClassName: local-path-home-ssd
+    copyMethod: Direct
+    moverAffinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: kubernetes.io/hostname
+                  operator: In
+                  values:
+                    - optiplex
+    moverPodLabels:
+      app.kubernetes.io/name: home-assistant-config-restic
+    moverResources:
+      limits:
+        cpu: "1"
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+    moverSecurityContext:
+      runAsGroup: 0
+      runAsUser: 0
+      seccompProfile:
+        type: RuntimeDefault
+    pruneIntervalDays: 7
+    repository: home-assistant-config-restic-tenant
+    retain:
+      daily: 7
+      monthly: 6
+      weekly: 4
+  sourcePVC: home-assistant-config
+  trigger:
+    schedule: 17 */6 * * *
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: home-assistant-config-restic-egress
+  namespace: home-assistant
+spec:
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+    - ports:
+        - port: 8333
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: seaweedfs
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: s3
+              app.kubernetes.io/instance: seaweedfs
+              app.kubernetes.io/managed-by: seaweedfs-operator
+              app.kubernetes.io/name: seaweedfs
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: home-assistant-config-restic
+  policyTypes:
+    - Egress

@@ -1,0 +1,173 @@
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: plaid-mcp-db-readonly-generator
+  namespace: plaid-mcp
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-mcp-db-readonly
+  namespace: plaid-mcp
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: plaid-mcp-db-readonly-generator
+  refreshInterval: 8760h
+  target:
+    name: plaid-mcp-db-readonly
+    template:
+      data:
+        DATABASE_URL: postgresql://plaid_ro:{{ .password }}@plaid-mcp-db-rw.plaid-mcp.svc:5432/plaidmcp
+        dbname: plaidmcp
+        host: plaid-mcp-db-rw.plaid-mcp.svc
+        password: "{{ .password }}"
+        port: "5432"
+        username: plaid_ro
+      metadata:
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: augur,haku-sandbox
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: augur,haku-sandbox
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    description: CNPG Postgres mirror for Plaid link metadata, full-refresh sync state, and Plaid-shaped financial data.
+  name: plaid-mcp-db
+  namespace: plaid-mcp
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          weight: 100
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: plaidmcp
+      owner: plaidmcp
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 2
+  managed:
+    roles:
+      - comment: Read-only SQL access for the Plaid Postgres MCP facade; the secret is reflected to the augur and haku-sandbox namespaces.
+        ensure: present
+        login: true
+        name: plaid_ro
+        passwordSecret:
+          name: plaid-mcp-db-readonly
+  monitoring:
+    enablePodMonitor: true
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 5Gi
+    storageClass: local-path-ovh
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  annotations:
+    description: Allow the one-shot readonly-role provisioner to resolve and connect to the Plaid CNPG primary.
+  name: plaid-mcp-db-readonly-provisioner-egress
+  namespace: plaid-mcp
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: plaid-mcp-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app: plaid-mcp-db-readonly-provisioner
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    description: Applies read-only object GRANTs for plaid_ro after the CNPG cluster creates the role.
+    kustomize.toolkit.fluxcd.io/force: enabled
+  name: plaid-mcp-db-readonly-provisioner
+  namespace: plaid-mcp
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: plaid-mcp-db-readonly-provisioner
+    spec:
+      containers:
+        - args:
+            - |
+              set -x
+              exec psql \
+                --set=ON_ERROR_STOP=1 \
+                -f /sql/readonly-role.sql
+          command:
+            - /bin/bash
+            - -c
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: plaid-mcp-db-app
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: plaid-mcp-db-app
+            - name: PGHOST
+              value: plaid-mcp-db-rw.plaid-mcp.svc
+            - name: PGDATABASE
+              value: plaidmcp
+          image: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+          name: psql
+          terminationMessagePolicy: FallbackToLogsOnError
+          volumeMounts:
+            - mountPath: /sql
+              name: sql
+              readOnly: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Never
+      volumes:
+        - configMap:
+            name: plaid-mcp-db-readonly-sql
+          name: sql

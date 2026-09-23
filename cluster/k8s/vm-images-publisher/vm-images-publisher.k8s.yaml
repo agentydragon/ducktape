@@ -1,0 +1,195 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    name: vm-images-publisher
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: privileged
+    rbac.ducktape.io/agent-readable-metadata: "true"
+  name: vm-images-publisher
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: vm-images
+  namespace: vm-images-publisher
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: vm-images-ci-writer
+    - actions:
+        - Read
+        - List
+      user: vm-images-cdi-reader
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: vm-images
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: vm-images-ci-writer
+  namespace: seaweedfs
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: vm-images-ci-writer
+  namespace: vm-images-publisher
+spec:
+  identityRef:
+    name: vm-images-ci-writer
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    name: vm-images-ci-writer-s3-credentials
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: vm-images-cdi-reader
+  namespace: seaweedfs
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: vm-images-cdi-reader
+  namespace: vm-images-publisher
+spec:
+  identityRef:
+    name: vm-images-cdi-reader
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    name: vm-images-cdi-reader-s3-credentials
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: vm-images
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: vm-images-publisher
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: vm-images-publisher
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    description: Builds `.#bootstrap-image` from a chosen git ref in-cluster and uploads the qcow2 to SeaweedFS via the internal S3 endpoint. Suspended on purpose; operators invoke with `kubectl create job --from=cronjob/vm-images-publisher publish-<sha> -n vm-images-publisher`. See README.md.
+  name: vm-images-publisher
+  namespace: vm-images-publisher
+spec:
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 5400
+      backoffLimit: 0
+      template:
+        spec:
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: DoesNotExist
+          containers:
+            - command:
+                - bash
+                - -c
+                - exec nix shell nixpkgs#git nixpkgs#awscli2 nixpkgs#gawk --command bash /scripts/publish.sh
+              env:
+                - name: NIX_CONFIG
+                  value: |
+                    experimental-features = nix-command flakes
+                    substituters = https://cache.nixos.org/ https://cache.allegedly.works/main
+                    trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= main:owYQITaq2ixR/EnqKoIQAxgjalKKVqMemFwRMaUW53U=
+                    netrc-file = /etc/nix-netrc/netrc
+                    system-features = benchmark big-parallel kvm nixos-test uid-range
+                    accept-flake-config = true
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      key: accessKey
+                      name: vm-images-ci-writer-s3-credentials
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      key: secretKey
+                      name: vm-images-ci-writer-s3-credentials
+              image: nixos/nix:2.35.2
+              imagePullPolicy: IfNotPresent
+              name: publish
+              resources:
+                limits:
+                  cpu: "4"
+                  memory: 8Gi
+                requests:
+                  cpu: "2"
+                  memory: 4Gi
+              securityContext:
+                privileged: true
+              volumeMounts:
+                - mountPath: /scripts
+                  name: scripts
+                - mountPath: /etc/nix-netrc
+                  name: attic-netrc
+                  readOnly: true
+                - mountPath: /dev/kvm
+                  name: kvm
+                - mountPath: /tmp
+                  name: tmp
+          nodeSelector:
+            topology.kubernetes.io/region: hil
+          restartPolicy: Never
+          volumes:
+            - configMap:
+                defaultMode: 365
+                name: vm-images-publisher-scripts
+              name: scripts
+            - name: attic-netrc
+              secret:
+                items:
+                  - key: netrc
+                    path: netrc
+                secretName: attic-reader-netrc
+            - hostPath:
+                path: /dev/kvm
+                type: CharDevice
+              name: kvm
+            - emptyDir:
+                sizeLimit: 8Gi
+              name: tmp
+  schedule: 0 0 1 1 *
+  successfulJobsHistoryLimit: 1
+  suspend: true

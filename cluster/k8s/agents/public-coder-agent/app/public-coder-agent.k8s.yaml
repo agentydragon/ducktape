@@ -1,0 +1,655 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: public-coder-agent-github-token
+  namespace: public-coder-agent
+spec:
+  data:
+    - remoteRef:
+        key: github-agentydragon-agent
+        property: token
+      secretKey: GITHUB_TOKEN
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: public-coder-agent-github-token
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: public-coder-agent-gateway-password-generator
+  namespace: public-coder-agent
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: public-coder-agent-gateway-password
+  namespace: public-coder-agent
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: public-coder-agent-gateway-password-generator
+  refreshInterval: 8760h
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: public-coder-agent-gateway-password
+    template:
+      data:
+        password: "{{ .password }}"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    description: Worker-local replacement for the archived Public Coder OpenClaw state. WaitForFirstConsumer binds it to ovh-ns102453 when the one-off restore Pod is created; it must not be mounted by the Deployment before restore.
+  name: public-coder-agent-state-v2
+  namespace: public-coder-agent
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 80Gi
+  storageClassName: local-path-ovh-hdd
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    description: Heap snapshots and Node diagnostic reports for the OpenClaw gateway
+  name: public-coder-agent-diagnostics
+  namespace: public-coder-agent
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: local-path-ovh-hdd
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: public-coder-agent
+  name: public-coder-agent
+  namespace: public-coder-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: public-coder-agent
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - ovh-ns102453
+      containers:
+        - env:
+            - name: HOME
+              value: /home/openclaw
+            - name: OPENCLAW_CONFIG_PATH
+              value: /home/openclaw/.openclaw/openclaw.json5
+            - name: NPM_CONFIG_PREFIX
+              value: /home/openclaw/.local
+            - name: NPM_CONFIG_CACHE
+              value: /home/openclaw/.cache/npm
+            - name: OPENCLAW_MEMORY_INDEX_CONCURRENCY
+              value: "1"
+            - name: OPENCLAW_MEMORY_RETRY_BASE_DELAY_MS
+              value: "30000"
+            - name: OPENCLAW_MEMORY_RETRY_MAX_DELAY_MS
+              value: "120000"
+            - name: OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK
+              value: none
+            - name: OPENCLAW_AGENT_DB_MAINTENANCE_LEASE_MS
+              value: "86400000"
+            - name: OPENCLAW_DATABASE_VERIFY
+              value: "off"
+            - name: OPENCLAW_LOG_LEVEL
+              value: debug
+            - name: GITHUB_TOKEN
+              value: proxy-github-placeholder
+            - name: GH_PAT
+              value: proxy-github-placeholder
+            - name: HAKU_CONSOLE_TOKEN
+              value: proxy-haku-console-placeholder
+            - name: CLICKHOUSE_PUBLIC_CODER_USER
+              value: public_coder_analytics
+            - name: CLICKHOUSE_PUBLIC_CODER_PASSWORD
+              value: proxy-clickhouse-public-coder-password
+            - name: AIQUOTA_API_BEARER_TOKEN
+              value: proxy-aiquota-api-bearer-placeholder
+            - name: BRAVE_API_KEY
+              value: proxy-brave-search-api-key-placeholder
+            - name: OPENCLAW_LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: api-key
+                  name: litellm-key-public-coder-agent
+            - name: OPENCLAW_GATEWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: public-coder-agent-gateway-password
+            - name: MATRIX_PASSWORD
+              value: proxy-matrix-password-placeholder
+            - name: NODE_USE_ENV_PROXY
+              value: "1"
+            - name: HTTP_PROXY
+              value: http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080
+            - name: HTTPS_PROXY
+              value: http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: PIP_CERT
+              value: /etc/ssl/certs/ca-certificates.crt
+          image: ghcr.io/agentydragon/openclaw:unset
+          name: openclaw
+          ports:
+            - containerPort: 18789
+              name: gateway
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: gateway
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4Gi
+            requests:
+              cpu: 250m
+              memory: 768Mi
+          volumeMounts:
+            - mountPath: /home/openclaw/.openclaw
+              name: data
+            - mountPath: /home/openclaw/.kube
+              name: kubeconfig
+              readOnly: true
+            - mountPath: /etc/ssl/certs/ca-certificates.crt
+              name: trust
+              readOnly: true
+              subPath: ca-certificates.crt
+            - mountPath: /egress-proxy-ca
+              name: haku-egress-proxy-ca-cert
+              readOnly: true
+            - mountPath: /home/openclaw/.ssh
+              name: ssh
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /diag
+              name: diagnostics
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - |
+              cp /cfg/openclaw.json5 /state/openclaw.json5
+              rm -f /state/openclaw.json5.last-good /state/openclaw.json5.bak*
+          image: ghcr.io/agentydragon/openclaw:unset
+          name: seed-config
+          volumeMounts:
+            - mountPath: /cfg
+              name: cfg
+            - mountPath: /state
+              name: data
+      securityContext:
+        fsGroup: 1000
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: public-coder-agent-state-v2
+        - configMap:
+            name: public-coder-agent-kubeconfig
+          name: kubeconfig
+        - configMap:
+            name: public-coder-agent-config
+          name: cfg
+        - configMap:
+            name: public-coder-agent-proxy-ca-cert
+          name: trust
+        - configMap:
+            name: haku-egress-proxy-ca-cert
+          name: haku-egress-proxy-ca-cert
+        - name: ssh
+          projected:
+            defaultMode: 288
+            sources:
+              - configMap:
+                  name: public-coder-agent-ssh
+              - secret:
+                  name: public-coder-agent-devbox-ssh-key
+        - emptyDir: {}
+          name: tmp
+        - name: diagnostics
+          persistentVolumeClaim:
+            claimName: public-coder-agent-diagnostics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: public-coder-agent
+  namespace: public-coder-agent
+spec:
+  ports:
+    - name: gateway
+      port: 18789
+      targetPort: 18789
+  selector:
+    app.kubernetes.io/name: public-coder-agent
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: public-coder-agent-egress
+  namespace: public-coder-agent
+spec:
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+    - ports:
+        - port: 8080
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: public-coder-agent-proxy
+    - ports:
+        - port: 2222
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: public-coder-agent-sshpiper
+    - ports:
+        - port: 8888
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: haku-console
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: haku-console
+    - ports:
+        - port: 4000
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: litellm
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent
+  policyTypes:
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: public-coder-agent-ingress
+  namespace: public-coder-agent
+spec:
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: server
+              app.kubernetes.io/instance: authentik
+      ports:
+        - port: 18789
+          protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent
+  policyTypes:
+    - Ingress
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    description: Read-only diagnostic access for the public-coder access profile.
+  name: public-coder-agent-reader
+  namespace: public-coder-agent
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - pods/log
+      - events
+      - services
+      - configmaps
+      - persistentvolumeclaims
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+      - statefulsets
+      - daemonsets
+      - replicasets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - networkpolicies
+      - ingresses
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+      - rolebindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - kustomize.toolkit.fluxcd.io
+    resources:
+      - kustomizations
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+    resources:
+      - gitrepositories
+      - ocirepositories
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - metrics.k8s.io
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - kubevirt.io
+    resourceNames:
+      - public-coder-devbox
+    resources:
+      - virtualmachines
+    verbs:
+      - get
+  - apiGroups:
+      - kubevirt.io
+    resourceNames:
+      - public-coder-devbox
+    resources:
+      - virtualmachineinstances
+    verbs:
+      - get
+      - list
+      - watch
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  annotations:
+    description: Binds public-coder and its Haku superset to the reader Role.
+  name: public-coder-agent-reader
+  namespace: public-coder-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: public-coder-agent-reader
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:haku
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:haku
+  - kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:public-coder
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    description: Read-only VolSync backup status for Haku and public-coder.
+  name: agent-public-coder-extended-diagnostics-reader
+  namespace: public-coder-agent
+rules:
+  - apiGroups:
+      - volsync.backube
+    resources:
+      - replicationsources
+      - replicationdestinations
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  annotations:
+    description: Binds Haku and public-coder to VolSync status.
+  name: agent-public-coder-extended-diagnostics-reader
+  namespace: public-coder-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-public-coder-extended-diagnostics-reader
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:haku
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:haku
+  - kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:public-coder
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-acceptance-operator-reader
+  namespace: public-coder-agent
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - agentplane-acceptance-operator
+      - agentplane-testing-acceptance-operator
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-acceptance-operator-reader
+  namespace: public-coder-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-acceptance-operator-reader
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:public-coder
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    description: Read-only node inventory for public-coder-agent diagnostics.
+  name: public-coder-agent-node-reader
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  annotations:
+    description: Binds public-coder and its Haku superset to read-only node inventory.
+  name: public-coder-agent-node-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: public-coder-agent-node-reader
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:haku
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:haku
+  - kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:public-coder
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    description: Read-only CRD schemas and node metrics for public-coder diagnostics.
+  name: public-coder-agent-cluster-metadata-reader
+rules:
+  - apiGroups:
+      - apiextensions.k8s.io
+    resources:
+      - customresourcedefinitions
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - metrics.k8s.io
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  annotations:
+    description: Binds public-coder and its Haku superset to CRD schemas and node metrics only.
+  name: public-coder-agent-cluster-metadata-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: public-coder-agent-cluster-metadata-reader
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:haku
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:haku
+  - kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:public-coder
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  annotations:
+    description: Gives only the Haku authorization proxy a cluster-admin execution ceiling.
+  name: haku-kube-api-proxy-cluster-admin-ceiling
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: haku-kube-api-proxy
+    namespace: haku-console

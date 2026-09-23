@@ -1,7 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - iam.yaml
+  # cdk8s-generated (cluster/cdk8s/home_assistant/backup.py).
+  - home-assistant-backups.k8s.yaml
   - credentials-secret.sops.yaml
-  - seaweed.yaml
+  # Hand-written: no namespaced SecretStore CRD binding exists for cdk8s.
   - repository-secret-store.yaml
