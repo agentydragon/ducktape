@@ -157,6 +157,20 @@ py_library(
 )
 
 py_library(
+    name = "haku_openclaw_spike_backup",
+    srcs = ["haku_openclaw_spike_backup.py"],
+    deps = [
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
+        "//cluster/cdk8s/crd_bindings/volsync:replicationsource",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "public_coder_agent_config",
     srcs = ["public_coder_agent_config.py"],
     visibility = ["//cluster/k8s/litellm/app:__pkg__"],
@@ -513,6 +527,7 @@ py_library(
         ":github_branch_protection",
         ":google_mcp",
         ":ha_mcp",
+        ":haku_openclaw_spike_backup",
         ":haku_openclaw_spike_config",
         ":mitmproxy",
         ":ntfy",
@@ -699,6 +714,7 @@ py_test(
         "//cluster/k8s:agents/haku-openclaw-spike/app/haku-openclaw-spike.k8s.yaml",
         "//cluster/k8s:agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
         "//cluster/k8s:agents/haku-openclaw-spike/app/namespace.k8s.yaml",
+        "//cluster/k8s:agents/haku-openclaw-spike/backup/haku-openclaw-spike-backup.k8s.yaml",
         "//cluster/k8s:agents/machine-access-tf/agent-machine-access.k8s.yaml",
         "//cluster/k8s:agents/machine-access-tf/kustomization.yaml",
         "//cluster/k8s:agents/mitmproxy/cnp-cloud-api-egress.k8s.yaml",

@@ -21,6 +21,7 @@ from cluster.cdk8s import (
     github_branch_protection,
     google_mcp,
     ha_mcp,
+    haku_openclaw_spike_backup,
     haku_openclaw_spike_config,
     mitmproxy,
     ntfy,
@@ -159,6 +160,7 @@ def generate_manifests(root: Path) -> None:
     haku_console_resource_chart = haku_charts.write_console_manifests(root)
     haku_console_health_checks = flux_health_checks(haku_console_resource_chart, ("Cluster", "Job"))
     haku_openclaw_spike_config.write_manifests(root)
+    haku_openclaw_spike_backup.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
     descheduler.write_manifests(root)
     stateful_infra.write_seaweedfs_manifests(root)
