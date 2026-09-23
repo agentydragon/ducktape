@@ -254,11 +254,6 @@ name)` takes strings at 35 sites. The TODO entry proposes passing the workload
   `haku/workspaces.py`). The PDB helper was worth it; these may not be the same
   shape (ExternalSecret varies by store and data mapping). Measure the sites before
   writing either.
-- **`health_checks(chart, kinds)` kinds tuples.** Each node lists which kinds gate
-  readiness (`("Cluster", "Job")`, agentplane's `_HEALTH_CHECK_KINDS` with a
-  `Bundle` → `ConfigMap` special case). Unsure whether the kinds are a per-node choice
-  (keep listing them) or a property of the object kind (derive: every Deployment, Job,
-  Cluster in the chart gates). Look at the lists when there are a dozen (9 today).
 - **Two props styles.** agentplane uses an `Environment` props object (two
   environments); haku uses module constants (one). Both fit their case; converge only
   if a second haku environment appears.
