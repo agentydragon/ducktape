@@ -1021,7 +1021,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/v1.30.0/config/crd/bases/postgresql.cnpg.io_databases.yaml"],
 )
 
-# Match the deployed version in cluster/k8s/cert-manager/app/helmrelease.yaml.
+# Match the deployed version in cluster/cdk8s/cert_manager/app.py.
 http_file(
     name = "cert_manager_certificate_crd",
     downloaded_file_path = "cert-manager.io_certificates.yaml",
@@ -1029,7 +1029,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cert-manager/cert-manager/v1.21.2/deploy/crds/cert-manager.io_certificates.yaml"],
 )
 
-# Match the deployed version in cluster/k8s/cert-manager/trust/helmrelease.yaml.
+# Match the deployed version in cluster/cdk8s/cert_manager/trust.py.
 http_file(
     name = "trust_manager_bundle_crd",
     downloaded_file_path = "trust.cert-manager.io_bundles.yaml",

@@ -66,7 +66,14 @@ from cluster.cdk8s.authentik import (
     namespace as authentik_namespace,
     sso_providers,
 )
-from cluster.cdk8s.cert_manager import flux_kustomizations as cert_manager_flux_kustomizations
+from cluster.cdk8s.cert_manager import (
+    app as cert_manager_app,
+    cluster_ca as cert_manager_cluster_ca,
+    config as cert_manager_config,
+    environment as cert_manager_environment,
+    issuer_config as cert_manager_issuer_config,
+    trust as cert_manager_trust,
+)
 from cluster.cdk8s.cli_proxy_api import flux_kustomizations as cli_proxy_api_flux_kustomizations
 from cluster.cdk8s.clickhouse import (
     flux_kustomizations as clickhouse_flux_kustomizations,
@@ -203,6 +210,12 @@ def generate_manifests(root: Path) -> None:
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
+    cert_manager_app.write_manifests(root)
+    cert_manager_trust.write_manifests(root)
+    cert_manager_issuer_config.write_manifests(root)
+    cert_manager_environment.write_manifests(root)
+    cert_manager_config.write_manifests(root)
+    cert_manager_cluster_ca.write_manifests(root)
     kube_system.write_manifests(root)
     user_agentydragon.write_manifests(root)
     nvidia_runtimeclass.write_manifests(root)
@@ -242,10 +255,8 @@ def generate_manifests(root: Path) -> None:
         flux_chart, agent_sandbox_controller_artifact
     )
     artifact_generators_factory(flux_chart)
-    cert_manager_issuer_config_artifact = artifact(
-        "cert-manager-issuer-config", "cluster/k8s/cert-manager/issuer-config"
-    )
-    cert_manager_issuer_config_kustomization = cert_manager_flux_kustomizations.cert_manager_issuer_config(
+    cert_manager_issuer_config_artifact = artifact("cert-manager-issuer-config", cert_manager_issuer_config.OUTPUT_DIR)
+    cert_manager_issuer_config_kustomization = cert_manager_issuer_config.cert_manager_issuer_config(
         flux_chart, cert_manager_issuer_config_artifact
     )
     coredns_custom_artifact = artifact("coredns-custom", "cluster/k8s/coredns-custom")
@@ -379,8 +390,8 @@ def generate_manifests(root: Path) -> None:
         nvidia_runtimeclass_kustomization,
         node_feature_discovery_kustomization,
     )
-    cert_manager_artifact = artifact("cert-manager", "cluster/k8s/cert-manager/app")
-    cert_manager_kustomization = cert_manager_flux_kustomizations.cert_manager(
+    cert_manager_artifact = artifact("cert-manager", cert_manager_app.OUTPUT_DIR)
+    cert_manager_kustomization = cert_manager_app.cert_manager(
         flux_chart,
         cert_manager_artifact,
         cert_manager_issuer_config_kustomization,
@@ -414,8 +425,8 @@ def generate_manifests(root: Path) -> None:
     dcgm_exporter_flux_kustomizations.dcgm_exporter(
         flux_chart, dcgm_exporter_artifact, nvidia_device_plugin_kustomization, monitoring_crds_kustomization
     )
-    cert_manager_trust_artifact = artifact("cert-manager-trust", "cluster/k8s/cert-manager/trust")
-    cert_manager_trust_kustomization = cert_manager_flux_kustomizations.cert_manager_trust(
+    cert_manager_trust_artifact = artifact("cert-manager-trust", cert_manager_trust.OUTPUT_DIR)
+    cert_manager_trust_kustomization = cert_manager_trust.cert_manager_trust(
         flux_chart, cert_manager_trust_artifact, cert_manager_kustomization, kyverno_kustomization
     )
     cnpg_artifact = artifact("cnpg", "cluster/k8s/cnpg")
@@ -462,11 +473,11 @@ def generate_manifests(root: Path) -> None:
     )
     cert_manager_environment_artifact = artifact(
         "cert-manager-environment",
-        "cluster/k8s/cert-manager/environment",
+        cert_manager_environment.OUTPUT_DIR,
         "cluster/k8s/cert-manager/config",
         "cluster/k8s/cert-manager/cluster-ca",
     )
-    cert_manager_environment_kustomization = cert_manager_flux_kustomizations.cert_manager_environment(
+    cert_manager_environment_kustomization = cert_manager_environment.cert_manager_environment(
         flux_chart,
         cert_manager_environment_artifact,
         cert_manager_kustomization,

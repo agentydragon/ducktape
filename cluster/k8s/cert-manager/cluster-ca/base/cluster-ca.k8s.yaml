@@ -1,0 +1,33 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-root-ca
+  namespace: cert-manager
+spec:
+  commonName: cluster-root-ca
+  duration: 87600h
+  isCA: true
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-ca-bootstrap
+  privateKey:
+    algorithm: RSA
+    size: 4096
+  renewBefore: 8760h
+  secretName: cluster-root-ca-secret
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: cluster-internal-ca-bundle
+spec:
+  sources:
+    - secret:
+        key: ca.crt
+        name: cluster-root-ca-secret
+    - secret:
+        key: ca.crt
+        name: ${LETSENCRYPT_ISSUER}-root-ca
+  target:
+    configMap:
+      key: ca-certificates.crt
