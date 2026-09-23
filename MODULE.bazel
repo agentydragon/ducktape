@@ -1008,6 +1008,20 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_httproutes.yaml"],
 )
 
+http_file(
+    name = "gateway_api_gateway_crd",
+    downloaded_file_path = "gateway.networking.k8s.io_gateways.yaml",
+    sha256 = "ecb21e3a23757108e74399c49365864f5e0d87c694679d63e4c34c7ccf579e2a",
+    urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_gateways.yaml"],
+)
+
+http_file(
+    name = "gateway_api_tlsroute_crd",
+    downloaded_file_path = "gateway.networking.k8s.io_tlsroutes.yaml",
+    sha256 = "6a74bbe019916d1b53ec270634185aec2eeee1a4e100d6029a53f63ae448f77c",
+    urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_tlsroutes.yaml"],
+)
+
 # Upstream publishes one bundle; the bindings BUILD extracts each needed CRD. Match
 # cluster/k8s/flux/sources/external-secrets.yaml.
 http_file(
