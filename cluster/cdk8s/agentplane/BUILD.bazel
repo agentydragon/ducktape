@@ -111,6 +111,7 @@ py_library(
         ":app_settings",
         ":container_security",
         ":database",
+        ":egress_credentials",
         ":environment",
         ":llm_ingress",
         ":migrate_container",
@@ -369,6 +370,7 @@ py_library(
         ":chart",
         ":dex",
         ":egress_credentials",
+        ":egress_testing_credentials",
         ":environment",
         ":generation",
         ":testing_config",
@@ -458,6 +460,17 @@ py_library(
     ],
 )
 
+py_library(
+    name = "egress_testing_credentials",
+    srcs = ["egress_testing_credentials.py"],
+    deps = [
+        ":egress_credentials",
+        "//cluster/cdk8s:metadata",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
 py_test(
     name = "test_egress_credentials",
     srcs = ["test_egress_credentials.py"],
@@ -481,6 +494,20 @@ py_test(
     deps = [
         ":egress_credentials",
         ":egress_staging_credentials",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_egress_testing_credentials",
+    srcs = ["test_egress_testing_credentials.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":egress_credentials",
+        ":egress_testing_credentials",
         "//:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
