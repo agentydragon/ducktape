@@ -9,10 +9,10 @@ from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import suppress
 from pathlib import Path
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
-
 # Tool results ride inside single frames, so a line can run to megabytes.
 _LINE_LIMIT = 64 * 1024 * 1024
+# Beside this module in the Bazel runfiles tree and in the installed runner wheel alike.
+_SUPERVISOR = Path(__file__).with_name("harness_supervisor")
 
 
 class HarnessProcess:
@@ -32,7 +32,7 @@ class HarnessProcess:
         os.set_inheritable(report_writer, True)
         try:
             self._process = await asyncio.create_subprocess_exec(
-                str(get_required_path(own_repo_rlocation("agentplane/runner/harness_supervisor"))),
+                _SUPERVISOR,
                 "--native-pid-fd",
                 str(report_writer),
                 *self.command,
