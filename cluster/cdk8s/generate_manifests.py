@@ -19,6 +19,8 @@ from cluster.cdk8s import (
     external_creds,
     forgejo_image_automation,
     forgejo_images,
+    forgejo_images_flux_kustomizations,
+    forgejo_token_rotation,
     gateway,
     gateway_flux_kustomizations,
     github_branch_protection,
@@ -238,6 +240,7 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    forgejo_token_rotation.write_manifests(root)
     loki_read_proxy.write_manifests(root)
     claude_sandbox_secrets.write_manifests(root)
     kubectl_passthrough_mcp.write_manifests(root)
@@ -1222,7 +1225,7 @@ def generate_manifests(root: Path) -> None:
         home_assistant_kustomization,
         monitoring_crds_kustomization,
     )
-    forgejo_token_rotation_artifact = artifact("forgejo-token-rotation", "cluster/k8s/agents/forgejo-token-rotation")
+    forgejo_token_rotation_artifact = artifact("forgejo-token-rotation", forgejo_token_rotation.OUTPUT_DIR)
     agents_flux_kustomizations.forgejo_token_rotation(
         flux_chart,
         forgejo_token_rotation_artifact,
