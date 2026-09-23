@@ -1,3 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: node-feature-discovery
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
@@ -14,23 +21,20 @@ metadata:
   name: node-feature-discovery
   namespace: node-feature-discovery
 spec:
-  interval: 15m
-  install:
-    remediation:
-      retries: 3
   chart:
     spec:
       chart: node-feature-discovery
-      version: "0.19.0"
       sourceRef:
         kind: HelmRepository
         name: nfd
         namespace: node-feature-discovery
+      version: 0.19.0
+  install:
+    remediation:
+      retries: 3
+  interval: 15m
   values:
     worker:
-      tolerations:
-        - effect: NoSchedule
-          operator: Exists
       config:
         sources:
           pci:
@@ -39,3 +43,6 @@ spec:
               - "03"
             deviceLabelFields:
               - vendor
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists
