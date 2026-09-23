@@ -160,6 +160,7 @@ from cluster.cdk8s.haku import (
     mailbox as haku_mailbox,
     namespace as haku_namespace,
     rbac as haku_rbac,
+    ui_image_webhook as haku_ui_image_webhook,
     workloads as haku_workloads,
     workspaces as haku_workspaces,
 )
@@ -264,6 +265,7 @@ def generate_manifests(root: Path) -> None:
     haku_openclaw_spike_config.write_manifests(root)
     haku_openclaw_spike_backup.write_manifests(root)
     haku_workloads.write_manifests(root)
+    haku_ui_image_webhook.write_manifests(root)
     haku_workspaces.write_manifests(root)
     haku_mailbox.write_manifests(root)
     haku_ci_runner.write_manifests(root)
@@ -1347,8 +1349,8 @@ def generate_manifests(root: Path) -> None:
         cert_manager_trust_kustomization,
         external_secrets_operator_kustomization,
     )
-    haku_ui_image_webhook_artifact = artifact("haku-ui-image-webhook", "cluster/k8s/haku/ui-image-webhook")
-    haku_flux_kustomizations.haku_ui_image_webhook(flux_chart, haku_ui_image_webhook_artifact, haku_state_kustomization)
+    haku_ui_image_webhook_artifact = artifact("haku-ui-image-webhook", haku_ui_image_webhook.OUTPUT_DIR)
+    haku_ui_image_webhook.haku_ui_image_webhook(flux_chart, haku_ui_image_webhook_artifact, haku_state_kustomization)
     haku_workloads_artifact = artifact("haku-workloads", haku_workloads.OUTPUT_DIR)
     haku_workloads.haku_workloads(flux_chart, haku_workloads_artifact, haku_state_kustomization)
     litellm_keys_tf_artifact = artifact("litellm-keys-tf", litellm_keys.OUTPUT_DIR)

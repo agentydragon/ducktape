@@ -70,6 +70,7 @@ exports_files(
         "haku/rbac/haku-rbac.k8s.yaml",
         "haku/rbac/kustomization.yaml",
         "haku/forgejo-tea/kustomization.yaml",
+        "haku/ui-image-webhook/haku-ui-image-webhook.k8s.yaml",
         "haku/workloads/haku-workloads.k8s.yaml",
         "haku/workspaces/app/haku-workspaces.k8s.yaml",
         "haku/mailbox/haku-mailbox.k8s.yaml",

@@ -78,7 +78,7 @@ GHCR→Forgejo move). On merge to `devel`, once re-wired:
    writes it into the Deployment marker, and the pod pulls with its
    `imagePullSecrets` and runs.
 4. Optional: add a Forgejo `package`-webhook receiver (copy
-   `cluster/k8s/haku/ui-image-webhook/receiver.yaml`) for push-time pickup
+   the Receiver in `cluster/cdk8s/haku/ui_image_webhook.py`) for push-time pickup
    instead of the 5m `ImageRepository` poll.
 
 ## Identity + credentials
