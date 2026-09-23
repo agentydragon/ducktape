@@ -1125,3 +1125,29 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_electric_chunk_compaction",
+    size = "medium",
+    srcs = ["test_electric_chunk_compaction.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database",
+        ":electric",
+        "//:conftest",
+        "//agentplane/app/agent_runtime:ingestion",
+        "//agentplane/app/agent_runtime:models",
+        "//agentplane/app/agent_runtime/events:event_log",
+        "//agentplane/app/agent_runtime/view:content",
+        "//agentplane/app/agent_runtime/view:views",
+        "//agentplane/app/testing:electric_service",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
