@@ -101,6 +101,7 @@ exports_files(
         "tofu-controller/kustomization.yaml",
         "cnpg/cnpg.k8s.yaml",
         "cnpg/kustomization.yaml",
+        "gateway/gateway-system.k8s.yaml",
         "agentplane-index/agentplane-index.k8s.yaml",
         "atuin/atuin.k8s.yaml",
         "atuin/kustomization.yaml",

@@ -199,8 +199,11 @@ py_library(
     srcs = ["gateway.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":generation",
+        ":metadata",
         "//cluster/cdk8s/crd_bindings/gateway_api:httproute",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )
@@ -881,6 +884,7 @@ py_library(
         "//cluster/cdk8s:flux_kustomizations_dns_automation",
         "//cluster/cdk8s:flux_kustomizations_forgejo_images",
         "//cluster/cdk8s:flux_kustomizations_gateway",
+        "//cluster/cdk8s:gateway",
         "//cluster/cdk8s/activitywatch:flux_kustomizations",
         "//cluster/cdk8s/agentplane:generation",
         "//cluster/cdk8s/agentplane:staging",
@@ -1132,6 +1136,7 @@ py_test(
         "//cluster/k8s:forgejo/haku-state/haku-state.k8s.yaml",
         "//cluster/k8s:forgejo/haku-state/kustomization.yaml",
         "//cluster/k8s:forgejo/namespace.k8s.yaml",
+        "//cluster/k8s:gateway/gateway-system.k8s.yaml",
         "//cluster/k8s:gatus/sso-tf/gatus-sso.k8s.yaml",
         "//cluster/k8s:gatus/sso-tf/kustomization.yaml",
         "//cluster/k8s:github-branch-protection/github-branch-protection.k8s.yaml",

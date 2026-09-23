@@ -17,6 +17,8 @@ from cluster.cdk8s import (
     external_creds,
     forgejo_image_automation,
     forgejo_images,
+    forgejo_images_flux_kustomizations,
+    gateway,
     gateway_flux_kustomizations,
     github_branch_protection,
     goldilocks,
@@ -236,6 +238,7 @@ def generate_manifests(root: Path) -> None:
     flux_image_automation_ghcr_openclaw.write_manifests(root)
     tofu_controller_release.write_manifests(root)
     cnpg_operator.write_manifests(root)
+    gateway.write_manifests(root)
     kube_system.write_manifests(root)
     user_agentydragon.write_manifests(root)
     nvidia_runtimeclass.write_manifests(root)

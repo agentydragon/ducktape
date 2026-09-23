@@ -141,6 +141,7 @@ _GENERATED_FILES = (
     "cluster/k8s/tofu-controller/kustomization.yaml",
     "cluster/k8s/cnpg/cnpg.k8s.yaml",
     "cluster/k8s/cnpg/kustomization.yaml",
+    "cluster/k8s/gateway/gateway-system.k8s.yaml",
     "cluster/k8s/kube-system/kube-system.k8s.yaml",
     "cluster/k8s/kube-system/kustomization.yaml",
     "cluster/k8s/user-agentydragon/user-agentydragon.k8s.yaml",
