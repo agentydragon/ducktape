@@ -235,7 +235,7 @@ written to haku-state is genuine. Intra-namespace traffic (sandboxes→haku-ui,
 haku-ui→jupyter) flows freely: sandboxes run at Haku's own privilege and already hold
 its git credential, so this grants nothing they lack. `haku-console`, the privileged
 surface, lives outside the namespace and is untouched.
-Source of truth: <../../cluster/k8s/haku/namespace/networkpolicy.yaml>.
+Source of truth: <../../cluster/cdk8s/haku/namespace.py>.
 
 ### Audit trails
 

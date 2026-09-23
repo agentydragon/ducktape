@@ -140,7 +140,11 @@ from cluster.cdk8s.github_secrets_sync import (
 )
 from cluster.cdk8s.grafana import flux_kustomizations as grafana_flux_kustomizations
 from cluster.cdk8s.grocy import flux_kustomizations as grocy_flux_kustomizations
-from cluster.cdk8s.haku import charts as haku_charts, flux_kustomizations as haku_flux_kustomizations
+from cluster.cdk8s.haku import (
+    charts as haku_charts,
+    flux_kustomizations as haku_flux_kustomizations,
+    namespace as haku_namespace,
+)
 from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations
 from cluster.cdk8s.home_assistant import (
     flux_kustomizations as home_assistant_flux_kustomizations,
@@ -331,8 +335,12 @@ def generate_manifests(root: Path) -> None:
     )
     budget_namespace_artifact = artifact("budget-namespace", "cluster/k8s/forgejo/budget-namespace")
     budget_namespace_kustomization = forgejo_flux_kustomizations.budget_namespace(flux_chart, budget_namespace_artifact)
-    haku_namespace_artifact = artifact("haku-namespace", "cluster/k8s/haku/namespace")
-    haku_namespace_kustomization = haku_flux_kustomizations.haku_namespace(flux_chart, haku_namespace_artifact)
+    haku_namespace_artifact = artifact(haku_namespace.NAME, haku_namespace.OUTPUT_DIR)
+    haku_namespace_kustomization = haku_namespace.haku_namespace(flux_chart, haku_namespace_artifact, root)
+    hubble_ui_artifact = artifact("hubble-ui", "cluster/k8s/hubble-ui")
+    hubble_ui_flux_kustomizations.hubble_ui(flux_chart, hubble_ui_artifact)
+    kube_api_proxy_artifact = artifact("kube-api-proxy", "cluster/k8s/kube-api-proxy")
+    kube_api_proxy_flux_kustomizations.kube_api_proxy(flux_chart, kube_api_proxy_artifact)
     hubble_ui_artifact = artifact("hubble-ui", hubble_ui.OUTPUT_DIR)
     hubble_ui.hubble_ui(flux_chart, hubble_ui_artifact)
     kube_api_proxy_artifact = artifact("kube-api-proxy", kube_api_proxy.OUTPUT_DIR)
