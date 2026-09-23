@@ -246,24 +246,6 @@ def mimir(
     )
 
 
-def monitoring_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "monitoring-namespace",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            wait=True,
-            # Health check ensures monitoring namespace exists before dependents deploy
-            health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="monitoring")],
-            depends_on=[],
-        ),
-    )
-
-
 def monitoring_rules(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
 ) -> Kustomization:
