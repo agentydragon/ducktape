@@ -112,6 +112,7 @@ _GENERATED_FILES = (
     "cluster/k8s/agents/claude-sandbox-secrets/kustomization.yaml",
     "cluster/k8s/agents/loki-read-proxy/loki-read-proxy.k8s.yaml",
     "cluster/k8s/agents/loki-read-proxy/kustomization.yaml",
+    "cluster/k8s/agents/forgejo-token-rotation/forgejo-token-rotation.k8s.yaml",
 )
 
 
