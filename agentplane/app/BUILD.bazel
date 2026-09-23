@@ -1102,3 +1102,27 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_electric_subset_window",
+    size = "medium",
+    srcs = ["test_electric_subset_window.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database",
+        "//:conftest",
+        "//agentplane/app/agent_runtime:ingestion",
+        "//agentplane/app/agent_runtime:models",
+        "//agentplane/app/agent_runtime/events:event_log",
+        "//agentplane/app/agent_runtime/events:ingestion_lease",
+        "//agentplane/app/agent_runtime/view:recording",
+        "//agentplane/app/testing:electric_service",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
