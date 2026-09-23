@@ -1,3 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+  name: headlamp
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
@@ -14,69 +21,42 @@ metadata:
   name: headlamp
   namespace: headlamp
 spec:
-  interval: 15m
-  install:
-    remediation:
-      retries: 3
-  upgrade:
-    remediation:
-      retries: 3
   chart:
     spec:
       chart: headlamp
-      # 0.45.0 ships the Prometheus details-view plugin, enabled by default.
-      version: "0.45.0"
       sourceRef:
         kind: HelmRepository
         name: headlamp
         namespace: headlamp
+      version: 0.45.0
+  install:
+    remediation:
+      retries: 3
+  interval: 15m
+  upgrade:
+    remediation:
+      retries: 3
   values:
-    replicaCount: 1
-
-    podAnnotations:
-      reloader.stakater.com/auto: "true"
-
     config:
-      # OIDC mode: Headlamp redirects to Authentik, JWT forwarded to K8s API server
-      # which validates it via oidc-issuer-url (in Talos machine config).
-      # Each user gets their own K8s identity (oidc:<username>).
       oidc:
-        secret:
-          create: false
         externalSecret:
           enabled: true
           name: headlamp-oidc-secret
+        secret:
+          create: false
       watchPlugins: true
-
     httpRoute:
       enabled: true
+      hostnames:
+        - headlamp.allegedly.works
       parentRefs:
         - name: cluster-gateway
           namespace: gateway-system
-      hostnames:
-        - "headlamp.allegedly.works"
-
     ingress:
       enabled: false
-
     nodeSelector:
       topology.kubernetes.io/region: hil
-    tolerations:
-      - key: "node-role.kubernetes.io/control-plane"
-        operator: "Exists"
-        effect: "NoSchedule"
-
-    resources:
-      requests:
-        cpu: 50m
-        memory: 128Mi
-      limits:
-        cpu: 500m
-        memory: 256Mi
-
     pluginsManager:
-      enabled: true
-      version: "0.1.1"
       configContent: |
         plugins:
           - name: headlamp_flux
@@ -97,3 +77,32 @@ spec:
         installOptions:
           parallel: true
           maxConcurrent: 2
+      enabled: true
+      version: 0.1.1
+    podAnnotations:
+      reloader.stakater.com/auto: "true"
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oidc-agentydragon-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: oidc:agentydragon

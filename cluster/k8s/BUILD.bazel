@@ -179,6 +179,8 @@ exports_files(
         "local-path-provisioner/kustomization.yaml",
         "goldilocks/goldilocks.k8s.yaml",
         "goldilocks/kustomization.yaml",
+        "headlamp/headlamp.k8s.yaml",
+        "headlamp/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
