@@ -43,6 +43,7 @@ _GENERATED_FILES = (
     "cluster/k8s/haku/rbac/haku-rbac.k8s.yaml",
     "cluster/k8s/haku/rbac/kustomization.yaml",
     "cluster/k8s/haku/forgejo-tea/kustomization.yaml",
+    "cluster/k8s/haku/ui-image-webhook/haku-ui-image-webhook.k8s.yaml",
     "cluster/k8s/haku/workloads/haku-workloads.k8s.yaml",
     "cluster/k8s/haku/workspaces/app/haku-workspaces.k8s.yaml",
     "cluster/k8s/haku/workspaces/app/kustomization.yaml",

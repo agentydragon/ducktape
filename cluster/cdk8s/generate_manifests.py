@@ -160,6 +160,7 @@ from cluster.cdk8s.haku import (
     mailbox as haku_mailbox,
     namespace as haku_namespace,
     rbac as haku_rbac,
+    ui_image_webhook as haku_ui_image_webhook,
     workloads as haku_workloads,
     workspaces as haku_workspaces,
 )
@@ -205,10 +206,7 @@ from cluster.cdk8s.monitoring import (
 from cluster.cdk8s.nix_cache import attic as nix_cache_attic, flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations, zot as oci_cache_zot
 from cluster.cdk8s.ollama import app as ollama_app, flux_kustomizations as ollama_flux_kustomizations
-from cluster.cdk8s.openebs_lvm import (
-    flux_kustomizations as openebs_lvm_flux_kustomizations,
-    storage as openebs_lvm_storage,
-)
+from cluster.cdk8s.openebs_lvm import storage as openebs_lvm_storage
 from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
 from cluster.cdk8s.plaid_mcp import app as plaid_mcp_app, db as plaid_mcp_db, reader as plaid_mcp_reader
 from cluster.cdk8s.seaweedfs import (
@@ -266,6 +264,7 @@ def generate_manifests(root: Path) -> None:
     haku_openclaw_spike_config.write_manifests(root)
     haku_openclaw_spike_backup.write_manifests(root)
     haku_workloads.write_manifests(root)
+    haku_ui_image_webhook.write_manifests(root)
     haku_workspaces.write_manifests(root)
     haku_mailbox.write_manifests(root)
     haku_ci_runner.write_manifests(root)
@@ -481,8 +480,8 @@ def generate_manifests(root: Path) -> None:
     nvidia_runtimeclass_kustomization = nvidia_runtimeclass.nvidia_runtimeclass(
         flux_chart, nvidia_runtimeclass_artifact
     )
-    openebs_lvm_artifact = artifact("openebs-lvm", "cluster/k8s/openebs-lvm")
-    openebs_lvm_flux_kustomizations.openebs_lvm(flux_chart, openebs_lvm_artifact)
+    openebs_lvm_artifact = artifact("openebs-lvm", openebs_lvm_storage.OUTPUT_DIR)
+    openebs_lvm_storage.openebs_lvm(flux_chart, openebs_lvm_artifact)
     parked_flux_kustomizations.buildbuddy_executor(flux_chart)
     gecko_namespace_artifact = artifact("gecko-namespace", "cluster/k8s/parked/gecko/namespace")
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart, gecko_namespace_artifact)
@@ -1346,8 +1345,8 @@ def generate_manifests(root: Path) -> None:
         cert_manager_trust_kustomization,
         external_secrets_operator_kustomization,
     )
-    haku_ui_image_webhook_artifact = artifact("haku-ui-image-webhook", "cluster/k8s/haku/ui-image-webhook")
-    haku_flux_kustomizations.haku_ui_image_webhook(flux_chart, haku_ui_image_webhook_artifact, haku_state_kustomization)
+    haku_ui_image_webhook_artifact = artifact("haku-ui-image-webhook", haku_ui_image_webhook.OUTPUT_DIR)
+    haku_ui_image_webhook.haku_ui_image_webhook(flux_chart, haku_ui_image_webhook_artifact, haku_state_kustomization)
     haku_workloads_artifact = artifact("haku-workloads", haku_workloads.OUTPUT_DIR)
     haku_workloads.haku_workloads(flux_chart, haku_workloads_artifact, haku_state_kustomization)
     litellm_keys_tf_artifact = artifact("litellm-keys-tf", litellm_keys.OUTPUT_DIR)
