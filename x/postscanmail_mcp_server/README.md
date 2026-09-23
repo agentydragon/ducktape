@@ -10,11 +10,12 @@ upstream endpoint doc; the two reads return typed Pydantic models (see
 upstream JSON verbatim.
 
 The server itself holds a single account-wide `x-api-key` and does **no**
-per-caller authentication. End-user authentication and the agentydragon-only
-ACL come from the `mcp-oauth-facade` sidecar in the same Kubernetes pod —
-see <../../cluster/k8s/parked/postscanmail-mcp/deployment.yaml> and
-the Authentik provider/group/policy block in
-<../../tf/gitops/agent-machine-access/main.tf>.
+per-caller authentication. Its Kubernetes app is decommissioned and its manifests
+are parked at <../../cluster/k8s/parked/postscanmail-mcp/>. The former deployment
+used an `mcp-oauth-facade` sidecar and a Terraform-managed Authentik client. The
+OAuth client is being retired; this source is not currently registered with
+haku-console or exposed through a deployed OAuth facade. Any revival must restore
+an authentication boundary before exposing the server.
 
 ## Tool surface
 
@@ -55,8 +56,9 @@ on account data"). Both reads share a Laravel `LengthAwarePaginator` envelope: `
 ## Tool annotations
 
 Each tool declares [`ToolAnnotations`](../../mcp_infra/docs/tool_annotations.md) so MCP
-clients (claude.ai / Claude Code) group it and relax approval prompts. The hints are
-advisory; haku-console enforces its own approval policy server-side regardless.
+clients (claude.ai / Claude Code) can group it and relax approval prompts. The hints are
+advisory and are not a security boundary; an integrating server must enforce its own
+approval policy.
 
 | Tool(s)                               | Annotations                                                    |
 | ------------------------------------- | -------------------------------------------------------------- |
@@ -66,13 +68,11 @@ advisory; haku-console enforces its own approval policy server-side regardless.
 | `request_open`, `request_rescan`      | `destructiveHint=false` (paid, additive scan)                  |
 | `request_discard`, `request_shred`    | `destructiveHint=true` (remove/destroy mail)                   |
 
-## Wired behind haku-console
+## Deployment status
 
-The server is wired into haku-console as `postscanmail-mcp`
-(<../../cluster/cdk8s/haku/console_config.py>): reads (`list_items`, `list_automation_rules`)
-auto-approve for the agent; every mutating/paid/destructive action queues for operator
-approval (<../../haku/console/auto_approval.py>). haku-console reflects and propagates these
-annotations to its clients unchanged.
+The PostScanMail MCP app is decommissioned. The server source and tests remain here for
+possible revival; haku-console does not currently register this server. The tool
+annotations below describe intended client behavior, not an active approval boundary.
 
 ## Running locally
 

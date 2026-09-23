@@ -8,7 +8,7 @@ from util.bazel.runfiles import get_required_path
 
 def test_workers_config_matches_generator() -> None:
     committed = yaml.safe_load(
-        get_required_path("ducktape/haku/x/dispatch/deploy/litellm/workers-litellm-config.yaml").read_text()
+        get_required_path("ducktape/haku/x/dispatch/deploy/workers-litellm-config.yaml").read_text()
     )
     if committed != yaml.safe_load(generate()):
         pytest.fail(

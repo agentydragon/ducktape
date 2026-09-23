@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:public"])
 
 TSCONFIG = "//haku/console/frontend:tsconfig"
 
-# The `tana-rw` server's tool-call rendering widgets (request-only; see ../BUILD.bazel for
+# The `tana` server's tool-call rendering widgets (request-only; see ../BUILD.bazel for
 # the tree's shape).
 
 ts_library(

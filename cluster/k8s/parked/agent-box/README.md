@@ -60,7 +60,7 @@ repository access remains governed by the Terraform collaborator grants.
 
 Direct-boot images hit a first-boot race that bootstrap+switch never hits (gecko's
 sops runs at `nixos-rebuild switch`, long after cloud-init). Two bugs, both worked
-around in `nix/nixos/hosts/agent-box/default.nix`:
+around in `nix/nixos.nix`:
 
 1. **system sops vs cloud-init**: `sops-install-secrets` runs early (sysinit) but
    cloud-init writes the persisted host key late (cloud-config stage), so first-boot
@@ -83,7 +83,7 @@ around in `nix/nixos/hosts/agent-box/default.nix`:
 
 ## See also
 
-- <../../../../nix/nixos/hosts/agent-box/default.nix> — NixOS host config
+- <nix/nixos.nix> — NixOS host config
 - <virtualmachine.yaml> — KubeVirt VM definition
 - <../../agents/agent-rbac-base/README.md> § "agent-box Codex" — cluster RBAC for the
   codex user

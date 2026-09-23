@@ -2,7 +2,7 @@
 name: web_selfcheck
 description: >-
   Diagnose a Claude Code session's health against the hook daemon SPEC's
-  acceptance criteria, plus setup/pin/bbr-runner/git-hook diagnostics. Use
+  acceptance criteria, plus setup/pin/buildbuddy-remote-runner/git-hook diagnostics. Use
   for "did setup go ok", "why isn't bbr working", "why do my commits fail",
   "selfcheck".
 ---
@@ -303,9 +303,9 @@ Firecracker "pin drift on persistent rootfs" class, the Nix 2.34.3 SIGABRT
 masking issue) and is the authoritative reference for
 how `web_setup.sh` is supposed to behave. In particular, the
 **"Pin drift on persistent rootfs"** section explains why a container
-running for more than a day or two can silently have a stale `claude-hooks`
-wheel even though `web_setup.sh` re-runs every session, and gives the
-`readlink /nix/var/nix/profiles/default/bin/claude-hook` diagnostic below.
+running for more than a day or two can silently have a stale `.#devtools`
+closure even though `web_setup.sh` re-runs every session, and gives the
+installed `claude-hook` diagnostic below.
 
 ### D1 — `web_setup.sh` freshness (web only)
 
@@ -321,42 +321,45 @@ HEAD_COMMIT=$(git -C /home/user/ducktape rev-parse HEAD)
 [ "$SETUP_COMMIT" = "$HEAD_COMMIT" ] && echo "OK" || echo "STALE: setup=$SETUP_COMMIT head=$HEAD_COMMIT"
 ```
 
-### D2 — `claude-hooks` daemon pin staleness
+### D2 — Claude hook and statusline artifact freshness
 
-A stale installed daemon is often the root cause of session hook failures.
-There are **two** independent kinds of staleness to check:
+The Nix outputs are `.#claude-hook` (Rust dispatcher) and
+`.#claude-statusline` (Python statusline). Their CI artifact pin IDs are
+`claude-hook` and `claude-statusline`, respectively. A stale installed Rust
+dispatcher can cause session hook failures. There are **two** independent
+kinds of staleness to check:
 
-**(a) Pin in `nix/artifact-pins.json` is behind HEAD** — sync-pins.yml didn't
-run recently, or release.yml is failing. The repo itself is out of date.
-On a **shallow clone** (Claude Code web clones ~50 commits — check
-`.git/shallow`), the pinned commit is usually absent locally, so the
-`git log` / `git merge-base` ancestry checks below are unreliable. Compare the
-pin SHA against `origin/devel` via the GitHub MCP instead, or just confirm
-`daemon.err.log` shows no schema-drift crashes (the practical signal).
+**(a) Artifact pins are stale** — `sync-pins.yml` did not run recently, or
+`release.yml` is failing. Check both pin URLs and the corresponding release
+and sync workflow runs. The tag suffix is a content digest, not a source
+commit; on a **shallow clone** (Claude Code web clones ~50 commits — check
+`.git/shallow`), it cannot be compared directly with Git history. The practical
+signal for a hook incompatibility is a schema/template error in `daemon.err.log`.
 
-**(b) Installed wheel is behind the pin** — on Firecracker web sessions
-with a persistent rootfs, `nix profile install` is a no-op when devtools
-is already installed, so the on-disk wheel can freeze at first-boot even
-though `nix/artifact-pins.json` has moved forward. This is the class of
-failure described in <../../docs/web-setup-debug.md>
+**(b) Installed `.#devtools` closure is behind the pins** — on Firecracker web
+sessions with a persistent rootfs, `nix profile install` is a no-op when
+devtools is already installed, so the Rust dispatcher and Python statusline
+can remain at first-boot versions even though `nix/artifact-pins.json` moved
+forward. This is the class of failure described in <../../docs/web-setup-debug.md>
 "Pin drift on persistent rootfs". Typical symptom: SessionStart crashes
 with `'Undefined' object has no attribute '<field>'` in `daemon.err.log`,
-or silently missing env vars because a new `profile.yaml` field was
-dropped by Pydantic.
+or silently missing env vars because `serde` ignores an unrecognized
+`profile.yaml` field.
 
 ```bash
 # (a) Pin in artifact-pins vs HEAD
 python3 -c "
 import json, re
 pins = json.load(open('/home/user/ducktape/nix/artifact-pins.json'))['pins']
-url = pins.get('claude-hooks', {}).get('url', '')
-m = re.search(r'claude-hooks-([0-9a-f]+)', url)
-print('pinned:', m.group(1) if m else 'unknown')
+for name in ('claude-hook', 'claude-statusline'):
+    url = pins.get(name, {}).get('url', '')
+    m = re.search(re.escape(name) + r'-([0-9a-f]+)', url)
+    print(name + ':', m.group(1) if m else 'unknown')
 "
 git -C /home/user/ducktape log --oneline -5 -- devinfra/claude/ nix/artifact-pins.json
 
-# (b) Installed wheel vs pin
-claude-hook --version  # Rust binary: prints the crate version (e.g. 0.0.0), not a git stamp
+# (b) Inspect the installed Rust dispatcher; its version is not the artifact digest.
+claude-hook --version
 # Check daemon.err.log for template/schema crashes that indicate drift
 tail -50 /tmp/claude-hd/*/daemon.err.log 2>/dev/null
 ```
@@ -413,7 +416,7 @@ Profile: <CLI/Web>    Summary: <healthy / degraded / broken>
 | ID | Check                          | Status        | Detail                 |
 | -- | ------------------------------ | ------------- | ---------------------- |
 | D1 | web_setup.sh freshness         | OK/STALE/MISS | setup=<sha> head=<sha> |
-| D2 | claude-hooks pin staleness     | OK/BEHIND     | pin=<sha>, CI status   |
+| D2 | hook/statusline pin freshness  | OK/BEHIND     | pin IDs, CI status     |
 | D3 | origin URL reachable for bbr   | OK/WARN       | origin=...             |
 
 ## Issues & remediation

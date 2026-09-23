@@ -5,7 +5,7 @@
 # git tree at LLAMA_CPP_REF below.
 #
 # GHCR, not the Forgejo registry: this image is consumed by a Nix-managed host
-# service, not a Flux-tracked cluster workload, so it follows the bbr-runner /
+# service, not a Flux-tracked cluster workload, so it follows the buildbuddy-remote-runner /
 # freecad-test shape in container-images.yml rather than the Forgejo+ImagePolicy
 # shape used by cluster-deployed images (see that workflow's header comment for
 # the split). Unlike those two, the resolved digest isn't auto-pinned into
@@ -42,7 +42,7 @@ jobs:
     name: Build and push
     runs-on: ubuntu-latest
     # Compiles llama.cpp from source plus a Node UI build and large Intel
-    # GPU/NPU driver downloads; comparable in weight to bbr-runner's cold build.
+    # GPU/NPU driver downloads; comparable in weight to buildbuddy-remote-runner's cold build.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7

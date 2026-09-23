@@ -35,13 +35,21 @@ Add deps to root `Cargo.toml`, regenerate `Cargo.Bazel.lock` via
 
 ### Remote Cache + RBE
 
-BuildBuddy provides remote caching and remote build execution (RBE). Build actions run on BuildBuddy runner VMs; results are cached so unchanged targets are instant on repeat runs. `bbr` (a wrapper around `bb remote`) runs the whole invocation on a runner; `bb run` keeps Bazel local and dispatches only build actions — which to reach for is in <AGENTS.md> § Bazel Commands.
+BuildBuddy provides remote caching and remote build execution (RBE). BuildBuddy Remote
+Runners run Bazel commands, which dispatch actions to RBE executors; the selected RBE
+container image provides each action's environment. Results are cached so unchanged
+targets are instant on repeat runs. `bbr` (a wrapper around `bb remote`) runs the whole
+invocation on a runner; `bb run` keeps Bazel local and dispatches only build actions —
+which to reach for is in <AGENTS.md> § Bazel Commands.
 
-Two images, deliberately separate. `ghcr.io/agentydragon/rbe-worker`
-(<devinfra/rbe_image/Dockerfile>) is the execution platform actions run inside; its digest is in
-every action's cache key, so it carries only what Bazel cannot supply from the repo it is building.
-`ghcr.io/agentydragon/bbr-runner` (<devinfra/bbr_runner/Dockerfile>) adds the Nix devtools for the
-`bb remote` runner and is pinned only in <devinfra/bbr.json>. Setup: <devinfra/setup_buildbuddy.sh>.
+Two images, deliberately separate. `ghcr.io/agentydragon/rbe-container-image`
+(<devinfra/rbe_container_image/Dockerfile>) is selected for remote actions through
+BuildBuddy's `container-image` execution property. Its digest participates in each
+action's cache key, so it carries only what Bazel cannot supply from the repo.
+`ghcr.io/agentydragon/buildbuddy-remote-runner`
+(<devinfra/buildbuddy_remote_runner/Dockerfile>) adds the Nix devtools for the outer
+`bb remote` Bazel invocation. It is pinned in <devinfra/bbr.json>. Setup:
+<devinfra/setup_buildbuddy.sh>.
 
 ## Dotfiles
 
@@ -52,7 +60,8 @@ Deploy: see <nix/README.md> (NixOS hosts use `sudo nixos-rebuild switch`; standa
 ## Development
 
 ```bash
-pre-commit install  # Installs ruff, buildifier, rustfmt, prettier, etc.
+nix shell .#precommit -c pre-commit install
+nix shell .#precommit -c pre-commit run --all-files
 ```
 
 ### Lint/Format Exclusions

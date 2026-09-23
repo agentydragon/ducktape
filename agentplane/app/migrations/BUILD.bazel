@@ -1,0 +1,31 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+filegroup(
+    name = "files",
+    srcs = [
+        "env.py",
+        "script.py.mako",
+        "//agentplane/app/migrations/versions:0001_trajectory_store.py",
+        "//agentplane/app/migrations/versions:0002_thread_archived.py",
+        "//agentplane/app/migrations/versions:0003_thread_harness.py",
+        "//agentplane/app/migrations/versions:0004_followable_event_entries.py",
+        "//agentplane/app/migrations/versions:0005_conversation_projection_storage.py",
+        "//agentplane/app/migrations/versions:0006_thread_fold_rename.py",
+        "//agentplane/app/migrations/versions:0007_event_origin_sequence.py",
+        "//agentplane/app/migrations/versions:0008_thread_scope_source_id.py",
+        "//agentplane/app/migrations/versions:0009_thread_entity_index.py",
+        "//agentplane/app/migrations/versions:0010_drop_unread_fold_state.py",
+        "//agentplane/app/migrations/versions:0011_event_log_identity.py",
+    ],
+    visibility = ["//agentplane/app:__pkg__"],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    deps = [
+        "//agentplane/app:database_migrate",
+        "//agentplane/app/thread:models",
+        "@pypi//alembic",
+    ],
+)

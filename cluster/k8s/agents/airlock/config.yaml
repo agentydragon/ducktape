@@ -1,6 +1,5 @@
 public_base_url: "https://airlock.allegedly.works"
-oidc_issuer: "https://auth.allegedly.works/application/o/airlock/"
-oidc_client_id: "airlock-operator"
+oidc_issuer: "https://auth.allegedly.works/application/o/airlock-server/"
 port: 8765
 
 oauth:
@@ -54,6 +53,38 @@ oauth:
         name: google-tokens
       access_secret:
         name: google-access-token
+      refresh_margin_seconds: 300
+      extra_auth_params:
+        access_type: offline
+        prompt: consent
+    # A separate provider, not a widened `google` grant: the `google` access token above is
+    # what agentplane's egress proxies present on sandboxes' Google reads (see
+    # google-access-token-eso.yaml), so adding write scopes to that same token would hand
+    # write-capable Gmail/Calendar to every holder of it. This provider's token is instead mirrored only into the google-mcp namespace
+    # (google-write-access-token-eso.yaml), which fronts it behind an approval-gated MCP server
+    # (x/google_mcp_server) -- see plans/personal_agents/personal_data_agent.md and
+    # docs/personal_agents/verdicts.md for why that boundary matters. Scopes match what
+    # haku-console's own google_mail/google_calendar connections already use
+    # (cluster/cdk8s/haku/console_config.py). Reuses the same Google OAuth client as `google`
+    # above (see deployment.yaml's GOOGLE_WRITE_CLIENT_ID/SECRET) -- scope is a per-authorize-flow
+    # parameter, not fixed to the client registration, so this needs no second hand-created GCP
+    # OAuth client; the GCP Console consent screen must have these scopes registered before this
+    # provider's one-time consent flow can complete.
+    - name: google-write
+      provider_type: oauth2
+      display_name: Google (write access)
+      authorize_url: https://accounts.google.com/o/oauth2/v2/auth
+      token_url: https://oauth2.googleapis.com/token
+      scopes:
+        - https://www.googleapis.com/auth/gmail.modify
+        - https://www.googleapis.com/auth/gmail.compose
+        - https://www.googleapis.com/auth/gmail.settings.basic
+        - https://www.googleapis.com/auth/calendar.events
+      redirect_uri: https://airlock.allegedly.works/oauth/callback/google-write
+      refresh_secret:
+        name: google-write-tokens
+      access_secret:
+        name: google-write-access-token
       refresh_margin_seconds: 300
       extra_auth_params:
         access_type: offline

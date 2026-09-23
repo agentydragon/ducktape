@@ -26,10 +26,12 @@ replacement and loss of etcd quorum.
   on its original node; a pod using it may remain Pending until that node is
   back and uncordoned. EmptyDir contents are ephemeral and are discarded by
   `--delete-emptydir-data`.
-- Before rolling a node with a SeaweedFS volume server, require a clean
-  `volume.fix.replication -n` dry-run. Repeat the check after every volume
-  server roll. Do not roll any volume host while repair is still running or
-  under-replicated volumes remain.
+- Before rolling a node with a SeaweedFS volume server, verify that every
+  volume hosted there currently has its required healthy replica count and is
+  not solely stored on the target. It is acceptable for the planned outage to
+  temporarily reduce a volume below its desired replica count. Over-replication
+  alone does not block the roll, and excess copies do not need to be pruned
+  first. Repeat the check after every volume-server roll.
 - If a critical single-replica workload has no approved downtime, or safe
   eviction cannot proceed without force, stop and ask the operator. A
   disposable testing database may be unavailable only when that downtime has
@@ -56,35 +58,122 @@ kubectl top nodes
 Review CNPG state with `kubectl cnpg -n <namespace> status <cluster>` (or list
 `Cluster` resources and inspect their status). Every multi-instance cluster
 that could be affected must have all instances healthy and a ready replica on
-another node. Identify the target's current primary before draining.
+another node. Record the target's current primary and each instance's node
+before draining. A CNPG PDB showing zero allowed disruptions while the target
+hosts the primary is a cue to switch primaries, not a reason to treat the
+cluster as permanently undrainable. For a node-local PVC, expect an evicted
+replica to remain Pending until its bound node returns; this does not prevent
+the drain once the primary is healthy off-node.
 
 Check Flux, active alerts, and recent warning events. Record known unrelated
 baseline conditions (for example, intentionally offline roaming nodes) and
 do not count them as new roll failures. Do not start during an unexplained
-control-plane, storage, replication, or application incident.
+control-plane, storage, or application incident. For SeaweedFS, apply the
+per-volume availability gate below; an over-replication mismatch by itself is
+not an incident that blocks a node roll.
 
-For any OVH node hosting a `seaweedfs-volume-*` pod, check the current repair
-jobs/logs and run this dry-run against a healthy filer:
+For any node hosting a `seaweedfs-volume-*` pod, check the current repair
+jobs/logs and query the master's structured `/vol/status` JSON. The
+`target_data_node` value must exactly match the DataNode address in that
+response (for example, `seaweedfs-volume-hdd-2.seaweedfs-volume-hdd-peer.seaweedfs:8444`):
 
 ```bash
-kubectl exec -i -n seaweedfs seaweedfs-filer-0 -- weed shell <<'EOF'
-volume.fix.replication -n
-EOF
+target_data_node='seaweedfs-volume-hdd-2.seaweedfs-volume-hdd-peer.seaweedfs:8444'
+kubectl get --raw '/api/v1/namespaces/seaweedfs/services/http:seaweedfs-master:9333/proxy/vol/status' |
+  jq --arg target "$target_data_node" '
+    [
+      .Volumes.DataCenters
+      | to_entries[] | .key as $dc
+      | .value | to_entries[] | .key as $rack
+      | .value | to_entries[] | .key as $node
+      | .value[]
+      | {
+          id: .Id,
+          collection: .Collection,
+          disk: (if .DiskType == "" then "hdd" else .DiskType end),
+          rule: .ReplicaPlacement,
+          dc: $dc,
+          rack: $rack,
+          node: $node
+        }
+    ]
+    | group_by([.disk, .id, .collection])
+    | map(select(any(.[]; .node == $target)))
+    | map(
+        . as $copies
+        | ($copies | map(select(.node != $target))) as $survivors
+        | {
+            id: $copies[0].id,
+            collection: $copies[0].collection,
+            disk: $copies[0].disk,
+            rule: $copies[0].rule,
+            current_copies: ($copies | map(.node) | unique | length),
+            copies_outside_target: ($survivors | map(.node) | unique | length),
+            required_copies: (1 + ($copies[0].rule.node // 0) + ($copies[0].rule.rack // 0) + ($copies[0].rule.dc // 0)),
+            target_is_only_copy: (($copies | map(.node) | unique | length) == 1)
+          }
+      ) as $volumes
+    | {
+        target_volume_count: ($volumes | length),
+        already_below_required: [$volumes[] | select(.current_copies < .required_copies)],
+        only_copy_on_target: [$volumes[] | select(.target_is_only_copy)],
+        safe_to_temporarily_reduce_redundancy_count: ([$volumes[] | select(.current_copies >= .required_copies and (.target_is_only_copy | not))] | length)
+      }
+  '
 ```
 
-Proceed only when the dry-run reports no under-replicated volumes and no
-repair job is still copying data. The cluster may have an active repair job
-even when all pods are Ready.
+The JSON query compares each target-hosted volume's current distinct
+DataNodes with the copy count encoded in its `ReplicaPlacement`. Do not gate
+on how many copies would remain after the target goes down: a temporary
+reduction below the desired count is acceptable. For the SeaweedFS replica
+gate, block if a target-hosted volume is already below its required healthy
+copy count, or if the target holds its only copy (which would make that
+volume unavailable during the roll). A volume with surplus copies elsewhere
+is fine even if draining the target temporarily reduces it below the desired
+count.
+
+Correlate the DataNode addresses with the volume-server pods and Kubernetes
+nodes, and confirm each relevant pod and node is Ready. The per-server
+`/status` endpoint exposes its disk status and registered volumes as JSON:
+
+```bash
+kubectl get pods -n seaweedfs -l app.kubernetes.io/component=volume -o wide
+volume_service='seaweedfs-volume-hdd-2'
+kubectl get --raw "/api/v1/namespaces/seaweedfs/services/http:${volume_service}:8444/proxy/status" |
+  jq '{Version, DiskStatuses, volume_count: (.Volumes | length)}'
+```
+
+The master's status is its current view, and per-server `/status` is not a
+disk-integrity scan. If a listed copy is on an unhealthy server, treat it as
+unavailable. Check repair Jobs and recent logs as well. A repair job may still
+be running when all pods are Ready.
+
+An over-replication or misplacement report for the cluster as a whole is not
+by itself a blocker. The JSON query is target-specific and checks the two
+conditions above. Do not over-replicate just to preserve full redundancy
+during a planned drain, wait for cleanup, or run a delete repair to make
+counts exact. The usual node and service-health gates still apply; a replica
+on an unhealthy volume server does not count as healthy. If an active repair
+is restoring a target-hosted volume that is currently under-replicated, wait
+for that repair and rerun the query. Once the target volumes all meet their
+current required count and none has its sole copy on the target, a temporary
+reduction in redundancy during the drain is acceptable.
 
 ## 2. Prepare only the target's Terraform machine configuration
 
-Set `talos_version` to the intended release and use the same version for every
-active machine role. Remove any temporary per-node version override once the
-fleet-wide version is being adopted. Keep unrelated pins (including
-`proxmox_talos_version`) unchanged. Keep
-`talos_machine_secrets_version` pinned to the version contract that generated
-the durable cluster secrets; an OS upgrade does not require rotating those
-secrets.
+`talos_version` is the version used by the provider to generate machine
+configuration; it is not the running OS upgrade target. Keep it at the current
+configuration contract during a serial OS roll, and set the selected node's
+desired OS release in `talos_installer_version_overrides`. This selects the
+target `machine.install.image`; `talosctl upgrade` performs the actual OS
+upgrade. The target plan can still contain preexisting machine-configuration
+drift, so apply only if the complete config diff passes the image-only gate.
+Do not bump the shared configuration-generator version as part of a node roll:
+it can also change generated extension configuration (for example, Nebula peer
+data), which must be reviewed separately. Keep unrelated pins (including
+`proxmox_talos_version`) unchanged. Keep `talos_machine_secrets_version`
+pinned to the version contract that generated the durable cluster secrets; an
+OS upgrade does not require rotating those secrets.
 
 For an OVH node, the target is
 `talos_machine_configuration_apply.kimsufi["<node>"]`; this map includes both
@@ -134,7 +223,7 @@ is resolvable:
 
 ```bash
 docker manifest inspect \
-  factory.talos.dev/installer/<fleet-schematic-id>:<talos-version>
+  factory.talos.dev/metal-installer/<fleet-schematic-id>:<talos-version>
 ```
 
 Do not infer registry availability from Terraform state alone: the
@@ -154,7 +243,8 @@ builds installer images on demand when they are pulled, as described in the
 ### CNPG primary on the target
 
 For each healthy multi-instance CNPG cluster whose primary is on the target,
-choose a healthy replica on another node and request a planned switchover:
+use the `kubectl cnpg` plugin to request a planned promotion onto a healthy
+replica on another node:
 
 ```bash
 kubectl cnpg -n <namespace> status <cluster>
@@ -163,8 +253,23 @@ kubectl cnpg -n <namespace> status <cluster>
 ```
 
 Confirm the new primary is the selected off-node replica and every instance is
-healthy before continuing. This uses CNPG's planned promotion path; do not
-delete the primary pod or its PVC to force a role change.
+healthy before continuing. CNPG maintains separate primary and replica PDBs;
+they are cluster-scoped, not attached to nodes. After promotion, the former
+primary on the target should be a replica rather than the pod selected by the
+primary PDB. Confirm the changed roles and both PDBs' `Disruptions Allowed` in
+`kubectl cnpg status`; use `kubectl get pdb -n <namespace>` to inspect the
+actual PDB objects if needed. The replica PDB must allow the normal eviction
+for the target pod. Do not assume a successful promotion deleted a PDB or
+guarantees drainability: if the PDB status does not reflect the new roles, or
+the target pod's eviction is still blocked, wait for CNPG reconciliation and
+re-check health, roles, PDB selectors, and allowed disruptions before
+proceeding. Do not bypass a PDB or force-delete the pod.
+
+Do not delete the primary pod or its PVC to force a role change. If no ready
+replica is off-node, or the primary cannot be moved off the target, stop and
+resolve that condition before the node roll. After the node returns and is
+uncordoned, verify the local-PVC replica schedules and catches up before
+moving to the next node.
 
 ### Explicitly approved single-instance testing CNPG
 
@@ -211,7 +316,7 @@ talosctl \
   --endpoints <node-nebula-ip> \
   --nodes <node-nebula-ip> \
   upgrade \
-  --image factory.talos.dev/installer/<fleet-schematic-id>:<talos-version> \
+  --image factory.talos.dev/metal-installer/<fleet-schematic-id>:<talos-version> \
   --drain=false \
   --wait
 ```

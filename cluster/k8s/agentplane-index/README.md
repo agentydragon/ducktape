@@ -33,6 +33,6 @@ when callers need different access. The workers need no Kubernetes API access an
 ServiceAccount token. ImagePolicy `flux-system/agentplane-index` advances both workers to
 published devel images.
 
-See the [service contract](../../../../x/agentplane/indexing/SPEC.md) and
-[database configuration](db/README.md). Index state is rebuildable; full initial ingestion is
+See the [service contract](../../../agentplane/indexing/SPEC.md) and
+[database configuration](database.md). Index state is rebuildable; full initial ingestion is
 asynchronous, and mixed-revision search during updates is reported in the response.

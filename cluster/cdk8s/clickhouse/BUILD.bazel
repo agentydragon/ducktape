@@ -27,13 +27,29 @@ py_library(
     ],
     deps = [
         ":client",
+        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s:pod_spec_patches",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "flux_kustomizations",
+    srcs = ["flux_kustomizations.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
     ],
 )

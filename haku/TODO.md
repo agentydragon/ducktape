@@ -65,14 +65,6 @@ slices over the deployed schema, not another identity migration:
 
 ## Google connection ownership and Airlock
 
-- **G3 (later, not scheduled): retire Haku's last Airlock dependency — the read-only Google token.**
-  The console now owns Gmail/Calendar (G1/G2, done), but the agent still holds the read-only
-  `google-access-token` (`$TOK`) that the `google` Airlock grant reflects into `haku-sandbox` — used
-  directly for Drive/Tasks and as the Gmail/Calendar REST fallback. Target: the
-  console mediates all Google access so the agent holds no standing Google token; high-risk ops are
-  already approval-gated (invariant), and the open question is whether to also move read-only reads
-  behind console MCP tools (cleaner/safer, but a larger tool surface) vs. keep the direct read-only
-  token. Full G-sequence, target, and tradeoff: `plans/google_access_mediation.md`.
 - **Decide `haku_routine` ownership independently.** The Google singleton decision does not define
   whether every Operator should share one routine launcher. Specify whether the launcher is a
   global Haku capability or an Operator-owned downstream resource before relying on it in a
@@ -120,8 +112,9 @@ as a pass in its `procedures/`).
 A source whose MCP server exposes mutating tools doesn't need a separate read-only filter
 facade: wire the full server behind haku-console (`cluster/cdk8s/haku/console_config.py`) and
 let the console's approval gate filter it — reads auto-approve, every mutating/paid/destructive
-call queues for operator approval (`haku/console/auto_approval.py`). The Authentik OAuth facades
-are auth, not tool filtering, but the approval gate is. PostScanMail is wired this way.
+call queues for operator approval (`haku/console/auto_approval.py`). Authentik OAuth facades
+handle authentication separately from tool filtering; the console approval gate applies the
+tool policy.
 
 **Grocy is wired** — routed through haku-console's `grocy-sf`
 MCP entry (the `grocy_reads` policy in `cluster/cdk8s/haku/console_config.py` auto-approves the
@@ -131,7 +124,7 @@ read tools; every write tool stays approval-gated). Haku's dedicated read-only `
 and unlike the direct read-only path it also lets every runtime reach approval-gated
 Grocy writes.
 
-**Tana is wired** — routed through haku-console's `tana-rw`
+**Tana is wired** — routed through haku-console's `tana`
 MCP entry instead of a dedicated facade: the read tools (`search_nodes`, `read_node`,
 `get_children`, `open_node`, `list_tags`, `list_workspaces`, `get_tag_schema`) plus the
 idempotent `get_or_create_calendar_node` auto-approve under the `tana_safe_tools` policy in

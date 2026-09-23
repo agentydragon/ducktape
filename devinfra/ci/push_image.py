@@ -9,9 +9,10 @@ itself, so it holds the digest the planner lacked.
 Pushing anyway is not free and not idempotent. Every push mints a fresh
 `devel-<timestamp>-<sha>` tag, Flux ImagePolicy picks the newest one, and its
 image-automation controller commits the new tag back to this repository — so an
-image that did not change still costs a commit, a reconcile and a rollout. On devel
-that happened once per merge for `manifold-mcp-server`, whose target lives in a
-nested module and so is absent from the `//...` sweep the planner reads.
+image that did not change still costs a commit, a reconcile and a rollout. Before
+`manifold-mcp-server` was decommissioned and removed from the image roster, that
+happened once per devel merge: its target lives in a nested module and is absent from
+the `//...` sweep the planner reads.
 
 Comparing here rather than teaching the planner to see that target keeps the check
 in one place and covers the other fail-open reasons too, which no amount of build

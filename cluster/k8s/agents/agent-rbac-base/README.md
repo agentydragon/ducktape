@@ -124,16 +124,28 @@ Claude web or Haku: it is co-subjected only onto the secret-free
 `cluster-diagnostics-reader` binding. It does not receive a writable sandbox
 namespace or the separate `logs-configmaps-reader` class.
 
+### 6. claude-ai (agentplane-staging) — diagnostics only
+
+The `claude-ai` ServiceAccount in `agentplane-staging` is the principal for Connections
+enrolled from the Claude.ai MCP connector (`cluster/cdk8s/agentplane/actions_staging_policies.py`);
+every sandbox it stamps through the sandbox Action group runs as it
+(`agentplane/docs/sandbox_actions.md`). Its access is the same secret-free
+`cluster-diagnostics-reader` binding as agent-box Codex above, and nothing more: no writable
+namespace here, no `logs-configmaps-reader` class. Distinct from Haku's own identities
+(`oidc-ksbx-groups:haku` et al.) even though a claude-ai sandbox may separately carry Haku's
+own Forgejo credential via `EgressBinding` — that authority is unrelated to this Kubernetes RBAC
+grant.
+
 @permissions.md
 
 ## Adding Agent RBAC for a New Service
 
 1. For service-specific or sensitive access, create `<service>/agent-rbac/` with:
-   - `flux-kustomization.yaml` — depends on service's namespace kustomization + agent RBAC base
    - `kustomization.yaml` — lists the RoleBinding YAML(s)
    - RoleBinding YAML(s) referencing the appropriate ClusterRole from this directory
-2. Add the `flux-kustomization.yaml` path to the root `cluster/k8s/kustomization.yaml`
-3. The service namespace kustomization has **zero coupling** to agent infrastructure
+2. Add the service's Flux Kustomization generator under `cluster/cdk8s/`; wire its
+   namespace and agent RBAC dependencies in `generate_manifests.py`.
+3. The service namespace kustomization has **zero coupling** to agent infrastructure.
 
 ## Authentication
 

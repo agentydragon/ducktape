@@ -37,42 +37,33 @@ gotk-sync.yaml linguist-generated=true
 
 # cdk8s-generated cluster manifests — `bbr run //cluster/cdk8s:generate_manifests` output,
 # pinned to committed content by //cluster/cdk8s:test_generate_manifests. See
-# cluster/docs/cdk8s.md. The `.k8s.yaml` suffix is conventionally
-# cdk8s-only; flux-kustomization.yaml/kustomization.yaml share their filename with
-# hand-written directories elsewhere, so those need a path-scoped line per converted
-# directory instead.
+# cluster/docs/cdk8s.md. The `.k8s.yaml` suffix is conventionally cdk8s-only. The
+# central Flux Kustomization chart uses that suffix too; generated `kustomization.yaml`
+# files still need path-scoped lines because that filename is shared with hand-written
+# directories.
 cluster/k8s/**/*.k8s.yaml linguist-generated=true
-cluster/k8s/litellm/app/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/app/kustomization.yaml linguist-generated=true
-cluster/k8s/artifact-generators/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/artifact-generators/kustomization.yaml linguist-generated=true
-cluster/k8s/agents/ha-mcp/app/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/agents/ha-mcp/app/kustomization.yaml linguist-generated=true
-cluster/k8s/aiquota/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/aiquota/kustomization.yaml linguist-generated=true
-cluster/k8s/clickhouse/schema/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/schema/kustomization.yaml linguist-generated=true
-cluster/k8s/agentplane-staging/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/agentplane-staging/kustomization.yaml linguist-generated=true
-cluster/k8s/agentplane-testing/flux-kustomization.yaml linguist-generated=true
-cluster/k8s/agentplane-testing/kustomization.yaml linguist-generated=true
-cluster/k8s/haku/console/flux-kustomization.yaml linguist-generated=true
+# Agentplane testing's root Kustomization is hand-maintained because Flux image
+# automation updates its inline `images:` pins.
 cluster/k8s/haku/console/kustomization.yaml linguist-generated=true
-cluster/k8s/haku/console/db/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/haku/console/db/kustomization.yaml linguist-generated=true
-cluster/k8s/haku/console/migration/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/haku/console/migration/kustomization.yaml linguist-generated=true
-cluster/k8s/monitoring/etcd/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/etcd/kustomization.yaml linguist-generated=true
-cluster/k8s/ntfy/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/ntfy/kustomization.yaml linguist-generated=true
-cluster/k8s/external-creds/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
-# kubeconform schemas of the Agentplane CRDs — `bb run //x/agentplane/crds:generate_bin`
-# output, pinned by //x/agentplane/crds:test_generate.
+cluster/k8s/descheduler/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/public-coder-agent/namespace/kustomization.yaml linguist-generated=true
+cluster/k8s/github-branch-protection/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/machine-access-tf/kustomization.yaml linguist-generated=true
+# kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
+# output, pinned by //agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true
 # cdk8s-generated ssh-mcp directory wiring.
-cluster/k8s/ssh-mcp/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/ssh-mcp/kustomization.yaml linguist-generated=true
 
 # Artifacts captured from live Claude Code containers — not our source code
@@ -116,7 +107,9 @@ nix/nixos/hosts/cpap-gateway/** filename-conventions-ignored=true
 cluster/k8s/**/trixie_*.yaml cluster-manifest-ignored=true
 # Parked manifests are retained for possible revival but are not active cluster config.
 cluster/k8s/parked/** cluster-manifest-ignored=true
-cluster/k8s/evidence/market-roster/market-roster.yaml cluster-manifest-ignored=true
+# The retired Codex pod's manifests are kept beside their source, not active cluster config.
+x/codex_pod_image/deploy/** cluster-manifest-ignored=true
+cluster/k8s/evidence/market-roster.yaml cluster-manifest-ignored=true
 # rotate.py's rotation list, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml cluster-manifest-ignored=true
 # rotate.py's token list, mounted via configMapGenerator — not a K8s manifest.
@@ -124,9 +117,9 @@ cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=tru
 # provision.py's user→permission policy, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/grocy/user-perms-base/policy.yaml cluster-manifest-ignored=true
 # dispatcher Job template (${...} placeholders), mounted via configMapGenerator — not a live manifest.
-haku/x/dispatch/deploy/dispatcher/job-template.yaml cluster-manifest-ignored=true
+haku/x/dispatch/deploy/job-template.yaml cluster-manifest-ignored=true
 # dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.
-haku/x/dispatch/deploy/dispatcher/zones.yaml cluster-manifest-ignored=true
+haku/x/dispatch/deploy/zones.yaml cluster-manifest-ignored=true
 # per-index haku-indexer chunk config slices, mounted via configMapGenerator — not K8s manifests.
 cluster/k8s/haku/console/indexer-chunk-*-config.yaml cluster-manifest-ignored=true
 # iron-proxy config for the coder agent's egress proxy, mounted via

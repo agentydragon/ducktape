@@ -107,7 +107,7 @@ jobs:
           fetch-depth: 1
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: citools # provides bazel-diff, bazelisk
+          package: citools # provides bb, bbapi, bbr, and sops
       - uses: ./.github/actions/mint-automation-token
         id: app
         with:

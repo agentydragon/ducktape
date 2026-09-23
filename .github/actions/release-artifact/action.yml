@@ -3,7 +3,7 @@ description: Build a Bazel artifact via RBE, upload to GitHub Release if content
 
 inputs:
   pkg:
-    description: "Package name (e.g. claude-hooks)"
+    description: "Package name (e.g. claude-statusline)"
     required: true
   bazel_targets:
     description: "Space-separated Bazel targets that produce the release assets"
@@ -19,7 +19,7 @@ inputs:
     description: "Optional platform string to include in release metadata"
     required: false
     default: ""
-  rbe_image:
+  rbe_container_image:
     description: "Override RBE container image (optional)"
     required: false
     default: ""
@@ -41,7 +41,7 @@ runs:
       uses: ./.github/actions/bb-remote
       with:
         args: build ${{ inputs.bazel_targets }} ${{ inputs.bazel_flags }}
-        rbe_image: ${{ inputs.rbe_image }}
+        rbe_container_image: ${{ inputs.rbe_container_image }}
 
     - name: Check content hash
       id: check
@@ -95,7 +95,7 @@ runs:
       uses: ./.github/actions/bb-remote
       with:
         args: build ${{ inputs.bazel_targets }} ${{ inputs.bazel_flags }} --stamp
-        rbe_image: ${{ inputs.rbe_image }}
+        rbe_container_image: ${{ inputs.rbe_container_image }}
 
     - name: Upload release
       if: steps.check.outputs.should_release == 'true'

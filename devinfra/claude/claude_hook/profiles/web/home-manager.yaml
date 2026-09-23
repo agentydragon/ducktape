@@ -25,8 +25,8 @@ idle_watchdog: false
 #   setup_docker:    true
 #   bazel_bes_proxy: { target: remote.buildbuddy.io:443 }
 # Restore a key (with a ProfileConfig field + test) when the Rust daemon
-# implements it; otherwise delete this tombstone once the "Rust parity
-# follow-ups" item in devinfra/claude/TODO.md is closed as won't-do.
+# implements it. Revisit this note when the Rust profile follow-ups in
+# devinfra/claude/TODO.md are implemented or explicitly closed.
 # NOTE: DUCKTAPE_OTEL_BEARER_TOKEN is still exported by web_env.sh, independent
 # of the removed `otel:` key.
 env_exports: |

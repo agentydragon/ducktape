@@ -3,9 +3,9 @@
 Manifests for `haku/console/` (see that directory's README for the app itself). Deploy
 notes here cover only what's specific to running it in-cluster.
 
-The `haku-console.k8s.yaml`, `flux-kustomization.yaml` and `kustomization.yaml` here are
-generated from `cluster/cdk8s/haku/` (`charts.py` composes the one Kustomization —
-database, migration, console and API proxy; `console_config.py` is the non-secret config
+The `haku-console.k8s.yaml` and `kustomization.yaml` here are generated from
+`cluster/cdk8s/haku/` (`charts.py` composes the database, migration, console and API proxy
+in one Kustomization, emitted in the central Flux chart; `console_config.py` is the non-secret config
 the `haku-console-config` ConfigMap carries, rendered and checked through the console's
 own `Settings`). Regenerate per <../../../docs/cdk8s.md>. Hand-written beside them: the SOPS
 Secrets, `indexer-role.sql` (a `configMapGenerator` input, so a changed script re-hashes
@@ -214,7 +214,7 @@ enforcement-inventory entry.
 
 ## Tana backend credential
 
-`tana-rw` uses the cluster-internal Tana MCP endpoint with a static bearer held by the Console
+`tana` uses the cluster-internal Tana MCP endpoint with a static bearer held by the Console
 server. The encrypted account PAT is reflected only into the `haku-console` namespace and injected
 only into this deployment; the inner Haku workload sees the proxied tool surface, never the PAT.
 The public Tana OAuth facade remains available for external MCP clients but is not on Haku's path.

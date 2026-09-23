@@ -1,8 +1,4 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ankiweb-credentials.sops.yaml
   - attic-push-token.sops.yaml
-  - brave-search-api-key.sops.yaml
-  - buildbuddy-api-key.sops.yaml
-  - openclaw-telegram-bot-token.sops.yaml

@@ -420,7 +420,7 @@ reconcile recreates and re-runs it — recovery without a human. Change-driven s
 run-on-change script into a run-on-schedule one. Those stay on the manual recovery above.
 Rationale lives next to the Jobs themselves — see
 `HaMcpCredentialsProvisioner._add_job` in <../cdk8s/ha_mcp.py> and
-<../k8s/study-casino/db/readonly-role-provisioner-job.yaml>.
+<../k8s/study-casino/readonly-role-provisioner-job.yaml>.
 
 ## Removing a CRD Operator (Uninstall Runbook)
 
@@ -520,11 +520,11 @@ silently freezes every downstream Kustomization:
 kubectl -n flux-system get kustomization flux-system -o jsonpath='{.status.conditions[*].message}{"\n"}'
 ```
 
-A `kustomize build failed: ... no such file or directory` message there means
-some `cluster/k8s/.../flux-kustomization.yaml` reference in
-`cluster/k8s/kustomization.yaml` points at a path that doesn't exist in the
-tracked tree. Fix the reference (or recommit the missing directory), then
-all the queued-up downstream changes apply at once.
+A `kustomize build failed: ... no such file or directory` message there means a
+resource in `cluster/k8s/flux/kustomization.yaml` or a generated Kustomization's
+`spec.path` points at a path that doesn't exist in the tracked tree. Fix that path
+(or recommit the missing directory), then all the queued-up downstream changes apply
+at once.
 
 The Bazel test `//cluster/validation:test_cluster_integration` catches dangling
 resource references in `cluster/k8s/kustomization.yaml` (its orphaned-files and

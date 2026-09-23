@@ -1,5 +1,5 @@
 # HTTPRoute for Airlock. Traffic flows directly: Gateway → backend.
-# Auth is handled by the SPA's native OIDC integration (no proxy outpost).
+# The backend handles OIDC and protects browser APIs with its same-origin session cookie.
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

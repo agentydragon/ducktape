@@ -2,7 +2,7 @@
 
 Shared Puppeteer/Playwright infrastructure for visual render-health tests (see
 `visual-test-lib.mjs` for the JS/Puppeteer path used by `study_casino/frontend`,
-`props/frontend`, `airlock/frontend` and `x/agentplane/app/frontend`, and
+`props/frontend`, `airlock/frontend` and `agentplane/app/frontend`, and
 `frontend_visual.py` for the Python/Playwright path used by `study_casino/tests`
 and `finance/augur`). `capture.mjs` holds the lower-level page-prep/capture
 primitives (`prepareDeterministicPage`, `screenshotElement`, `waitForStable`) that
@@ -23,13 +23,13 @@ rendered PNG for PR visual review instead — see
 where it wants its scenario list to live.
 
 - **`main(name, options)`** — one `js_test` per scenario, each with its own entry-point `.mjs`.
-  Scenario names are then in BUILD as well as in the harness. `airlock/frontend` and
-  `study_casino/frontend` work this way.
+  Scenario names are then in BUILD as well as in the harness. `study_casino/frontend` works this
+  way.
 - **`runScenarios(table, {title})`** — one `js_test` over a whole table, split with `shard_count`.
   The list lives only in the table; BUILD carries a shard count, which needs no edit when the
   table grows. One browser serves every scenario in a shard, and a failure is recorded and the
   sweep continues, so a run enumerates every broken scene rather than stopping at the first.
-  `x/agentplane/app/frontend` and `props/frontend` work this way.
+  `agentplane/app/frontend`, `airlock/frontend` and `props/frontend` work this way.
 
 Under `runScenarios`, `--test_filter=<scenario>` (Bazel's `TESTBRIDGE_TEST_ONLY`) addresses a
 single scenario — the substitute for a per-scenario target name. Filtering happens before

@@ -94,17 +94,17 @@ locals {
     for k, v in local.kimsufi_servers : k => v if v.service_name != ""
   }
 
-  # Temporary Talos upgrade canary. Keep the generated machine-configuration
-  # contract at var.talos_version until the whole fleet moves; the
-  # talos_machine_configuration_apply resource applies configuration but does
-  # not upgrade the running OS. The canary is upgraded explicitly with
-  # talosctl after this installer image is reconciled.
-  kimsufi_talos_version_overrides = {
+  # Per-node OS upgrade targets. Keep the machine-configuration generator at
+  # var.talos_version during serial rolls; these overrides change only
+  # machine.install.image, while talosctl performs the actual OS upgrade.
+  talos_installer_version_overrides = {
+    "ovh-ns103656" = "v1.14.0"
     "ovh-ns103711" = "v1.14.0"
+    "optiplex"     = "v1.14.0"
   }
   kimsufi_installer_version = {
     for k in keys(local.kimsufi_servers) :
-    k => lookup(local.kimsufi_talos_version_overrides, k, var.talos_version)
+    k => lookup(local.talos_installer_version_overrides, k, var.talos_version)
   }
 
   # Stage 3: emptied — the former bootstrap CP (102453) and the HDD CP (103656) are
@@ -125,9 +125,14 @@ resource "talos_image_factory_schematic" "kimsufi" {
       # KS-5 has no physical display; we only see boot output via OVH IPMI SOL.
       # Without console=ttyS0 every Talos boot log is invisible — silent reboot
       # loops mask whether the kernel even started.
+      # The previous schematic registered but its v1.14.0 artifacts returned
+      # 404 (issue #7262). consoleblank=0 is the Linux default; it creates a
+      # fresh content-addressed ID without changing behavior. This variant's
+      # v1.14.0 metal-installer manifest resolves from the official Factory.
       extraKernelArgs = [
         "console=tty0",
         "console=ttyS0,115200n8",
+        "consoleblank=0",
       ]
       systemExtensions = {
         officialExtensions = [
@@ -244,24 +249,16 @@ resource "null_resource" "install_talos_kimsufi" {
     timeout     = "15m"
   }
 
+  provisioner "file" {
+    source      = "${path.module}/install_talos_from_image_factory.sh"
+    destination = "/tmp/install_talos_from_image_factory.sh"
+  }
+
   provisioner "remote-exec" {
-    # OVH rescue runs dash (no `set -o pipefail`). Decompress to a temp file
-    # and dd from that, so an unrelated decompressor failure can't silently
-    # feed dd zero bytes. `test -s` makes sure we actually got a raw image.
-    # The Image Factory currently ships `metal-amd64.raw.zst`; older releases
-    # used .xz, hence the URL-suffix switch.
-    # KS-5 has 32 GB RAM; /tmp on tmpfs has room for the ~1.5 GB raw image.
-    # install_disk is per node: KS-5 uses /dev/sda, KS-GAME uses NVMe.
+    # Workers and control planes share the installer; only the target disk
+    # differs. Image URLs still come directly from the public Image Factory.
     inline = [
-      "set -ex",
-      # OVH Debian rescue doesn't have zstd pre-installed; xz-utils is there.
-      "apt-get update -qq && apt-get install -y -qq zstd",
-      "URL='${data.talos_image_factory_urls.kimsufi.urls.disk_image}'",
-      "wget -q -O /tmp/talos.bin \"$URL\"",
-      "case \"$URL\" in *.zst) zstd -dc /tmp/talos.bin > /tmp/talos.raw ;; *.xz) xz -dc /tmp/talos.bin > /tmp/talos.raw ;; *) echo \"unknown compression in $URL\" >&2; exit 1 ;; esac",
-      "test -s /tmp/talos.raw",
-      "dd if=/tmp/talos.raw of=${each.value.install_disk} bs=4M status=progress",
-      "sync",
+      "/bin/sh /tmp/install_talos_from_image_factory.sh '${data.talos_image_factory_urls.kimsufi.urls.disk_image}' '${each.value.install_disk}'",
     ]
   }
 
@@ -338,8 +335,10 @@ locals {
             match = v.data_disk_match
           }
         }
+        # Prepare the existing XFS data volume for a future quota-aware local-PV provisioner.
         filesystem = {
-          type = "xfs"
+          type                = "xfs"
+          projectQuotaSupport = true
         }
       })
     ]
@@ -350,7 +349,7 @@ locals {
     k => yamlencode({
       machine = merge(local.common_machine_base, {
         install = {
-          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
+          image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${lookup(local.talos_installer_version_overrides, k, var.talos_version)}"
         }
         files = local.cp_auth_files
         # Topology labels set explicitly. The installed talos-CCM only populates
@@ -375,7 +374,7 @@ locals {
     k => yamlencode({
       machine = merge(local.worker_machine_base, {
         install = {
-          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
+          image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
         }
         # Talos hardens user.max_user_namespaces to 0; the haku-ci runner's rootless
         # dind (docker:dind-rootless) needs user namespaces to start. Scoped to the
@@ -506,7 +505,7 @@ locals {
     k => yamlencode({
       machine = merge(local.common_machine_base, {
         install = {
-          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
+          image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
         }
         files = local.cp_auth_files
         # Topology labels set explicitly. The installed talos-CCM only populates
@@ -612,16 +611,14 @@ resource "null_resource" "install_talos_kimsufi_cp" {
     timeout     = "15m"
   }
 
+  provisioner "file" {
+    source      = "${path.module}/install_talos_from_image_factory.sh"
+    destination = "/tmp/install_talos_from_image_factory.sh"
+  }
+
   provisioner "remote-exec" {
     inline = [
-      "set -ex",
-      "apt-get update -qq && apt-get install -y -qq zstd",
-      "URL='${data.talos_image_factory_urls.kimsufi.urls.disk_image}'",
-      "wget -q -O /tmp/talos.bin \"$URL\"",
-      "case \"$URL\" in *.zst) zstd -dc /tmp/talos.bin > /tmp/talos.raw ;; *.xz) xz -dc /tmp/talos.bin > /tmp/talos.raw ;; *) echo \"unknown compression in $URL\" >&2; exit 1 ;; esac",
-      "test -s /tmp/talos.raw",
-      "dd if=/tmp/talos.raw of=${each.value.install_disk} bs=4M status=progress",
-      "sync",
+      "/bin/sh /tmp/install_talos_from_image_factory.sh '${data.talos_image_factory_urls.kimsufi.urls.disk_image}' '${each.value.install_disk}'",
     ]
   }
 

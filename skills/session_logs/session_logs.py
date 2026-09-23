@@ -48,11 +48,14 @@ class ParseStats:
 def iter_entries(path: Path, stats: ParseStats | None = None) -> Iterator[dict[str, Any]]:
     """Yield valid JSON objects while skipping malformed JSONL records.
 
-    Harness transcripts occasionally contain a partially written tool-call
-    record or an unescaped control character in a string.  jq rejects the
-    entire file in that situation.  Python's decoder can accept control
-    characters with ``strict=False``; genuinely truncated records are still
-    skipped one physical line at a time so later user messages remain visible.
+    Observed Codex examples include a ``response_item`` whose
+    ``custom_tool_call`` ``payload.input`` string is cut off, and an
+    ``event_msg`` with ``payload.type == "token_count"`` cut off while writing
+    a payload field name.  The next JSONL record parsed successfully in both
+    cases, so keep scanning after parse errors.  Python's decoder accepts
+    unescaped control characters with ``strict=False``; malformed or truncated
+    records are still skipped one physical line at a time so later user
+    messages remain visible.
     """
 
     scan = stats or ParseStats()
@@ -378,6 +381,16 @@ def analyze_transcript(path: Path, harness: str) -> tuple[dict[str, str | int], 
     )
 
 
+def followups_replay_guidance(compactions: int, malformed_records: int) -> str:
+    """Recommend whether followups needs transcript output to recover context."""
+
+    if malformed_records:
+        return "uncertain; malformed records may hide compaction markers, so do not use the no-compaction shortcut"
+    if compactions:
+        return f"{compactions} marker(s) found; replay unless already recovered in this context after the latest marker"
+    return "skip; no compaction markers were found and no records were malformed"
+
+
 def main_find() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("harness", nargs="?", choices=HARNESS_NAMES)
@@ -415,6 +428,9 @@ def main_analyze() -> int:
     print(f"Tool calls: {summary['tool_uses']}")
     print(f"Compactions: {summary['compactions']}")
     print(f"Malformed records skipped: {stats.malformed_records}")
+    print(
+        f"Followups replay guidance: {followups_replay_guidance(int(summary['compactions']), stats.malformed_records)}"
+    )
     print(f"Transcript: {path}")
     report_parse_issues(stats)
     return 0

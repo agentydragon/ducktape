@@ -15,11 +15,8 @@ rotations:
     scopes: openid profile email groups
     credential_mode: user_password
     expected_group: haku
-    # Assert the token carries the audience kubectl-machine-mcp validates (the
-    # provider-default aud = its client_id). Haku's Anthropic-hosted managed agent
-    # reaches the cluster through that passthrough MCP with a static_bearer vault
-    # credential carrying this token (tf/gitops/haku-cloud-agent); the same aud also
-    # keeps the direct kubeapi.allegedly.works path working.
+    # Assert the provider-default audience (its client_id), which keeps the direct
+    # kubeapi.allegedly.works path working.
     expected_audiences:
       - kubectl-sandbox-client-credentials
     credentials_dir: /var/run/secrets/authentik/haku-k8s
@@ -110,9 +107,9 @@ rotations:
     sops_file: secrets/haku-mail-jwt.yaml
     token_field: jwt
     # Publish as an in-cluster Secret; the haku-mail-token ClusterExternalSecret
-    # (cluster/k8s/haku/mailbox/app) mirrors it into haku-sandbox for Haku.
+    # (cluster/k8s/haku/mailbox) mirrors it into haku-sandbox for Haku.
     k8s_secret:
-      path: cluster/k8s/haku/mailbox/app/haku-mail-token.sops.yaml
+      path: cluster/k8s/haku/mailbox/haku-mail-token.sops.yaml
       name: haku-mail-token
       namespace: flux-system
     # Stalwart 401s a bad bearer and 403s a token whose email claim can't be

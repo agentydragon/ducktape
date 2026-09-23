@@ -116,7 +116,7 @@ Goal: make Codex Cloud behave as close as feasible to our canonical Nix/devshell
 5. **Secrets / decryption inputs**:
    - no direct `BUILDBUDDY_API_KEY` environment injection required
    - `SOPS_AGE_KEY` available so setup/maintenance can decrypt
-     `cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml`
+     `cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml`
    - any additional tokens needed only to install/private-fetch during setup
 6. **Internet policy**:
    - start with allowlist mode, minimum domains required for setup/package fetch + repo infra endpoints.

@@ -1,4 +1,7 @@
+@import "@mantine/core/styles.css";
+@import "@mantine/notifications/styles.css";
 @import "tailwindcss";
+@import "highlight.js/styles/github.css";
 
 :root {
   font-family:
@@ -35,11 +38,6 @@ body {
 #app {
   max-width: 1600px;
   margin: 0 auto;
-}
-
-h1 {
-  font-size: 1.5rem;
-  margin: 0 0 1rem 0;
 }
 
 /* Table styles */

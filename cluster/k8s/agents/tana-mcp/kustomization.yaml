@@ -1,11 +1,12 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  - external-creds.yaml
   - forgejo-images-creds-eso.yaml
   - namespace.yaml
+  - firebase-resigner-config.yaml
   - deployment.yaml
   - service.yaml
-  - tana-agentydragon-gmail-com-account-pat.sops.yaml
   - tana-firebase-refresh-token.sops.yaml
   - firebase-resigner-rbac.yaml
   - facade-configmap.yaml

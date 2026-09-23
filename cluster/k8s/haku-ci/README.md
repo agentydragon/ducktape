@@ -71,7 +71,7 @@ The registration-token Secret (`haku-ci-runner-token`) is provisioned by `tf/git
 (a `hashicorp/http` GET of the repo's runner registration-token API, written to the Secret) —
 not committed here.
 
-`flux-kustomization.yaml` (root-wired) applies this dir; `wait: false` because the runner stays
+The central Flux chart entry applies this directory with `wait: false` because the runner stays
 pending until that token Secret lands.
 
 ## Queue autoscaling

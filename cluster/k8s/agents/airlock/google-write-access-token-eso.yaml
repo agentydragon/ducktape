@@ -1,0 +1,25 @@
+# Airlock writes google-write-access-token (write-scoped Google Gmail/Calendar) into the
+# `airlock` namespace; ESO mirrors it into google-mcp only -- the standalone MCP server that
+# fronts it behind agentplane's approval-gated ActionGroups (x/google_mcp_server,
+# cluster/cdk8s/google_mcp.py). Deliberately not mirrored into claude-sandbox, haku-sandbox, or
+# agentplane-staging directly: unlike google-access-token (read-only, google-access-token-eso.yaml),
+# which an egress proxy may present on a sandbox's reads, this token can send mail and mutate Gmail/Calendar, so it must never reach a namespace the
+# agent's own execution can read from directly. See plans/personal_agents/personal_data_agent.md
+# and docs/personal_agents/verdicts.md.
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: google-write-access-token
+spec:
+  namespaces:
+    - google-mcp
+  externalSecretSpec:
+    refreshInterval: 1m
+    secretStoreRef:
+      name: kubernetes-airlock-secret-store
+      kind: ClusterSecretStore
+    target:
+      name: google-write-access-token
+    dataFrom:
+      - extract:
+          key: google-write-access-token

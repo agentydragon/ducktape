@@ -72,8 +72,19 @@ from cdk8s_plus_34 import (
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
+from agentplane.app.main import CONFIG_FILE_ENV, Settings
+from agentplane.app.oidc import OIDCSettings
+from agentplane.egress import sidecar
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import actions, container_security, database, egress, llm_ingress, node_scheduling
+from cluster.cdk8s.agentplane import (
+    actions,
+    container_security,
+    database,
+    egress,
+    electric,
+    llm_ingress,
+    node_scheduling,
+)
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -89,9 +100,6 @@ from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
-from x.agentplane.app.main import CONFIG_FILE_ENV, Settings
-from x.agentplane.app.oidc import OIDCSettings
-from x.agentplane.egress import sidecar
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 # Mounted by the egress sidecar and no other container; every token under it is the Pod's own.
@@ -234,6 +242,11 @@ class App(Construct):
         namespace = self.env.namespace
         postgres_app = Secret.from_secret_name(self, "postgres-app-secret", "postgres-app")
         oidc_secret = Secret.from_secret_name(self, "agentplane-oidc-secret", "agentplane-oidc")
+        oidc_session_secret = (
+            oidc_secret
+            if self.env.app.oidc_session_secret_name == "agentplane-oidc"
+            else Secret.from_secret_name(self, "agentplane-oidc-session-secret", self.env.app.oidc_session_secret_name)
+        )
         token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
         return {
             CONFIG_FILE_ENV: EnvValue.from_value(f"{_CONFIG_DIR}/config.yaml"),
@@ -246,6 +259,9 @@ class App(Construct):
                 "postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)"
                 "@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
             ),
+            env_name(Settings, "electric_url"): EnvValue.from_value(
+                f"http://{electric.NAME}.{namespace}.svc.cluster.local:{electric.PORT}"
+            ),
             env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.env.app.oidc_issuer),
             env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(f"https://{self.env.app.hostname}"),
             env_name(OIDCSettings, "client_id"): EnvValue.from_secret_value(
@@ -255,7 +271,7 @@ class App(Construct):
                 SecretValue(secret=oidc_secret, key="client-secret")
             ),
             env_name(OIDCSettings, "session_secret"): EnvValue.from_secret_value(
-                SecretValue(secret=oidc_secret, key="session-secret")
+                SecretValue(secret=oidc_session_secret, key="session-secret")
             ),
             env_name(Settings, "token_subjects"): EnvValue.from_value(token_subjects),
         }
@@ -263,6 +279,9 @@ class App(Construct):
     def _add_deployment(self, app_service_account: ServiceAccount) -> Deployment:
         namespace = self.env.namespace
         env = self._container_env()
+        oidc_secret_reload = "agentplane-oidc"
+        if self.env.app.oidc_session_secret_name != "agentplane-oidc":
+            oidc_secret_reload += f",{self.env.app.oidc_session_secret_name}"
         deployment = Deployment(
             self,
             "deployment",
@@ -273,7 +292,7 @@ class App(Construct):
                 annotations={
                     # A re-minted client secret otherwise leaves the pod on the old
                     # one, and every login 401s.
-                    "secret.reloader.stakater.com/reload": "agentplane-oidc",
+                    "secret.reloader.stakater.com/reload": oidc_secret_reload,
                     "configmap.reloader.stakater.com/reload": "agentplane-app-config",
                 },
             ),
@@ -394,6 +413,7 @@ class App(Construct):
                 # still requires its own configured operator authenticator;
                 # network reachability grants no review authority.
                 cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-actions"), actions.CONTAINER_PORT),
+                cilium.egress_to(cilium.endpoint_labels(namespace, electric.NAME), electric.PORT),
                 cilium.egress_to(
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,

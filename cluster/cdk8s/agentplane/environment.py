@@ -6,29 +6,12 @@ written once.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from cdk8s import Duration
 from cdk8s_plus_34 import DeploymentStrategy
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
-
-# What every environment's Flux Kustomization waits on.
-DEPENDS_ON = (
-    "agentplane-crds",
-    "agent-sandbox-controller",
-    "cert-manager-environment",
-    "cert-manager-trust",
-    "claude-rbac",
-    "cnpg",
-    "external-creds",
-    "external-secrets-config",
-    "forgejo-images",
-    "gateway",
-    "litellm-keys-tf",
-    "local-path-provisioner",
-    "reflector",
-)
 
 
 @dataclass(frozen=True)
@@ -62,6 +45,7 @@ class EgressProps:
     # The interception CA's Secret/Bundle/ConfigMap name; the runner SandboxTemplate
     # mounts the ConfigMap by the same name.
     ca_secret_name: str
+    credentials_namespace: str
 
 
 @dataclass(frozen=True)
@@ -73,12 +57,27 @@ class AppProps:
     reach_incluster_authentik: bool
     # Pin runner Pods to a zone (near the database/LiteLLM), or None for no pin.
     runner_zone: str | None
+    # The OIDC client secret and the session signing key can have separate owners.
+    # Testing leaves this at `agentplane-oidc`; staging uses an ESO-generated Secret.
+    oidc_session_secret_name: str = "agentplane-oidc"
+
+
+@dataclass(frozen=True)
+class BearerMcpMount:
+    """One static-bearer MCP backend's reflected Secret, mounted at
+    `/run/secrets/<name>/<file_name>` for an `action_groups` entry's `bearer_file` to name."""
+
+    name: str
+    secret_name: str
+    secret_key: str
+    file_name: str = "bearer-token"
+    optional: bool = False
 
 
 @dataclass(frozen=True)
 class ActionsProps:
     hostname: str
-    # x/agentplane/action_service `Settings`, the settings ConfigMap; `operator_oidc` included.
+    # agentplane/action_service `Settings`, the settings ConfigMap; `operator_oidc` included.
     settings: dict
     # Secrets whose rotation should roll the Deployment, beyond agentplane-mcp-oauth
     # (always reloaded).
@@ -88,7 +87,7 @@ class ActionsProps:
     # None/False omits the corresponding env var, volume, and mount.
     web_push_secret_name: str | None = None
     github_mcp_client_secret_name: str | None = None
-    ssh_mcp_bearer: bool = False
+    bearer_mcp_mounts: Sequence[BearerMcpMount] = ()
     # CiliumNetworkPolicy egress rules appended after the shared DNS/claude.ai/
     # kube-apiserver/postgres rules: this environment's OIDC provider, MCP servers, ...
     extra_egress: Sequence[CiliumNetworkPolicySpecEgress] = field(default_factory=tuple)
@@ -100,16 +99,12 @@ class Environment:
     # The Namespace's `description` annotation and the Flux Kustomization's.
     description: str
     flux_description: str
-    depends_on: Sequence[str]
     # Hand-written files the root Kustomization lists beside the generated one.
     extra_resources: Sequence[str]
-    # Secrets Pods read that nothing in the chart creates, each with the dependency
-    # (one of `depends_on` or `extra_resources`) that does; fleet_rules checks both ends.
-    provided_secrets: Mapping[str, str]
     # Whether the operator Role may manage ActionPolicySet/Binding objects.
     include_action_policy_rule: bool
     replicas: ReplicaProfile
-    # x/agentplane/app/main.py's `Settings`, the `agentplane-app-config` ConfigMap.
+    # agentplane/app/main.py's `Settings`, the `agentplane-app-config` ConfigMap.
     app_config: dict
     db: DbProps
     llm_ingress: LlmIngressProps

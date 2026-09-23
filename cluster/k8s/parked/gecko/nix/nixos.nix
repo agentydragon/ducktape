@@ -1,0 +1,70 @@
+# Gecko - headless CLI-only NixOS VM (KubeVirt)
+{
+  pkgs,
+  lib,
+  username,
+  ...
+}:
+let
+  keys = import ../../../../../nix/ssh-keys.nix;
+  sshKeys = with keys; [
+    wyrm2
+    atlas
+    rugged
+    gecko
+  ];
+in
+{
+  imports = [
+    ../../../../../nix/nixos/modules/operator.nix
+    ../../../../../nix/nixos/modules/vm-hardware.nix
+    ../../../../../nix/nixos/modules/bazel
+    ../../../../../nix/nixos/modules/system-inspection-sudo.nix
+    ../../../../../nix/nixos/modules/attic-substituter.nix
+  ];
+
+  # Pull substituter for cache.allegedly.works/{main,gaffer}. Reader JWT is
+  # auto-rotated by attic-jwt-rotation CronJob; the SOPS file is decryptable
+  # by gecko's cloud-init-persisted host key + agentydragon user key.
+  ducktape.attic-substituter = {
+    enable = true;
+    sopsFile = ../../../../../secrets/hosts/gecko-attic.yaml;
+  };
+
+  # Passwordless sudo for read-only system inspection commands used by agents.
+  ducktape.systemInspectionSudo.enable = true;
+
+  environment.systemPackages = with pkgs; [
+    htop
+    btop
+    ripgrep
+    fd
+    fzf
+    jq
+    yq
+    tree
+    pv
+    strace
+    lsof
+    sops
+    ssh-to-age
+    home-manager
+  ];
+
+  users.users.${username} = {
+    shell = pkgs.zsh;
+    openssh.authorizedKeys.keys = sshKeys;
+    extraGroups = [ "systemd-journal" ];
+  };
+
+  users.users.root.openssh.authorizedKeys.keys = sshKeys;
+  services.openssh.hostKeys = lib.mkForce [
+    {
+      type = "ed25519";
+      path = "/etc/ssh/ssh_host_ed25519_key";
+    }
+  ];
+  services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
+
+  users.motd = "Gecko - headless KubeVirt agent VM\n";
+}

@@ -67,7 +67,8 @@ repos:
   - repo: local
     hooks:
       # Language-agnostic ordering for explicitly marked blocks. The binary is
-      # in devToolsCommon so this also runs in CI and Claude Code web sessions.
+      # in `preCommitPackages`, exposed as `.#precommit` for CI and included in
+      # `devToolPackages` for Claude Code web.
       - id: keep-sorted
         name: keep-sorted
         entry: keep-sorted
@@ -117,9 +118,9 @@ repos:
         language: system
         files: ^(cluster|website)/.*\.md$
 
-  # NOTE: ESLint and svelte-check are handled by Bazel:
+  # NOTE: ESLint and TypeScript type checking are handled by Bazel:
   # - ESLint: bazel build //... (lint aspects run by default)
-  # - svelte-check: bazel test //props/frontend:svelte_check_test
+  # - TypeScript: ts_library targets type-check when built.
 
   # Buildifier - Bazel/Starlark formatting and linting — buildifier provided by devShell / web-session via Nix
   - repo: local
@@ -188,7 +189,7 @@ repos:
         name: prettier
         entry: prettier --write --ignore-unknown --list-different
         language: system
-        files: "\\.(js|mjs|cjs|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html)$"
+        files: "\\.(js|mjs|cjs|jsx|ts|tsx|css|md|yaml|yml|json|html)$"
         exclude: "\\.pnpm/"
 
       # Block non-root pyproject.toml files — all Python packaging config must live in the root pyproject.toml.
@@ -241,7 +242,7 @@ repos:
       # CRD schemas from datreeio/CRDs-catalog cover Flux, cert-manager,
       # external-secrets, etc.; cluster/schemas/ holds the ones for this repo's
       # own CRDs (each file is its CRD's openAPIV3Schema, dumped by
-      # `bb run //x/agentplane/crds:generate_bin`). Niche third-party CRDs without catalog
+      # `bb run //agentplane/crds:generate_bin`). Niche third-party CRDs without catalog
       # schemas (powerdns-operator, kagent) are skipped rather than failing.
       # TODO: Run the datree CRD extractor against the live cluster to get
       # schemas for niche CRDs (ClusterRRset, ClusterZone, Agent, ModelConfig,
@@ -271,9 +272,9 @@ repos:
             # Authentik blueprints are not K8s manifests, skip validation
             cluster/k8s/authentik/app/blueprints/.*|
             # Application config files, not K8s manifests
-            cluster/k8s/gatus/app/config\.yaml|
+            cluster/k8s/gatus/config\.yaml|
             cluster/k8s/home-assistant/app/provisioner\.yaml|
-            cluster/k8s/evidence/market-roster/market-roster\.yaml|
+            cluster/k8s/evidence/market-roster\.yaml|
             cluster/k8s/agents/airlock/config\.yaml|
             cluster/k8s/grocy/sf/mcp/config\.yaml|
             cluster/k8s/grocy/vallejo/mcp/config\.yaml|
@@ -291,12 +292,12 @@ repos:
             cluster/k8s/agents/haku-egress-proxy/openclaw-spike-iron\.yaml|
             cluster/k8s/litellm/app/(chatgpt-)?proxy-config\.yaml|
             cluster/k8s/litellm/tana/proxy-config\.yaml|
-            haku/x/dispatch/deploy/litellm/workers-litellm-config\.yaml|
+            haku/x/dispatch/deploy/workers-litellm-config\.yaml|
             # per-index haku-indexer chunk config slices mounted via configMapGenerator
             cluster/k8s/haku/console/indexer-chunk-[a-z0-9-]+-config\.yaml|
             # dispatcher Job template with ${...} placeholders, mounted via configMapGenerator
-            haku/x/dispatch/deploy/dispatcher/job-template\.yaml|
-            haku/x/dispatch/deploy/dispatcher/zones\.yaml|
+            haku/x/dispatch/deploy/job-template\.yaml|
+            haku/x/dispatch/deploy/zones\.yaml|
             # Helm values files consumed via configMapGenerator, not K8s manifests
             cluster/k8s/.*/ccm-values\.yaml|
             # Authelia configuration files consumed via configMapGenerator, not K8s manifests

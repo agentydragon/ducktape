@@ -55,7 +55,7 @@ SOPS decryption:
    sops updatekeys secrets/ovh-rescue-ssh.sops.yaml
    ```
 
-2. Drop `suspend: true` from `flux-kustomization.yaml` and commit both.
+2. Drop `suspend: true` from the Kustomization's generator and commit both.
 
 No new Secret to plant: the runner reads `SOPS_AGE_KEY` from the existing
 `flux-system/sops-age-cluster-secrets`, the same identity Flux decrypts
@@ -125,7 +125,7 @@ sparseCheckout: [cluster/k8s/, loom/wayback/deploy/, props/deploy/, tf/gitops/]
 `cluster/terraform/` is not among them, so the runner's checkout has no such
 directory and the plan dies with
 `terraform path not found: stat …/cluster/terraform/main`. That list cannot be
-extended: `cluster/k8s/flux-system/gotk-sync.yaml` is flux-generated and marked
+extended: `cluster/k8s/flux/flux-system/gotk-sync.yaml` is flux-generated and marked
 DO NOT EDIT. Hence `infra-drift-source`, scoped to what this plan reads and
 nothing else, which also keeps the shared artifact every other Flux consumer
 pulls from growing.
@@ -149,8 +149,8 @@ All five call sites, and the file each needs:
 | --------------------------------------- | ------------------------ | ------------------------------------------------------------- |
 | `nebula.tf:17` `jsondecode(file(…))`    | `locals`                 | `nebula-mesh.json` (repo root)                                |
 | `talos-ccm.tf:14` `yamldecode(file(…))` | `locals`                 | `cluster/k8s/talos-cloud-controller-manager/helmrelease.yaml` |
-| `flux.tf:23` `filesha256(…)`            | `null_resource` triggers | `cluster/k8s/flux-system/gotk-components.yaml`                |
-| `flux.tf:24` `filesha256(…)`            | `null_resource` triggers | `cluster/k8s/flux-system/gotk-sync.yaml`                      |
+| `flux.tf:23` `filesha256(…)`            | `null_resource` triggers | `cluster/k8s/flux/flux-system/gotk-components.yaml`           |
+| `flux.tf:24` `filesha256(…)`            | `null_resource` triggers | `cluster/k8s/flux/flux-system/gotk-sync.yaml`                 |
 | `cilium.tf:44` `filesha256(…)`          | `null_resource` triggers | `cilium-values.yaml`, inside the root module                  |
 
 The `ignore` rules carry all of them. The rest of `cluster/k8s` (10 MB) is read

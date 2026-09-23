@@ -6,14 +6,15 @@ resources:
   - oura-client-credentials.sops.yaml
   - google-client-credentials.sops.yaml
   - bsc-client-credentials.sops.yaml
+  - session-secret-eso.yaml
   - serviceaccount.yaml
   - rbac.yaml
   - deployment.yaml
   - service.yaml
   - httproute.yaml
   - ciliumnetworkpolicy.yaml
-  - oura-access-token-eso.yaml
   - google-access-token-eso.yaml
+  - google-write-access-token-eso.yaml
 
 configMapGenerator:
   - name: airlock-config

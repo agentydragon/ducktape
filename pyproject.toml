@@ -33,7 +33,7 @@ dependencies = [
     "httpx>=0.27.0",
     "httpx2[ws]>=2.13.0",
     # mcp/fastmcp v4 use httpx2 for SSE and no longer pull this in transitively;
-    # x/agentplane's replication tests use it directly against a real httpx SSE client.
+    # agentplane's replication tests use it directly against a real httpx SSE client.
     "httpx-sse>=0.4.3",
     # IDNA A-label canonicalization for exact-origin HTTP grants (haku/console).
     "idna>=3.4",
@@ -192,7 +192,7 @@ dependencies = [
 
     "typing-extensions",
 
-    # claude_hooks
+    # Claude tooling
     "opentelemetry-api>=1.20",
     "opentelemetry-sdk>=1.20",
     "opentelemetry-exporter-otlp-proto-http>=1.20",
@@ -289,7 +289,7 @@ dependencies = [
     "PyHamcrest>=2.1",
     "mypy==2.3.1",
 
-    # Protobuf and gRPC code generation for //x/agentplane/runner: grpcio-tools bundles protoc
+    # Protobuf and gRPC code generation for //agentplane/runner: grpcio-tools bundles protoc
     # and the gRPC Python plugin; mypy-protobuf adds the .pyi stubs mypy reads.
     "grpcio>=1.84.0",
     "grpcio-tools>=1.84.0",

@@ -1,0 +1,64 @@
+# Shared build-and-publish job for Nix-built KubeVirt containerDisk images.
+name: Publish Nix containerDisk image
+
+on:
+  workflow_call:
+    inputs:
+      flake_output:
+        description: Flake package output to build
+        required: true
+        type: string
+      image_name:
+        description: Short image name used in the job display
+        required: true
+        type: string
+      image:
+        description: Full Forgejo registry image name, without a tag
+        required: true
+        type: string
+    secrets:
+      SOPS_AGE_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-push:
+    name: Build & push ${{ inputs.image_name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      FLAKE_OUTPUT: ${{ inputs.flake_output }}
+      IMAGE: ${{ inputs.image }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-nix-attic
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Build containerDisk image
+        run: nix build ".#$FLAKE_OUTPUT" --print-build-logs
+
+      - name: Compute tag
+        id: meta
+        shell: bash
+        run: |
+          echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      # Keep feature-branch/manual runs from publishing a tag that Flux would
+      # consider deployable. workflow_dispatch on devel remains useful for a
+      # retry after a transient registry failure.
+      - name: Push to Forgejo registry
+        if: github.ref_name == 'devel'
+        env:
+          PIN_TAG: ${{ steps.meta.outputs.pin_tag }}
+        run: |
+          ref="$IMAGE:$PIN_TAG"
+          echo "$FORGEJO_IMAGES_PASSWORD" | skopeo login git.allegedly.works \
+            -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
+          skopeo copy --insecure-policy \
+            "docker-archive:$(readlink -f result)" \
+            "docker://$ref"
+          echo "pushed $ref" >> "$GITHUB_STEP_SUMMARY"

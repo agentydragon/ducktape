@@ -112,6 +112,10 @@ class TestRetryPolicy:
     def test_wait_true_with_retry_passes(self) -> None:
         check_retry_policy(self._make_cluster(health_check_kind="Namespace", wait=True, retry_interval="1m"))
 
+    def test_cli_proxy_api_preserves_existing_retry_interval_omission(self) -> None:
+        cluster = ParsedCluster(flux_kustomizations={"cli-proxy-api": FluxKustomizationSpec(wait=True)})
+        check_retry_policy(cluster)
+
     def test_sync_only_no_wait_no_retry_passes(self) -> None:
         """Sync-only health checks (Namespace) without wait don't need retryInterval."""
         check_retry_policy(self._make_cluster(health_check_kind="Namespace"))

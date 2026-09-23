@@ -179,10 +179,11 @@ read <skills/seaweed_operator/SKILL.md> before operating on them.
 
 ## Flux Kustomization Wiring
 
-Flux `Kustomization` resources (`flux-kustomization.yaml`) are applied from the **root**
-`cluster/k8s/kustomization.yaml`. A directory's own `kustomization.yaml` lists only the
-manifests Flux applies at `spec.path` — **never its `flux-kustomization.yaml`**, which
-would apply it redundantly.
+Flux `Kustomization` resources are defined together in the generated
+`cluster/k8s/flux/kustomizations.k8s.yaml`, applied from the **root**
+`cluster/k8s/kustomization.yaml` through `flux/`. A directory's own `kustomization.yaml`
+lists only the manifests Flux applies at `spec.path` — never its Flux Kustomization,
+which lives in the central chart.
 
 ### Migrating stateful Flux Kustomizations
 
@@ -195,19 +196,33 @@ settings and the existing stateful resource, then reconcile the replacement and 
 uses the same resource and PVC identities before cleaning up the old owner. `suspend` alone
 does not make deletion safe.
 
-**Do not mix HelmReleases with CRD instances in the same Kustomization unless the
-path is an explicitly documented consolidation exception.**
-Layer 1 (CRD operators) → Layer 2 (secrets with ESO) → Layer 3 (app with HelmRelease),
-each layer's `flux-kustomization.yaml` with `dependsOn` on the previous. Violations are
-caught by `//cluster/validation:test_crd_layering`.
+**Flux ownership labels can affect operator-managed traffic.** Before moving a custom
+resource between Kustomizations, inspect its generated Services' selectors, workload
+Pod templates, and existing Pod labels. Operators may propagate
+`kustomize.toolkit.fluxcd.io/*` labels into selectors. Changing ownership can disconnect
+running Pods before they roll; an unavailable replica can prolong the outage.
 
-The paths listed in `MIXED_CRD_LAYERING_EXCEPTIONS` are intentional exceptions while
-Flux Kustomizations are being consolidated to reduce needless artifacts and long
-reconcile chains. They still require an explicit transitive dependency on the operator
-that serves the CRDs.
+Confirmed with Opstree Redis operator managing Langfuse Valkey: changing the owner
+from `langfuse-cache` to `langfuse` removed the master Service's endpoints. Orphan
+protection prevents deletion but does not prevent this routing failure. If ownership
+labels participate in selectors, include an explicit label-transition procedure in the
+handoff. Verify ready EndpointSlice backends and a connection from the consuming
+workload afterward; unchanged resource/PVC identities, identical rendered manifests,
+and Flux readiness alone do not prove service continuity. See the
+[Redis operator incident and guarded recovery](docs/lessons_learned/2026_09_20_redis_operator_flux_labels.md),
+including upstream issue #1347 and the partial fix in PR #1382.
+
+**Custom resources must transitively depend on the Kustomization providing their
+CRDs/operator.** An application HelmRelease may share a Kustomization with resources
+from separately installed operators (for example, a CNPG Cluster or ExternalSecret).
+An operator HelmRelease and instances requiring that operator belong in separate
+Kustomizations: admitting the HelmRelease does not install its CRDs synchronously.
+`validate_operator_dependencies` enforces this in
+`//cluster/validation:test_cluster_integration`; regression coverage lives in
+`//cluster/validation:test_crd_layering`.
 
 - Flat example: `k8s/aiquota/` — single flux-kustomization, all manifests at root
-- Grouped example: `k8s/langfuse/{namespace,secrets,db,app}/` — multi-layer with dependsOn
+- Grouped example: `k8s/langfuse/` — one Flux unit composing namespace, secrets, database, cache, storage, and app directories
 
 ### Parked (non-ducktape-owned) application manifests
 
@@ -215,15 +230,19 @@ An app whose source ducktape does **not** own — a third-party image, Helm char
 tool, as opposed to `<project>/deploy/`-pattern code like `props/deploy/`,
 `loom/wayback/deploy/`, `haku/x/dispatch/deploy/` — moves entirely to
 `cluster/k8s/parked/<name>/` when decommissioned or suspended indefinitely. Keep the
-layout it already had (flat, or `namespace/`/`db/`/`app/`/etc.). Every
-`flux-kustomization.yaml` under it carries `spec.suspend: true` and
-`metadata.annotations.ducktape.org/parked: "true"`, and is **never** referenced from
-root `cluster/k8s/kustomization.yaml`. `cluster/validation/test_cluster_integration.py`'s
-`test_parked_manifests_location` enforces both directions: the annotation is required
-under `cluster/k8s/parked/` and forbidden anywhere else.
+layout it already had (flat, or `namespace/`/`db/`/`app/`/etc.). By default, its Flux
+Kustomization remains in the central chart with `spec.suspend: true` and
+`metadata.annotations.ducktape.org/parked: "true"`; the suspended object does not apply
+the parked workload manifests. `cluster/validation/test_cluster_integration.py`'s
+`test_parked_manifests_location` requires paths under `cluster/k8s/parked/` to carry the
+annotation. A parked ducktape-owned project may keep its manifests in its own `deploy/`
+directory instead.
 
-Revive by reversing all three: drop the annotation, drop (or flip) `suspend`, move the
-directory back out of `parked/`, and add its `flux-kustomization.yaml` back to root.
+When explicitly asked to fully unwire a decommissioned app, remove its Kustomization
+constructor and call from the generated central chart; keep the manifests under
+`cluster/k8s/parked/` for manual revival. Revive an unwired app by adding its
+Kustomization back to the central chart, dropping the parked annotation and suspension,
+and moving the directory back out of `parked/`.
 
 Ducktape-owned code is never part of this convention — it keeps manifests under its own
 `<project>/deploy/`, active or suspended, right beside the source. Current inventory and
@@ -231,10 +250,11 @@ per-app reasons: <docs/decisions.md> § "Parked application manifests".
 
 ## Generated manifests
 
-Every `*.k8s.yaml` under `cluster/k8s`, and the `flux-kustomization.yaml` and
-`kustomization.yaml` beside one in `agentplane-{staging,testing}`, `litellm/app`,
+Every `*.k8s.yaml` under `cluster/k8s`, and the `kustomization.yaml` beside generated
+resources in `agentplane-{staging,testing}`, `litellm/app`,
 `agents/ha-mcp/app`, `aiquota`, `artifact-generators`, `clickhouse/schema`,
-`external-creds`, `haku/console{,/db,/migration}` and `monitoring/etcd`, is
+`external-creds`, `haku/console{,/db,/migration}`, `monitoring/etcd`, `descheduler` and
+`agents/public-coder-agent/namespace`, is
 `bb run //cluster/cdk8s:generate_manifests` output
 (`.gitattributes` lists them). Change the generator under `cluster/cdk8s/` and
 regenerate; `//cluster/cdk8s:test_generate_manifests` fails on drift. The layout rules in

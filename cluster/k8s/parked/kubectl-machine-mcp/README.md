@@ -39,7 +39,7 @@ credentials (its ServiceAccount has no RBAC bindings).
 
 ## Dependencies
 
-`flux-kustomization.yaml` depends on `gateway` (HTTPRoute needs
+Its central Flux chart entry depends on `gateway` (HTTPRoute needs
 `cluster-gateway`) and `agent-machine-access-tf` (creates the
 `kubectl-sandbox-client-credentials` Authentik provider this server
 validates tokens against).

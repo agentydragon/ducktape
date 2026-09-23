@@ -12,7 +12,7 @@ from cluster.validation.dependencies import (
     CyclicDependencyError,
     assert_no_cycles,
     check_cross_namespace_references,
-    check_required_dependencies,
+    validate_dependencies,
     validate_operator_dependencies,
 )
 from cluster.validation.flux import DependsOn, FluxKustomizationSpec, SourceRef
@@ -81,40 +81,44 @@ class TestDependencyGraph:
         assert_no_cycles(cluster.graph)  # should not raise
 
 
-class TestRequiredDependencies:
-    """Tests for required dependency checking."""
-
-    def test_detects_missing_dependency(self) -> None:
-        """Detects when authentik is missing cert-manager dependency."""
-        cluster = _cluster(
-            {
-                "authentik": FluxKustomizationSpec(),
-                "cert-manager": FluxKustomizationSpec(),
-                "gateway": FluxKustomizationSpec(depends_on=[DependsOn(name="cert-manager")]),
-            }
+class TestValidateDependencies:
+    # These names exercise the former application-name-based prerequisite rules.
+    @pytest.mark.parametrize("name", ["authentik", "gitea", "matrix", "gateway"])
+    @pytest.mark.parametrize("include_infrastructure", [False, True])
+    def test_workloads_need_no_runtime_readiness_edges(
+        self, tmp_path: Path, name: str, include_infrastructure: bool
+    ) -> None:
+        k8s_dir = tmp_path / "k8s"
+        kustomizations = (
+            {"gateway": FluxKustomizationSpec(), "cert-manager": FluxKustomizationSpec()}
+            if include_infrastructure
+            else {}
         )
-        errors = check_required_dependencies(cluster)
-        assert any("authentik" in e and "cert-manager" in e for e in errors)
+        kustomizations[name] = FluxKustomizationSpec(path="./cluster/k8s/test-app")
+        cluster = _cluster(
+            kustomizations, build_results=[_build_result(k8s_dir, "test-app", [("Deployment", "apps/v1")])]
+        )
+        assert validate_dependencies(cluster, k8s_dir) == []
 
-    def test_accepts_valid_dependencies(self) -> None:
-        """No errors when required dependencies are present."""
+    @pytest.mark.parametrize("depends_on_provider", [False, True])
+    def test_certificate_still_requires_its_provider(self, tmp_path: Path, depends_on_provider: bool) -> None:
+        k8s_dir = tmp_path / "k8s"
         cluster = _cluster(
             {
-                "authentik": FluxKustomizationSpec(
-                    depends_on=[DependsOn(name="gateway"), DependsOn(name="cert-manager")]
+                "test-app": FluxKustomizationSpec(
+                    path="./cluster/k8s/test-app",
+                    depends_on=[DependsOn(name="cert-manager")] if depends_on_provider else [],
                 ),
-                "gateway": FluxKustomizationSpec(depends_on=[DependsOn(name="cert-manager")]),
                 "cert-manager": FluxKustomizationSpec(),
-            }
+            },
+            build_results=[_build_result(k8s_dir, "test-app", [("Certificate", "cert-manager.io/v1")])],
         )
-        errors = check_required_dependencies(cluster)
-        assert not any("authentik" in e for e in errors)
-
-    def test_raises_on_unknown_prerequisite(self) -> None:
-        """Raises ValueError when a rule references a kustomization not in the cluster."""
-        cluster = _cluster({"authentik": FluxKustomizationSpec()})
-        with pytest.raises(ValueError, match="unknown kustomization: cert-manager"):
-            check_required_dependencies(cluster)
+        errors = validate_dependencies(cluster, k8s_dir)
+        assert errors == (
+            []
+            if depends_on_provider
+            else ["test-app uses Certificate resources but doesn't transitively depend on cert-manager"]
+        )
 
 
 class TestValidateOperatorDependencies:

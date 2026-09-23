@@ -244,7 +244,7 @@ export const SAMPLE_MCP_SERVERS: McpServerConnection[] = [
     },
   },
   {
-    server_id: "tana-rw",
+    server_id: "tana",
     backend: {
       kind: "remote_mcp",
       url: "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp",

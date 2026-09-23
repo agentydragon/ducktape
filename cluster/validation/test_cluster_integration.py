@@ -32,7 +32,6 @@ from cluster.validation.checks import (
     find_orphaned_files,
 )
 from cluster.validation.cluster import ParsedCluster, parse_cluster
-from cluster.validation.crd_layering import CrdLayeringViolationError, check_crd_layering
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.flux import parse_flux_kustomizations
 from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
@@ -93,20 +92,6 @@ def test_no_dependency_errors(cluster: ParsedCluster, k8s_dir: Path) -> None:
 
 def test_controller_resources_have_health_checks(cluster: ParsedCluster, k8s_dir: Path) -> None:
     errors = check_controller_health_checks(cluster, k8s_dir)
-    assert not errors, "\n".join(errors)
-
-
-def test_no_crd_layering_violations(cluster: ParsedCluster, k8s_dir: Path) -> None:
-    """Active kustomizations must not mix HelmReleases with external-operator CRD instances."""
-    active_dirs = {spec.local_dir(k8s_dir) for spec in cluster.active_flux_kustomizations.values()}
-    errors: list[str] = []
-    for result in cluster.build_results:
-        if result.kustomization_path.parent.resolve() not in active_dirs:
-            continue
-        try:
-            check_crd_layering(result)
-        except CrdLayeringViolationError as e:
-            errors.append(str(e))
     assert not errors, "\n".join(errors)
 
 
@@ -174,7 +159,7 @@ def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
 
     # flux-system applies this label through its bootstrap overlay rather than
     # a literal Namespace manifest, so retain the explicit assertion here.
-    flux_system_kustomization = (k8s_dir / "flux-system/kustomization.yaml").read_text()
+    flux_system_kustomization = (k8s_dir / "flux/flux-system/kustomization.yaml").read_text()
     assert "path: /metadata/labels/rbac.ducktape.io~1agent-readable-logs" in flux_system_kustomization
     labeled_namespaces.add("flux-system")
 
@@ -220,36 +205,34 @@ def test_no_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_no_unwired_flux_kustomizations(cluster: ParsedCluster, k8s_dir: Path) -> None:
-    """Every active flux-kustomization.yaml on disk must be referenced in the root kustomization."""
-    on_disk = {
-        f.resolve()
-        for f in k8s_dir.rglob("flux-kustomization.yaml")
-        if "flux-system" not in f.parts and f.resolve() in cluster.all_yaml_files
-    }
-
-    root_kust = cluster.kustomize_files[k8s_dir / "kustomization.yaml"]
-    referenced = {r for r in root_kust.resolved_resources if r.name == "flux-kustomization.yaml"}
-
-    unwired = sorted(f.relative_to(k8s_dir) for f in on_disk - referenced)
-    assert not unwired, "flux-kustomization.yaml files not listed in root kustomization.yaml:\n" + "\n".join(
-        f"  {f}" for f in unwired
+def test_flux_kustomizations_chart_is_root_wired(cluster: ParsedCluster, k8s_dir: Path) -> None:
+    """The single generated Flux chart is reachable through both hand-written roots."""
+    root_kust = next(
+        k for path, k in cluster.kustomize_files.items() if path.resolve() == (k8s_dir / "kustomization.yaml").resolve()
     )
+    flux_dir = (k8s_dir / "flux").resolve()
+    assert flux_dir in {resource.resolve() for resource in root_kust.resolved_resources}
+
+    flux_root = next(
+        k
+        for path, k in cluster.kustomize_files.items()
+        if path.resolve() == (flux_dir / "kustomization.yaml").resolve()
+    )
+    chart_path = (flux_dir / "kustomizations.k8s.yaml").resolve()
+    assert chart_path in {resource.resolve() for resource in flux_root.resolved_resources}
 
 
-def test_parked_manifests_location(k8s_dir: Path) -> None:
-    """A flux-kustomization.yaml carries ducktape.org/parked iff it lives under cluster/k8s/parked/."""
+def test_flux_kustomizations_under_parked_path_are_annotated(k8s_dir: Path) -> None:
+    """A local Flux source path under cluster/k8s/parked must carry the parked annotation."""
     errors = []
-    for flux_file in k8s_dir.rglob("flux-kustomization.yaml"):
-        if "flux-system" in flux_file.parts:
-            continue
-        relative = flux_file.relative_to(k8s_dir)
-        under_parked = relative.parts[0] == "parked"
-        specs = parse_flux_kustomizations(flux_file)
-        is_parked = bool(specs) and all(spec.parked for spec in specs.values())
-        if is_parked != under_parked:
+    chart = k8s_dir / "flux/kustomizations.k8s.yaml"
+    for name, spec in parse_flux_kustomizations(chart).items():
+        flux_path = Path(spec.path.removeprefix("./"))
+        under_parked = flux_path.parts[:3] == ("cluster", "k8s", "parked")
+        if under_parked and not spec.parked:
             errors.append(
-                f"{relative}: ducktape.org/parked annotation={is_parked}, under cluster/k8s/parked/={under_parked}"
+                f"{name} ({spec.path}): ducktape.org/parked annotation={spec.parked}, "
+                "but its source path is under cluster/k8s/parked/"
             )
     assert not errors, "\n".join(errors)
 

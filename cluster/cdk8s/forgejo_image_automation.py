@@ -28,15 +28,17 @@ from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
     ImageRepositorySpec,
     ImageRepositorySpecSecretRef,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDependsOn,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.flux import (
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
 
@@ -75,32 +77,29 @@ IMAGES = (
     "authentik-jwt-rotation",
     "aw-server",
     "cli-proxy-api",
-    "codex-pod",
     "cpap-gateway",
     "cpap-sync",
     "forgejo-token-rotation",
     "github-api-proxy",
     "github-graphql-rate-exporter",
+    "google-mcp",
     "grocy-mcp-oidc-server",
     "grocy-user-perms-provisioner",
     "ha-mcp-token-provisioner",
     "haku-console",
     "haku-console-static",
     "haku-kube-api-proxy",
-    "haku-managed-agent",
     "haku-openclaw-spike",
     # The trailing `-image` is in the repository path too, unlike every other entry.
     "haku-sandbox-image",
     "homeassistant-provisioner",
     "iron-proxy",
     "loki-read-proxy",
-    "manifold-mcp-server",
     "matrix-user-provisioner",
     "mcp-oauth-facade",
     "osm-mcp",
     "plaid-mcp-server",
     "plaid-mcp-sync",
-    "postscanmail-mcp-server",
     "props-backend",
     "props-llm-proxy",
     "props-registry-proxy",
@@ -157,31 +156,30 @@ def write_manifests(root: Path) -> None:
     app = App(outdir=str(out_dir))
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     ForgejoImageAutomation(chart, "images")
-    add_fleet_rules(chart, provided_secrets={}, providers=frozenset())
+    add_fleet_rules(chart)
     app.synth()
 
-    write_yaml(
-        out_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            NAME,
-            description=(
-                "Image automation for images hosted in our Forgejo registry "
-                "(authenticated scans via the reflected ducktape-ci credential)."
-            ),
-            spec=KustomizationSpec(
-                interval="10m",
-                path=f"./{OUTPUT_DIR}",
-                prune=True,
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=NAME, namespace=FLUX_NAMESPACE
-                ),
-                depends_on=[
-                    # The source credential, reflected into flux-system.
-                    KustomizationSpecDependsOn(name="forgejo-images", namespace=FLUX_NAMESPACE),
-                    # The all-images ImageUpdateAutomation lives there.
-                    KustomizationSpecDependsOn(name="flux-image-automation-ghcr", namespace=FLUX_NAMESPACE),
-                ],
-            ),
+    write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))
+
+
+def flux_image_automation_forgejo(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    forgejo_images: Kustomization,
+    flux_image_automation_ghcr: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        spec=KustomizationSpec(
+            depends_on=flux_kustomization_depends_on_many(forgejo_images, flux_image_automation_ghcr),
+            interval="10m",
+            path=artifact_path(artifact),
+            prune=True,
+            source_ref=artifact_source_ref(artifact),
+        ),
+        description=(
+            "Image automation for images hosted in our Forgejo registry "
+            "(authenticated scans via the reflected ducktape-ci credential)."
         ),
     )
-    write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))

@@ -11,9 +11,10 @@ cluster/k8s/agents/ha-mcp/app/image-pins/kustomization.yaml) overrides them at
 `kustomize build` time via Flux's image-automation marker. The ha-mcp container's own
 image is pinned by digest directly and isn't Flux-managed.
 
-bearer.sops.yaml (the facade's static bearer token) stays hand-written alongside this
-generated output -- cdk8s has no key material to synthesize ciphertext with. See
-cluster/docs/cdk8s.md § SOPS secrets in a converted directory.
+The facade's static bearer token is minted by ESO's Password generator (same pattern
+as ssh_mcp/backend.py's `_bearer_credentials`), not hand-written SOPS -- ducktape mints
+this value itself, so there is no ciphertext to keep in sync with the cluster's age
+recipients.
 """
 
 from __future__ import annotations
@@ -54,26 +55,33 @@ from cdk8s_plus_34 import (
     Volume,
 )
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
-    KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
+from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecret,
+    ExternalSecretSpec,
+    ExternalSecretSpecDataFrom,
+    ExternalSecretSpecDataFromSourceRef,
+    ExternalSecretSpecDataFromSourceRefGeneratorRef,
+    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
+    ExternalSecretSpecRefreshPolicy,
+    ExternalSecretSpecTarget,
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetTemplate,
+    ExternalSecretSpecTargetTemplateMetadata,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec, KustomizationSpecHealthChecks
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecSelector,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
@@ -84,6 +92,8 @@ _NAMESPACE = "ha-mcp"
 OUTPUT_DIR = "cluster/k8s/agents/ha-mcp/app"
 _HOME_ASSISTANT_NAMESPACE = "home-assistant"  # where the token-provisioner's SA/Job/CronJob run
 _HOME_ASSISTANT_TOKEN_SECRET_NAME = "ha-mcp-home-assistant-token"
+_BEARER_SECRET_NAME = "ha-mcp-bearer"
+_BEARER_SECRET_KEY = "bearer-token"
 _PLACEHOLDER_TAG = "unset"
 
 _PROVISIONER_NAME = "ha-mcp-token-provisioner"
@@ -98,6 +108,53 @@ _APP_FACADE_PORT = 8765
 _APP_METRICS_PORT = 9090
 _APP_LABELS = {"app.kubernetes.io/name": _APP_NAME}
 _APP_DATA_DIR = "/data"
+
+
+def _bearer_credentials(scope: Construct) -> None:
+    """The facade's static bearer token: ducktape mints it itself (same pattern as
+    ssh_mcp/backend.py's `_bearer_credentials`), so ESO's Password generator creates it
+    directly -- no hand-written SOPS ciphertext to keep in sync with cluster recipients."""
+    Password(
+        scope,
+        "bearer-password-generator",
+        metadata=metadata(_BEARER_SECRET_NAME, _NAMESPACE),
+        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
+    )
+    ExternalSecret(
+        scope,
+        "bearer-external-secret",
+        metadata=metadata(_BEARER_SECRET_NAME, _NAMESPACE),
+        spec=ExternalSecretSpec(
+            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+            target=ExternalSecretSpecTarget(
+                name=_BEARER_SECRET_NAME,
+                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+                template=ExternalSecretSpecTargetTemplate(
+                    type="Opaque",
+                    metadata=ExternalSecretSpecTargetTemplateMetadata(
+                        annotations={
+                            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
+                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "^haku-console$,^agentplane-staging$",
+                            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
+                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "^haku-console$,^agentplane-staging$",
+                        }
+                    ),
+                    data={_BEARER_SECRET_KEY: "{{ .password }}"},
+                ),
+            ),
+            data_from=[
+                ExternalSecretSpecDataFrom(
+                    source_ref=ExternalSecretSpecDataFromSourceRef(
+                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
+                            api_version="generators.external-secrets.io/v1alpha1",
+                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
+                            name=_BEARER_SECRET_NAME,
+                        )
+                    )
+                )
+            ],
+        ),
+    )
 
 
 class HaMcpCredentialsProvisioner(Construct):
@@ -188,7 +245,7 @@ class HaMcpCredentialsProvisioner(Construct):
                     # Deliberately NOT applied to change-driven provisioners (the
                     # readonly-role GRANT Jobs): for those the TTL would convert a
                     # run-on-change script into a run-on-schedule one. See
-                    # study-casino/db/readonly-role-provisioner-job.yaml.
+                    # study-casino/readonly-role-provisioner-job.yaml.
                     "kustomize.toolkit.fluxcd.io/force": "enabled",
                 },
             ),
@@ -232,6 +289,7 @@ class HaMcpApp(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=_NAMESPACE)
+        _bearer_credentials(self)
         config_map = self._add_config_map()
         deployment = self._add_deployment(config_map)
         self._add_service(deployment)
@@ -345,7 +403,8 @@ class HaMcpApp(Construct):
                 # haku-console by the emberstack reflector) -- one source of truth, no drift.
                 "MCP_FACADE_CLIENT_AUTH__STATIC_BEARER": EnvValue.from_secret_value(
                     SecretValue(
-                        secret=Secret.from_secret_name(self, "ha-mcp-bearer-ref", "ha-mcp-bearer"), key="bearer-token"
+                        secret=Secret.from_secret_name(self, "ha-mcp-bearer-ref", _BEARER_SECRET_NAME),
+                        key=_BEARER_SECRET_KEY,
                     )
                 )
             },
@@ -387,15 +446,19 @@ class HaMcpApp(Construct):
                 _NAMESPACE,
                 annotations={
                     "description": (
-                        "Default-deny ingress for HA-MCP. Only haku-console reaches the facade port; the "
-                        "upstream server port is reachable only over pod-local loopback. No Gateway ingress "
-                        "-- this MCP is cluster-internal since the move to a static bearer."
+                        "Default-deny ingress for HA-MCP. Only haku-console and agentplane-staging reach the "
+                        "facade port; the upstream server port is reachable only over pod-local loopback. No "
+                        "Gateway ingress -- this MCP is cluster-internal since the move to a static bearer."
                     )
                 },
             ),
             selector=_APP_LABELS,
             ingress=[
-                cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "haku-console"}, ports=[_APP_FACADE_PORT]),
+                cilium.ingress_from(
+                    {"k8s:io.kubernetes.pod.namespace": "haku-console"},
+                    {"k8s:io.kubernetes.pod.namespace": "agentplane-staging"},
+                    ports=[_APP_FACADE_PORT],
+                ),
                 cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_APP_METRICS_PORT]),
             ],
         )
@@ -430,70 +493,52 @@ class HaMcp(Construct):
         HaMcpApp(self, "app")
 
 
-def write_manifests(root: Path) -> None:
+def ha_mcp(
+    flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    root: Path,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    home_assistant: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
     name = "ha-mcp"
-    depends_on = (
-        "external-secrets-config",
-        "forgejo-images",
-        "home-assistant",
-        "monitoring-crds",  # the ServiceMonitor CRD
-    )
-
     app_dir = root / OUTPUT_DIR
     app_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(app_dir))
     chart = Chart(app, name, disable_resource_name_hashes=True)
     HaMcp(chart, "ha-mcp")
-    add_fleet_rules(
-        chart,
-        provided_secrets={
-            "home-assistant-break-glass": "home-assistant",
-            # bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted; without a
-            # decryption block Flux applies the ENC[...] ciphertext literally.
-            "ha-mcp-bearer": "bearer.sops.yaml",
-            # Created imperatively by this directory's own token-provisioner Job, not by
-            # any static manifest in the chart -- this directory is always a valid
-            # provider of its own such Secrets.
-            "ha-mcp-home-assistant-token": name,
-        },
-        providers=frozenset({name, "bearer.sops.yaml", *depends_on}),
-    )
+    add_fleet_rules(chart)
     app.synth()
 
-    write_yaml(
-        app_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            name,
-            spec=KustomizationSpec(
-                retry_interval="1m",
-                interval="10m",
-                timeout="5m",
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
+    kustomization = flux_kustomization(
+        flux_chart,
+        name,
+        spec=KustomizationSpec(
+            retry_interval="1m",
+            interval="10m",
+            timeout="5m",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
+            prune=True,
+            wait=True,
+            health_checks=[
+                KustomizationSpecHealthChecks(
+                    api_version="batch/v1", kind="Job", name="ha-mcp-token-provisioner", namespace="home-assistant"
                 ),
-                path=f"./{OUTPUT_DIR}",
-                prune=True,
-                wait=True,
-                health_checks=[
-                    KustomizationSpecHealthChecks(
-                        api_version="batch/v1", kind="Job", name="ha-mcp-token-provisioner", namespace="home-assistant"
-                    ),
-                    KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=name, namespace=name),
-                ],
-                # bearer.sops.yaml (hand-written, stays alongside this generated output --
-                # see cluster/docs/cdk8s.md) is SOPS-encrypted; without this Flux applies the
-                # ENC[...] ciphertext literally and the facade rejects every call from haku-console.
-                decryption=KustomizationSpecDecryption(
-                    provider=KustomizationSpecDecryptionProvider.SOPS,
-                    secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-                ),
-                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in depends_on],
+                KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=name, namespace=name),
+            ],
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                home_assistant,
+                # the ServiceMonitor CRD
+                monitoring_crds,
             ),
         ),
     )
     write_yaml(
         app_dir / "kustomization.yaml",
-        # bearer.sops.yaml stays hand-written; this generated file just lists it as a plain
-        # sibling resource -- cdk8s never touches its bytes. See cluster/docs/cdk8s.md.
-        kustomize_kustomization(resources=[f"{name}.k8s.yaml", "bearer.sops.yaml"], components=["./image-pins"]),
+        kustomize_kustomization(resources=[f"{name}.k8s.yaml"], components=["./image-pins"]),
     )
+    return kustomization

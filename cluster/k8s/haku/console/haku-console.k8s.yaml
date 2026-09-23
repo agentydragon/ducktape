@@ -300,6 +300,28 @@ metadata:
   namespace: haku-console
 automountServiceAccountToken: false
 ---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: ESO copy of the canonical Tana PAT from external-creds.
+  name: tana-agentydragon-gmail-com-account-pat
+  namespace: haku-console
+spec:
+  data:
+    - remoteRef:
+        key: tana-agentydragon-gmail-com-account-pat
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: tana-agentydragon-gmail-com-account-pat
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -558,7 +580,7 @@ data:
       - id: tana_safe_tools
         type: exact_tools
         tools:
-          tana-rw:
+          tana:
             - get_or_create_calendar_node
             - search_nodes
             - read_node
@@ -567,12 +589,6 @@ data:
             - list_tags
             - list_workspaces
             - get_tag_schema
-      - id: postscanmail_reads
-        type: exact_tools
-        tools:
-          postscanmail-mcp:
-            - list_items
-            - list_automation_rules
       - id: home_assistant_reads
         type: exact_tools
         tools:
@@ -637,7 +653,6 @@ data:
           - github_reads
           - github_identity_reads
           - tana_safe_tools
-          - postscanmail_reads
           - home_assistant_reads
           - home_assistant_desk_light_control
           - haku_sandbox_control
@@ -749,8 +764,8 @@ data:
               client_registration:
                 kind: dynamic
                 client_name: Haku Console
-        tana_rw:
-          id: tana-rw
+        tana:
+          id: tana
           backend:
             kind: remote_mcp
             url: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
@@ -768,16 +783,6 @@ data:
             kind: in_process
             credential:
               kind: none
-        postscanmail_mcp:
-          id: postscanmail-mcp
-          backend:
-            kind: remote_mcp
-            url: https://postscanmail-mcp.allegedly.works/mcp
-            auth:
-              kind: remote_server_oauth
-              client_registration:
-                kind: dynamic
-                client_name: Haku Console
         ssh:
           id: ssh
           backend:
@@ -902,7 +907,7 @@ spec:
               value: "60000"
             - name: HAKU_CONSOLE__MCP_OPERATOR_OAUTH_TOKEN_TIMEOUT_SECONDS
               value: "30"
-            - name: HAKU_CONSOLE__MCP__SERVERS__TANA_RW__BACKEND__AUTH__TOKEN
+            - name: HAKU_CONSOLE__MCP__SERVERS__TANA__BACKEND__AUTH__TOKEN
               valueFrom:
                 secretKeyRef:
                   key: token

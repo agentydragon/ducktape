@@ -1,55 +1,19 @@
-/**
- * OIDC authentication for the Airlock credential-broker SPA.
- *
- * Uses Authorization Code + PKCE flow via oidc-client-ts.
- * OIDC configuration (authority, client_id) is fetched from the backend's
- * /auth/config endpoint so nothing is hardcoded in the JS bundle.
- */
-import { UserManager, WebStorageStateStore } from "oidc-client-ts";
+/** Same-origin session authentication for the Airlock browser UI. */
 
-let _userManager: UserManager | null = null;
+let _authenticationRedirectStarted = false;
 
-async function getUserManager(): Promise<UserManager> {
-  if (_userManager) return _userManager;
-
-  const resp = await fetch("/auth/config");
-  if (!resp.ok) throw new Error(`Failed to fetch /auth/config: ${resp.status}`);
-  const config: {
-    authority: string;
-    client_id: string;
-    redirect_uri: string;
-  } = await resp.json();
-
-  _userManager = new UserManager({
-    authority: config.authority,
-    client_id: config.client_id,
-    redirect_uri: config.redirect_uri,
-    response_type: "code",
-    scope: "openid profile email",
-    userStore: new WebStorageStateStore({ store: sessionStorage }),
-    automaticSilentRenew: false,
-  });
-  return _userManager;
+export function isAuthenticationFailurePage(): boolean {
+  return new URLSearchParams(window.location.search).get("auth") === "failed";
 }
 
-/** Get a valid access token, redirecting to login if needed. */
-export async function getAccessToken(): Promise<string> {
-  const mgr = await getUserManager();
-  const user = await mgr.getUser();
-  if (user && !user.expired) return user.access_token;
-  await mgr.signinRedirect();
-  throw new Error("Redirecting to login");
+/** Start at most one top-level login navigation for concurrent API 401s. */
+export function redirectToLogin(): void {
+  if (_authenticationRedirectStarted || isAuthenticationFailurePage()) return;
+  _authenticationRedirectStarted = true;
+  window.location.assign("/auth/login");
 }
 
-/** Complete the OIDC callback after Authentik redirects back. */
-export async function handleAuthCallback(): Promise<void> {
-  const mgr = await getUserManager();
-  await mgr.signinRedirectCallback();
-  window.history.replaceState({}, "", "/");
-}
-
-/** Check if the current URL is an OIDC callback. */
-export function isAuthCallback(): boolean {
-  const params = new URLSearchParams(window.location.search);
-  return params.has("code") && params.has("state");
+/** Let UI error boundaries stay quiet while the browser is navigating to Authentik. */
+export function isAuthenticationRedirectStarted(): boolean {
+  return _authenticationRedirectStarted;
 }

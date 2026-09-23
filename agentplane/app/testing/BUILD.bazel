@@ -1,0 +1,93 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane/app:__pkg__"],
+)
+
+py_library(
+    name = "kubernetes",
+    srcs = ["kubernetes.py"],
+    deps = [
+        "//agentplane/app:egress",
+        "//agentplane/app:inventory",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "egress_proxy",
+    srcs = ["egress_proxy.py"],
+    deps = ["@pypi//httpx"],
+)
+
+py_library(
+    name = "replication_process",
+    srcs = ["replication_process.py"],
+    deps = [
+        ":kubernetes",
+        ":replication_source",
+        "//agentplane/app:action_policy",
+        "//agentplane/app:api",
+        "//agentplane/app:bridge",
+        "//agentplane/app:decisions",
+        "//agentplane/app:egress",
+        "//agentplane/app:electric",
+        "//agentplane/app:identity",
+        "//agentplane/app:inventory",
+        "//agentplane/app:live",
+        "//agentplane/app:presets",
+        "//agentplane/app/thread:store",
+        "//agentplane/protocol:event_log_pb2",
+        "@pypi//asyncpg",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+        "@pypi//starlette",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "replication_source",
+    srcs = ["replication_source.py"],
+    deps = [
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "electric_service",
+    srcs = ["electric_service.py"],
+    deps = [
+        "//agentplane/app:database_migrate",
+        "//third_party/containers:electric_1_8_1",
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_library(
+    name = "http2_proxy",
+    srcs = ["http2_proxy.py"],
+    deps = [
+        "//third_party/containers:nginx_unprivileged",
+        "//util:net",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "@pypi//cryptography",
+        "@pypi//h2",
+        "@pypi//httpx",
+    ],
+)

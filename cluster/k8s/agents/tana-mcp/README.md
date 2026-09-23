@@ -54,8 +54,10 @@ surface.
   the resulting `tana://auth?token=...&providerId=tanaFirebaseToken` URL to
   the desktop container's localhost reseed receiver, which `exec`s Tana
   so Electron's second-instance handler routes the URL into the renderer.
+  Its non-secret settings come from the `tana-firebase-resigner-config`
+  ConfigMap; its `PAT` comes from the existing PAT Secret.
   Readiness is **not** just
-  `/health`: when `TANA_PAT` is set (from the PAT secret below) the sidecar also
+  `/health`: when `PAT` is set (from the PAT secret below) the sidecar also
   POSTs `/mcp initialize` with the PAT and treats a `401` as unhealthy. This
   catches the case where `/health` reports the renderer loaded but its
   `validateToken` is refusing the PAT (the renderer drifted off the matching
@@ -211,7 +213,7 @@ External clients that need MCP OAuth/DCR should use the separate public facade:
 This split is intentional:
 
 - internal `tana-mcp` stays simple and bearer-authenticated
-- `haku-console` is an internal client: it holds a namespace-reflected copy of the PAT and proxies
+- `haku-console` is an internal client: it holds an ESO-delivered copy of the PAT and proxies
   Tana tools to the inner Haku agent without disclosing the credential
 - public `tana-mcp-facade` handles Authentik OAuth and caller allowlisting
 - the Tana PAT never leaves Kubernetes

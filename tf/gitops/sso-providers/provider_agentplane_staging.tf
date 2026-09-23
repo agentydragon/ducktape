@@ -1,6 +1,6 @@
 # Agentplane staging — OIDC login for the integration app (agentplane-staging.allegedly.works)
 #
-# The app is the relying party (authlib + a signed session cookie; see x/agentplane/app/oidc.py).
+# The app is the relying party (authlib + a signed session cookie; see agentplane/app/oidc.py).
 # The application slug is the per-provider issuer path, which the app pins the id token's `iss`
 # against, so `agentplane` cannot be renamed without changing the app's configured issuer.
 
@@ -49,13 +49,6 @@ resource "authentik_policy_binding" "agentplane_staging_access" {
   order  = 0
 }
 
-# Signs the opaque server-side session handle. Generated here so it lives with the
-# client credentials and rotates together; a per-pod key would end every session on a restart.
-resource "random_password" "agentplane_staging_session_secret" {
-  length  = 64
-  special = false
-}
-
 resource "kubernetes_secret" "agentplane_staging_oidc" {
   metadata {
     name      = "agentplane-oidc"
@@ -70,8 +63,7 @@ resource "kubernetes_secret" "agentplane_staging_oidc" {
   }
 
   data = {
-    client-id      = authentik_provider_oauth2.agentplane_staging.client_id
-    client-secret  = authentik_provider_oauth2.agentplane_staging.client_secret
-    session-secret = random_password.agentplane_staging_session_secret.result
+    client-id     = authentik_provider_oauth2.agentplane_staging.client_id
+    client-secret = authentik_provider_oauth2.agentplane_staging.client_secret
   }
 }

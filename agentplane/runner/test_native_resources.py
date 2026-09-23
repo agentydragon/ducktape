@@ -1,0 +1,158 @@
+"""Measure pinned native harness residency and resume separately from runner journal bounds."""
+
+import json
+import os
+import stat
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
+
+import pytest
+import pytest_bazel
+
+from agentplane.protocol import event_pb2
+from agentplane.runner import protocol_pb2
+from agentplane.runner.client import RunnerClient
+from agentplane.runner.config import RunnerConfig
+from agentplane.runner.service import serve
+from agentplane.runner.testing import events
+from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from util.testing.undeclared_outputs import undeclared_outputs_dir
+
+# gazelle:include_dep @pypi//protobuf
+
+
+@dataclass(frozen=True)
+class NativeFiles:
+    logical_bytes: int
+    allocated_bytes: int
+    files: int
+
+
+@dataclass(frozen=True)
+class NativeSample:
+    rss_kib: int
+    peak_rss_kib: int
+    cpu_ticks: int
+    clock_ticks_per_second: int
+    persistence_bytes: int
+    persistence_files: int
+    persistence_allocated_bytes: int
+    symlinks_excluded: int
+    vanished_during_scan: int
+    persistence_by_directory: dict[str, NativeFiles]
+
+
+def sample_native(pid: int, directory: Path) -> NativeSample:
+    # Kernel process accounting, not the Python test/runner process. Never collect argv,
+    # environment, file contents, or credentials in the profile artifacts.
+    status = dict(line.split(":", 1) for line in Path(f"/proc/{pid}/status").read_text().splitlines())
+    process_stat = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+    groups: dict[str, NativeFiles] = {}
+    symlinks = vanished = 0
+    for path in directory.rglob("*"):
+        try:
+            metadata = path.lstat()
+        except FileNotFoundError:
+            # Native temporary files can disappear during this live directory sample.
+            vanished += 1
+            continue
+        if stat.S_ISLNK(metadata.st_mode):
+            symlinks += 1
+        elif stat.S_ISREG(metadata.st_mode):
+            group = path.relative_to(directory).parts[0]
+            before = groups.get(group, NativeFiles(0, 0, 0))
+            groups[group] = NativeFiles(
+                before.logical_bytes + metadata.st_size,
+                before.allocated_bytes + metadata.st_blocks * 512,
+                before.files + 1,
+            )
+    return NativeSample(
+        rss_kib=int(status["VmRSS"].split()[0]),
+        peak_rss_kib=int(status["VmHWM"].split()[0]),
+        cpu_ticks=int(process_stat[11]) + int(process_stat[12]),
+        clock_ticks_per_second=os.sysconf("SC_CLK_TCK"),
+        persistence_bytes=sum(group.logical_bytes for group in groups.values()),
+        persistence_files=sum(group.files for group in groups.values()),
+        persistence_allocated_bytes=sum(group.allocated_bytes for group in groups.values()),
+        symlinks_excluded=symlinks,
+        vanished_during_scan=vanished,
+        persistence_by_directory=groups,
+    )
+
+
+@asynccontextmanager
+async def running_client(config: RunnerConfig) -> AsyncIterator[RunnerClient]:
+    server, runner, port = await serve(config)
+    client = RunnerClient(f"127.0.0.1:{port}")
+    try:
+        yield client
+    finally:
+        await client.close()
+        await runner.stop()
+        await server.stop(0)
+
+
+@pytest.mark.parametrize("history_size", [1, 10, 100])
+async def test_native_history_and_resume_resources(
+    harness: protocol_pb2.Harness,
+    config: RunnerConfig,
+    model: ScriptedModel[Any],
+    spec: protocol_pb2.SessionSpec,
+    history_size: int,
+) -> None:
+    """The loopback upstream receives the real native request, including resumed history.
+
+    This deliberately records measurements without asserting constant native memory or
+    context. Agentplane's bounded journal does not control the native harness's context.
+    """
+    name = "claude" if harness == protocol_pb2.HARNESS_CLAUDE else "codex"
+    session_id = "native-resource-profile"
+    directory = config.state_dir / "sessions" / session_id / name
+    inputs = [f"User marker {index}: " + "u" * 2048 for index in range(history_size + 1)]
+    outputs = [f"Assistant marker {index}: " + "a" * 2048 for index in range(history_size + 1)]
+    artifact = undeclared_outputs_dir() / f"native-{name}-{history_size}-resources.json"
+    samples: dict[str, Any] = {"harness": name, "completed_turns": history_size, "text_bytes_per_marker": 2048}
+    try:
+        async with running_client(config) as client, await client.attach(session_id, spec=spec) as attachment:
+            started = await attachment.until(events.is_kind("harness_started"))
+            for index in range(history_size):
+                await attachment.send(f"input-{index}", inputs[index])
+                request = await model.request()
+                assert request.user_texts == inputs[: index + 1]
+                assert request.assistant_texts == outputs[:index]
+                await model.reply(request, Text(outputs[index]))
+                done = await attachment.until(events.turn_completed)
+                assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+            samples["before_restart"] = asdict(sample_native(started.event.harness_started.pid, directory))
+            cursor = attachment.cursor
+
+        # New runner and new native process, using their durable directories. Do not replay
+        # the runner archive into the test client or substitute synthetic native resume files.
+        async with (
+            running_client(config) as client,
+            await client.attach(session_id, spec=spec, after_cursor=cursor) as attachment,
+        ):
+            started = await attachment.until(events.is_kind("harness_started"))
+            assert started.event.harness_started.resumed
+            await attachment.send("resumed-input", inputs[-1])
+            request = await model.request()
+            assert request.user_texts == inputs
+            assert request.assistant_texts == outputs[:-1]
+            samples["resumed_request"] = asdict(sample_native(started.event.harness_started.pid, directory))
+            samples["resumed_user_messages"] = len(request.user_texts)
+            samples["resumed_assistant_messages"] = len(request.assistant_texts)
+            samples["resumed_conversation_utf8_bytes"] = sum(
+                len(text.encode("utf-8")) for text in [*request.user_texts, *request.assistant_texts]
+            )
+            await model.reply(request, Text(outputs[-1]))
+            done = await attachment.until(events.turn_completed)
+            assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    finally:
+        artifact.write_text(json.dumps(samples, indent=2) + "\n")
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

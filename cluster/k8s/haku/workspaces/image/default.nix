@@ -29,7 +29,7 @@
 # once, in <../../../../../debug/nixos_bazel_bash/README.md> "Issue 4". Don't restate them
 # here.
 #
-# A full-NixOS container (like nixosConfigurations.nix-rbe-worker) would get envfs/nix-ld for
+# A full-NixOS container (like nixosConfigurations.buildbuddy-remote-runner) would get envfs/nix-ld for
 # free, but cannot boot here per
 # <../../../../../haku/runtime/managed_agent/self_hosted/README.md>: systemd PID 1 in an
 # unprivileged container can't mount the API filesystems. Hence static `/usr/bin/env` and

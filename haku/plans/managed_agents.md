@@ -112,9 +112,9 @@ headless-MCP-auth mechanism the PLAN's _MCP auth provisioning_ spike was for:
 Candidate servers to wire (each already has or could expose a gated public route):
 `haku-console` (already wired this way for Tana + Grocy: a `static_bearer` bound to
 the console's aggregated `/mcp`, superseding a per-source `tana-mcp-ro`-style
-facade), PostScanMail, the Google Workspace MCP, Manifold — the
-`cluster/k8s/agents/*-mcp` fleet, optionally fronted by the `mcp_infra` compositor
-as a single endpoint.
+facade), the Google Workspace MCP, and the
+`cluster/k8s/agents/*-mcp` fleet, optionally fronted by the `mcp_infra` compositor as
+a single endpoint.
 
 ### Two caveats that shape the source split
 
@@ -130,7 +130,7 @@ as a single endpoint.
 2. **`environment_variable` vault credentials are _not_ supported in self-hosted**
    (egress is yours, so there's nowhere for Anthropic to substitute the secret).
    That's fine: the secrets Haku's **bash** tools need — the `haku` kubeconfig/JWT,
-   the Plaid `plaid-mcp-db-readonly` DSN, the `google-access-token`, the
+   the Plaid `plaid-mcp-db-readonly` DSN, the
    `haku-forgejo-git` creds — stay materialized **in-container from
    `haku-sandbox` k8s secrets at bootstrap**, exactly as `bootstrap.sh` does now.
 

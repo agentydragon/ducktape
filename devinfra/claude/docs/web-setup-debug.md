@@ -62,7 +62,7 @@ cache. Do not set `max-jobs=0` for this environment.
 
 ### Non-Deterministic Hook Release Pins
 
-If `claude-hooks` releases or `nix/artifact-pins.json` churn without code
+If `claude-statusline` releases or `nix/artifact-pins.json` churn without code
 changes, inspect the wheel payload for stamped files. A previous issue was
 caused by `devinfra/_build_status.txt` entering the wheel dependency tree and
 changing every build. The fix was to keep build stamping out of the runtime
@@ -77,8 +77,10 @@ fields silently no-op and expected env vars are missing.
 **Root cause**: `nix profile install "${FLAKE}#devtools"` is add-if-missing,
 not install-or-upgrade. Firecracker microVMs can persist the rootfs across
 sessions, and `web_setup.sh` re-runs each session. Without a forced remove or
-upgrade, the installed `claude-hooks` wheel can stay at the first-boot store
-path while the repo checkout and `nix/artifact-pins.json` move forward.
+upgrade, the installed `.#devtools` closure can stay at its first-boot store
+path while the repo checkout and artifact pins move forward. That closure
+contains the Rust `claude-hook` dispatcher and Python `claude-statusline`;
+their CI artifact pin IDs are `claude-hook` and `claude-statusline`, respectively.
 
 **Current fix**: `web_setup.sh` runs `nix profile remove devtools || true`
 before `nix profile install`, forcing re-evaluation of `.#devtools` against the
@@ -91,10 +93,10 @@ Diagnose future occurrences with:
 # Check daemon error log for profile/schema/template crashes.
 tail -100 /tmp/claude-hd/*/daemon.err.log 2>/dev/null
 
-# Inspect the pin URL.
-jq -r '.pins["claude-hooks"].url' nix/artifact-pins.json
+# Inspect the CI artifact pin URLs (IDs match the flake package names).
+jq -r '.pins["claude-hook"].url, .pins["claude-statusline"].url' nix/artifact-pins.json
 
-# Confirm the installed binary resolves from the Nix profile.
+# Confirm the installed Rust dispatcher resolves from the Nix profile.
 readlink -f /nix/var/nix/profiles/default/bin/claude-hook
 claude-hook --version
 ```
@@ -103,9 +105,9 @@ claude-hook --version
 
 - `nix profile install` is "add if missing"; pair it with remove or upgrade on
   persistent rootfs when the selected flake output must track the current repo.
-- Schema-level changes in `claude-hooks` profiles or templates can break live
-  sessions until the installed wheel catches up.
-- Pydantic's default `extra="ignore"` can silently drop new config fields.
-  Consider `extra="forbid"` where schema drift should crash loudly.
+- Schema-level changes to the Rust hook's profile or template handling can
+  break live sessions until the installed `.#devtools` closure catches up.
+- Rust `serde` ignores unknown profile fields by default. Promote a field into
+  `ProfileConfig` with a test when the daemon starts consuming it.
 - Put actionable setup output near the end of the script log; the Claude Code
   UI may show only the tail.

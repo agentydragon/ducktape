@@ -80,7 +80,7 @@ py_binary(
 #     entry_points = {
 #         "console_scripts": ["git-commit-ai = git_commit_ai.cli:main"],
 #     },
-#     python_requires = ">=3.13",
+#     python_requires = ">=3.14",
 #     requires = [
 #         "aiodocker",
 #         "anyio",

@@ -11,13 +11,15 @@
 #   6. user-level ~/.bazelrc with a shared local --disk_cache (web sessions only)
 #
 # Install modes (DUCKTAPE_WEB_SETUP_MODE env var, or --mode=<...> arg):
-#   profile       (default) — `nix profile install .#devtools`, then manually
-#                  symlink skills into ~/.claude/skills/ (steps 2 + 4 above).
+#   profile       (default) — `nix profile install .#devtools` (shared core plus
+#                  localOnlyPackages), then manually symlink skills into
+#                  ~/.claude/skills/ (steps 2 + 4 above).
 #   home-manager  — `home-manager switch --flake .#claude-web`. Home Manager
-#                  installs the same devtools and deploys skills through the
-#                  shared HM skills module (nix/home/skills.nix), so step 4 is
-#                  owned by HM. claude-web is standalone/minimal: it does NOT
-#                  deploy Claude Code settings, plugins, or MCP servers. See
+#                  installs the shared devToolPackages core (without
+#                  localOnlyPackages) and deploys skills through the shared HM
+#                  skills module (nix/home/skills.nix), so step 4 is owned by
+#                  HM. claude-web is standalone/minimal: it does NOT deploy
+#                  Claude Code settings, plugins, or MCP servers. See
 #                  homeConfigurations.claude-web in flake.nix and
 #                  <nix/home/hosts/claude-web.nix>.
 #
@@ -224,16 +226,16 @@ ls -la
 # See <devinfra/claude/docs/web-setup-debug.md> ("Pin drift on persistent rootfs").
 log "Install mode: $MODE"
 if [ "$MODE" = "home-manager" ]; then
-  # Home Manager installs the same devtools (homeConfigurations.claude-web reuses
-  # devToolPackages list in nix/flake/devtools.nix) and deploys skills itself, so the
-  # standalone skill symlink in step 4 is skipped below. claude-web is
+  # Home Manager installs the shared devToolPackages core from
+  # nix/flake/devtools.nix (without localOnlyPackages) and deploys skills itself,
+  # so the standalone skill symlink in step 4 is skipped below. claude-web is
   # standalone/minimal — it deploys no Claude Code settings, plugins, or MCP
   # servers.
   #
   # --impure: claude-web reads home.username/homeDirectory from $USER/$HOME.
   # -b hm-backup: back up any pre-existing dotfiles (Anthropic-landed
   #   ~/.claude/settings.json etc.) instead of failing the activation.
-  # nix run .#home-manager pins the HM CLI to our flake input (release-25.11).
+  # nix run .#home-manager pins the HM CLI to our flake input (release-26.05).
   #
   # The init-script env does not reliably export USER, and the home-manager CLI
   # runs under `set -u` (dies with "USER: unbound variable"). Export it (and

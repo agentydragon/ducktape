@@ -5,8 +5,6 @@
 import js from "@eslint/js";
 import tseslint from "@typescript-eslint/eslint-plugin";
 import tsparser from "@typescript-eslint/parser";
-import sveltePlugin from "eslint-plugin-svelte";
-import svelteParser from "svelte-eslint-parser";
 import importPlugin from "eslint-plugin-import-x";
 import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
@@ -31,17 +29,17 @@ const unusedVarsOptions = { argsIgnorePattern: "^_", varsIgnorePattern: "^_" };
 // js_library targets (the Vite build is a WIP stub), so the lint aspect never
 // runs on it. Listing it here would be dead config implying coverage that does
 // not exist — re-add once it's Bazelized (per-file ts_library).
-const reactProjects = ["aiquota/frontend/**", "finance/augur/frontend/**", "haku/console/frontend/**"];
-const svelteProjects = ["props/frontend/src/**", "airlock/frontend/**"];
-const projectGlobs = [...reactProjects, ...svelteProjects];
+const reactProjects = [
+  "aiquota/frontend/**",
+  "airlock/frontend/**",
+  "finance/augur/frontend/**",
+  "haku/console/frontend/**",
+  "props/frontend/**",
+];
+const projectGlobs = reactProjects;
 
-// All projects' .ts/.tsx get the shared TS rules. .svelte (+ .svelte.ts) come
-// only from the Svelte projects; the React projects' .ts/.tsx additionally get
-// eslint-plugin-react + react-hooks (the Svelte projects' .ts are plain modules,
-// so React rules — notably react-hooks/rules-of-hooks — stay off them).
+// All React projects' .ts/.tsx get the shared TypeScript, React, and hooks rules.
 const tsFiles = projectGlobs.map((g) => `${g}/*.{ts,tsx}`);
-const svelteFiles = svelteProjects.map((g) => `${g}/*.svelte`);
-const svelteTsFiles = svelteProjects.map((g) => `${g}/*.svelte.ts`);
 const reactFiles = reactProjects.map((g) => `${g}/*.{ts,tsx}`);
 
 // Import ordering (the TS equivalent of ruff's isort) is intentionally OFF.
@@ -49,8 +47,7 @@ const reactFiles = reactProjects.map((g) => `${g}/*.{ts,tsx}`);
 // which walks up from the source file for a package.json (pkgUp) — but the
 // bazel-out execution tree has none above it, so path.dirname(null) throws. Not
 // fixable via resolver config or the whole-program test path. A Prettier
-// import-sort plugin could order .ts/.tsx/.js but not .svelte (it doesn't touch
-// prettier-plugin-svelte's parser) and needs Nix+Bazel+pnpm wiring, so import
+// import-sort plugin needs Nix+Bazel+pnpm wiring, so import
 // ordering is parked. See debug/eslint_import_order_bazel.md for the full investigation.
 const importRules = {
   "import/first": "error",
@@ -92,14 +89,7 @@ const coreRules = {
 export default [
   // Global ignores
   {
-    ignores: [
-      "**/node_modules/**",
-      "**/dist/**",
-      "**/build/**",
-      "**/.svelte-kit/**",
-      "**/playwright-report/**",
-      "**/*.config.mjs",
-    ],
+    ignores: ["**/node_modules/**", "**/dist/**", "**/build/**", "**/playwright-report/**", "**/*.config.mjs"],
   },
 
   js.configs.recommended,
@@ -107,7 +97,6 @@ export default [
   // ── All TypeScript files ───────────────────────────────────────────────
   {
     files: tsFiles,
-    ignores: svelteTsFiles,
     languageOptions: {
       parser: tsparser,
       parserOptions: { ecmaVersion: "latest", sourceType: "module" },
@@ -115,26 +104,6 @@ export default [
     },
     plugins: tsPlugins,
     rules: coreRules,
-  },
-
-  // ── All Svelte files ───────────────────────────────────────────────────
-  // Svelte plugin recommended config (scoped to our projects)
-  ...sveltePlugin.configs["flat/recommended"].map((config) => ({
-    ...config,
-    files: svelteFiles,
-  })),
-  {
-    files: svelteFiles,
-    languageOptions: {
-      parser: svelteParser,
-      parserOptions: { parser: tsparser, ecmaVersion: "latest", sourceType: "module" },
-      globals: browserGlobals,
-    },
-    plugins: tsPlugins,
-    rules: {
-      ...coreRules,
-      "svelte/no-unused-svelte-ignore": "error",
-    },
   },
 
   // ── React projects (eslint-plugin-react recommended + react-hooks) ──────

@@ -23,7 +23,7 @@ llm/instruct_logseq/**
 x/claude_commands_old/**
 
 # Flux-generated GitOps manifests
-cluster/k8s/flux-system/**
+cluster/k8s/flux/flux-system/**
 
 # cdk8s synthesis owns these committed snapshots. Formatting them after generation
 # makes the snapshot test fail and obscures the authored construct.
@@ -31,7 +31,7 @@ cluster/k8s/**/*.k8s.yaml
 cluster/k8s/ssh-mcp/flux-kustomization.yaml
 cluster/k8s/ssh-mcp/kustomization.yaml
 
-# kubeconform schemas dumped from the Agentplane CRDs by `bb run //x/agentplane/crds:generate_bin`
+# kubeconform schemas dumped from the Agentplane CRDs by `bb run //agentplane/crds:generate_bin`
 cluster/schemas/**
 
 # Root kustomization.yaml - prettier mangles the resources list
@@ -60,7 +60,7 @@ devinfra/js/debundle/peel/golden/**
 # no Node.js). When the rotator pushes a re-encrypted file with sops's default
 # 4-space indentation, pre-commit on the next CI run flags it.
 # TODO: have the rotator format with prettier (or stop using prettier on yaml
-# entirely, which would also unblock cluster/k8s/flux-system, kustomization,
+# entirely, which would also unblock cluster/k8s/flux/flux-system, kustomization,
 # etc.) and drop these excludes.
 # Glob covers every rotated JWT (claude-web-k8s, haku-k8s, haku-grocy, …) so a new
 # rotation target doesn't break CI until someone adds it here by hand.

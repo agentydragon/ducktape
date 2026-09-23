@@ -6,21 +6,54 @@
 }:
 
 let
-  # Dev tools shared between the devShell (local `nix develop` / direnv)
-  # and Claude Code web (`nix profile install .#devtools`).
-  # release.yml pushes this to attic so web installs are cache hits.
+  # The BuildBuddy runner VM drives Bazel CI; Bazel actions run in the separate
+  # RBE container image. These are the only Nix tools its scripts need.
+  buildBuddyRunnerPackages = {
+    inherit (ducktapePkgs) bb;
+    inherit (pkgs) bazelisk;
+    bazelDiff = ducktapePkgs.bazel-diff;
+  };
+  buildBuddyRunnerTools = builtins.attrValues buildBuddyRunnerPackages;
+
+  # Nix-provided tools used by .pre-commit-config.yaml. Hook environments from
+  # pre-commit-managed repos continue to be installed and cached by pre-commit.
+  preCommitPackages = [
+    buildBuddyRunnerPackages.bb
+    ducktapePkgs.bbr
+    ducktapePkgs.ducktape-git-hooks
+    pkgs.pre-commit
+    buildBuddyRunnerPackages.bazelisk
+    pkgs.nixfmt
+    pkgs.statix
+    ruffLatest
+    pkgs.shfmt
+    pkgs.buildifier
+    pkgs.keep-sorted
+    pkgs.gofumpt
+    pkgs.markdownlint-cli2
+    ducktapePkgs.prettier
+    pkgs.kubeconform
+    pkgs.tflint
+    pkgs.checkov
+    pkgs.rustfmt
+    pkgs.ansible
+  ];
+
+  # Shared developer tool core used by `.#devtools` and Claude Code web's
+  # Home Manager profile. The devShell and `.#devtools` also include
+  # `localOnlyPackages`.
+  # The Nix Attic workflow builds this so web installs can use the cache.
   # TODO: disable NLS on pre-commit's gitMinimal to drop ~31 MiB of
   # gettext + locale data. Blocked on slow rebuild (gitMinimal override
   # isn't in the binary cache, triggers 600+ derivation bootstrap chain).
   # See devinfra/claude/docs/devtools-closure-size.md for details.
-  # Packages NOT needed on RBE workers (large, only for local/infra use).
-  # Excluded from rbeToolPackages to keep the RBE image small.
+  # Packages only needed by local development or cluster operations.
   localOnlyPackages = [
     # Anthropic CLI (`ant`): Claude API / Managed Agents control plane, for
-    # running `ant beta:*` (haku/runtime/managed_agent/self_hosted). Not needed on RBE.
+    # running `ant beta:*` (haku/runtime/managed_agent/self_hosted). Not included in the BuildBuddy Remote Runner toolset.
     ducktapePkgs.anthropic-cli
-    pkgs.rustfmt # 1GB (pulls full rustc via RPATH)
-    pkgs.ansible # 650MB
+  ]
+  ++ [
     # llvm-addr2line: drop-in for GNU addr2line used by `perf report` for
     # inline-frame symbolization. 10-50x faster on Rust DWARF and keeps a
     # persistent symbol cache across queries from the same process; the
@@ -38,30 +71,17 @@ let
     pkgs.ovhcloud-cli # OVH API CLI (Kimsufi server inventory, boot, IPMI)
     pkgs.python314Packages.ovh # OVH Python client for ad-hoc API scripts
   ];
-  # System libraries matching RBE worker image (devinfra/rbe_image/Dockerfile).
+  # System libraries matching the RBE container image (devinfra/rbe_container_image/Dockerfile).
   systemLibs = import ../packages/system-libs.nix { inherit pkgs; };
-  # Common dev tools shared by both Python and Rust hook implementations.
+  # Non-hook developer tools shared by the devShell and Claude profiles.
+  # Pre-commit's packages are composed once below; the BuildBuddy runner has its
+  # own smaller package set above.
   devToolsCommon = [
-    ducktapePkgs.bb
     ducktapePkgs.bbapi
-    ducktapePkgs.bbr
-    ducktapePkgs.ducktape-git-hooks
     # Repo-configured Gazelle; `gazelle` / `gazelle -mode=diff` from a
     # checkout regenerate Python BUILD files without Bazel.
     ducktapePkgs.gazelle
     ducktapePkgs.skills
-    # Dev tools
-    pkgs.pre-commit
-    pkgs.bazelisk
-    pkgs.nixfmt
-    pkgs.statix
-    ruffLatest
-    pkgs.shfmt
-    pkgs.buildifier
-    pkgs.keep-sorted
-    pkgs.gofumpt
-    pkgs.markdownlint-cli2
-    ducktapePkgs.prettier
     pkgs.openssl
     # Codex setup materializes kubeconfig via devinfra/k8s/kubeconfig.py;
     # include a guaranteed Python runtime with pyyaml for that path.
@@ -73,25 +93,26 @@ let
     pkgs.fluxcd
     pkgs.kustomize
     pkgs.kubernetes-helm
-    pkgs.kubeconform
     pkgs.opentofu
-    pkgs.tflint
-    pkgs.checkov # Terraform security scanner; backs the checkov_diff pre-commit hook
     pkgs.sops
     pkgs.ssh-to-age
-    ducktapePkgs.bazel-diff
+    buildBuddyRunnerPackages.bazelDiff
   ];
   # Rust claude-hook is the active hook/shim implementation. The statusline
-  # remains Python, exposed through a package that does not put the legacy
-  # Python `claude-hook` on PATH.
-  devToolPackages = devToolsCommon ++ [
-    ducktapePkgs.claude-hook-rs
-    ducktapePkgs.claude-statusline
-  ];
+  # remains Python and is exposed separately as `claude-statusline`.
+  devToolPackages =
+    preCommitPackages
+    ++ devToolsCommon
+    ++ [
+      ducktapePkgs.claude-hook
+      ducktapePkgs.claude-statusline
+    ];
 in
 {
   inherit
+    buildBuddyRunnerTools
     localOnlyPackages
+    preCommitPackages
     systemLibs
     devToolPackages
     ;

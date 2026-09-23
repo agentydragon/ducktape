@@ -79,7 +79,7 @@ def gitops_terraform(
                     f'backend "pg" {{\n  conn_str    = "{_STATE_DB}"\n  schema_name = "{name.replace("-", "_")}"\n}}\n'
                 )
             ),
-            vars=[TerraformV1Alpha2SpecVars(name=key, value=value) for key, value in variables.items()],
+            vars=[TerraformV1Alpha2SpecVars(name=key, value=value) for key, value in variables.items()] or None,
             depends_on=[TerraformV1Alpha2SpecDependsOn(name=dep) for dep in depends_on] or None,
             runner_pod_template=TerraformV1Alpha2SpecRunnerPodTemplate(
                 spec=TerraformV1Alpha2SpecRunnerPodTemplateSpec(

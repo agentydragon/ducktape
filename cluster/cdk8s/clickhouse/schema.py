@@ -14,19 +14,16 @@ from pathlib import Path
 
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration
 from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy, Secret
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDependsOn,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
-    NAMESPACE as FLUX_NAMESPACE,
     ConfigMapArgs,
     flux_kustomization,
+    flux_kustomization_depends_on,
     health_checks,
     kustomize_kustomization,
 )
@@ -83,40 +80,30 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
+def clickhouse_schema(
+    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, clickhouse: Kustomization
+) -> Kustomization:
     name = NAME
     out_dir = root / OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
     rendered_chart = chart(app)
-    add_fleet_rules(
-        rendered_chart,
-        provided_secrets={"clickhouse-admin-credentials": "clickhouse"},
-        # schema.sql (hand-written, listed below) always provides its own ConfigMap: the
-        # generated kustomization.yaml's config_map_generator entry renders it from
-        # exactly that file.
-        provided_config_maps={SCHEMA_CONFIG_MAP.name: "schema.sql"},
-        providers=frozenset({"clickhouse", "schema.sql"}),
-    )
+    add_fleet_rules(rendered_chart)
     app.synth()
 
-    write_yaml(
-        out_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            name,
-            spec=KustomizationSpec(
-                retry_interval="1m",
-                interval="10m",
-                timeout="20m",
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=FLUX_NAMESPACE
-                ),
-                path=f"./{OUTPUT_DIR}",
-                prune=True,
-                wait=True,
-                health_checks=health_checks(rendered_chart, ("Job",)),
-                depends_on=[KustomizationSpecDependsOn(name="clickhouse")],
-            ),
+    kustomization = flux_kustomization(
+        flux_chart,
+        name,
+        spec=KustomizationSpec(
+            retry_interval="1m",
+            interval="10m",
+            timeout="20m",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
+            prune=True,
+            wait=True,
+            health_checks=health_checks(rendered_chart, ("Job",)),
+            depends_on=[flux_kustomization_depends_on(clickhouse)],
         ),
     )
     write_yaml(
@@ -125,3 +112,4 @@ def write_manifests(root: Path) -> None:
         # Job mounts. See cluster/docs/cdk8s.md.
         kustomize_kustomization(resources=[f"{name}.k8s.yaml"], config_map_generator=[SCHEMA_CONFIG_MAP]),
     )
+    return kustomization

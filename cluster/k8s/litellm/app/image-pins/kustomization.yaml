@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/tana-litellm-proxy
-    newTag: devel-20260914084437-6a8e3e2 # {"$imagepolicy": "flux-system:tana-litellm-proxy:tag"}
+    newTag: devel-20260921022830-13b3054 # {"$imagepolicy": "flux-system:tana-litellm-proxy:tag"}

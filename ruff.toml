@@ -169,6 +169,7 @@ known-first-party = [
     # imports mis-sorted into the third-party group, producing spurious I001. (When
     # ruff runs from the repo root — e.g. pre-commit — auto-detection masks omissions.)
     "agent_cli",
+    "agentplane",
     "aiquota",
     "airlock",
     "augur",

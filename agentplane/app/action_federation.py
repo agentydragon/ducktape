@@ -1,0 +1,216 @@
+"""Request-bound Authentik JWT-bearer federation, following Haku hostexec's grant shape.
+
+No global operator client/token cache, static BFF bearer, or workload-token promotion. Separate
+providers use the same Authentik subject mode, and the app verifies subject continuity after exchange.
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from typing import Annotated, Literal
+from urllib.parse import urlsplit
+
+import httpx
+import httpx2
+from authlib.integrations.base_client.errors import OAuthError
+from authlib.integrations.httpx_client import AsyncOAuth2Client
+from fastapi import Request
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from agentplane.action_service.client import OperatorActionServiceClient
+from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
+from agentplane.app.identity import CallerIdentity, CallerKind
+from agentplane.app.oidc import OIDCSettings, OperatorSession, operator_session
+from mcp_infra.oidc_principal import InvalidOidcPrincipalError, OidcPrincipalVerificationUnavailableError
+
+logger = logging.getLogger(__name__)
+
+
+class OperatorFederationError(Exception):
+    """Fixed public failure codes only; never provider bodies or token material."""
+
+    def __init__(self, code: str, *, status_code: int = 403) -> None:
+        super().__init__(code)
+        self.status_code = status_code
+
+
+class UpstreamFailure(BaseModel):
+    """A failed upstream request -- to the identity provider or the Action Service -- without
+    credentials, query, or provider text."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    method: str
+    url: str
+    upstream_status: int | None = Field(description="The status answered, or None when no response arrived.")
+    error_type: str = Field(description="The httpx exception class, which names the failure shape.")
+
+
+def upstream_failure_detail(
+    error: httpx.HTTPStatusError | httpx.RequestError | httpx2.HTTPStatusError | httpx2.TransportError,
+) -> UpstreamFailure:
+    return UpstreamFailure(
+        method=error.request.method,
+        url=str(error.request.url.copy_with(username="", password="", query=None, fragment=None)),
+        upstream_status=error.response.status_code
+        if isinstance(error, (httpx.HTTPStatusError, httpx2.HTTPStatusError))
+        else None,
+        error_type=type(error).__name__,
+    )
+
+
+async def _check_token_response(response: httpx2.Response) -> None:
+    # Authlib otherwise discards the HTTP response when raising OAuthError.
+    response.raise_for_status()
+
+
+class _ActionFederationSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    service_url: str
+    login_jwks_uri: str
+    login_token_profile: OperatorTokenProfile = OperatorTokenProfile.AUTHENTIK
+    target: OperatorOidcSettings
+    scope: str = Field(min_length=1)
+
+    @field_validator("service_url")
+    @classmethod
+    def service_endpoint(cls, value: str) -> str:
+        url = urlsplit(value)
+        if (
+            url.scheme not in {"http", "https"}
+            or not url.hostname
+            or url.username is not None
+            or url.password is not None
+            or url.query
+            or url.fragment
+        ):
+            raise ValueError("service_url must be an HTTP(S) URL without credentials, query, or fragment")
+        return value
+
+
+class ExchangeFederationSettings(_ActionFederationSettings):
+    mode: Literal["exchange"] = "exchange"
+    token_endpoint: str
+
+    @field_validator("token_endpoint")
+    @classmethod
+    def secure_exchange_endpoint(cls, value: str) -> str:
+        url = urlsplit(value)
+        if (
+            not url.hostname
+            or url.username is not None
+            or url.password is not None
+            or url.fragment
+            or url.query
+            or (url.scheme != "https" and not (url.scheme == "http" and url.hostname in {"127.0.0.1", "localhost"}))
+        ):
+            raise ValueError("token_endpoint must be HTTPS (loopback HTTP is allowed for tests)")
+        return value
+
+
+class DirectFederationSettings(_ActionFederationSettings):
+    mode: Literal["direct"] = "direct"
+    token_endpoint: None = None
+
+
+ActionFederationSettings = Annotated[ExchangeFederationSettings | DirectFederationSettings, Field(discriminator="mode")]
+
+
+class FederatedOperatorActions:
+    def __init__(self, config: ActionFederationSettings, oidc: OIDCSettings, http: httpx.AsyncClient) -> None:
+        self._config = config
+        self._http = http
+        self._login_issuer = oidc.issuer
+        self._upstream = OperatorOidcSettings(
+            issuer=oidc.issuer,
+            audience=oidc.client_id,
+            jwks_uri=config.login_jwks_uri,
+            token_profile=config.login_token_profile,
+        ).resolver()
+        self._target = config.target.resolver()
+
+    def for_session(self, session: OperatorSession) -> OperatorActionServiceClient:
+        return OperatorActionServiceClient(self._http, _SessionToken(self, session))
+
+    async def exchange(self, session: OperatorSession) -> str:
+        if session.issuer != self._login_issuer or session.expires_at <= time.time() or session.access_token is None:
+            raise OperatorFederationError("operator_reauthentication_required")
+        try:
+            upstream = await self._upstream.resolve(
+                {"access_token": session.access_token.get_secret_value(), "token_type": "Bearer"}
+            )
+            if (upstream.issuer, upstream.subject) != (session.issuer, session.subject):
+                raise OperatorFederationError("operator_federation_identity_mismatch")
+            if self._config.mode == "direct":
+                token = {"access_token": session.access_token.get_secret_value(), "token_type": "Bearer"}
+            else:
+                assert self._config.token_endpoint is not None
+                # Authlib mutates token state: create a fresh OAuth client for each exchange.
+                async with AsyncOAuth2Client(
+                    client_id=self._config.target.audience,
+                    timeout=10,
+                    event_hooks={"response": [_check_token_response]},
+                ) as client:
+                    token = await client.fetch_token(
+                        url=self._config.token_endpoint,
+                        grant_type="client_credentials",
+                        client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                        client_assertion=session.access_token.get_secret_value(),
+                        scope=self._config.scope,
+                    )
+            downstream = await self._target.resolve(token)
+            if downstream.subject != upstream.subject:
+                raise OperatorFederationError("operator_federation_identity_mismatch")
+            access_token = token["access_token"]
+            if not isinstance(access_token, str):
+                raise OperatorFederationError("operator_federation_token_invalid")
+            return access_token
+        except OperatorFederationError as error:
+            logger.warning(f"operator federation refused for {session.subject=}: {error}")
+            raise
+        except InvalidOidcPrincipalError as error:
+            logger.warning(f"operator federation rejected the login token: {type(error).__name__}")
+            raise OperatorFederationError("operator_federation_token_invalid") from None
+        except OidcPrincipalVerificationUnavailableError as error:
+            if error.http_error is not None:
+                logger.warning(
+                    f"operator federation signing-key fetch failed: {upstream_failure_detail(error.http_error)}"
+                )
+                raise error.http_error from None
+            logger.warning("operator federation cannot verify tokens: signing keys unavailable")
+            raise OperatorFederationError("operator_federation_verification_unavailable", status_code=503) from None
+        except (httpx.HTTPStatusError, httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError) as error:
+            logger.warning(f"operator federation exchange request failed: {upstream_failure_detail(error)}")
+            raise
+        except (OAuthError, ValueError) as error:
+            # Provider text stays out of logs; the class names the failure shape.
+            logger.warning(f"operator federation exchange failed: {type(error).__name__}")
+            raise OperatorFederationError("operator_federation_exchange_failed", status_code=502) from None
+
+
+class _SessionToken:
+    def __init__(self, provider: FederatedOperatorActions, session: OperatorSession) -> None:
+        self._provider = provider
+        self._session = session
+
+    async def token(self) -> str:
+        return await self._provider.exchange(self._session)
+
+
+def operator_actions(request: Request, caller: CallerIdentity) -> OperatorActionServiceClient:
+    """The request's operator-bound client, or the `OperatorFederationError` naming why it has none:
+    the caller is not an operator session, federation is not configured, or the session has to log in
+    again. The exchange itself happens at the first request the client makes."""
+    if caller.kind is not CallerKind.OPERATOR:
+        raise OperatorFederationError("operator_session_required")
+    provider = request.app.state.operator_actions
+    if provider is None:
+        raise OperatorFederationError("operator_federation_not_configured", status_code=503)
+    if not isinstance(provider, FederatedOperatorActions):
+        raise TypeError("operator_actions must be FederatedOperatorActions")
+    session = operator_session(request)
+    if session is None:
+        raise OperatorFederationError("operator_reauthentication_required", status_code=401)
+    return provider.for_session(session)

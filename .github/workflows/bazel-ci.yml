@@ -8,7 +8,7 @@ on:
         description: "BuildBuddy remote execution and cache credential"
         required: true
     inputs:
-      rbe_image:
+      rbe_container_image:
         description: "Override RBE container image (optional)"
         required: false
         type: string
@@ -151,7 +151,7 @@ jobs:
         id: bb-remote
         uses: ./.github/actions/bb-remote
         with:
-          rbe_image: ${{ inputs.rbe_image }}
+          rbe_container_image: ${{ inputs.rbe_container_image }}
           # The full devel //... sweep configured 265k targets before Bazel's
           # 8 GiB heap exhausted a 4-unit (~10 GiB RAM) runner.  Use the
           # 8-unit (~20 GiB RAM) shape for the analysis-heavy sweep; recycling

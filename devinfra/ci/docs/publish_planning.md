@@ -69,8 +69,9 @@ built rather than from what the planner could read. A release is content-address
 a fresh `devel-<timestamp>-<sha>` tag that Flux picks up, so publishing an
 unchanged image still costs a commit, a reconcile and a rollout. So
 `devinfra/ci/push_image.py` compares its built digest against what the registry
-last published and pushes only on a difference. Without that, a row this sweep
-cannot see — `manifold-mcp-server` below — churns a deployment on every merge.
+last published and pushes only on a difference. Before it was decommissioned and
+removed from the image roster, `manifold-mcp-server` churned a deployment on every
+merge because this sweep could not see its nested-module target.
 
 **And there the asymmetry reverses.** The push job is the last check, so a
 registry it cannot read fails the job rather than publishing regardless. Carrying
@@ -84,23 +85,23 @@ made is a rollout.
 
 Some rows are outside the sweep, and no amount of care here brings them in:
 
-| Row                   | Why                                                                                |
-| --------------------- | ---------------------------------------------------------------------------------- |
-| `manifold-mcp-server` | `@ducktape_manifold_mcp_server//:image` — external repo; `//...` does not reach it |
-| `aw-importer`         | `@ducktape_activitywatch//importer:…` — same                                       |
-| `gterm-theme`         | `tags = ["manual"]` (needs libgirepository, libdbus), so wildcards skip it         |
-| `debundle`            | builds under `-c opt`, a different configuration                                   |
+| Row           | Why                                                                        |
+| ------------- | -------------------------------------------------------------------------- |
+| `aw-importer` | `@ducktape_activitywatch//importer:…` — external repo; `//...` misses it   |
+| `gterm-theme` | `tags = ["manual"]` (needs libgirepository, libdbus), so wildcards skip it |
+| `debundle`    | builds under `-c opt`, a different configuration                           |
 
-Measured coverage on devel's sweep: **41 of 42** images, **47 of 50** releases.
+Before Manifold MCP was decommissioned, measured coverage on devel's sweep was **41 of
+42** images and **47 of 50** releases. Its image is no longer in the publishing roster.
 
 **A row in that table is a live defect until its own job re-checks.** This design
 replaced one that named every digest label out of the roster and built them, so it
 covered 42 of 42; reading the sweep instead is what made the table non-empty. For
-three weeks `manifold-mcp-server` — whose image content had not changed since June —
-therefore hit fail-open on every devel push and minted a tag Flux committed back,
-once per merge. The gap was written down here from the start and read as an accepted
-limitation, which is precisely the mistake: the note recorded that the planner could
-not see the row, not that not seeing it meant republishing it.
+three weeks before retirement, `manifold-mcp-server` — whose image content had not
+changed since June — hit fail-open on every devel push and minted a tag Flux committed
+back, once per merge. Removing its decommissioned image from the roster closes that
+case. The remaining gaps still need the image's own job to prove it unchanged, or the
+item to leave the roster.
 
 So do not add a row here and stop. Either the item's own job proves the item
 unchanged before publishing (what `push_image.py` now does, and why a row here is

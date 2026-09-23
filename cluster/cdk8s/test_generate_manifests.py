@@ -2,9 +2,8 @@
 
 `test_generated_manifests_match_committed` is the "LiteLLM config pattern"
 generated-output snapshot (STYLE.md § Testing), generalized from the ConfigMap
-payload to every converted directory's whole generated file set: the committed
-files are the source of truth, and this test proves regeneration reproduces
-them exactly.
+payload to every generated file: the committed files are the source of truth,
+and this test proves regeneration reproduces them exactly.
 """
 
 from pathlib import Path
@@ -15,17 +14,14 @@ from cluster.cdk8s.generate_manifests import generate_manifests
 from util.bazel.runfiles import get_required_path
 
 _GENERATED_FILES = (
+    "cluster/k8s/flux/kustomizations.k8s.yaml",
     "cluster/k8s/artifact-generators/artifact-generators.k8s.yaml",
-    "cluster/k8s/artifact-generators/flux-kustomization.yaml",
     "cluster/k8s/artifact-generators/kustomization.yaml",
     "cluster/k8s/litellm/app/litellm.k8s.yaml",
-    "cluster/k8s/litellm/app/flux-kustomization.yaml",
     "cluster/k8s/litellm/app/kustomization.yaml",
     "cluster/k8s/agents/ha-mcp/app/ha-mcp.k8s.yaml",
-    "cluster/k8s/agents/ha-mcp/app/flux-kustomization.yaml",
     "cluster/k8s/agents/ha-mcp/app/kustomization.yaml",
     "cluster/k8s/ssh-mcp/ssh-mcp.k8s.yaml",
-    "cluster/k8s/ssh-mcp/flux-kustomization.yaml",
     "cluster/k8s/ssh-mcp/kustomization.yaml",
     "cluster/k8s/agents/public-coder-agent/sshpiper/pipe-devbox.k8s.yaml",
     "cluster/k8s/agents/public-coder-agent/devbox/public-coder-devbox.k8s.yaml",
@@ -33,28 +29,22 @@ _GENERATED_FILES = (
     "cluster/k8s/agents/public-coder-agent/namespace/public-coder-agent.k8s.yaml",
     "cluster/k8s/agents/public-coder-agent/namespace/kustomization.yaml",
     "cluster/k8s/clickhouse/schema/clickhouse-schema.k8s.yaml",
-    "cluster/k8s/clickhouse/schema/flux-kustomization.yaml",
     "cluster/k8s/clickhouse/schema/kustomization.yaml",
     "cluster/k8s/aiquota/aiquota.k8s.yaml",
-    "cluster/k8s/aiquota/flux-kustomization.yaml",
     "cluster/k8s/aiquota/kustomization.yaml",
     "cluster/k8s/agentplane-testing/agentplane.k8s.yaml",
-    "cluster/k8s/agentplane-testing/flux-kustomization.yaml",
-    "cluster/k8s/agentplane-testing/kustomization.yaml",
-    "cluster/k8s/agentplane-testing/litellm-credentials/litellm-credentials.k8s.yaml",
-    "cluster/k8s/agentplane-testing/litellm-credentials/kustomization.yaml",
+    "cluster/k8s/agentplane-testing/litellm-credentials.k8s.yaml",
     "cluster/k8s/agentplane-staging/agentplane.k8s.yaml",
-    "cluster/k8s/agentplane-staging/flux-kustomization.yaml",
     "cluster/k8s/agentplane-staging/kustomization.yaml",
     "cluster/k8s/haku/console/haku-console.k8s.yaml",
-    "cluster/k8s/haku/console/flux-kustomization.yaml",
     "cluster/k8s/haku/console/kustomization.yaml",
     "cluster/k8s/agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
     "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
     "cluster/k8s/descheduler/helmrelease.k8s.yaml",
+    "cluster/k8s/descheduler/rbac.k8s.yaml",
+    "cluster/k8s/descheduler/kustomization.yaml",
     "cluster/k8s/seaweedfs/cluster/priorityclass.k8s.yaml",
     "cluster/k8s/external-creds/external-creds.k8s.yaml",
-    "cluster/k8s/external-creds/flux-kustomization.yaml",
     "cluster/k8s/external-creds/kustomization.yaml",
     "cluster/k8s/agents/haku-egress-proxy/cnp-haku-cloud-api-egress.k8s.yaml",
     "cluster/k8s/agents/haku-egress-proxy/cnp-haku-claude-egress.k8s.yaml",
@@ -63,14 +53,15 @@ _GENERATED_FILES = (
     "cluster/k8s/dns-automation/dns-records.k8s.yaml",
     "cluster/k8s/litellm/keys-tf/litellm-keys.k8s.yaml",
     "cluster/k8s/monitoring/etcd/etcd-monitoring.k8s.yaml",
-    "cluster/k8s/monitoring/etcd/flux-kustomization.yaml",
     "cluster/k8s/monitoring/etcd/kustomization.yaml",
     "cluster/k8s/flux-image-automation-forgejo/flux-image-automation-forgejo.k8s.yaml",
-    "cluster/k8s/flux-image-automation-forgejo/flux-kustomization.yaml",
     "cluster/k8s/flux-image-automation-forgejo/kustomization.yaml",
     "cluster/k8s/ntfy/ntfy.k8s.yaml",
-    "cluster/k8s/ntfy/flux-kustomization.yaml",
     "cluster/k8s/ntfy/kustomization.yaml",
+    "cluster/k8s/github-branch-protection/github-branch-protection.k8s.yaml",
+    "cluster/k8s/github-branch-protection/kustomization.yaml",
+    "cluster/k8s/agents/machine-access-tf/agent-machine-access.k8s.yaml",
+    "cluster/k8s/agents/machine-access-tf/kustomization.yaml",
 )
 
 

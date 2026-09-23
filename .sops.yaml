@@ -94,14 +94,11 @@ creation_rules:
           - *claude-web
 
   # BuildBuddy API key — the widest-audience shared credential here. Flux
-  # applies the Secret and reflects it to the agent namespaces; the in-cluster
-  # tofu-controller reads it from claude-sandbox to set the ducktape
-  # BUILDBUDDY_API_KEY GitHub Actions secret (tf/gitops/github-secrets-sync);
-  # and every workstation and agent identity that runs bbr decrypts this file
-  # directly. Recipients are the union of the two rules this replaced, so no
-  # reader lost access when the duplicate under secrets/ was removed. More
-  # specific than the generic cluster/k8s/* rule below, so this match wins.
-  - path_regex: cluster/k8s/agents/shared-secrets/buildbuddy-api-key\.sops\.yaml$
+  # applies the canonical Secret from external-creds, ESO distributes it to
+  # approved namespaces, and every workstation and agent identity that runs
+  # bbr decrypts this file directly. More specific than the generic
+  # cluster/k8s/* rule below, so this match wins.
+  - path_regex: cluster/k8s/external-creds/buildbuddy-api-key\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:
@@ -117,12 +114,11 @@ creation_rules:
           - *agent-box-codex-user
           - *haku
 
-  # Brave Search API key — Flux applies the Secret and the agent egress proxies
-  # consume it in-cluster (cluster-secrets), AND workstations read it directly
-  # as $BRAVE_API_KEY via ducktape.sopsEnv (user keys), so the subscription is
-  # not duplicated into a second ciphertext under secrets/. More specific than
-  # the generic cluster/k8s/* rule below, so this match wins.
-  - path_regex: cluster/k8s/agents/shared-secrets/brave-search-api-key\.sops\.yaml$
+  # Brave Search API key — external-creds is canonical and ESO distributes it
+  # to the egress proxy; workstations read it directly via ducktape.sopsEnv.
+  # The legacy shared-secrets copy remains managed during the initial cutover
+  # and is removed under pruning after the consumer ExternalSecret is verified.
+  - path_regex: cluster/k8s/(agents/shared-secrets|external-creds)/brave-search-api-key\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:
@@ -304,8 +300,8 @@ creation_rules:
           - *admin
           - *cluster-secrets
 
-  # Cluster, Props, and Wayback deployment secrets (Flux + admin can decrypt).
-  - path_regex: (cluster/k8s|props/deploy/secrets|loom/wayback/deploy/secrets)/.*\.sops\.yaml$
+  # Cluster, Props, Wayback, and Haku managed-agent deployment secrets (Flux + admin can decrypt).
+  - path_regex: (cluster/k8s|props/deploy|loom/wayback/deploy|haku/runtime/managed_agent/self_hosted/deploy)/.*\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:

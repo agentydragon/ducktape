@@ -63,6 +63,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
+from cluster.cdk8s import external_creds
 from cluster.cdk8s.agentplane import container_security, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
@@ -149,6 +150,14 @@ class Console(Construct):
             self, "serviceaccount", metadata=metadata(NAME, NAMESPACE), automount_token=True
         )
         self._add_rbac(service_account)
+        external_creds.add_external_secret(
+            self,
+            "tana-pat-external-secret",
+            namespace=NAMESPACE,
+            source_name="tana-agentydragon-gmail-com-account-pat",
+            property_name="token",
+            description="ESO copy of the canonical Tana PAT from external-creds.",
+        )
         env = self._container_env()
         config_map = self._add_config()
         self._add_deployment(service_account, env, config_map)
@@ -282,15 +291,15 @@ class Console(Construct):
                     env_name(Settings, "mcp_operator_oauth_token_timeout_seconds"),
                     EnvValue.from_value(str(checked_value(Settings, "mcp_operator_oauth_token_timeout_seconds", 30))),
                 ),
-                # Static bearers for the cluster-internal MCP backends, each reflected into this
-                # namespace from the backend's own (tana-mcp, ha-mcp, ssh-mcp). Resolved only
+                # Static bearers for the cluster-internal MCP backends, each delivered into this
+                # namespace by its credential owner (tana-mcp, ha-mcp, ssh-mcp). Resolved only
                 # while the console calls the backend; never mounted into the inner workload.
                 self._from_secret(
                     "tana-agentydragon-gmail-com-account-pat",
                     "token",
                     "mcp",
                     "servers",
-                    "tana_rw",
+                    "tana",
                     "backend",
                     "auth",
                     "token",

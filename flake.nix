@@ -85,6 +85,23 @@
         inherit system;
         config.allowUnfree = true;
       };
+      # Keep the experimental BuildBuddy Remote Runner NixOS configuration and
+      # output definitions with the experiment; the root flake only registers them.
+      buildbuddyRemoteRunnerNixosOutputs =
+        import ./devinfra/buildbuddy_remote_runner/x/nixos/flake-outputs.nix
+          {
+            inherit nixpkgs self system;
+          };
+      artifactData = builtins.fromJSON (builtins.readFile ./nix/artifact-pins.json);
+      rawArtifactOverrides = builtins.getEnv "DUCKTAPE_ARTIFACT_OVERRIDES";
+      artifactOverrides =
+        if rawArtifactOverrides == "" then { } else builtins.fromJSON rawArtifactOverrides;
+      # Keep archive names as evaluation-time metadata. Deriving them from
+      # artifact store paths later would include Nix's hash prefix.
+      artifactFilenames = builtins.mapAttrs (
+        name: spec:
+        if artifactOverrides ? ${name} then baseNameOf artifactOverrides.${name} else baseNameOf spec.url
+      ) artifactData.pins;
 
       # Keep the developer Ruff binary aligned with the repository's pinned
       # Python and Bazel toolchains while nixpkgs catches up.
@@ -116,29 +133,26 @@
       # that is what catches "wheel forgot a package" regressions like the
       # gmail_api / ducktape_pkg drift in #2669. Requires --impure (getEnv).
       # Empty in normal use; behaviour is identical to the pre-override flake.
-      artifacts =
-        let
-          data = builtins.fromJSON (builtins.readFile ./nix/artifact-pins.json);
-          rawOverrides = builtins.getEnv "DUCKTAPE_ARTIFACT_OVERRIDES";
-          overrides = if rawOverrides == "" then { } else builtins.fromJSON rawOverrides;
-        in
-        builtins.mapAttrs (
-          name: spec:
-          if overrides ? ${name} then
-            # Preserve the URL's basename so consumers that read the store
-            # path's suffix (aiquota's buildPythonApplication glob for *.whl,
-            # extension-zip unzip) work identically to the fetchurl path.
-            # renameWheel-based mkWheel callers are agnostic to this name.
-            builtins.path {
-              path = /. + overrides.${name};
-              name = baseNameOf spec.url;
-            }
-          else
-            pkgs.fetchurl {
-              inherit (spec) url;
-              hash = "sha256-${spec.sha256}";
-            }
-        ) data.pins;
+      artifacts = builtins.mapAttrs (
+        name: spec:
+        if artifactOverrides ? ${name} then
+          # Preserve the local artifact's basename. Wheel installers validate
+          # the archive filename against its embedded .dist-info directory.
+          builtins.path {
+            path = /. + artifactOverrides.${name};
+            name = artifactFilenames.${name};
+          }
+        else
+          pkgs.fetchurl {
+            inherit (spec) url;
+            name =
+              let
+                asset = artifactFilenames.${name};
+              in
+              if pkgs.lib.hasSuffix ".whl" asset || pkgs.lib.hasSuffix ".zip" asset then asset else "source";
+            hash = "sha256-${spec.sha256}";
+          }
+      ) artifactData.pins;
 
       # Each skill ships as its own `skill-<name>` release artifact. Assemble the
       # per-skill `.skill` zips (each already rooted under `<name>/`) into one flat
@@ -237,6 +251,9 @@
       mkNixos =
         {
           hostname,
+          # Most host modules are kept under nix/nixos/hosts. Component-owned
+          # guests can keep their module beside the component's other recipes.
+          hostModule ? ./nix/nixos/hosts/${hostname},
           username ? "agentydragon",
           homeManagerHost ? hostname,
           hardwareModule ? null,
@@ -284,7 +301,7 @@
           };
           modules = [
             ./nix/nixos/modules/base.nix
-            ./nix/nixos/hosts/${hostname}
+            hostModule
           ]
           ++ nixpkgs.lib.optionals enableHomeManager [
             home-manager.nixosModules.home-manager
@@ -343,15 +360,18 @@
       };
       inherit (devTools)
         localOnlyPackages
+        buildBuddyRunnerTools
+        preCommitPackages
         systemLibs
         devToolPackages
         ;
     in
     {
-      # CI push targets for nix-attic-push, split by destination cache. Under
-      # legacyPackages so `nix flake {show,check}` skip them (they force-eval all
-      # host closures). drivefs isolation for `main` lives in the imported file.
-      legacyPackages.${system} =
+      # Purpose-specific targets for nix-attic-push, split by destination
+      # cache. These include the host closures we intend to publish, so keep
+      # them out of ordinary package/check outputs. drivefs isolation for
+      # `main` lives in the imported file.
+      atticPushTargets.${system} =
         let
           atticTargets = import ./devinfra/ci/nix_attic_targets.nix {
             inherit
@@ -362,13 +382,12 @@
               ;
           };
         in
-        {
-          ci-attic-main = atticTargets.main;
-          ci-attic-public = atticTargets.public;
-        };
+        atticTargets;
 
       # Development shell — enter via `nix develop` or direnv (`use flake`).
       devShells.${system}.default = pkgs.mkShell {
+        # Keep each Python CLI's dependencies in its own wrapper, not the shared shell.
+        dontAddPythonPath = "1";
         packages = devToolPackages ++ localOnlyPackages ++ systemLibs.packages;
         inherit (systemLibs) buildInputs;
         LD_LIBRARY_PATH = systemLibs.libraryPath;
@@ -390,22 +409,31 @@
           inherit pkgs;
         };
       };
-      packages.${system} = import ./nix/flake/packages.nix {
-        inherit
-          self
-          system
-          pkgs
-          ducktapePkgs
-          gafferPkgs
-          home-manager
-          pkgsUnstable
-          pkgsMaster
-          nix-openclaw
-          ruffLatest
-          localOnlyPackages
-          devToolPackages
-          ;
-      };
+      packages.${system} =
+        (import ./nix/flake/packages.nix {
+          inherit
+            self
+            system
+            pkgs
+            ducktapePkgs
+            gafferPkgs
+            home-manager
+            pkgsUnstable
+            pkgsMaster
+            nix-openclaw
+            ruffLatest
+            localOnlyPackages
+            buildBuddyRunnerTools
+            preCommitPackages
+            devToolPackages
+            ;
+        })
+        // {
+          # Keep the NixOS prototype under x/; this lazy value does not make
+          # unrelated packages depend on the experiment.
+          buildbuddy-remote-runner-nixos-image =
+            buildbuddyRemoteRunnerNixosOutputs.packages.${system}.buildbuddy-remote-runner-nixos-image;
+        };
 
       homeConfigurations = {
         # NixOS VM
@@ -426,7 +454,8 @@
 
         # Claude Code web session — headless standalone profile installed by
         # web_setup.sh's home-manager mode. Independent of the shared host
-        # structure: it only needs the devtools list and the skills args.
+        # structure: it uses the shared devToolPackages core and skills args.
+        # Unlike .#devtools, it intentionally omits localOnlyPackages.
         # Portable across the web container's user (home.username/homeDirectory
         # read from the env), so it must be built/activated with --impure:
         #   home-manager switch --impure --flake .#claude-web
@@ -487,11 +516,12 @@
         agent-box = mkNixos {
           hostname = "agent-box";
           username = "codex";
+          hostModule = ./cluster/k8s/parked/agent-box/nix/nixos.nix;
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
           inlineHomeManager = {
             enableGui = false;
             isK8sWorker = false;
-            module = ./nix/home/hosts/agent-box/codex.nix;
+            module = ./cluster/k8s/parked/agent-box/nix/home/codex.nix;
           };
         };
 
@@ -502,10 +532,11 @@
           hostname = "public-coder-devbox";
           username = "coder";
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          hostModule = ./openclaw/public_coder_agent/devbox/nixos.nix;
           inlineHomeManager = {
             enableGui = false;
             isK8sWorker = false;
-            module = ./nix/home/hosts/public-coder-devbox.nix;
+            module = ./openclaw/public_coder_agent/devbox/home.nix;
           };
         };
 
@@ -514,10 +545,11 @@
           hostname = "gecko";
           username = "agentydragon";
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          hostModule = ./cluster/k8s/parked/gecko/nix/nixos.nix;
           inlineHomeManager = {
             enableGui = false;
             isK8sWorker = false;
-            module = ./nix/home/hosts/gecko.nix;
+            module = ./cluster/k8s/parked/gecko/nix/home.nix;
           };
         };
 
@@ -533,27 +565,24 @@
         # from the OptiPlex host.
         cpap-gateway = mkNixos {
           hostname = "cpap-gateway";
+          hostModule = ./cpap/gateway/nixos.nix;
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
           enableHomeManager = false;
         };
 
         # Minimal NixOS container for testing Bazel compatibility.
-        # Not a real host — see nix/nixos/hosts/bazel-test/ for config.
+        # Not a real host — see devinfra/nixos_bazel_test/nixos.nix.
         bazel-test = nixpkgs.lib.nixosSystem {
           inherit system;
           modules = [
-            ./nix/nixos/hosts/bazel-test
+            ./devinfra/nixos_bazel_test/nixos.nix
             home-manager.nixosModules.home-manager
           ];
         };
 
-        # NixOS-based RBE worker with full Bazel compat (envfs, nix-ld).
-        nix-rbe-worker = nixpkgs.lib.nixosSystem {
-          inherit system;
-          modules = [
-            ./x/nix_rbe_image/nixos.nix
-          ];
-        };
+        # Experimental NixOS implementation lives under the BuildBuddy Remote Runner.
+        buildbuddy-remote-runner =
+          buildbuddyRemoteRunnerNixosOutputs.nixosConfigurations.buildbuddy-remote-runner;
 
         # Haku Managed Agents self-hosted worker (Runtime B). fastmcp is a
         # ducktape package, passed in rather than re-derived. The poll loop is
@@ -566,7 +595,6 @@
             ./haku/runtime/managed_agent/self_hosted/nixos.nix
           ];
         };
-
       };
 
       # Phone (Android via nix-on-droid). aarch64-linux; see nix/droid/README.md.

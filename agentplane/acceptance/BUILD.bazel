@@ -1,0 +1,253 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+# gazelle:resolve py agentplane.protocol.command_pb2 //agentplane/protocol:command_pb2
+# gazelle:resolve py agentplane.protocol.event_log_pb2 //agentplane/protocol:event_log_pb2
+# gazelle:resolve py agentplane.protocol.event_pb2 //agentplane/protocol:event_pb2
+# gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
+
+py_library(
+    name = "agent",
+    testonly = True,
+    srcs = ["agent.py"],
+    deps = [
+        "//agentplane/app:client",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//agentplane/app:client",
+        "//agentplane/app:inventory",
+        "//agentplane/app:presets",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//tenacity",
+    ],
+)
+
+# Live: creates real sandboxes on a deployed instance and runs real model turns, so it needs a
+# kubeconfig and a route to the cluster. `manual` keeps //... from selecting it, which is how CI
+# picks targets; no-remote-exec keeps it off RBE, whose workers have neither. Run it by name:
+# bazelisk test //agentplane/acceptance:test_egress --test_output=streamed
+#
+# Bazel warns that `eternal` is too big, having measured a warm run at ~120s. The size matches the
+# suite's own bounds rather than that run: four sandboxes each wait up to SANDBOX_READY_SECONDS for
+# a Pod to be scheduled and pull the image, and up to six turns each wait TURN_SECONDS. A cold run
+# is most of an hour, and shrinking this to fit a warm one buys a timeout on the first slow day.
+py_test(
+    name = "test_egress",
+    timeout = "eternal",
+    srcs = ["test_egress.py"],
+    # kubectl reads the caller's own kubeconfig to mint the app's token; with neither of these it
+    # falls back to http://localhost:8080 and fails for a reason that looks nothing like the cause.
+    env_inherit = [
+        "AGENTPLANE_ACCEPTANCE_NAMESPACE",
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":agent",
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app:client",
+        "//agentplane/app:decisions",
+        "//agentplane/app:inventory",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_launch_presets",
+    timeout = "eternal",
+    srcs = ["test_launch_presets.py"],
+    env_inherit = [
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":agent",
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app:client",
+        "//agentplane/app:inventory",
+        "//agentplane/app:presets",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Live, for the same reasons as `test_egress` above and with the same flags: one sandbox and two
+# turns per harness, on the real model. `eternal` because the bound is the suite's own -- a Pod
+# scheduled and pulled, then turns that may each take TURN_SECONDS -- not the warm run's minutes.
+py_test(
+    name = "test_instructions",
+    timeout = "eternal",
+    srcs = ["test_instructions.py"],
+    env_inherit = [
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":agent",
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app:client",
+        "//agentplane/app:inventory",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Live testing, using the same real-agent fixtures and execution boundary as this suite.
+py_test(
+    name = "test_mcp",
+    timeout = "eternal",
+    srcs = ["test_mcp.py"],
+    env_inherit = [
+        "AGENTPLANE_ACCEPTANCE_IDP",
+        "AGENTPLANE_ACCEPTANCE_TOKEN",
+        "AGENTPLANE_ACCEPTANCE_URL",
+        "AGENTPLANE_OPERATOR_SECRET_PATH",
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":agent",
+        ":conftest",
+        ":operator_login",
+        "//:conftest",
+        "//agentplane:crd_group",
+        "//agentplane/action_service:mcp_linkage",
+        "//agentplane/action_service:models",
+        "//agentplane/action_service:policy_evaluation",
+        "//agentplane/action_service/policies:resources",
+        "//agentplane/app:client",
+        "//agentplane/app:inventory",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "operator_login",
+    testonly = True,
+    srcs = ["operator_login.py"],
+    deps = [
+        "//agentplane/app:action_federation",
+        "//agentplane/app:oidc",
+        "@pypi//beautifulsoup4",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+# Deliberate exception: this is an offline provider-adapter regression test, not evidence that a
+# deployed IdP or Agentplane is reachable. It remains here because login choreography is a
+# high-churn prerequisite for the live MCP scenario and benefits from the same package/target.
+py_test(
+    name = "test_operator_login",
+    srcs = ["test_operator_login.py"],
+    deps = [
+        ":conftest",
+        ":operator_login",
+        "//:conftest",
+        "//agentplane/app:oidc",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Real testing ingress; never send registrations to staging or run this implicitly in CI.
+py_test(
+    name = "test_dcr",
+    size = "medium",
+    srcs = ["test_dcr.py"],
+    tags = [
+        "manual",
+        "no-cache",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":conftest",
+        ":dcr",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "dcr",
+    srcs = ["dcr.py"],
+    deps = [
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx2",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//py_key_value_aio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_agent",
+    srcs = ["test_agent.py"],
+    deps = [
+        ":agent",
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app:client",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

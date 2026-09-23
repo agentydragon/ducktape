@@ -1,5 +1,7 @@
 # Known Problems with JS Frontend Bazel Integration
 
+These notes cover Bazel and pnpm integration issues that can affect JavaScript frontends.
+
 ## 1. Playwright Module Identity Issue
 
 **Symptom**: Playwright crashes with "Playwright Test did not expect test() to be called here" and mentions "two different versions of @playwright/test".
@@ -43,17 +45,7 @@ When we flatten the pnpm workspace (single package.json at root, no workspace me
 
 **aspect_rules_js Behavior**: The `npm_translate_lock` rule reads the lockfile and creates Bazel targets. It expects workspace member package.json files if the lockfile references workspace packages.
 
-## 4. Storybook + Vite Version Constraints
-
-**Symptom**: Storybook build fails with peer dependency errors.
-
-**Root Cause**: Storybook 8.x requires vite ^4.0.0 || ^5.0.0 || ^6.0.0. Cannot use vite 7.x.
-
-**Current Workaround**: Pinned vite to 6.3.5, @sveltejs/vite-plugin-svelte to 5.1.0.
-
-**Status**: Resolved, but constrains vite upgrades until Storybook catches up.
-
-## 5. aspect_rules_js Workspace Detection
+## 4. aspect_rules_js Workspace Detection
 
 **Symptom**: Bazel fails with "expected pnpm-workspace.yaml to exist since the pnpm-lock.yaml file contains workspace packages".
 

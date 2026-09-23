@@ -38,31 +38,35 @@ def k8s_dir() -> Path:
     return get_required_path(_K8S_ROOT_KUSTOMIZATION).parent
 
 
-def _flux_target_namespace(kust: Path) -> str | None:
-    flux = kust.parent / "flux-kustomization.yaml"
-    if not flux.exists():
-        return None
+def _flux_target_namespaces(k8s_dir: Path) -> dict[str, str | None]:
+    flux = k8s_dir / "flux/kustomizations.k8s.yaml"
+    result = {}
     for doc in yaml.safe_load_all(flux.read_text()):
-        if isinstance(doc, dict) and (ns := doc.get("spec", {}).get("targetNamespace")):
-            return str(ns)
-    return None
+        if not isinstance(doc, dict) or doc.get("kind") != "Kustomization":
+            continue
+        spec = doc.get("spec", {})
+        result[str(spec.get("path"))] = (
+            str(target_namespace) if (target_namespace := spec.get("targetNamespace")) else None
+        )
+    return result
 
 
 def test_generators_declare_a_namespace(k8s_dir: Path) -> None:
     offenders: list[str] = []
+    flux_target_namespaces = _flux_target_namespaces(k8s_dir)
     for kust in k8s_dir.rglob("kustomization.yaml"):
         doc = yaml.safe_load(kust.read_text())
         if not isinstance(doc, dict):
             continue
-        # Only directories Flux applies directly are checked. A base or overlay
-        # fragment has no flux-kustomization.yaml and inherits its namespace from
-        # whichever parent includes it, so requiring one there would be wrong --
-        # e.g. grocy/user-perms-base and seaweedfs/cluster.
-        if not (kust.parent / "flux-kustomization.yaml").exists():
+        # Only directories Flux applies directly are checked. Base or overlay
+        # fragments have no entry in the central Flux chart and inherit their
+        # namespace from whichever parent includes them.
+        flux_path = f"./cluster/k8s/{kust.parent.relative_to(k8s_dir).as_posix()}"
+        if flux_path not in flux_target_namespaces:
             continue
         # A namespace supplied for the whole kustomization, by either mechanism,
         # covers every generated resource in it.
-        if doc.get("namespace") or _flux_target_namespace(kust):
+        if doc.get("namespace") or flux_target_namespaces.get(flux_path):
             continue
         # A generator used purely as a `replacements` source is never applied, so
         # it needs no namespace -- e.g. seaweedfs/cluster's filer.toml, which is

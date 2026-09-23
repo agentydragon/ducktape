@@ -64,6 +64,3 @@ resource "kubernetes_secret" "tana_mcp_facade_oidc_source" {
     client_secret = authentik_provider_oauth2.tana_mcp_facade.client_secret
   }
 }
-
-
-# --- Manifold MCP facade (public OAuth facade, gates access to Manifold Markets) ---

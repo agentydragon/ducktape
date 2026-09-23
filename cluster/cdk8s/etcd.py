@@ -13,12 +13,7 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import Protocol, Service, ServicePort, k8s
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDependsOn,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -27,9 +22,11 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecNamespaceSelector,
     ServiceMonitorSpecSelector,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, flux_kustomization, health_checks, kustomize_kustomization
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, health_checks, kustomize_kustomization
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.metadata import metadata
 from cluster.scripts import nebula_mesh
@@ -101,37 +98,39 @@ class TalosEtcdMetrics(Construct):
         )
 
 
-def write_manifests(root: Path, mesh: nebula_mesh.Mesh) -> None:
+def etcd_monitoring(
+    flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    root: Path,
+    mesh: nebula_mesh.Mesh,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
     name = "etcd-monitoring"
     out_dir = root / OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
     chart = Chart(app, name, disable_resource_name_hashes=True)
     TalosEtcdMetrics(chart, "etcd", mesh)
-    add_fleet_rules(chart, provided_secrets={}, providers=frozenset())
+    add_fleet_rules(chart)
     app.synth()
 
-    write_yaml(
-        out_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            name,
-            spec=KustomizationSpec(
-                interval="10m",
-                retry_interval="1m",
-                timeout="2m",
-                path=f"./{OUTPUT_DIR}",
-                prune=True,
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                    name="monitoring-etcd",
-                    namespace=FLUX_NAMESPACE,
-                ),
-                depends_on=[KustomizationSpecDependsOn(name="monitoring-crds")],  # the ServiceMonitor CRD
-                wait=True,
-                health_checks=health_checks(chart, ("ServiceMonitor",)),
-            ),
+    kustomization = flux_kustomization(
+        flux_chart,
+        name,
+        spec=KustomizationSpec(
+            interval="10m",
+            retry_interval="1m",
+            timeout="2m",
+            path=artifact_path(artifact),
+            prune=True,
+            source_ref=artifact_source_ref(artifact),
+            # the ServiceMonitor CRD
+            depends_on=[flux_kustomization_depends_on(monitoring_crds)],
+            wait=True,
+            health_checks=health_checks(chart, ("ServiceMonitor",)),
         ),
     )
     write_yaml(
         out_dir / "kustomization.yaml", kustomize_kustomization(namespace=NAMESPACE, resources=[f"{name}.k8s.yaml"])
     )
+    return kustomization

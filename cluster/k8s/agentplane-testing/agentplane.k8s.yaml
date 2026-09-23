@@ -48,109 +48,6 @@ spec:
         memory: 8Gi
       type: Pod
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: agentplane-operator
-  namespace: agentplane-testing
-rules:
-  - apiGroups:
-      - extensions.agents.x-k8s.io
-    resources:
-      - sandboxtemplates
-    verbs:
-      - get
-  - apiGroups:
-      - agents.x-k8s.io
-    resources:
-      - sandboxes
-    verbs:
-      - create
-      - get
-      - list
-      - watch
-      - patch
-      - delete
-  - apiGroups:
-      - ""
-    resources:
-      - pods
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - pods/exec
-    verbs:
-      - create
-  - apiGroups:
-      - ""
-    resources:
-      - pods/portforward
-    verbs:
-      - create
-  - apiGroups:
-      - ""
-    resources:
-      - pods/log
-    verbs:
-      - get
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicysets
-    verbs:
-      - create
-      - get
-      - patch
-      - delete
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicybindings
-    verbs:
-      - create
-      - get
-      - patch
-      - delete
-  - apiGroups:
-      - ""
-    resourceNames:
-      - agentplane-agent
-    resources:
-      - serviceaccounts/token
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: agent-agentplane-operator
-  namespace: agentplane-testing
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: agentplane-operator
-subjects:
-  - apiGroup: rbac.authorization.k8s.io
-    kind: Group
-    name: oidc-ksbx-groups:haku
-  - apiGroup: rbac.authorization.k8s.io
-    kind: Group
-    name: haku:access-profile:haku
-  - apiGroup: rbac.authorization.k8s.io
-    kind: Group
-    name: haku:access-profile:public-coder
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: haku
-    namespace: haku-sandbox
-  - apiGroup: rbac.authorization.k8s.io
-    kind: Group
-    name: oidc-ksbx-groups:kubectl-sandbox-users
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -275,6 +172,42 @@ spec:
         username: egress
       type: kubernetes.io/basic-auth
 ---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: postgres-electric-generator
+  namespace: agentplane-testing
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: postgres-electric
+  namespace: agentplane-testing
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          kind: Password
+          name: postgres-electric-generator
+  refreshInterval: 8760h
+  target:
+    name: postgres-electric
+    template:
+      data:
+        dbname: app
+        host: postgres-rw.agentplane-testing.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://electric:{{ .password }}@postgres-rw.agentplane-testing.svc:5432/app
+        username: electric
+      type: kubernetes.io/basic-auth
+---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -313,8 +246,17 @@ spec:
         name: egress
         passwordSecret:
           name: postgres-egress
+      - ensure: present
+        login: true
+        name: electric
+        passwordSecret:
+          name: postgres-electric
+        replication: true
   monitoring:
     enablePodMonitor: true
+  postgresql:
+    parameters:
+      max_slot_wal_keep_size: 512MB
   probes:
     liveness:
       isolationCheck:
@@ -346,6 +288,214 @@ spec:
   databaseReclaimPolicy: delete
   name: egress
   owner: egress
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agentplane-electric-storage
+  namespace: agentplane-testing
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: seaweedfs-ovh
+  volumeMode: Filesystem
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-electric
+  name: agentplane-electric
+  namespace: agentplane-testing
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-electric
+        cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - hil-ovh
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: postgres-electric
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: postgres-electric
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  key: host
+                  name: postgres-electric
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: port
+                  name: postgres-electric
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  key: dbname
+                  name: postgres-electric
+            - name: DATABASE_URL
+              value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)
+            - name: ELECTRIC_INSECURE
+              value: "true"
+            - name: ELECTRIC_PORT
+              value: "3000"
+            - name: ELECTRIC_STORAGE
+              value: fast_file
+            - name: ELECTRIC_STORAGE_DIR
+              value: /var/lib/electric
+            - name: ELECTRIC_PERSISTENT_STATE
+              value: file
+            - name: ELECTRIC_MANUAL_TABLE_PUBLISHING
+              value: "true"
+            - name: ELECTRIC_REPLICATION_STREAM_ID
+              value: agentplane_conversation
+            - name: ELECTRIC_MAX_SHAPES
+              value: "1024"
+          image: docker.io/electricsql/electric:1.8.1@sha256:9b4cebe2d8f51fb3ebaeb156e443ba09deaa7c9e731f146e81f7e48238bae211
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /v1/health
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          name: electric
+          ports:
+            - containerPort: 3000
+              name: http
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /v1/health
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 1024Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /var/lib/electric
+              name: pvc-agentplane-electric-storage
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 65534
+        fsGroupChangePolicy: Always
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: pvc-agentplane-electric-storage
+          persistentVolumeClaim:
+            claimName: agentplane-electric-storage
+            readOnly: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-electric
+  name: agentplane-electric
+  namespace: agentplane-testing
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 3000
+      protocol: TCP
+      targetPort: 3000
+  selector:
+    cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-electric
+  namespace: agentplane-testing
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: postgres
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-electric
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -696,7 +846,7 @@ spec:
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
 metadata:
-  name: agentplane-egress-upstream-ca
+  name: agentplane-testing-egress-upstream-ca
 spec:
   sources:
     - useDefaultCAs: true
@@ -767,7 +917,7 @@ spec:
       containers:
         - args:
             - --rules-namespace=agentplane-testing
-            - --credentials-namespace=agentplane-egress-credentials
+            - --credentials-namespace=agentplane-testing-egress-credentials
             - --listen-port=8888
             - --admin-port=8081
             - --agent-api-port=8082
@@ -890,7 +1040,7 @@ spec:
           secret:
             secretName: agentplane-testing-egress-ca
         - configMap:
-            name: agentplane-egress-upstream-ca
+            name: agentplane-testing-egress-upstream-ca
           name: upstream-ca
         - emptyDir: {}
           name: confdir
@@ -1068,21 +1218,6 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
 metadata:
-  name: forgejo-haku
-  namespace: agentplane-testing
-spec:
-  description: "The password of the `haku` account on the internal Forgejo, the service user that owns haku-state and haku's mirrors. Requests carrying it act as that account with its full authority -- it is the account's own password, not a scoped token, so it reaches every repository haku can reach and the web UI besides. The proxy narrows nothing but the host: treat a sandbox bound to this as holding haku's Forgejo account."
-  source:
-    secretRef:
-      name: haku-forgejo-git
-      key: password
-  targets:
-    - header: Authorization
-      method: basicPassword
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
   name: kubernetes-workload
   namespace: agentplane-testing
 spec:
@@ -1149,19 +1284,6 @@ spec:
       clusterInternal: true
       credentialRef:
         name: kubernetes-workload
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: forgejo-haku
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - forgejo-http.forgejo.svc.cluster.local
-      clusterInternal: true
-      credentialRef:
-        name: forgejo-haku
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
@@ -1459,6 +1581,8 @@ spec:
                   name: postgres-app
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
+            - name: AGENTPLANE_ELECTRIC_URL
+              value: http://agentplane-electric.agentplane-testing.svc.cluster.local:3000
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://agentplane-dex-testing.allegedly.works/dex
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -1556,6 +1680,8 @@ spec:
                   name: postgres-app
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
+            - name: AGENTPLANE_ELECTRIC_URL
+              value: http://agentplane-electric.agentplane-testing.svc.cluster.local:3000
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://agentplane-dex-testing.allegedly.works/dex
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -1744,6 +1870,14 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-electric
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "3000"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
@@ -2073,7 +2207,6 @@ data:
     mcp_servers:
       example:
         server_id: example
-        provider: example
         server_url: http://agentplane-oauth-fixture.agentplane-testing.svc.cluster.local:8080/mcp
         client_id: agentplane-testing-mcp
         client_secret_file: /etc/agentplane-mcp/client-secret
@@ -2446,6 +2579,109 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-testing-operator
+  namespace: agentplane-testing
+rules:
+  - apiGroups:
+      - extensions.agents.x-k8s.io
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - create
+  - apiGroups:
+      - ""
+    resources:
+      - pods/portforward
+    verbs:
+      - create
+  - apiGroups:
+      - ""
+    resources:
+      - pods/log
+    verbs:
+      - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicysets
+    verbs:
+      - create
+      - get
+      - patch
+      - delete
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicybindings
+    verbs:
+      - create
+      - get
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - agentplane-agent
+    resources:
+      - serviceaccounts/token
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-agentplane-testing-operator
+  namespace: agentplane-testing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-testing-operator
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:haku
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:haku
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:public-coder
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -3104,3 +3340,61 @@ spec:
         - ports:
             - port: "5556"
               protocol: TCP
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    description: Outbound credentials readable only by the agentplane-testing egress proxy.
+  name: agentplane-testing-egress-credentials
+spec: {}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-egress-credentials-reader
+  namespace: agentplane-testing-egress-credentials
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-testing-egress
+  namespace: agentplane-testing-egress-credentials
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-egress-credentials-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-egress
+    namespace: agentplane-testing
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: agentplane-github-pat
+  namespace: agentplane-testing-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: github-agentydragon-agent
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: agentplane-github-pat

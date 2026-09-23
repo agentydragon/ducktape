@@ -23,8 +23,8 @@ idle_watchdog: false
 #   setup_docker:    true
 #   bazel_bes_proxy: { target: remote.buildbuddy.io:443 }
 # Restore a key (with a ProfileConfig field + test) when the Rust daemon
-# implements it; otherwise delete this tombstone once the "Rust parity
-# follow-ups" item in devinfra/claude/TODO.md is closed as won't-do.
+# implements it. Revisit this note when the Rust profile follow-ups in
+# devinfra/claude/TODO.md are implemented or explicitly closed.
 # NOTE: DUCKTAPE_OTEL_BEARER_TOKEN is still exported by web_env.sh, independent
 # of the removed `otel:` key. Claude Code *native* telemetry deliberately does
 # NOT go through a profile key either: it is wired as the "otel forwarder"
@@ -34,7 +34,7 @@ env_exports: |
   # Explicitly off: agent sessions let CI run the tests (AGENTS.md § Before
   # Hand-off), so an ambient enable can't turn the local gate back on.
   export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
-  # Nix devtools (prettier with svelte plugin, pre-commit, ruff, etc.) must come
+  # Nix devtools (prettier, pre-commit, ruff, etc.) must come
   # before /opt/node22/bin so the nix versions are preferred. In `profile` mode
   # web_setup.sh symlinks the nix-profile bin into /usr/local/bin (on PATH, but
   # after /opt/node22), so prepend it here to win.

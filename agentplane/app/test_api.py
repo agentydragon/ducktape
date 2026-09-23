@@ -1,0 +1,868 @@
+"""The HTTP contract over the inventory: status codes, bodies, and the schema's own validation."""
+
+from __future__ import annotations
+
+import socket
+from collections.abc import AsyncIterator, Iterator
+from datetime import timedelta
+
+import httpx
+import pytest
+import pytest_bazel
+from fastapi.testclient import TestClient
+
+from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.api import create_app, upstream_http_error
+from agentplane.app.bridge import RunnerBridge
+from agentplane.app.conftest import AGENT_AUTH
+from agentplane.app.decisions import DecisionsClient
+from agentplane.app.egress import EgressInventory
+from agentplane.app.electric import ElectricProxy
+from agentplane.app.identity import TokenReviewer
+from agentplane.app.inventory import SandboxInventory
+from agentplane.app.live import LiveIndex
+from agentplane.app.presets import Harness, PresetCatalog, SandboxPreset, ThreadPreset
+from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
+from agentplane.app.testing.kubernetes import (
+    NAMESPACE,
+    TEMPLATE,
+    FakeCoreV1Api,
+    FakeCustomObjectsApi,
+    action_policy_set,
+    egress_binding,
+    egress_policy,
+    pod,
+    sandbox,
+)
+from agentplane.app.thread.recording import THREAD_FOLD_EPOCH
+from agentplane.app.thread.store import ThreadStore
+from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.runner import protocol_pb2
+
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
+
+
+TEST_MODELS = {Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]}
+
+
+@pytest.mark.parametrize("host", ["identity-provider.invalid", "actions.invalid"])
+@pytest.mark.parametrize("upstream_status", [None, 403, 429, 503])
+def test_upstream_http_error_preserves_request_without_secrets(host: str, upstream_status: int | None) -> None:
+    request = httpx.Request(
+        "POST",
+        f"https://user:private-password@{host}/token?code=private-code#private-fragment",
+        headers={"Authorization": "Bearer private-token"},
+    )
+    error: httpx.HTTPStatusError | httpx.RequestError
+    if upstream_status is None:
+        error = httpx.ConnectError("private transport details", request=request)
+    else:
+        response = httpx.Response(upstream_status, request=request, text="private response body")
+        error = httpx.HTTPStatusError("private status details", request=request, response=response)
+    result = upstream_http_error(error)
+    assert result.status_code == (upstream_status if upstream_status is not None else 503)
+    detail: object = result.detail
+    assert detail == {
+        "method": "POST",
+        "url": f"https://{host}/token",
+        "upstream_status": upstream_status,
+        "error_type": "ConnectError" if upstream_status is None else "HTTPStatusError",
+    }
+
+
+TEST_PRESETS = PresetCatalog(
+    sandboxes={
+        "public-coder": SandboxPreset(
+            title="Public coder",
+            template="agentplane-test-runner",
+            policies=["github"],
+            action_policy_sets=["github-reads"],
+            thread_preset="public-coder-codex",
+            bootstrap="mkdir -p /state/workspaces",
+        )
+    },
+    threads={
+        "public-coder-codex": ThreadPreset(
+            title="Public coder / Codex",
+            harness=Harness.CODEX,
+            model="test-codex-model",
+            reasoning_effort="medium",
+            instructions="preset instructions",
+        )
+    },
+    agent_instructions="shared agent instructions",
+)
+
+
+@pytest.fixture
+async def electric(store: ThreadStore) -> AsyncIterator[ElectricProxy]:
+    async def unexpected(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"API contract tests must not dispatch Electric requests: {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(unexpected), base_url="http://electric") as client:
+        yield ElectricProxy(client, store)
+
+
+@pytest.fixture
+def client(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: ThreadStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
+    reviewer: TokenReviewer,
+    electric: ElectricProxy,
+) -> Iterator[TestClient]:
+    custom_objects.objects[("sandboxes", "live")] = sandbox("live")
+    core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
+    custom_objects.objects[("sandboxes", "fresh")] = sandbox("fresh")
+    custom_objects.objects[("egresspolicies", "github")] = egress_policy(
+        "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
+    )
+    custom_objects.objects[("egresspolicies", "pypi")] = egress_policy("pypi", [{"hosts": ["pypi.org"]}])
+    custom_objects.objects[("egressbindings", "live-seeded")] = egress_binding(
+        "live-seeded",
+        subjects=[{"namespace": NAMESPACE, "name": "live"}],
+        policies=["github"],
+        active=("True", "Resolved", ""),
+    )
+    custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
+        "live-granted", subjects=[{"namespace": NAMESPACE, "name": "live"}], policies=["pypi"], from_git=False
+    )
+    custom_objects.objects[("actionpolicysets", "github-reads")] = action_policy_set(
+        "github-reads",
+        auto_approve_if=[{"type": "exact_actions", "actions": {"github": ["search_code"]}}],
+        ready=("True", "Valid", "spec accepted"),
+    )
+    custom_objects.objects[("actionpolicysets", "github-writes")] = action_policy_set(
+        "github-writes", auto_approve_if=[{"type": "exact_actions", "actions": {"github": ["push_files"]}}]
+    )
+    app = create_app(
+        inventory,
+        bridge,
+        store,
+        TEST_MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        presets=TEST_PRESETS,
+        electric=electric,
+    )
+    with TestClient(app, headers=AGENT_AUTH) as test_client:
+        yield test_client
+
+
+def test_list_reports_state(client: TestClient) -> None:
+    response = client.get("/sandboxes")
+
+    assert response.status_code == 200
+    assert {row["name"]: row["state"] for row in response.json()} == {"live": "running", "fresh": "waiting_for_pod"}
+
+
+def test_get_returns_the_row_or_404(client: TestClient) -> None:
+    row = client.get("/sandboxes/live").json()
+
+    assert (row["state"], row["pod"]["ip"]) == ("running", "10.0.0.7")
+    assert row["pod"]["containers"][0]["state"] == "running"
+    assert client.get("/sandboxes/nope").status_code == 404
+
+
+def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
+    response = client.post("/sandboxes", json={"slug": "demo", "template": TEMPLATE})
+
+    assert response.status_code == 201
+    row = response.json()
+    assert row["name"].startswith("demo-")
+    assert row["state"] == "waiting_for_pod"
+    assert ("sandboxes", row["name"]) in custom_objects.objects
+    # Nothing was picked, so nothing may leave it.
+    assert client.get(f"/sandboxes/{row['name']}/egress").json() == []
+
+
+def test_templates_list_the_concrete_choices_for_the_create_form(client: TestClient) -> None:
+    assert client.get("/sandboxes/templates").json() == [TEMPLATE]
+
+
+def test_create_requires_an_explicit_template(client: TestClient) -> None:
+    assert client.post("/sandboxes", json={"slug": "demo"}).status_code == 422
+
+
+def test_create_records_the_concrete_thread_defaults_and_bootstrap(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    response = client.post(
+        "/sandboxes",
+        json={
+            "slug": "coder",
+            "template": TEMPLATE,
+            "policies": ["github"],
+            "action_policy_sets": ["github-reads"],
+            "thread_defaults": {
+                "harness": "HARNESS_CODEX",
+                "model": "edited-model",
+                "cwd": "/state/workspaces/{session_id}",
+                "reasoning_effort": "medium",
+                "instructions": "extra instructions",
+            },
+            "bootstrap": "mkdir -p /state/workspaces",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    row = response.json()
+    assert row["binding"] == {
+        "thread_defaults": {
+            "harness": "HARNESS_CODEX",
+            "model": "edited-model",
+            "cwd": "/state/workspaces/{session_id}",
+            "reasoning_effort": "medium",
+            "instructions": "extra instructions",
+        },
+        "bootstrap": "mkdir -p /state/workspaces",
+    }
+    (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
+    assert [policy["name"] for policy in binding["policies"]] == ["github"]
+    annotation = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["annotations"]
+    assert "agentplane.allegedly.works/sandbox-binding" in annotation
+
+
+def test_create_binds_the_sandbox_to_its_action_policy_sets(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """One ActionPolicyBinding per launched Sandbox, owned by it and naming the ServiceAccount it
+    runs as: what its harness may do without the operator, as the Action Service reads it. Reading the policy back is the Action Service's answer through the operator
+    federation (`test_action_api.py`), so a token caller is refused it."""
+    row = client.post(
+        "/sandboxes", json={"slug": "coder", "template": TEMPLATE, "action_policy_sets": ["github-reads"]}
+    ).json()
+
+    sandbox_uid = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["uid"]
+    (written,) = [obj for (kind, _), obj in custom_objects.objects.items() if kind == "actionpolicybindings"]
+    assert written["metadata"]["name"].startswith(f"{row['name']}-")
+    assert written["metadata"]["labels"] == {"app.agentplane.allegedly.works/managed-by": "integration-app"}
+    assert written["metadata"]["ownerReferences"][0]["uid"] == sandbox_uid
+    assert written["spec"] == {"subject": {"namespace": NAMESPACE, "name": row["name"]}, "policySets": ["github-reads"]}
+
+    client.post("/sandboxes", json={"slug": "plain", "template": TEMPLATE})
+    assert len([kind for kind, _ in custom_objects.objects if kind == "actionpolicybindings"]) == 1
+
+
+def test_a_missing_action_policy_set_creates_nothing(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
+    """Refused before the Sandbox exists, as a missing egress policy is: a launch that would grant
+    nothing leaves no Sandbox behind to puzzle over."""
+    del custom_objects.objects[("actionpolicysets", "github-reads")]
+    seeded = {name for kind, name in custom_objects.objects if kind == "sandboxes"}
+
+    response = client.post(
+        "/sandboxes", json={"slug": "coder", "template": TEMPLATE, "action_policy_sets": ["github-reads"]}
+    )
+
+    assert response.status_code == 422, response.text
+    assert "github-reads" in response.json()["detail"]
+    assert {name for kind, name in custom_objects.objects if kind == "sandboxes"} == seeded
+
+
+def _written_bindings(custom_objects: FakeCustomObjectsApi) -> list[tuple[str, list[str]]]:
+    """Each ActionPolicyBinding the app wrote, as (bound account, its sets): the launch's whole effect,
+    read where it landed, since the policy route answers only an operator session."""
+    return [
+        (obj["spec"]["subject"]["name"], obj["spec"]["policySets"])
+        for (kind, _), obj in custom_objects.objects.items()
+        if kind == "actionpolicybindings"
+    ]
+
+
+def test_sandbox_fields_are_the_exact_egress_and_action_policy_picks(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    row = client.post(
+        "/sandboxes",
+        json={"slug": "coder", "template": TEMPLATE, "policies": ["pypi"], "action_policy_sets": ["github-writes"]},
+    ).json()
+
+    (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
+    assert [policy["name"] for policy in binding["policies"]] == ["pypi"]
+    assert _written_bindings(custom_objects) == [(row["name"], ["github-writes"])]
+
+
+def test_the_launch_pick_of_action_policy_sets_is_the_operators(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """An explicit empty list binds nothing, while a concrete choice binds exactly that list."""
+    unbound = client.post("/sandboxes", json={"slug": "coder", "template": TEMPLATE, "action_policy_sets": []})
+    assert unbound.status_code == 201, unbound.text
+    assert _written_bindings(custom_objects) == []
+
+    picked = client.post(
+        "/sandboxes",
+        json={"slug": "plain", "template": TEMPLATE, "action_policy_sets": ["github-reads", "github-writes"]},
+    )
+    assert picked.status_code == 201, picked.text
+    assert _written_bindings(custom_objects) == [(picked.json()["name"], ["github-reads", "github-writes"])]
+
+    sandboxes_before = [name for kind, name in custom_objects.objects if kind == "sandboxes"]
+    refused = client.post(
+        "/sandboxes", json={"slug": "plain", "template": TEMPLATE, "action_policy_sets": ["vanished"]}
+    )
+    assert refused.status_code == 422, refused.text
+    assert [name for kind, name in custom_objects.objects if kind == "sandboxes"] == sandboxes_before
+
+
+def test_policy_sets_list_the_namespace_for_the_create_form(client: TestClient) -> None:
+    sets = {policy_set["name"]: policy_set for policy_set in client.get("/action-policy/sets").json()}
+    assert set(sets) == {"github-reads", "github-writes"}
+    assert sets["github-reads"]["ready"]["status"] == "True"
+    assert (sets["github-writes"]["ready"], sets["github-writes"]["refused"]) == (None, None)
+
+
+def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    response = client.post("/sandboxes", json={"slug": "demo", "template": TEMPLATE, "policies": ["pypi"]})
+
+    assert response.status_code == 201, response.text
+    row = response.json()
+    # The new sandbox's egress is its own pick and nothing else: no binding names it in advance.
+    (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
+    assert [policy["name"] for policy in binding["policies"]] == ["pypi"]
+    picked = custom_objects.objects[("egressbindings", binding["name"])]
+    assert (
+        picked["metadata"]["ownerReferences"][0]["uid"]
+        == custom_objects.objects[("sandboxes", row["name"])]["metadata"]["uid"]
+    )
+
+
+@pytest.mark.parametrize("default_policies", [["github"]])
+def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(client: TestClient) -> None:
+    """The model endpoint is what this is for in the deployment: without it a sandbox has no agent,
+    so it is not the caller's to leave out — nor, having picked it, to be granted twice. The
+    parameter overrides the `default_policies` fixture the client is built from."""
+    unpicked = client.post("/sandboxes", json={"slug": "plain", "template": TEMPLATE}).json()
+    (binding,) = client.get(f"/sandboxes/{unpicked['name']}/egress").json()
+    assert [policy["name"] for policy in binding["policies"]] == ["github"]
+
+    picked = client.post(
+        "/sandboxes", json={"slug": "asked", "template": TEMPLATE, "policies": ["github", "pypi"]}
+    ).json()
+    (binding,) = client.get(f"/sandboxes/{picked['name']}/egress").json()
+    assert [policy["name"] for policy in binding["policies"]] == ["github", "pypi"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"slug": "Demo", "template": TEMPLATE},
+        {"slug": "-demo", "template": TEMPLATE},
+        {"slug": "a" * 58, "template": TEMPLATE},
+        {"slug": "demo", "template": TEMPLATE, "harness": "claude"},
+        {"slug": "demo", "template": TEMPLATE, "model": "cheap"},
+    ],
+    ids=[
+        "uppercase-slug",
+        "leading-dash-slug",
+        "slug-too-long-for-a-dns-label",
+        "harness-on-sandbox",
+        "model-on-sandbox",
+    ],
+)
+def test_create_rejects_invalid_requests(client: TestClient, custom_objects: FakeCustomObjectsApi, body: dict) -> None:
+    response = client.post("/sandboxes", json=body)
+
+    assert response.status_code == 422
+    assert all(kind != "sandboxes" or name in {"live", "fresh"} for kind, name in custom_objects.objects)
+
+
+def test_suspend_resume_apply_in_order(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
+    assert client.post("/sandboxes/live/suspend").status_code == 204
+    assert client.get("/sandboxes/live").json()["state"] == "suspended"
+    assert client.post("/sandboxes/live/resume").status_code == 204
+    assert client.get("/sandboxes/live").json()["state"] == "running"
+    assert custom_objects.objects[("sandboxes", "live")]["spec"]["operatingMode"] == "Running"
+    assert client.post("/sandboxes/nope/suspend").status_code == 404
+
+
+def test_delete_removes_the_sandbox_once_it_is_suspended(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    refused = client.delete("/sandboxes/live")
+
+    assert refused.status_code == 409
+    assert "suspend it" in refused.json()["detail"]
+    assert ("sandboxes", "live") in custom_objects.objects
+
+    assert client.post("/sandboxes/live/suspend").status_code == 204
+    assert client.delete("/sandboxes/live").status_code == 204
+    assert ("sandboxes", "live") not in custom_objects.objects
+    assert client.delete("/sandboxes/live").status_code == 404
+
+
+def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fields_win(
+    client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = client.post(
+        "/sandboxes",
+        json={
+            "slug": "coder",
+            "template": TEMPLATE,
+            "thread_defaults": {
+                "harness": "HARNESS_CODEX",
+                "model": "sandbox-model",
+                "cwd": "/state/workspaces/{session_id}",
+                "reasoning_effort": "medium",
+                "instructions": "preset instructions",
+            },
+            "bootstrap": "mkdir -p /state/workspaces",
+        },
+    ).json()
+    calls: list[tuple[str, object]] = []
+
+    async def initialize(name: str, script: str) -> protocol_pb2.InitializeResult:
+        calls.append(("initialize", script))
+        return protocol_pb2.InitializeResult(executed=True)
+
+    async def open_session(name: str, session_id: str, spec: protocol_pb2.SessionSpec) -> protocol_pb2.Attached:
+        calls.append(("open", spec))
+        return protocol_pb2.Attached(session_id=session_id, spec=spec)
+
+    monkeypatch.setattr(bridge, "initialize", initialize)
+    monkeypatch.setattr(bridge, "open_session", open_session)
+
+    response = client.post(
+        f"/sandboxes/{created['name']}/sessions",
+        json={"session_id": "thread-1", "spec": {"model": "thread-model", "instructions": "thread instructions"}},
+    )
+
+    assert response.status_code == 201, response.text
+    assert calls[0] == ("initialize", "mkdir -p /state/workspaces")
+    assert calls[1][0] == "open"
+    spec = calls[1][1]
+    assert isinstance(spec, protocol_pb2.SessionSpec)
+    assert (spec.harness, spec.cwd, spec.model, spec.reasoning_effort, spec.instructions) == (
+        protocol_pb2.HARNESS_CODEX,
+        "/state/workspaces/thread-1",
+        "thread-model",
+        "medium",
+        "shared agent instructions\n\nthread instructions",
+    )
+
+
+def test_shared_instructions_are_also_added_to_direct_session_launches(
+    client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: list[protocol_pb2.SessionSpec] = []
+
+    async def open_session(name: str, session_id: str, spec: protocol_pb2.SessionSpec) -> protocol_pb2.Attached:
+        captured.append(spec)
+        return protocol_pb2.Attached(session_id=session_id, spec=spec)
+
+    monkeypatch.setattr(bridge, "open_session", open_session)
+    response = client.post(
+        "/sandboxes/live/sessions",
+        json={"session_id": "plain-1", "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "plain-model"}},
+    )
+
+    assert response.status_code == 201, response.text
+    assert captured == [
+        protocol_pb2.SessionSpec(
+            harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="plain-model", instructions="shared agent instructions"
+        )
+    ]
+
+
+def test_a_runner_that_does_not_answer_is_a_503(
+    inventory: SandboxInventory,
+    store: ThreadStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
+    reviewer: TokenReviewer,
+) -> None:
+    """A Pod with an address but no runner listening yet, as right after a resume."""
+    custom_objects.objects[("sandboxes", "live")] = sandbox("live")
+    core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
+
+    # A bound but never listening port refuses every connection for as long as the socket is open.
+    with socket.socket() as closed_port:
+        closed_port.bind(("127.0.0.1", 0))
+        address = f"127.0.0.1:{closed_port.getsockname()[1]}"
+
+        async def nobody_listens(name: str) -> str:
+            return address
+
+        app = create_app(
+            inventory,
+            RunnerBridge(address_of=nobody_listens, store=store),
+            store,
+            TEST_MODELS,
+            egress,
+            decisions,
+            live_index,
+            action_policy,
+            reviewer=reviewer,
+        )
+        with TestClient(app, headers=AGENT_AUTH) as client:
+            response = client.get("/sandboxes/live/sessions")
+    assert response.status_code == 503
+    assert "not answering" in response.json()["detail"]
+
+
+def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> None:
+    response = client.get("/sandboxes/live/egress")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [(b["name"], b["from_git"]) for b in body] == [("live-granted", False), ("live-seeded", True)]
+    assert body[1]["policies"][0]["rules"][0]["hosts"] == ["api.github.com"]
+    # Nothing names `fresh`, so nothing may leave it.
+    assert client.get("/sandboxes/fresh/egress").json() == []
+    assert client.get("/sandboxes/nope/egress").status_code == 404
+
+
+def test_granting_a_running_sandbox_adds_a_binding_and_leaves_the_others(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """A sandbox's egress is not frozen at creation: the grant is one more binding naming it, and
+    revoking that one leaves the rest of its egress standing."""
+    granted = client.post("/sandboxes/live/egress", json={"policies": ["pypi", "github"]})
+
+    assert granted.status_code == 201, granted.text
+    binding = granted.json()
+    assert (binding["subjects"], binding["from_git"]) == ([{"namespace": NAMESPACE, "name": "live"}], False)
+    assert [policy["name"] for policy in binding["policies"]] == ["pypi", "github"]
+    # Owned by the Sandbox, so deleting the sandbox takes the grant with it.
+    (owner,) = custom_objects.objects[("egressbindings", binding["name"])]["metadata"]["ownerReferences"]
+    assert (owner["kind"], owner["name"], owner["uid"]) == (
+        "Sandbox",
+        "live",
+        custom_objects.objects[("sandboxes", "live")]["metadata"]["uid"],
+    )
+    assert sorted(b["name"] for b in client.get("/sandboxes/live/egress").json()) == sorted(
+        ["live-granted", "live-seeded", binding["name"]]
+    )
+
+    assert client.delete(f"/egress/bindings/{binding['name']}").status_code == 204
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-granted", "live-seeded"]
+
+
+def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """422 and not 404: the sandbox in the path is there, and 404 on this route already says it is
+    not. The CRD would admit the dangling name and the proxy would report `MissingPolicy`, so what
+    the operator would otherwise get is a grant that grants nothing."""
+    refused = client.post("/sandboxes/live/egress", json={"policies": ["github", "vanished"]})
+
+    assert refused.status_code == 422
+    assert "vanished" in refused.json()["detail"]
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-granted", "live-seeded"]
+    assert client.post("/sandboxes/nope/egress", json={"policies": ["github"]}).status_code == 404
+    # The CRD's policies are minItems: 1, so an empty grant is refused here rather than at admission.
+    assert client.post("/sandboxes/live/egress", json={"policies": []}).status_code == 422
+    # And at launch the names resolve before the Sandbox exists, so a typo leaves none behind.
+    assert (
+        client.post("/sandboxes", json={"slug": "demo", "template": TEMPLATE, "policies": ["vanished"]}).status_code
+        == 422
+    )
+    assert all(kind != "sandboxes" or name in {"live", "fresh"} for kind, name in custom_objects.objects)
+
+
+def test_egress_decisions_come_from_the_proxy(client: TestClient, egress_admin: FakeEgressAdmin) -> None:
+    egress_admin.decisions[(NAMESPACE, "live")] = [
+        decision("2026-09-02T10:00:00Z", "CONNECT", "api.github.com", None, "allow"),
+        decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "/repos/x/y", "allow", address="140.82.116.5"),
+        decision("2026-09-02T10:00:02Z", "POST", "pypi.org", "/simple/", "deny", reason="no-rule"),
+    ]
+
+    response = client.get("/sandboxes/live/egress/decisions")
+
+    assert response.status_code == 200, response.text
+    assert [(d["method"], d["host"], d["path"], d["outcome"], d["reason"]) for d in response.json()] == [
+        ("CONNECT", "api.github.com", None, "allow", None),
+        ("GET", "api.github.com", "/repos/x/y", "allow", None),
+        ("POST", "pypi.org", "/simple/", "deny", "no-rule"),
+    ]
+    # The proxy resolves and pins the host itself; the address it dialled reaches the page.
+    assert [d["address"] for d in response.json()] == [None, "140.82.116.5", None]
+    assert egress_admin.queries == [(NAMESPACE, "live")], (
+        "the route asks for the account the sandbox runs as, namespace included"
+    )
+    assert client.get("/sandboxes/nope/egress/decisions").status_code == 404
+    assert egress_admin.queries == [(NAMESPACE, "live")]
+
+
+def test_egress_decisions_are_502_when_the_proxy_is_unreachable(
+    client: TestClient, egress_admin: FakeEgressAdmin
+) -> None:
+    egress_admin.reachable = False
+
+    response = client.get("/sandboxes/live/egress/decisions")
+
+    assert response.status_code == 502
+    assert "did not answer" in response.json()["detail"]
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-granted", "live-seeded"]
+
+
+def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> None:
+    """Guarded from the app, not from a proxy in front of it: no header a caller sets is trusted."""
+    assert client.get("/sandboxes", headers={"Authorization": ""}).status_code == 401
+    assert client.get("/sandboxes", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert client.post("/sandboxes", json={"slug": "x"}, headers={"Authorization": ""}).status_code == 401
+    # The forgeable header the API server's service proxy used to forward buys nothing now.
+    assert client.get("/sandboxes", headers={"Authorization": "", "x-authentik-username": "root"}).status_code == 401
+    assert client.get("/healthz", headers={"Authorization": ""}).status_code == 204
+
+
+@pytest.mark.parametrize("endpoint", ["interest", "entities", "payload-interest", "payload-chunks", "commands"])
+def test_thread_sync_routes_authenticate_before_dispatch(client: TestClient, endpoint: str) -> None:
+    path = f"/threads/00000000-0000-0000-0000-000000000000/sync/{endpoint}"
+    for credentials in (
+        {"Authorization": ""},
+        {"Authorization": "Bearer wrong"},
+        {"Authorization": "", "x-authentik-username": "root"},
+    ):
+        assert client.get(path, headers=credentials).status_code == 401
+
+
+def test_binding_revocation(client: TestClient) -> None:
+    """A runtime binding is revoked by deleting it; one the manifest declares would be re-applied."""
+    refused = client.delete("/egress/bindings/live-seeded")
+    assert refused.status_code == 409
+    assert "git" in refused.json()["detail"]
+    assert client.delete("/egress/bindings/live-granted").status_code == 204
+    assert client.delete("/egress/bindings/live-granted").status_code == 404
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-seeded"]
+
+
+def test_policies_lists_the_namespace_for_the_create_form(client: TestClient) -> None:
+    assert {policy["name"] for policy in client.get("/egress/policies").json()} == {"github", "pypi"}
+
+
+def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient) -> None:
+    assert client.get("/presets").json() == [
+        {
+            "name": "public-coder",
+            "title": "Public coder",
+            "template": "agentplane-test-runner",
+            "policies": ["github"],
+            "action_policy_sets": ["github-reads"],
+            "thread_defaults": {
+                "harness": "HARNESS_CODEX",
+                "model": "test-codex-model",
+                "cwd": "/state/workspaces/{session_id}",
+                "reasoning_effort": "medium",
+                "instructions": "preset instructions",
+            },
+            "bootstrap": "mkdir -p /state/workspaces",
+        }
+    ]
+
+
+def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
+    """The catalog the session form offers; a thread carries its model, a sandbox does not."""
+    assert client.get("/models").json() == {
+        "HARNESS_CLAUDE": ["test-claude-model"],
+        "HARNESS_CODEX": ["test-codex-model"],
+    }
+
+
+async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: ThreadStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+) -> None:
+    """Over ASGI on this loop, not TestClient's thread: the store's pooled asyncpg connections
+    belong to the loop that opened them."""
+    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    thread_id = str(await store.thread("live", "s-1", spec))
+    await store.thread("live", "s-2", spec)
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        (found,) = (await http.get("/threads", params={"sandbox": "live", "session_id": "s-1"})).json()
+        assert (found["id"], found["name"]) == (thread_id, None)
+        assert (await http.get("/threads", params={"sandbox": "other"})).json() == []
+
+        renamed = await http.patch(f"/threads/{thread_id}", json={"name": "  list the files  "})
+        assert renamed.status_code == 200, renamed.text
+        assert renamed.json()["name"] == "list the files"
+        assert (await http.get(f"/threads/{thread_id}")).json()["name"] == "list the files"
+        assert (await http.patch(f"/threads/{thread_id}", json={"name": "   "})).json()["name"] is None
+        assert (await http.patch(f"/threads/{thread_id}", json={"name": None})).json()["name"] is None
+        assert (await http.patch(f"/threads/{thread_id}", json={"name": "x" * 201})).status_code == 422
+        assert (await http.patch(f"/threads/{thread_id}", json={})).status_code == 422
+        missing = await http.patch("/threads/00000000-0000-0000-0000-000000000000", json={"name": "nobody"})
+        assert missing.status_code == 404
+
+
+async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply_and_reload(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: ThreadStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+) -> None:
+    """A reload asks the authoritative scope about browser-held ids without resending commands."""
+    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    thread = await store.thread("live", "command-reconcile", spec)
+    lease = await store.acquire_ingestion("live", timedelta(minutes=1))
+    assert lease is not None
+    failed = command_pb2.Command(
+        command_id="failed", submit_input=command_pb2.SubmitInput(text="persisted before the reply was lost")
+    )
+    pending = command_pb2.Command(
+        command_id="pending", submit_input=command_pb2.SubmitInput(text="still awaiting the runner")
+    )
+
+    def entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
+        return event_log_pb2.EventEntry(
+            cursor=cursor,
+            origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=cursor),
+            event=event_pb2.Event(**observation),  # type: ignore[arg-type]
+        )
+
+    await store.record(
+        thread,
+        [
+            entry(1, command_admitted=event_pb2.CommandAdmitted(command=failed)),
+            entry(2, command_failed=event_pb2.CommandFailed(command_id="failed", reason="runner rejected it")),
+            entry(3, command_admitted=event_pb2.CommandAdmitted(command=pending)),
+        ],
+        lease=lease,
+    )
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+    )
+    body = {"projection_epoch": THREAD_FOLD_EPOCH, "command_ids": ["failed", "pending", "absent", "failed"]}
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        first = await http.post(f"/threads/{thread}/commands/reconcile", json=body)
+        assert first.status_code == 200, first.text
+        assert first.json() == {
+            "projection_epoch": THREAD_FOLD_EPOCH,
+            "commands": [
+                {"command_id": "failed", "outcome": "failed"},
+                {"command_id": "pending", "outcome": "pending"},
+                {"command_id": "absent", "outcome": None},
+            ],
+        }
+        # This is the reload path after a committed admission's HTTP response was lost.
+        reloaded = await http.post(f"/threads/{thread}/commands/reconcile", json=body)
+        assert reloaded.json() == first.json()
+
+        stale = await http.post(
+            f"/threads/{thread}/commands/reconcile", json={**body, "projection_epoch": "old-projection"}
+        )
+        assert stale.status_code == 410
+        invalid = await http.post(f"/threads/{thread}/commands/reconcile", json={**body, "command_ids": ["id"] * 129})
+        assert invalid.status_code == 422
+
+
+async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listing(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: ThreadStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+) -> None:
+    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    thread_id = str(await store.thread("live", "s-1", spec))
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        assert (await http.post(f"/threads/{thread_id}/archive")).status_code == 204
+        assert (await http.get("/threads", params={"sandbox": "live"})).json() == []
+        [archived] = (await http.get("/threads", params={"sandbox": "live", "include_archived": "true"})).json()
+        assert archived["archived"] is True
+        assert (await http.get(f"/threads/{thread_id}")).json()["archived"] is True
+
+        assert (await http.post(f"/threads/{thread_id}/unarchive")).status_code == 204
+        [unarchived] = (await http.get("/threads", params={"sandbox": "live"})).json()
+        assert unarchived["archived"] is False
+
+        assert (await http.post("/threads/00000000-0000-0000-0000-000000000000/archive")).status_code == 404
+        assert (await http.post("/threads/00000000-0000-0000-0000-000000000000/unarchive")).status_code == 404
+
+
+async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: ThreadStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
+) -> None:
+    """The cross-sandbox listing: a Thread survives its Sandbox's deletion, and a Sandbox with
+    several Threads is not duplicated once per Thread."""
+    custom_objects.objects[("sandboxes", "live")] = sandbox("live")
+    custom_objects.objects[("sandboxes", "test-provisioning")] = sandbox("test-provisioning")
+    core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
+    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    live_thread = await store.thread("live", "s-1", spec)
+    other_live_thread = await store.thread("live", "s-2", spec)
+    gone_thread = await store.thread("gone", "s-3", spec)
+    await store.archive(gone_thread)
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        default_body = (await http.get("/threads/with-sandboxes")).json()
+        default_thread_ids = {row["id"] for row in default_body["threads"]}
+        assert default_thread_ids == {str(live_thread), str(other_live_thread)}
+        # Neither thread's feed has attached; the sidebar's per-thread status dot reads this as gray.
+        assert {row["harness_state"] for row in default_body["threads"]} == {"HARNESS_STATE_UNSPECIFIED"}
+        assert set(default_body["sandboxes"]) == {"live", "test-provisioning"}
+        assert default_body["sandboxes"]["test-provisioning"]["state"] == "waiting_for_pod"
+        assert (default_body["sandboxes"]["live"]["name"], default_body["sandboxes"]["live"]["state"]) == (
+            "live",
+            "running",
+        )
+
+        all_body = (await http.get("/threads/with-sandboxes", params={"include_archived": "true"})).json()
+        all_thread_ids = {row["id"] for row in all_body["threads"]}
+        assert all_thread_ids == {str(live_thread), str(other_live_thread), str(gone_thread)}
+        assert set(all_body["sandboxes"]) == {"live", "test-provisioning"}, "the deleted 'gone' sandbox must not appear"
+
+
+def test_healthz_answers_outside_the_schema(client: TestClient) -> None:
+    assert client.get("/healthz").status_code == 204
+    assert "/healthz" not in client.get("/openapi.json").json()["paths"]
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

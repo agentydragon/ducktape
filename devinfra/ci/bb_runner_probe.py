@@ -24,7 +24,7 @@ from typing import Any
 
 SCHEMA = "ducktape.bb_runner_probe.v1"
 DEFAULT_DIR = Path(os.environ.get("CI_VM_PROBE_DIR", "/home/buildbuddy/workspace/.ducktape-ci-vm-probe"))
-SAFE_ENV_KEYS = ("BUILD_WORKSPACE_DIRECTORY", "GIT_REPO_DEFAULT_BRANCH", "HOME", "PWD", "RBE_IMAGE", "USER")
+SAFE_ENV_KEYS = ("BUILD_WORKSPACE_DIRECTORY", "GIT_REPO_DEFAULT_BRANCH", "HOME", "PWD", "RBE_CONTAINER_IMAGE", "USER")
 PATHS_TO_STAT = (
     "/home/buildbuddy/workspace",
     "/home/buildbuddy/workspace/repo-root",
@@ -105,7 +105,9 @@ def parse_float(value: str | None) -> float | None:
         return None
     try:
         return float(value.split()[0])
-    except IndexError, ValueError:
+    except IndexError:
+        return None
+    except ValueError:
         return None
 
 
@@ -193,7 +195,9 @@ def proc_btime() -> int | None:
         if line.startswith("btime "):
             try:
                 return int(line.split()[1])
-            except IndexError, ValueError:
+            except IndexError:
+                return None
+            except ValueError:
                 return None
     return None
 

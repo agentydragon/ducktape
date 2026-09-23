@@ -91,7 +91,7 @@ bb ssh mybox hostname          # single command
 `bbr` wraps `bb remote` and is the recommended way to run Bazel from Claude Code web. It:
 
 - Auto-syncs local git diffs as patches (no `git push` needed for uncommitted changes)
-- Uses the custom `bbr-runner` Ubuntu image (configured in `devinfra/bbr.json`)
+- Uses the custom `buildbuddy-remote-runner` Ubuntu image (configured in `devinfra/bbr.json`)
 - Mints and prints the Bazel invocation ID (`--invocation-id-file=PATH` records it)
 - Supports **Firecracker snapshot recycling** — the running Bazel server (JVM, analysis
   cache, output base) survives across builds
@@ -193,7 +193,7 @@ fresh Firecracker VM (~4-5s uptime). Useful for one-off commands from Claude Cod
 
 ```bash
 export BUILDBUDDY_API_KEY=$(sops -d --extract '["stringData"]["api-key"]' \
-  cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml)
+  cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml)
 
 bb execute \
   -remote_header="x-buildbuddy-api-key=$BUILDBUDDY_API_KEY" \
@@ -246,7 +246,7 @@ echo $BUILDBUDDY_API_KEY
 
 # Option B: decrypt from SOPS secret
 export BUILDBUDDY_API_KEY=$(sops -d --extract '["stringData"]["api-key"]' \
-  cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml)
+  cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml)
 ```
 
 ---
@@ -279,11 +279,11 @@ bbapi invocation <outer>
 
 ## VM Environment
 
-Observed via `bb execute` with default BB RBE image:
+Observed via `bb execute` with the BuildBuddy default RBE container image:
 
 ```
-OS:       Ubuntu 16.04 LTS (default BB RBE image — glibc 2.23, Bazel 9 won't run)
-OS:       Ubuntu 22.04 LTS when using rbe-worker image (bbr / -exec_properties=container-image=...)
+OS:       Ubuntu 16.04 LTS (BuildBuddy default RBE container image — glibc 2.23, Bazel 9 won't run)
+OS:       Ubuntu 22.04 LTS when using custom RBE container image (bbr / -exec_properties=container-image=...)
 Kernel:   Linux 5.15.0 (Firecracker guest)
 User:     root
 HOME:     / by default — must set -action_env=HOME=/root for bazelisk to work

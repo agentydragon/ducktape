@@ -126,16 +126,11 @@ let
       };
   };
   python314Packages = python314.pkgs;
-  # CI wheels land in the nix store as "source" (no .whl extension).
-  # pypaInstallPhase globs *.whl, so we restore the original filename.
-  renameWheel =
-    name: input:
-    pkgs.runCommand name { } ''
-      cp ${input} $out
-    '';
-
-  # All ducktape wheels follow the same pattern: pname maps to an artifact-pin
-  # artifact, wheel filename is <pname_underscored>-0.1.0-py3-none-any.whl.
+  # `wheelUnpackPhase` strips the single Nix store hash from the source basename.
+  # Keep `src` as the fetched artifact: wrapping it in another derivation would
+  # leave the inner store hash in the wheel filename and break installer checks.
+  # This also keeps older pinned distribution names valid until sync-pins moves
+  # them to the latest release.
   #
   # `importsCheck` is required — at minimum list the modules backing each
   # console-script entry point. buildPythonApplication imports them at build
@@ -155,9 +150,7 @@ let
       inherit pname;
       version = "latest";
       format = "wheel";
-      src = renameWheel "${
-        builtins.replaceStrings [ "-" ] [ "_" ] pname
-      }-0.1.0-py3-none-any.whl" artifacts.${pname};
+      src = artifacts.${pname};
       inherit propagatedBuildInputs buildInputs;
       nativeBuildInputs = nativeBuildInputs ++ [ pkgs.cacert ];
       # pygit2 (and anything else that calls OpenSSL at module import) needs
@@ -224,13 +217,28 @@ let
       ++ [ ducktape-util ];
   };
 
-  # Combined CLI + GNOME Shell extension package. Takes the same overridden python3Packages as
-  # everything else here (not stock pkgs.python3Packages) -- claude-hooks depends on both aiquota
-  # and httpx/pydantic directly, and Nix's duplicate-package check fails the build if those two
-  # paths resolve to different derivations of the "same" version (see idna.nix's own comment: this
-  # is exactly the kind of ripple a packageOverrides addition can cause).
+  ducktape-claude-api = mkWheel {
+    pname = "ducktape-claude-api";
+    description = "Shared Claude Code API models and hook types";
+    importsCheck = [
+      "devinfra.claude.claude_api.credentials"
+      "devinfra.claude.claude_api.hooks.dispatch_input"
+      "devinfra.claude.claude_api.hooks.output"
+      "devinfra.claude.claude_api.statusline"
+      "devinfra.claude.claude_api.usage"
+    ];
+    # SYNC: This list must match `requires` in
+    # //devinfra/claude/claude_api:claude_api_wheel.
+    propagatedBuildInputs = with python314Packages; [ pydantic ];
+  };
+
+  # aiquota and the Python statusline share this overridden Python package set
+  # (not stock pkgs.python3Packages). Nix's duplicate-package check fails if
+  # their dependencies resolve to different derivations of the same version;
+  # see idna.nix for an example of how packageOverrides can cause that ripple.
   aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix {
     inherit artifacts lib python314Packages;
+    claudeApi = ducktape-claude-api;
   };
 
   mkBinaryArtifact =
@@ -278,6 +286,7 @@ in
 rec {
   inherit ducktape-util;
   inherit ducktape-git-hooks;
+  inherit ducktape-claude-api;
   inherit aiquota;
 
   bbr = mkWheel {
@@ -340,20 +349,20 @@ rec {
     ];
   };
 
-  claude-hooks = mkWheel {
-    pname = "claude-hooks";
+  claude-statusline = mkWheel {
+    pname = "claude-statusline";
     description = "Python Claude Code statusline";
     mainProgram = "claude-statusline";
     importsCheck = [ "devinfra.claude.statusline.statusline" ];
-    # SYNC: This list must match `requires` in //:claude_hooks_wheel (BUILD.bazel).
-    # The wheel declares pip-level deps; this list provides Nix-level equivalents.
+    # SYNC: This list must match `requires` in //devinfra/claude/statusline:claude_statusline_wheel.
+    # The wheel declares pip-level deps; this provides Nix-level equivalents.
     # When adding a dependency, update BOTH places.
     #
-    # `aiquota` (the derivation, not a python314Packages attr) provides the aiquota
-    # module the statusline imports for quota data; it propagates its own deps
-    # (typer, atomicwrites, ...) so they don't need listing here.
+    # `aiquota` provides quota data and its CLI dependencies; the shared API
+    # wheel provides the Claude Code model classes imported by both packages.
     propagatedBuildInputs = [
       aiquota
+      ducktape-claude-api
     ]
     ++ (with python314Packages; [
       httpx
@@ -363,19 +372,12 @@ rec {
     ]);
   };
 
-  # Expose only the Python statusline command. Active Claude hook dispatch is the
-  # Rust binary below, so this avoids putting the legacy Python `claude-hook` on PATH.
-  claude-statusline = pkgs.runCommand "claude-statusline" { } ''
-    mkdir -p $out/bin
-    ln -s ${claude-hooks}/bin/claude-statusline $out/bin/claude-statusline
-  '';
-
   # Rust claude-hook binary — static, no runtime deps.
   # Provides the active `claude-hook` binary used for hook dispatch and shims.
-  claude-hook-rs = pkgs.stdenvNoCC.mkDerivation {
-    pname = "claude-hook-rs";
+  claude-hook = pkgs.stdenvNoCC.mkDerivation {
+    pname = "claude-hook";
     version = "latest";
-    src = artifacts.claude-hook-rs;
+    src = artifacts.claude-hook;
     dontUnpack = true;
     installPhase = ''
       install -Dm755 $src $out/bin/claude-hook

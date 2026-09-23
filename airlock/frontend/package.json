@@ -1,26 +1,5 @@
 {
   "name": "airlock-frontend",
   "private": true,
-  "type": "module",
-  "dependencies": {
-    "oidc-client-ts": "^3.1.0",
-    "svelte": "^5.56.9"
-  },
-  "devDependencies": {
-    "esbuild": "^0.28.0",
-    "esbuild-plugin-tailwindcss": "^2.0.3",
-    "esbuild-svelte": "^0.9.5",
-    "openapi-typescript": "^7.10.1",
-    "pixelmatch": "^7.0.0",
-    "pngjs": "^7.0.0",
-    "puppeteer": "^25.0.0",
-    "svelte-check": "^4.7.6",
-    "tailwindcss": "^4.3.3",
-    "typescript": "^5.9.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "puppeteer"
-    ]
-  }
+  "type": "module"
 }

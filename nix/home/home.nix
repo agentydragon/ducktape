@@ -32,7 +32,7 @@ let
       pkgs.gnomeExtensions.pop-shell;
   inherit (ducktapePackages)
     ducktape
-    claude-hook-rs
+    claude-hook
     claude-statusline
     gterm-theme
     bbapi
@@ -122,7 +122,7 @@ in
     # here directly rather than copied: see .sops.yaml for why this one
     # cluster/k8s file is also encrypted to the workstation keys.
     BRAVE_API_KEY = {
-      sopsFile = ../../cluster/k8s/agents/shared-secrets/brave-search-api-key.sops.yaml;
+      sopsFile = ../../cluster/k8s/external-creds/brave-search-api-key.sops.yaml;
       key = "stringData/api-key";
       name = "brave_api_key";
     };
@@ -392,7 +392,7 @@ in
       stylua
 
       ducktape
-      claude-hook-rs
+      claude-hook
       claude-statusline
       bbapi
       gterm-theme

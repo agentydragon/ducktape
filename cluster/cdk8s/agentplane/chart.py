@@ -9,21 +9,24 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from cdk8s_plus_34 import ConfigMap
 
-from cluster.cdk8s.agentplane import actions, app as app_component, database, egress, llm_ingress, rbac
+from agentplane.app import main as app_main
+from cluster.cdk8s.agentplane import actions, app as app_component, database, egress, electric, llm_ingress, rbac
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.metadata import metadata
 from util.settings_contract import settings_file
-from x.agentplane.app import main as app_main
 
 
 def environment_chart(app: App, env: Environment) -> Chart:
     """The shared objects. The fleet rules attach as a synth-time validation, so a caller
-    may keep adding objects to the returned chart and they are still checked."""
+    may keep adding objects to the returned chart and they are still checked.
+
+    Deliberately excludes `rbac.AgentRbac` -- that Role/RoleBinding lets an agent drive
+    Agentplane without a human, which only belongs in `testing.chart` (see
+    `rbac.AgentRbac`'s own docstring)."""
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     rbac.NamespaceQuota(chart, "namespace", env)
-    rbac.AgentRbac(chart, "rbac", env)
     ConfigMap(
         chart,
         "config",
@@ -31,14 +34,13 @@ def environment_chart(app: App, env: Environment) -> Chart:
         data={"config.yaml": yaml_config(settings_file(app_main.Settings, env.app_config))},
     )
     database.Db(chart, "db", env)
+    electric.Electric(chart, "electric", env)
     llm_ingress.LlmIngress(chart, "llm-ingress", env)
     egress.Egress(chart, "egress", env)
     app_component.App(chart, "app", env)
     actions.Actions(chart, "actions", env)
     add_fleet_rules(
         chart,
-        provided_secrets=env.provided_secrets,
-        providers=frozenset({*env.depends_on, *env.extra_resources}),
         # The interception proxy terminates TLS for the namespace; its allowlist is the
         # EgressPolicy objects, not SNI on its own egress rule.
         unpinned_https_egress=frozenset({egress.NAME}),

@@ -37,6 +37,20 @@ preserved. Do not pipe it through `head`, `tail`, or a truncating pager when
 doing the recovery pass. For a large transcript, read the output in sequential
 chunks and verify the final user message number.
 
+For `/followups`, first check whether this context already contains either a
+full transcript recovery or a clean zero-compaction analysis. Reuse that state
+unless a newer compaction occurred. Otherwise run `analyze_session.py` before
+printing the conversation. When it reports `Compactions: 0` and
+`Malformed records skipped: 0`, skip `conversation.py`: no recorded compaction
+has removed earlier context. If compaction markers are present, read the full
+conversation once unless it was already recovered after the latest marker in
+this context. If malformed records were skipped, the scan is incomplete and
+the no-compaction shortcut is unsafe; report that the visible transcript may
+be incomplete.
+
+For routine followups, keep the default Codex filtering enabled. Do not pass
+`--no-strip-*`; the omitted harness-injected blocks are intentionally excluded.
+
 For Codex transcripts, harness-injected AGENTS.md instructions, environment
 context, and selected skill instructions are omitted by default using
 `internal_chat_message_metadata_passthrough.content_item_kinds`. Ordinary user

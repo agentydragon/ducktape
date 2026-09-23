@@ -14,23 +14,21 @@
 - **Toolchain flexibility** - can switch bundlers, dev servers, test runners
 - **Package manager doesn't matter** - pnpm, npm, bun, whatever works with Bazel
 - **Dev server is nice-to-have** - not required
-- **Frameworks stay as-is** - rewriting UI code is out of scope
 
 ## Current State
 
 - Independent JS frontends include:
-  - **props/frontend**: SvelteKit (file-based routing, SSR disabled, static adapter)
-  - **airlock/frontend**: Plain Svelte compiled with esbuild
+  - **props/frontend**: React + Mantine SPA, bundled with esbuild
+  - **airlock/frontend**: React + Mantine bundled with esbuild
   - **study_casino/frontend**: React
-  - **rspcache/admin_ui**: React + Mantine (not Svelte)
+  - **rspcache/admin_ui**: React + Mantine
 - pnpm workspace with per-project package.json files
 - aspect_rules_js for Bazel integration
-- Vite as bundler
-- Storybook + Playwright for visual regression tests (props/frontend only)
+- Vite or esbuild via the Bazel rules, depending on the frontend
+- A React component harness with Puppeteer visual regression tests (props/frontend)
 
 ## Decisions Made
 
-- **SvelteKit replacement OK** if it simplifies Bazel integration
 - **Local pnpm dev can break** - Bazel is the source of truth
 
 ## Known Problems

@@ -22,10 +22,10 @@ def _resource(path: Path, kind: str, name: str) -> dict[str, Any]:
 
 def test_mailbox_smtp_ingress_covers_public_kubernetes_nodes() -> None:
     """Every public MX node should run a source-preserving port-25 proxy."""
-    service_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/app/service.yaml")
-    ingress_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/app/smtp-ingress.yaml")
-    ingress_config = get_required_path("_main/cluster/k8s/haku/mailbox/app/nginx.conf").read_text()
-    namespace_yaml = get_required_path("_main/cluster/k8s/haku/mailbox-namespace/namespace.yaml")
+    service_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/service.yaml")
+    ingress_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/smtp-ingress.yaml")
+    ingress_config = get_required_path("_main/cluster/k8s/haku/mailbox/nginx.conf").read_text()
+    namespace_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/namespace.yaml")
 
     smtp_service = _resource(service_yaml, "Service", "haku-mailbox-smtp")
     assert "externalIPs" not in smtp_service["spec"]

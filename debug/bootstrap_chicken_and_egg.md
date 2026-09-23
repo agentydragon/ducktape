@@ -18,7 +18,7 @@ commit `fde2dd95` (rename `bb-remote` to `bbr`), but the last released wheel was
 from commit `4563071` (before `bbr` existed). All CI jobs failed with
 `bbr: command not found`.
 
-**Recovery**: Build the wheel manually with `bb remote build //:claude_hooks_wheel`,
+**Recovery at the time**: Build the wheel manually with `bb remote build //:claude_hooks_wheel`,
 create a GitHub release with `gh release create`, update `nix/artifact-pins.json`.
 
 **Prevention**: When adding new entry points to wheels that CI itself depends on,

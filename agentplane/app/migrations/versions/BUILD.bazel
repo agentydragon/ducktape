@@ -1,0 +1,111 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+exports_files(
+    [
+        "0001_trajectory_store.py",
+        "0002_thread_archived.py",
+        "0003_thread_harness.py",
+        "0004_followable_event_entries.py",
+        "0005_conversation_projection_storage.py",
+        "0006_thread_fold_rename.py",
+        "0007_event_origin_sequence.py",
+        "0008_thread_scope_source_id.py",
+        "0009_thread_entity_index.py",
+        "0010_drop_unread_fold_state.py",
+        "0011_event_log_identity.py",
+    ],
+    visibility = ["//agentplane/app/migrations:__pkg__"],
+)
+
+py_library(
+    name = "0001_trajectory_store",
+    srcs = ["0001_trajectory_store.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0002_thread_archived",
+    srcs = ["0002_thread_archived.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0003_thread_harness",
+    srcs = ["0003_thread_harness.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0004_followable_event_entries",
+    srcs = ["0004_followable_event_entries.py"],
+    deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0005_conversation_projection_storage",
+    srcs = ["0005_conversation_projection_storage.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0006_thread_fold_rename",
+    srcs = ["0006_thread_fold_rename.py"],
+    deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0007_event_origin_sequence",
+    srcs = ["0007_event_origin_sequence.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0008_thread_scope_source_id",
+    srcs = ["0008_thread_scope_source_id.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0009_thread_entity_index",
+    srcs = ["0009_thread_entity_index.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0010_drop_unread_fold_state",
+    srcs = ["0010_drop_unread_fold_state.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0011_event_log_identity",
+    srcs = ["0011_event_log_identity.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)

@@ -451,31 +451,6 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
-  name: codex-pod
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/codex-pod
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: codex-pod
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: codex-pod
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
   name: cpap-gateway
   namespace: flux-system
 spec:
@@ -594,6 +569,31 @@ spec:
     pattern: ^devel-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: github-graphql-rate-exporter
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: google-mcp
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/google-mcp
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: google-mcp
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: google-mcp
   policy:
     alphabetical:
       order: asc
@@ -751,31 +751,6 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
-  name: haku-managed-agent
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/haku-managed-agent
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: haku-managed-agent
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: haku-managed-agent
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
   name: haku-openclaw-spike
   namespace: flux-system
 spec:
@@ -901,31 +876,6 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
-  name: manifold-mcp-server
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/manifold-mcp-server
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: manifold-mcp-server
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: manifold-mcp-server
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
   name: matrix-user-provisioner
   namespace: flux-system
 spec:
@@ -1044,31 +994,6 @@ spec:
     pattern: ^devel-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: plaid-mcp-sync
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: postscanmail-mcp-server
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/postscanmail-mcp-server
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: postscanmail-mcp-server
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: postscanmail-mcp-server
   policy:
     alphabetical:
       order: asc

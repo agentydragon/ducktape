@@ -1,0 +1,17 @@
+version: 1
+metadata:
+  name: Retire Airlock public OIDC client
+  labels:
+    blueprints.goauthentik.io/description: >-
+      Delete the old browser-side public client; Airlock now owns a confidential server-side OIDC client.
+
+entries:
+  - model: authentik_core.application
+    state: absent
+    identifiers:
+      slug: airlock
+
+  - model: authentik_providers_oauth2.oauth2provider
+    state: absent
+    identifiers:
+      name: airlock

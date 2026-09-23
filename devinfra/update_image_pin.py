@@ -16,10 +16,11 @@ _BBR_CONFIG = _DEVINFRA / "bbr.json"
 
 
 def _update_bbr_config(image: str, digest: str) -> bool:
-    """Update container_image in bbr.json when bbr_runner is repinned.
+    """Update container_image in bbr.json when buildbuddy_remote_runner is repinned.
 
-    bbr.json names the `bb remote` runner, deliberately not the RBE worker: the
-    runner's digest is in no action's cache key, so it can move freely.
+    bbr.json selects the BuildBuddy Remote Runner image for `bb remote`; the RBE
+    container image is selected separately by the execution platform. The runner
+    image is outside action keys.
     """
     if not _BBR_CONFIG.exists():
         return False
@@ -58,7 +59,7 @@ def main() -> None:
     print(f"Updated {args.name} in {_PINS_FILE}")
 
     # Also update bbr.json when the runner is repinned
-    if args.name == "bbr_runner":
+    if args.name == "buildbuddy_remote_runner":
         image = pins[args.name]["image"]
         if _update_bbr_config(image, args.digest):
             if prettier:

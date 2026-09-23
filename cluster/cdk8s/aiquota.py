@@ -52,25 +52,25 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
-    KustomizationSpecDecryption,
-    KustomizationSpecDecryptionProvider,
-    KustomizationSpecDecryptionSecretRef,
-    KustomizationSpecDependsOn,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecSelector,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import NAMESPACE as FLUX_NAMESPACE, ConfigMapArgs, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
+    ConfigMapArgs,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_yaml
@@ -329,62 +329,54 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
+def aiquota(
+    flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    root: Path,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
+    cli_proxy_api: Kustomization,
+    external_secrets_operator: Kustomization,
+    clickhouse_schema: Kustomization,
+    agent_machine_access_tf: Kustomization,
+    reflector: Kustomization,
+) -> Kustomization:
     name = NAME
-    depends_on = (
-        "external-secrets-config",
-        "forgejo-images",
-        # Provides the shared namespace and the CLIProxyAPI management Secret.
-        "cli-proxy-api",
-        # Materializes the narrow mirrored copies of the API bearer for its
-        # consumers; the source Secret stays SOPS-managed here.
-        "external-secrets-operator",
-        # Creates the aiquota database the migrate init container populates.
-        "clickhouse-schema",
-        # Mints the aiquota-oidc Authentik OAuth2 client credentials Secret.
-        "agent-machine-access-tf",
-        # Reflects clickhouse-aiquota-credentials from the clickhouse namespace.
-        "reflector",
-    )
-
     out_dir = root / OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
     rendered_chart = chart(app)
-    add_fleet_rules(
-        rendered_chart,
-        provided_secrets={
-            BEARER_SECRET_NAME: f"{BEARER_SECRET_NAME}.sops.yaml",
-            "cli-proxy-api-management": "cli-proxy-api",
-            "aiquota-oidc": "agent-machine-access-tf",
-            "clickhouse-aiquota-credentials": "reflector",
-        },
-        provided_config_maps={CONFIG_CONFIG_MAP.name: "config.toml", SCHEMA_CONFIG_MAP.name: "schema.sql"},
-        providers=frozenset({f"{BEARER_SECRET_NAME}.sops.yaml", "config.toml", "schema.sql", *depends_on}),
-    )
+    add_fleet_rules(rendered_chart)
     app.synth()
 
-    write_yaml(
-        out_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            name,
-            description="aiquota API with Claude and Codex quota through the CLIProxyAPI integration.",
-            spec=KustomizationSpec(
-                retry_interval="1m",
-                interval="10m",
-                timeout="5m",
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=FLUX_NAMESPACE
-                ),
-                path=f"./{OUTPUT_DIR}",
-                prune=True,
-                wait=True,
-                # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
-                decryption=KustomizationSpecDecryption(
-                    provider=KustomizationSpecDecryptionProvider.SOPS,
-                    secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
-                ),
-                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in depends_on],
+    kustomization = flux_kustomization(
+        flux_chart,
+        name,
+        description="aiquota API with Claude and Codex quota through the CLIProxyAPI integration.",
+        spec=KustomizationSpec(
+            retry_interval="1m",
+            interval="10m",
+            timeout="5m",
+            source_ref=artifact_source_ref(artifact),
+            path=artifact_path(artifact),
+            prune=True,
+            wait=True,
+            # aiquota-api-bearer.sops.yaml (hand-written, listed below) is SOPS-encrypted.
+            decryption=SOPS_DECRYPTION,
+            depends_on=flux_kustomization_depends_on_many(
+                external_secrets_config,
+                forgejo_images,
+                # Provides the shared namespace and the CLIProxyAPI management Secret.
+                cli_proxy_api,
+                # Materializes the narrow mirrored copies of the API bearer for its
+                # consumers; the source Secret stays SOPS-managed here.
+                external_secrets_operator,
+                # Creates the aiquota database the migrate init container populates.
+                clickhouse_schema,
+                # Mints the aiquota-oidc Authentik OAuth2 client credentials Secret.
+                agent_machine_access_tf,
+                # Reflects clickhouse-aiquota-credentials from the clickhouse namespace.
+                reflector,
             ),
         ),
     )
@@ -399,3 +391,4 @@ def write_manifests(root: Path) -> None:
             config_map_generator=[CONFIG_CONFIG_MAP, SCHEMA_CONFIG_MAP],
         ),
     )
+    return kustomization

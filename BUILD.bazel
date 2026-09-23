@@ -37,7 +37,9 @@
 # itself, so a test names it once. Generated, so there is no source file for Gazelle to
 # map the import onto -- same reason skills/BUILD.bazel pins its generated spec modules.
 # gazelle:resolve py third_party.containers.debian_slim //third_party/containers:debian_slim
+# gazelle:resolve py third_party.containers.electric_1_8_1 //third_party/containers:electric_1_8_1
 # gazelle:resolve py third_party.containers.grocy //third_party/containers:grocy
+# gazelle:resolve py third_party.containers.nginx_unprivileged //third_party/containers:nginx_unprivileged
 # gazelle:resolve py third_party.containers.pgvector_pg18 //third_party/containers:pgvector_pg18
 # gazelle:resolve py third_party.containers.postgres_18 //third_party/containers:postgres_18
 # gazelle:resolve py third_party.containers.python_3_14_slim //third_party/containers:python_3_14_slim
@@ -72,7 +74,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_js//npm:defs.bzl", "npm_link_package")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
-load("@image_pins//:pins.bzl", "RBE_WORKER_DIGEST", "RBE_WORKER_IMAGE")
+load("@image_pins//:pins.bzl", "RBE_CONTAINER_DIGEST", "RBE_CONTAINER_IMAGE")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_python//python/uv:lock.bzl", "lock")
@@ -140,10 +142,7 @@ js_library(
         ":node_modules/eslint-plugin-import-x",
         ":node_modules/eslint-plugin-react",
         ":node_modules/eslint-plugin-react-hooks",
-        ":node_modules/eslint-plugin-svelte",
         ":node_modules/globals",
-        ":node_modules/svelte",  # peer dep of svelte-eslint-parser & eslint-plugin-svelte
-        ":node_modules/svelte-eslint-parser",
         ":node_modules/typescript",  # peer dep of @typescript-eslint/parser & plugin
     ],
 )
@@ -156,10 +155,6 @@ js_library(
     srcs = [".prettierrc.cjs"],
     tags = ["no-lint"],
     visibility = ["//devinfra:__subpackages__"],
-    deps = [
-        ":node_modules/prettier-plugin-svelte",
-        ":node_modules/svelte",
-    ],
 )
 
 # Generate requirements_bazel.txt from pyproject.toml
@@ -204,8 +199,8 @@ platform(
     exec_properties = {
         # Custom image layered on BuildBuddy's rbe-ubuntu24-04 with git,
         # ca-certificates, and podman for e2e tests.
-        # Built by .github/workflows/container-images.yml, pinned in devinfra/image_pins.json.
-        "container-image": "docker://" + RBE_WORKER_IMAGE + "@" + RBE_WORKER_DIGEST,
+        # Built by .github/workflows/rbe-container-image.yml, pinned in devinfra/image_pins.json.
+        "container-image": "docker://" + RBE_CONTAINER_IMAGE + "@" + RBE_CONTAINER_DIGEST,
         # BuildBuddy Firecracker isolation for all RBE actions (better isolation + runner recycling)
         "workload-isolation-type": "firecracker",
         "recycle-runner": "true",
@@ -225,7 +220,7 @@ platform(
 )
 
 # bbr wheel — standalone `bb remote` wrapper (own package, not bundled into
-# claude-hooks, so it's available when using the Rust claude-hook binary).
+# the Python statusline wheel, so it's available with the Rust claude-hook).
 py_package(
     name = "bbr_pkg",
     packages = ["devinfra"],
@@ -238,7 +233,7 @@ py_wheel(
     entry_points = {
         "console_scripts": ["bbr = devinfra.bbr:main"],
     },
-    python_requires = ">=3.13",
+    python_requires = ">=3.14",
     requires = ["pygit2>=1.14"],
     version = "0.1.0",
     visibility = ["//visibility:public"],
@@ -269,7 +264,7 @@ py_wheel(
             "ducktape-enforce-bazel-tests = devinfra.precommit.git_hook:main_enforce_bazel_tests",
         ],
     },
-    python_requires = ">=3.13",
+    python_requires = ">=3.14",
     # SYNC: This list must match propagatedBuildInputs in nix/packages/default.nix
     # (ducktape-git-hooks). When adding a dependency, update BOTH places.
     requires = [
@@ -284,49 +279,6 @@ py_wheel(
     version = "0.1.0",
     visibility = ["//visibility:public"],
     deps = [":ducktape_git_hooks_pkg"],
-)
-
-# Claude hooks wheel — Python statusline only. Active hook dispatch is the Rust
-# `claude-hook` binary packaged separately by Nix.
-py_package(
-    name = "claude_hooks_pkg",
-    packages = [
-        "devinfra.claude",
-        "devinfra.claude.claude_api",
-        "devinfra.claude.claude_api.hooks",
-        "devinfra.claude.statusline",
-    ],
-    deps = [
-        "//devinfra/claude/statusline",
-    ],
-)
-
-py_wheel(
-    name = "claude_hooks_wheel",
-    distribution = "claude_hooks",
-    entry_points = {
-        "console_scripts": [
-            "claude-statusline = devinfra.claude.statusline.statusline:main",
-        ],
-    },
-    python_requires = ">=3.13",
-    # SYNC: This list must match propagatedBuildInputs in nix/packages/default.nix
-    # (claude-hooks). The Nix derivation provides these at runtime on NixOS/devShell.
-    # When adding a dependency, update BOTH places.
-    #
-    # `aiquota` is the local artifact-pinned wheel (not on PyPI); the statusline
-    # imports it for quota data. Nix provides it via the aiquota derivation in
-    # propagatedBuildInputs (which also brings typer/atomicwrites transitively).
-    requires = [
-        "aiquota",
-        "httpx",
-        "platformdirs",
-        "pydantic>=2.0",
-        "rich",
-    ],
-    version = "0.1.0",
-    visibility = ["//visibility:public"],
-    deps = [":claude_hooks_pkg"],
 )
 
 # Ducktape wheel - bundles CLI tools for distribution
@@ -378,7 +330,7 @@ py_wheel(
             "ws = devinfra.ws.cli:main",
         ],
     },
-    python_requires = ">=3.13",
+    python_requires = ">=3.14",
     requires = [
         # git_commit_ai deps
         "aiodocker",

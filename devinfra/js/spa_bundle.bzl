@@ -15,7 +15,7 @@ Two configuration paths:
 
   - **Plugin-free (React)**: pass `jsx`/`loader` and the macro builds the inline
     esbuild `config` dict. No `esbuild.config.mjs` needed.
-  - **Plugins (Svelte, Tailwind, svg, …)**: pass `config` = a `js_library`
+  - **Plugins (Tailwind, svg, …)**: pass `config` = a `js_library`
     wrapping an `esbuild.config.mjs` that `export default {plugins: [...]}` with
     the plugin npm packages as that library's `deps`. The native rule threads
     plugins in through this label (see rules_esbuild `examples/plugins`). When
@@ -133,7 +133,7 @@ def spa_bundle(
             `None` when the app's index.html is served separately (e.g. a backend
             packages it next to, not inside, the bundle dir).
         config: Optional label of a `js_library` exporting esbuild options for
-            plugin-based bundling (Svelte/Tailwind). Mutually exclusive with
+            plugin-based bundling. Mutually exclusive with
             `jsx`/`loader`, which the mjs sets instead.
         jsx: esbuild `jsx` mode, e.g. `"automatic"` for React. Inline-config path.
         loader: esbuild `loader` dict, e.g. `{".js": "jsx"}`. Inline-config path.

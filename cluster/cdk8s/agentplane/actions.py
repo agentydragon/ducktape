@@ -31,6 +31,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
+from agentplane.action_service.main import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import container_security, database, llm_ingress, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
@@ -43,10 +44,8 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name, settings_file
-from x.agentplane.action_service.main import CONFIG_FILE_ENV, Settings
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-actions"
@@ -130,7 +129,7 @@ class Actions(Construct):
                 ),
                 # The sandbox ActionGroup stamps Sandboxes and runs commands in their Pods. This is
                 # namespace-wide and cannot say "only the boxes this Action made": that boundary is
-                # the executor's own label check (x/agentplane/sandbox_actions/inventory.py), which
+                # the executor's own label check (agentplane/sandbox_actions/inventory.py), which
                 # is why it is an application rule tested as one rather than something RBAC states.
                 RolePolicyRule(
                     resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]
@@ -276,17 +275,18 @@ class Actions(Construct):
                 items={"client_secret": PathMapping(path="client_secret")},
             )
             deployment.containers[0].mount("/etc/agentplane-github", github_volume, read_only=True)
-        if self.env.actions.ssh_mcp_bearer:
-            ssh_mcp_secret = Secret.from_secret_name(self, "ssh-mcp-bearer-secret", BEARER_SECRET_NAME)
-            ssh_mcp_volume = Volume.from_secret(
+        for mount in self.env.actions.bearer_mcp_mounts:
+            bearer_secret = Secret.from_secret_name(self, f"{mount.name}-bearer-secret", mount.secret_name)
+            bearer_volume = Volume.from_secret(
                 self,
-                "ssh-mcp-bearer-volume",
-                ssh_mcp_secret,
-                items={BEARER_SECRET_KEY: PathMapping(path=BEARER_SECRET_KEY)},
+                f"{mount.name}-bearer-volume",
+                bearer_secret,
+                items={mount.secret_key: PathMapping(path=mount.file_name)},
+                optional=mount.optional or None,
             )
             # Its own directory: a subPath file cannot be mounted inside the read-only
             # settings volume (runc: "not a directory").
-            deployment.containers[0].mount("/run/secrets/ssh-mcp", ssh_mcp_volume, read_only=True)
+            deployment.containers[0].mount(f"/run/secrets/{mount.name}", bearer_volume, read_only=True)
 
         node_scheduling.attract_to_zone(deployment)
         apply_pod_spec_patches(deployment)

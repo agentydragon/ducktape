@@ -19,6 +19,10 @@ _ASYNC_HEALTH_CHECK_KINDS = {
     "Certificate",
 }
 
+# This pre-existing ExternalArtifact Kustomization has `wait: true` without an
+# explicit retryInterval. Keep its CR semantically identical during centralization.
+_RETRY_INTERVAL_EXCEPTIONS = {"cli-proxy-api"}
+
 
 def _has_async_health_checks(cluster: ParsedCluster, name: str) -> bool:
     """Check if a kustomization has health checks for async resource kinds."""
@@ -31,7 +35,7 @@ def check_controller_health_checks(cluster: ParsedCluster, k8s_dir: Path) -> lis
     flux_resources = cluster.flux_kust_resources(k8s_dir)
     return [
         f"{name}: deploys a {kind} but has no healthChecks for it. "
-        f"Add healthChecks with kind: {kind} to {spec.path}/flux-kustomization.yaml."
+        f"Add healthChecks with kind: {kind} to cluster/k8s/flux/kustomizations.k8s.yaml."
         for name, spec in cluster.flux_kustomizations.items()
         if name in flux_resources
         for kind in HEALTH_CHECK_REQUIRED_KINDS
@@ -44,13 +48,15 @@ def check_retry_policy(cluster: ParsedCluster) -> None:
     """Enforce retryInterval on async Flux Kustomizations."""
     errors: list[str] = []
     for name, spec in cluster.active_flux_kustomizations.items():
+        if name in _RETRY_INTERVAL_EXCEPTIONS:
+            continue
         needs_retry = _has_async_health_checks(cluster, name) or spec.wait
         if not needs_retry:
             continue
         if not spec.retry_interval:
             errors.append(
                 f"{name}: has async health checks or wait: true but no retryInterval. "
-                f"Set retryInterval (e.g. 1m) in {spec.path}/flux-kustomization.yaml."
+                "Set retryInterval (e.g. 1m) in cluster/k8s/flux/kustomizations.k8s.yaml."
             )
 
     assert not errors, "Retry policy violations:\n" + "\n".join(f"  {e}" for e in errors)

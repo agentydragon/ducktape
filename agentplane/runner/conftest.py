@@ -1,0 +1,102 @@
+"""One interaction script runs against both harnesses; only the model fixture knows the dialect."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, cast
+
+import grpc
+import pytest
+
+from agentplane.harness_tests.claude.messages import AnthropicMessages
+from agentplane.harness_tests.codex.responses import OpenAIResponses
+from agentplane.runner import protocol_pb2
+from agentplane.runner.client import RunnerClient
+from agentplane.runner.config import RunnerConfig
+from agentplane.runner.service import Runner, serve
+from agentplane.runner.testing import launches
+from agentplane.runner.testing.claude_model import ClaudeModel
+from agentplane.runner.testing.codex_model import CodexModel
+from agentplane.runner.testing.scripted_model import ScriptedModel
+
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep @pypi//grpcio
+
+
+@pytest.fixture(params=[protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX], ids=["claude", "codex"])
+def harness(request: pytest.FixtureRequest) -> protocol_pb2.Harness:
+    return cast(protocol_pb2.Harness, request.param)
+
+
+ModelEndpoint = AnthropicMessages | OpenAIResponses
+
+
+@pytest.fixture
+async def endpoint(harness: protocol_pb2.Harness) -> AsyncIterator[ModelEndpoint]:
+    server: ModelEndpoint = AnthropicMessages() if harness == protocol_pb2.HARNESS_CLAUDE else OpenAIResponses()
+    await server.start()
+    try:
+        yield server
+    finally:
+        await server.stop()
+
+
+@pytest.fixture
+def model(harness: protocol_pb2.Harness, endpoint: ModelEndpoint) -> ScriptedModel[Any]:
+    if harness == protocol_pb2.HARNESS_CLAUDE:
+        assert isinstance(endpoint, AnthropicMessages)
+        return ClaudeModel(endpoint)
+    if harness == protocol_pb2.HARNESS_CODEX:
+        assert isinstance(endpoint, OpenAIResponses)
+        return CodexModel(endpoint)
+    raise ValueError(f"unsupported {harness=}")
+
+
+@pytest.fixture
+def workspace(tmp_path: Path) -> Path:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    return root
+
+
+@pytest.fixture
+def spec(harness: protocol_pb2.Harness, workspace: Path) -> protocol_pb2.SessionSpec:
+    return launches.spec(harness, workspace)
+
+
+@pytest.fixture
+def config(harness: protocol_pb2.Harness, endpoint: ModelEndpoint, tmp_path: Path) -> RunnerConfig:
+    return launches.config(harness, endpoint.origin, state_dir=tmp_path / "state", home=tmp_path / "home")
+
+
+@dataclass
+class RunnerHandle:
+    server: grpc.aio.Server
+    runner: Runner
+    port: int
+
+    @property
+    def target(self) -> str:
+        return f"127.0.0.1:{self.port}"
+
+    async def stop(self) -> None:
+        await self.runner.stop()
+        await self.server.stop(0)
+
+
+@pytest.fixture
+async def runner(config: RunnerConfig) -> AsyncIterator[RunnerHandle]:
+    server, started, port = await serve(config)
+    handle = RunnerHandle(server, started, port)
+    yield handle
+    await handle.stop()
+
+
+@pytest.fixture
+async def client(runner: RunnerHandle) -> AsyncIterator[RunnerClient]:
+    client = RunnerClient(runner.target, capture_history=True)
+    yield client
+    await client.close()

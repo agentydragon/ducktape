@@ -29,8 +29,7 @@ standard tools; examples appear only where they define a repo-specific format.
 ### @-Transclusion Syntax
 
 `@path/to/file.md` alone on its own line; relative paths supported. Transclude only
-content every reader of the host file needs — task-specific docs get a `<path>` pointer
-instead, so they load on demand.
+content every reader of the host file needs.
 
 ## General
 
@@ -245,7 +244,7 @@ py_binary(
 - **Keep test-only ownership at package granularity.** A package is either
   `package(default_testonly = True)` because it is a test-support umbrella
   (`testing/`, `e2e/`, or another clearly named test package such as
-  `x/agentplane/acceptance/`), or it contains only production libraries/code
+  `agentplane/acceptance/`), or it contains only production libraries/code
   plus actual `test_*.py` / `*_test.py` test targets. A library shared across
   tests belongs in a package `conftest.py` or such a test-only umbrella, not in
   a production package. Actual test-target mains such as
@@ -291,10 +290,6 @@ take a `tsconfig` and emit a `ts_library`); every `.tsx` needs
 `//:node_modules/@types/react` even without importing a React symbol (TS2742);
 whole-program tools (type-aware ESLint) need a `filegroup` glob of the sources plus
 `no_copy_to_bin`, since `ts_library` does not propagate `.ts`.
-
-**Svelte packages keep `svelte_check_test`** — `ts_project` cannot process `.svelte`,
-and `svelte_check` already checks components and their `.ts` as one program with no
-second hand-maintained list.
 
 ### Runfiles: `_main` is the root module, not this repo
 
@@ -515,13 +510,6 @@ never re-explain the standard behavior. Example: "Standard Flux image automation
 deviation: register the `ImageRepository` with the webhook receiver." House vocabulary:
 **deviation** = intentional divergence from stock; **gotcha** = surprising behavior that
 bites.
-
-### Local File Links in Markdown
-
-- `@path/to/file.md` (own line) — transclusion, for content agents must always load
-- `<path/to/file.md>` — clickable link without custom text
-- `[custom text](path/to/file.md)` — link with custom text
-- Never `[path](path)` — duplicates the path
 
 ### Inline Code in Prose
 

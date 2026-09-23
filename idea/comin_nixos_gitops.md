@@ -10,7 +10,7 @@ with no CI step and no manual `nixos-rebuild`.
 ## Why
 
 This is the mature, purpose-built answer to the property we kept hitting while
-designing the codex pod (<../cluster/k8s/parked/codex-pod/README.md>): "change
+designing the codex pod (<../x/codex_pod_image/deploy/README.md>): "change
 the Nix definition, push, the running thing reconciles itself." At the
 k8s-pod + nix-csi layer that needs custom glue (there's no off-the-shelf
 Flux-image-automation analog for Nix store paths). At the **NixOS-system** layer,
@@ -63,9 +63,9 @@ away. Worth doing on the VM regardless of what happens with the pod.
 ## Fit / open questions for our setup
 
 - **Which repo does comin poll?** ducktape is the NixOS SSOT
-  (`nix/nixos/hosts/agent-box/…`). Point comin at our Forgejo mirror of ducktape
-  (+ optionally a second remote to avoid SPOF). Confirm the hostname matches the
-  `nixosConfigurations` attr.
+  (`cluster/k8s/parked/agent-box/nix/nixos.nix`). Point comin at our Forgejo mirror
+  of ducktape (+ optionally a second remote to avoid SPOF). Confirm the hostname
+  matches the `nixosConfigurations` attr.
 - **Auth** to a private repo from the box — see comin's `docs/authentication.md`.
 - **Blast radius**: comin auto-switches on push to `main`/`devel`. Consider
   pointing it at a dedicated branch or using signature checking so an unrelated
@@ -80,5 +80,5 @@ away. Worth doing on the VM regardless of what happens with the pod.
 - Repo: <https://github.com/nlewo/comin> (`readme.md`, `docs/` — howtos,
   advanced-config, authentication, generated-module-options, design).
 - Matrix room: `#nixos-comin:matrix.org`.
-- Related: <../cluster/k8s/parked/codex-pod/README.md> (the pod arc that
+- Related: <../x/codex_pod_image/deploy/README.md> (the pod arc that
   surfaced this).
