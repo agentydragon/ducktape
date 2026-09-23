@@ -15,9 +15,9 @@ Electric sits behind one module on each side:
 - **Backend:** `electric.py` holds `ElectricProxy` and the `/threads/{thread_id}/sync/*` router,
   mounted only when `electric_url` is set (`main.py`, `api.py`). Its only read of the fold is
   `ContentStore.current_scope`, which any implementation needs for **P7**.
-- **Frontend:** `thread_store.tsx` exports `ThreadCollection`, `CommandSelection` and `PayloadBody`,
-  on the raw `@electric-sql/client`. `projected_session.tsx` renders from those three, so the
-  frontend seam mostly exists already.
+- **Frontend:** `thread_sync.ts` defines the `ThreadSync` interface, and `projected_session.tsx`
+  reads only that, from a context `app.tsx` fills. `thread_store.tsx` implements it as
+  `electricThreadSync`, on the raw `@electric-sql/client`.
 
 ## Backend
 
@@ -46,24 +46,10 @@ What the renderer needs from any implementation, per thread:
 - a body by reference, possibly still growing (**S1**, **P8**);
 - the fold's rows for commands the client sent (**P9**).
 
-A sketch of the interface — its shape, not a final signature:
-
-```ts
-interface ThreadSync {
-  useThreadWindow(threadId: string): {
-    rows: ThreadEntity[];
-    caughtUp: boolean;
-    olderAvailable: boolean;
-    loadOlder(): void;
-    error: string | null;
-  };
-  usePayload(threadId: string, reference: PayloadRef, follow: boolean): string | null;
-  useCommandRows(threadId: string, commandIds: readonly string[]): ThreadEntity[];
-}
-```
-
-Paging is "load older", owned by the implementation. Electric's swap to a new epoch without a
-reload stays inside it; **P7** requires only the refusal.
+`ThreadSync` in `frontend/thread_sync.ts` is that list: a `Thread` provider that syncs one thread
+while mounted, and hooks for its window, command rows by ID, and a body by reference. Paging is
+"load older", owned by the implementation. Electric's swap to a new epoch without a reload stays
+inside it; **P7** requires only the refusal.
 
 ## Shared between implementations
 
@@ -116,22 +102,20 @@ a dynamic `import()` already keeps it off the page.
 4. **The schema is shared.** An implementation that needs a column or index adds it to the fold
    for everyone. Additive changes are fine, and under **C3** there is no migration to stage, but no
    implementation may change what another reads.
-5. **Command rows.** `CommandSelection` is Electric-backed, and `local_commands.ts` reconciles
-   against it. Keeping `useCommandRows` on the interface lets each implementation supply live
-   pending state. A shared commands endpoint outside sync would be simpler but gives that up. To be
-   decided when the second implementation lands.
+5. **Command rows.** Electric's `useCommandRows` loads them into the thread's window, and
+   `local_commands.ts` reconciles against it. Keeping `useCommandRows` on the interface lets each
+   implementation supply live pending state. A shared commands endpoint outside sync would be
+   simpler but gives that up. To be decided when the second implementation lands.
 6. **Implementations rot.** Each non-default implementation states the experiment it exists for
    and the measurement that ends it. The losers are deleted; the seam stays.
 7. **Which one served a request (O3)** is in its path, and the thread's debug page should show the one in use.
 
 ## Order of work
 
-Each step ships alone, and the first two change no behaviour.
+Each step ships alone, and the first changes no behaviour.
 
-1. Define `ThreadSync` and put `thread_store.tsx` behind it as the Electric implementation;
-   `projected_session.tsx` consumes only the interface.
-2. Move `electric.py` into `thread_sync/electric/`, and its routes to `/threads/{thread_id}/sync/electric/…`, with the frontend following in the same
+1. Move `electric.py` into `thread_sync/electric/`, and its routes to `/threads/{thread_id}/sync/electric/…`, with the frontend following in the same
    change.
-3. The deployment setting that picks an implementation, which the frontend reads at start.
-4. A second implementation, with the shared range and delta read. The cheapest is the window poll,
+2. The deployment setting that picks an implementation, which the frontend reads at start.
+3. A second implementation, with the shared range and delta read. The cheapest is the window poll,
    long-polled rather than on a timer (**E6**).

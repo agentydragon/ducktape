@@ -79,7 +79,7 @@ class Stage(StrEnum):
 COLD_CEILINGS = {Stage.SCOPE: 1.0, Stage.ENTITY_SHAPE: 5.0, Stage.TAIL: 2.0, Stage.BODY_SHAPE: 5.0, Stage.BODY: 2.0}
 WARM_CEILINGS = COLD_CEILINGS | {Stage.ENTITY_SHAPE: 1.0, Stage.BODY_SHAPE: 1.0}
 
-# The subsets `ThreadWindow` in thread_store.tsx loads before it shows a thread, in the forms the
+# The subsets `EpochWindow` in thread_store.tsx loads before it shows a thread, in the forms the
 # proxy admits; the tail is its `PAGE`.
 NEWEST_FIRST = "entity_index DESC"
 TAIL = SubsetRequest(order_by=NEWEST_FIRST, limit=30)
