@@ -232,6 +232,8 @@ exports_files(
         "authentik/sso-providers-tf/kustomization.yaml",
         "monitoring/namespace/namespace.k8s.yaml",
         "monitoring/namespace/kustomization.yaml",
+        "monitoring/grafana-helmrepository/helmrepository.k8s.yaml",
+        "monitoring/grafana-helmrepository/kustomization.yaml",
         "langfuse/langfuse.k8s.yaml",
         "forgejo/app/forgejo.k8s.yaml",
         "forgejo/budget-namespace/namespace.k8s.yaml",
