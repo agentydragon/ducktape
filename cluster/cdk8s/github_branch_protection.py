@@ -1,13 +1,36 @@
-"""Flux Kustomizations for the cluster/k8s/github-branch-protection slice."""
+"""Branch protection for the ducktape GitHub repository (tf/gitops/github-branch-protection)."""
 
 from __future__ import annotations
 
-from cdk8s import Chart
+from pathlib import Path
+
+from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import terraform
 from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
+from cluster.cdk8s.generation import write_charts, write_yaml
+
+NAME = "github-branch-protection"
+OUTPUT_DIR = f"cluster/k8s/{NAME}"
+
+
+def chart(app: App) -> Chart:
+    chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    terraform.gitops_terraform(chart, "terraform", name=NAME, variables={})
+    return chart
+
+
+def write_manifests(root: Path) -> None:
+    write_charts(root, OUTPUT_DIR, chart)
+    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))
 
 
 def github_branch_protection(
@@ -17,10 +40,9 @@ def github_branch_protection(
     tofu_state_db: Kustomization,
     github_secrets_sync_secrets: Kustomization,
 ) -> Kustomization:
-    name = "github-branch-protection"
     return flux_kustomization(
         chart,
-        name,
+        NAME,
         spec=KustomizationSpec(
             retry_interval="1m",
             interval="10m",
@@ -33,8 +55,8 @@ def github_branch_protection(
                 KustomizationSpecHealthChecks(
                     api_version="infra.contrib.fluxcd.io/v1alpha2",
                     kind="Terraform",
-                    name="github-branch-protection",
-                    namespace="flux-system",
+                    name=NAME,
+                    namespace=terraform.NAMESPACE,
                 )
             ],
             depends_on=flux_kustomization_depends_on_many(

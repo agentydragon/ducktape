@@ -58,6 +58,8 @@ _GENERATED_FILES = (
     "cluster/k8s/flux-image-automation-forgejo/kustomization.yaml",
     "cluster/k8s/ntfy/ntfy.k8s.yaml",
     "cluster/k8s/ntfy/kustomization.yaml",
+    "cluster/k8s/github-branch-protection/github-branch-protection.k8s.yaml",
+    "cluster/k8s/github-branch-protection/kustomization.yaml",
 )
 
 

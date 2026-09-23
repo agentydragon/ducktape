@@ -96,6 +96,8 @@ exports_files(
         "seaweedfs/cluster/priorityclass.k8s.yaml",
         "ssh-mcp/ssh-mcp.k8s.yaml",
         "ssh-mcp/kustomization.yaml",
+        "github-branch-protection/github-branch-protection.k8s.yaml",
+        "github-branch-protection/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
