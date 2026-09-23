@@ -662,8 +662,8 @@ def generate_manifests(root: Path) -> None:
     )
     tofu_state_db_artifact = artifact("tofu-state-db", tofu_state_db.OUTPUT_DIR)
     tofu_state_db_kustomization = tofu_state_db.tofu_state_db(flux_chart, tofu_state_db_artifact, cnpg_kustomization)
-    seaweedfs_secrets_artifact = artifact("seaweedfs-secrets", "cluster/k8s/seaweedfs/secrets")
-    seaweedfs_secrets_kustomization = seaweedfs_flux_kustomizations.seaweedfs_secrets(
+    seaweedfs_secrets_artifact = artifact("seaweedfs-secrets", seaweedfs_s3_config.OUTPUT_DIR)
+    seaweedfs_secrets_kustomization = seaweedfs_s3_config.seaweedfs_secrets(
         flux_chart,
         seaweedfs_secrets_artifact,
         seaweedfs_namespace_kustomization,

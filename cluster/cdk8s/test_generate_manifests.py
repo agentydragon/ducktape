@@ -92,6 +92,7 @@ _GENERATED_FILES = (
     "cluster/k8s/seaweedfs/public-s3/public-s3.k8s.yaml",
     "cluster/k8s/seaweedfs/public-s3/kustomization.yaml",
     "cluster/k8s/seaweedfs/secrets/s3-config.k8s.yaml",
+    "cluster/k8s/seaweedfs/secrets/kustomization.yaml",
     "cluster/k8s/seaweedfs/db/seaweedfs-filer-db-ssd.k8s.yaml",
     "cluster/k8s/seaweedfs/db/kustomization.yaml",
     "cluster/k8s/seaweedfs/external-credentials/external-credentials.k8s.yaml",

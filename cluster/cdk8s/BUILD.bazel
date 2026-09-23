@@ -1693,6 +1693,7 @@ py_test(
         "//cluster/k8s:seaweedfs/public-s3/public-s3.k8s.yaml",
         "//cluster/k8s:seaweedfs/registry-cache-bucket/kustomization.yaml",
         "//cluster/k8s:seaweedfs/registry-cache-bucket/registry-cache-bucket.k8s.yaml",
+        "//cluster/k8s:seaweedfs/secrets/kustomization.yaml",
         "//cluster/k8s:seaweedfs/secrets/s3-config.k8s.yaml",
         "//cluster/k8s:ssh-mcp/kustomization.yaml",
         "//cluster/k8s:ssh-mcp/ssh-mcp.k8s.yaml",
