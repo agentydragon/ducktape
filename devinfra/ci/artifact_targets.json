@@ -69,6 +69,16 @@
       "target": "//devinfra:gazelle_python_binary",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/gazelle_python_binary_/gazelle_python_binary",
       "release": "gazelle"
+    },
+    "agentplane-runner": {
+      "target": "//agentplane/runner:runner_release",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/agentplane/runner/runner_release.tar.gz",
+      "release": "agentplane-runner"
+    },
+    "agentplane-runner-config": {
+      "target": "//agentplane/runner:runner_image_config",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/agentplane/runner/runner_image_config.json",
+      "release": "agentplane-runner"
     }
   },
   "releases": {
@@ -125,6 +135,10 @@
     },
     "gazelle": {
       "tests": "",
+      "nixPackage": false
+    },
+    "agentplane-runner": {
+      "tests": "//agentplane/runner/...",
       "nixPackage": false
     }
   }

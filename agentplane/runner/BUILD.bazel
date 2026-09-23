@@ -1,5 +1,6 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "pkg_mkdirs", "strip_prefix")
@@ -491,17 +492,23 @@ pkg_tar(
     ],
 )
 
+RUNNER_ENTRYPOINT = py_image_entrypoint("runner_image_bin")
+
+RUNNER_ENV = py_image_env(
+    binary_name = "runner_image_bin",
+    extra_env = {
+        "HOME": "/home/runner",
+        "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+    },
+)
+
+RUNNER_USER = "1000:1000"
+
 oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("runner_image_bin"),
-    env = py_image_env(
-        binary_name = "runner_image_bin",
-        extra_env = {
-            "HOME": "/home/runner",
-            "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
-        },
-    ),
+    entrypoint = RUNNER_ENTRYPOINT,
+    env = RUNNER_ENV,
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
         ":runner_layers",
@@ -509,7 +516,29 @@ oci_image(
         "//third_party/debian_slim:cacerts",
         "@trixie_agentplane_runner//:flat",
     ],
-    user = "1000:1000",
+    user = RUNNER_USER,
+)
+
+# The runner release (devinfra/ci/artifact_targets.json): what this image adds to its base, as
+# one tarball, and the image config that runs it. The Nix-built runner image lays both over the
+# sandbox image's tools.
+pkg_tar(
+    name = "runner_release",
+    extension = "tar.gz",
+    deps = [
+        ":harness_layer",
+        ":runner_layers",
+    ],
+)
+
+write_file(
+    name = "runner_image_config",
+    out = "runner_image_config.json",
+    content = [json.encode({
+        "Entrypoint": RUNNER_ENTRYPOINT,
+        "Env": ["%s=%s" % item for item in RUNNER_ENV.items()],
+        "User": RUNNER_USER,
+    })],
 )
 
 oci_layout_rloc(
