@@ -118,7 +118,6 @@ ENV = Environment(
         "Actions fixtures, app, runner template, and operator RBAC."
     ),
     extra_resources=(_LITELLM_CREDENTIALS_DIR,),
-    include_action_policy_rule=True,
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     app_config={**testing_config.config(), "action_federation": _ACTION_FEDERATION},
     db=DbProps(instances=1, pod_anti_affinity=False),
