@@ -53,3 +53,9 @@ py_library(
         "@pypi//cdk8s",
     ],
 )
+
+py_library(
+    name = "namespace",
+    srcs = ["namespace.py"],
+    deps = ["//cluster/cdk8s:generation"],
+)
