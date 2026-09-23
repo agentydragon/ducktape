@@ -167,6 +167,8 @@ exports_files(
         "nvidia-runtimeclass/kustomization.yaml",
         "hubble-ui/hubble-ui.k8s.yaml",
         "hubble-ui/kustomization.yaml",
+        "metrics-server/metrics-server.k8s.yaml",
+        "metrics-server/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
