@@ -196,6 +196,7 @@ from cluster.cdk8s.monitoring import (
     flux_kustomizations as monitoring_flux_kustomizations,
     grafana_helmrepository,
     grafana_operator,
+    loki,
     namespace as monitoring_namespace,
     stack as monitoring_stack,
 )
@@ -304,6 +305,7 @@ def generate_manifests(root: Path) -> None:
     cilium_monitoring.write_manifests(root)
     monitoring_stack.write_manifests(root)
     alloy.write_manifests(root)
+    loki.write_manifests(root)
     langfuse_app.write_manifests(root)
     forgejo_app.write_manifests(root)
     forgejo_budget_namespace.write_manifests(root)
@@ -774,8 +776,8 @@ def generate_manifests(root: Path) -> None:
     authentik_flux_kustomizations.authentik_db_backups(
         flux_chart, authentik_db_backups_artifact, cnpg_kustomization, seaweedfs_cluster_kustomization
     )
-    monitoring_loki_artifact = artifact("monitoring-loki", "cluster/k8s/monitoring/loki")
-    loki_kustomization = monitoring_flux_kustomizations.loki(
+    monitoring_loki_artifact = artifact("monitoring-loki", loki.OUTPUT_DIR)
+    loki_kustomization = loki.loki(
         flux_chart, monitoring_loki_artifact, grafana_helmrepository_kustomization, seaweedfs_cluster_kustomization
     )
     monitoring_mimir_artifact = artifact("monitoring-mimir", "cluster/k8s/monitoring/mimir")

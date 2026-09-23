@@ -391,14 +391,16 @@ py_test(
     srcs = ["test_roaming_daemonset_capacity.py"],
     data = [
         "//:nebula-mesh.json",
-        "//cluster/k8s:cluster_all_files",
+        "@nodejs_linux_amd64//:bin/node",
     ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        "//cluster/cdk8s/monitoring:loki",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
+        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

@@ -243,6 +243,8 @@ exports_files(
         "monitoring/stack/monitoring-stack.k8s.yaml",
         "monitoring/stack/kustomization.yaml",
         "monitoring/alloy/alloy.k8s.yaml",
+        "monitoring/loki/loki.k8s.yaml",
+        "monitoring/loki/kustomization.yaml",
         "langfuse/langfuse.k8s.yaml",
         "forgejo/app/forgejo.k8s.yaml",
         "forgejo/budget-namespace/namespace.k8s.yaml",
