@@ -137,6 +137,8 @@ _GENERATED_FILES = (
     "cluster/k8s/keda/kustomization.yaml",
     "cluster/k8s/valkey/valkey.k8s.yaml",
     "cluster/k8s/valkey/kustomization.yaml",
+    "cluster/k8s/local-path-provisioner/local-path-provisioner.k8s.yaml",
+    "cluster/k8s/local-path-provisioner/kustomization.yaml",
 )
 
 

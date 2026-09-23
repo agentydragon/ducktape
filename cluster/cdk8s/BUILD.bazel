@@ -618,6 +618,24 @@ py_library(
 )
 
 py_library(
+    name = "local_path_provisioner",
+    srcs = ["local_path_provisioner.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     data = [
@@ -648,6 +666,7 @@ py_library(
         ":hubble_ui",
         ":keda",
         ":kube_system",
+        ":local_path_provisioner",
         ":metrics_server",
         ":mitmproxy",
         ":ntfy",
@@ -721,7 +740,6 @@ py_library(
         "//cluster/cdk8s/litellm:namespace",
         "//cluster/cdk8s/litellm:proxy",
         "//cluster/cdk8s/litellm:secrets",
-        "//cluster/cdk8s/local_path_provisioner:flux_kustomizations",
         "//cluster/cdk8s/matrix:flux_kustomizations",
         "//cluster/cdk8s/monitoring:alloy_otlp_bearer_token",
         "//cluster/cdk8s/monitoring:flux_kustomizations",
@@ -915,6 +933,8 @@ py_test(
         "//cluster/k8s:litellm/keys-tf/litellm-keys.k8s.yaml",
         "//cluster/k8s:litellm/kustomization.yaml",
         "//cluster/k8s:litellm/namespace.k8s.yaml",
+        "//cluster/k8s:local-path-provisioner/kustomization.yaml",
+        "//cluster/k8s:local-path-provisioner/local-path-provisioner.k8s.yaml",
         "//cluster/k8s:metrics-server/kustomization.yaml",
         "//cluster/k8s:metrics-server/metrics-server.k8s.yaml",
         "//cluster/k8s:litellm/secrets/kustomization.yaml",

@@ -175,6 +175,8 @@ exports_files(
         "keda/kustomization.yaml",
         "valkey/valkey.k8s.yaml",
         "valkey/kustomization.yaml",
+        "local-path-provisioner/local-path-provisioner.k8s.yaml",
+        "local-path-provisioner/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
