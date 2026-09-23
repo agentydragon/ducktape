@@ -70,6 +70,7 @@ exports_files(
         "haku/rbac/haku-rbac.k8s.yaml",
         "haku/rbac/kustomization.yaml",
         "haku/forgejo-tea/kustomization.yaml",
+        "haku/workloads/haku-workloads.k8s.yaml",
         "agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
         "agents/public-coder-agent/namespace/public-coder-agent.k8s.yaml",
         "agents/public-coder-agent/namespace/kustomization.yaml",

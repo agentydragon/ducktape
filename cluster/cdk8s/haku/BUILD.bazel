@@ -206,3 +206,16 @@ py_library(
         "@pypi//cdk8s",
     ],
 )
+
+py_library(
+    name = "workloads",
+    srcs = ["workloads.py"],
+    deps = [
+        ":namespace",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
