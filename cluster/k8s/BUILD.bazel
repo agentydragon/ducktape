@@ -147,6 +147,10 @@ exports_files(
         "ollama/ollama.k8s.yaml",
         "gatus/gatus.k8s.yaml",
         "activitywatch/activitywatch.k8s.yaml",
+        "matrix/matrix.k8s.yaml",
+        "matrix/kustomization.yaml",
+        "matrix/user-provisioner/matrix-user-provisioner.k8s.yaml",
+        "matrix/user-provisioner/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

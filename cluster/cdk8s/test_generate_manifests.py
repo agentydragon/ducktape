@@ -111,6 +111,10 @@ _GENERATED_FILES = (
     "cluster/k8s/activitywatch/activitywatch.k8s.yaml",
     "cluster/k8s/cli-proxy-api/cli-proxy-api.k8s.yaml",
     "cluster/k8s/cli-proxy-api/kustomization.yaml",
+    "cluster/k8s/matrix/matrix.k8s.yaml",
+    "cluster/k8s/matrix/kustomization.yaml",
+    "cluster/k8s/matrix/user-provisioner/matrix-user-provisioner.k8s.yaml",
+    "cluster/k8s/matrix/user-provisioner/kustomization.yaml",
 )
 
 
