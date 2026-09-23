@@ -413,9 +413,11 @@ tools are `curl`, `git` and `ripgrep`. `python3`, `jq`, `openssl`, `kubectl`, `t
 
 **Steps:**
 
-1. The Nix sandbox image, published where bazel-ci can pull it by digest without credentials.
-2. The runner image's `base` switches to it; its image tests are the first to run the nix-ld
-   path in a container.
+1. The Nix sandbox image, published to the Forgejo registry beside the runner image.
+2. `oci.pull` fetches wherever Bazel resolves external repositories, so the `bbr` remote runner,
+   developer machines and web sessions get credentials for that registry. The runner image's
+   `base` then switches to the sandbox image; its image tests are the first to run the nix-ld path
+   in a container.
 3. The sandbox `SandboxTemplate` and environment, described by what the image holds.
 
 **What waits on it:**
