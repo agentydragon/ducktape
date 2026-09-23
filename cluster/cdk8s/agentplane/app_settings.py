@@ -15,6 +15,7 @@ PACKAGES_POLICY = "packages"
 KUBERNETES_POLICY = "kubernetes"
 GOOGLE_READONLY_POLICY = "google-readonly"
 GROCY_SF_READONLY_POLICY = "grocy-sf-readonly"
+COINBASE_POLICY = "coinbase"
 
 
 def settings(

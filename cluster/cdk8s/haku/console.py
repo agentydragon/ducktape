@@ -155,7 +155,7 @@ class Console(Construct):
             "tana-pat-external-secret",
             namespace=NAMESPACE,
             source_name="tana-agentydragon-gmail-com-account-pat",
-            property_name="token",
+            properties=("token",),
             description="ESO copy of the canonical Tana PAT from external-creds.",
         )
         env = self._container_env()

@@ -1,9 +1,9 @@
 """Staging-only Action Service policy objects: the claude-ai caller ServiceAccount, its
 five reviewed GitHub-reads ActionPolicySets, its reviewed Home Assistant/Gmail/Google
 Calendar-reads ActionPolicySets, and the ActionPolicyBinding granting them to that
-ServiceAccount. See cluster/k8s/agentplane-staging/README.md § Action policies --
-Sandbox-subject bindings are written by the integration app at runtime and are never
-checked in here.
+ServiceAccount; also what its sandboxes may reach (the EgressBinding) and read (the Coinbase
+key). See cluster/k8s/agentplane-staging/README.md § Action policies -- Sandbox-subject
+bindings are written by the integration app at runtime and are never checked in here.
 """
 
 from __future__ import annotations
@@ -24,14 +24,22 @@ from agentplane_egressbinding_crds.works.allegedly.agentplane import (
     EgressBindingSpec,
     EgressBindingSpecSubjects,
 )
+from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
+    EgressPolicy,
+    EgressPolicySpec,
+    EgressPolicySpecRules,
+    EgressPolicySpecRulesMethods,
+)
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import ServiceAccount
+from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 from constructs import Construct
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAction
+from cluster.cdk8s import external_creds
 from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
+    COINBASE_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
@@ -44,6 +52,7 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GAFFER_PRIVATE_READS_SET,
     PUBLIC_GITHUB_READS_SET,
 )
+from cluster.cdk8s.metadata import metadata
 
 _NAMESPACE = "agentplane-staging"
 _GITHUB_READS_SET = "github-reads"
@@ -52,6 +61,9 @@ _GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 _HOME_ASSISTANT_READS_SET = "home-assistant-reads"
 _GMAIL_READS_SET = "gmail-reads"
 _GOOGLE_CALENDAR_READS_SET = "google-calendar-reads"
+# The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
+# Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
+_COINBASE_SECRET = "coinbase-api-credentials"
 
 
 def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: ActionPolicySetSpec) -> None:
@@ -216,12 +228,12 @@ def _repository_reads(scope: Construct, id: str, *, name: str, description: str,
 
 
 def add_staging_action_policies(scope: Construct) -> None:
-    # The principal a Connection enrolled from the Claude.ai MCP connector acts as,
-    # picked by the operator at OAuth consent. No Pod runs as it and it holds no
-    # RoleBinding: the label is what makes it an Action caller, and removing the label
-    # or the object is how it is disabled. What it may do without an operator is an
-    # ActionPolicyBinding naming it; on its own it grants nothing.
-    ServiceAccount(
+    # The principal a Connection enrolled from the Claude.ai MCP connector acts as, picked by
+    # the operator at OAuth consent, and the identity its sandboxes run as. The label is what
+    # makes it an Action caller, and removing the label or the object is how it is disabled.
+    # What it may do without an operator is an ActionPolicyBinding naming it; its Kubernetes
+    # access is listed in cluster/k8s/agents/agent-rbac-base/README.md § 6.
+    claude_ai = ServiceAccount(
         scope,
         "serviceaccount-claude-ai",
         metadata=ApiObjectMetadata(
@@ -327,6 +339,44 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
     )
 
+    # Coinbase authenticates each request with a fresh JWT signed over its method, host and path,
+    # which the egress proxy's placeholder substitution cannot produce. So a sandbox of claude-ai's
+    # holds the key and signs for itself: it may read this one Secret through the API server, and
+    # the `coinbase` policy passes its GETs to api.coinbase.com unchanged. What makes handing the
+    # sandbox the key acceptable is that the key can only view.
+    external_creds.add_external_secret(
+        scope,
+        "coinbase-external-secret",
+        namespace=_NAMESPACE,
+        source_name=_COINBASE_SECRET,
+        properties=("api_key", "api_secret"),
+        description="ESO copy of the view-only Coinbase CDP key from external-creds, read by claude-ai's sandboxes.",
+    )
+    coinbase_reader = Role(
+        scope,
+        "role-claude-ai-coinbase",
+        metadata=metadata("claude-ai-coinbase-reader", _NAMESPACE),
+        rules=[
+            RolePolicyRule(
+                resources=[Secret.from_secret_name(scope, "coinbase-secret", _COINBASE_SECRET)], verbs=["get"]
+            )
+        ],
+    )
+    RoleBinding(
+        scope,
+        "rolebinding-claude-ai-coinbase",
+        metadata=metadata("claude-ai-coinbase-reader", _NAMESPACE),
+        role=coinbase_reader,
+    ).add_subjects(claude_ai)
+    EgressPolicy(
+        scope,
+        "egresspolicy-coinbase",
+        metadata=ApiObjectMetadata(name=COINBASE_POLICY, namespace=_NAMESPACE),
+        spec=EgressPolicySpec(
+            rules=[EgressPolicySpecRules(hosts=["api.coinbase.com"], methods=[EgressPolicySpecRulesMethods.GET])]
+        ),
+    )
+
     # What a sandbox of claude-ai's may reach. The binding is on the account rather than on each
     # box because that is what the account is entitled to: the proxy authenticates the Pod's
     # ServiceAccount, and every sandbox stamped for this caller runs as exactly that. Nothing else
@@ -342,7 +392,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # (egress_staging_credentials.py). `grocy-sf-readonly` presents the app password of an Authentik
     # service account with no Grocy permissions, as HTTP Basic, on GETs to Grocy's own REST API (see
     # that module's `grocy-sf-readonly` EgressPolicy for why that's Grocy's API rather than the
-    # grocy-mcp-sf MCP server).
+    # grocy-mcp-sf MCP server). `coinbase` presents nothing: the sandbox signs with the key above.
     #
     # TODO(github-egress): consider binding `github-public` here too. The asymmetry today is that
     # the ActionPolicyBinding below auto-approves GitHub *reads through the Action Service*, while
@@ -369,6 +419,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 PACKAGES_POLICY,
                 GOOGLE_READONLY_POLICY,
                 GROCY_SF_READONLY_POLICY,
+                COINBASE_POLICY,
             ],
         ),
     )

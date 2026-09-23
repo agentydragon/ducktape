@@ -125,18 +125,19 @@ Claude web or Haku: it is co-subjected only onto the secret-free
 `cluster-diagnostics-reader` binding. It does not receive a writable sandbox
 namespace or the separate `logs-configmaps-reader` class.
 
-### 6. claude-ai (agentplane-staging) — diagnostics and agent-readable namespaces
+### 6. claude-ai (agentplane-staging) — diagnostics, agent-readable namespaces, Coinbase key
 
 The `claude-ai` ServiceAccount in `agentplane-staging` is the principal for Connections
 enrolled from the Claude.ai MCP connector (`cluster/cdk8s/agentplane/actions_staging_policies.py`);
 every sandbox it stamps through the sandbox Action group runs as it
 (`agentplane/docs/sandbox_actions.md`). Its access is the secret-free
 `cluster-diagnostics-reader` binding plus the metadata and pod-log readers of the
-`agent-readable-*` namespaces (section 4): no writable namespace, no `logs-configmaps-reader`
-class. Distinct from Haku's own identities
-(`oidc-ksbx-groups:haku` et al.) even though a claude-ai sandbox may separately carry Haku's
-own Forgejo credential via `EgressBinding` — that authority is unrelated to this Kubernetes RBAC
-grant.
+`agent-readable-*` namespaces (section 4), and `get` on exactly one Secret,
+`agentplane-staging/coinbase-api-credentials`: the view-only Coinbase CDP key, which its
+sandboxes sign Coinbase requests with because the egress proxy cannot. No writable namespace, no
+`logs-configmaps-reader` class. Distinct from Haku's own identities (`oidc-ksbx-groups:haku` et
+al.) even though a claude-ai sandbox may separately carry Haku's own Forgejo credential via
+`EgressBinding` — that authority is unrelated to this Kubernetes RBAC grant.
 
 @permissions.md
 
