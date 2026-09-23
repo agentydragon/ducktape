@@ -94,7 +94,7 @@ from cluster.cdk8s.keda import flux_kustomizations as keda_flux_kustomizations
 from cluster.cdk8s.kube_api_proxy import flux_kustomizations as kube_api_proxy_flux_kustomizations
 from cluster.cdk8s.kube_system import flux_kustomizations as kube_system_flux_kustomizations
 from cluster.cdk8s.kubevirt import flux_kustomizations as kubevirt_flux_kustomizations
-from cluster.cdk8s.kyverno import flux_kustomizations as kyverno_flux_kustomizations
+from cluster.cdk8s.kyverno import app as kyverno_app, flux_kustomizations as kyverno_flux_kustomizations
 from cluster.cdk8s.langfuse import flux_kustomizations as langfuse_flux_kustomizations
 from cluster.cdk8s.litellm import (
     credentials as litellm_credentials,
@@ -161,6 +161,7 @@ def generate_manifests(root: Path) -> None:
     haku_openclaw_spike_config.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
     descheduler.write_manifests(root)
+    kyverno_app.write_manifests(root)
     stateful_infra.write_seaweedfs_manifests(root)
     egress_fences.write_manifests(root)
     dns_automation.write_manifests(root, mesh)
@@ -234,8 +235,8 @@ def generate_manifests(root: Path) -> None:
     kubevirt_operator_kustomization = kubevirt_flux_kustomizations.kubevirt_operator(
         flux_chart, kubevirt_operator_artifact
     )
-    kyverno_artifact = artifact("kyverno", "cluster/k8s/kyverno/app")
-    kyverno_kustomization = kyverno_flux_kustomizations.kyverno(flux_chart, kyverno_artifact)
+    kyverno_artifact = artifact("kyverno", kyverno_app.OUTPUT_DIR)
+    kyverno_kustomization = kyverno_app.kyverno(flux_chart, kyverno_artifact)
     local_path_provisioner_artifact = artifact("local-path-provisioner", "cluster/k8s/local-path-provisioner")
     local_path_provisioner_kustomization = local_path_provisioner_flux_kustomizations.local_path_provisioner(
         flux_chart, local_path_provisioner_artifact

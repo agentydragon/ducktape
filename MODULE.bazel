@@ -1135,7 +1135,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/grafana/grafana-operator/v5.22.2/config/crd/bases/grafana.integreatly.org_grafanaserviceaccounts.yaml"],
 )
 
-# Match the kyverno chart 3.9.1 (appVersion v1.19.1) in cluster/k8s/kyverno/app/kyverno.yaml.
+# Match the kyverno chart 3.9.1 (appVersion v1.19.1) in cluster/cdk8s/kyverno/app.py.
 http_file(
     name = "kyverno_clusterpolicy_crd",
     downloaded_file_path = "kyverno.io_clusterpolicies.yaml",
