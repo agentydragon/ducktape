@@ -30,8 +30,8 @@ from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_STORE,
     GITHUB_PAT_SECRET,
     credential_external_secret,
-    single_secret_store,
 )
+from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.metadata import metadata
 
 # Written by tf/gitops/agent-machine-access/grocy-sf.tf into agents-infra, named after the Authentik

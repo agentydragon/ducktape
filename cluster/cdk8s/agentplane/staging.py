@@ -26,12 +26,7 @@ from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.agentplane import actions, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
-from cluster.cdk8s.agentplane.egress_credentials import (
-    STAGING_NAMESPACE,
-    EgressCredentials,
-    credential_external_secret,
-    single_secret_store,
-)
+from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials, credential_external_secret
 from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
@@ -44,6 +39,7 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
 )
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator, remote_data
+from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.metadata import metadata
