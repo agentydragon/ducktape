@@ -1,10 +1,9 @@
-"""The `ducktape-flux` Namespace every generated Flux Kustomization lives in, and the
+"""The `ducktape-flux` Namespace every generated Flux Kustomization lives in, the
+namespace-local Ducktape GitRepository they and the ArtifactGenerator read, and the
 read-only diagnostics grant on it for trusted agent identities.
 
 `cluster/k8s/flux/ducktape-flux` is applied by the bootstrap `flux-system` Kustomization,
-not by a node in the generated Flux chart. Hand-written beside the generated output:
-`ducktape-gitrepository.yaml`, the namespace-local source for public Ducktape control
-objects, since no cdk8s binding covers GitRepository.
+not by a node in the generated Flux chart.
 """
 
 from __future__ import annotations
@@ -13,9 +12,11 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
 
 from cluster.cdk8s.flux import NAMESPACE
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.metadata import metadata
 
 OUTPUT_DIR = "cluster/k8s/flux/ducktape-flux"
 _READER = "ducktape-flux-reader"
@@ -35,6 +36,27 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAMESPACE, disable_resource_name_hashes=True)
     # A control-plane boundary only: managed workloads retain their own namespaces.
     k8s.KubeNamespace(chart, "namespace", metadata=k8s.ObjectMeta(name=NAMESPACE, labels={"name": NAMESPACE}))
+    # Intentionally sparse, like flux-system's public-repository source: the source roots
+    # the ArtifactGenerator consumes, and the paths public Kustomizations read directly.
+    GitRepository(
+        chart,
+        "source",
+        metadata=metadata("ducktape", NAMESPACE),
+        spec=GitRepositorySpec(
+            interval="1m",
+            ref=GitRepositorySpecRef(branch="devel"),
+            sparse_checkout=[
+                "cluster/k8s/",
+                "cluster/charts/browsertrix/",
+                "haku/x/dispatch/deploy/",
+                "haku/runtime/managed_agent/self_hosted/deploy/",
+                "loom/wayback/deploy/",
+                "props/deploy/",
+                "tf/gitops/",
+            ],
+            url="https://github.com/agentydragon/ducktape.git",
+        ),
+    )
     # Only the two public control-plane CRDs in this namespace. In particular no access to
     # the controller-only SOPS key Secret, ConfigMaps, Pods, logs, exec, or writes.
     k8s.KubeRole(
