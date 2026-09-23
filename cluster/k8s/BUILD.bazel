@@ -209,6 +209,7 @@ exports_files(
         "agents/claude-sandbox-secrets/claude-sandbox-secrets.k8s.yaml",
         "agents/claude-sandbox-secrets/kustomization.yaml",
         "agents/forgejo-token-rotation/forgejo-token-rotation.k8s.yaml",
+        "agents/authentik-jwt-rotation/authentik-jwt-rotation.k8s.yaml",
         "website/website.k8s.yaml",
         "website/kustomization.yaml",
         "ollama/ollama.k8s.yaml",
