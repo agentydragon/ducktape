@@ -1,0 +1,37 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
+    policies.kyverno.io/category: Reliability
+    policies.kyverno.io/description: Prevents Reloader from deleting and recreating CloudNativePG-owned Jobs. CNPG bootstrap and recovery Jobs are part of the operator reconciliation state machine, so replacing them can remove their Pod before the operation completes. The exclusion is applied at Job creation and is reapplied if a Job is recreated.
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Job
+    policies.kyverno.io/title: Exclude CloudNativePG Jobs from Reloader
+  name: ignore-cnpg-jobs-for-reloader
+spec:
+  admission: true
+  background: false
+  mutateExistingOnPolicyUpdate: false
+  rules:
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Job
+              operations:
+                - CREATE
+              selector:
+                matchExpressions:
+                  - key: app.kubernetes.io/managed-by
+                    operator: In
+                    values:
+                      - cloudnative-pg
+                  - key: cnpg.io/jobRole
+                    operator: Exists
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            annotations:
+              reloader.stakater.com/auto: "false"
+      name: exclude-cnpg-jobs-from-reloader

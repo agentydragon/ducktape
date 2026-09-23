@@ -80,7 +80,7 @@ Source of truth: <../../cluster/k8s/agents/agent-rbac-base/README.md>.
 ### Kyverno `restrict-agent-gateway-routes`
 
 Agents cannot create public routes even if RBAC ever drifted.
-Source of truth: <../../cluster/k8s/kyverno/policies/restrict-agent-gateway-routes.yaml>.
+Source of truth: <../../cluster/cdk8s/kyverno/policies.py>.
 
 ### `haku-egress-proxy` egress fence
 

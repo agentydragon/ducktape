@@ -32,9 +32,9 @@ one of two data-classification labels:
 
 Both classifications grant the same subjects: Haku's OIDC and synthetic access-profile groups,
 its in-cluster ServiceAccounts, `kubectl-sandbox-users`, the synthetic public-coder group, and
-agentplane-staging's `claude-ai` ServiceAccount. The Kyverno policy at
-`cluster/k8s/kyverno/policies/generate-agent-diagnostics-readers.yaml` generates the corresponding
-namespaced RoleBindings. Sensitive or identity-specific access remains explicit
+agentplane-staging's `claude-ai` ServiceAccount. The Kyverno policy
+`generate-agent-diagnostics-readers` (`cluster/cdk8s/kyverno/policies.py`) generates the
+corresponding namespaced RoleBindings. Sensitive or identity-specific access remains explicit
 service RBAC.
 
 Augur is reconciled from `gaffer-private`, so its agent RBAC lives cross-repo at
