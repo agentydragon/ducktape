@@ -99,6 +99,8 @@ exports_files(
         "flux-image-automation-ghcr/openclaw-image.k8s.yaml",
         "tofu-controller/tofu-controller.k8s.yaml",
         "tofu-controller/kustomization.yaml",
+        "cnpg/cnpg.k8s.yaml",
+        "cnpg/kustomization.yaml",
         "agentplane-index/agentplane-index.k8s.yaml",
         "atuin/atuin.k8s.yaml",
         "atuin/kustomization.yaml",

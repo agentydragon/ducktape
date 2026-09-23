@@ -870,13 +870,13 @@ py_library(
         ":reflector",
         ":reloader",
         ":stateful_infra",
+        "//cluster/cdk8s:cnpg_operator",
         ":talos_cloud_controller_manager",
         ":user_agentydragon",
         ":valkey",
         ":vector_talos_logs",
         ":volsync",
         ":vpa",
-        "//cluster/cdk8s:flux_kustomizations_cnpg",
         "//cluster/cdk8s:ducktape_flux",
         "//cluster/cdk8s:flux_kustomizations_dns_automation",
         "//cluster/cdk8s:flux_kustomizations_forgejo_images",
@@ -1094,6 +1094,8 @@ py_test(
         "//cluster/k8s:clickhouse/operator/namespace.k8s.yaml",
         "//cluster/k8s:clickhouse/schema/clickhouse-schema.k8s.yaml",
         "//cluster/k8s:clickhouse/schema/kustomization.yaml",
+        "//cluster/k8s:cnpg/cnpg.k8s.yaml",
+        "//cluster/k8s:cnpg/kustomization.yaml",
         "//cluster/k8s:dcgm-exporter/dcgm-exporter.k8s.yaml",
         "//cluster/k8s:descheduler/helmrelease.k8s.yaml",
         "//cluster/k8s:descheduler/kustomization.yaml",
@@ -1224,16 +1226,20 @@ py_test(
 )
 
 py_library(
-    name = "flux_kustomizations_cnpg",
-    srcs = ["cnpg_flux_kustomizations.py"],
+    name = "cnpg_operator",
+    srcs = ["cnpg_operator.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":artifact_generators",
         ":flux",
         ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
     ],
 )
 
