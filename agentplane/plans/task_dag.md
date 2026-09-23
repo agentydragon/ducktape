@@ -87,7 +87,7 @@ flowchart TB
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
     CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
-    SANDBOX_EXEC_IMAGE["Planned image<br/>a Nix sandbox image under the runner image<br/>today an exec box is the runner image, with no python3 or jq"]:::future
+    SANDBOX_EXEC_IMAGE["Planned images<br/>Nix sandbox and runner images from one definition<br/>today an exec box is the runner image, with no python3 or jq"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>some first need an ActionGroup, a kind, or DENY_LISTS"]:::future
 
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
@@ -387,7 +387,7 @@ settle).
 accumulated; a real API request from inside a sandbox succeeds for the intended operations and is
 refused outside them; and removing the account or its label still disables the whole path.
 
-### `SANDBOX_EXEC_IMAGE` — a Nix-built sandbox image under the runner image
+### `SANDBOX_EXEC_IMAGE` — Nix-built sandbox and runner images from one definition
 
 **Planned image:** the configured `runner` environment stamps the integration app's runner
 template, which carries the egress sidecar, the interception CA and the proxy environment, so the
@@ -403,22 +403,28 @@ tools are `curl`, `git` and `ripgrep`. `python3`, `jq`, `openssl`, `kubectl`, `t
   nix-ld's filesystem fallback and static `/usr/bin/env` and `/bin/bash` links, without which an
   FHS binary (the runner's hermetic Python, the harness CLIs, a toolchain Bazel downloads) finds
   no loader.
-- The runner image stays a Bazel `oci_image`, with the sandbox image as its `base`, pulled by
-  digest. The runner is not released and pinned for a Nix build instead: `agentplane/runner`'s
-  image tests load the image built from the tree under test, and every runner change would wait
-  on a release.
+- The runner image is the same definition plus the runner, also built by Nix; Bazel pulls no image
+  from Forgejo. The runner comes in as a release artifact Bazel builds and tests: one tarball of
+  the runner, its hermetic Python and both harnesses, the content of the Bazel image's own layers.
+  `release.yml` publishes it and `sync-pins.yml` pins it in `nix/artifact-pins.json`, as for the
+  repository's other released tools.
+- `test_image` and `test_image_packaging` move to the runner image's workflow and run against the
+  image it built, before it publishes. A runner change then reaches the image through a release, a
+  pin and an image build; its container tests run on devel once the pin moves, not on the change's
+  PR.
 - Sandbox Actions get a default environment on the plain sandbox image, through its own
   `SandboxTemplate` that keeps the sidecar, CA and proxy environment egress needs
   ([sandbox Actions](../docs/sandbox_actions.md)). `runner` stays as a second environment.
 
 **Steps:**
 
-1. The Nix sandbox image, published to the Forgejo registry beside the runner image.
-2. `oci.pull` fetches wherever Bazel resolves external repositories, so the `bbr` remote runner,
-   developer machines and web sessions get credentials for that registry. The runner image's
-   `base` then switches to the sandbox image; its image tests are the first to run the nix-ld path
-   in a container.
-3. The sandbox `SandboxTemplate` and environment, described by what the image holds.
+1. The Nix sandbox image, published to the Forgejo registry.
+2. The runner release artifact, a row in `devinfra/ci/artifact_targets.json`.
+3. The Nix runner image from the shared definition and that pin, with the container tests in its
+   workflow, where the runner's hermetic Python first runs through nix-ld.
+   `devinfra/ci/image_targets.json` stops publishing the Bazel runner image, and its apt tool set
+   (`trixie_agentplane_runner`) goes.
+4. The sandbox `SandboxTemplate` and environment, described by what the image holds.
 
 **What waits on it:**
 
