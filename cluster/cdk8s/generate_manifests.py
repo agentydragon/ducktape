@@ -236,6 +236,7 @@ from cluster.cdk8s.seaweedfs import (
     pr_visuals_bucket as seaweedfs_pr_visuals_bucket,
     public_coder_agent_backups_bucket as seaweedfs_public_coder_agent_backups_bucket,
     registry_cache_bucket as seaweedfs_registry_cache_bucket,
+    s3_config as seaweedfs_s3_config,
 )
 from cluster.cdk8s.seaweedfs_csi import flux_kustomizations as seaweedfs_csi_flux_kustomizations
 from cluster.cdk8s.plaid_mcp import app as plaid_mcp_app, db as plaid_mcp_db, reader as plaid_mcp_reader
@@ -339,6 +340,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_operator_release.write_manifests(root)
     seaweedfs_external_credentials.write_manifests(root)
     seaweedfs_filer_db.write_manifests(root)
+    seaweedfs_s3_config.write_manifests(root)
     grafana_operator.write_manifests(root)
     cilium_monitoring.write_manifests(root)
     monitoring_stack.write_manifests(root)

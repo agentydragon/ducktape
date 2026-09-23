@@ -76,7 +76,7 @@ from seaweed_seaweed_crds.com.seaweedfs.seaweed import (
 from cluster.cdk8s import stateful_infra
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.seaweedfs import filer_db, namespace
+from cluster.cdk8s.seaweedfs import filer_db, namespace, s3_config
 
 NAME = "seaweedfs"
 OUTPUT_DIR = "cluster/k8s/seaweedfs/cluster"
@@ -368,7 +368,7 @@ def seaweed(scope: Construct) -> Seaweed:
             ),
             s3=SeaweedSpecS3(
                 replicas=2,  # stateless S3 gateway -- scales freely across the 3 kimsufi hosts
-                config_secret=SeaweedSpecS3ConfigSecret(name="seaweedfs-s3-config", key="seaweedfs_s3_config.json"),
+                config_secret=SeaweedSpecS3ConfigSecret(name=s3_config.SECRET_NAME, key=s3_config.SECRET_KEY),
                 # `weed s3` only reads seaweedfs-s3-config at startup, so it must roll when ESO
                 # reassembles that Secret (tenant added/rotated). NOTE: this annotation lands
                 # on the *pod template*, not the Deployment's own metadata, and Reloader only
