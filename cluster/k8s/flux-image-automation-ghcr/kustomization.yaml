@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - ducktape-write-source.yaml
   - image-update-automation.yaml
-  - openclaw-image.yaml
+  - openclaw-image.k8s.yaml

@@ -136,6 +136,7 @@ _GENERATED_FILES = (
     "cluster/k8s/external-secrets/operator/external-secrets-operator.k8s.yaml",
     "cluster/k8s/flux/ducktape-flux/ducktape-flux.k8s.yaml",
     "cluster/k8s/flux-webhook/flux-webhook.k8s.yaml",
+    "cluster/k8s/flux-image-automation-ghcr/openclaw-image.k8s.yaml",
     "cluster/k8s/kube-system/kube-system.k8s.yaml",
     "cluster/k8s/kube-system/kustomization.yaml",
     "cluster/k8s/user-agentydragon/user-agentydragon.k8s.yaml",
