@@ -529,7 +529,7 @@ export { existingHelper };
         "diagnostics/source_match",
         "as `MissingFormatter`",
         "as `MissingParser`",
-        "valid global selector assignment",
+        "did not match any top-level declaration",
         "missingFormatter",
         "missingParser",
     ] {
@@ -590,9 +590,10 @@ fn dry_run_defaults_to_collecting_source_match_failures_and_duplicate_claims_tog
         "Source-match selector diagnostic report: 2 unresolved selector(s) found",
         "diagnostics/missing",
         "as `MissingFormatter`",
-        "valid global selector assignment",
+        "did not match any top-level declaration",
         "diagnostics/ambiguous",
         "as `AmbiguousHelper`",
+        "is ambiguous",
         "Duplicate binding claim report: 1 duplicate claim(s) found",
         "\"renderCard\"",
         "owners/card",
@@ -612,10 +613,10 @@ fn fail_fast_dry_run_stops_before_later_duplicate_claim_diagnostics() {
         run_fail_fast_dry_run_rejection_fixture(source_match_and_duplicate_claims_fixture());
     let stderr = rejected.stderr;
     for required in [
-        "diagnostics/ambiguous",
-        "export `AmbiguousHelper`",
-        "source_matches[].bindings[`repeatedHelper`]",
-        "valid global selector assignment",
+        "diagnostics/missing",
+        "export `MissingFormatter`",
+        "source_matches[].bindings[`selectedFormatter`]",
+        "did not match any top-level declaration",
     ] {
         assert!(
             stderr.contains(required),

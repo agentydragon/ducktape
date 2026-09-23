@@ -40,11 +40,9 @@ shared `@Name` variables genuinely need a solver.
 
 So `ChunkResolver` acts as a **specialized propagator** for the shape subproblem
 and hands the solver a domain of a few rows; the solver does the joint
-assignment. Native AST lowering of a `source_match` exists as the fallback when
-the matcher cannot enumerate a shape
-(`declare_native_anonymous_statement_target_in_module_parsed`,
-`try_lower_native_source_match_group_parsed`), and it constrains over the
-chunk's full node domain.
+assignment. A selector the matcher places nowhere never reaches the solver: it
+is reported unmatched, since an empty candidate table would make the chunk's
+whole program unsatisfiable.
 
 ### Rejected: let the solver consume AST facts natively instead of candidate rows
 
@@ -96,8 +94,8 @@ corpus of the same shape class measures an exponent of ≈1.30
 
 ## Fail-closed
 
-A selector neither the matcher nor native lowering can resolve becomes an
-explicit `ClaimOutcome::Unsupported` or a resolution diagnostic — never a guess.
+A selector the matcher cannot resolve becomes an unmatched or resolution
+diagnostic — never a guess.
 `chunk_facts` extraction is likewise fail-closed: a construct it cannot project
 faithfully is `Unsupported` rather than approximated. Rejecting input debundle
 cannot handle is correct behavior; silently resolving it to the wrong binding is
