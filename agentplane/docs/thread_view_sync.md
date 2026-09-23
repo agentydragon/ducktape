@@ -201,10 +201,6 @@ field replication without extra semantics. AG-UI, AI SDK and ACP provide useful 
 vocabularies; they do not remove the storage/projection work. Evidence from the evaluation
 should select an engine before proposing a custom REST/SSE fallback.
 
-The existing test-only TanStack DB spike establishes same-collection atomic updates and
-selective subscriptions, not Electric integration, React consistency or pagination races:
-<../app/frontend/db_spike/README.md>.
-
 ## Component responsibilities
 
 ```mermaid
