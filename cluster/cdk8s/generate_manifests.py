@@ -191,6 +191,10 @@ from cluster.cdk8s.openebs_lvm import (
     storage as openebs_lvm_storage,
 )
 from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
+from cluster.cdk8s.plaid_mcp import app as plaid_mcp_app, db as plaid_mcp_db, reader as plaid_mcp_reader
+from cluster.cdk8s.proxmox_proxy import flux_kustomizations as proxmox_proxy_flux_kustomizations
+from cluster.cdk8s.reflector import flux_kustomizations as reflector_flux_kustomizations
+from cluster.cdk8s.reloader import flux_kustomizations as reloader_flux_kustomizations
 from cluster.cdk8s.seaweedfs import flux_kustomizations as seaweedfs_flux_kustomizations
 from cluster.cdk8s.seaweedfs_csi import (
     driver as seaweedfs_csi_driver,
@@ -275,6 +279,9 @@ def generate_manifests(root: Path) -> None:
     grocy_mcp.write_manifests(root)
     grocy_user_perms.write_manifests(root)
     oci_cache_zot.write_manifests(root)
+    plaid_mcp_app.write_manifests(root)
+    plaid_mcp_db.write_manifests(root)
+    plaid_mcp_reader.write_manifests(root)
     haku_egress_proxy.write_manifests(root)
     airlock.write_manifests(root)
     authentik_jwt_rotation.write_manifests(root)
