@@ -121,7 +121,6 @@ def haku_console(
     reflector: Kustomization,
     external_creds: Kustomization,
     external_secrets_config: Kustomization,
-    ssh_mcp: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     """Build the Flux graph node from health-check values and predecessor nodes."""
@@ -160,12 +159,12 @@ def haku_console(
                 # TF creates the Authentik clients and haku-console-oidc Secret;
                 # the console does OIDC discovery synchronously at startup.
                 agent_machine_access_tf,
-                # Copies the MCP backends' bearers and aiquota's into this namespace.
+                # Copies aiquota's bearer, the ActivityWatch read token and the egress proxy's CA
+                # into this namespace.
                 reflector,
                 external_creds,
                 external_secrets_config,
-                # The SSH MCP backend the console fronts and the ServiceMonitor CRD.
-                ssh_mcp,
+                # The ServiceMonitor CRD.
                 monitoring_crds,
             ),
         ),

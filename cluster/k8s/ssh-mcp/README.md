@@ -1,7 +1,7 @@
 # Shared SSH MCP backend
 
-The standalone backend serves `haku-console` and `agentplane-staging` only. Each
-consumer owns its approval policy; the backend owns SSH transport and private keys.
+The standalone backend serves `agentplane-staging` only, which owns the approval policy;
+the backend owns SSH transport and private keys.
 `agentplane-testing` has neither an SSH binding nor the backend bearer.
 
 ## Credentials and reconciliation
@@ -16,8 +16,8 @@ hand-written siblings. The component's generator reads the target roster from
 The generated manifest includes the Password and ExternalSecret for the bearer,
 Forgejo image credentials, ConfigMap, Deployment, Service, and CiliumNetworkPolicy.
 `CreatedOnce` preserves the generated bearer across ordinary reconciliations.
-Reflector distributes that Secret to exactly `haku-console` and
-`agentplane-staging`; neither consumer invokes a generator. All three deployments
+Reflector distributes that Secret to exactly `agentplane-staging`, which invokes no
+generator. Both deployments
 reload when their bearer Secret changes. Deleting the source Secret recreates the
 bearer and triggers an asynchronous mirror/reload rollout, so rotation can briefly
 interrupt calls.

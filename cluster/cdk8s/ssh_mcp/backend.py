@@ -93,9 +93,9 @@ def _bearer_credentials(scope: Construct) -> None:
                     metadata=ExternalSecretSpecTargetTemplateMetadata(
                         annotations={
                             "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "^haku-console$,^agentplane-staging$",
+                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "^agentplane-staging$",
                             "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "^haku-console$,^agentplane-staging$",
+                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "^agentplane-staging$",
                         }
                     ),
                     data={BEARER_SECRET_KEY: "{{ .password }}"},
@@ -251,9 +251,7 @@ class SshMcp(Construct):
             selector=LABELS,
             ingress=[
                 cilium.ingress_from(
-                    cilium.endpoint_labels("agentplane-staging", "agentplane-actions"),
-                    cilium.endpoint_labels("haku-console", "haku-console"),
-                    ports=[HTTP_PORT],
+                    cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[HTTP_PORT]
                 )
             ],
             egress=_egress(mesh, config),

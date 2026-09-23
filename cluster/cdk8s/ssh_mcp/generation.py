@@ -42,7 +42,7 @@ def ssh_mcp(
     kustomization = flux_kustomization(
         flux_chart,
         config.NAME,
-        description="Standalone SSH MCP backend for haku-console and Agentplane staging.",
+        description="Standalone SSH MCP backend for Agentplane staging.",
         spec=KustomizationSpec(
             interval="10m",
             retry_interval="1m",

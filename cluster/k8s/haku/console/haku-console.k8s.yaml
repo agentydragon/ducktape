@@ -646,23 +646,6 @@ data:
             kind: in_process
             credential:
               kind: none
-        ssh:
-          id: ssh
-          backend:
-            kind: remote_mcp
-            url: http://ssh-mcp.ssh-mcp.svc.cluster.local:8080/mcp
-            auth:
-              kind: static_bearer
-        kubectl_passthrough_mcp:
-          id: kubectl-passthrough-mcp
-          backend:
-            kind: remote_mcp
-            url: https://kubectl-passthrough-mcp.allegedly.works/mcp
-            auth:
-              kind: remote_server_oauth
-              client_registration:
-                kind: preregistered
-                client_id: kubectl-passthrough-mcp
 immutable: false
 ---
 apiVersion: apps/v1
@@ -670,7 +653,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: aiquota-api-bearer-haku-console,haku-console-agent-api,haku-console-github-mcp-client-credentials,haku-console-oidc,haku-console-public-coder-agent,haku-console-web-push-vapid,haku-routine-launch-token,ssh-mcp-bearer
+    secret.reloader.stakater.com/reload: aiquota-api-bearer-haku-console,haku-console-agent-api,haku-console-github-mcp-client-credentials,haku-console-oidc,haku-console-public-coder-agent,haku-console-web-push-vapid,haku-routine-launch-token
   labels:
     app.kubernetes.io/name: haku-console
   name: haku-console
@@ -749,12 +732,6 @@ spec:
               value: "60000"
             - name: HAKU_CONSOLE__MCP_OPERATOR_OAUTH_TOKEN_TIMEOUT_SECONDS
               value: "30"
-            - name: HAKU_CONSOLE__MCP__SERVERS__SSH__BACKEND__AUTH__TOKEN
-              valueFrom:
-                secretKeyRef:
-                  key: bearer-token
-                  name: ssh-mcp-bearer
-                  optional: false
             - name: HAKU_CONSOLE_DB_USER
               valueFrom:
                 secretKeyRef:

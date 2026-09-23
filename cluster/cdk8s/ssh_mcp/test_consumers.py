@@ -1,4 +1,4 @@
-"""The SSH MCP backend and both consumers share a generated URL and bearer contract.
+"""The SSH MCP backend and its consumer share a generated URL and bearer contract.
 
 The backend and sshpiper charts are synthesized from their cdk8s constructs here; this
 checks their resource relationships without reading committed generated YAML.
@@ -18,7 +18,6 @@ from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named 
 from more_itertools import one
 
 from cluster.cdk8s import public_coder_devbox
-from cluster.cdk8s.haku import console_config
 from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config, sshpiper
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
@@ -101,13 +100,6 @@ def test_actions_binding_uses_the_bearer_ssh_mcp_mints(
     # Private SSH material never crosses the backend namespace boundary.
     key_volume = one(v for v in backend["spec"]["template"]["spec"]["volumes"] if v["name"] == "keys")
     assert all(v.get("secret", {}).get("secretName") != key_volume["secret"]["secretName"] for v in pod["volumes"])
-
-
-def test_haku_console_uses_the_same_backend_endpoint() -> None:
-    ssh = console_config.config()["mcp"]["servers"]["ssh"]
-    endpoint = urlsplit(ssh["backend"]["url"])
-    assert ssh["backend"]["auth"]["kind"] == "static_bearer"
-    assert endpoint.geturl() == ssh_mcp_config.MCP_URL
 
 
 def test_bearer_reaches_exactly_the_namespaces_that_may_call(ssh_resources: list[dict[str, Any]]) -> None:

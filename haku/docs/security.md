@@ -100,16 +100,6 @@ all-`.readonly` Google token); Haku-owned write credentials are separately scope
 canonical hard-rule inventory.
 Source of truth: `haku-state` `SOUL.md` → _Hard boundaries_.
 
-### `kubectl-passthrough-mcp` server entry
-
-`auth: remote_server_oauth`, cluster-admin passthrough. Agent-requested cluster
-operations execute only after haku-console approval, with the approving Operator's own
-cluster-admin identity — never a standing Haku credential. A DB-revalidated Operator
-browser session may call the same `/mcp` tool directly with exact-Origin enforcement;
-that path treats trusted console code as the Operator and creates no approval/audit row.
-There is no narrower RBAC backstop underneath either path.
-Source of truth: <../../cluster/k8s/agents/kubectl-passthrough-mcp/>, <../console/README.md>.
-
 ### `sandbox` in-process server
 
 The whole surface (`provision_sandbox`, `exec_sandbox`, `dispose_sandbox`, and the reads
