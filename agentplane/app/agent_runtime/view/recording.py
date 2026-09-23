@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.app.agent_runtime.events.event_log import EventReplicationError
+from agentplane.app.agent_runtime.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 from agentplane.app.agent_runtime.view import fold
 from agentplane.app.agent_runtime.view.payloads import write_payloads
 from agentplane.app.agent_runtime.view.rows import command_summary, fold_item, ordered_entity_rows
@@ -22,7 +23,6 @@ from agentplane.app.agent_runtime.view.views import (
     ThreadOperationalState,
     ThreadViewState,
 )
-from agentplane.app.thread.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 from agentplane.protocol import event_log_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

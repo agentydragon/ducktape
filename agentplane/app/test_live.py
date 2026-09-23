@@ -21,8 +21,11 @@ from agentplane.action_service.operator_oidc import OperatorOidcSettings
 from agentplane.app.action_federation import DirectFederationSettings, FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import create_app
 from agentplane.app.conftest import Replica
@@ -30,7 +33,6 @@ from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
-from agentplane.app.ingestion import Ingester, Ingestion
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import (
     PODS_PLURAL,
@@ -58,8 +60,6 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from agentplane.app.thread.store import ThreadStore
-from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.runner import protocol_pb2
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import SANDBOXES_PLURAL

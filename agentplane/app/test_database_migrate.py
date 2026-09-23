@@ -6,8 +6,8 @@ from alembic.migration import MigrationContext
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Connection
 
+from agentplane.app.agent_runtime.models import Base
 from agentplane.app.database_migrate import RUNNER
-from agentplane.app.thread.models import Base
 
 # The migrated database is read back over psycopg, which SQLAlchemy loads from the URL scheme.
 # gazelle:include_dep @pypi//psycopg

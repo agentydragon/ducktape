@@ -2,8 +2,8 @@
 
 from alembic import context
 
+from agentplane.app.agent_runtime.models import Base
 from agentplane.app.database_migrate import RUNNER
-from agentplane.app.thread.models import Base
 
 connection = context.config.attributes["connection"]
 target_metadata = context.config.attributes.get("target_metadata", Base.metadata)

@@ -19,15 +19,17 @@ from testcontainers.postgres import PostgresContainer
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
+from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
-from agentplane.app.ingestion import Ingester, Ingestion
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
@@ -39,8 +41,6 @@ from agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
 )
-from agentplane.app.thread.store import ThreadStore
-from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 

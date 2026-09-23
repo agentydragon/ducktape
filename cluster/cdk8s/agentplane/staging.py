@@ -375,7 +375,7 @@ def chart(app: App) -> Chart:
         "tana-pat-external-secret",
         namespace=_NAMESPACE,
         source_name=_TANA_MCP_BEARER_SECRET,
-        property_name="token",
+        properties=("token",),
         description="ESO copy of the canonical Tana PAT from external-creds.",
     )
     ExternalSecret(

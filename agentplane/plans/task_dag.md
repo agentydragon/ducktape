@@ -348,12 +348,13 @@ identity of a shell somebody can run arbitrary commands in.
 
 What exists today (<../../cluster/cdk8s/agentplane/actions_staging_policies.py>): the labelled
 ServiceAccount with `automountServiceAccountToken: false`, an `EgressBinding` to the basic,
-Kubernetes, `forgejo-haku`, `packages`, `google-readonly` and `grocy-sf-readonly` policies, and an
-`ActionPolicyBinding` auto-approving reviewed GitHub, Home Assistant, Gmail and Calendar reads plus
-the whole `sandbox-self` set. Its Kubernetes authority is the cluster-wide
+Kubernetes, `forgejo-haku`, `packages`, `google-readonly`, `grocy-sf-readonly` and `coinbase`
+policies, and an `ActionPolicyBinding` auto-approving reviewed GitHub, Home Assistant, Gmail and
+Calendar reads plus the whole `sandbox-self` set. Its Kubernetes authority is the cluster-wide
 `cluster-diagnostics-reader` ClusterRoleBinding (`cluster/k8s/agents/shared-rbac/`), reads of
 non-sensitive cluster state, plus the metadata and pod-log readers Kyverno generates in namespaces
-labelled `agent-readable-*`; the verified Kubernetes evidence from a sandbox is still a
+labelled `agent-readable-*`, plus `get` on one Secret: the view-only Coinbase key its sandboxes
+sign with, since the proxy cannot. The verified Kubernetes evidence from a sandbox is still a
 `SelfSubjectReview`, not a read of any object.
 
 `forgejo-haku` is the deliberate part and the widest: at the operator's request, a sandbox of this

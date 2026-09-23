@@ -21,9 +21,7 @@ from agentplane.app.agent_runtime.events.debug import (
     ThreadScopeChangedError,
 )
 from agentplane.app.agent_runtime.events.event_log import ThreadNotFoundError
-from agentplane.app.agent_runtime.view import fold
-from agentplane.app.agent_runtime.view.views import SEGMENT_KINDS, EntityKind, ThreadCommandState
-from agentplane.app.thread.models import (
+from agentplane.app.agent_runtime.models import (
     Event,
     EventLog,
     ThreadCheckpoint,
@@ -32,6 +30,8 @@ from agentplane.app.thread.models import (
     ThreadNativeLink,
     ThreadPayloadManifest,
 )
+from agentplane.app.agent_runtime.view import fold
+from agentplane.app.agent_runtime.view.views import SEGMENT_KINDS, EntityKind, ThreadCommandState
 from agentplane.protocol import command_pb2, event_log_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

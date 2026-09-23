@@ -22,9 +22,9 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.app.agent_runtime.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
+from agentplane.app.agent_runtime.models import Event, EventLog, FeedState
+from agentplane.app.agent_runtime.updates import notify
 from agentplane.app.presets import Harness
-from agentplane.app.thread.models import Event, EventLog, FeedState
-from agentplane.app.thread.updates import notify
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 

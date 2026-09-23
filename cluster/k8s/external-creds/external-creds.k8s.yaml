@@ -194,6 +194,21 @@ subjects:
     namespace: haku-sandbox
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: coinbase-api-credentials-agentplane-staging-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: coinbase-api-credentials-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: buildbuddy-api-key-reader
