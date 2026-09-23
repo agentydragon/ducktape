@@ -21,18 +21,7 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPorts,
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecBootstrap,
-    ClusterSpecBootstrapInitdb,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
-)
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
     ClusterExternalSecret,
     ClusterExternalSecretSpec,
@@ -106,30 +95,16 @@ def _add_store(chart: Chart) -> None:
     # Store for the Stalwart mailserver (data + blobs + search + settings all live in Postgres --
     # no PVC on the app; see cluster/k8s/haku/mailbox/README.md). OVH-HA CNPG profile per
     # cluster/docs/cnpg_conventions.md: mail must stay OVH-resilient.
-    Cluster(
+    cnpg.cluster(
         chart,
         "db",
-        metadata=metadata("haku-mailbox-db", NAMESPACE),
-        spec=ClusterSpec(
-            instances=2,
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-            # CNPG 1.27+ kills isolated primaries by default (liveness probe). Disable to prevent
-            # false positives from transient network blips.
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
-                topology_key="kubernetes.io/hostname",
-                node_affinity=cnpg.OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh", size="10Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            # CNPG auto-generates credentials in secret haku-mailbox-db-app.
-            bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database="stalwart", owner="stalwart")),
-        ),
+        name="haku-mailbox-db",
+        namespace=NAMESPACE,
+        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        storage_class="local-path-ovh",
+        size="10Gi",
+        # CNPG auto-generates credentials in secret haku-mailbox-db-app.
+        initdb=ClusterSpecBootstrapInitdb(database="stalwart", owner="stalwart"),
     )
 
 

@@ -13,15 +13,9 @@ metadata:
   namespace: langfuse
 spec:
   affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
     tolerations:
       - effect: NoSchedule
         key: node-role.kubernetes.io/control-plane
@@ -41,7 +35,7 @@ spec:
         enabled: false
   storage:
     size: 10Gi
-    storageClass: local-path-ovh
+    storageClass: local-path-ovh-ssd
 ---
 apiVersion: v1
 kind: Secret
@@ -75,25 +69,6 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Credentials
-metadata:
-  annotations:
-    description: Langfuse's tenant-local SeaweedFS credentials.
-  name: langfuse
-  namespace: langfuse
-spec:
-  identityRef:
-    name: langfuse
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
-    namespace: seaweedfs
-  secretRef:
-    accessKeyField: s3-access-key-id
-    name: langfuse-seaweedfs-credentials
-    secretKeyField: s3-secret-access-key
----
-apiVersion: seaweed.seaweedfs.com/v1
 kind: ResourceReferenceGrant
 metadata:
   name: langfuse
@@ -120,6 +95,25 @@ spec:
   reclaimPolicy: Retain
   seaweedRef:
     name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  annotations:
+    description: Langfuse's tenant-local SeaweedFS credentials.
+  name: langfuse
+  namespace: langfuse
+spec:
+  identityRef:
+    name: langfuse
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: s3-access-key-id
+    name: langfuse-seaweedfs-credentials
+    secretKeyField: s3-secret-access-key
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

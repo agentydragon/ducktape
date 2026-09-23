@@ -102,6 +102,24 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: loki
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: loki
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: loki
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
 metadata:
   annotations:
@@ -119,24 +137,6 @@ spec:
     accessKeyField: AWS_ACCESS_KEY_ID
     name: loki-seaweedfs-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: loki
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: loki
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: loki
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease

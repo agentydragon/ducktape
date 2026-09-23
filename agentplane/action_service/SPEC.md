@@ -75,6 +75,8 @@ auto-approves with an Execution; no match leaves the request on the human path; 
 has synced, every caller is human-only. A later edit, expiry or deletion changes the next Action's
 Decision, not this one's; dispatch re-checks only caller authority. The Decision records the
 bindings with their resource versions, the sets with their generations, and the matching policy.
+The request is persisted only once evaluation has finished, together with any auto-decision, so a
+request is observable as pending only while it waits for a human.
 
 A caller can read an effective policy: the bindings admission would resolve now for its own
 subject, or for a ServiceAccount it names, the sets that resolved, and the three lists

@@ -45,8 +45,8 @@
       "sha256": "GxkFxSm+5LRey0vad2V78GTUAY5yZrvXL6wJbbcKjIM="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-4d27bb98d9fe/debundle",
-      "sha256": "TSe7mNn+h8fFscYaEZRibXdIHopqW2CiRJvKE8RgPrs="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-029a646e4cbd/debundle",
+      "sha256": "Appkbky9d7OEmy65RK3TBjUUBaBhbrL7SUb8n8fvR08="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-dd6165877050/cluster_health.skill",
@@ -217,8 +217,8 @@
       "sha256": "zibRvzTbRUZ0hhXNOu5pC5TcnnZIvzkFFxCYVCpIHQo="
     },
     "skill-seaweed_operator": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-fc8b31663a53/seaweed_operator.skill",
-      "sha256": "/IsxZjpTyk1rtenQ7GomVQov2hzfQcKsIeDPh6p9qhg="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-6249a6ee9e7e/seaweed_operator.skill",
+      "sha256": "Ykmm7p5+JP8DndK2z6O5AYGTRHBWmjybF5awL9ZqeHc="
     },
     "skill-grafana": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-fb1524744592/grafana.skill",

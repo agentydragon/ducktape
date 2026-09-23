@@ -5,15 +5,9 @@ metadata:
   namespace: authentik
 spec:
   affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
     tolerations:
       - effect: NoSchedule
         key: node-role.kubernetes.io/control-plane
@@ -34,4 +28,4 @@ spec:
         enabled: false
   storage:
     size: 8Gi
-    storageClass: local-path-ovh
+    storageClass: local-path-ovh-ssd
