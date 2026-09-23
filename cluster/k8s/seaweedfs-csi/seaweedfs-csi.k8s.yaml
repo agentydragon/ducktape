@@ -7,6 +7,20 @@ metadata:
     pod-security.kubernetes.io/warn: privileged
   name: seaweedfs-csi-system
 ---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: seaweedfs-csi-driver
+  namespace: flux-system
+spec:
+  ignore: |
+    /*
+    !/deploy/helm/seaweedfs-csi-driver
+  interval: 24h
+  ref:
+    tag: v1.4.31
+  url: https://github.com/seaweedfs/seaweedfs-csi-driver
+---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:

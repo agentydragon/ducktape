@@ -1310,7 +1310,6 @@ py_library(
         "//cluster/cdk8s/seaweedfs:registry_cache_bucket",
         "//cluster/cdk8s/seaweedfs:s3_config",
         "//cluster/cdk8s/seaweedfs_csi:driver",
-        "//cluster/cdk8s/seaweedfs_csi:flux_kustomizations",
         "//cluster/cdk8s/snapshot_controller:flux_kustomizations",
         "//cluster/cdk8s/ssh_mcp:generation",
         "//cluster/cdk8s/sshpiper_crds:flux_kustomizations",

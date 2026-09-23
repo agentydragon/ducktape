@@ -226,10 +226,7 @@ from cluster.cdk8s.seaweedfs import (
     registry_cache_bucket as seaweedfs_registry_cache_bucket,
     s3_config as seaweedfs_s3_config,
 )
-from cluster.cdk8s.seaweedfs_csi import (
-    driver as seaweedfs_csi_driver,
-    flux_kustomizations as seaweedfs_csi_flux_kustomizations,
-)
+from cluster.cdk8s.seaweedfs_csi import driver as seaweedfs_csi_driver
 from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_controller_flux_kustomizations
 from cluster.cdk8s.ssh_mcp import generation as ssh_mcp_generation
 from cluster.cdk8s.sshpiper_crds import flux_kustomizations as sshpiper_crds_flux_kustomizations
@@ -880,8 +877,8 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_registry_cache_bucket_kustomization = seaweedfs_registry_cache_bucket.seaweedfs_registry_cache_bucket(
         flux_chart, seaweedfs_registry_cache_bucket_artifact, seaweedfs_cluster_kustomization
     )
-    seaweedfs_csi_artifact = artifact("seaweedfs-csi", "cluster/k8s/seaweedfs-csi")
-    seaweedfs_csi_flux_kustomizations.seaweedfs_csi(flux_chart, seaweedfs_csi_artifact, seaweedfs_cluster_kustomization)
+    seaweedfs_csi_artifact = artifact("seaweedfs-csi", seaweedfs_csi_driver.OUTPUT_DIR)
+    seaweedfs_csi_driver.seaweedfs_csi(flux_chart, seaweedfs_csi_artifact, seaweedfs_cluster_kustomization)
     vm_images_publisher_artifact = artifact("vm-images-publisher", "cluster/k8s/vm-images-publisher")
     vm_images_publisher_kustomization = vm_images_publisher_flux_kustomizations.vm_images_publisher(
         flux_chart, vm_images_publisher_artifact, seaweedfs_cluster_kustomization
