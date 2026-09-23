@@ -174,7 +174,11 @@ from cluster.cdk8s.infra_drift import drift_watch, flux_kustomizations as infra_
 from cluster.cdk8s.keda import flux_kustomizations as keda_flux_kustomizations
 from cluster.cdk8s.kube_api_proxy import flux_kustomizations as kube_api_proxy_flux_kustomizations
 from cluster.cdk8s.kube_system import flux_kustomizations as kube_system_flux_kustomizations
-from cluster.cdk8s.kubevirt import app as kubevirt_app, flux_kustomizations as kubevirt_flux_kustomizations
+from cluster.cdk8s.kubevirt import (
+    app as kubevirt_app,
+    cdi as kubevirt_cdi,
+    flux_kustomizations as kubevirt_flux_kustomizations,
+)
 from cluster.cdk8s.kyverno import flux_kustomizations as kyverno_flux_kustomizations
 from cluster.cdk8s.langfuse import app as langfuse_app, flux_kustomizations as langfuse_flux_kustomizations
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
@@ -270,6 +274,7 @@ def generate_manifests(root: Path) -> None:
     clickhouse_operator.write_manifests(root)
     clickhouse_installation.write_manifests(root)
     kubevirt_app.write_manifests(root)
+    kubevirt_cdi.write_manifests(root)
     authentik_app.write_manifests(root)
     authentik_proxy_routes.write_manifests(root)
     authentik_db_backups.write_manifests(root)
@@ -477,9 +482,11 @@ def generate_manifests(root: Path) -> None:
     metrics_server_kustomization = metrics_server.metrics_server(
         flux_chart, metrics_server_artifact, kyverno_kustomization
     )
+    reloader_artifact = artifact("reloader", "cluster/k8s/reloader")
+    reloader_flux_kustomizations.reloader(flux_chart, reloader_artifact, kyverno_kustomization)
+    cdi_artifact = artifact("cdi", kubevirt_cdi.OUTPUT_DIR)
     reloader_artifact = artifact("reloader", reloader.OUTPUT_DIR)
     reloader.reloader(flux_chart, reloader_artifact, kyverno_kustomization)
-    cdi_artifact = artifact("cdi", "cluster/k8s/kubevirt/cdi")
     cdi_kustomization = kubevirt_flux_kustomizations.cdi(
         flux_chart, cdi_artifact, cdi_operator_kustomization, local_path_provisioner_kustomization
     )

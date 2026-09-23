@@ -98,6 +98,7 @@ exports_files(
         "descheduler/helmrelease.k8s.yaml",
         "kubevirt/app/kubevirt.k8s.yaml",
         "kubevirt/app/kustomization.yaml",
+        "kubevirt/cdi/cdi.k8s.yaml",
         "descheduler/kustomization.yaml",
         "descheduler/rbac.k8s.yaml",
         "cert-manager/app/cert-manager.k8s.yaml",
