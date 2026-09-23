@@ -152,7 +152,6 @@ differs keeps building the object directly.
   annotation one place to live.
 - **ExternalSecrets onto `add_external_secret`**: 46 built directly in 39 modules
   (~1,300 lines); 3 use the helper. Move the ones whose shape it covers.
-- **CNPG `Cluster`s onto `cnpg.py`**: 18 built in 18 modules (~670 lines).
 
 ## Parked — lower priority
 

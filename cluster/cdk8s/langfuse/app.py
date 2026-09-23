@@ -10,19 +10,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecAffinityTolerations,
-    ClusterSpecBootstrap,
-    ClusterSpecBootstrapInitdb,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
-)
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmRelease,
@@ -95,7 +83,7 @@ from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
+from cluster.cdk8s import cnpg
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -129,35 +117,16 @@ def _namespace(scope: Construct) -> None:
 
 
 def _database(scope: Construct) -> None:
-    Cluster(
+    cnpg.cluster(
         scope,
         "database",
-        metadata=metadata("langfuse-db", _NAMESPACE),
-        spec=ClusterSpec(
-            instances=2,
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-            # CNPG 1.27+ kills isolated primaries by default (liveness probe).
-            # Disable to prevent false positives from transient network blips.
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                node_selector={"topology.kubernetes.io/zone": _ZONE},
-                tolerations=[
-                    ClusterSpecAffinityTolerations(
-                        key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                    )
-                ],
-                topology_key="kubernetes.io/hostname",
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh", size="10Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            # CNPG auto-generates credentials in secret langfuse-db-app
-            bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database="langfuse", owner="langfuse")),
-        ),
+        name="langfuse-db",
+        namespace=_NAMESPACE,
+        affinity=cnpg.affinity(node_selector={"topology.kubernetes.io/zone": _ZONE}, tolerate_control_plane=True),
+        storage_class="local-path-ovh",
+        size="10Gi",
+        # CNPG auto-generates credentials in secret langfuse-db-app
+        initdb=ClusterSpecBootstrapInitdb(database="langfuse", owner="langfuse"),
     )
 
 

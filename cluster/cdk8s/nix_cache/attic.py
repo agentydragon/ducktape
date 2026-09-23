@@ -13,19 +13,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecAffinityTolerations,
-    ClusterSpecBootstrap,
-    ClusterSpecBootstrapInitdb,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
-)
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret,
@@ -67,8 +55,7 @@ from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
     S3IdentitySpecSeaweedRef,
 )
 
-from cluster.cdk8s import forgejo_images
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
+from cluster.cdk8s import cnpg, forgejo_images
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -102,36 +89,17 @@ def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
 
 
 def _database(scope: Construct) -> None:
-    Cluster(
+    cnpg.cluster(
         scope,
         "db",
-        metadata=metadata(_DB, NAMESPACE),
-        spec=ClusterSpec(
-            instances=2,
-            # CNPG 1.27+ kills isolated primaries by default (liveness probe). Disable to
-            # prevent false positives from transient network blips.
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                node_selector=_ZONE_SELECTOR,
-                tolerations=[
-                    ClusterSpecAffinityTolerations(
-                        key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                    )
-                ],
-                # One PostgreSQL instance per OVH kimsufi node for real HA.
-                topology_key="kubernetes.io/hostname",
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh", size="2Gi"),
-            # TODO: Migrate to manually managed PodMonitor (enablePodMonitor is deprecated).
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            # CNPG generates the credentials in Secret attic-db-app.
-            bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database="attic", owner="attic")),
-        ),
+        name=_DB,
+        namespace=NAMESPACE,
+        image_name=None,
+        affinity=cnpg.affinity(node_selector=_ZONE_SELECTOR, tolerate_control_plane=True),
+        storage_class="local-path-ovh",
+        size="2Gi",
+        # CNPG generates the credentials in Secret attic-db-app.
+        initdb=ClusterSpecBootstrapInitdb(database="attic", owner="attic"),
     )
 
 

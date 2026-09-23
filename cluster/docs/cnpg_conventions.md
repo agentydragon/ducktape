@@ -99,9 +99,6 @@ Parked clusters (retained in Git; R2/R3 bind again on revival):
 
 - [ ] Set up off-site backups for Proxmox-single clusters (see "CNPG Backup
       Strategy" in <plan.md>)
-- [ ] Deduplicate CNPG cluster configs: extract shared fields (probes,
-      monitoring, liveness isolation check) into Kustomize bases or a shared
-      patch, so each service only specifies name/namespace/database/size
 - [ ] Machine-check R1: pre-commit or CI check that no `image: postgres:*`
       appears in StatefulSets/Deployments outside of CNPG
 - [ ] Machine-check R2: validate that every CNPG Cluster matches one of the

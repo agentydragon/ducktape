@@ -32,18 +32,7 @@ from cdk8s_plus_34 import (
     Service,
     ServicePort,
 )
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecBootstrap,
-    ClusterSpecBootstrapInitdb,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
-)
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecAffinity, ClusterSpecBootstrapInitdb
 from constructs import Construct
 from external_secret_store_crds.io.external_secrets import (
     ClusterSecretStore,
@@ -80,9 +69,8 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import fleet_rules
+from cluster.cdk8s import cnpg, fleet_rules
 from cluster.cdk8s.agentplane import node_scheduling
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import sops_decryption, write_yaml
@@ -243,29 +231,21 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
 
 
 def _database(scope: Construct) -> None:
-    Cluster(
+    cnpg.cluster(
         scope,
         "database",
-        metadata=metadata(_DATABASE_CLUSTER, NAMESPACE),
-        spec=ClusterSpec(
-            instances=2,
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                enable_pod_anti_affinity=True,
-                pod_anti_affinity_type="required",
-                node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
-                topology_key="kubernetes.io/hostname",
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh-hdd", size="2Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database=NAME, owner=NAME)),
+        name=_DATABASE_CLUSTER,
+        namespace=NAMESPACE,
+        affinity=ClusterSpecAffinity(
+            enable_pod_anti_affinity=True,
+            pod_anti_affinity_type="required",
+            node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
+            topology_key="kubernetes.io/hostname",
+            node_affinity=cnpg.OFF_CONTROL_PLANE_NODE_AFFINITY,
         ),
+        storage_class="local-path-ovh-hdd",
+        size="2Gi",
+        initdb=ClusterSpecBootstrapInitdb(database=NAME, owner=NAME),
     )
 
 

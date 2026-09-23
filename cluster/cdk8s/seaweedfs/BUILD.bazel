@@ -203,7 +203,6 @@ py_library(
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cnpg:cluster",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:namespace",
