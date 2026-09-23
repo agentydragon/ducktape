@@ -1,12 +1,11 @@
 """Home Assistant: the Deployment with its Caddy metrics proxy, the onboarding Job, the
-config volume and its VolSync backup, pull credentials, metrics token, route and the backup
-mover's egress policy.
+config volume and its VolSync backup, pull credentials, metrics token, route, the backup
+mover's egress policy, and the ServiceMonitor and PrometheusRule.
 
 The provisioner image tag is the placeholder "unset"; the hand-written
 `cluster/k8s/home-assistant/app/image-pins/kustomization.yaml` overrides it at
 `kustomize build` time via Flux's image-automation marker. Hand-written beside the generated
-output: `monitoring.yaml` (no `PrometheusRule` binding), the `configMapGenerator` inputs, the
-SOPS break-glass Secret and the `kustomization.yaml` that generates the ConfigMaps.
+output: the `configMapGenerator` inputs, the SOPS break-glass Secret and the `kustomization.yaml` that generates the ConfigMaps.
 """
 
 from __future__ import annotations
@@ -27,6 +26,21 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
+)
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecEndpoints,
+    ServiceMonitorSpecEndpointsAuthorization,
+    ServiceMonitorSpecEndpointsAuthorizationCredentials,
+    ServiceMonitorSpecSelector,
+)
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
+    PrometheusRule,
+    PrometheusRuleSpec,
+    PrometheusRuleSpecGroups,
+    PrometheusRuleSpecGroupsRules,
+    PrometheusRuleSpecGroupsRulesExpr,
 )
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSource,
@@ -292,6 +306,55 @@ def _metrics_token(scope: Construct) -> None:
     )
 
 
+def _monitoring(scope: Construct) -> None:
+    ServiceMonitor(
+        scope,
+        "service-monitor",
+        metadata=metadata(_NAME, _NAMESPACE),
+        spec=ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
+            endpoints=[
+                ServiceMonitorSpecEndpoints(
+                    port="http",
+                    path="/api/prometheus",
+                    authorization=ServiceMonitorSpecEndpointsAuthorization(
+                        type="Bearer",
+                        credentials=ServiceMonitorSpecEndpointsAuthorizationCredentials(
+                            name=_METRICS_TOKEN, key="password"
+                        ),
+                    ),
+                )
+            ],
+        ),
+    )
+    PrometheusRule(
+        scope,
+        "prometheus-rule",
+        metadata=metadata(_NAME, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        spec=PrometheusRuleSpec(
+            groups=[
+                PrometheusRuleSpecGroups(
+                    name=_NAME,
+                    rules=[
+                        PrometheusRuleSpecGroupsRules(
+                            alert="HomeAssistantUnavailable",
+                            expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
+                                'up{namespace="home-assistant", service="home-assistant"} == 0'
+                            ),
+                            for_="10m",
+                            labels={"severity": "warning"},
+                            annotations={
+                                "summary": "Home Assistant is unavailable",
+                                "description": "Prometheus has been unable to scrape Home Assistant for 10 minutes.",
+                            },
+                        )
+                    ],
+                )
+            ]
+        ),
+    )
+
+
 def _backup(scope: Construct) -> None:
     # Encrypted, deduplicated snapshots of Home Assistant's OptiPlex-local state in the
     # dedicated SeaweedFS S3 bucket. Home Assistant's own backup integration remains the
@@ -419,6 +482,7 @@ def chart(app: App) -> Chart:
         listener=None,
     )
     _backup(chart)
+    _monitoring(chart)
     return chart
 
 

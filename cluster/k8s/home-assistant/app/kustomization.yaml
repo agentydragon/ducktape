@@ -4,8 +4,6 @@ resources:
   # cdk8s-generated (cluster/cdk8s/home_assistant/app.py).
   - home-assistant.k8s.yaml
   - break-glass-credentials.sops.yaml
-  # Hand-written: no PrometheusRule CRD binding exists for cdk8s.
-  - monitoring.yaml
 components:
   - ./image-pins
 generatorOptions:
