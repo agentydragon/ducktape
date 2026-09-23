@@ -25,6 +25,7 @@ from cluster.cdk8s import (
     hubble_ui,
     keda,
     kube_system,
+    local_path_provisioner,
     metrics_server,
     ntfy,
     nvidia_runtimeclass,
@@ -106,7 +107,6 @@ from cluster.cdk8s.litellm import (
     namespace as litellm_namespace,
     proxy as litellm_proxy,
 )
-from cluster.cdk8s.local_path_provisioner import flux_kustomizations as local_path_provisioner_flux_kustomizations
 from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizations
 from cluster.cdk8s.monitoring import alloy_otlp_bearer_token, flux_kustomizations as monitoring_flux_kustomizations
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
@@ -194,6 +194,7 @@ def generate_manifests(root: Path) -> None:
     reflector.write_manifests(root)
     keda.write_manifests(root)
     valkey.write_manifests(root)
+    local_path_provisioner.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -243,8 +244,8 @@ def generate_manifests(root: Path) -> None:
     )
     kyverno_artifact = artifact("kyverno", "cluster/k8s/kyverno/app")
     kyverno_kustomization = kyverno_flux_kustomizations.kyverno(flux_chart, kyverno_artifact)
-    local_path_provisioner_artifact = artifact("local-path-provisioner", "cluster/k8s/local-path-provisioner")
-    local_path_provisioner_kustomization = local_path_provisioner_flux_kustomizations.local_path_provisioner(
+    local_path_provisioner_artifact = artifact("local-path-provisioner", local_path_provisioner.OUTPUT_DIR)
+    local_path_provisioner_kustomization = local_path_provisioner.local_path_provisioner(
         flux_chart, local_path_provisioner_artifact
     )
     monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)

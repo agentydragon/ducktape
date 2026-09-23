@@ -308,7 +308,7 @@ locals {
   # Data-disk mount rename (OVH storage tiering — cluster/docs/plans/ovh_storage_tiering.md).
   # Renaming a UserVolume repartitions/WIPES the disk, so roll it one node at a time: add a node
   # here (empty set = no-op; every node keeps the legacy `seaweedfs-data` name) AND flip that
-  # node's nodePathMap entry in cluster/k8s/local-path-provisioner/helmrelease.yaml in the SAME
+  # node's nodePathMap entry in cluster/cdk8s/local_path_provisioner.py (regenerated) in the SAME
   # commit, then `tofu apply -target=` for just that node under the plan's health gates
   # (G-all + G-losable) — never a blanket bootstrap. A renamed node gets a tier-named UserVolume
   # `local-path-ovh-${storage_tier}` mounted at `/var/mnt/local-path-ovh-${tier}`; its
