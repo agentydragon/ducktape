@@ -3,6 +3,20 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
+    name = "db",
+    srcs = ["db.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/cnpg:cluster",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "flux_kustomizations",
     srcs = ["flux_kustomizations.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
