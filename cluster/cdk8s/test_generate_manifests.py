@@ -174,6 +174,7 @@ _GENERATED_FILES = (
     "cluster/k8s/agents/plaid-mcp/reader/plaid-db-mcp.k8s.yaml",
     "cluster/k8s/agents/plaid-mcp/servicemonitor/plaid-db-mcp.k8s.yaml",
     "cluster/k8s/agents/plaid-mcp/servicemonitor/kustomization.yaml",
+    "cluster/k8s/agents/tana-mcp/tana-mcp.k8s.yaml",
     "cluster/k8s/agents/shared-rbac/agent-shared-rbac.k8s.yaml",
     "cluster/k8s/agents/shared-rbac/kustomization.yaml",
     "cluster/k8s/agents/kubectl-passthrough-mcp/app/kubectl-passthrough-mcp.k8s.yaml",

@@ -53,6 +53,7 @@ from cluster.cdk8s import (
     reflector,
     reloader,
     stateful_infra,
+    tana_mcp,
     talos_cloud_controller_manager,
     user_agentydragon,
     valkey,
@@ -282,6 +283,7 @@ def generate_manifests(root: Path) -> None:
     plaid_mcp_app.write_manifests(root)
     plaid_mcp_db.write_manifests(root)
     plaid_mcp_reader.write_manifests(root)
+    tana_mcp.write_manifests(root)
     haku_egress_proxy.write_manifests(root)
     airlock.write_manifests(root)
     authentik_jwt_rotation.write_manifests(root)
