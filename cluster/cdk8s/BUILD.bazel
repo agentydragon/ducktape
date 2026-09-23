@@ -285,6 +285,18 @@ py_library(
 )
 
 py_library(
+    name = "flux_sources",
+    srcs = ["flux_sources.py"],
+    deps = [
+        ":flux",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/flux:gitrepository",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "flux_monitoring",
     srcs = ["flux_monitoring.py"],
     deps = [
@@ -1116,6 +1128,7 @@ py_library(
         ":external_creds",
         ":flux",
         ":flux_monitoring",
+        ":flux_sources",
         ":forgejo_image_automation",
         ":forgejo_images",
         ":forgejo_token_rotation",
@@ -1496,6 +1509,7 @@ py_test(
         "//cluster/k8s:flux-webhook/flux-webhook.k8s.yaml",
         "//cluster/k8s:flux/ducktape-flux/ducktape-flux.k8s.yaml",
         "//cluster/k8s:flux/kustomizations.k8s.yaml",
+        "//cluster/k8s:flux/sources/git-repositories.k8s.yaml",
         "//cluster/k8s:forgejo-images/forgejo-images.k8s.yaml",
         "//cluster/k8s:forgejo-images/kustomization.yaml",
         "//cluster/k8s:forgejo/agentydragon-repos/forgejo-agentydragon-repos.k8s.yaml",

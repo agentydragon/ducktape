@@ -1,0 +1,52 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: external-secrets-source
+  namespace: ducktape-flux
+spec:
+  interval: 1h
+  ref:
+    tag: v2.10.0
+  url: https://github.com/external-secrets/external-secrets.git
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  annotations:
+    description: Prometheus Operator CRDs, split out of the kube-prometheus-stack HelmRelease so a ServiceMonitor's dependency is the CRD and not Prometheus being healthy. The tag tracks kube-prometheus-stack's appVersion - bump both together.
+  name: prometheus-operator-source
+  namespace: ducktape-flux
+spec:
+  interval: 1h
+  ref:
+    tag: v0.94.0
+  url: https://github.com/prometheus-operator/prometheus-operator.git
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: external-snapshotter-source
+  namespace: ducktape-flux
+spec:
+  interval: 1h
+  ref:
+    tag: v8.6.0
+  url: https://github.com/kubernetes-csi/external-snapshotter.git
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: sshpiper-source
+  namespace: ducktape-flux
+spec:
+  ignore: |
+    /*
+    !/plugin
+    /plugin/*
+    !/plugin/kubernetes
+    /plugin/kubernetes/*
+    !/plugin/kubernetes/crd.yaml
+  interval: 1h
+  ref:
+    tag: v1.6.1
+  url: https://github.com/tg123/sshpiper.git

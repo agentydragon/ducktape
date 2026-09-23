@@ -4,10 +4,8 @@ resources:
   # cdk8s-generated Flux Kustomization graph.
   - kustomizations.k8s.yaml
 
-  # Bootstrap and Flux source resources remain hand-written.
+  # Hand-written: the Flux bootstrap.
   - flux-system/
+  # cdk8s-generated: the ducktape-flux namespace and upstream sources.
   - ducktape-flux/
-  - sources/snapshot-controller.yaml
-  - sources/sshpiper-crds.yaml
-  - sources/external-secrets.yaml
-  - sources/monitoring.yaml
+  - sources/git-repositories.k8s.yaml

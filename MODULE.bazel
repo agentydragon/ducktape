@@ -991,7 +991,7 @@ http_file(
 )
 
 # Match kube-prometheus-stack's operator version tracked by
-# cluster/k8s/flux/sources/monitoring.yaml.
+# cluster/cdk8s/flux_sources.py.
 http_file(
     name = "prometheus_operator_servicemonitor_crd",
     downloaded_file_path = "monitoring.coreos.com_servicemonitors.yaml",
@@ -1037,7 +1037,7 @@ http_file(
 )
 
 # Upstream publishes one bundle; the bindings BUILD extracts each needed CRD. Match
-# cluster/k8s/flux/sources/external-secrets.yaml.
+# cluster/cdk8s/flux_sources.py.
 http_file(
     name = "external_secrets_crds_bundle",
     downloaded_file_path = "external-secrets-crds-bundle.yaml",
@@ -1266,7 +1266,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/backube/volsync/v0.16.0/config/crd/bases/volsync.backube_replicationsources.yaml"],
 )
 
-# Match the external-snapshotter tag in cluster/k8s/flux/sources/snapshot-controller.yaml.
+# Match the external-snapshotter tag in cluster/cdk8s/flux_sources.py.
 http_file(
     name = "external_snapshotter_volumesnapshotclass_crd",
     downloaded_file_path = "snapshot.storage.k8s.io_volumesnapshotclasses.yaml",
