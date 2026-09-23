@@ -146,17 +146,6 @@ Kustomization must wait for, a ConfigMap generator input), look at what it is be
 becomes a pattern by accident: a second value parameter is the expected answer;
 anything that wants the chart back is the signal to stop.
 
-## Renovate over the generators
-
-Renovate's `flux` and `kubernetes` managers scan `cluster/k8s` YAML
-(`renovate.json5`), so the chart versions and image pins now written in Python are
-invisible to them, and a Renovate PR touching a generated file fails
-`test_generate_manifests` until someone regenerates. Operator-approved direction:
-
-- a `# renovate:` comment on each chart version and image pin in `cluster/cdk8s`, and a
-  regex `customManager` over `cluster/cdk8s/**/*.py` reading them;
-- a CI job that regenerates manifests on Renovate branches and pushes the result.
-
 ## The floor
 
 What stays hand-written after the conversion; <../docs/cdk8s.md> § What stays

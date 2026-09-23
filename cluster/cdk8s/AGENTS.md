@@ -207,8 +207,40 @@ objects. Encode what the fleet holds; a rule that fails on `devel` is a policy c
 and lands in its own PR with the violations fixed. Exceptions are explicit parameters
 (`unpinned_https_egress`), never name matching inside the rule.
 
+## Version pins and Renovate
+
+Every chart version, third-party image reference and `GitRepository` tag carries a
+`# renovate:` comment on the line above it, read by the cdk8s custom manager in
+`renovate.json5`; `.github/workflows/renovate-regenerate.yml` regenerates the manifests
+on Renovate's branches. Two forms:
+
+```python
+# renovate: datasource=helm depName=keda registryUrl=https://kedacore.github.io/charts
+version="2.20.2",
+# renovate: datasource=docker
+image="busybox:1.38",
+```
+
+- With `depName=`, the version is the last string literal on the next line. `helm`
+  takes `registryUrl=`; an OCI chart is `datasource=docker` with depName
+  `<registry>/<path>/<chart>`; a `GitRepository` tag is `github-tags` with `owner/repo`;
+  a Helm-values image tag is `docker` with the image as depName. Add `versioning=` when
+  the datasource default cannot parse the value (`~5.22` on an OCI chart).
+- Bare `datasource=docker` reads the literal as a whole `name[:tag][@sha256:…]`
+  reference, which stays one literal on one line.
+- Either literal may sit on the line after an opening `(`, as ruff wraps a long
+  constant. A version inside a larger expression becomes a named constant carrying the
+  comment.
+- Not annotated: the `ducktape-ci` and `agentydragon/openclaw` images, which Flux image
+  automation owns (§ `image-pins/kustomization.yaml`).
+- A comment the regex does not match is skipped silently. Check a new shape with
+  `npx renovate --platform=local --dry-run=extract` (Node 24+, `LOG_LEVEL=debug`; the
+  `Extracted dependencies` record lists what matched).
+
 ## Gotchas
 
+- Never hand-edit a version in a `*.k8s.yaml`: Renovate ignores generated files and the
+  next regeneration reverts the edit. Change the pin in the generator.
 - `Chart.api_objects` is direct children only: walk `chart.node.find_all()` and filter
   with `ApiObject.is_api_object`.
 - `cdk8s.Testing.synth(chart)` is `chart.to_json()`, which validates the whole app
