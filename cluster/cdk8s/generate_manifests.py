@@ -5,6 +5,7 @@ from pathlib import Path
 from cdk8s import App, Chart
 
 from cluster.cdk8s import (
+    agent_machine_access,
     aiquota,
     cnpg_flux_kustomizations,
     descheduler,
@@ -139,6 +140,7 @@ def generate_manifests(root: Path) -> None:
     litellm_keys.write_manifests(root)
     forgejo_image_automation.write_manifests(root)
     github_branch_protection.write_manifests(root)
+    agent_machine_access.write_manifests(root)
     alloy_otlp_bearer_token.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
@@ -506,8 +508,8 @@ def generate_manifests(root: Path) -> None:
     atuin_flux_kustomizations.atuin_user_provisioner(
         flux_chart, atuin_user_provisioner_artifact, atuin_kustomization, user_agentydragon_kustomization
     )
-    agent_machine_access_tf_artifact = artifact("agent-machine-access-tf", "cluster/k8s/agents/machine-access-tf")
-    agent_machine_access_tf_kustomization = agents_flux_kustomizations.agent_machine_access_tf(
+    agent_machine_access_tf_artifact = artifact("agent-machine-access-tf", agent_machine_access.OUTPUT_DIR)
+    agent_machine_access_tf_kustomization = agent_machine_access.agent_machine_access_tf(
         flux_chart,
         agent_machine_access_tf_artifact,
         tofu_controller_kustomization,
