@@ -1,9 +1,15 @@
-"""The app's PostgreSQL engine: one connection pool, shared by every store and the update listener."""
+"""The app's PostgreSQL database: the declarative base every table maps onto, and one connection pool
+shared by every store and the update listener."""
 
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
 
 # SQLAlchemy loads the asyncpg dialect from the URL scheme; nothing imports it directly.
 # gazelle:include_dep @pypi//asyncpg
+
+
+class Base(DeclarativeBase):
+    pass
 
 
 def connect(database_url: str) -> AsyncEngine:
