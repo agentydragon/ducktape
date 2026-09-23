@@ -127,6 +127,18 @@ spec:
             sizeLimit: 30Gi
           name: workspace
 ---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxWarmPool
+metadata:
+  name: haku
+  namespace: haku-sandbox
+spec:
+  replicas: 1
+  sandboxTemplateRef:
+    name: haku
+  updateStrategy:
+    type: Recreate
+---
 apiVersion: kyverno.io/v2
 kind: CleanupPolicy
 metadata:

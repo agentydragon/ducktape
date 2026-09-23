@@ -445,6 +445,7 @@ filegroup(
         "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
         "haku/rbac/haku-rbac.k8s.yaml",
         "haku/workspaces/app/haku-workspaces.k8s.yaml",
+        "haku/workspaces/app/kustomization.yaml",
         "haku/workspaces/image/haku-sandbox-setup.sh",
         "keda/keda.k8s.yaml",
         "kustomization.yaml",
