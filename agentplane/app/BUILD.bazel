@@ -1137,6 +1137,7 @@ py_test(
     srcs = ["test_electric_chunk_compaction.py"],
     requires_docker = True,
     deps = [
+        ":changes",
         ":conftest",
         ":database",
         ":electric",
