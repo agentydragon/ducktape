@@ -1189,6 +1189,21 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kedacore/keda/v2.20.2/config/crd/bases/keda.sh_triggerauthentications.yaml"],
 )
 
+# Match the altinity-clickhouse-operator chart 0.27.3 in cluster/k8s/clickhouse/operator/helmrelease.yaml.
+http_file(
+    name = "clickhouse_installation_crd",
+    downloaded_file_path = "CustomResourceDefinition-clickhouseinstallations.clickhouse.altinity.com.yaml",
+    sha256 = "f1dae530b066fd43a0e65be16f10f95eddca6b523c0011baf93754d5cd8b455d",
+    urls = ["https://raw.githubusercontent.com/Altinity/clickhouse-operator/release-0.27.3/deploy/helm/clickhouse-operator/crds/CustomResourceDefinition-clickhouseinstallations.clickhouse.altinity.com.yaml"],
+)
+
+http_file(
+    name = "clickhouse_keeper_installation_crd",
+    downloaded_file_path = "CustomResourceDefinition-clickhousekeeperinstallations.clickhouse-keeper.altinity.com.yaml",
+    sha256 = "50bcd8df813d8eeea4a730e8723f233713c6a06fda9d17126af27c5a461d49c2",
+    urls = ["https://raw.githubusercontent.com/Altinity/clickhouse-operator/release-0.27.3/deploy/helm/clickhouse-operator/crds/CustomResourceDefinition-clickhousekeeperinstallations.clickhouse-keeper.altinity.com.yaml"],
+)
+
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
 # `//grocy_mcp:server` can drive `FastMCP.from_openapi` without
 # vendoring the 100 KB JSON in-tree. Refresh by bumping the tag and
