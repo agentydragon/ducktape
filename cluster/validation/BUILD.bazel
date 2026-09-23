@@ -20,6 +20,7 @@ py_test(
     name = "test_terraform_sources",
     srcs = ["test_terraform_sources.py"],
     data = [
+        "//cluster:generated_manifests",
         "//cluster/k8s:cluster_yaml_files",
         "//cluster/k8s:flux_bootstrap_files",
     ],
