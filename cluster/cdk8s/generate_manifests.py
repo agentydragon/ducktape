@@ -136,8 +136,6 @@ from cluster.cdk8s.forgejo import (
     namespace as forgejo_namespace,
 )
 from cluster.cdk8s.gaffer_private_source import flux_kustomizations as gaffer_private_source_flux_kustomizations
-from cluster.cdk8s.gatus import flux_kustomizations as gatus_flux_kustomizations, sso as gatus_sso
-from cluster.cdk8s.github_api_proxy import flux_kustomizations as github_api_proxy_flux_kustomizations
 from cluster.cdk8s.github_exporter import (
     app as github_exporter_app,
     flux_kustomizations as github_exporter_flux_kustomizations,
@@ -146,16 +144,12 @@ from cluster.cdk8s.gatus import app as gatus_app, flux_kustomizations as gatus_f
 from cluster.cdk8s.github_api_proxy import (
     flux_kustomizations as github_api_proxy_flux_kustomizations,
     proxy as github_api_proxy,
+)
 from cluster.cdk8s.github_secrets_sync import (
     gitops_module as github_secrets_sync_gitops_module,
     secrets as github_secrets_sync_secrets,
 )
-from cluster.cdk8s.goldilocks import flux_kustomizations as goldilocks_flux_kustomizations
 from cluster.cdk8s.grafana import app as grafana_app, flux_kustomizations as grafana_flux_kustomizations
-from cluster.cdk8s.grocy import flux_kustomizations as grocy_flux_kustomizations
-from cluster.cdk8s.haku import charts as haku_charts, flux_kustomizations as haku_flux_kustomizations
-from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations
-from cluster.cdk8s.headlamp import flux_kustomizations as headlamp_flux_kustomizations
 from cluster.cdk8s.grocy import (
     app as grocy_app,
     flux_kustomizations as grocy_flux_kustomizations,
@@ -171,6 +165,7 @@ from cluster.cdk8s.haku import (
     rbac as haku_rbac,
     workloads as haku_workloads,
     workspaces as haku_workspaces,
+)
 from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations, runner as haku_ci_runner
 from cluster.cdk8s.home_assistant import (
     app as home_assistant_app,
@@ -194,17 +189,7 @@ from cluster.cdk8s.litellm import (
     proxy as litellm_proxy,
     secrets as litellm_secrets,
 )
-from cluster.cdk8s.local_path_provisioner import flux_kustomizations as local_path_provisioner_flux_kustomizations
-from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizations
-from cluster.cdk8s.metrics_server import flux_kustomizations as metrics_server_flux_kustomizations
-from cluster.cdk8s.monitoring import alloy_otlp_bearer_token, flux_kustomizations as monitoring_flux_kustomizations
 from cluster.cdk8s.nix_cache import attic as nix_cache_attic, flux_kustomizations as nix_cache_flux_kustomizations
-from cluster.cdk8s.node_feature_discovery import flux_kustomizations as node_feature_discovery_flux_kustomizations
-from cluster.cdk8s.nvidia_device_plugin import flux_kustomizations as nvidia_device_plugin_flux_kustomizations
-from cluster.cdk8s.nvidia_runtimeclass import flux_kustomizations as nvidia_runtimeclass_flux_kustomizations
-from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations
-from cluster.cdk8s.ollama import flux_kustomizations as ollama_flux_kustomizations
-from cluster.cdk8s.openebs_lvm import flux_kustomizations as openebs_lvm_flux_kustomizations
 from cluster.cdk8s.monitoring import (
     alloy,
     alloy_otlp_bearer_token,
@@ -225,10 +210,8 @@ from cluster.cdk8s.ollama import app as ollama_app, flux_kustomizations as ollam
 from cluster.cdk8s.openebs_lvm import (
     flux_kustomizations as openebs_lvm_flux_kustomizations,
     storage as openebs_lvm_storage,
+)
 from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
-from cluster.cdk8s.proxmox_proxy import flux_kustomizations as proxmox_proxy_flux_kustomizations
-from cluster.cdk8s.reflector import flux_kustomizations as reflector_flux_kustomizations
-from cluster.cdk8s.reloader import flux_kustomizations as reloader_flux_kustomizations
 from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
     drivefs_artifacts_bucket as seaweedfs_drivefs_artifacts_bucket,
@@ -245,27 +228,21 @@ from cluster.cdk8s.seaweedfs import (
     registry_cache_bucket as seaweedfs_registry_cache_bucket,
     s3_config as seaweedfs_s3_config,
 )
-from cluster.cdk8s.seaweedfs_csi import flux_kustomizations as seaweedfs_csi_flux_kustomizations
 from cluster.cdk8s.plaid_mcp import app as plaid_mcp_app, db as plaid_mcp_db, reader as plaid_mcp_reader
 from cluster.cdk8s.seaweedfs_csi import (
     driver as seaweedfs_csi_driver,
     flux_kustomizations as seaweedfs_csi_flux_kustomizations,
+)
 from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_controller_flux_kustomizations
 from cluster.cdk8s.ssh_mcp import generation as ssh_mcp_generation
 from cluster.cdk8s.sshpiper_crds import flux_kustomizations as sshpiper_crds_flux_kustomizations
 from cluster.cdk8s.study_casino import app as study_casino_app, flux_kustomizations as study_casino_flux_kustomizations
 from cluster.cdk8s.tofu_controller import release as tofu_controller_release
 from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
-from cluster.cdk8s.user_agentydragon import flux_kustomizations as user_agentydragon_flux_kustomizations
-from cluster.cdk8s.valkey import flux_kustomizations as valkey_flux_kustomizations
-from cluster.cdk8s.vector_talos_logs import flux_kustomizations as vector_talos_logs_flux_kustomizations
 from cluster.cdk8s.vm_images_publisher import (
     flux_kustomizations as vm_images_publisher_flux_kustomizations,
     publisher as vm_images_publisher_publisher,
 )
-from cluster.cdk8s.volsync import flux_kustomizations as volsync_flux_kustomizations
-from cluster.cdk8s.vpa import flux_kustomizations as vpa_flux_kustomizations
-from cluster.cdk8s.website import flux_kustomizations as website_flux_kustomizations
 from cluster.cdk8s.website import website
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
@@ -511,14 +488,12 @@ def generate_manifests(root: Path) -> None:
     parked_flux_kustomizations.buildbuddy_executor(flux_chart)
     gecko_namespace_artifact = artifact("gecko-namespace", "cluster/k8s/parked/gecko/namespace")
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart, gecko_namespace_artifact)
-    reflector_artifact = artifact("reflector", "cluster/k8s/reflector")
-    reflector_kustomization = reflector_flux_kustomizations.reflector(flux_chart, reflector_artifact)
     seaweedfs_namespace_artifact = artifact("seaweedfs-namespace", seaweedfs_namespace.OUTPUT_DIR)
     seaweedfs_namespace_kustomization = seaweedfs_namespace.seaweedfs_namespace(
-    reflector_artifact = artifact("reflector", reflector.OUTPUT_DIR)
-    reflector_kustomization = reflector.reflector(flux_chart, reflector_artifact)
         flux_chart, seaweedfs_namespace_artifact
     )
+    reflector_artifact = artifact("reflector", reflector.OUTPUT_DIR)
+    reflector_kustomization = reflector.reflector(flux_chart, reflector_artifact)
     snapshot_controller_crds_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller_crds(
         flux_chart
     )

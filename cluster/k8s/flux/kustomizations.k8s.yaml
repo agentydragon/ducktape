@@ -471,6 +471,21 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: seaweedfs-namespace
+  namespace: ducktape-flux
+spec:
+  interval: 10m
+  path: ./cluster/k8s/seaweedfs/namespace
+  prune: true
+  sourceRef:
+    kind: ExternalArtifact
+    name: seaweedfs-namespace
+    namespace: ducktape-flux
+  suspend: false
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: reflector
   namespace: ducktape-flux
 spec:
@@ -489,21 +504,6 @@ spec:
     namespace: ducktape-flux
   timeout: 5m
   wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: seaweedfs-namespace
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/k8s/seaweedfs/namespace
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-namespace
-    namespace: ducktape-flux
-  suspend: false
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
