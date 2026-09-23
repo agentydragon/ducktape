@@ -76,30 +76,19 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: atuin-user-provisioner
-  namespace: atuin
   annotations:
     kustomize.toolkit.fluxcd.io/force: enabled
+  name: atuin-user-provisioner
+  namespace: atuin
 spec:
-  # The script documents itself as idempotent (creates if missing, updates the
-  # password only when the SOPS source changed, else no-op), so re-running is
-  # safe; the TTL lets a failed run retry instead of holding this Kustomization
-  # unready forever. Rationale in cluster/cdk8s/ha_mcp.py's
-  # HaMcpCredentialsProvisioner._add_job.
-  ttlSecondsAfterFinished: 3600
   backoffLimit: 5
   template:
     metadata:
       labels:
         app: atuin-user-provisioner
     spec:
-      restartPolicy: OnFailure
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
       containers:
-        - name: provisioner
-          image: python:3.14-alpine
-          command:
+        - command:
             - sh
             - -c
             - pip install --quiet psycopg2-binary argon2-cffi && python /scripts/provision.py
@@ -107,18 +96,24 @@ spec:
             - name: ATUIN_USER_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: atuin-user-password
                   key: user_password
+                  name: atuin-user-password
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: atuin-db-app
                   key: password
+                  name: atuin-db-app
+          image: python:3.14-alpine
+          name: provisioner
           volumeMounts:
-            - name: script
-              mountPath: /scripts
+            - mountPath: /scripts
+              name: script
               readOnly: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: OnFailure
       volumes:
-        - name: script
-          configMap:
+        - configMap:
             name: atuin-user-provisioner-script
+          name: script
+  ttlSecondsAfterFinished: 3600

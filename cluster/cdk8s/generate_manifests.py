@@ -35,7 +35,7 @@ from cluster.cdk8s.artifact_generators import (
     artifact_generators as artifact_generators_factory,
     write_artifact_generators,
 )
-from cluster.cdk8s.atuin import flux_kustomizations as atuin_flux_kustomizations
+from cluster.cdk8s.atuin import server as atuin_server, user_provisioner as atuin_user_provisioner
 from cluster.cdk8s.authentik import (
     db as authentik_db,
     flux_kustomizations as authentik_flux_kustomizations,
@@ -165,6 +165,8 @@ def generate_manifests(root: Path) -> None:
     dns_automation.write_manifests(root, mesh)
     litellm_keys.write_manifests(root)
     litellm_namespace.write_manifests(root)
+    atuin_server.write_manifests(root)
+    atuin_user_provisioner.write_manifests(root)
     litellm_database.write_manifests(root)
     litellm_secrets.write_manifests(root)
     forgejo_image_automation.write_manifests(root)
@@ -474,8 +476,8 @@ def generate_manifests(root: Path) -> None:
     parked_flux_kustomizations.docker_ci(
         flux_chart, docker_ci_artifact, cert_manager_environment_kustomization, claude_rbac_kustomization
     )
-    atuin_artifact = artifact("atuin", "cluster/k8s/atuin")
-    atuin_kustomization = atuin_flux_kustomizations.atuin(
+    atuin_artifact = artifact("atuin", atuin_server.OUTPUT_DIR)
+    atuin_kustomization = atuin_server.atuin(
         flux_chart, atuin_artifact, cert_manager_issuer_config_kustomization, cnpg_kustomization
     )
     authentik_artifact = artifact("authentik", "cluster/k8s/authentik")
@@ -546,8 +548,8 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_filer_db_kustomization,
         local_path_provisioner_kustomization,
     )
-    atuin_user_provisioner_artifact = artifact("atuin-user-provisioner", "cluster/k8s/atuin/user-provisioner")
-    atuin_flux_kustomizations.atuin_user_provisioner(
+    atuin_user_provisioner_artifact = artifact("atuin-user-provisioner", atuin_user_provisioner.OUTPUT_DIR)
+    atuin_user_provisioner.atuin_user_provisioner(
         flux_chart, atuin_user_provisioner_artifact, atuin_kustomization, user_agentydragon_kustomization
     )
     agent_machine_access_tf_artifact = artifact("agent-machine-access-tf", agent_machine_access.OUTPUT_DIR)
