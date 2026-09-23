@@ -193,6 +193,7 @@ from cluster.cdk8s.monitoring import (
     alloy_otlp_bearer_token,
     flux_kustomizations as monitoring_flux_kustomizations,
     grafana_helmrepository,
+    grafana_operator,
     namespace as monitoring_namespace,
 )
 from cluster.cdk8s.matrix import matrix, user_provisioner as matrix_user_provisioner
@@ -296,6 +297,7 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    grafana_operator.write_manifests(root)
     langfuse_app.write_manifests(root)
     forgejo_app.write_manifests(root)
     forgejo_budget_namespace.write_manifests(root)
@@ -498,8 +500,8 @@ def generate_manifests(root: Path) -> None:
     monitoring_flux_kustomizations.monitoring_rules(
         flux_chart, monitoring_rules_artifact, monitoring_crds_kustomization
     )
-    grafana_operator_artifact = artifact("grafana-operator", "cluster/k8s/monitoring/grafana-operator")
-    grafana_operator_kustomization = monitoring_flux_kustomizations.grafana_operator(
+    grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
+    grafana_operator_kustomization = grafana_operator.grafana_operator(
         flux_chart, grafana_operator_artifact, monitoring_namespace_kustomization
     )
     nvidia_device_plugin_artifact = artifact("nvidia-device-plugin", nvidia_device_plugin.OUTPUT_DIR)

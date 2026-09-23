@@ -126,32 +126,6 @@ def grafana_instance(
     )
 
 
-def grafana_operator(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_namespace: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "grafana-operator",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2",
-                    kind="HelmRelease",
-                    name="grafana-operator",
-                    namespace="monitoring",
-                )
-            ],
-            timeout="5m",
-            depends_on=[flux_kustomization_depends_on(monitoring_namespace)],
-        ),
-    )
-
-
 def loki(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,

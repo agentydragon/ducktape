@@ -236,6 +236,8 @@ exports_files(
         "monitoring/grafana-helmrepository/kustomization.yaml",
         "flux-grafana-secrets/flux-grafana-secrets.k8s.yaml",
         "flux-grafana-secrets/kustomization.yaml",
+        "monitoring/grafana-operator/grafana-operator.k8s.yaml",
+        "monitoring/grafana-operator/kustomization.yaml",
         "langfuse/langfuse.k8s.yaml",
         "forgejo/app/forgejo.k8s.yaml",
         "forgejo/budget-namespace/namespace.k8s.yaml",
