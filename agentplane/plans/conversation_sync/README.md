@@ -81,6 +81,7 @@ Cells are judgements from the option files, not measurements.
 | **D1 no overlap re-sent**    | −           | −           | −             | **+**         | +        | **−**          | **+**           | +                |
 | D2 no windowed/lazy seam     | +           | +           | +             | +             | +        | −              | −               | +                |
 | D3 incrementally reachable   | +           | **+**       | +             | +             | ~        | n/a            | −               | +                |
+| D4 streaming costs the delta | −           | +           | +             | +             | +        | +              | +               | +                |
 
 ### What the matrix says
 

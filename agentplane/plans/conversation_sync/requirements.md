@@ -190,3 +190,13 @@ bounding held pages, and a client that keeps them cached avoids it.
   implementation-side twin.
 - **D3 — incrementally reachable.** A design we can get to in steps, each shippable and better than
   the last, beats one that has to land whole.
+- **D4 — streaming costs the delta.** Tokens appended to a body cost the client traffic in
+  proportion to what was appended, not a re-send of the prefix it already holds. Owner, 2026-09-23.
+
+**D4 is mostly given by the storage.** A body is insert-only chunks: each ingestion batch that
+appends to a body writes one new chunk row holding only that batch's text
+(`agent_runtime/view/payloads.py`). A design that syncs chunk rows therefore transfers the delta,
+at batch rather than token granularity. What fails D4 is re-sending a body whole on each change —
+A0, or an engine that re-sends a whole value or query result. Two costs ride on each append
+regardless: the entity row whose reference moved (whole, under Electric's `replica=full`), and a
+replacement, which starts a new generation and so is a new body.

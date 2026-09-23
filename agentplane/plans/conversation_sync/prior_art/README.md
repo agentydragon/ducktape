@@ -23,6 +23,10 @@ serve our Postgres fold rather than its own store.
 | Convex, InstantDB, LiveStore   | −   |     |     |     |           |     |     |     |     | each owns its store; Triplit also, and is dormant       |
 | Phoenix LiveView streams       | +   | +   |     | +   | ~         | +   | +   | ~   |     | a pattern for <../option_app_push.md>, not a dependency |
 
+**D4** (streaming costs the delta) was added after the survey. Electric, Zero and PowerSync sync rows,
+so our insert-only chunk rows give it to them; Replicache needs bodies split into immutable chunk
+keys, since it re-sends a changed value whole; Convex fails it, re-sending the whole query result.
+
 **Nothing here is adopted whole.** The four engines that can read our Postgres split on O4 and C2:
 
 - **Electric** is the only one already running, and it turns out to reach **D1** inside one fixed
