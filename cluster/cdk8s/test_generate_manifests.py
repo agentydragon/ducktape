@@ -114,6 +114,8 @@ _GENERATED_FILES = (
     "cluster/k8s/hubble-ui/kustomization.yaml",
     "cluster/k8s/metrics-server/metrics-server.k8s.yaml",
     "cluster/k8s/metrics-server/kustomization.yaml",
+    "cluster/k8s/reflector/reflector.k8s.yaml",
+    "cluster/k8s/reflector/kustomization.yaml",
 )
 
 
