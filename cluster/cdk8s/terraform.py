@@ -28,7 +28,7 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "flux-system"
-_STATE_DB = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+STATE_DB = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
 
 
 def secret_env(name: str, secret: str, key: str) -> TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv:
@@ -78,7 +78,7 @@ def gitops_terraform(
             approve_plan="auto",
             backend_config=TerraformV1Alpha2SpecBackendConfig(
                 custom_configuration=(
-                    f'backend "pg" {{\n  conn_str    = "{_STATE_DB}"\n  schema_name = "{schema or name.replace("-", "_")}"\n}}\n'
+                    f'backend "pg" {{\n  conn_str    = "{STATE_DB}"\n  schema_name = "{schema or name.replace("-", "_")}"\n}}\n'
                 )
             ),
             vars=[TerraformV1Alpha2SpecVars(name=key, value=value) for key, value in variables.items()] or None,

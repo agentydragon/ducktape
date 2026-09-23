@@ -5,7 +5,6 @@ cluster/k8s/infra-drift/README.md."""
 
 from __future__ import annotations
 
-import textwrap
 from pathlib import Path
 
 from cdk8s import App, Chart
@@ -73,12 +72,9 @@ def chart(app: App) -> Chart:
                 "ovh_dedicated_server.kimsufi_cp",
             ],
             backend_config=TerraformV1Alpha2SpecBackendConfig(
-                custom_configuration=textwrap.dedent("""\
-                    backend "pg" {
-                      conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
-                      schema_name = "main"
-                    }
-                """)
+                custom_configuration=(
+                    f'backend "pg" {{\n  conn_str    = "{terraform.STATE_DB}"\n  schema_name = "main"\n}}\n'
+                )
             ),
             runner_pod_template=TerraformV1Alpha2SpecRunnerPodTemplate(
                 spec=TerraformV1Alpha2SpecRunnerPodTemplateSpec(
