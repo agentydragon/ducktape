@@ -6,18 +6,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.seaweedfs import cluster, namespace
+from cluster.cdk8s.seaweedfs import s3
 
 NAME = "forgejo"
 OUTPUT_DIR = "cluster/k8s/seaweedfs/forgejo-bucket"
@@ -26,14 +19,7 @@ _CHART = "forgejo-bucket"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _CHART, disable_resource_name_hashes=True)
-    S3Identity(
-        chart,
-        "identity",
-        metadata=metadata(NAME, namespace.NAME),
-        spec=S3IdentitySpec(
-            seaweed_ref=S3IdentitySpecSeaweedRef(name=cluster.NAME), reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN
-        ),
-    )
+    s3.Identity(chart, "identity", name=NAME)
     return chart
 
 

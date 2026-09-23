@@ -24,6 +24,8 @@ on:
       - "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml"
       - ".github/scripts/smoke-openclaw-image.sh"
       - ".github/workflows/openclaw-image.yml"
+      - ".github/workflows/nix-image.yml"
+      - ".github/actions/setup-nix-attic/action.yml"
   push:
     branches: [devel]
     paths:
@@ -42,6 +44,8 @@ on:
       - "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml"
       - ".github/scripts/smoke-openclaw-image.sh"
       - ".github/workflows/openclaw-image.yml"
+      - ".github/workflows/nix-image.yml"
+      - ".github/actions/setup-nix-attic/action.yml"
   workflow_dispatch:
 
 concurrency:
@@ -53,79 +57,29 @@ permissions:
   packages: write
 
 jobs:
-  build-and-push:
-    name: Build and Push
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/openclaw
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Load Attic trusted pubkeys
-        id: attic_keys
-        run: echo "value=$(jq -r 'join(\" \")' nix/attic-pubkeys.json)" >> "$GITHUB_OUTPUT"
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          extra_nix_config: |
-            experimental-features = nix-command flakes fetch-closure
-            netrc-file = /home/runner/.config/nix/netrc
-            extra-trusted-public-keys = ${{ steps.attic_keys.outputs.value }}
-            extra-substituters = https://cache.allegedly.works/main
-            fallback = true
-
-      - uses: ./.github/actions/setup-ci-secrets
-        with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
-
-      - name: Write Nix netrc for cache.allegedly.works
-        run: |
-          mkdir -p /home/runner/.config/nix
-          umask 077
-          printf 'machine cache.allegedly.works password %s\n' "$ATTIC_TOKEN" \
-            > /home/runner/.config/nix/netrc
-
-      - name: Build image
-        run: nix build .#openclaw-image --print-build-logs
-
-      - name: Extract deployed openclaw.json5 from the generated ConfigMap
-        run: |
-          pip install --quiet pyyaml
-          python3 -c '
-          import yaml
-          with open("cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml") as f:
-              config_map = yaml.safe_load(f)
-          with open("/tmp/public-coder-agent-openclaw.json5", "w") as out:
-              out.write(config_map["data"]["openclaw.json5"])
-          '
-
-      - name: Smoke test public-coder runtime
-        run: |
-          loaded="$(docker load -i "$(readlink -f result)")"
-          printf '%s\n' "$loaded"
-          image="$(printf '%s\n' "$loaded" | sed -n -e 's/^Loaded image: //p' -e 's/^Loaded image ID: //p' | tail -n 1)"
-          test -n "$image"
-          docker run --rm \
-            --entrypoint /bin/sh \
-            --mount "type=bind,src=$PWD/.github/scripts/smoke-openclaw-image.sh,dst=/tmp/smoke-openclaw-image.sh,readonly" \
-            --mount "type=bind,src=/tmp/public-coder-agent-openclaw.json5,dst=/tmp/public-coder-agent-openclaw.json5,readonly" \
-            "$image" /tmp/smoke-openclaw-image.sh
-
-      - name: Compute tag
-        id: meta
-        run: |
-          SHA="${{ github.sha }}"
-          echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
-
-      - name: Push to GHCR
-        if: github.event_name == 'push'
-        run: |
-          ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
-          echo "${{ github.token }}" | skopeo login ghcr.io \
-            -u "${{ github.actor }}" --password-stdin
-          skopeo copy --insecure-policy \
-            "docker-archive:$(readlink -f result)" "docker://$ref"
-          echo "pushed \`$ref\`" >> "$GITHUB_STEP_SUMMARY"
+  image:
+    uses: ./.github/workflows/nix-image.yml
+    with:
+      attr: openclaw-image
+      image: ghcr.io/${{ github.repository_owner }}/openclaw
+      registry: ghcr
+      smoke: |
+        pip install --quiet pyyaml
+        python3 -c '
+        import yaml
+        with open("cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml") as f:
+            config_map = yaml.safe_load(f)
+        with open("/tmp/public-coder-agent-openclaw.json5", "w") as out:
+            out.write(config_map["data"]["openclaw.json5"])
+        '
+        loaded="$(docker load -i "$(readlink -f result)")"
+        printf '%s\n' "$loaded"
+        image="$(printf '%s\n' "$loaded" | sed -n -e 's/^Loaded image: //p' -e 's/^Loaded image ID: //p' | tail -n 1)"
+        test -n "$image"
+        docker run --rm \
+          --entrypoint /bin/sh \
+          --mount "type=bind,src=$PWD/.github/scripts/smoke-openclaw-image.sh,dst=/tmp/smoke-openclaw-image.sh,readonly" \
+          --mount "type=bind,src=/tmp/public-coder-agent-openclaw.json5,dst=/tmp/public-coder-agent-openclaw.json5,readonly" \
+          "$image" /tmp/smoke-openclaw-image.sh
+    secrets:
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}

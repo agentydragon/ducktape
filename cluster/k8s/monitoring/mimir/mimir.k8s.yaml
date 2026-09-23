@@ -1,4 +1,14 @@
 apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: mimir
+  namespace: seaweedfs
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
 metadata:
   annotations:
@@ -19,6 +29,24 @@ spec:
     namespace: seaweedfs
   name: mimir-blocks
   reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: mimir
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: monitoring
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: monitoring
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
@@ -61,24 +89,6 @@ spec:
     name: mimir-seaweedfs-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
 ---
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: mimir
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: monitoring
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: monitoring
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
 apiVersion: v1
 kind: Secret
 metadata:
@@ -87,16 +97,6 @@ metadata:
   name: mimir-s3-credentials
   namespace: monitoring
 type: Opaque
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Identity
-metadata:
-  name: mimir
-  namespace: seaweedfs
-spec:
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease

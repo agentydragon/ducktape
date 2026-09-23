@@ -87,7 +87,7 @@ flowchart TB
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
     CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
-    SANDBOX_EXEC_IMAGE["Planned image<br/>a dedicated exec-target image<br/>today an exec box is the runner image, with no python3 or jq"]:::future
+    SANDBOX_EXEC_IMAGE["Planned image<br/>a Nix sandbox image under the runner image<br/>today an exec box is the runner image, with no python3 or jq"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>some first need an ActionGroup, a kind, or DENY_LISTS"]:::future
 
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
@@ -103,7 +103,7 @@ flowchart TB
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_VIEW_SYNC["P1 design gate<br/>derived conversation snapshot + updates<br/>on-demand Raw and state ownership"]:::decision
     THREAD_VIEW_PROJECTION["Planned backend<br/>incremental projection and transactional read model"]:::future
-    THREAD_VIEW_ENGINE["Sync evaluation<br/>Electric + TanStack DB<br/>limited subsets and recovery"]:::decision
+    THREAD_VIEW_ENGINE["Sync evaluation<br/>Electric<br/>limited subsets and recovery"]:::decision
     THREAD_VIEW_READ["Planned integration<br/>engine-backed queries and synchronization"]:::future
     THREAD_TAIL_FIRST["Planned performance<br/>recent reduced items, not old token replay<br/>bounded short and long Thread loads"]:::future
     THREAD_VIEW_CATCHUP["Planned reconnect correctness<br/>bounded catch-up after long gaps<br/>refresh state without losing reading position"]:::future
@@ -387,22 +387,38 @@ settle).
 accumulated; a real API request from inside a sandbox succeeds for the intended operations and is
 refused outside them; and removing the account or its label still disables the whole path.
 
-### `SANDBOX_EXEC_IMAGE` — a dedicated exec-target image
+### `SANDBOX_EXEC_IMAGE` — a Nix-built sandbox image under the runner image
 
 **Planned image:** the configured `runner` environment stamps the integration app's runner
 template, which carries the egress sidecar, the interception CA and the proxy environment, so the
 path is real end to end. Its workload container is the runner image, which is both too much and too
 little for a box to run commands in: it brings the harnesses and the state volume, but its only
 tools are `curl`, `git` and `ripgrep`. `python3`, `jq`, `openssl`, `kubectl`, `tea`, `gh` and
-`bazel` are not on `PATH` (checked 2026-09-19 and 2026-09-23). Build the exec target as its own
-image and `SandboxTemplate`, keeping the sidecar, CA and proxy environment that make egress work
-([sandbox Actions](../docs/sandbox_actions.md)), and offer it as a second environment beside
-`runner`.
+`bazel` are not on `PATH` (checked 2026-09-19 and 2026-09-23).
 
-**Candidate:** the Haku workspace image (`cluster/k8s/haku/workspaces/image/`) already bakes what
-`haku-state`'s tooling calls: `python3`, `jq`, `openssl`, `gh`, `kubectl`, `tea`, `ruff`, Bazel with a
-JRE, and `build-essential`. Its setup script takes the Forgejo login from environment variables fed
-by the `haku-forgejo-git` Secret; in a sandbox the `forgejo-haku` placeholder stands in for it.
+**Shape:**
+
+- A Nix-built sandbox image holds the tool set as one reviewable list, on the substrate the Haku
+  workspace image (`cluster/k8s/haku/workspaces/image/default.nix`) and `x/codex_pod_image` share:
+  nix-ld's filesystem fallback and static `/usr/bin/env` and `/bin/bash` links, without which an
+  FHS binary (the runner's hermetic Python, the harness CLIs, a toolchain Bazel downloads) finds
+  no loader.
+- The runner image stays a Bazel `oci_image`, with the sandbox image as its `base`, pulled by
+  digest. The runner is not released and pinned for a Nix build instead: `agentplane/runner`'s
+  image tests load the image built from the tree under test, and every runner change would wait
+  on a release.
+- Sandbox Actions get a default environment on the plain sandbox image, through its own
+  `SandboxTemplate` that keeps the sidecar, CA and proxy environment egress needs
+  ([sandbox Actions](../docs/sandbox_actions.md)). `runner` stays as a second environment.
+
+**Steps:**
+
+1. The Nix sandbox image, published to the Forgejo registry beside the runner image.
+2. `oci.pull` fetches wherever Bazel resolves external repositories, so the `bbr` remote runner,
+   developer machines and web sessions get credentials for that registry. The runner image's
+   `base` then switches to the sandbox image; its image tests are the first to run the nix-ld path
+   in a container.
+3. The sandbox `SandboxTemplate` and environment, described by what the image holds.
 
 **What waits on it:**
 
@@ -1322,12 +1338,11 @@ batch atomicity and source fencing. No all-history map reconstruction per batch.
 
 ### `THREAD_VIEW_ENGINE` — evaluate existing synchronization
 
-Evaluate Electric with TanStack DB before implementing a custom change journal or browser
-replay protocol. The [integration gates](../docs/thread_view_sync.md#reuse-the-synchronization-engine)
+Evaluate Electric before implementing a custom change journal or browser replay protocol.
+The [integration gates](../docs/thread_view_sync.md#reuse-the-synchronization-engine)
 cover on-demand tail/history, snapshot/live races, reconnect expiry without full-shape
 fallback, content selection, transaction visibility, auth and replica failure. Pin versions
-and exercise the actual engine/client. The merged [collection spike](https://github.com/agentydragon/ducktape/pull/7069)
-is useful library evidence, not proof of this integration.
+and exercise the actual engine/client.
 
 ### `THREAD_VIEW_READ` — integrate the selected engine
 

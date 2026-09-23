@@ -15,21 +15,11 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecAffinityTolerations,
-    ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
     ClusterSpecManagedRolesPasswordSecret,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
 )
 from constructs import Construct
 from gateway_api_crds.io.k8s.networking.gateway import (
@@ -46,7 +36,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesMatchesPathType,
 )
 
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
+from cluster.cdk8s import cnpg
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
@@ -95,56 +85,37 @@ def _namespace(scope: Construct) -> None:
 
 
 def _database(scope: Construct) -> None:
-    Cluster(
+    cnpg.cluster(
         scope,
         "database",
-        metadata=metadata(_DB_NAME, _NAMESPACE, annotations={"description": "CNPG Postgres for study-casino state."}),
-        spec=ClusterSpec(
-            # 3 instances spread across 3 OVH nodes via the topologyKey=hostname
-            # anti-affinity below. Tolerates 1-node loss without read-quorum or
-            # primary-availability impact.
-            instances=3,
-            # CNPG 1.27+ kills isolated primaries by default (liveness probe).
-            # Disable to prevent false positives from transient network blips.
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
+        name=_DB_NAME,
+        namespace=_NAMESPACE,
+        annotations={"description": "CNPG Postgres for study-casino state."},
+        # 3 instances, one per OVH SSD (control-plane) node. Tolerates 1-node loss without read-quorum or
+        # primary-availability impact.
+        instances=3,
+        image_name=None,
+        node_selector={"topology.kubernetes.io/region": _REGION},
+        storage_class="local-path-ovh-ssd",
+        size="1Gi",
+        # Declaratively-managed roles. CNPG creates `study_casino_ro` on first
+        # reconcile and keeps the password in sync with study-casino-db-readonly.
+        # Object-level GRANTs (CONNECT/USAGE/SELECT + ALTER DEFAULT PRIVILEGES)
+        # are applied by the provisioner Job running as the `studycasino` owner —
+        # `managed.roles` only covers role attributes, not object permissions.
+        managed=ClusterSpecManaged(
+            roles=[
+                ClusterSpecManagedRoles(
+                    name="study_casino_ro",
+                    ensure=ClusterSpecManagedRolesEnsure.PRESENT,
+                    login=True,
+                    password_secret=ClusterSpecManagedRolesPasswordSecret(name="study-casino-db-readonly"),
+                    comment="Read-only access for sandbox agents (see cluster/k8s/study-casino/readonly-role.sql)",
                 )
-            ),
-            affinity=ClusterSpecAffinity(
-                node_selector={"topology.kubernetes.io/region": _REGION},
-                tolerations=[
-                    ClusterSpecAffinityTolerations(
-                        key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                    )
-                ],
-                # One PostgreSQL instance per HIL node for real HA.
-                topology_key="kubernetes.io/hostname",
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh", size="1Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            # Declaratively-managed roles. CNPG creates `study_casino_ro` on first
-            # reconcile and keeps the password in sync with study-casino-db-readonly.
-            # Object-level GRANTs (CONNECT/USAGE/SELECT + ALTER DEFAULT PRIVILEGES)
-            # are applied by the provisioner Job running as the `studycasino` owner —
-            # `managed.roles` only covers role attributes, not object permissions.
-            managed=ClusterSpecManaged(
-                roles=[
-                    ClusterSpecManagedRoles(
-                        name="study_casino_ro",
-                        ensure=ClusterSpecManagedRolesEnsure.PRESENT,
-                        login=True,
-                        password_secret=ClusterSpecManagedRolesPasswordSecret(name="study-casino-db-readonly"),
-                        comment=(
-                            "Read-only access for sandbox agents (see cluster/k8s/study-casino/readonly-role.sql)"
-                        ),
-                    )
-                ]
-            ),
-            # CNPG auto-generates credentials in secret study-casino-db-app
-            bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database=_DATABASE, owner=_DATABASE)),
+            ]
         ),
+        # CNPG auto-generates credentials in secret study-casino-db-app
+        initdb=ClusterSpecBootstrapInitdb(database=_DATABASE, owner=_DATABASE),
     )
 
 

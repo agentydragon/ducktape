@@ -10,6 +10,9 @@ These rules are verified against the deployed SeaweedFS operator chart `0.1.42`
 upstream controllers when the chart changes:
 <https://github.com/seaweedfs/seaweedfs-operator/tree/seaweedfs-operator-0.1.42>.
 
+Generated manifests build these objects through `cluster/cdk8s/seaweedfs/s3.py`,
+which fixes the invariants below (names, `Retain` on credentials, grants).
+
 ## Before changing anything
 
 - Treat the SeaweedFS bucket and IAM key as external state, not disposable

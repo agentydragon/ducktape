@@ -44,36 +44,12 @@ member is pinned by shape or by a relation, never by both. "Emits this literal
 **and** is imported by `@settingsModule`" needs conjunction across the two
 families.
 
-**R5 — `@Name` inside a shape.** Readable names bound by `identifiers:
-alpha_all` are local to one match. A `source_match` that mentions a name another
-selector pinned treats it as a free identifier, so the match fails. Either
-resolve such names against the selector environment or reject them with an error
-that says why — silently failing to match is the worst of the three.
-
-Candidate mechanism for R5: iterate rather than widen the model. Enumerate
-candidates with the cross-reference left as a hole, solve, re-enumerate with it
-bound, to a fixpoint. Each round stays a matcher pass over a pruned candidate
-set. Lowering the shape itself into constraints so the solver can join it is
-the approach <../docs/selector_resolution.md> rejects on measured grounds; do
-not reintroduce it here.
-
-**R6 — Engine performance.** Two measured costs, both on the joint-solve side:
-
-- `FactDomains::from_program_and_facts` still builds eager
-  `BTreeSet<String>` domains and every derived relation regardless of what the
-  program references. It is the once-per-chunk floor and the reason a
-  production-sized compile has never finished
-  (<../debug/perf/2026_06_27_large_bundle_selector_csp_profile.md>).
-- Native `source_match` fallback lowering leaves unreferenced AST variables
-  carrying the full node domain
-  (<../debug/perf/2026_07_13_match_selector_full_domain_profile.md>). Prune
-  them before serialization, and prefer failing closed over emitting a
-  full-domain variable.
-
-**R7 — Wire the injective stress fixture.**
-`e2e/testdata/global_selector_assignment_stress/broad_specific_injective/` has a
-source, a sketched constraint file, and no test. `all_different` propagation is
-covered at the model and backend level; this is the missing end-to-end case.
+**R5 — `@Name` inside a shape.** A `source_match` that mentions a name another
+selector pinned treats it as an alpha wildcard: `const x = new Widget(ANYTHING);`
+matches any `new C(…)`, so it is ambiguous or, when only another class is
+constructed, silently wrong (<../SELECTOR_BUGS.md>). This is the
+template-references step of <selector_engine.md>: an entity name in a template
+becomes a table constraint in the one CP-SAT solve.
 
 ## Landing a new relation
 
@@ -84,7 +60,8 @@ covered at the model and backend level; this is the missing end-to-end case.
    binding they touch, which is the discriminating case synthetic fixtures miss.
 2. Add the fact to `chunk_facts` if it is not derivable from what is there.
    Extraction stays fail-closed.
-3. Lower it to an IR atom in `selector_ir_lowering`, with a compiled encoding in
+3. Lower it to a table over candidate ids in the resolve engine
+   (<selector_engine.md>), with a compiled encoding in
    `selector_constraint_model_builder`.
 4. Extend `docs/selectors.md` — a selector kind that is not documented there
    does not exist for authors.

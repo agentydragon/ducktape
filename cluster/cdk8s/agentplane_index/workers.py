@@ -12,19 +12,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecAffinityTolerations,
-    ClusterSpecBootstrap,
-    ClusterSpecBootstrapInitdb,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
-)
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from cnpg_database_crds.io.cnpg.postgresql import (
     Database,
     DatabaseSpec,
@@ -40,7 +28,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
-from cluster.cdk8s import forgejo_images
+from cluster.cdk8s import cnpg, forgejo_images
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -85,32 +73,15 @@ def _read_token(chart: Chart) -> None:
 
 
 def _database(chart: Chart) -> None:
-    Cluster(
+    cnpg.cluster(
         chart,
         "database-cluster",
-        metadata=metadata(_DB_CLUSTER, NAME),
-        spec=ClusterSpec(
-            instances=2,
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
-                topology_key="kubernetes.io/hostname",
-                pod_anti_affinity_type="required",
-                tolerations=[
-                    ClusterSpecAffinityTolerations(
-                        key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                    )
-                ],
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh-ssd", size="20Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER)),
-        ),
+        name=_DB_CLUSTER,
+        namespace=NAME,
+        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        storage_class="local-path-ovh-ssd",
+        size="20Gi",
+        initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER),
     )
 
 

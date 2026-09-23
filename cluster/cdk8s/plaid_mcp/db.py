@@ -13,21 +13,11 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecAffinityTolerations,
-    ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
     ClusterSpecManagedRolesPasswordSecret,
-    ClusterSpecMonitoring,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
 )
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
@@ -35,8 +25,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMetadata,
 )
 
-from cluster.cdk8s import cilium
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
+from cluster.cdk8s import cilium, cnpg
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
@@ -58,59 +47,36 @@ _ZONE = "hil-ovh"
 
 
 def _cluster(chart: Chart) -> None:
-    Cluster(
+    cnpg.cluster(
         chart,
         "cluster",
-        metadata=metadata(
-            _CLUSTER,
-            NAMESPACE,
-            annotations={
-                "description": (
-                    "CNPG Postgres mirror for Plaid link metadata, full-refresh sync state, and Plaid-shaped"
-                    " financial data."
+        name=_CLUSTER,
+        namespace=NAMESPACE,
+        annotations={
+            "description": (
+                "CNPG Postgres mirror for Plaid link metadata, full-refresh sync state, and Plaid-shaped"
+                " financial data."
+            )
+        },
+        node_selector={"topology.kubernetes.io/zone": _ZONE},
+        storage_class="local-path-ovh",
+        size="5Gi",
+        managed=ClusterSpecManaged(
+            roles=[
+                ClusterSpecManagedRoles(
+                    name=_READONLY_ROLE,
+                    ensure=ClusterSpecManagedRolesEnsure.PRESENT,
+                    login=True,
+                    password_secret=ClusterSpecManagedRolesPasswordSecret(name=_READONLY_SECRET),
+                    comment=(
+                        "Read-only SQL access for the Plaid Postgres MCP facade; the secret is reflected to the"
+                        " augur and haku-sandbox namespaces."
+                    ),
                 )
-            },
+            ]
         ),
-        spec=ClusterSpec(
-            instances=2,
-            image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=ClusterSpecAffinity(
-                node_selector={"topology.kubernetes.io/zone": _ZONE},
-                # This instance currently has a local PV on a control plane. Keep it
-                # restartable there until its replica migration, but prefer workers for any
-                # placement not constrained by that PV.
-                tolerations=[
-                    ClusterSpecAffinityTolerations(
-                        key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                    )
-                ],
-                topology_key="kubernetes.io/hostname",
-                node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-            ),
-            storage=ClusterSpecStorage(storage_class="local-path-ovh", size="5Gi"),
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            managed=ClusterSpecManaged(
-                roles=[
-                    ClusterSpecManagedRoles(
-                        name=_READONLY_ROLE,
-                        ensure=ClusterSpecManagedRolesEnsure.PRESENT,
-                        login=True,
-                        password_secret=ClusterSpecManagedRolesPasswordSecret(name=_READONLY_SECRET),
-                        comment=(
-                            "Read-only SQL access for the Plaid Postgres MCP facade; the secret is reflected to the"
-                            " augur and haku-sandbox namespaces."
-                        ),
-                    )
-                ]
-            ),
-            # CNPG auto-generates credentials in secret plaid-mcp-db-app.
-            bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database=_DATABASE, owner=_DATABASE)),
-        ),
+        # CNPG auto-generates credentials in secret plaid-mcp-db-app.
+        initdb=ClusterSpecBootstrapInitdb(database=_DATABASE, owner=_DATABASE),
     )
 
 

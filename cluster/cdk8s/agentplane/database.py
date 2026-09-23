@@ -8,22 +8,12 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecAffinity,
-    ClusterSpecAffinityTolerations,
-    ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
     ClusterSpecManagedRolesPasswordSecret,
-    ClusterSpecMonitoring,
     ClusterSpecPostgresql,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecStorage,
 )
 from cnpg_database_crds.io.cnpg.postgresql import (
     Database,
@@ -41,13 +31,12 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
+from cluster.cdk8s import cnpg
 from cluster.cdk8s.agentplane import node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret
 
 _CLUSTER_NAME = "postgres"
-_IMAGE_NAME = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
 _STORAGE_CLASS = "local-path-ovh-ssd"
 _STORAGE_SIZE = "5Gi"
 # CNPG's fixed Postgres port -- egress/actions/app's CiliumNetworkPolicy rules allowing
@@ -58,10 +47,6 @@ POSTGRES_PORT = 5432
 # "app"/trajectory database needs no Database/role of its own.
 _ROLE_NAMES = ["actions", "egress"]
 _ELECTRIC_ROLE = "electric"
-
-_CONTROL_PLANE_TOLERATION = ClusterSpecAffinityTolerations(
-    key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-)
 
 
 def _role_credentials(
@@ -124,53 +109,39 @@ class Db(Construct):
             self, "role-credentials-electric", role=_ELECTRIC_ROLE, namespace=env.namespace, database_name="app"
         )
 
-        Cluster(
+        cnpg.cluster(
             self,
             "cluster",
-            metadata=ApiObjectMetadata(name=_CLUSTER_NAME, namespace=env.namespace),
-            spec=ClusterSpec(
-                instances=env.db.instances,
-                image_name=_IMAGE_NAME,
-                probes=ClusterSpecProbes(
-                    liveness=ClusterSpecProbesLiveness(
-                        isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
+            name=_CLUSTER_NAME,
+            namespace=env.namespace,
+            instances=env.db.instances,
+            node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
+            storage_class=_STORAGE_CLASS,
+            size=_STORAGE_SIZE,
+            # Electric's WAL-loss recovery purges every shape, then stays unready while
+            # rebuilding its replication pipeline. Keep a bounded outage budget below the
+            # 5Gi volume instead of silently recycling the logical slot's WAL.
+            postgresql=ClusterSpecPostgresql(parameters={"max_slot_wal_keep_size": "512MB"}),
+            initdb=ClusterSpecBootstrapInitdb(database="app", owner="app"),
+            managed=ClusterSpecManaged(
+                roles=[
+                    ClusterSpecManagedRoles(
+                        name=role,
+                        ensure=ClusterSpecManagedRolesEnsure.PRESENT,
+                        login=True,
+                        password_secret=ClusterSpecManagedRolesPasswordSecret(name=f"postgres-{role}"),
                     )
-                ),
-                affinity=ClusterSpecAffinity(
-                    enable_pod_anti_affinity=True if env.db.pod_anti_affinity else None,
-                    pod_anti_affinity_type="preferred" if env.db.pod_anti_affinity else None,
-                    topology_key="kubernetes.io/hostname" if env.db.pod_anti_affinity else None,
-                    node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
-                    tolerations=[_CONTROL_PLANE_TOLERATION],
-                    node_affinity=OFF_CONTROL_PLANE_NODE_AFFINITY,
-                ),
-                storage=ClusterSpecStorage(storage_class=_STORAGE_CLASS, size=_STORAGE_SIZE),
-                # Electric's WAL-loss recovery purges every shape, then stays unready while
-                # rebuilding its replication pipeline. Keep a bounded outage budget below the
-                # 5Gi volume instead of silently recycling the logical slot's WAL.
-                postgresql=ClusterSpecPostgresql(parameters={"max_slot_wal_keep_size": "512MB"}),
-                monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-                bootstrap=ClusterSpecBootstrap(initdb=ClusterSpecBootstrapInitdb(database="app", owner="app")),
-                managed=ClusterSpecManaged(
-                    roles=[
-                        ClusterSpecManagedRoles(
-                            name=role,
-                            ensure=ClusterSpecManagedRolesEnsure.PRESENT,
-                            login=True,
-                            password_secret=ClusterSpecManagedRolesPasswordSecret(name=f"postgres-{role}"),
-                        )
-                        for role in _ROLE_NAMES
-                    ]
-                    + [
-                        ClusterSpecManagedRoles(
-                            name=_ELECTRIC_ROLE,
-                            ensure=ClusterSpecManagedRolesEnsure.PRESENT,
-                            login=True,
-                            replication=True,
-                            password_secret=ClusterSpecManagedRolesPasswordSecret(name="postgres-electric"),
-                        )
-                    ]
-                ),
+                    for role in _ROLE_NAMES
+                ]
+                + [
+                    ClusterSpecManagedRoles(
+                        name=_ELECTRIC_ROLE,
+                        ensure=ClusterSpecManagedRolesEnsure.PRESENT,
+                        login=True,
+                        replication=True,
+                        password_secret=ClusterSpecManagedRolesPasswordSecret(name="postgres-electric"),
+                    )
+                ]
             ),
         )
 

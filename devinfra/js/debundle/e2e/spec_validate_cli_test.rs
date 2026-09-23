@@ -8,8 +8,8 @@ use std::path::Path;
 use std::process::Command;
 
 use debundle_e2e_support::{
-    CommandResult, FixtureOpts, Member, debundler_path, logical_module, run_spec_validate,
-    write_validate_fixture_spec,
+    CommandResult, FixtureOpts, Member, debundler_path, logical_module, run_source_only_validate,
+    run_spec_validate, write_validate_fixture_spec,
 };
 use serde_json::Value;
 
@@ -594,33 +594,6 @@ const widget = makeWidget("ok");
         _root: root,
         modules_root,
         source_file,
-    }
-}
-
-fn run_source_only_validate(
-    modules_root: &Path,
-    source_file: &Path,
-    extra_args: &[&str],
-) -> CommandResult {
-    let bin = debundler_path();
-    let output = Command::new(&bin)
-        .arg("spec")
-        .arg("validate")
-        .arg("--modules")
-        .arg(modules_root)
-        .arg("--source-file")
-        .arg(source_file)
-        .args(extra_args)
-        .env(
-            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER",
-            "/definitely/missing/selector_cpsat_solver",
-        )
-        .output()
-        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
-    CommandResult {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
     }
 }
 
