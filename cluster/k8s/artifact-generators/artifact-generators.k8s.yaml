@@ -444,8 +444,6 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/clickhouse/operator/**"
           to: "@artifact/cluster/k8s/clickhouse/operator/"
-        - from: "@repo/cluster/k8s/clickhouse/namespace/**"
-          to: "@artifact/cluster/k8s/clickhouse/namespace/"
       name: clickhouse-operator
       originRevision: "@repo"
     - copy:
