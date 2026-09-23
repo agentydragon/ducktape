@@ -11,4 +11,3 @@ resources:
   - clickhouse.k8s.yaml
   - clickhouse-service.k8s.yaml
   - networkpolicy.k8s.yaml
-  - podmonitor.yaml

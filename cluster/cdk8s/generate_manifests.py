@@ -99,7 +99,6 @@ from cluster.cdk8s.cert_manager import (
 )
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api
 from cluster.cdk8s.clickhouse import (
-    flux_kustomizations as clickhouse_flux_kustomizations,
     installation as clickhouse_installation,
     operator as clickhouse_operator,
     schema as clickhouse_schema,
@@ -588,7 +587,7 @@ def generate_manifests(root: Path) -> None:
     clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
     vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
     vpa_kustomization = vpa.vpa(flux_chart, vpa_artifact, kyverno_kustomization, metrics_server_kustomization)
-    clickhouse_kustomization = clickhouse_flux_kustomizations.clickhouse(
+    clickhouse_kustomization = clickhouse_installation.clickhouse(
         flux_chart, clickhouse_artifact, clickhouse_operator_kustomization
     )
     dcgm_exporter_artifact = artifact("dcgm-exporter", "cluster/k8s/dcgm-exporter")
