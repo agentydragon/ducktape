@@ -64,7 +64,7 @@ class EgressCredentials(Construct):
 def credential_external_secret(
     scope: Construct, *, namespace: str, target: str, source: str, key: str, store: str
 ) -> None:
-    """ESO copy of one credential into an egress-credentials namespace, as Secret `target`."""
+    """ESO copy of one credential into `namespace`, as Secret `target`."""
     ExternalSecret(
         scope,
         target,
