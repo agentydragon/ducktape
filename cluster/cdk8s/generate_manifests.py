@@ -110,7 +110,7 @@ from cluster.cdk8s.node_feature_discovery import flux_kustomizations as node_fea
 from cluster.cdk8s.nvidia_device_plugin import flux_kustomizations as nvidia_device_plugin_flux_kustomizations
 from cluster.cdk8s.nvidia_runtimeclass import flux_kustomizations as nvidia_runtimeclass_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations
-from cluster.cdk8s.ollama import flux_kustomizations as ollama_flux_kustomizations
+from cluster.cdk8s.ollama import app as ollama_app, flux_kustomizations as ollama_flux_kustomizations
 from cluster.cdk8s.openebs_lvm import flux_kustomizations as openebs_lvm_flux_kustomizations
 from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
 from cluster.cdk8s.proxmox_proxy import flux_kustomizations as proxmox_proxy_flux_kustomizations
@@ -186,6 +186,7 @@ def generate_manifests(root: Path) -> None:
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
     website.write_manifests(root)
+    ollama_app.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"

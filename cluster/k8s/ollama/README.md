@@ -1,6 +1,6 @@
 # Ollama direct bearer token
 
-`secrets/ollama-direct-token-eso.yaml` uses ESO's `Password` generator to
+`cluster/cdk8s/ollama/app.py` uses ESO's `Password` generator to
 create `ollama/ollama-direct-token`. The generated target is retained and is
 not periodically rotated (`refreshInterval: 8760h`).
 

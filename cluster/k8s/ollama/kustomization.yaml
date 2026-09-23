@@ -1,20 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
-  - pvc.yaml
-  - deployment.yaml
-  - service.yaml
-  - httproute.yaml
-  - clusterrole-ollama-consumer.yaml
-  # Versioned so a changed bootstrap model list creates a fresh Job.
-  - job-setup-gpt-oss-v3.yaml
-  - role-ollama-reader.yaml
-  # RoleBinding's ServiceAccount subject is cross-namespace (claude-sandbox),
-  # so namespace is set per-generator below rather than via a top-level
-  # `namespace:` transformer, which would rewrite that subject too.
-  - rolebinding-ollama-reader.yaml
-  - ollama-direct-token-eso.yaml
+  # cdk8s-generated (cluster/cdk8s/ollama/app.py). The RoleBinding's ServiceAccount
+  # subject is cross-namespace (claude-sandbox), so namespace is set per-generator
+  # below rather than via a top-level `namespace:` transformer, which would rewrite
+  # that subject too.
+  - ollama.k8s.yaml
 
 configMapGenerator:
   - name: gpt-oss-scripts
