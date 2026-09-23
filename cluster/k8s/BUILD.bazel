@@ -250,6 +250,7 @@ exports_files(
         "monitoring/tempo/tempo.k8s.yaml",
         "monitoring/tempo/kustomization.yaml",
         "monitoring/grafana-instance/grafana-instance.k8s.yaml",
+        "grafana/clickhouse-grafana.k8s.yaml",
         "langfuse/langfuse.k8s.yaml",
         "forgejo/app/forgejo.k8s.yaml",
         "forgejo/budget-namespace/namespace.k8s.yaml",

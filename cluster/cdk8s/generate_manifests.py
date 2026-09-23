@@ -146,7 +146,12 @@ from cluster.cdk8s.github_secrets_sync import (
     gitops_module as github_secrets_sync_gitops_module,
     secrets as github_secrets_sync_secrets,
 )
-from cluster.cdk8s.grafana import flux_kustomizations as grafana_flux_kustomizations
+from cluster.cdk8s.goldilocks import flux_kustomizations as goldilocks_flux_kustomizations
+from cluster.cdk8s.grafana import app as grafana_app, flux_kustomizations as grafana_flux_kustomizations
+from cluster.cdk8s.grocy import flux_kustomizations as grocy_flux_kustomizations
+from cluster.cdk8s.haku import charts as haku_charts, flux_kustomizations as haku_flux_kustomizations
+from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations
+from cluster.cdk8s.headlamp import flux_kustomizations as headlamp_flux_kustomizations
 from cluster.cdk8s.grocy import (
     app as grocy_app,
     flux_kustomizations as grocy_flux_kustomizations,
@@ -162,7 +167,6 @@ from cluster.cdk8s.haku import (
     rbac as haku_rbac,
     workloads as haku_workloads,
     workspaces as haku_workspaces,
-)
 from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations, runner as haku_ci_runner
 from cluster.cdk8s.home_assistant import (
     app as home_assistant_app,
@@ -312,6 +316,7 @@ def generate_manifests(root: Path) -> None:
     mimir.write_manifests(root)
     tempo.write_manifests(root)
     grafana_instance.write_manifests(root)
+    grafana_app.write_manifests(root)
     langfuse_app.write_manifests(root)
     forgejo_app.write_manifests(root)
     forgejo_budget_namespace.write_manifests(root)
