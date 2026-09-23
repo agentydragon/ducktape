@@ -73,7 +73,10 @@ from cluster.cdk8s.gaffer_private_source import flux_kustomizations as gaffer_pr
 from cluster.cdk8s.gatus import flux_kustomizations as gatus_flux_kustomizations, sso as gatus_sso
 from cluster.cdk8s.github_api_proxy import flux_kustomizations as github_api_proxy_flux_kustomizations
 from cluster.cdk8s.github_exporter import flux_kustomizations as github_exporter_flux_kustomizations
-from cluster.cdk8s.github_secrets_sync import flux_kustomizations as github_secrets_sync_flux_kustomizations
+from cluster.cdk8s.github_secrets_sync import (
+    flux_kustomizations as github_secrets_sync_flux_kustomizations,
+    gitops_module as github_secrets_sync_gitops_module,
+)
 from cluster.cdk8s.goldilocks import flux_kustomizations as goldilocks_flux_kustomizations
 from cluster.cdk8s.grafana import flux_kustomizations as grafana_flux_kustomizations
 from cluster.cdk8s.grocy import flux_kustomizations as grocy_flux_kustomizations
@@ -178,6 +181,7 @@ def generate_manifests(root: Path) -> None:
     agent_machine_access.write_manifests(root)
     forgejo_gitops_modules.write_manifests(root)
     alloy_otlp_bearer_token.write_manifests(root)
+    github_secrets_sync_gitops_module.write_manifests(root)
     forgejo_images.write_manifests(root)
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
@@ -930,8 +934,8 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
         external_creds_kustomization,
     )
-    github_secrets_sync_artifact = artifact("github-secrets-sync", "cluster/k8s/github-secrets-sync")
-    github_secrets_sync_flux_kustomizations.github_secrets_sync(
+    github_secrets_sync_artifact = artifact("github-secrets-sync", github_secrets_sync_gitops_module.OUTPUT_DIR)
+    github_secrets_sync_gitops_module.github_secrets_sync(
         flux_chart,
         github_secrets_sync_artifact,
         tofu_controller_kustomization,

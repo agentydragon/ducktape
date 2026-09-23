@@ -129,6 +129,8 @@ exports_files(
         "monitoring/alloy-otlp-bearer-token-tf/alloy-otlp-bearer-token.k8s.yaml",
         "forgejo-images/forgejo-images.k8s.yaml",
         "monitoring/alloy-otlp-bearer-token-tf/kustomization.yaml",
+        "github-secrets-sync/github-secrets-sync.k8s.yaml",
+        "github-secrets-sync/kustomization.yaml",
         "gatus/sso-tf/gatus-sso.k8s.yaml",
         "gatus/sso-tf/kustomization.yaml",
         "flux-webhook-token/flux-webhook-token.k8s.yaml",
