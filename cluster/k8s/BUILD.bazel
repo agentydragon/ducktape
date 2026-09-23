@@ -218,6 +218,7 @@ exports_files(
         "forgejo/app/forgejo.k8s.yaml",
         "forgejo/budget-namespace/namespace.k8s.yaml",
         "forgejo/budget-namespace/kustomization.yaml",
+        "home-assistant/backup/home-assistant-backups.k8s.yaml",
         "grocy/app-base/grocy.k8s.yaml",
         "grocy/app-base/kustomization.yaml",
         "grocy/mcp-base/grocy-mcp.k8s.yaml",

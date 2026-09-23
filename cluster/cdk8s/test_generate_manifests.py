@@ -159,6 +159,7 @@ _GENERATED_FILES = (
     "cluster/k8s/forgejo/app/forgejo.k8s.yaml",
     "cluster/k8s/forgejo/budget-namespace/namespace.k8s.yaml",
     "cluster/k8s/forgejo/budget-namespace/kustomization.yaml",
+    "cluster/k8s/home-assistant/backup/home-assistant-backups.k8s.yaml",
     "cluster/k8s/grocy/app-base/grocy.k8s.yaml",
     "cluster/k8s/grocy/app-base/kustomization.yaml",
     "cluster/k8s/grocy/mcp-base/grocy-mcp.k8s.yaml",

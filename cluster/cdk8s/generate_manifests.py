@@ -164,6 +164,7 @@ from cluster.cdk8s.haku import (
 from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations, runner as haku_ci_runner
 from cluster.cdk8s.headlamp import flux_kustomizations as headlamp_flux_kustomizations
 from cluster.cdk8s.home_assistant import (
+    backup as home_assistant_backup,
     flux_kustomizations as home_assistant_flux_kustomizations,
     namespace as home_assistant_namespace,
 )
@@ -282,6 +283,7 @@ def generate_manifests(root: Path) -> None:
     langfuse_app.write_manifests(root)
     forgejo_app.write_manifests(root)
     forgejo_budget_namespace.write_manifests(root)
+    home_assistant_backup.write_manifests(root)
     grocy_app.write_manifests(root)
     grocy_mcp.write_manifests(root)
     grocy_user_perms.write_manifests(root)

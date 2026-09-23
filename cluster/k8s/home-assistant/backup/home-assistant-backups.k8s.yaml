@@ -1,42 +1,54 @@
 apiVersion: seaweed.seaweedfs.com/v1
-kind: Bucket
+kind: S3Identity
 metadata:
   name: home-assistant-backups
-  namespace: home-assistant
+  namespace: seaweedfs
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
   annotations:
     description: Home Assistant's tenant-local SeaweedFS backup bucket.
-spec:
   name: home-assistant-backups
+  namespace: home-assistant
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: home-assistant-backups
   adoptExisting: true
   clusterRef:
     name: seaweedfs
     namespace: seaweedfs
+  name: home-assistant-backups
   reclaimPolicy: Retain
-  access:
-    - user: home-assistant-backups
-      actions: [Read, Write, List, Tagging]
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
 metadata:
-  name: home-assistant-backups
-  namespace: home-assistant
   annotations:
     description: Home Assistant's tenant-local SeaweedFS backup credentials.
+  name: home-assistant-backups
+  namespace: home-assistant
 spec:
+  identityRef:
+    name: home-assistant-backups
+  reclaimPolicy: Retain
   seaweedRef:
     name: seaweedfs
     namespace: seaweedfs
-  identityRef:
-    name: home-assistant-backups
   secretRef:
-    name: home-assistant-seaweedfs-credentials
     accessKeyField: AWS_ACCESS_KEY_ID
+    name: home-assistant-seaweedfs-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
-  reclaimPolicy: Retain
 ---
-# Permit only Home Assistant's tenant-local Bucket and S3Credentials to
-# reference the SeaweedFS cluster in its namespace.
 apiVersion: seaweed.seaweedfs.com/v1
 kind: ResourceReferenceGrant
 metadata:
