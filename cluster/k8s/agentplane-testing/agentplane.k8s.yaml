@@ -284,20 +284,6 @@ spec:
   name: egress
   owner: egress
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: agentplane-electric-storage
-  namespace: agentplane-testing
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
-  storageClassName: seaweedfs-ovh
-  volumeMode: Filesystem
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -415,7 +401,7 @@ spec:
             runAsNonRoot: true
           volumeMounts:
             - mountPath: /var/lib/electric
-              name: pvc-agentplane-electric-storage
+              name: storage
       dnsPolicy: ClusterFirst
       hostNetwork: false
       restartPolicy: Always
@@ -431,10 +417,9 @@ spec:
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
       volumes:
-        - name: pvc-agentplane-electric-storage
-          persistentVolumeClaim:
-            claimName: agentplane-electric-storage
-            readOnly: false
+        - emptyDir:
+            sizeLimit: 5120Mi
+          name: storage
 ---
 apiVersion: v1
 kind: Service
