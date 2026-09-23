@@ -84,6 +84,8 @@ exports_files(
         "clickhouse/schema/clickhouse-schema.k8s.yaml",
         "clickhouse/schema/kustomization.yaml",
         "descheduler/helmrelease.k8s.yaml",
+        "kubevirt/app/kubevirt.k8s.yaml",
+        "kubevirt/app/kustomization.yaml",
         "descheduler/kustomization.yaml",
         "descheduler/rbac.k8s.yaml",
         "dns-automation/dns-records.k8s.yaml",

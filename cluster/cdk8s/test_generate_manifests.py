@@ -77,6 +77,8 @@ _GENERATED_FILES = (
     "cluster/k8s/clickhouse/cluster/clickhouse-service.k8s.yaml",
     "cluster/k8s/clickhouse/cluster/networkpolicy.k8s.yaml",
     "cluster/k8s/clickhouse/cluster/agent-diagnostics-rbac.k8s.yaml",
+    "cluster/k8s/kubevirt/app/kubevirt.k8s.yaml",
+    "cluster/k8s/kubevirt/app/kustomization.yaml",
     "cluster/k8s/clickhouse/operator/kustomization.yaml",
     "cluster/k8s/agents/mitmproxy/namespace.k8s.yaml",
     "cluster/k8s/litellm/namespace.k8s.yaml",
