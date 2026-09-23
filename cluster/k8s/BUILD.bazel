@@ -161,6 +161,8 @@ exports_files(
         "authentik/sso-providers-tf/kustomization.yaml",
         "kube-system/kube-system.k8s.yaml",
         "kube-system/kustomization.yaml",
+        "user-agentydragon/user-agentydragon.k8s.yaml",
+        "user-agentydragon/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

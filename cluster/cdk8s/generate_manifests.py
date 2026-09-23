@@ -26,6 +26,7 @@ from cluster.cdk8s import (
     public_coder_agent_config,
     public_coder_devbox,
     stateful_infra,
+    user_agentydragon,
 )
 from cluster.cdk8s.activitywatch import flux_kustomizations as activitywatch_flux_kustomizations
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
@@ -131,7 +132,6 @@ from cluster.cdk8s.talos_cloud_controller_manager import (
 )
 from cluster.cdk8s.tofu_controller import flux_kustomizations as tofu_controller_flux_kustomizations
 from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
-from cluster.cdk8s.user_agentydragon import flux_kustomizations as user_agentydragon_flux_kustomizations
 from cluster.cdk8s.valkey import flux_kustomizations as valkey_flux_kustomizations
 from cluster.cdk8s.vector_talos_logs import flux_kustomizations as vector_talos_logs_flux_kustomizations
 from cluster.cdk8s.vm_images_publisher import flux_kustomizations as vm_images_publisher_flux_kustomizations
@@ -197,6 +197,7 @@ def generate_manifests(root: Path) -> None:
     sso_providers.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
     kube_system.write_manifests(root)
+    user_agentydragon.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -292,10 +293,8 @@ def generate_manifests(root: Path) -> None:
             flux_chart, talos_cloud_controller_manager_artifact
         )
     )
-    user_agentydragon_artifact = artifact("user-agentydragon", "cluster/k8s/user-agentydragon")
-    user_agentydragon_kustomization = user_agentydragon_flux_kustomizations.user_agentydragon(
-        flux_chart, user_agentydragon_artifact
-    )
+    user_agentydragon_artifact = artifact("user-agentydragon", user_agentydragon.OUTPUT_DIR)
+    user_agentydragon_kustomization = user_agentydragon.user_agentydragon(flux_chart, user_agentydragon_artifact)
     valkey_artifact = artifact("valkey", "cluster/k8s/valkey")
     valkey_kustomization = valkey_flux_kustomizations.valkey(flux_chart, valkey_artifact)
     gaffer_private_source_flux_kustomizations.gaffer_private_source(
