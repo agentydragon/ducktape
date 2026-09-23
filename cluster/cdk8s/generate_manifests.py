@@ -26,7 +26,6 @@ from cluster.cdk8s import (
     forgejo_images,
     forgejo_token_rotation,
     gateway,
-    gateway_flux_kustomizations,
     github_branch_protection,
     goldilocks,
     google_mcp,
@@ -603,8 +602,8 @@ def generate_manifests(root: Path) -> None:
     external_secrets_config_kustomization = external_secrets_config.external_secrets_config(
         flux_chart, external_secrets_config_artifact, external_secrets_operator_kustomization
     )
-    gateway_artifact = artifact("gateway", "cluster/k8s/gateway")
-    gateway_kustomization = gateway_flux_kustomizations.gateway(
+    gateway_artifact = artifact("gateway", gateway.OUTPUT_DIR)
+    gateway_kustomization = gateway.gateway(
         flux_chart,
         gateway_artifact,
         cert_manager_kustomization,
