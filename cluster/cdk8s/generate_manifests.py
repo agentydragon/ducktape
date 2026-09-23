@@ -129,6 +129,7 @@ from cluster.cdk8s.seaweedfs import (
     operator_release as seaweedfs_operator_release,
     pr_visuals_bucket as seaweedfs_pr_visuals_bucket,
     public_coder_agent_backups_bucket as seaweedfs_public_coder_agent_backups_bucket,
+    public_s3 as seaweedfs_public_s3,
     registry_cache_bucket as seaweedfs_registry_cache_bucket,
     s3_config as seaweedfs_s3_config,
 )
@@ -212,6 +213,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_external_credentials.write_manifests(root)
     seaweedfs_filer_db.write_manifests(root)
     seaweedfs_s3_config.write_manifests(root)
+    seaweedfs_public_s3.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -774,8 +776,8 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_registry_cache_bucket_kustomization,
         monitoring_crds_kustomization,
     )
-    seaweedfs_public_s3_artifact = artifact("seaweedfs-public-s3", "cluster/k8s/seaweedfs/public-s3")
-    seaweedfs_public_s3_kustomization = seaweedfs_flux_kustomizations.seaweedfs_public_s3(
+    seaweedfs_public_s3_artifact = artifact("seaweedfs-public-s3", seaweedfs_public_s3.OUTPUT_DIR)
+    seaweedfs_public_s3_kustomization = seaweedfs_public_s3.seaweedfs_public_s3(
         flux_chart,
         seaweedfs_public_s3_artifact,
         seaweedfs_external_credentials_kustomization,

@@ -100,6 +100,8 @@ exports_files(
         "ntfy/ntfy.k8s.yaml",
         "ntfy/kustomization.yaml",
         "seaweedfs/cluster/priorityclass.k8s.yaml",
+        "seaweedfs/public-s3/public-s3.k8s.yaml",
+        "seaweedfs/public-s3/kustomization.yaml",
         "seaweedfs/secrets/s3-config.k8s.yaml",
         "seaweedfs/db/seaweedfs-filer-db-ssd.k8s.yaml",
         "seaweedfs/db/kustomization.yaml",
