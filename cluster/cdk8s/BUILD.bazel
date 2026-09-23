@@ -1802,17 +1802,3 @@ py_library(
         "@pypi//cdk8s_plus_34",
     ],
 )
-
-py_library(
-    name = "flux_kustomizations_gateway",
-    srcs = ["gateway_flux_kustomizations.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        ":artifact_generators",
-        ":flux",
-        ":generation",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
-        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
-        "@pypi//cdk8s",
-    ],
-)
