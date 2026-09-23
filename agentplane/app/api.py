@@ -31,6 +31,9 @@ from agentplane.app.action_federation import (
     upstream_failure_detail,
 )
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicySetView, UnknownPolicySetError
+from agentplane.app.agent_runtime.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
+from agentplane.app.agent_runtime.view.fold import CommandOutcome
+from agentplane.app.agent_runtime.view.views import ThreadView
 from agentplane.app.consent import (
     ConsentDecision,
     ConsentPreview,
@@ -63,11 +66,9 @@ from agentplane.app.operator_sessions import OperatorSessionMiddleware, Operator
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from agentplane.app.runners import SandboxNotReachableError
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
-from agentplane.app.thread.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
 from agentplane.app.thread.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
-from agentplane.app.thread.views import ThreadView
 from agentplane.app.thread_debug import (
     ArchivedObservationEntry,
     EvidencePage,
@@ -76,7 +77,6 @@ from agentplane.app.thread_debug import (
     ThreadEvidenceNotFoundError,
     ThreadScopeChangedError,
 )
-from agentplane.app.thread_fold import CommandOutcome
 from agentplane.runner.client import RunnerError
 from agentplane.subjects import ServiceAccountRef
 

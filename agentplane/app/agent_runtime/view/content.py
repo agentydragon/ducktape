@@ -12,7 +12,8 @@ from google.protobuf.json_format import ParseDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.app import thread_fold
+from agentplane.app.agent_runtime.view import fold
+from agentplane.app.agent_runtime.view.views import SEGMENT_KINDS, EntityKind, ThreadCommandState
 from agentplane.app.thread.event_log import ThreadNotFoundError
 from agentplane.app.thread.models import (
     Event,
@@ -23,7 +24,6 @@ from agentplane.app.thread.models import (
     ThreadNativeLink,
     ThreadPayloadManifest,
 )
-from agentplane.app.thread.views import SEGMENT_KINDS, EntityKind, ThreadCommandState
 from agentplane.app.thread_debug import (
     EvidenceObservation,
     EvidencePage,
@@ -269,7 +269,7 @@ class ContentStore:
 
     async def command_outcomes(
         self, thread_id: UUID, projection_epoch: str, command_ids: Sequence[str]
-    ) -> dict[str, thread_fold.CommandOutcome | None]:
+    ) -> dict[str, fold.CommandOutcome | None]:
         """Current outcomes for a finite browser-held command-id set, keyed by entity primary key."""
         requested = tuple(dict.fromkeys(command_ids))
         async with self._sessions() as session:

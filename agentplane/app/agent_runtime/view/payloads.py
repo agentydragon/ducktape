@@ -10,24 +10,24 @@ from uuid import UUID
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.app import thread_fold
+from agentplane.app.agent_runtime.view import fold
 from agentplane.app.thread.models import ThreadPayloadChunk, ThreadPayloadManifest
 
 
 @dataclass
 class _PayloadPlan:
-    reference: thread_fold.PayloadRef
+    reference: fold.PayloadRef
     prefix_chunks: int
     prefix_bytes: int
     fragments: list[str]
     replaced: bool
 
 
-async def write_payloads(session: AsyncSession, thread_id: UUID, writes: Sequence[thread_fold.PayloadWrite]) -> None:
-    plans_by_reference: dict[thread_fold.PayloadRef, _PayloadPlan] = {}
-    final_plans: dict[tuple[int, str, thread_fold.PayloadField], _PayloadPlan] = {}
+async def write_payloads(session: AsyncSession, thread_id: UUID, writes: Sequence[fold.PayloadWrite]) -> None:
+    plans_by_reference: dict[fold.PayloadRef, _PayloadPlan] = {}
+    final_plans: dict[tuple[int, str, fold.PayloadField], _PayloadPlan] = {}
     for write in writes:
-        if isinstance(write, thread_fold.ReplacePayload):
+        if isinstance(write, fold.ReplacePayload):
             plan = _PayloadPlan(write.reference, 0, 0, [write.text], True)
         else:
             prior = plans_by_reference.get(write.base) if write.base is not None else None
@@ -81,9 +81,7 @@ async def write_payloads(session: AsyncSession, thread_id: UUID, writes: Sequenc
             )
 
 
-def _payload_manifest_key(
-    thread_id: UUID, reference: thread_fold.PayloadRef
-) -> tuple[UUID, str, int, str, str, int, int]:
+def _payload_manifest_key(thread_id: UUID, reference: fold.PayloadRef) -> tuple[UUID, str, int, str, str, int, int]:
     return (
         thread_id,
         reference.projection_epoch,

@@ -12,6 +12,8 @@ import pytest_bazel
 from fastapi.testclient import TestClient
 
 from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.agent_runtime.view.recording import THREAD_FOLD_EPOCH
 from agentplane.app.api import create_app, upstream_http_error
 from agentplane.app.bridge import RunnerBridge
 from agentplane.app.conftest import AGENT_AUTH
@@ -37,9 +39,7 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from agentplane.app.thread.content import ContentStore
 from agentplane.app.thread.event_log import EventLogStore
-from agentplane.app.thread.recording import THREAD_FOLD_EPOCH
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2

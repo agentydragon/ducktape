@@ -7,6 +7,8 @@ import pytest
 import pytest_bazel
 from sqlalchemy import select
 
+from agentplane.app.agent_runtime.view.recording import ThreadFoldError
+from agentplane.app.agent_runtime.view.views import EntityKind, ThreadOperationalState
 from agentplane.app.conftest import SPEC, Replica, event_entry
 from agentplane.app.ingestion import Ingestion
 from agentplane.app.thread.event_log import EventLogStore
@@ -19,9 +21,7 @@ from agentplane.app.thread.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.app.thread.recording import ThreadFoldError
 from agentplane.app.thread.store import ThreadStore
-from agentplane.app.thread.views import EntityKind, ThreadOperationalState
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 

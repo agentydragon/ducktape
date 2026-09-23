@@ -17,9 +17,9 @@ from httpx_sse import ServerSentEvent, aconnect_sse
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.testing.replication_process import CommitBoundary, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.thread.content import ContentStore
 from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.models import SandboxIngestion
 from agentplane.app.thread.store import ThreadStore

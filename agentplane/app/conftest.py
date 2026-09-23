@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.postgres import PostgresContainer
 
 from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.bridge import RunnerBridge
 from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
@@ -36,7 +37,6 @@ from agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
 )
-from agentplane.app.thread.content import ContentStore
 from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.ingestion_lease import IngestionLease
 from agentplane.app.thread.store import ThreadStore

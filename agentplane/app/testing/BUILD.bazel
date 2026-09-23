@@ -41,7 +41,7 @@ py_library(
         "//agentplane/app:operator_sessions",
         "//agentplane/app:presets",
         "//agentplane/app:runners",
-        "//agentplane/app/thread:content",
+        "//agentplane/app/agent_runtime/view:content",
         "//agentplane/app/thread:event_log",
         "//agentplane/app/thread:ingestion_lease",
         "//agentplane/app/thread:store",

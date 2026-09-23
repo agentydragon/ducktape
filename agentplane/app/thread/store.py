@@ -14,10 +14,10 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from agentplane.app.agent_runtime.view.views import ThreadView
 from agentplane.app.thread.event_log import ThreadNotFoundError
 from agentplane.app.thread.models import Event, EventLog, FeedState, Thread
 from agentplane.app.thread.updates import notify
-from agentplane.app.thread.views import ThreadView
 from agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

@@ -24,14 +24,14 @@ from starlette.requests import ClientDisconnect
 from starlette.types import Message
 from testcontainers.postgres import PostgresContainer
 
+from agentplane.app.agent_runtime.view.content import ContentStore, ThreadEntityInterest, ThreadPayloadSelection
+from agentplane.app.agent_runtime.view.fold import PayloadField
+from agentplane.app.agent_runtime.view.views import EntityKind
 from agentplane.app.conftest import migrated_database
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.ingestion import Ingestion
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.thread.content import ContentStore, ThreadEntityInterest, ThreadPayloadSelection
 from agentplane.app.thread.event_log import EventLogStore
-from agentplane.app.thread.views import EntityKind
-from agentplane.app.thread_fold import PayloadField
 from agentplane.protocol import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

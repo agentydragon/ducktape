@@ -10,12 +10,10 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.app import thread_fold
-from agentplane.app.thread.event_log import EventReplicationError
-from agentplane.app.thread.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
-from agentplane.app.thread.payloads import write_payloads
-from agentplane.app.thread.rows import command_summary, fold_item, ordered_entity_rows
-from agentplane.app.thread.views import (
+from agentplane.app.agent_runtime.view import fold
+from agentplane.app.agent_runtime.view.payloads import write_payloads
+from agentplane.app.agent_runtime.view.rows import command_summary, fold_item, ordered_entity_rows
+from agentplane.app.agent_runtime.view.views import (
     EntityKind,
     ThreadCommandEntityView,
     ThreadFeedErrorState,
@@ -23,6 +21,8 @@ from agentplane.app.thread.views import (
     ThreadOperationalState,
     ThreadViewState,
 )
+from agentplane.app.thread.event_log import EventReplicationError
+from agentplane.app.thread.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 from agentplane.protocol import event_log_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -43,7 +43,7 @@ async def record_thread_fold(
         select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id).with_for_update()
     )
     if checkpoint is None:
-        state = thread_fold.initial(source_id, THREAD_FOLD_EPOCH)
+        state = fold.initial(source_id, THREAD_FOLD_EPOCH)
         operational = None
     else:
         if checkpoint.source_id != source_id:
@@ -56,8 +56,8 @@ async def record_thread_fold(
                 cursor=entries[0].cursor,
             )
         state, operational = await _fold_state(session, checkpoint)
-    batch = thread_fold.EventBatch(source_id, state.position.through_cursor, tuple(entries))
-    result = thread_fold.advance(state, batch, await _prior_entities(session, thread_id, batch))
+    batch = fold.EventBatch(source_id, state.position.through_cursor, tuple(entries))
+    result = fold.advance(state, batch, await _prior_entities(session, thread_id, batch))
     await write_payloads(session, thread_id, result.payload_writes)
     # Numbered here rather than in the fold, which reports upserts without saying which are new.
     # A revision takes the conflict path and `set_` omits the index, so `returning` hands back the
@@ -105,7 +105,7 @@ async def record_thread_fold(
 
 async def _fold_state(
     session: AsyncSession, checkpoint: ThreadCheckpoint
-) -> tuple[thread_fold.ViewState, ThreadOperationalState]:
+) -> tuple[fold.ViewState, ThreadOperationalState]:
     row = await session.scalar(
         select(ThreadEntity).where(
             ThreadEntity.thread_id == checkpoint.thread_id,
@@ -117,9 +117,9 @@ async def _fold_state(
     if row is None:
         raise ValueError("thread checkpoint has no current controls")
     view = ThreadViewState.model_validate(row.state)
-    return thread_fold.ViewState(
-        thread_fold.Position(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor),
-        thread_fold.Controls(
+    return fold.ViewState(
+        fold.Position(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor),
+        fold.Controls(
             applied_model=view.controls.applied_model,
             active_turn_id=view.controls.active_turn_id,
             harness_state=view.controls.harness_state,
@@ -157,13 +157,11 @@ async def set_operational(
     ).model_dump(mode="json")
 
 
-async def _prior_entities(
-    session: AsyncSession, thread_id: UUID, batch: thread_fold.EventBatch
-) -> thread_fold.PriorEntities:
-    required = thread_fold.touched_keys(batch)
+async def _prior_entities(session: AsyncSession, thread_id: UUID, batch: fold.EventBatch) -> fold.PriorEntities:
+    required = fold.touched_keys(batch)
     checkpoint = await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id))
     if checkpoint is None:
-        return thread_fold.PriorEntities(dict.fromkeys(required.item_ids), dict.fromkeys(required.command_ids))
+        return fold.PriorEntities(dict.fromkeys(required.item_ids), dict.fromkeys(required.command_ids))
     rows = await session.scalars(
         select(ThreadEntity).where(
             ThreadEntity.thread_id == thread_id,
@@ -174,17 +172,17 @@ async def _prior_entities(
             ),
         )
     )
-    items: dict[str, thread_fold.Item | None] = dict.fromkeys(required.item_ids)
-    commands: dict[str, thread_fold.CommandSummary | None] = dict.fromkeys(required.command_ids)
+    items: dict[str, fold.Item | None] = dict.fromkeys(required.item_ids)
+    commands: dict[str, fold.CommandSummary | None] = dict.fromkeys(required.command_ids)
     for row in rows:
         if row.entity_kind == EntityKind.ITEM:
             items[row.entity_id] = fold_item(ThreadItemEntityView.model_validate(row, from_attributes=True))
         elif row.entity_kind == EntityKind.COMMAND:
             commands[row.entity_id] = command_summary(ThreadCommandEntityView.model_validate(row, from_attributes=True))
-    return thread_fold.PriorEntities(items, commands)
+    return fold.PriorEntities(items, commands)
 
 
-async def _next_entity_index(session: AsyncSession, thread_id: UUID, scope: thread_fold.Position) -> int:
+async def _next_entity_index(session: AsyncSession, thread_id: UUID, scope: fold.Position) -> int:
     """The scope's next free index, read once so a batch numbers its rows without a query apiece."""
     highest = await session.scalar(
         select(func.max(ThreadEntity.entity_index)).where(
