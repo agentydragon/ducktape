@@ -17,12 +17,11 @@ relation.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 import pytest_bazel
-import yaml
+from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
+from cluster.cdk8s.monitoring import loki
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
 
@@ -31,13 +30,16 @@ from util.bazel.runfiles import get_required_path
 # carries role `worker`. `non-k8s` hosts (atlas, pixel6) are not cluster nodes.
 _ROAMING_ROLE = "laptop"
 
-# HelmReleases rendering a DaemonSet that schedules onto roaming nodes. Add new
+# HelmReleases in cluster/cdk8s/monitoring/loki.py's chart rendering a DaemonSet
+# that schedules onto roaming nodes. Add new
 # ones here — a roaming DaemonSet missing from this list is unprotected, which is
 # the one gap this test cannot close on its own.
-_ROAMING_DAEMONSET_RELEASES = (
-    "cluster/k8s/monitoring/loki/promtail-helmrelease.yaml",
-    "cluster/k8s/monitoring/loki/promtail-journal-helmrelease.yaml",
-)
+_ROAMING_DAEMONSET_RELEASES = ("promtail", "promtail-journal")
+
+
+@pytest.fixture(scope="module")
+def loki_manifests() -> list[dict]:
+    return Cdk8sTesting.synth(loki.chart(Cdk8sTesting.app()))
 
 
 @pytest.fixture(scope="module")
@@ -55,19 +57,21 @@ def test_roaming_nodes_exist(roaming_node_count: int) -> None:
     )
 
 
-@pytest.mark.parametrize("release_path", _ROAMING_DAEMONSET_RELEASES)
-def test_max_unavailable_exceeds_roaming_nodes(release_path: str, roaming_node_count: int) -> None:
-    doc = yaml.safe_load(Path(get_required_path(f"_main/{release_path}")).read_text())
+@pytest.mark.parametrize("release_name", _ROAMING_DAEMONSET_RELEASES)
+def test_max_unavailable_exceeds_roaming_nodes(
+    release_name: str, loki_manifests: list[dict], roaming_node_count: int
+) -> None:
+    doc = next(m for m in loki_manifests if m["kind"] == "HelmRelease" and m["metadata"]["name"] == release_name)
     strategy = doc["spec"]["values"]["updateStrategy"]["rollingUpdate"]
     max_unavailable = strategy["maxUnavailable"]
 
     assert isinstance(max_unavailable, int), (
-        f"{release_path}: maxUnavailable is {max_unavailable!r}; this test only "
+        f"{release_name}: maxUnavailable is {max_unavailable!r}; this test only "
         "reasons about integers. A percentage may well be correct — if you switch "
         "to one, extend this assertion rather than dropping it."
     )
     assert max_unavailable > roaming_node_count, (
-        f"{release_path}: maxUnavailable={max_unavailable} does not exceed the "
+        f"{release_name}: maxUnavailable={max_unavailable} does not exceed the "
         f"{roaming_node_count} roaming node(s) in nebula-mesh.json. With every "
         "roaming node offline, the rollout deadlocks and no node receives the new "
         "config — while Helm and Flux both report success."

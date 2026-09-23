@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 import yaml
+from more_itertools import one
 
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
@@ -145,7 +146,11 @@ def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
     but anonymous (token-less) callers are judged by this static allowlist; this
     CI contract makes the GitOps-owned logs label the review point for both.
     """
-    deployment = yaml.safe_load((k8s_dir / "agents/loki-read-proxy/deployment.yaml").read_text())
+    deployment = one(
+        obj
+        for obj in yaml.safe_load_all((k8s_dir / "agents/loki-read-proxy/loki-read-proxy.k8s.yaml").read_text())
+        if obj["kind"] == "Deployment"
+    )
     container = next(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "proxy")
     env = {entry["name"]: entry["value"] for entry in container["env"]}
     loki_allowlist = frozenset(namespace for namespace in env["NAMESPACE_ALLOWLIST"].split(",") if namespace)

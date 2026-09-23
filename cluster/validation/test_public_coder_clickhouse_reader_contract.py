@@ -8,7 +8,10 @@ from typing import Any, cast
 import pytest
 import pytest_bazel
 import yaml
+from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
+
+from cluster.cdk8s import public_coder_agent_config, public_coder_proxy
 
 
 @pytest.fixture
@@ -19,15 +22,19 @@ def source_secret(k8s_dir: Path) -> dict[str, Any]:
 
 
 @pytest.fixture
-def app(k8s_dir: Path) -> dict[str, Any]:
-    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "agents/public-coder-agent/app/deployment.yaml").read_text()))
+def app() -> dict[str, Any]:
+    objects = cast(list[dict[str, Any]], Cdk8sTesting.synth(public_coder_agent_config.app_chart(Cdk8sTesting.app())))
+    return one(obj for obj in objects if obj["kind"] == "Deployment")
 
 
 @pytest.fixture
-def proxy(k8s_dir: Path) -> dict[str, Any]:
-    return cast(
-        dict[str, Any], yaml.safe_load((k8s_dir / "agents/public-coder-agent/proxy/deployment.yaml").read_text())
-    )
+def proxy_objects() -> list[dict[str, Any]]:
+    return cast(list[dict[str, Any]], Cdk8sTesting.synth(public_coder_proxy.chart(Cdk8sTesting.app())))
+
+
+@pytest.fixture
+def proxy(proxy_objects: list[dict[str, Any]]) -> dict[str, Any]:
+    return one(obj for obj in proxy_objects if obj["kind"] == "Deployment")
 
 
 @pytest.fixture
@@ -38,14 +45,17 @@ def iron(k8s_dir: Path) -> dict[str, Any]:
 @pytest.fixture
 def network_policies(k8s_dir: Path) -> list[dict[str, Any]]:
     return cast(
-        list[dict[str, Any]], list(yaml.safe_load_all((k8s_dir / "clickhouse/cluster/networkpolicy.yaml").read_text()))
+        list[dict[str, Any]],
+        list(yaml.safe_load_all((k8s_dir / "clickhouse/cluster/networkpolicy.k8s.yaml").read_text())),
     )
 
 
 @pytest.fixture
-def proxy_egress(k8s_dir: Path) -> dict[str, Any]:
-    return cast(
-        dict[str, Any], yaml.safe_load((k8s_dir / "agents/public-coder-agent/proxy/cnp-egress.yaml").read_text())
+def proxy_egress(proxy_objects: list[dict[str, Any]]) -> dict[str, Any]:
+    return one(
+        obj
+        for obj in proxy_objects
+        if obj["kind"] == "CiliumNetworkPolicy" and obj["metadata"]["name"] == "allow-public-coder-agent-proxy-egress"
     )
 
 

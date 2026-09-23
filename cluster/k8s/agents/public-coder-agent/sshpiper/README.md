@@ -59,7 +59,7 @@ asciinema play /recordings/<conn_guid>/shell-channel-0.cast
 
 - **Nothing fences the devbox's own port 22.** No policy selects that endpoint, so Cilium
   default-allows ingress to it and the piper is the Agent's only route only because the Agent's
-  `../app/networkpolicy-egress.yaml` says so. A CiliumNetworkPolicy on
+  `public-coder-agent-egress` NetworkPolicy says so. A CiliumNetworkPolicy on
   `kubevirt.io/domain: public-coder-devbox` would close the rest of the cluster out, and has to be
   written without breaking the Operator's `kubectl port-forward` (which arrives as node, not Pod,
   identity).
@@ -80,5 +80,5 @@ container in the proxy Pod that holds the GitHub PAT and Console bearer.
 
 ## Bumping the image
 
-The image tag, <../../../sshpiper-crds/gitrepository.yaml>'s upstream tag, and the
+The image tag in `cluster/cdk8s/public_coder_sshpiper.py`, <../../../sshpiper-crds/gitrepository.yaml>'s upstream tag, and the
 `sshpiper_pipe_crd` `http_file` pin in the root `MODULE.bazel` must move together.

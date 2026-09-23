@@ -1,0 +1,109 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: haku-openclaw-spike-volsync-egress
+  namespace: haku-openclaw-spike
+spec:
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+    - ports:
+        - port: 8333
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: seaweedfs
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: s3
+              app.kubernetes.io/instance: seaweedfs
+              app.kubernetes.io/managed-by: seaweedfs-operator
+              app.kubernetes.io/name: seaweedfs
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-openclaw-spike-volsync
+  policyTypes:
+    - Egress
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-openclaw-spike-volsync-restic
+  namespace: haku-openclaw-spike
+spec:
+  data:
+    - remoteRef:
+        key: haku-openclaw-spike-volsync-s3-credentials
+        property: AWS_ACCESS_KEY_ID
+      secretKey: AWS_ACCESS_KEY_ID
+    - remoteRef:
+        key: haku-openclaw-spike-volsync-s3-credentials
+        property: AWS_SECRET_ACCESS_KEY
+      secretKey: AWS_SECRET_ACCESS_KEY
+    - remoteRef:
+        key: haku-openclaw-spike-volsync-restic-password
+        property: RESTIC_PASSWORD
+      secretKey: RESTIC_PASSWORD
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: haku-openclaw-spike-volsync-s3
+  target:
+    creationPolicy: Owner
+    name: haku-openclaw-spike-volsync-restic
+    template:
+      mergePolicy: Merge
+      templateFrom:
+        - literal: |
+            RESTIC_REPOSITORY: s3:http://seaweedfs-s3.seaweedfs.svc:8333/haku-openclaw-spike-backups
+            AWS_DEFAULT_REGION: us-east-1
+      type: Opaque
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: haku-openclaw-spike-state-restic
+  namespace: haku-openclaw-spike
+spec:
+  restic:
+    cacheAccessModes:
+      - ReadWriteOnce
+    cacheCapacity: 1Gi
+    cacheStorageClassName: local-path-home-ssd
+    copyMethod: Direct
+    moverPodLabels:
+      app.kubernetes.io/name: haku-openclaw-spike-volsync
+    moverResources:
+      limits:
+        cpu: "1"
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+    moverSecurityContext:
+      fsGroup: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      runAsUser: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    pruneIntervalDays: 7
+    repository: haku-openclaw-spike-volsync-restic
+    retain:
+      daily: 7
+      monthly: 6
+      weekly: 4
+  sourcePVC: haku-openclaw-spike-state-v2
+  trigger:
+    schedule: 23 03 * * *

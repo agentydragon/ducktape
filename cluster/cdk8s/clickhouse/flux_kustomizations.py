@@ -5,7 +5,6 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
-    KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
 )
@@ -62,36 +61,5 @@ def clickhouse(
                 ),
             ],
             depends_on=[flux_kustomization_depends_on(clickhouse_operator)],
-        ),
-    )
-
-
-def clickhouse_operator(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
-) -> Kustomization:
-    name = "clickhouse-operator"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            decryption=SOPS_DECRYPTION,
-            source_ref=artifact_source_ref(artifact),
-            timeout="10m",
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2",
-                    kind="HelmRelease",
-                    name="clickhouse-operator",
-                    namespace="clickhouse",
-                )
-            ],
-            # The chart enables ServiceMonitor resources.
-            depends_on=[flux_kustomization_depends_on(monitoring_crds)],
         ),
     )

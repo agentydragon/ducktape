@@ -1,0 +1,270 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: public-coder-agent
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: brave-search-api-key
+  namespace: public-coder-agent
+spec:
+  data:
+    - remoteRef:
+        key: brave-search-api-key
+        property: api-key
+      secretKey: api-key
+  refreshInterval: 1m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Orphan
+    deletionPolicy: Retain
+    name: brave-search-api-key
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: public-coder-agent
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: public-coder-agent-proxy-root-ca
+  namespace: public-coder-agent
+spec:
+  commonName: public-coder-agent-proxy-root-ca
+  duration: 87600h
+  isCA: true
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-ca-bootstrap
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  renewBefore: 8760h
+  secretName: public-coder-agent-proxy-ca
+  secretTemplate:
+    annotations:
+      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager
+      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: public-coder-agent-proxy-ca-cert
+spec:
+  sources:
+    - useDefaultCAs: true
+    - secret:
+        key: ca.crt
+        name: cluster-root-ca-secret
+    - secret:
+        key: tls.crt
+        name: public-coder-agent-proxy-ca
+  target:
+    configMap:
+      key: ca-certificates.crt
+      metadata:
+        annotations:
+          description: Trust bundle for public-coder-agent HTTPS traffic intercepted by its egress proxy
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - public-coder-agent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: public-coder-agent-proxy
+  name: public-coder-agent-proxy
+  namespace: public-coder-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: public-coder-agent-proxy
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - -config
+            - /etc/iron-proxy/iron.yaml
+          env:
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: GITHUB_TOKEN
+                  name: public-coder-agent-github-token
+            - name: HAKU_CONSOLE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: haku-console-public-coder-agent
+            - name: CLICKHOUSE_PUBLIC_CODER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: clickhouse-public-coder-credentials
+            - name: AIQUOTA_API_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: bearer-token
+                  name: aiquota-api-bearer-public-coder
+            - name: BRAVE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: api-key
+                  name: brave-search-api-key
+            - name: MATRIX_BOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: public-coder-agent-matrix-bot-password
+          image: git.allegedly.works/ducktape-ci/iron-proxy:unset
+          name: iron-proxy
+          ports:
+            - containerPort: 8080
+              name: proxy
+            - containerPort: 9090
+              name: metrics
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /etc/iron-proxy
+              name: config
+              readOnly: true
+            - mountPath: /ca
+              name: ca
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: public-coder-agent-proxy-config
+          name: config
+        - name: ca
+          secret:
+            secretName: public-coder-agent-proxy-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: public-coder-agent-proxy
+  namespace: public-coder-agent
+spec:
+  ports:
+    - name: proxy
+      port: 8080
+      targetPort: 8080
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+  selector:
+    app.kubernetes.io/name: public-coder-agent-proxy
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-public-coder-agent-proxy-ingress
+  namespace: public-coder-agent
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent-proxy
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:app.kubernetes.io/name: public-coder-agent
+            k8s:io.kubernetes.pod.namespace: public-coder-agent
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: public-coder-agent
+            k8s:kubevirt.io/domain: public-coder-devbox
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-public-coder-agent-proxy-egress
+  namespace: public-coder-agent
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - world
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:app.kubernetes.io/instance: clickhouse
+            k8s:app.kubernetes.io/name: clickhouse
+            k8s:io.kubernetes.pod.namespace: clickhouse
+      toPorts:
+        - ports:
+            - port: "8123"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent-proxy

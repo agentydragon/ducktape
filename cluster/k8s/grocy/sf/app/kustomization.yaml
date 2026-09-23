@@ -3,11 +3,8 @@ kind: Kustomization
 namespace: grocy-sf
 resources:
   - ../../app-base
-  - namespace.yaml
-  - pvc.yaml
-  - volsync-verify-job.yaml
-  - volsync-migration.yaml
-  - volsync-backup.yaml
+  # cdk8s-generated (cluster/cdk8s/grocy/app.py) -- see cluster/docs/cdk8s.md.
+  - grocy-sf.k8s.yaml
 patches:
   - target:
       kind: Deployment

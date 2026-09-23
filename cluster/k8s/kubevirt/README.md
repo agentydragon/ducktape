@@ -14,7 +14,7 @@ large generated upstream YAML. The hashes above are recorded so URL contents can
 be checked during upgrades.
 
 Workloads are constrained to non-control-plane OVH/Talos/Proxmox workers via
-`workloads.nodePlacement` region affinity in `app/kubevirt.yaml`. `wyrm2`
+`workloads.nodePlacement` region affinity in `cluster/cdk8s/kubevirt/app.py`. `wyrm2`
 (region `proxmox`) is a nested-KVM-capable Proxmox guest — confirmed via
 `kvm_amd` `nested=1` on both `atlas` (L0) and `wyrm2` (L1) — and included in
 that affinity.

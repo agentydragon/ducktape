@@ -20,32 +20,6 @@ from cluster.cdk8s.flux import (
 )
 
 
-def claude_rbac(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno_policies: Kustomization
-) -> Kustomization:
-    # TODO: migrate this live Flux object name to agent-rbac-base in a staged
-    # change. Renaming it directly would delete the old Kustomization and may prune
-    # its inventory before the replacement owns the same RBAC resources.
-    name = "claude-rbac"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="2m",
-            depends_on=[flux_kustomization_depends_on(kyverno_policies)],
-            health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="claude-sandbox")],
-        ),
-        description=(
-            "Lightweight base for agent RBAC. Claude sandbox namespace + shared "
-            "ClusterRoles. Must not depend on service or database kustomizations."
-        ),
-    )
-
-
 def agent_sandbox_controller(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "agent-sandbox-controller"
     return flux_kustomization(
@@ -194,44 +168,6 @@ def authentik_jwt_rotation(
     )
 
 
-def claude_sandbox_secrets(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    claude_rbac: Kustomization,
-    external_secrets_operator: Kustomization,
-) -> Kustomization:
-    name = "claude-sandbox-secrets"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m",
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_operator),
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="openclaw-telegram-bot-token",
-                    namespace="claude-sandbox",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="buildbuddy-api-key",
-                    namespace="claude-sandbox",
-                ),
-            ],
-        ),
-    )
-
-
 def forgejo_token_rotation(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
@@ -367,62 +303,6 @@ def haku_openclaw_spike_backup(
             "dedicated private SeaweedFS S3 bucket, plus the one-shot restore "
             "into the optiplex worker PVC that migrates the state off the control "
             "plane."
-        ),
-    )
-
-
-def kubectl_passthrough_mcp(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    name = "kubectl-passthrough-mcp"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            suspend=False,
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1",
-                    kind="Deployment",
-                    name="kubectl-passthrough-mcp",
-                    namespace="kubectl-passthrough-mcp",
-                )
-            ],
-        ),
-    )
-
-
-def loki_read_proxy(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
-) -> Kustomization:
-    name = "loki-read-proxy"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
-            source_ref=artifact_source_ref(artifact),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="loki-read-proxy", namespace="loki-read-proxy"
-                )
-            ],
-        ),
-        description=(
-            "Read-only namespace-filtering Loki query proxy so Haku can read logs "
-            "for allowlisted namespaces without touching Loki "
-            "(auth_enabled:false) directly."
         ),
     )
 
@@ -644,29 +524,6 @@ def public_coder_agent_devbox(
             "KubeVirt build/test devbox for public-coder-agent "
             "(Bazel/BuildBuddy/direnv), with an ephemeral containerDisk root "
             "apart from the sshd host key and SSH access through ../sshpiper."
-        ),
-    )
-
-
-def agent_shared_rbac(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, claude_rbac: Kustomization, kyverno_policies: Kustomization
-) -> Kustomization:
-    name = "agent-shared-rbac"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="2m",
-            depends_on=flux_kustomization_depends_on_many(claude_rbac, kyverno_policies),
-        ),
-        description=(
-            "Cluster-scoped agent RBAC (ClusterRoleBindings) + flux-system "
-            "RoleBindings only. Namespace-scoped RoleBindings live in per-service "
-            "agent-rbac/ directories."
         ),
     )
 

@@ -471,6 +471,21 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: seaweedfs-namespace
+  namespace: ducktape-flux
+spec:
+  interval: 10m
+  path: ./cluster/k8s/seaweedfs/namespace
+  prune: true
+  sourceRef:
+    kind: ExternalArtifact
+    name: seaweedfs-namespace
+    namespace: ducktape-flux
+  suspend: false
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: reflector
   namespace: ducktape-flux
 spec:
@@ -489,21 +504,6 @@ spec:
     namespace: ducktape-flux
   timeout: 5m
   wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: seaweedfs-namespace
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/k8s/seaweedfs/namespace
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-namespace
-    namespace: ducktape-flux
-  suspend: false
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -628,24 +628,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: haku-rbac
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: haku-namespace
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/haku/rbac
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-rbac
-    namespace: ducktape-flux
-  timeout: 2m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: kubevirt
   namespace: ducktape-flux
 spec:
@@ -675,6 +657,24 @@ spec:
     namespace: ducktape-flux
   timeout: 10m
   wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: haku-rbac
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: haku-namespace
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/haku/rbac
+  prune: true
+  sourceRef:
+    kind: ExternalArtifact
+    name: haku-rbac
+    namespace: ducktape-flux
+  timeout: 2m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

@@ -1,8 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - datasource.yaml
-  - dashboard.yaml
+  # cdk8s-generated (cluster/cdk8s/grafana/app.py).
+  - clickhouse-grafana.k8s.yaml
 
 configMapGenerator:
   - name: aiquota-history-dashboard
