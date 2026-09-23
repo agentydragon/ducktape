@@ -6,9 +6,6 @@ resources:
   # Hand-written: the AIRLOCK_IMAGE_TAG env value carries an image-automation marker an
   # `images:` Component cannot set.
   - deployment.yaml
-  # Hand-written: no ClusterExternalSecret CRD binding exists for cdk8s yet.
-  - google-access-token-eso.yaml
-  - google-write-access-token-eso.yaml
   - oura-client-credentials.sops.yaml
   - google-client-credentials.sops.yaml
   - bsc-client-credentials.sops.yaml
