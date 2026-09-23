@@ -25,6 +25,7 @@ from cluster.cdk8s import (
     ha_mcp,
     haku_openclaw_spike_config,
     kubectl_passthrough_mcp,
+    loki_read_proxy,
     ntfy,
     public_coder_agent_config,
     public_coder_devbox,
@@ -188,6 +189,7 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    loki_read_proxy.write_manifests(root)
     claude_sandbox_secrets.write_manifests(root)
     kubectl_passthrough_mcp.write_manifests(root)
     agent_shared_rbac.write_manifests(root)
@@ -861,10 +863,8 @@ def generate_manifests(root: Path) -> None:
     authentik_jwt_rotation_kustomization = agents_flux_kustomizations.authentik_jwt_rotation(
         flux_chart, authentik_jwt_rotation_artifact, external_secrets_operator_kustomization
     )
-    loki_read_proxy_artifact = artifact("loki-read-proxy", "cluster/k8s/agents/loki-read-proxy")
-    agents_flux_kustomizations.loki_read_proxy(
-        flux_chart, loki_read_proxy_artifact, external_secrets_operator_kustomization
-    )
+    loki_read_proxy_artifact = artifact("loki-read-proxy", loki_read_proxy.OUTPUT_DIR)
+    loki_read_proxy.loki_read_proxy(flux_chart, loki_read_proxy_artifact, external_secrets_operator_kustomization)
     plaid_mcp_artifact = artifact("plaid-mcp", "cluster/k8s/agents/plaid-mcp")
     agents_flux_kustomizations.plaid_mcp(
         flux_chart,

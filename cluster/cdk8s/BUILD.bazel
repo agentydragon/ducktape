@@ -282,6 +282,23 @@ py_library(
 )
 
 py_library(
+    name = "loki_read_proxy",
+    srcs = ["loki_read_proxy.py"],
+    deps = [
+        ":artifact_generators",
+        ":cilium",
+        ":flux",
+        ":forgejo_images",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "google_mcp",
     srcs = ["google_mcp.py"],
     deps = [
@@ -541,6 +558,7 @@ py_library(
         ":ha_mcp",
         ":haku_openclaw_spike_config",
         ":kubectl_passthrough_mcp",
+        ":loki_read_proxy",
         ":ntfy",
         ":public_coder_agent_config",
         ":public_coder_devbox",
@@ -784,6 +802,8 @@ py_test(
         "//cluster/k8s:tofu-state/namespace.k8s.yaml",
         "//cluster/k8s/agents/ha-mcp/app:ha-mcp.k8s.yaml",
         "//cluster/k8s/agents/ha-mcp/app:kustomization.yaml",
+        "//cluster/k8s/agents/loki-read-proxy:kustomization.yaml",
+        "//cluster/k8s/agents/loki-read-proxy:loki-read-proxy.k8s.yaml",
         "//cluster/k8s/litellm/app:kustomization.yaml",
         "//cluster/k8s/litellm/app:litellm.k8s.yaml",
         "@nodejs_linux_amd64//:bin/node",

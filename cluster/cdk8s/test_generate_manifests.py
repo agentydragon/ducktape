@@ -110,6 +110,8 @@ _GENERATED_FILES = (
     "cluster/k8s/agents/kubectl-passthrough-mcp/app/kustomization.yaml",
     "cluster/k8s/agents/claude-sandbox-secrets/claude-sandbox-secrets.k8s.yaml",
     "cluster/k8s/agents/claude-sandbox-secrets/kustomization.yaml",
+    "cluster/k8s/agents/loki-read-proxy/loki-read-proxy.k8s.yaml",
+    "cluster/k8s/agents/loki-read-proxy/kustomization.yaml",
 )
 
 
