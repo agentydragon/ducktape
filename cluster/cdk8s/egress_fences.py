@@ -221,7 +221,7 @@ def _fence(
 
 def haku_cloud_api(app: App) -> Chart:
     """The haku-egress-proxy fence. Plaid Postgres is reached cluster-internally, not through
-    this proxy: the `cluster` rule of ccnp-haku-proxy-egress.yaml."""
+    this proxy: the `cluster` rule of haku_egress_proxy.py's haku-sandbox-force-proxy-egress."""
     return _fence(
         app,
         "cnp-haku-cloud-api-egress",

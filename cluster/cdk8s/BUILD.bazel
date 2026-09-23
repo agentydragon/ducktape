@@ -452,11 +452,13 @@ py_library(
     name = "haku_egress_proxy",
     srcs = ["haku_egress_proxy.py"],
     deps = [
+        ":cilium",
         ":forgejo_images",
         ":generation",
         ":metadata",
         "//cluster/cdk8s/crd_bindings/cert_manager:bundle",
         "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
+        "//cluster/cdk8s/crd_bindings/cilium:ciliumclusterwidenetworkpolicy",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

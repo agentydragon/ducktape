@@ -5,9 +5,9 @@ credential substituters (the Console-owned Claude sandbox's and the OpenClaw spi
 Written beside other generated files in the same directory (the Namespace from
 agents/namespaces.py, the CiliumNetworkPolicies from egress_fences.py). Hand-written there:
 `kustomization.yaml` (its configMapGenerator renames the iron configs into `iron.yaml`, and
-a patch renames a SOPS Secret), the iron configs themselves, the SOPS Secrets, the two
-CiliumClusterwideNetworkPolicies (no CRD binding), and `image-pins/kustomization.yaml`,
-which overrides the iron-proxy placeholder tag via Flux's image-automation marker.
+a patch renames a SOPS Secret), the iron configs themselves, the SOPS Secrets, and
+`image-pins/kustomization.yaml`, which overrides the iron-proxy placeholder tag via Flux's
+image-automation marker.
 """
 
 from __future__ import annotations
@@ -23,6 +23,19 @@ from cert_manager_crds.io.cert_manager import (
     CertificateSpecPrivateKey,
     CertificateSpecPrivateKeyAlgorithm,
     CertificateSpecSecretTemplate,
+)
+from cilium_clusterwide_crds.io.cilium import (
+    CiliumClusterwideNetworkPolicy,
+    CiliumClusterwideNetworkPolicySpec,
+    CiliumClusterwideNetworkPolicySpecEgress,
+    CiliumClusterwideNetworkPolicySpecEgressToEndpoints,
+    CiliumClusterwideNetworkPolicySpecEgressToEntities,
+    CiliumClusterwideNetworkPolicySpecEgressToPorts,
+    CiliumClusterwideNetworkPolicySpecEgressToPortsPorts,
+    CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol,
+    CiliumClusterwideNetworkPolicySpecEndpointSelector,
+    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions,
+    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator,
 )
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret,
@@ -47,6 +60,7 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
+from cluster.cdk8s import cilium
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
@@ -565,6 +579,146 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
     )
 
 
+_TCP = CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.TCP
+_UDP = CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.UDP
+
+
+def _ports(
+    *ports: tuple[int, CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol],
+) -> list[CiliumClusterwideNetworkPolicySpecEgressToPorts]:
+    return [
+        CiliumClusterwideNetworkPolicySpecEgressToPorts(
+            ports=[
+                CiliumClusterwideNetworkPolicySpecEgressToPortsPorts(port=str(number), protocol=protocol)
+                for number, protocol in ports
+            ]
+        )
+    ]
+
+
+def _to_endpoint(namespace: str, labels: dict[str, str], port: int) -> CiliumClusterwideNetworkPolicySpecEgress:
+    """Egress to the pods carrying `labels` in `namespace`, on TCP `port`."""
+    return CiliumClusterwideNetworkPolicySpecEgress(
+        to_endpoints=[
+            CiliumClusterwideNetworkPolicySpecEgressToEndpoints(
+                match_labels={"k8s:io.kubernetes.pod.namespace": namespace, **labels}
+            )
+        ],
+        to_ports=_ports((port, _TCP)),
+    )
+
+
+# DNS resolution (CoreDNS in kube-system)
+_DNS = CiliumClusterwideNetworkPolicySpecEgress(
+    to_endpoints=[CiliumClusterwideNetworkPolicySpecEgressToEndpoints(match_labels=cilium.KUBE_DNS_LABELS)],
+    to_ports=_ports((53, _UDP), (53, _TCP)),
+)
+
+
+def _namespace_selector(namespace: str) -> CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions:
+    return CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions(
+        key="k8s:io.kubernetes.pod.namespace",
+        operator=CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator.IN,
+        values=[namespace],
+    )
+
+
+def _sandbox_fence(chart: Chart) -> None:
+    """Force all external egress from the haku-sandbox namespace through the dedicated
+    haku-egress-proxy. Allows: DNS, cluster-internal traffic, kube-apiserver, haku-egress-proxy
+    port 8080, and the colocated egress proxy in the Console pod (haku-console, port 8888,
+    #4942). Blocks: direct external internet access.
+
+    The colocated-proxy rule is explicit even though the `toEntities: cluster` rule already admits
+    it at L4: it keeps the enforcement model legible (#4670 § Enforcement topology -- "DNS,
+    cluster, apiserver, and the proxy's listener") and survives the eventual tightening of that
+    broad cluster rule into a ceiling. It makes the colocated listener *reachable*; the
+    Kyverno-injected HTTP_PROXY still points sandbox clients at the port-8080 fence, so this opens
+    the path without cutting traffic over (the repoint is the adoption step). The oracle at
+    haku-console:8079 is loopback-bound, so nothing answers on the pod IP there.
+    """
+    CiliumClusterwideNetworkPolicy(
+        chart,
+        "haku-sandbox-force-proxy-egress",
+        metadata=ApiObjectMetadata(name="haku-sandbox-force-proxy-egress"),
+        spec=CiliumClusterwideNetworkPolicySpec(
+            endpoint_selector=CiliumClusterwideNetworkPolicySpecEndpointSelector(
+                match_expressions=[_namespace_selector("haku-sandbox")]
+            ),
+            egress=[
+                _DNS,
+                # All cluster-internal traffic (pod-to-service, bypasses proxy via NO_PROXY).
+                # This is also how haku-sandbox reaches the Plaid Postgres cluster-internally.
+                CiliumClusterwideNetworkPolicySpecEgress(
+                    to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.CLUSTER]
+                ),
+                # Kubernetes API server
+                CiliumClusterwideNetworkPolicySpecEgress(
+                    to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER],
+                    to_ports=_ports((6443, _TCP)),
+                ),
+                # Shared proxy for existing sandbox traffic.
+                _to_endpoint(NAME, {"k8s:app.kubernetes.io/name": NAME}, 8080),
+                # Colocated egress proxy in the Console pod (#4942). The sidecar shares the Console
+                # pod's network namespace, so its listener is selected by the Console pod label on
+                # port 8888. Once the Kyverno HTTP_PROXY repoint lands, this becomes the sandbox's
+                # egress path; until then it is a reachable-but-unused route the adoption cutover
+                # switches to.
+                _to_endpoint("haku-console", {"k8s:app.kubernetes.io/name": "haku-console"}, 8888),
+            ],
+        ),
+    )
+
+
+def _agent_runner_fence(chart: Chart) -> None:
+    """Console-owned Haku Agent runners are isolated from Haku's general sandbox namespace. They
+    can reach Haku Console's runner-protocol endpoint, the OAuth-substituting proxy, the in-cluster
+    Forgejo they check haku-state out of, and the Console's authorization proxy -- but have no
+    direct internet, general cluster access, or general-purpose proxy."""
+    CiliumClusterwideNetworkPolicy(
+        chart,
+        "haku-agent-runner-egress",
+        metadata=ApiObjectMetadata(name="haku-agent-runner-egress"),
+        spec=CiliumClusterwideNetworkPolicySpec(
+            endpoint_selector=CiliumClusterwideNetworkPolicySpecEndpointSelector(
+                match_labels={
+                    "app.kubernetes.io/name": "haku-harness-runner",
+                    "haku.allegedly.works/access-profile-id": "haku",
+                },
+                match_expressions=[_namespace_selector("haku-runtime-sandbox")],
+            ),
+            egress=[
+                _DNS,
+                # Cilium evaluates the destination endpoint after Service translation.
+                # haku-console Service port 9090 targets the API container's `api` port 8080.
+                _to_endpoint("haku-console", {"k8s:app.kubernetes.io/name": "haku-console"}, 8080),
+                _to_endpoint(NAME, {"k8s:app.kubernetes.io/name": _CLAUDE_PROXY}, 8180),
+                # Colocated Console egress fence (#4670): the runner's HTTPS_PROXY now points here
+                # (haku-egress-proxy.haku-console.svc:8888), carrying its inference to the
+                # in-cluster LiteLLM gateway and its GitHub traffic. The sidecar shares the Console
+                # pod's network namespace, so it is selected by the Console pod label on the
+                # proxy's container port. The haku-claude-oauth-proxy rule above stays until that
+                # iron proxy retires, so reverting the runner's proxy needs no policy change.
+                _to_endpoint("haku-console", {"k8s:app.kubernetes.io/name": "haku-console"}, 8888),
+                # Kubernetes access is mediated by the Haku Console authorization proxy. The runner
+                # writes an ephemeral tokenFile kubeconfig only when Console selects this route; no
+                # ServiceAccount token is mounted in the runner pod and there is no direct
+                # apiserver path. The proxy's TLS listener, because kubectl sends credentials only
+                # to an https server.
+                _to_endpoint("haku-console", {"k8s:app.kubernetes.io/name": "haku-kube-api-proxy"}, 8443),
+                # haku-state, so the session starts with Haku's manual rather than an empty
+                # workspace. In-cluster and plaintext, the way the haku-sandbox exec target already
+                # clones it -- so no credential passes through the OAuth-substituting proxy, which
+                # knows one host and one header and has no business rewriting git auth. The runner
+                # writes the same haku Forgejo account into ~/.netrc; a public git.allegedly.works
+                # route is deliberately NOT opened, since it would hairpin out through the Gateway
+                # for a service one hop away.
+                _to_endpoint("forgejo", {"k8s:app.kubernetes.io/name": "forgejo"}, 3000),
+            ],
+        ),
+    )
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
@@ -576,6 +730,8 @@ def chart(app: App) -> Chart:
     _mitmproxy(chart)
     _claude_proxy(chart)
     _openclaw_spike_proxy(chart)
+    _sandbox_fence(chart)
+    _agent_runner_fence(chart)
     return chart
 
 
