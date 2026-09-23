@@ -69,7 +69,7 @@ _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
 # or client_secret_basic -- so this is a public, PKCE-only client (RFC 7591 dynamic client
 # registration against https://grocy-mcp-sf.allegedly.works/register, redirect_uri
 # https://agentplane-staging.allegedly.works/mcp-linkage/callback), the same shape as
-# `kubernetes` below. No client secret exists to rotate or leak. If the registration is ever
+# `kubernetes_admin` below. No client secret exists to rotate or leak. If the registration is ever
 # lost (e.g. the server's Valkey-backed client store is wiped), re-run the DCR POST and update
 # this literal; nothing else changes.
 _GROCY_SF_MCP_CLIENT_ID = "cb57e244-c13c-4eac-a299-e052698b774e"
@@ -123,8 +123,8 @@ _ACTIONS_SETTINGS = {
             "client_secret_file": "/etc/agentplane-github/client_secret",
             "redirect_uri": f"https://{_HOSTNAME}/mcp-linkage/callback",
         },
-        "kubernetes": {
-            "server_id": "kubernetes",
+        "kubernetes_admin": {
+            "server_id": "kubernetes_admin",
             "server_url": _KUBERNETES_MCP_URL,
             "client_id": "kubectl-passthrough-mcp",
             "redirect_uri": f"https://{_HOSTNAME}/mcp-linkage/callback",
@@ -151,16 +151,19 @@ _ACTIONS_SETTINGS = {
                 },
             },
         },
-        "kubernetes": {
-            "title": "Kubernetes MCP",
-            "description": "Kubernetes passthrough MCP tools; every Action remains subject to operator approval.",
+        "kubernetes_admin": {
+            "title": "Kubernetes admin",
+            "description": (
+                "The Kubernetes API with the linked operator's own permissions. Use it only for what your own "
+                "Kubernetes identity cannot do; each call waits for the operator's approval."
+            ),
             "executor": {
                 "kind": "mcp",
-                "description": "Kubernetes MCP executed with the linked operator Kubernetes identity.",
+                "description": "kubectl-passthrough-mcp, run as the linked operator's Kubernetes identity.",
                 "config": {
                     "transport": "streamable-http",
                     "url": _KUBERNETES_MCP_URL,
-                    "server_id": "kubernetes",
+                    "server_id": "kubernetes_admin",
                     "auth": "oauth",
                 },
             },
