@@ -305,6 +305,8 @@ py_library(
     deps = [
         ":flux",
         ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/flux:gitrepository",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
