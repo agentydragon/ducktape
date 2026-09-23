@@ -4,11 +4,6 @@ metadata:
   name: clickhouse-ingress
   namespace: clickhouse
 spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: clickhouse
-      app.kubernetes.io/instance: clickhouse
-  policyTypes: [Ingress]
   ingress:
     - from:
         - podSelector: {}
@@ -31,14 +26,8 @@ spec:
       ports:
         - port: 8123
           protocol: TCP
-        # The `migrate` init container runs clickhouse-client (native
-        # protocol) to apply schema.sql; the main container only ever uses
-        # the HTTP port above.
         - port: 9000
           protocol: TCP
-    # The agent app itself cannot reach ClickHouse. Its credential-bearing
-    # egress proxy is the only cross-namespace client admitted for the native
-    # read-only public_coder_analytics account.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -55,7 +44,6 @@ spec:
               kubernetes.io/metadata.name: monitoring
           podSelector:
             matchLabels:
-              # Grafana Operator's generated Deployment uses app=grafana.
               app: grafana
       ports:
         - port: 8123
@@ -86,6 +74,12 @@ spec:
           protocol: TCP
         - port: 9000
           protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: clickhouse
+      app.kubernetes.io/name: clickhouse
+  policyTypes:
+    - Ingress
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -93,11 +87,12 @@ metadata:
   name: clickhouse-keeper-ingress
   namespace: clickhouse
 spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: clickhouse-keeper
-      app.kubernetes.io/instance: clickhouse-keeper
-  policyTypes: [Ingress]
   ingress:
     - from:
         - podSelector: {}
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: clickhouse-keeper
+      app.kubernetes.io/name: clickhouse-keeper
+  policyTypes:
+    - Ingress

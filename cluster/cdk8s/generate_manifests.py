@@ -98,6 +98,7 @@ from cluster.cdk8s.cert_manager import (
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api
 from cluster.cdk8s.clickhouse import (
     flux_kustomizations as clickhouse_flux_kustomizations,
+    installation as clickhouse_installation,
     operator as clickhouse_operator,
     schema as clickhouse_schema,
 )
@@ -264,6 +265,7 @@ def generate_manifests(root: Path) -> None:
     authentik_namespace.write_manifests(root)
     authentik_db.write_manifests(root)
     clickhouse_operator.write_manifests(root)
+    clickhouse_installation.write_manifests(root)
     authentik_app.write_manifests(root)
     authentik_proxy_routes.write_manifests(root)
     authentik_db_backups.write_manifests(root)
@@ -529,9 +531,9 @@ def generate_manifests(root: Path) -> None:
     claude_rbac_kustomization = agent_rbac_base.claude_rbac(
         flux_chart, claude_rbac_artifact, root, kyverno_policies_kustomization
     )
+    clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
     vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
     vpa_kustomization = vpa.vpa(flux_chart, vpa_artifact, kyverno_kustomization, metrics_server_kustomization)
-    clickhouse_artifact = artifact("clickhouse", "cluster/k8s/clickhouse/cluster")
     clickhouse_kustomization = clickhouse_flux_kustomizations.clickhouse(
         flux_chart, clickhouse_artifact, clickhouse_operator_kustomization
     )
