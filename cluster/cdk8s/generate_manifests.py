@@ -10,6 +10,8 @@ from cluster.cdk8s import (
     cnpg_flux_kustomizations,
     descheduler,
     dns_automation,
+    dns_automation_flux_kustomizations,
+    ducktape_flux,
     egress_fences,
     etcd,
     external_creds,
@@ -222,6 +224,7 @@ def generate_manifests(root: Path) -> None:
     cert_manager_cluster_ca.write_manifests(root)
     external_secrets_config.write_manifests(root)
     external_secrets_operator.write_manifests(root)
+    ducktape_flux.write_manifests(root)
     kube_system.write_manifests(root)
     user_agentydragon.write_manifests(root)
     nvidia_runtimeclass.write_manifests(root)
