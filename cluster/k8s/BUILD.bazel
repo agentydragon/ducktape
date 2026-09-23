@@ -95,6 +95,7 @@ exports_files(
         "external-secrets/config/kustomization.yaml",
         "external-secrets/operator/external-secrets-operator.k8s.yaml",
         "flux/ducktape-flux/ducktape-flux.k8s.yaml",
+        "flux-webhook/flux-webhook.k8s.yaml",
         "agentplane-index/agentplane-index.k8s.yaml",
         "atuin/atuin.k8s.yaml",
         "atuin/kustomization.yaml",
@@ -352,7 +353,7 @@ exports_files(
 filegroup(
     name = "ntfy_manifest_contract_files",
     srcs = [
-        "flux-webhook/ntfy-webhook-eso.yaml",
+        "flux-webhook/flux-webhook.k8s.yaml",
         "ntfy/ntfy.k8s.yaml",
     ],
     visibility = ["//cluster/validation:__pkg__"],
