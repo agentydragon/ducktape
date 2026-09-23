@@ -1452,7 +1452,7 @@ def generate_manifests(root: Path) -> None:
     public_coder_agent_devbox_artifact = artifact(
         "public-coder-agent-devbox", "cluster/k8s/agents/public-coder-agent/devbox"
     )
-    agents_flux_kustomizations.public_coder_agent_devbox(
+    public_coder_devbox.public_coder_agent_devbox(
         flux_chart,
         public_coder_agent_devbox_artifact,
         kubevirt_kustomization,
