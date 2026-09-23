@@ -91,21 +91,6 @@ def haku_mailbox(
     )
 
 
-def haku_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    name = "haku-namespace"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="2m",
-        ),
-    )
-
-
 def haku_rbac(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_namespace: Kustomization) -> Kustomization:
     name = "haku-rbac"
     return flux_kustomization(

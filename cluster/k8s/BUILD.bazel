@@ -65,6 +65,8 @@ exports_files(
         "agents/mitmproxy/cnp-cloud-api-egress.k8s.yaml",
         "agents/mitmproxy/kustomization.yaml",
         "agents/mitmproxy/mitmproxy.k8s.yaml",
+        "haku/namespace/haku-namespace.k8s.yaml",
+        "haku/namespace/kustomization.yaml",
         "agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
         "agents/public-coder-agent/namespace/public-coder-agent.k8s.yaml",
         "agents/public-coder-agent/namespace/kustomization.yaml",
