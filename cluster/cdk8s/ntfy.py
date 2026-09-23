@@ -58,14 +58,7 @@ from external_secret_store_crds.io.external_secrets import (
     ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
 )
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
     ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
@@ -83,6 +76,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s import fleet_rules
 from cluster.cdk8s.agentplane import node_scheduling
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import sops_decryption, write_yaml
@@ -143,102 +137,65 @@ def _secret_store(scope: Construct) -> None:
 
 def _auth_external_secret(scope: Construct) -> None:
     """Derive stable-on-change ntfy auth inputs from the SOPS source Secret."""
-    ExternalSecret(
+    add_external_secret(
         scope,
         "auth-external-secret",
-        metadata=metadata(
-            _AUTH_SECRET,
-            NAMESPACE,
-            annotations={
-                "description": "Derives ntfy bcrypt users and declarative tokens from SOPS values.",
-                # Sprig bcrypt uses a fresh salt on every render. Keep this ExternalSecret
-                # OnChange and bump the generation on deliberate credential rotation instead
-                # of regenerating hashes on every ESO refresh.
-                "ntfy.ducktape.io/auth-generation": "1",
+        name=_AUTH_SECRET,
+        namespace=NAMESPACE,
+        refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
+        store=cluster_secret_store(SECRET_STORE),
+        data=[
+            remote_data(_AUTH_SOURCE_SECRET, "alertmanager-password", secret_key="alertmanager_password"),
+            remote_data(_AUTH_SOURCE_SECRET, "alertmanager-token", secret_key="alertmanager_token"),
+            remote_data(_AUTH_SOURCE_SECRET, "android-password", secret_key="android_password"),
+            remote_data(_AUTH_SOURCE_SECRET, "android-token", secret_key="android_token"),
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(
+            engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
+            type="Opaque",
+            data={
+                "NTFY_AUTH_USERS": (
+                    '{{ htpasswd "alertmanager" .alertmanager_password "bcrypt" }}:user,'
+                    '{{ htpasswd "android" .android_password "bcrypt" }}:user'
+                ),
+                "NTFY_AUTH_TOKENS": (
+                    "alertmanager:{{ .alertmanager_token }}:alertmanager,android:{{ .android_token }}:android"
+                ),
             },
         ),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name=SECRET_STORE, kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_AUTH_SECRET,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(
-                    engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
-                    type="Opaque",
-                    data={
-                        "NTFY_AUTH_USERS": (
-                            '{{ htpasswd "alertmanager" .alertmanager_password "bcrypt" }}:user,'
-                            '{{ htpasswd "android" .android_password "bcrypt" }}:user'
-                        ),
-                        "NTFY_AUTH_TOKENS": (
-                            "alertmanager:{{ .alertmanager_token }}:alertmanager,android:{{ .android_token }}:android"
-                        ),
-                    },
-                ),
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="alertmanager_password",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(
-                        key=_AUTH_SOURCE_SECRET, property="alertmanager-password"
-                    ),
-                ),
-                ExternalSecretSpecData(
-                    secret_key="alertmanager_token",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key=_AUTH_SOURCE_SECRET, property="alertmanager-token"),
-                ),
-                ExternalSecretSpecData(
-                    secret_key="android_password",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key=_AUTH_SOURCE_SECRET, property="android-password"),
-                ),
-                ExternalSecretSpecData(
-                    secret_key="android_token",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key=_AUTH_SOURCE_SECRET, property="android-token"),
-                ),
-            ],
-        ),
+        annotations={
+            "description": "Derives ntfy bcrypt users and declarative tokens from SOPS values.",
+            # Sprig bcrypt uses a fresh salt on every render. Keep this ExternalSecret
+            # OnChange and bump the generation on deliberate credential rotation instead
+            # of regenerating hashes on every ESO refresh.
+            "ntfy.ducktape.io/auth-generation": "1",
+        },
     )
 
 
 def _alertmanager_webhook_secret(scope: Construct) -> None:
     """Publish the ntfy bearer credential as Alertmanager's webhook Secret."""
-    ExternalSecret(
+    add_external_secret(
         scope,
         "alertmanager-webhook-external-secret",
-        metadata=metadata(
-            "alertmanager-ntfy-webhook",
-            "monitoring",
-            annotations={
-                "description": "Alertmanager bearer credential for the self-hosted ntfy instance",
-                "ntfy.ducktape.io/auth-generation": "1",
-            },
+        name="alertmanager-ntfy-webhook",
+        namespace="monitoring",
+        refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
+        store=cluster_secret_store(SECRET_STORE),
+        data=[remote_data(_AUTH_SOURCE_SECRET, "alertmanager-token", secret_key="alertmanager_token")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(
+            engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
+            type="Opaque",
+            data={"address": f"https://{HOSTNAME}/alerts", "token": "{{ .alertmanager_token }}"},
         ),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name=SECRET_STORE, kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE
-            ),
-            target=ExternalSecretSpecTarget(
-                name="alertmanager-ntfy-webhook",
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                template=ExternalSecretSpecTargetTemplate(
-                    engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
-                    type="Opaque",
-                    data={"address": f"https://{HOSTNAME}/alerts", "token": "{{ .alertmanager_token }}"},
-                ),
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="alertmanager_token",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key=_AUTH_SOURCE_SECRET, property="alertmanager-token"),
-                )
-            ],
-        ),
+        annotations={
+            "description": "Alertmanager bearer credential for the self-hosted ntfy instance",
+            "ntfy.ducktape.io/auth-generation": "1",
+        },
     )
 
 
