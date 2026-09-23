@@ -34,6 +34,7 @@ from cluster.cdk8s import (
     public_coder_agent_config,
     public_coder_devbox,
     reflector,
+    reloader,
     stateful_infra,
     user_agentydragon,
     valkey,
@@ -122,7 +123,6 @@ from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustom
 from cluster.cdk8s.ollama import flux_kustomizations as ollama_flux_kustomizations
 from cluster.cdk8s.openebs_lvm import flux_kustomizations as openebs_lvm_flux_kustomizations
 from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
-from cluster.cdk8s.reloader import flux_kustomizations as reloader_flux_kustomizations
 from cluster.cdk8s.seaweedfs import flux_kustomizations as seaweedfs_flux_kustomizations
 from cluster.cdk8s.seaweedfs_csi import flux_kustomizations as seaweedfs_csi_flux_kustomizations
 from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_controller_flux_kustomizations
@@ -209,6 +209,7 @@ def generate_manifests(root: Path) -> None:
     headlamp.write_manifests(root)
     proxmox_proxy.write_manifests(root)
     volsync.write_manifests(root)
+    reloader.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -331,8 +332,8 @@ def generate_manifests(root: Path) -> None:
     metrics_server_kustomization = metrics_server.metrics_server(
         flux_chart, metrics_server_artifact, kyverno_kustomization
     )
-    reloader_artifact = artifact("reloader", "cluster/k8s/reloader")
-    reloader_flux_kustomizations.reloader(flux_chart, reloader_artifact, kyverno_kustomization)
+    reloader_artifact = artifact("reloader", reloader.OUTPUT_DIR)
+    reloader.reloader(flux_chart, reloader_artifact, kyverno_kustomization)
     cdi_artifact = artifact("cdi", "cluster/k8s/kubevirt/cdi")
     cdi_kustomization = kubevirt_flux_kustomizations.cdi(
         flux_chart, cdi_artifact, cdi_operator_kustomization, local_path_provisioner_kustomization
