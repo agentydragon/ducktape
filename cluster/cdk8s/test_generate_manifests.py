@@ -102,6 +102,8 @@ _GENERATED_FILES = (
     "cluster/k8s/infra-drift/infra-drift.k8s.yaml",
     "cluster/k8s/github-secrets-sync/github-secrets-sync.k8s.yaml",
     "cluster/k8s/github-secrets-sync/kustomization.yaml",
+    "cluster/k8s/github-secrets-sync/secrets/github-secrets-sync-secrets.k8s.yaml",
+    "cluster/k8s/github-secrets-sync/secrets/kustomization.yaml",
     "cluster/k8s/gatus/sso-tf/gatus-sso.k8s.yaml",
     "cluster/k8s/gatus/sso-tf/kustomization.yaml",
     "cluster/k8s/flux-webhook-token/flux-webhook-token.k8s.yaml",

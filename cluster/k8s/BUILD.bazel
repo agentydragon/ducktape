@@ -140,6 +140,8 @@ exports_files(
         "infra-drift/infra-drift.k8s.yaml",
         "github-secrets-sync/github-secrets-sync.k8s.yaml",
         "github-secrets-sync/kustomization.yaml",
+        "github-secrets-sync/secrets/github-secrets-sync-secrets.k8s.yaml",
+        "github-secrets-sync/secrets/kustomization.yaml",
         "gatus/sso-tf/gatus-sso.k8s.yaml",
         "gatus/sso-tf/kustomization.yaml",
         "flux-webhook-token/flux-webhook-token.k8s.yaml",
