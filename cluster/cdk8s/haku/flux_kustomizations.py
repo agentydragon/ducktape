@@ -62,24 +62,3 @@ def haku_mailbox(
             ),  # ${LETSENCRYPT_ISSUER}
         ),
     )
-
-
-def haku_ui_image_webhook(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_state: Kustomization
-) -> Kustomization:
-    name = "haku-ui-image-webhook"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=[
-                # haku-state provisions the forgejo-webhook-token Secret (the Receiver's secretRef)
-                # and the Forgejo package webhook that targets this receiver.
-                flux_kustomization_depends_on(haku_state)
-            ],
-        ),
-    )
