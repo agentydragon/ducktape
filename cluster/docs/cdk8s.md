@@ -12,7 +12,8 @@ from the committed files. Conventions for writing a generator: <../cdk8s/AGENTS.
 
 1. **Generated component resources** (`agentplane-{staging,testing}`, `artifact-generators`,
    `litellm/app`, `agents/ha-mcp/app`, `ssh-mcp`, `aiquota`, `clickhouse/schema`,
-   `external-creds`, `haku/console{,/db,/migration}`, `monitoring/etcd`): `kustomization.yaml`
+   `external-creds`, `haku/console{,/db,/migration}`, `monitoring/etcd`,
+   `agents/public-coder-agent/namespace`): `kustomization.yaml`
    (`flux.kustomize_kustomization`, a Pydantic model: the plain
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for
    `cdk8s import` to ingest) and one `<name>.k8s.yaml` per chart. Hand-written beside
