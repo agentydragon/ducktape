@@ -101,7 +101,7 @@ def cert_manager_trust(
             # Health check ensures trust-manager is ready before ClusterIssuers depend on it
             health_checks=[
                 KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace="cert-manager"
+                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
                 )
             ],
             depends_on=flux_kustomization_depends_on_many(

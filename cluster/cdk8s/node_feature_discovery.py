@@ -16,6 +16,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallRemediation,
+    HelmReleaseSpecUpgrade,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
@@ -54,6 +55,9 @@ def chart(app: App) -> Chart:
         spec=HelmReleaseSpec(
             interval="15m",
             install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
+            # The worker DaemonSet runs on the roaming laptops, which are often offline: waiting
+            # for every pod times the upgrade out, as for promtail (cluster/cdk8s/monitoring/loki.py).
+            upgrade=HelmReleaseSpecUpgrade(disable_wait=True),
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart=NAME,
@@ -68,6 +72,9 @@ def chart(app: App) -> Chart:
             values={
                 "worker": {
                     "tolerations": [{"effect": "NoSchedule", "operator": "Exists"}],
+                    # Must exceed the roaming-node count, as for promtail (cluster/cdk8s/monitoring/loki.py);
+                    # enforced by //cluster/validation:test_roaming_daemonset_capacity.
+                    "updateStrategy": {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}},
                     "config": {
                         "sources": {"pci": {"deviceClassWhitelist": ["02", "03"], "deviceLabelFields": ["vendor"]}}
                     },
@@ -97,7 +104,7 @@ def node_feature_discovery(chart: Chart, artifact: ArtifactGeneratorSpecArtifact
             wait=True,
             health_checks=[
                 KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="nfd", namespace=NAMESPACE
+                    api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
                 )
             ],
         ),
