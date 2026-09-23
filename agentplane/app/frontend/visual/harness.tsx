@@ -34,7 +34,7 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
-import { electricLongPoll, electricShape, electricSubset, routes } from "./network";
+import { electricLive, electricShape, electricSubset, routes } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
 
@@ -1214,7 +1214,7 @@ routes.push(
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
     (match, query, signal) =>
       query.get("live") === "true"
-        ? electricLongPoll(`visual-entities-${match[1]}`, undefined, signal)
+        ? electricLive(`visual-entities-${match[1]}`, undefined, signal)
         : electricShape([], `visual-entities-${match[1]}`),
   ],
   [
@@ -1238,7 +1238,7 @@ routes.push(
     /^\/threads\/([0-9a-f-]+)\/sync\/chunks\/([a-z_]+)$/,
     (match, query, signal) =>
       query.get("live") === "true"
-        ? electricLongPoll(`visual-chunks-${match[1]}-${match[2]}`, "thread_payload_chunk", signal)
+        ? electricLive(`visual-chunks-${match[1]}-${match[2]}`, "thread_payload_chunk", signal)
         : electricShape([], `visual-chunks-${match[1]}-${match[2]}`, "thread_payload_chunk"),
   ],
   [
