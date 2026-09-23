@@ -6,12 +6,13 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlparse
 
+import pytest
 import pytest_bazel
 import yaml
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
 
-from cluster.cdk8s import aiquota
+from cluster.cdk8s import aiquota, public_coder_agent_config, public_coder_proxy
 
 # pytest_plugins loads cluster.validation.haku_console_fixtures by name; gazelle cannot see
 # the dependency.
@@ -38,8 +39,26 @@ def _resources(role: dict[str, Any]) -> set[str]:
     return set().union(*(set(rule["resources"]) for rule in role["rules"]))
 
 
+def _named(objects: list[dict[str, Any]], name: str) -> list[dict[str, Any]]:
+    return [obj for obj in objects if obj["metadata"]["name"] == name]
+
+
+def _one(objects: list[dict[str, Any]], kind: str, name: str | None = None) -> dict[str, Any]:
+    return one(obj for obj in objects if obj["kind"] == kind and name in {None, obj["metadata"]["name"]})
+
+
+@pytest.fixture(scope="module")
+def app_objects() -> list[dict[str, Any]]:
+    return cast(list[dict[str, Any]], Cdk8sTesting.synth(public_coder_agent_config.app_chart(Cdk8sTesting.app())))
+
+
+@pytest.fixture(scope="module")
+def proxy_objects() -> list[dict[str, Any]]:
+    return cast(list[dict[str, Any]], Cdk8sTesting.synth(public_coder_proxy.chart(Cdk8sTesting.app())))
+
+
 def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
-    k8s_dir: Path, haku_console_objects: list[dict[str, Any]]
+    k8s_dir: Path, haku_console_objects: list[dict[str, Any]], app_objects: list[dict[str, Any]]
 ) -> None:
     """Configured public diagnostics do not widen secret or exec access."""
     metadata_role = yaml.safe_load(
@@ -67,7 +86,7 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
     sources: dict[str, list[dict[str, Any]] | None] = {
         "clickhouse/cluster/agent-diagnostics-rbac.yaml": None,
         "haku-console chart": haku_console_objects,
-        "agents/public-coder-agent/app/extended-diagnostics-reader.yaml": None,
+        "public-coder-agent chart": _named(app_objects, "agent-public-coder-extended-diagnostics-reader"),
     }
     for relative_path, chart_objects in sources.items():
         objects = (
@@ -91,11 +110,12 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
     assert _PUBLIC_CODER_SUBJECT not in haku_cluster_binding["subjects"]
 
 
-def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credential(k8s_dir: Path) -> None:
-    agent_dir = k8s_dir / "agents/public-coder-agent"
-    objects = list(yaml.safe_load_all((agent_dir / "app/agentplane-acceptance-operator.yaml").read_text()))
-    role = one(obj for obj in objects if obj["kind"] == "Role")
-    binding = one(obj for obj in objects if obj["kind"] == "RoleBinding")
+def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credential(
+    app_objects: list[dict[str, Any]], proxy_objects: list[dict[str, Any]]
+) -> None:
+    objects = _named(app_objects, "agentplane-acceptance-operator-reader")
+    role = _one(objects, "Role")
+    binding = _one(objects, "RoleBinding")
     assert binding["roleRef"]["name"] == role["metadata"]["name"]
     assert one(binding["subjects"]) == _PUBLIC_CODER_SUBJECT
     rule = one(role["rules"])
@@ -104,8 +124,8 @@ def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credentia
     secret_names = set(rule["resourceNames"])
     assert secret_names
 
-    for layer in ("app", "proxy"):
-        deployment = yaml.safe_load((agent_dir / layer / "deployment.yaml").read_text())
+    for objects in (app_objects, proxy_objects):
+        deployment = _one(objects, "Deployment")
         pod = deployment["spec"]["template"]["spec"]
         for container in pod.get("initContainers", []) + pod["containers"]:
             for entry in container.get("env", []):
@@ -119,7 +139,12 @@ def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credentia
                 assert source.get("secret", {}).get("name") not in secret_names
 
 
-def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path, haku_console_objects: list[dict[str, Any]]) -> None:
+def test_public_coder_kubernetes_proxy_contract(
+    k8s_dir: Path,
+    haku_console_objects: list[dict[str, Any]],
+    app_objects: list[dict[str, Any]],
+    proxy_objects: list[dict[str, Any]],
+) -> None:
     """Agent traffic, configured SAR authorization, and proxy execution authority stay separate."""
     agent_dir = k8s_dir / "agents" / "public-coder-agent"
 
@@ -151,11 +176,11 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path, haku_console_obje
     # clients' own manifests rather than pinned here twice -- a client retired or revived
     # without updating the CNP fails this on its own instead of relying on two hand-typed
     # literals happening to be kept in sync (see e.g. the devbox retire/revive PRs).
-    ingress_policy = yaml.safe_load((agent_dir / "proxy" / "cnp-ingress.yaml").read_text())
+    ingress_policy = _one(proxy_objects, "CiliumNetworkPolicy", "allow-public-coder-agent-proxy-ingress")
     ingress_rule = one(ingress_policy["spec"]["ingress"])
     allowed = {frozenset(endpoint["matchLabels"].items()) for endpoint in ingress_rule["fromEndpoints"]}
 
-    app_deployment = yaml.safe_load((agent_dir / "app" / "deployment.yaml").read_text())
+    app_deployment = _one(app_objects, "Deployment")
     app_pod_labels = app_deployment["spec"]["template"]["metadata"]["labels"]
     devbox_pod_labels = yaml.safe_load((agent_dir / "devbox" / "virtualmachine.yaml").read_text())["spec"]["template"][
         "metadata"
@@ -168,7 +193,7 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path, haku_console_obje
         )
         assert any(rule <= actual for rule in allowed), client_labels
 
-    app_egress = yaml.safe_load((agent_dir / "app" / "networkpolicy-egress.yaml").read_text())
+    app_egress = _one(app_objects, "NetworkPolicy", "public-coder-agent-egress")
     assert all(rule.get("to") for rule in app_egress["spec"]["egress"])
     assert not any("ipBlock" in peer for rule in app_egress["spec"]["egress"] for peer in rule["to"])
     assert not {port["port"] for rule in app_egress["spec"]["egress"] for port in rule.get("ports", [])} & {443, 6443}
@@ -190,7 +215,7 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path, haku_console_obje
         == secrets_by_env["AIQUOTA_API_BEARER_TOKEN"]["replace"]["proxy_value"]
     )
 
-    proxy_deployment = yaml.safe_load((agent_dir / "proxy" / "deployment.yaml").read_text())
+    proxy_deployment = _one(proxy_objects, "Deployment")
     proxy_container = one(proxy_deployment["spec"]["template"]["spec"]["containers"])
     proxy_env = {entry["name"]: entry for entry in proxy_container["env"]}
     aiquota_ref = proxy_env["AIQUOTA_API_BEARER_TOKEN"]["valueFrom"]["secretKeyRef"]
@@ -224,7 +249,7 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path, haku_console_obje
         for obj in haku_console_objects
         if obj["kind"] == "ServiceAccount" and obj["metadata"]["name"] == execution_name
     )
-    ceiling = yaml.safe_load((agent_dir / "app" / "cluster-admin-ceiling.yaml").read_text())
+    ceiling = _one(app_objects, "ClusterRoleBinding", "haku-kube-api-proxy-cluster-admin-ceiling")
     assert ceiling["subjects"] == [
         {
             "kind": "ServiceAccount",
@@ -240,15 +265,14 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path, haku_console_obje
         *(
             yaml.safe_load_all(path.read_text())
             for path in (
-                agent_dir / "app" / "role.yaml",
-                agent_dir / "app" / "node-reader.yaml",
-                agent_dir / "app" / "cluster-metadata-reader.yaml",
-                agent_dir / "app" / "extended-diagnostics-reader.yaml",
                 k8s_dir / "clickhouse" / "cluster" / "agent-diagnostics-rbac.yaml",
                 k8s_dir / "flux" / "ducktape-flux" / "ducktape-flux-reader.yaml",
             )
         ),
         haku_console_objects,
+        # Less the acceptance-operator reader, which is public-coder's alone: the secrets it names
+        # are the profile's own login bootstrap (see the acceptance test above).
+        [obj for obj in app_objects if obj["metadata"]["name"] != "agentplane-acceptance-operator-reader"],
     )
     for objects in binding_sources:
         for binding in objects:

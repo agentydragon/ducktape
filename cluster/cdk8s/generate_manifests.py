@@ -28,6 +28,7 @@ from cluster.cdk8s import (
     public_coder_agent_config,
     public_coder_backup,
     public_coder_devbox,
+    public_coder_proxy,
     public_coder_sshpiper,
     stateful_infra,
 )
@@ -164,6 +165,7 @@ def generate_manifests(root: Path) -> None:
     haku_openclaw_spike_config.write_manifests(root)
     haku_openclaw_spike_backup.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
+    public_coder_proxy.write_manifests(root)
     public_coder_sshpiper.write_manifests(root)
     public_coder_backup.write_manifests(root)
     descheduler.write_manifests(root)
