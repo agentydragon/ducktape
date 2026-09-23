@@ -81,6 +81,7 @@ _GENERATED_FILES = (
     "cluster/k8s/kyverno/policies/restrict-agent-gateway-routes.k8s.yaml",
     "cluster/k8s/kyverno/policies/restrict-agent-kustomization-patch.k8s.yaml",
     "cluster/k8s/seaweedfs/cluster/priorityclass.k8s.yaml",
+    "cluster/k8s/vm-images-publisher/vm-images-publisher.k8s.yaml",
     "cluster/k8s/nix-cache/attic.k8s.yaml",
     "cluster/k8s/seaweedfs/public-s3/public-s3.k8s.yaml",
     "cluster/k8s/seaweedfs/public-s3/kustomization.yaml",
