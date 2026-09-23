@@ -770,6 +770,7 @@ py_test(
 
 py_test(
     name = "test_enrollments",
+    size = "medium",
     srcs = ["test_enrollments.py"],
     requires_docker = True,
     deps = [
