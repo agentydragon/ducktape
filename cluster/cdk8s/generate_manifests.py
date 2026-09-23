@@ -91,7 +91,7 @@ from cluster.cdk8s.haku import (
     workloads as haku_workloads,
     workspaces as haku_workspaces,
 )
-from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations
+from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations, runner as haku_ci_runner
 from cluster.cdk8s.headlamp import flux_kustomizations as headlamp_flux_kustomizations
 from cluster.cdk8s.home_assistant import (
     flux_kustomizations as home_assistant_flux_kustomizations,
@@ -171,6 +171,7 @@ def generate_manifests(root: Path) -> None:
     haku_workloads.write_manifests(root)
     haku_workspaces.write_manifests(root)
     haku_mailbox.write_manifests(root)
+    haku_ci_runner.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
     descheduler.write_manifests(root)
     stateful_infra.write_seaweedfs_manifests(root)
