@@ -1,7 +1,5 @@
-# Build agentplane's Nix sandbox image (agentplane/sandbox_image/default.nix) and push it to
-# the Forgejo OCI registry: a dockerTools.buildLayeredImage docker archive, so
-# `skopeo copy docker-archive:`, as in haku-sandbox-image-nix.yml. The archive also goes to
-# the Attic cache, so a host building the same revision substitutes it instead of building it.
+# Build agentplane's Nix sandbox image (agentplane/sandbox_image/default.nix) and push it to the
+# Forgejo registry, through nix-image.yml. The archive also goes to the Attic cache.
 name: Agentplane Sandbox Image
 
 on:
@@ -14,6 +12,7 @@ on:
       - "nix/flake/packages.nix"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-sandbox-image.yml"
+      - ".github/workflows/nix-image.yml"
   # Build-only on PRs, so a change to the tool list is proven to build before it merges.
   pull_request:
     paths:
@@ -23,6 +22,7 @@ on:
       - "nix/flake/packages.nix"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-sandbox-image.yml"
+      - ".github/workflows/nix-image.yml"
   workflow_dispatch:
 
 concurrency:
@@ -33,43 +33,12 @@ permissions:
   contents: read
 
 jobs:
-  build-push:
-    name: Build & push agentplane-sandbox
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      IMAGE: git.allegedly.works/ducktape-ci/agentplane-sandbox
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ./.github/actions/setup-nix-attic
-        with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
-
-      - name: Build image
-        run: nix build .#agentplane-sandbox-image --print-build-logs
-
-      - name: Compute tag
-        id: meta
-        run: |
-          SHA="${{ github.sha }}"
-          echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
-
-      # Both pushes run on devel only: fork PRs do not receive the publish credentials, and only
-      # a merged image is one anything pins.
-      - name: Push to Attic
-        if: github.ref_name == 'devel'
-        run: |
-          nix profile install nixpkgs#attic-client
-          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
-          attic push ducktape:main result
-
-      - name: Push to Forgejo
-        if: github.ref_name == 'devel'
-        run: |
-          ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
-          skopeo copy --insecure-policy \
-            --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
-            --digestfile digest \
-            "docker-archive:$(readlink -f result)" "docker://$ref"
-          echo "pushed \`$ref\` as \`$IMAGE@$(cat digest)\`" >> "$GITHUB_STEP_SUMMARY"
+  image:
+    uses: ./.github/workflows/nix-image.yml
+    with:
+      attr: agentplane-sandbox-image
+      image: git.allegedly.works/ducktape-ci/agentplane-sandbox
+      registry: forgejo
+      attic: true
+    secrets:
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
