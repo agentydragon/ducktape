@@ -163,3 +163,39 @@ spec:
         - ports:
             - port: "8765"
               protocol: TCP
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: google-access-token
+spec:
+  externalSecretSpec:
+    dataFrom:
+      - extract:
+          key: google-access-token
+    refreshInterval: 1m
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: kubernetes-airlock-secret-store
+    target:
+      name: google-access-token
+  namespaces:
+    - agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: google-write-access-token
+spec:
+  externalSecretSpec:
+    dataFrom:
+      - extract:
+          key: google-write-access-token
+    refreshInterval: 1m
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: kubernetes-airlock-secret-store
+    target:
+      name: google-write-access-token
+  namespaces:
+    - google-mcp

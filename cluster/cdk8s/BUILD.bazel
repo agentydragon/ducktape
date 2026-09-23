@@ -426,6 +426,7 @@ py_library(
         ":generation",
         ":metadata",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/crd_bindings/external_secrets:clusterexternalsecret",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
         "//cluster/cdk8s/crd_bindings/external_secrets:passwordgenerator",
         "@pypi//cdk8s",
