@@ -75,7 +75,7 @@ _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
 _GROCY_SF_MCP_CLIENT_ID = "cb57e244-c13c-4eac-a299-e052698b774e"
 _HOME_ASSISTANT_MCP_URL = "http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp"
 _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
-# One standalone google-mcp pod (cluster/cdk8s/google_mcp.py) serves both tool sets at
+# One google-mcp pod (cluster/cdk8s/google_mcp.py) serves both tool sets at
 # distinct paths -- see that module's docstring for its Google credential.
 _GMAIL_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp"
 _CALENDAR_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp"
@@ -211,7 +211,7 @@ _ACTIONS_SETTINGS = {
             "description": "SSH commands on configured targets; every Action remains subject to operator approval.",
             "executor": {
                 "kind": "mcp",
-                "description": "Standalone SSH MCP backend; Agentplane retains approval and execution authority.",
+                "description": "SSH MCP backend (ssh-mcp); Agentplane retains approval and execution authority.",
                 "config": {
                     "transport": "streamable-http",
                     "url": MCP_URL,
@@ -225,7 +225,7 @@ _ACTIONS_SETTINGS = {
             "description": "Home Assistant tools; every Action remains subject to operator approval.",
             "executor": {
                 "kind": "mcp",
-                "description": "Standalone Home Assistant MCP backend (ha-mcp).",
+                "description": "Home Assistant MCP backend (ha-mcp).",
                 "config": {
                     "transport": "streamable-http",
                     "url": _HOME_ASSISTANT_MCP_URL,
@@ -239,7 +239,7 @@ _ACTIONS_SETTINGS = {
             "description": "Tana read/write tools; every Action remains subject to operator approval.",
             "executor": {
                 "kind": "mcp",
-                "description": "Standalone Tana MCP backend (tana-mcp).",
+                "description": "Tana MCP backend (tana-mcp).",
                 "config": {
                     "transport": "streamable-http",
                     "url": _TANA_MCP_URL,
@@ -253,7 +253,7 @@ _ACTIONS_SETTINGS = {
             "description": "Gmail read/write tools; every Action remains subject to operator approval.",
             "executor": {
                 "kind": "mcp",
-                "description": "Standalone Gmail MCP backend (google-mcp), on a write-scoped Google credential.",
+                "description": "Gmail MCP backend (google-mcp), on a write-scoped Google credential.",
                 "config": {
                     "transport": "streamable-http",
                     "url": _GMAIL_MCP_URL,
@@ -267,8 +267,7 @@ _ACTIONS_SETTINGS = {
             "description": "Google Calendar read/write tools; every Action remains subject to operator approval.",
             "executor": {
                 "kind": "mcp",
-                "description": "Standalone Google Calendar MCP backend (google-mcp), on a write-scoped Google "
-                "credential.",
+                "description": "Google Calendar MCP backend (google-mcp), on a write-scoped Google credential.",
                 "config": {
                     "transport": "streamable-http",
                     "url": _CALENDAR_MCP_URL,

@@ -1,4 +1,4 @@
-"""google-mcp: a standalone Gmail/Calendar MCP backend for agentplane-staging.
+"""google-mcp: a Gmail/Calendar MCP backend for agentplane-staging.
 
 Serves the Gmail/Calendar tool code in `haku/console/tools` (`x/google_mcp_server`) against a
 write-scoped Airlock provider (`cluster/k8s/agents/airlock/config.yaml`) whose access token is
@@ -258,7 +258,7 @@ def google_mcp(
         flux_chart,
         _NAME,
         artifact,
-        description="Standalone Gmail/Calendar MCP backend for Agentplane staging.",
+        description="Gmail/Calendar MCP backend for Agentplane staging.",
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(external_secrets_operator, forgejo_images),
     )
