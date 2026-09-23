@@ -98,6 +98,8 @@ exports_files(
         "ssh-mcp/kustomization.yaml",
         "github-branch-protection/github-branch-protection.k8s.yaml",
         "github-branch-protection/kustomization.yaml",
+        "monitoring/alloy-otlp-bearer-token-tf/alloy-otlp-bearer-token.k8s.yaml",
+        "monitoring/alloy-otlp-bearer-token-tf/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

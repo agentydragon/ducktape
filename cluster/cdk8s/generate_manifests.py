@@ -77,7 +77,7 @@ from cluster.cdk8s.litellm import credentials as litellm_credentials, keys as li
 from cluster.cdk8s.local_path_provisioner import flux_kustomizations as local_path_provisioner_flux_kustomizations
 from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizations
 from cluster.cdk8s.metrics_server import flux_kustomizations as metrics_server_flux_kustomizations
-from cluster.cdk8s.monitoring import flux_kustomizations as monitoring_flux_kustomizations
+from cluster.cdk8s.monitoring import alloy_otlp_bearer_token, flux_kustomizations as monitoring_flux_kustomizations
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.node_feature_discovery import flux_kustomizations as node_feature_discovery_flux_kustomizations
 from cluster.cdk8s.nvidia_device_plugin import flux_kustomizations as nvidia_device_plugin_flux_kustomizations
@@ -139,6 +139,7 @@ def generate_manifests(root: Path) -> None:
     litellm_keys.write_manifests(root)
     forgejo_image_automation.write_manifests(root)
     github_branch_protection.write_manifests(root)
+    alloy_otlp_bearer_token.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -995,9 +996,9 @@ def generate_manifests(root: Path) -> None:
         haku_namespace_kustomization,
     )
     monitoring_alloy_otlp_bearer_token_tf_artifact = artifact(
-        "monitoring-alloy-otlp-bearer-token-tf", "cluster/k8s/monitoring/alloy-otlp-bearer-token-tf"
+        "monitoring-alloy-otlp-bearer-token-tf", alloy_otlp_bearer_token.OUTPUT_DIR
     )
-    monitoring_flux_kustomizations.alloy_otlp_bearer_token_tf(
+    alloy_otlp_bearer_token.alloy_otlp_bearer_token_tf(
         flux_chart,
         monitoring_alloy_otlp_bearer_token_tf_artifact,
         tofu_controller_kustomization,
