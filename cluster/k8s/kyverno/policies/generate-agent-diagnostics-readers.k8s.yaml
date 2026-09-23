@@ -1,0 +1,101 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    policies.kyverno.io/category: Access Control
+    policies.kyverno.io/description: Generates namespaced, read-only metadata and optional pod-log RoleBindings when a GitOps-managed Namespace opts in.
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Namespace, RoleBinding
+    policies.kyverno.io/title: Generate agent diagnostics readers
+  name: generate-agent-diagnostics-readers
+spec:
+  background: true
+  rules:
+    - generate:
+        apiVersion: rbac.authorization.k8s.io/v1
+        data:
+          metadata:
+            labels:
+              rbac.ducktape.io/access: agent-readable-metadata
+              rbac.ducktape.io/managed-by: kyverno
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: agent-readable-namespace-metadata
+          subjects:
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: oidc-ksbx-groups:haku
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: haku:access-profile:haku
+            - kind: ServiceAccount
+              name: haku
+              namespace: haku-sandbox
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: oidc-ksbx-groups:kubectl-sandbox-users
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: haku:access-profile:public-coder
+        generateExisting: true
+        kind: RoleBinding
+        name: agent-readable-metadata
+        namespace: "{{request.object.metadata.name}}"
+        synchronize: true
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              selector:
+                matchLabels:
+                  rbac.ducktape.io/agent-readable-metadata: "true"
+          - resources:
+              kinds:
+                - Namespace
+              selector:
+                matchLabels:
+                  rbac.ducktape.io/agent-readable-logs: "true"
+      name: generate-agent-readable-metadata
+    - generate:
+        apiVersion: rbac.authorization.k8s.io/v1
+        data:
+          metadata:
+            labels:
+              rbac.ducktape.io/access: agent-readable-logs
+              rbac.ducktape.io/managed-by: kyverno
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: agent-readable-namespace-logs
+          subjects:
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: oidc-ksbx-groups:haku
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: haku:access-profile:haku
+            - kind: ServiceAccount
+              name: haku
+              namespace: haku-sandbox
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: oidc-ksbx-groups:kubectl-sandbox-users
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: haku:access-profile:public-coder
+        generateExisting: true
+        kind: RoleBinding
+        name: agent-readable-logs
+        namespace: "{{request.object.metadata.name}}"
+        synchronize: true
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              selector:
+                matchLabels:
+                  rbac.ducktape.io/agent-readable-logs: "true"
+      name: generate-agent-readable-logs

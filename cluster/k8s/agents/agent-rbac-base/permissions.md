@@ -32,7 +32,7 @@ one of two data-classification labels:
 
 Both classifications grant the same subjects: Haku's OIDC and synthetic access-profile groups,
 its in-cluster ServiceAccounts, `kubectl-sandbox-users`, and the synthetic public-coder group. The
-Kyverno policy at `cluster/k8s/kyverno/policies/generate-agent-diagnostics-readers.yaml` generates
+Kyverno policy `generate-agent-diagnostics-readers` (`cluster/cdk8s/kyverno/policies.py`) generates
 the corresponding namespaced RoleBindings. Sensitive or identity-specific access remains explicit
 service RBAC.
 

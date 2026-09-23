@@ -94,7 +94,7 @@ from cluster.cdk8s.keda import flux_kustomizations as keda_flux_kustomizations
 from cluster.cdk8s.kube_api_proxy import flux_kustomizations as kube_api_proxy_flux_kustomizations
 from cluster.cdk8s.kube_system import flux_kustomizations as kube_system_flux_kustomizations
 from cluster.cdk8s.kubevirt import flux_kustomizations as kubevirt_flux_kustomizations
-from cluster.cdk8s.kyverno import app as kyverno_app, flux_kustomizations as kyverno_flux_kustomizations
+from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
 from cluster.cdk8s.langfuse import flux_kustomizations as langfuse_flux_kustomizations
 from cluster.cdk8s.litellm import (
     credentials as litellm_credentials,
@@ -162,6 +162,7 @@ def generate_manifests(root: Path) -> None:
     public_coder_agent_config.write_manifests(root)
     descheduler.write_manifests(root)
     kyverno_app.write_manifests(root)
+    kyverno_policies.write_manifests(root)
     stateful_infra.write_seaweedfs_manifests(root)
     egress_fences.write_manifests(root)
     dns_automation.write_manifests(root, mesh)
@@ -304,8 +305,8 @@ def generate_manifests(root: Path) -> None:
     descheduler.descheduler(flux_chart, descheduler_artifact, kyverno_kustomization)
     keda_artifact = artifact("keda", "cluster/k8s/keda")
     keda_kustomization = keda_flux_kustomizations.keda(flux_chart, keda_artifact, kyverno_kustomization)
-    kyverno_policies_artifact = artifact("kyverno-policies", "cluster/k8s/kyverno/policies")
-    kyverno_policies_kustomization = kyverno_flux_kustomizations.kyverno_policies(
+    kyverno_policies_artifact = artifact("kyverno-policies", kyverno_policies.OUTPUT_DIR)
+    kyverno_policies_kustomization = kyverno_policies.kyverno_policies(
         flux_chart, kyverno_policies_artifact, kyverno_kustomization
     )
     metrics_server_artifact = artifact("metrics-server", "cluster/k8s/metrics-server")
