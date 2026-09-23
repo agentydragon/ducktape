@@ -31,20 +31,14 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
     ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
@@ -81,29 +75,15 @@ def _bearer_credentials(scope: Construct) -> None:
         metadata=metadata(BEARER_SECRET_NAME, NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    ExternalSecret(
+    add_external_secret(
         scope,
         "bearer-external-secret",
-        metadata=metadata(BEARER_SECRET_NAME, NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-            target=ExternalSecretSpecTarget(
-                name=BEARER_SECRET_NAME,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(type="Opaque", data={BEARER_SECRET_KEY: "{{ .password }}"}),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=BEARER_SECRET_NAME,
-                        )
-                    )
-                )
-            ],
-        ),
+        name=BEARER_SECRET_NAME,
+        namespace=NAMESPACE,
+        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+        data_from=[password_generator(BEARER_SECRET_NAME)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={BEARER_SECRET_KEY: "{{ .password }}"}),
     )
 
 
@@ -257,7 +237,7 @@ def chart(app: App, *, config: SshMcpConfig, mesh: Mesh) -> Chart:
         metadata=k8s.ObjectMeta(
             name=NAMESPACE,
             labels={"name": NAMESPACE, "goldilocks.fairwinds.com/enabled": "false"},
-            annotations={"description": "Standalone SSH MCP backend; private keys stay in this namespace."},
+            annotations={"description": "SSH MCP backend; private keys stay in this namespace."},
         ),
     )
     SshMcp(chart, NAME, config=config, mesh=mesh)

@@ -10,9 +10,14 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import helm_repository_source_ref
 from cluster.cdk8s.metadata import metadata
 
 OUTPUT_DIR = "cluster/k8s/monitoring/grafana-helmrepository"
+_NAME = "grafana"
+_NAMESPACE = "flux-system"
+# The releases installing from this repository live in other charts.
+SOURCE_REF = helm_repository_source_ref(_NAME, _NAMESPACE)
 
 
 def chart(app: App) -> Chart:
@@ -20,7 +25,7 @@ def chart(app: App) -> Chart:
     HelmRepository(
         chart,
         "grafana",
-        metadata=metadata("grafana", "flux-system"),
+        metadata=metadata(_NAME, _NAMESPACE),
         spec=HelmRepositorySpec(interval="12h", url="https://grafana.github.io/helm-charts"),
     )
     return chart

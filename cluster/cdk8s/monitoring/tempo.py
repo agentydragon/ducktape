@@ -6,14 +6,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     Bucket,
@@ -47,7 +39,9 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.monitoring import grafana_helmrepository
 
 NAME = "tempo"
 OUTPUT_DIR = "cluster/k8s/monitoring/tempo"
@@ -133,63 +127,48 @@ def _storage(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _storage(chart)
-    HelmRelease(
+    helm_release(
         chart,
-        "helm-release",
-        metadata=metadata(NAME, _NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=NAME,
-                    version="1.x",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name="grafana",
-                        namespace="flux-system",
-                    ),
-                    interval="12h",
-                )
-            ),
-            values={
-                "tempo": {
-                    "receivers": {
-                        "otlp": {
-                            "protocols": {"grpc": {"endpoint": "0.0.0.0:4317"}, "http": {"endpoint": "0.0.0.0:4318"}}
-                        }
-                    },
-                    "storage": {
-                        "trace": {
-                            "backend": "s3",
-                            "s3": {"endpoint": "seaweedfs-s3.seaweedfs.svc:8333", "bucket": NAME, "insecure": True},
-                        }
-                    },
-                    # Metrics-generator: powers TraceQL metrics queries (rate(), count_over_time(), etc.)
-                    # in Grafana's Explore Traces app. Without this, queries over "recent" (not yet
-                    # flushed to object storage) data fail with:
-                    #   error finding generators in Querier.queryRangeRecent: error finding generators: empty ring
-                    # because there are no metrics-generator instances registered in the ring.
-                    "metricsGenerator": {
-                        "enabled": True,
-                        "remoteWriteUrl": "http://mimir-gateway.monitoring.svc.cluster.local/api/v1/push",
-                        "processor": {"local_blocks": {}, "service_graphs": {}, "span_metrics": {}},
-                    },
-                    "overrides": {
-                        "defaults": {
-                            "metrics_generator": {"processors": ["local-blocks", "service-graphs", "span-metrics"]}
-                        }
-                    },
-                    "extraEnvFrom": [{"secretRef": {"name": _CREDENTIALS_SECRET}}],
+        NAME,
+        _NAMESPACE,
+        repository=grafana_helmrepository.SOURCE_REF,
+        chart=NAME,
+        version="1.x",
+        interval="30m",
+        chart_interval="12h",
+        values={
+            "tempo": {
+                "receivers": {
+                    "otlp": {"protocols": {"grpc": {"endpoint": "0.0.0.0:4317"}, "http": {"endpoint": "0.0.0.0:4318"}}}
                 },
-                "persistence": {"enabled": False},
-                "nodeSelector": {"topology.kubernetes.io/region": "hil"},
-                "resources": {
-                    "requests": {"cpu": "50m", "memory": "128Mi"},
-                    "limits": {"cpu": "500m", "memory": "512Mi"},
+                "storage": {
+                    "trace": {
+                        "backend": "s3",
+                        "s3": {"endpoint": "seaweedfs-s3.seaweedfs.svc:8333", "bucket": NAME, "insecure": True},
+                    }
                 },
-                "serviceMonitor": {"enabled": True},
+                # Metrics-generator: powers TraceQL metrics queries (rate(), count_over_time(), etc.)
+                # in Grafana's Explore Traces app. Without this, queries over "recent" (not yet
+                # flushed to object storage) data fail with:
+                #   error finding generators in Querier.queryRangeRecent: error finding generators: empty ring
+                # because there are no metrics-generator instances registered in the ring.
+                "metricsGenerator": {
+                    "enabled": True,
+                    "remoteWriteUrl": "http://mimir-gateway.monitoring.svc.cluster.local/api/v1/push",
+                    "processor": {"local_blocks": {}, "service_graphs": {}, "span_metrics": {}},
+                },
+                "overrides": {
+                    "defaults": {
+                        "metrics_generator": {"processors": ["local-blocks", "service-graphs", "span-metrics"]}
+                    }
+                },
+                "extraEnvFrom": [{"secretRef": {"name": _CREDENTIALS_SECRET}}],
             },
-        ),
+            "persistence": {"enabled": False},
+            "nodeSelector": {"topology.kubernetes.io/region": "hil"},
+            "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}, "limits": {"cpu": "500m", "memory": "512Mi"}},
+            "serviceMonitor": {"enabled": True},
+        },
     )
     return chart
 

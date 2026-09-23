@@ -32,8 +32,8 @@ export interface Scenario extends ScenarioOptions {
   openMobileSidebar?: boolean;
   threadlessSandbox?: boolean;
   sidebarSource?: "disconnected" | "database-disconnected";
-  /** Exercise the production interest and Electric shape synchronization boundary. `unavailable`
-   * is a persistent initial service failure, unlike a retired ready shape, whose 410 triggers a refresh. */
+  /** Exercise the production scope and Electric shape synchronization boundary. `unavailable`
+   * is a persistent initial service failure, unlike a retired epoch, whose 410 triggers a refresh. */
   sessionReplay?: "catching-up" | "unavailable";
   /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
   interleavedEvents?: boolean;

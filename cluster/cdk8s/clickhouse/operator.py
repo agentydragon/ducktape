@@ -11,12 +11,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
     HelmReleaseSpecDriftDetection,
     HelmReleaseSpecDriftDetectionMode,
     HelmReleaseSpecValuesFrom,
@@ -34,6 +28,7 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
+from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "clickhouse-operator"
@@ -91,36 +86,26 @@ def helmrelease_chart(app: App) -> Chart:
             type=HelmRepositorySpecType.OCI, url="oci://ghcr.io/altinity/clickhouse-operator-helm-chart", interval="12h"
         ),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            timeout="10m",
-            drift_detection=HelmReleaseSpecDriftDetection(mode=HelmReleaseSpecDriftDetectionMode.ENABLED),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="altinity-clickhouse-operator",
-                    version="0.27.3",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                    interval="12h",
-                )
-            ),
-            values_from=[
-                HelmReleaseSpecValuesFrom(
-                    # operator-values.sops.yaml
-                    kind=HelmReleaseSpecValuesFromKind.SECRET,
-                    name="clickhouse-operator-values",
-                    values_key="values.yaml",
-                )
-            ],
-            values=_values(),
-        ),
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart="altinity-clickhouse-operator",
+        version="0.27.3",
+        interval="30m",
+        chart_interval="12h",
+        timeout="10m",
+        drift_detection=HelmReleaseSpecDriftDetection(mode=HelmReleaseSpecDriftDetectionMode.ENABLED),
+        values_from=[
+            HelmReleaseSpecValuesFrom(
+                # operator-values.sops.yaml
+                kind=HelmReleaseSpecValuesFromKind.SECRET,
+                name="clickhouse-operator-values",
+                values_key="values.yaml",
+            )
+        ],
+        values=_values(),
     )
     return chart
 
