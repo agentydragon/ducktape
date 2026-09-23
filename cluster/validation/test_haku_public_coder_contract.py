@@ -84,9 +84,7 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
 
     # public-coder's cluster-scoped reads come from its own narrow ClusterRole, never from the
     # much broader cluster-diagnostics-reader Haku is bound to.
-    haku_cluster_binding = yaml.safe_load(
-        (k8s_dir / "agents/shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml").read_text()
-    )
+    haku_cluster_binding = yaml.safe_load((k8s_dir / "agents/shared-rbac/agent-shared-rbac.k8s.yaml").read_text())
     assert _subjects(haku_cluster_binding) >= _HAKU_SUBJECTS
     assert _PUBLIC_CODER_SUBJECT not in haku_cluster_binding["subjects"]
 

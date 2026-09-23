@@ -6,6 +6,7 @@ from cdk8s import App, Chart
 
 from cluster.cdk8s import (
     agent_machine_access,
+    agent_shared_rbac,
     aiquota,
     cnpg_operator,
     descheduler,
@@ -233,6 +234,7 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    agent_shared_rbac.write_manifests(root)
     website.write_manifests(root)
     ollama_app.write_manifests(root)
     gatus_app.write_manifests(root)
@@ -492,10 +494,14 @@ def generate_manifests(root: Path) -> None:
     tofu_controller_kustomization = tofu_controller_release.tofu_controller(
         flux_chart, tofu_controller_artifact, cert_manager_kustomization, kyverno_kustomization
     )
+    volsync_artifact = artifact("volsync", "cluster/k8s/volsync")
+    volsync_kustomization = volsync_flux_kustomizations.volsync(
+        flux_chart, volsync_artifact, snapshot_controller_kustomization
+    )
+    agent_shared_rbac_artifact = artifact("agent-shared-rbac", agent_shared_rbac.OUTPUT_DIR)
+    agent_shared_rbac.agent_shared_rbac(
     volsync_artifact = artifact("volsync", volsync.OUTPUT_DIR)
     volsync_kustomization = volsync.volsync(flux_chart, volsync_artifact, snapshot_controller_kustomization)
-    agent_shared_rbac_artifact = artifact("agent-shared-rbac", "cluster/k8s/agents/shared-rbac")
-    agents_flux_kustomizations.agent_shared_rbac(
         flux_chart, agent_shared_rbac_artifact, claude_rbac_kustomization, kyverno_policies_kustomization
     )
     agent_shared_secrets_artifact = artifact("agent-shared-secrets", "cluster/k8s/agents/shared-secrets")
