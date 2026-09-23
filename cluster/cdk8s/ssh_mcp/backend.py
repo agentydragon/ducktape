@@ -268,7 +268,7 @@ def chart(app: App, *, config: SshMcpConfig, mesh: Mesh) -> Chart:
         metadata=k8s.ObjectMeta(
             name=NAMESPACE,
             labels={"name": NAMESPACE, "goldilocks.fairwinds.com/enabled": "false"},
-            annotations={"description": "Standalone SSH MCP backend; private keys stay in this namespace."},
+            annotations={"description": "SSH MCP backend; private keys stay in this namespace."},
         ),
     )
     SshMcp(chart, NAME, config=config, mesh=mesh)
