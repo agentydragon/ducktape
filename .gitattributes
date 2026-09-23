@@ -63,6 +63,7 @@ cluster/k8s/monitoring/etcd/kustomization.yaml linguist-generated=true
 cluster/k8s/ntfy/kustomization.yaml linguist-generated=true
 cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
 cluster/k8s/descheduler/kustomization.yaml linguist-generated=true
+cluster/k8s/kyverno/app/kustomization.yaml linguist-generated=true
 cluster/k8s/cert-manager/app/kustomization.yaml linguist-generated=true
 cluster/k8s/cert-manager/trust/kustomization.yaml linguist-generated=true
 cluster/k8s/cert-manager/issuer-config/kustomization.yaml linguist-generated=true
