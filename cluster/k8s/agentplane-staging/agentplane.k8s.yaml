@@ -2395,7 +2395,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: agentplane-actions-settings
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer,ha-mcp-client-bearer,tana-agentydragon-gmail-com-account-pat,google-mcp-bearer
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-client-bearer,ha-mcp-client-bearer,tana-agentydragon-gmail-com-account-pat,google-mcp-bearer
   labels:
     app.kubernetes.io/name: agentplane-actions
   name: agentplane-actions
@@ -2529,7 +2529,7 @@ spec:
               name: secret-haku-console-github-mcp-client-credentials
               readOnly: true
             - mountPath: /run/secrets/ssh-mcp
-              name: secret-ssh-mcp-bearer
+              name: secret-ssh-mcp-client-bearer
               readOnly: true
             - mountPath: /run/secrets/ha-mcp
               name: secret-ha-mcp-client-bearer
@@ -2642,12 +2642,12 @@ spec:
               - key: client_secret
                 path: client_secret
             secretName: haku-console-github-mcp-client-credentials
-        - name: secret-ssh-mcp-bearer
+        - name: secret-ssh-mcp-client-bearer
           secret:
             items:
               - key: bearer-token
                 path: bearer-token
-            secretName: ssh-mcp-bearer
+            secretName: ssh-mcp-client-bearer
         - name: secret-ha-mcp-client-bearer
           secret:
             items:
@@ -2938,6 +2938,77 @@ spec:
     creationPolicy: Owner
     deletionPolicy: Retain
     name: tana-agentydragon-gmail-com-account-pat
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-ssh-mcp-bearer-reader
+  namespace: ssh-mcp
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - ssh-mcp-bearer
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-ssh-mcp-bearer-reader
+  namespace: ssh-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-ssh-mcp-bearer-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-ssh-mcp-bearer-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: ssh-mcp
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ssh-mcp-client-bearer
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: ssh-mcp-bearer
+        property: bearer-token
+      secretKey: bearer-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-ssh-mcp-bearer-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: ssh-mcp-client-bearer
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

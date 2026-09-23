@@ -1207,7 +1207,7 @@ def generate_manifests(root: Path) -> None:
         authentik_kustomization,
     )
     ssh_mcp_artifact = artifact("ssh-mcp", ssh_mcp_generation.OUTPUT_DIR)
-    ssh_mcp_kustomization = ssh_mcp_generation.ssh_mcp(
+    ssh_mcp_generation.ssh_mcp(
         flux_chart, ssh_mcp_artifact, root, mesh, devbox_service, external_secrets_operator_kustomization
     )
     google_mcp_artifact = artifact("google-mcp", google_mcp.OUTPUT_DIR)
@@ -1428,7 +1428,6 @@ def generate_manifests(root: Path) -> None:
         reflector_kustomization,
         external_creds_kustomization,
         external_secrets_config_kustomization,
-        ssh_mcp_kustomization,
         monitoring_crds_kustomization,
     )
     public_coder_agent_app_artifact = artifact(

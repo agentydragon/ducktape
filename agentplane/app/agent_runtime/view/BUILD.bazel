@@ -5,6 +5,10 @@ package(default_visibility = ["//agentplane/app:__subpackages__"])
 py_library(
     name = "fold",
     srcs = ["fold.py"],
+    visibility = [
+        "//agentplane/acceptance:__pkg__",
+        "//agentplane/app:__subpackages__",
+    ],
     deps = [
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
@@ -69,6 +73,10 @@ py_library(
 py_library(
     name = "views",
     srcs = ["views.py"],
+    visibility = [
+        "//agentplane/acceptance:__pkg__",
+        "//agentplane/app:__subpackages__",
+    ],
     deps = [
         ":fold",
         "//agentplane/app:presets",

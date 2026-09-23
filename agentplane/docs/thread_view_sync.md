@@ -165,6 +165,11 @@ store gates subsets on the first subset's response, never on that message. It al
 stream to a subset response's offset, which skips changes to rows outside the subset; the store's
 fetch client hands a subset response the stream's own offset back.
 
+**Gotcha:** the client follows each live log over SSE, but long-polls a shape instead once three
+SSE responses in a row have ended within a second. Electric answers a reader behind the log at once
+rather than holding the connection, so a shape that changes faster than the client reconnects can
+drop to long polling. Both read the same log.
+
 Against the [requirements](thread_sync_requirements.md), it falls short in four places:
 
 - **E5:** the live log re-sends nothing a reader holds, but it carries rows the reader discards.
@@ -351,9 +356,11 @@ older consistent view. Preserve the visible item and pixel offset after prependi
 For a disconnect, the engine resumes the same shape from its own token and deduplicates
 delivery. When Electric retires a shape's log, reload the rows held as fresh subsets while
 they stay on screen; when the projection epoch is gone, read the scope again and replace the
-window once the new one has caught up. Restore an old reading position with by-ID and before/after
-queries. Preserve drafts, disclosure state and reading position. Do not download the items
-between that position and the tail. Ignore late callbacks from superseded subscriptions.
+window once the new one has caught up. The store takes the view state leaving the shape as that
+signal, since an open SSE connection meets the proxy's 410 only when it reconnects. Restore an old
+reading position with by-ID and before/after queries. Preserve drafts, disclosure state and
+reading position. Do not download the items between that position and the tail. Ignore late
+callbacks from superseded subscriptions.
 
 ### Expand content during streaming
 

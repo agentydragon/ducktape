@@ -17,18 +17,17 @@ Electric design, and the path to trying a second implementation beside it.
 2. **A thread with no fold yet re-reads its scope on a one-second timer (E6).** The scope read
    should wait on `ThreadUpdates.changes` until the fold exists, and the client re-issue it on
    return.
-3. **The live log over SSE.** Long polling already meets E6; SSE saves a request per change batch.
-4. **Pending commands past the newest 200.** The pending subset returns the newest 200 with no
+3. **Pending commands past the newest 200.** The pending subset returns the newest 200 with no
    older page and no count, and the pending panel has no height cap, so on a phone it can squeeze
    the history view to nothing. Porting means a subset form such as
    `… pending = true AND entity_index < $1`, a load-older for it, and the cap. The design doc's
    "keyset page by admission cursor" describes the page that does not exist yet.
-5. **Electric's server memory** under history growth, a restart and a stalled reader is still an
+4. **Electric's server memory** under history growth, a restart and a stalled reader is still an
    adoption gate (<../../docs/thread_view_sync.md> § Server memory ownership). Probes exist on the
    parked spike PR #7490 (`shape_history_memory_test`, `shape_stalled_reader_test`,
    `shape_capacity_test`); they need rewriting against `testing/electric_service.py` and the thread
    tables.
-6. **Compacting completed bodies (D5).** Compaction keeps the body's identity — owner, generation
+5. **Compacting completed bodies (D5).** Compaction keeps the body's identity — owner, generation
    and every reference to it — so the entity row does not change. What reaches a reader holding the
    body is the storage change itself:
    - a delete for each chunk it replaces, which must not withdraw text the reader shows;
@@ -44,7 +43,7 @@ Electric design, and the path to trying a second implementation beside it.
    Electric's behaviour: whether a delete carries the row's text, and whether a compaction
    transaction's changes arrive together.
 
-7. **Measure it on `agentplane-testing`.**
+6. **Measure it on `agentplane-testing`.**
    - Open to first text for a 30-row tail, cold and warm, timed per stage.
    - A PING turn under 3 s.
    - The live log's traffic for a reader scrolled away from an active tail (**E5**).

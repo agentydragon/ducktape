@@ -141,23 +141,3 @@ the reviewed read-only tool names for Haku. The same entry denies the Copilot de
 
 GitHub's host guide describes the prerequisite and explicitly notes that its remote MCP server has
 no Dynamic Client Registration: <https://github.com/github/github-mcp-server/blob/main/docs/host-integration.md>.
-
-## One-time bootstrap: `kubectl-passthrough-mcp` (cluster-admin, operator-linked)
-
-The `kubectl-passthrough-mcp` MCP server entry (console_config.py — `pods_*`, `resources_*`,
-`nodes_*`, `events_list`, `configuration_view`) uses `auth: {kind: remote_server_oauth}`, the same
-per-operator browser-linked mechanism as `github`: the operator connects once
-from the console's Access tab (⚙ → Access → Connect next to `kubectl-passthrough-mcp`),
-which runs Authentik's PKCE flow against `kubectl-passthrough-mcp`'s own OAuth2
-application and stores the association in the console's Postgres database — no static
-token, no secret to mount.
-
-This server forwards the connecting operator's own token
-straight to kube-apiserver (`cluster_auth_mode = passthrough` in
-`agents/kubectl-passthrough-mcp/`) rather than acting through a scoped service credential
-of its own — the operator's real permissions apply, via the
-`oidc-ksbx-agentydragon-admin` `ClusterRoleBinding`
-(`cluster/cdk8s/kubectl_passthrough_mcp.py`, cluster-admin).
-So every tool call here runs with full cluster-admin once approved; the operator-approval
-click in trusted console chrome is the only gate. See `haku/docs/security.md` for the
-enforcement-inventory entry.
