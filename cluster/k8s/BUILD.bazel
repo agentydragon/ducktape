@@ -118,6 +118,7 @@ exports_files(
         "cert-manager/issuer-config/kustomization.yaml",
         "cert-manager/environment/environment.k8s.yaml",
         "cert-manager/environment/kustomization.yaml",
+        "cert-manager/config/base/letsencrypt-issuers.k8s.yaml",
         "cert-manager/config/base/letsencrypt-root-cas.k8s.yaml",
         "cert-manager/cluster-ca/base/cluster-ca.k8s.yaml",
         "external-secrets/config/external-secrets-config.k8s.yaml",
