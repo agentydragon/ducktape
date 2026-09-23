@@ -560,6 +560,10 @@ spec:
   dependsOn:
     - name: kubevirt-operator
       namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: kubevirt.io/v1
+      current: has(status.phase) && status.phase == 'Deployed' && has(status.conditions) && status.conditions.exists(c, c.type == 'Available' && c.status == 'True')
+      kind: KubeVirt
   interval: 10m
   path: ./cluster/k8s/kubevirt/app
   prune: true
@@ -700,6 +704,11 @@ spec:
       namespace: ducktape-flux
     - name: local-path-provisioner
       namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      current: has(status.phase) && status.phase == 'Deployed' && has(status.conditions) && status.conditions.exists(c, c.type == 'Available' && c.status == 'True')
+      failed: has(status.phase) && status.phase == 'Error'
+      kind: CDI
   interval: 10m
   path: ./cluster/k8s/kubevirt/cdi
   prune: true
