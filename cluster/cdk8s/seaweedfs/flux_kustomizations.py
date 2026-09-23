@@ -41,29 +41,6 @@ def seaweedfs_cluster(
     )
 
 
-def seaweedfs_filer_db(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_namespace: Kustomization, cnpg: Kustomization
-) -> Kustomization:
-    name = "seaweedfs-filer-db"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            # Required to apply seaweedfs-filer-db-ssd-creds.sops.yaml (the filer DB app creds
-            # CNPG syncs onto the -ssd seaweedfs role); without it Flux applies the ciphertext.
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(seaweedfs_namespace, cnpg),
-        ),
-    )
-
-
 def seaweedfs_monitoring(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,

@@ -76,18 +76,13 @@ from seaweed_seaweed_crds.com.seaweedfs.seaweed import (
 from cluster.cdk8s import stateful_infra
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.seaweedfs import namespace
+from cluster.cdk8s.seaweedfs import filer_db, namespace
 
 NAME = "seaweedfs"
 OUTPUT_DIR = "cluster/k8s/seaweedfs/cluster"
 _ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
 _HOSTNAME = "kubernetes.io/hostname"
 _CONTROL_PLANE = "node-role.kubernetes.io/control-plane"
-# seaweedfs-filer-db-ssd-creds is a committed Secret (../db/seaweedfs-filer-db-ssd-creds.sops.yaml)
-# that CNPG syncs onto the -ssd seaweedfs role (declared as the app user in that cluster's
-# initdb stanza). The -creds suffix is deliberate: CNPG auto-generates a bogus <cluster>-app
-# Secret (default user "app") for this cluster, so the committed one must not collide.
-_FILER_DB_SECRET = "seaweedfs-filer-db-ssd-creds"
 
 
 def _component_labels(component: str) -> dict[str, str]:
@@ -159,7 +154,7 @@ def _filer_db_env(name: str, key: str) -> SeaweedSpecFilerEnv:
     return SeaweedSpecFilerEnv(
         name=name,
         value_from=SeaweedSpecFilerEnvValueFrom(
-            secret_key_ref=SeaweedSpecFilerEnvValueFromSecretKeyRef(name=_FILER_DB_SECRET, key=key)
+            secret_key_ref=SeaweedSpecFilerEnvValueFromSecretKeyRef(name=filer_db.CREDENTIALS_SECRET, key=key)
         ),
     )
 
@@ -311,7 +306,8 @@ def seaweed(scope: Construct) -> Seaweed:
                     # and overshoots -> kernel OOM-kill.
                     SeaweedSpecFilerEnv(name="GOMEMLIMIT", value="700MiB"),
                     # Postgres credentials override filer.toml [postgres2] keys via viper's
-                    # env-var binding (WEED_<key>, dot->underscore).
+                    # env-var binding (WEED_<key>, dot->underscore); CNPG syncs the Secret onto
+                    # the DB's seaweedfs role.
                     _filer_db_env("WEED_POSTGRES2_USERNAME", "username"),
                     _filer_db_env("WEED_POSTGRES2_PASSWORD", "password"),
                 ],

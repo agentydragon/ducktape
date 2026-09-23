@@ -81,6 +81,8 @@ _GENERATED_FILES = (
     "cluster/k8s/kyverno/policies/restrict-agent-gateway-routes.k8s.yaml",
     "cluster/k8s/kyverno/policies/restrict-agent-kustomization-patch.k8s.yaml",
     "cluster/k8s/seaweedfs/cluster/priorityclass.k8s.yaml",
+    "cluster/k8s/seaweedfs/db/seaweedfs-filer-db-ssd.k8s.yaml",
+    "cluster/k8s/seaweedfs/db/kustomization.yaml",
     "cluster/k8s/seaweedfs/external-credentials/external-credentials.k8s.yaml",
     "cluster/k8s/seaweedfs/external-credentials/kustomization.yaml",
     "cluster/k8s/seaweedfs/operator/seaweedfs-operator.k8s.yaml",
