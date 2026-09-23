@@ -78,12 +78,11 @@ _GROCY_SF_MCP_CLIENT_ID = "cb57e244-c13c-4eac-a299-e052698b774e"
 _HOME_ASSISTANT_MCP_URL = "http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp"
 _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
 # One standalone google-mcp pod (cluster/cdk8s/google_mcp.py) serves both tool sets at
-# distinct paths, on a Google credential separate from haku-console's own per-Operator
-# connections -- see that module's docstring.
+# distinct paths -- see that module's docstring for its Google credential.
 _GMAIL_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp"
 _CALENDAR_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp"
-# The same ESO-delivered Secrets haku-console's own home_assistant/tana servers read
-# (cluster/cdk8s/haku/console_config.py), with the Tana PAT approved for this namespace too.
+# ha-mcp reflects its bearer into this namespace (cluster/cdk8s/ha_mcp.py); the Tana PAT is an
+# external-creds copy approved for this namespace (cluster/cdk8s/external_creds.py).
 _HA_MCP_BEARER_SECRET = "ha-mcp-bearer"
 _TANA_MCP_BEARER_SECRET = "tana-agentydragon-gmail-com-account-pat"
 _GOOGLE_MCP_BEARER_SECRET = "google-mcp-bearer"
@@ -228,7 +227,7 @@ _ACTIONS_SETTINGS = {
             "description": "Home Assistant tools; every Action remains subject to operator approval.",
             "executor": {
                 "kind": "mcp",
-                "description": "Standalone Home Assistant MCP backend (ha-mcp), the same one haku-console uses.",
+                "description": "Standalone Home Assistant MCP backend (ha-mcp).",
                 "config": {
                     "transport": "streamable-http",
                     "url": _HOME_ASSISTANT_MCP_URL,
@@ -242,7 +241,7 @@ _ACTIONS_SETTINGS = {
             "description": "Tana read/write tools; every Action remains subject to operator approval.",
             "executor": {
                 "kind": "mcp",
-                "description": "Standalone Tana MCP backend (tana-mcp), the same one haku-console uses.",
+                "description": "Standalone Tana MCP backend (tana-mcp).",
                 "config": {
                     "transport": "streamable-http",
                     "url": _TANA_MCP_URL,
@@ -256,8 +255,7 @@ _ACTIONS_SETTINGS = {
             "description": "Gmail read/write tools; every Action remains subject to operator approval.",
             "executor": {
                 "kind": "mcp",
-                "description": "Standalone Gmail MCP backend (google-mcp), on a write-scoped Google credential "
-                "separate from haku-console's per-Operator connections.",
+                "description": "Standalone Gmail MCP backend (google-mcp), on a write-scoped Google credential.",
                 "config": {
                     "transport": "streamable-http",
                     "url": _GMAIL_MCP_URL,
@@ -272,7 +270,7 @@ _ACTIONS_SETTINGS = {
             "executor": {
                 "kind": "mcp",
                 "description": "Standalone Google Calendar MCP backend (google-mcp), on a write-scoped Google "
-                "credential separate from haku-console's per-Operator connections.",
+                "credential.",
                 "config": {
                     "transport": "streamable-http",
                     "url": _CALENDAR_MCP_URL,

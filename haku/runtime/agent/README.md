@@ -10,7 +10,7 @@ different image, dependencies, and git write identity.
   (Anthropic / OpenAI) is a LiteLLM config knob (`HAKU_MODEL`), not code.
   Only LiteLLM holds provider keys.
 - **Tools**: a `run_command` shell tool (the Pod is the trust boundary — see
-  <../../PLAN.md>) plus haku-console's aggregated MCP catalog (Tana reads to
+  <../../PLAN.md>) plus haku-console's aggregated MCP catalog (Grocy reads to
   start). Bearer auth rides a pre-built `http_client` because `MCPStreamableHTTPTool`
   ignores `headers=`.
 - **Behavior** is the **haku-state clone**: its root `AGENTS.md` / `SOUL.md` / `MEMORY.md`

@@ -134,9 +134,9 @@ def _bearer_credentials(scope: Construct) -> None:
                     metadata=ExternalSecretSpecTargetTemplateMetadata(
                         annotations={
                             "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "^haku-console$,^agentplane-staging$",
+                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "^agentplane-staging$",
                             "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "^haku-console$,^agentplane-staging$",
+                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "^agentplane-staging$",
                         }
                     ),
                     data={_BEARER_SECRET_KEY: "{{ .password }}"},
@@ -343,8 +343,9 @@ class HaMcpApp(Construct):
                 annotations={
                     "description": (
                         "Writable Home Assistant MCP server behind the shared MCP facade, cluster-internal "
-                        "and gated by a static bearer that only haku-console holds. The upstream HA token "
-                        "remains server-side, and Haku applies its own per-call approval policy."
+                        "and gated by a static bearer that only agentplane-staging's Action Service holds. "
+                        "The upstream HA token remains server-side, and the Action Service applies its own "
+                        "per-call approval policy."
                     ),
                     "reloader.stakater.com/auto": "true",
                 },
@@ -399,8 +400,9 @@ class HaMcpApp(Construct):
             ],
             env_from=[EnvFrom(config_map=config_map)],
             env_variables={
-                # The same token haku-console presents (reflected as ha-mcp-bearer into
-                # haku-console by the emberstack reflector) -- one source of truth, no drift.
+                # The same token agentplane-staging's Action Service presents (reflected as
+                # ha-mcp-bearer into agentplane-staging by the emberstack reflector) -- one source
+                # of truth, no drift.
                 "MCP_FACADE_CLIENT_AUTH__STATIC_BEARER": EnvValue.from_secret_value(
                     SecretValue(
                         secret=Secret.from_secret_name(self, "ha-mcp-bearer-ref", _BEARER_SECRET_NAME),
@@ -446,18 +448,16 @@ class HaMcpApp(Construct):
                 _NAMESPACE,
                 annotations={
                     "description": (
-                        "Default-deny ingress for HA-MCP. Only haku-console and agentplane-staging reach the "
-                        "facade port; the upstream server port is reachable only over pod-local loopback. No "
-                        "Gateway ingress -- this MCP is cluster-internal since the move to a static bearer."
+                        "Default-deny ingress for HA-MCP. Only agentplane-staging reaches the facade port; the "
+                        "upstream server port is reachable only over pod-local loopback. No Gateway ingress -- "
+                        "this MCP is cluster-internal since the move to a static bearer."
                     )
                 },
             ),
             selector=_APP_LABELS,
             ingress=[
                 cilium.ingress_from(
-                    {"k8s:io.kubernetes.pod.namespace": "haku-console"},
-                    {"k8s:io.kubernetes.pod.namespace": "agentplane-staging"},
-                    ports=[_APP_FACADE_PORT],
+                    {"k8s:io.kubernetes.pod.namespace": "agentplane-staging"}, ports=[_APP_FACADE_PORT]
                 ),
                 cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_APP_METRICS_PORT]),
             ],

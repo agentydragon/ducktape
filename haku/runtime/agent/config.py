@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     litellm_base_url: str = Field(description="In-cluster LiteLLM OpenAI-compatible base URL (ends in /v1).")
     litellm_api_key: str = Field(description="Haku's scoped LiteLLM virtual key.")
     console_token: str | None = Field(
-        default=None, description="Bearer for haku-console's /mcp (Tana + other console-mediated tools); omit to skip."
+        default=None, description="Bearer for haku-console's /mcp (the console-mediated tools); omit to skip."
     )
     # Repos cloned at startup as context: ducktape holds the manual, run procedure, sources and
     # code; haku-state is Haku's memory and write surface. A None `*_repo_url` skips the clone,

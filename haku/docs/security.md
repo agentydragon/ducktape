@@ -100,25 +100,6 @@ all-`.readonly` Google token); Haku-owned write credentials are separately scope
 canonical hard-rule inventory.
 Source of truth: `haku-state` `SOUL.md` → _Hard boundaries_.
 
-### In-process `gmail` + `google_calendar` MCP servers
-
-Privileged Gmail reads/writes and Calendar event reads/creation reach Google only
-through haku-console, executing as the acting Operator's own Google account through
-separate `google_mail` and `google_calendar` grants, each with explicit least-privilege
-scopes and self-refresh in <../console/oauth/provider_connection.py>. Agent calls default to
-operator approval; the reviewed `haku_v1` policy auto-approves authenticated Agents for
-exposed read tools and bounded Gmail label mutations, while Calendar creation remains
-manual. Arguments are validated against the registered FastMCP schema, decision errors
-fail closed, and every evaluated Agent call remains in the ledger. The trusted console
-frontend may call the same tools directly as its DB-revalidated Operator session; those
-exact-Origin-gated calls resolve the configured downstream authentication in that
-Operator's context and deliberately create no tool-call row. The refresh tokens live
-only in the `haku-console` Postgres; Haku never holds them, and they are never reflected
-into `haku-sandbox`.
-Source of truth: <../console/auto_approval/>, <../../cluster/cdk8s/haku/console_config.py>,
-<../console/mcp_agent_auth.py>, <../console/mcp/tool_call_service.py>,
-<../console/tools/gmail.py>, <../console/tools/google_calendar.py>.
-
 ### `kubectl-passthrough-mcp` server entry
 
 `auth: remote_server_oauth`, cluster-admin passthrough. Agent-requested cluster
@@ -128,16 +109,6 @@ browser session may call the same `/mcp` tool directly with exact-Origin enforce
 that path treats trusted console code as the Operator and creates no approval/audit row.
 There is no narrower RBAC backstop underneath either path.
 Source of truth: <../../cluster/k8s/agents/kubectl-passthrough-mcp/>, <../console/README.md>.
-
-### `tana` server entry
-
-`auth: remote_server_oauth`. Tana reads (`search_nodes`, `read_node`, `get_children`, …)
-plus the idempotent `get_or_create_calendar_node` auto-approve for authenticated Agents
-under the console's reviewed policy; every other Tana tool (node edits, moves, deletes,
-tag creation) stays approval-gated, executing under the approving Operator's own linked
-Tana account. Supersedes the standalone `tana-mcp-ro` facade — no separate
-Deployment/secret/route.
-Source of truth: <../console/auto_approval/>, <../console/mcp_config.py>.
 
 ### `grocy-sf` server entry
 
@@ -325,8 +296,9 @@ bulk channels.
    Kyverno route denylist.
 2. Every credential for an operator-owned source reflected into `haku-sandbox` is read-only.
    A Haku-owned write credential must be scoped to its surface and named in the canonical base
-   hard-rule inventory; any other write capability requires its own closure-style server (per
-   the in-process `gmail` + `google_calendar` servers above) and an inventory update. In
+   hard-rule inventory; any other write capability requires its own closure-style server (the
+   credential stays behind a console server entry, as with `grocy-sf` above) and an inventory
+   update. In
    particular, `haku-mail-token` may mutate only the contents of
    Haku's `haku@allegedly.works` mailbox; it grants neither outbound mail nor server administration.
 3. The console renders **no** Haku-authored content. No haku-state credential is reflected into

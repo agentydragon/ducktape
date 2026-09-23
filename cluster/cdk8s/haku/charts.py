@@ -48,8 +48,6 @@ TIMEOUT = "20m"
 
 # Hand-written files the root Kustomization lists beside the generated one.
 EXTRA_RESOURCES = (
-    "haku-console-google-calendar-client-credentials.sops.yaml",
-    "haku-console-google-client-credentials.sops.yaml",
     "haku-console-github-mcp-client-credentials.sops.yaml",
     "routine-launch-token.sops.yaml",
     "web-push-vapid.sops.yaml",

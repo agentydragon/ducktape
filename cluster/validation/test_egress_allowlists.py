@@ -101,8 +101,7 @@ GITHUB_API = hosts("api.github.com")
 OPERATOR_DATA = hosts("api.coinbase.com", "haku-mailbox.allegedly.works", "*.ankiweb.net")
 
 # The operator's Google account (mail, calendar, tasks). No fence here reaches it: agents reach
-# it only through services that hold the token for them (agentplane's egress proxy, google-mcp,
-# haku-console's Gmail/Calendar tools).
+# it only through services that hold the token for them (agentplane's egress proxy, google-mcp).
 OPERATOR_GOOGLE = hosts("www.googleapis.com", "gmail.googleapis.com", "tasks.googleapis.com")
 
 # The fences the assertions below single out: a generated fence by its policy name, a

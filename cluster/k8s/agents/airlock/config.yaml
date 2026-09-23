@@ -63,13 +63,15 @@ oauth:
     # write-capable Gmail/Calendar to every holder of it. This provider's token is instead mirrored only into the google-mcp namespace
     # (google-write-access-token-eso.yaml), which fronts it behind an approval-gated MCP server
     # (x/google_mcp_server) -- see plans/personal_agents/personal_data_agent.md and
-    # docs/personal_agents/verdicts.md for why that boundary matters. Scopes match what
-    # haku-console's own google_mail/google_calendar connections already use
-    # (cluster/cdk8s/haku/console_config.py). Reuses the same Google OAuth client as `google`
+    # docs/personal_agents/verdicts.md for why that boundary matters. Scopes cover the
+    # Gmail/Calendar tools google-mcp serves. Reuses the same Google OAuth client as `google`
     # above (see deployment.yaml's GOOGLE_WRITE_CLIENT_ID/SECRET) -- scope is a per-authorize-flow
     # parameter, not fixed to the client registration, so this needs no second hand-created GCP
     # OAuth client; the GCP Console consent screen must have these scopes registered before this
     # provider's one-time consent flow can complete.
+    # Gotcha: Gmail's restricted scopes keep the GCP app in Testing publishing status unless it
+    # passes Google's verification/security assessment, and a Testing-status app's refresh tokens
+    # expire after 7 days -- expect to re-consent roughly weekly.
     - name: google-write
       provider_type: oauth2
       display_name: Google (write access)

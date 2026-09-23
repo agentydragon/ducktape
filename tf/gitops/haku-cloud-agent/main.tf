@@ -77,14 +77,12 @@ resource "claude-managed-agents_agent" "haku_cloud" {
       name = "kubectl-machine"
       url  = "https://kubectl-machine-mcp.allegedly.works/mcp"
     },
-    # haku-console's aggregated MCP catalog (Tana + Grocy read tools to start; also
-    # grants reach to whatever else console exposes — Gmail/Calendar reads, osm, and every
-    # approval-gated tool — gated by the console's own auto-approval/approval-queue
-    # policy, not by anything here). Supersedes the standalone `tana-mcp-ro` facade
-    # (Tana reads are now `tana` tools allowlisted in the console's auto-approval
-    # policy) and Haku's dedicated read-only grocy-sf credential (`grocy-mcp-haku-sf`):
-    # console's existing grocy-sf catalog entry already exposed the same read tools,
-    # plus approval-gated writes the direct credential could never reach.
+    # haku-console's aggregated MCP catalog (Grocy read tools to start; also grants reach
+    # to whatever else console exposes — osm, and every approval-gated tool — gated by the
+    # console's own auto-approval/approval-queue policy, not by anything here). Supersedes
+    # Haku's dedicated read-only grocy-sf credential (`grocy-mcp-haku-sf`): console's
+    # existing grocy-sf catalog entry already exposed the same read tools, plus
+    # approval-gated writes the direct credential could never reach.
     {
       type = "url"
       name = "haku-console"
