@@ -1,0 +1,295 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+  name: ollama
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: llm-models
+  namespace: ollama
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Gi
+  storageClassName: lvm-proxmox-hdd
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: ollama
+  name: ollama
+  namespace: ollama
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ollama
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ollama
+    spec:
+      containers:
+        - env:
+            - name: OLLAMA_MODELS
+              value: /models
+            - name: OLLAMA_HOST
+              value: 0.0.0.0:11434
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: all
+            - name: OLLAMA_KV_CACHE_TYPE
+              value: q8_0
+            - name: OLLAMA_FLASH_ATTENTION
+              value: "1"
+            - name: OLLAMA_NUM_CTX
+              value: "131072"
+          image: ollama/ollama:0.34.0
+          livenessProbe:
+            httpGet:
+              path: /
+              port: ollama
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          name: ollama
+          ports:
+            - containerPort: 11434
+              name: ollama
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: ollama
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 40Gi
+              nvidia.com/gpu: 2
+            requests:
+              cpu: "2"
+              memory: 24Gi
+              nvidia.com/gpu: 2
+          volumeMounts:
+            - mountPath: /models
+              name: models
+        - env:
+            - name: OLLAMA_DIRECT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: ollama-direct-token
+          image: nginx:1.31-alpine
+          livenessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            tcpSocket:
+              port: auth-proxy
+          name: auth-proxy
+          ports:
+            - containerPort: 11435
+              name: auth-proxy
+              protocol: TCP
+          volumeMounts:
+            - mountPath: /etc/nginx/templates
+              name: nginx-templates
+            - mountPath: /etc/nginx/nginx.conf
+              name: nginx-config
+              subPath: nginx.conf
+      nodeSelector:
+        feature.node.kubernetes.io/pci-10de.present: "true"
+      runtimeClassName: nvidia
+      tolerations:
+        - effect: PreferNoSchedule
+          key: nvidia.com/gpu
+          operator: Exists
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: llm-models
+        - configMap:
+            name: ollama-auth-proxy
+          name: nginx-templates
+        - configMap:
+            name: ollama-auth-proxy
+          name: nginx-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: ollama
+  name: ollama
+  namespace: ollama
+spec:
+  ports:
+    - name: http
+      port: 11434
+      protocol: TCP
+      targetPort: ollama
+    - name: auth-proxy
+      port: 11435
+      protocol: TCP
+      targetPort: auth-proxy
+  selector:
+    app.kubernetes.io/name: ollama
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ollama
+  namespace: ollama
+spec:
+  hostnames:
+    - ollama.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: ollama
+          port: 11435
+      timeouts:
+        backendRequest: 600s
+        request: 600s
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ollama-api-consumer
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - litellm-master-key
+      - ollama-direct-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ollama-reader
+  namespace: ollama
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - pods/log
+      - pods/portforward
+      - services
+      - configmaps
+      - events
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+  - apiGroups:
+      - infra.contrib.fluxcd.io
+    resources:
+      - terraforms
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: claude-ollama-reader
+  namespace: ollama
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ollama-reader
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: claude-sandbox
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: setup-gpt-oss-v3
+  namespace: ollama
+spec:
+  template:
+    spec:
+      containers:
+        - command:
+            - /scripts/setup-gpt-oss-v2.sh
+          env:
+            - name: OLLAMA_HOST
+              value: http://ollama.ollama.svc.cluster.local:11434
+          image: curlimages/curl:8.22.0
+          name: setup
+          volumeMounts:
+            - mountPath: /scripts
+              name: scripts
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      restartPolicy: OnFailure
+      volumes:
+        - configMap:
+            defaultMode: 493
+            name: gpt-oss-scripts
+          name: scripts
+  ttlSecondsAfterFinished: 86400
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: ollama-direct-token
+  namespace: ollama
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ollama-direct-token
+  namespace: ollama
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: ollama-direct-token
+  refreshInterval: 8760h
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: ollama-direct-token
+    template:
+      data:
+        token: "{{ .password }}"
+      metadata:
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: claude-sandbox
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: claude-sandbox
+      type: Opaque

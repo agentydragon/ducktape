@@ -123,6 +123,7 @@ _GENERATED_FILES = (
     "cluster/k8s/authentik/sso-providers-tf/kustomization.yaml",
     "cluster/k8s/website/website.k8s.yaml",
     "cluster/k8s/website/kustomization.yaml",
+    "cluster/k8s/ollama/ollama.k8s.yaml",
     "cluster/k8s/cert-manager/app/cert-manager.k8s.yaml",
     "cluster/k8s/cert-manager/app/kustomization.yaml",
     "cluster/k8s/cert-manager/trust/trust-manager.k8s.yaml",

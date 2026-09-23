@@ -145,7 +145,8 @@ from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizatio
 from cluster.cdk8s.monitoring import alloy_otlp_bearer_token, flux_kustomizations as monitoring_flux_kustomizations
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations
-from cluster.cdk8s.ollama import flux_kustomizations as ollama_flux_kustomizations
+from cluster.cdk8s.ollama import app as ollama_app, flux_kustomizations as ollama_flux_kustomizations
+from cluster.cdk8s.openebs_lvm import flux_kustomizations as openebs_lvm_flux_kustomizations
 from cluster.cdk8s.openebs_lvm import (
     flux_kustomizations as openebs_lvm_flux_kustomizations,
     storage as openebs_lvm_storage,
@@ -227,6 +228,7 @@ def generate_manifests(root: Path) -> None:
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
     website.write_manifests(root)
+    ollama_app.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
     cert_manager_app.write_manifests(root)
     cert_manager_trust.write_manifests(root)
