@@ -20,32 +20,6 @@ from cluster.cdk8s.flux import (
 )
 
 
-def claude_rbac(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kyverno_policies: Kustomization
-) -> Kustomization:
-    # TODO: migrate this live Flux object name to agent-rbac-base in a staged
-    # change. Renaming it directly would delete the old Kustomization and may prune
-    # its inventory before the replacement owns the same RBAC resources.
-    name = "claude-rbac"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="2m",
-            depends_on=[flux_kustomization_depends_on(kyverno_policies)],
-            health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="claude-sandbox")],
-        ),
-        description=(
-            "Lightweight base for agent RBAC. Claude sandbox namespace + shared "
-            "ClusterRoles. Must not depend on service or database kustomizations."
-        ),
-    )
-
-
 def agent_sandbox_controller(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
     name = "agent-sandbox-controller"
     return flux_kustomization(

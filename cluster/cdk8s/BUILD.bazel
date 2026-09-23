@@ -497,6 +497,7 @@ py_library(
     ],
     deps = [
         ":agent_machine_access",
+        ":agent_rbac_base",
         ":aiquota",
         ":artifact_generators",
         ":descheduler",
@@ -696,6 +697,8 @@ py_test(
         "//cluster/k8s:agentplane-staging/kustomization.yaml",
         "//cluster/k8s:agentplane-testing/agentplane.k8s.yaml",
         "//cluster/k8s:agentplane-testing/litellm-credentials.k8s.yaml",
+        "//cluster/k8s:agents/agent-rbac-base/agent-rbac-base.k8s.yaml",
+        "//cluster/k8s:agents/agent-rbac-base/kustomization.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/cnp-haku-claude-egress.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/cnp-haku-cloud-api-egress.k8s.yaml",
         "//cluster/k8s:agents/haku-egress-proxy/namespace.k8s.yaml",
