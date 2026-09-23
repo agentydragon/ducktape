@@ -1562,6 +1562,7 @@ py_test(
         "//cluster/k8s:forgejo/agentydragon/forgejo-agentydragon.k8s.yaml",
         "//cluster/k8s:forgejo/agentydragon/kustomization.yaml",
         "//cluster/k8s:forgejo/app/forgejo.k8s.yaml",
+        "//cluster/k8s:forgejo/app/kustomization.yaml",
         "//cluster/k8s:forgejo/budget-ledger/budget-ledger.k8s.yaml",
         "//cluster/k8s:forgejo/budget-ledger/kustomization.yaml",
         "//cluster/k8s:forgejo/budget-namespace/kustomization.yaml",

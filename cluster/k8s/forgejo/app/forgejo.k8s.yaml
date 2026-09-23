@@ -340,3 +340,42 @@ spec:
       data:
         token: "{{ .password }}"
       type: Opaque
+---
+apiVersion: cilium.io/v2
+kind: CiliumEnvoyConfig
+metadata:
+  annotations:
+    cec.cilium.io/use-original-source-address: "false"
+  name: forgejo-ssh
+  namespace: forgejo
+spec:
+  backendServices:
+    - name: forgejo-ssh
+      namespace: forgejo
+      number:
+        - "2222"
+  nodeSelector:
+    matchLabels:
+      topology.kubernetes.io/region: hil
+  resources:
+    - "@type": type.googleapis.com/envoy.config.listener.v3.Listener
+      address:
+        socketAddress:
+          address: 0.0.0.0
+          portValue: 2222
+      filterChains:
+        - filters:
+            - name: envoy.filters.network.tcp_proxy
+              typedConfig:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                cluster: forgejo:forgejo-ssh:2222
+                idleTimeout: 3600s
+                statPrefix: forgejo-ssh
+      name: forgejo-ssh
+    - "@type": type.googleapis.com/envoy.config.cluster.v3.Cluster
+      edsClusterConfig:
+        serviceName: forgejo/forgejo-ssh:2222
+      name: forgejo:forgejo-ssh:2222
+      outlierDetection:
+        splitExternalLocalOriginErrors: true
+      type: EDS

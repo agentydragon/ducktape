@@ -1,8 +1,7 @@
 """Forgejo: the Helm release, its git volume, S3 bucket and credentials, metrics token, route,
-disruption budget and ServiceMonitor.
+public SSH listener, disruption budget and ServiceMonitor.
 
-Hand-written beside the generated output: `ciliumenvoyconfig.yaml` (no `CiliumEnvoyConfig`
-binding), `forgejo-admin-password.sops.yaml` and the `kustomization.yaml` listing them.
+Hand-written beside the generated output: `forgejo-admin-password.sops.yaml`.
 """
 
 from __future__ import annotations
@@ -11,6 +10,12 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
+from cilium_envoyconfig_crds.io.cilium import (
+    CiliumEnvoyConfig,
+    CiliumEnvoyConfigSpec,
+    CiliumEnvoyConfigSpecBackendServices,
+    CiliumEnvoyConfigSpecNodeSelector,
+)
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
@@ -71,8 +76,9 @@ from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
     S3CredentialsSpecSecretRef,
 )
 
+from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
 
 _OUTPUT_DIR = "cluster/k8s/forgejo/app"
@@ -467,6 +473,61 @@ def _helm_release(scope: Construct) -> None:
     )
 
 
+_TCP_PROXY_TYPE = "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy"
+
+
+def _ssh_listener(scope: Construct) -> None:
+    """Public Forgejo SSH via a manual CiliumEnvoyConfig.
+
+    Cilium 1.19's Gateway API controller supports HTTPRoute/GRPCRoute/TLSRoute but not TCPRoute,
+    and SSH has no SNI/Host header to route on. The Cilium Envoy DaemonSet already runs with
+    hostNetwork on HIL gateway nodes, so this binds git.allegedly.works:2222 directly on those
+    nodes and forwards raw TCP to Forgejo's in-cluster SSH service.
+    """
+    service = "forgejo-ssh"
+    cluster = f"{_NAMESPACE}:{service}:2222"
+    CiliumEnvoyConfig(
+        scope,
+        "ssh-listener",
+        metadata=metadata(service, _NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}),
+        spec=CiliumEnvoyConfigSpec(
+            node_selector=CiliumEnvoyConfigSpecNodeSelector(match_labels={"topology.kubernetes.io/region": "hil"}),
+            backend_services=[
+                CiliumEnvoyConfigSpecBackendServices(name=service, namespace=_NAMESPACE, number=["2222"])
+            ],
+            resources=[
+                {
+                    "@type": "type.googleapis.com/envoy.config.listener.v3.Listener",
+                    "name": service,
+                    "address": {"socketAddress": {"address": "0.0.0.0", "portValue": 2222}},
+                    "filterChains": [
+                        {
+                            "filters": [
+                                {
+                                    "name": "envoy.filters.network.tcp_proxy",
+                                    "typedConfig": {
+                                        "@type": _TCP_PROXY_TYPE,
+                                        "statPrefix": service,
+                                        "cluster": cluster,
+                                        "idleTimeout": "3600s",
+                                    },
+                                }
+                            ]
+                        }
+                    ],
+                },
+                {
+                    "@type": "type.googleapis.com/envoy.config.cluster.v3.Cluster",
+                    "name": cluster,
+                    "type": "EDS",
+                    "edsClusterConfig": {"serviceName": f"{_NAMESPACE}/{service}:2222"},
+                    "outlierDetection": {"splitExternalLocalOriginErrors": True},
+                },
+            ],
+        ),
+    )
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     _helm_release(chart)
@@ -512,8 +573,14 @@ def chart(app: App) -> Chart:
         ),
     )
     _metrics_token(chart)
+    _ssh_listener(chart)
     return chart
 
 
 def write_manifests(root: Path) -> None:
     write_charts(root, _OUTPUT_DIR, chart)
+    # The OAuth OIDC credentials are provisioned by tf/gitops/sso-providers/ as a k8s Secret.
+    write_yaml(
+        root / _OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml", "forgejo-admin-password.sops.yaml"]),
+    )
