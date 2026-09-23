@@ -1,0 +1,200 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: gatus
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: gatus-db
+  namespace: gatus
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          weight: 100
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: gatus
+      owner: gatus
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 2
+  monitoring:
+    enablePodMonitor: true
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 1Gi
+    storageClass: local-path-ovh
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: twin
+  namespace: gatus
+spec:
+  interval: 24h
+  url: https://twin.github.io/helm-charts
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gatus
+  namespace: gatus
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gatus
+  namespace: gatus
+spec:
+  chart:
+    spec:
+      chart: gatus
+      sourceRef:
+        kind: HelmRepository
+        name: twin
+        namespace: gatus
+      version: 1.5.0
+  install:
+    strategy:
+      name: RetryOnFailure
+  interval: 15m
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+  values:
+    affinity:
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+            weight: 100
+    env:
+      GATUS_DB_URI:
+        valueFrom:
+          secretKeyRef:
+            key: uri
+            name: gatus-db-app
+      LITELLM_API_KEY:
+        valueFrom:
+          secretKeyRef:
+            key: api-key
+            name: litellm-master-key
+    envFrom:
+      - secretRef:
+          name: gatus-oidc-secret
+    externalConfigMap: gatus-config
+    ingress:
+      enabled: false
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    persistence:
+      enabled: false
+    podAnnotations:
+      reloader.stakater.com/auto: "true"
+    resources:
+      limits:
+        cpu: 200m
+        memory: 128Mi
+      requests:
+        cpu: 20m
+        memory: 64Mi
+    serviceMonitor:
+      enabled: false
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gatus-ingress
+  namespace: gatus
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: gatus
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gatus-dns-visibility
+  namespace: gatus
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - all
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: gatus
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: gatus
+  namespace: gatus
+spec:
+  hostnames:
+    - status.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: gatus
+          port: 80
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gatus
+  namespace: gatus
+spec:
+  endpoints:
+    - path: /metrics
+      port: http
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gatus
