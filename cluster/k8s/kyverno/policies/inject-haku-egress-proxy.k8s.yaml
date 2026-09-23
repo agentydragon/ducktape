@@ -1,0 +1,162 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
+    policies.kyverno.io/category: Networking
+    policies.kyverno.io/description: Mutates pods in haku-sandbox to automatically inject the dedicated haku-egress-proxy proxy env vars (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, SSL_CERT_FILE, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE, NODE_EXTRA_CA_CERTS) and mount the haku-egress-proxy trust bundle at /egress-proxy-ca/ca-certificates.crt.
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/title: Inject haku-egress-proxy
+  name: inject-haku-egress-proxy
+spec:
+  mutateExistingOnPolicyUpdate: false
+  rules:
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - haku-sandbox
+              operations:
+                - CREATE
+      mutate:
+        patchesJson6902: |-
+          - op: add
+            path: "/spec/volumes/-"
+            value:
+              name: haku-egress-proxy-ca-cert
+              configMap:
+                name: haku-egress-proxy-ca-cert
+      name: add-proxy-volume
+      preconditions:
+        all:
+          - key: "{{ (request.object.spec.volumes || `[]`)[?name=='haku-egress-proxy-ca-cert'] | length(@) }}"
+            operator: Equals
+            value: 0
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - haku-sandbox
+              operations:
+                - CREATE
+      mutate:
+        foreach:
+          - list: request.object.spec.containers
+            patchesJson6902: |-
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTP_PROXY
+                  value: "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTPS_PROXY
+                  value: "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: NO_PROXY
+                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: SSL_CERT_FILE
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: CURL_CA_BUNDLE
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: REQUESTS_CA_BUNDLE
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: NODE_EXTRA_CA_CERTS
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/volumeMounts/-"
+                value:
+                  name: haku-egress-proxy-ca-cert
+                  mountPath: /egress-proxy-ca
+                  readOnly: true
+            preconditions:
+              all:
+                - key: "{{ (element.volumeMounts || `[]`)[?name=='haku-egress-proxy-ca-cert'] | length(@) }}"
+                  operator: Equals
+                  value: 0
+      name: add-proxy-env-and-mount-containers
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - haku-sandbox
+              operations:
+                - CREATE
+      mutate:
+        foreach:
+          - list: request.object.spec.initContainers
+            patchesJson6902: |-
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTP_PROXY
+                  value: "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTPS_PROXY
+                  value: "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: NO_PROXY
+                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: SSL_CERT_FILE
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: CURL_CA_BUNDLE
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: REQUESTS_CA_BUNDLE
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: NODE_EXTRA_CA_CERTS
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/volumeMounts/-"
+                value:
+                  name: haku-egress-proxy-ca-cert
+                  mountPath: /egress-proxy-ca
+                  readOnly: true
+            preconditions:
+              all:
+                - key: "{{ (element.volumeMounts || `[]`)[?name=='haku-egress-proxy-ca-cert'] | length(@) }}"
+                  operator: Equals
+                  value: 0
+      name: add-proxy-env-and-mount-init-containers
+      preconditions:
+        any:
+          - key: "{{ (request.object.spec.initContainers || `[]`) | length(@) }}"
+            operator: GreaterThanOrEquals
+            value: 1

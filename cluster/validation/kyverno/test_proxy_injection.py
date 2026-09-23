@@ -89,13 +89,13 @@ class Injection:
 
 
 POLICIES: dict[str, Injection] = {
-    "cluster/k8s/kyverno/policies/inject-haku-egress-proxy.yaml": Injection(
+    "cluster/k8s/kyverno/policies/inject-haku-egress-proxy.k8s.yaml": Injection(
         namespace="haku-sandbox",
         proxy="http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080",
         ca_bundle="/egress-proxy-ca/ca-certificates.crt",
         bypasses=LOOPBACK | CLUSTER_ADDRESSING | OWN_DOMAINS,
     ),
-    "cluster/k8s/kyverno/policies/inject-mitmproxy.yaml": Injection(
+    "cluster/k8s/kyverno/policies/inject-mitmproxy.k8s.yaml": Injection(
         namespace="claude-sandbox",
         proxy="http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080",
         ca_bundle="/mitmproxy-ca/ca-certificates.crt",
@@ -196,7 +196,7 @@ def test_pod_carrying_its_own_wiring_is_left_alone() -> None:
     port-8080 values over its iron-proxy env.
     """
     assert_not_mutated(
-        get_required_path("_main/cluster/k8s/kyverno/policies/inject-haku-egress-proxy.yaml"),
+        get_required_path("_main/cluster/k8s/kyverno/policies/inject-haku-egress-proxy.k8s.yaml"),
         manifest("pod_self_wired_egress_proxy.yaml"),
     )
 

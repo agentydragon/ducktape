@@ -51,3 +51,50 @@ py_library(
         "@pypi//cdk8s",
     ],
 )
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        ":db",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
+        "//cluster/cdk8s/crd_bindings/gateway_api:httproute",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "db_backups",
+    srcs = ["db_backups.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:resourcereferencegrant",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3credentials",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:s3identity",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "proxy_routes",
+    srcs = ["proxy_routes.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/gateway_api:httproute",
+        "@pypi//cdk8s",
+    ],
+)

@@ -1,20 +1,28 @@
-"""The litellm Namespace, written into the directory of the Kustomization that owns it."""
+"""The litellm Namespace and the root `kustomization.yaml` of the directory the `litellm`
+Kustomization applies, which gathers it with `secrets`, `db` and `app`."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from cluster.cdk8s.generation import write_namespace
+from cluster.cdk8s.flux import kustomize_kustomization
+from cluster.cdk8s.generation import write_namespace, write_yaml
+
+OUTPUT_DIR = "cluster/k8s/litellm"
 
 
 def write_manifests(root: Path) -> None:
     write_namespace(
         root,
-        "cluster/k8s/litellm",
+        OUTPUT_DIR,
         name="litellm",
         labels={
             "goldilocks.fairwinds.com/enabled": "true",
             "goldilocks.fairwinds.com/vpa-update-mode": "auto",
             "rbac.ducktape.io/agent-readable-logs": "true",
         },
+    )
+    write_yaml(
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(resources=["namespace.k8s.yaml", "secrets", "db", "app"]),
     )

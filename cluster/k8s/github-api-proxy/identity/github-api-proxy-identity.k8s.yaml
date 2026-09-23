@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+  name: github-api-proxy
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: github-api-proxy-server
+  namespace: github-api-proxy
+spec:
+  dnsNames:
+    - github-proxy.allegedly.works
+  issuerRef:
+    kind: ClusterIssuer
+    name: ${LETSENCRYPT_ISSUER}
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Always
+    size: 256
+  secretName: github-api-proxy-server-tls
+  usages:
+    - server auth
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  annotations:
+    description: Dedicated workstation proxy interception root. Only its public certificate may be distributed to clients; the signing key stays in this namespace.
+  name: github-api-proxy-interception-ca
+  namespace: github-api-proxy
+spec:
+  commonName: ducktape-github-api-proxy-interception-ca
+  duration: 87600h
+  isCA: true
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-ca-bootstrap
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Never
+    size: 256
+  renewBefore: 8760h
+  secretName: github-api-proxy-interception-ca
+  usages:
+    - cert sign
+    - crl sign

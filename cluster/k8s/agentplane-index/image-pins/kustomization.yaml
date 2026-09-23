@@ -1,0 +1,5 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: git.allegedly.works/ducktape-ci/agentplane-index
+    newTag: devel-20260920014014-89ebdd6 # {"$imagepolicy": "flux-system:agentplane-index:tag"}

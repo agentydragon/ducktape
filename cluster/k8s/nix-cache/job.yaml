@@ -6,7 +6,7 @@ metadata:
   annotations:
     description: Idempotently ensure required Attic caches (main, gaffer, public) exist and print their public keys.
     # Force Flux to recreate the Job when its hash (image or args) changes.
-    # Same pattern as cluster/k8s/atuin/user-provisioner/job.yaml.
+    # Same pattern as cluster/cdk8s/atuin/user_provisioner.py.
     kustomize.toolkit.fluxcd.io/force: enabled
 spec:
   backoffLimit: 5

@@ -1,0 +1,233 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: github-api-proxy
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    description: Private investigation evidence. Retain on app removal; deletion requires explicit evidence-retention review.
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: github-api-proxy-capture
+  namespace: github-api-proxy
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: seaweedfs-ovh
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: github-api-proxy
+  name: github-api-proxy
+  namespace: github-api-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: github-api-proxy
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: github-api-proxy
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --config
+            - /run/github-api-proxy/config/config.json
+          image: git.allegedly.works/ducktape-ci/github-api-proxy:unset
+          imagePullPolicy: IfNotPresent
+          name: proxy
+          ports:
+            - containerPort: 8080
+              name: proxy
+              protocol: TCP
+            - containerPort: 9090
+              name: metrics
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /run/github-api-proxy/config
+              name: config
+              readOnly: true
+            - mountPath: /run/github-api-proxy/clients
+              name: clients
+              readOnly: true
+            - mountPath: /run/github-api-proxy/outer-tls
+              name: outer-tls
+              readOnly: true
+            - mountPath: /run/github-api-proxy/interception-ca
+              name: interception-ca
+              readOnly: true
+            - mountPath: /run/github-api-proxy/work
+              name: private-work
+            - mountPath: /var/lib/github-api-proxy
+              name: capture
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - configMap:
+            name: github-api-proxy-config
+          name: config
+        - name: clients
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: username
+                      path: wyrm2/username
+                    - key: password
+                      path: wyrm2/password
+                  name: github-api-proxy-wyrm2-credentials
+              - secret:
+                  items:
+                    - key: username
+                      path: rugged/username
+                    - key: password
+                      path: rugged/password
+                  name: github-api-proxy-rugged-credentials
+        - name: outer-tls
+          secret:
+            defaultMode: 288
+            secretName: github-api-proxy-server-tls
+        - name: interception-ca
+          secret:
+            defaultMode: 288
+            secretName: github-api-proxy-interception-ca
+        - emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+          name: private-work
+        - name: capture
+          persistentVolumeClaim:
+            claimName: github-api-proxy-capture
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: github-api-proxy
+  namespace: github-api-proxy
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+  egressDeny:
+    - toCIDR:
+        - 0.0.0.0/8
+        - 10.0.0.0/8
+        - 100.64.0.0/10
+        - 127.0.0.0/8
+        - 169.254.0.0/16
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+        - ::/128
+        - ::1/128
+        - fc00::/7
+        - fe80::/10
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: github-api-proxy
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alloy
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-api-proxy
+  namespace: github-api-proxy
+spec:
+  ports:
+    - name: proxy-tls
+      port: 443
+      protocol: TCP
+      targetPort: proxy
+  selector:
+    app.kubernetes.io/name: github-api-proxy

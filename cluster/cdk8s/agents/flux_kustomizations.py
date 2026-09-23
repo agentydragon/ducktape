@@ -7,8 +7,6 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -425,26 +423,6 @@ def loki_read_proxy(
             "Read-only namespace-filtering Loki query proxy so Haku can read logs "
             "for allowlisted namespaces without touching Loki "
             "(auth_enabled:false) directly."
-        ),
-    )
-
-
-def agents_mitmproxy(chart: Chart, cert_manager_trust: Kustomization) -> Kustomization:
-    name = "agents-mitmproxy"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path="./cluster/k8s/agents/mitmproxy",
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="flux-system", namespace="flux-system"
-            ),
-            timeout="5m",
-            # Installs Bundle CRDs and transitively the Certificate CRDs.
-            depends_on=[flux_kustomization_depends_on(cert_manager_trust)],
         ),
     )
 

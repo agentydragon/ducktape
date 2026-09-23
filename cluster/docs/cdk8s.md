@@ -13,7 +13,7 @@ from the committed files. Conventions for writing a generator: <../cdk8s/AGENTS.
 1. **Generated component resources** (`agentplane-{staging,testing}`, `artifact-generators`,
    `litellm/app`, `agents/ha-mcp/app`, `ssh-mcp`, `aiquota`, `clickhouse/schema`,
    `external-creds`, `haku/console{,/db,/migration}`, `monitoring/etcd`, `descheduler`,
-   `agents/public-coder-agent/namespace`): `kustomization.yaml`
+   `agents/public-coder-agent/namespace`, `agents/mitmproxy`): `kustomization.yaml`
    (`flux.kustomize_kustomization`, a Pydantic model: the plain
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for
    `cdk8s import` to ingest) and one `<name>.k8s.yaml` per chart. Hand-written beside
@@ -29,9 +29,8 @@ from the committed files. Conventions for writing a generator: <../cdk8s/AGENTS.
    `agents/public-coder-agent/app`); the objects that carry a value another directory
    shares (`seaweedfs/cluster`'s PriorityClass, rendered from `stateful_infra.PRIORITY`,
    which `descheduler`'s eviction policy also reads); the
-   CiliumNetworkPolicy fences of `agents/haku-egress-proxy` and `agents/mitmproxy`
-   (`cdk8s/egress_fences.py`, one chart per policy so each file keeps its hand-written
-   name); or a tofu-controller `Terraform` CR (`dns-automation`, `litellm/keys-tf`, through
+   CiliumNetworkPolicy fences of `agents/haku-egress-proxy` (`cdk8s/egress_fences.py`, one
+   chart per policy so each file keeps its hand-written name); or a tofu-controller `Terraform` CR (`dns-automation`, `litellm/keys-tf`, through
    `terraform.gitops_terraform` and `//cluster/cdk8s/crd_bindings/tofu_controller`'s bindings);
    `agents/public-coder-agent/devbox`'s SSH Service, whose cdk8s object also supplies the
    endpoint consumed by the SSH MCP generator; or a Namespace written as
@@ -123,7 +122,7 @@ an `http_file` in `MODULE.bazel` pinned by sha256 to the version the cluster dep
 Python bindings are build-time output, never committed. Put each import declaration and
 its optional smoke test in `cluster/cdk8s/crd_bindings/<provider>/BUILD.bazel`; keep
 upstream CRD source pins in `MODULE.bazel`. Current providers are
-`//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium,cert_manager,cnpg,agent_sandbox,tofu_controller,source_watcher}`.
+`//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium,cert_manager,cnpg,agent_sandbox,tofu_controller,source_watcher,seaweedfs,grafana_operator,kyverno,volsync,kubevirt,keda,clickhouse}`.
 `//agentplane/crds` owns its CRD constructs directly and is a separate case.
 
 The `source_watcher` import extracts `ArtifactGenerator` from the CRD bundle in

@@ -1,6 +1,15 @@
+# cdk8s-generated (cluster/cdk8s/talos_cloud_controller_manager.py); the Terraform bootstrap
+# parses the HelmRelease.
 exports_files(
-    ["helmrelease.yaml"],
-    visibility = ["//cluster/terraform/main:__pkg__"],
+    [
+        "helmrelease.k8s.yaml",
+        "helmrepository.k8s.yaml",
+        "kustomization.yaml",
+    ],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/terraform/main:__pkg__",
+    ],
 )
 
 # Cluster manifests for cluster/validation's flux-build test (the

@@ -1,0 +1,24 @@
+# gazelle:resolve py kubevirt_kubevirt_crds //cluster/cdk8s/crd_bindings/kubevirt:kubevirt
+# gazelle:resolve py kubevirt_cdi_crds //cluster/cdk8s/crd_bindings/kubevirt:cdi
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+cdk8s_import(
+    name = "kubevirt",
+    crd = "@kubevirt_operator_bundle//file",
+    crd_name = "kubevirts.kubevirt.io",
+    crd_version = "v1",
+    module_name = "kubevirt_kubevirt_crds",
+    module_path = "io/kubevirt",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "cdi",
+    crd = "@cdi_operator_bundle//file",
+    crd_name = "cdis.cdi.kubevirt.io",
+    crd_version = "v1beta1",
+    module_name = "kubevirt_cdi_crds",
+    module_path = "io/kubevirt/cdi",
+    visibility = ["//visibility:public"],
+)

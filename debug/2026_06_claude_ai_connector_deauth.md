@@ -24,7 +24,7 @@ Three-link chain:
    seconds-long DB blip becomes a minutes-long `auth.allegedly.works` 503
    window. Mitigated by relaxing the server livenessProbe
    (`failureThreshold: 8`, `periodSeconds: 15` — ride out ~2 min) in
-   `cluster/k8s/authentik/app/helmrelease.yaml`.
+   `cluster/cdk8s/authentik/app.py`.
 
 2. **FastMCP's OAuthProxy translates ANY upstream refresh failure into OAuth
    `invalid_grant`** (fastmcp 3.1.0,

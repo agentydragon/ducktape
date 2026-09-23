@@ -1,0 +1,75 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/description: Enforces that workload resources (Deployments, StatefulSets, DaemonSets) can only be created or modified by Flux GitOps controllers. Direct kubectl apply/create/patch is blocked.
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Deployment, StatefulSet, DaemonSet
+    policies.kyverno.io/title: Require GitOps
+  name: require-gitops
+spec:
+  background: false
+  rules:
+    - exclude:
+        any:
+          - subjects:
+              - kind: ServiceAccount
+                name: kustomize-controller
+                namespace: flux-system
+          - subjects:
+              - kind: ServiceAccount
+                name: helm-controller
+                namespace: flux-system
+          - subjects:
+              - kind: ServiceAccount
+                name: source-controller
+                namespace: flux-system
+          - subjects:
+              - kind: ServiceAccount
+                name: haku-state-reconciler
+                namespace: flux-system
+          - subjects:
+              - kind: ServiceAccount
+                name: kyverno-admission-controller
+                namespace: kyverno
+          - subjects:
+              - kind: ServiceAccount
+                name: monitoring-operator
+                namespace: monitoring
+          - subjects:
+              - kind: ServiceAccount
+                name: grafana-operator
+                namespace: monitoring
+          - subjects:
+              - kind: ServiceAccount
+                name: seaweedfs-operator
+                namespace: seaweedfs
+          - subjects:
+              - kind: ServiceAccount
+                name: authentik
+                namespace: authentik
+          - subjects:
+              - kind: ServiceAccount
+                name: reloader-reloader
+                namespace: kube-system
+          - resources:
+              namespaces:
+                - kube-system
+                - kyverno
+                - flux-system
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+              operations:
+                - CREATE
+                - UPDATE
+      name: block-direct-workload-changes
+      validate:
+        deny: {}
+        message: "Direct resource creation/modification blocked. All changes must go through GitOps (commit to git repository). Resource: {{request.object.kind}}/{{request.object.metadata.name}} User: {{request.userInfo.username}}"
+  validationFailureAction: Audit

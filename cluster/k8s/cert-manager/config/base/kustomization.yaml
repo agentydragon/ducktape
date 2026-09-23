@@ -3,5 +3,4 @@ kind: Kustomization
 resources:
   - clusterissuer-prod.yaml
   - clusterissuer-staging.yaml
-  - letsencrypt-prod-ca.yaml
-  - letsencrypt-staging-ca.yaml
+  - letsencrypt-root-cas.k8s.yaml

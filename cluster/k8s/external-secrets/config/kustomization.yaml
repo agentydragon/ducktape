@@ -1,10 +1,4 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - external-secrets-config.yaml
-  - activitywatch-secret-store.yaml
-  - airlock-secret-store.yaml
-  - external-creds-secret-store.yaml
-  - flux-system-secret-store.yaml
-  - forgejo-images-secret-store.yaml
-  - google-mcp-secret-store.yaml
+  - external-secrets-config.k8s.yaml

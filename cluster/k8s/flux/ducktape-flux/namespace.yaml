@@ -1,9 +1,0 @@
-# Namespace for Flux Kustomization CRs sourced from the public Ducktape repo.
-# This is a control-plane boundary only: managed workloads retain their own
-# existing namespaces.
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: ducktape-flux
-  labels:
-    name: ducktape-flux

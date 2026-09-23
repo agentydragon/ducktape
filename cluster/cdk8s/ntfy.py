@@ -107,7 +107,7 @@ _DATABASE_CLUSTER = "ntfy-db"
 _DATABASE_APP_SECRET = f"{_DATABASE_CLUSTER}-app"
 _AUTH_SOURCE_SECRET = "ntfy-credentials"
 _AUTH_SECRET = "ntfy-auth"
-_SECRET_STORE = "kubernetes-ntfy-secret-store"
+SECRET_STORE = "kubernetes-ntfy-secret-store"
 
 
 def _secret_env(scope: Construct, id: str, *, name: str, key: str) -> EnvValue:
@@ -120,7 +120,7 @@ def _secret_store(scope: Construct) -> None:
         scope,
         "secret-store",
         metadata=ApiObjectMetadata(
-            name=_SECRET_STORE,
+            name=SECRET_STORE,
             annotations={"description": "Scoped ESO access to ntfy credentials for ntfy, Flux, and Alertmanager."},
         ),
         spec=ClusterSecretStoreSpec(
@@ -166,7 +166,7 @@ def _auth_external_secret(scope: Construct) -> None:
         spec=ExternalSecretSpec(
             refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
             secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name=_SECRET_STORE, kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE
+                name=SECRET_STORE, kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE
             ),
             target=ExternalSecretSpecTarget(
                 name=_AUTH_SECRET,
@@ -226,7 +226,7 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
         spec=ExternalSecretSpec(
             refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
             secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                name=_SECRET_STORE, kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE
+                name=SECRET_STORE, kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE
             ),
             target=ExternalSecretSpecTarget(
                 name="alertmanager-ntfy-webhook",

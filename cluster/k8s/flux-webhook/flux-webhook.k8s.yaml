@@ -1,0 +1,65 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: flux-webhook
+  namespace: flux-system
+spec:
+  hostnames:
+    - flux-webhook.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: webhook-receiver
+          port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-webhook-ingress
+  namespace: flux-system
+spec:
+  ingress:
+    - ports:
+        - port: 9292
+          protocol: TCP
+  podSelector:
+    matchLabels:
+      app: notification-controller
+  policyTypes:
+    - Ingress
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: Flux failure notifications delivered through the self-hosted ntfy instance
+    ntfy.ducktape.io/auth-generation: "1"
+  name: ntfy-webhook
+  namespace: flux-system
+spec:
+  data:
+    - remoteRef:
+        key: ntfy-credentials
+        property: alertmanager-token
+      secretKey: alertmanager_token
+  refreshPolicy: OnChange
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-ntfy-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: ntfy-webhook
+    template:
+      data:
+        address: https://ntfy.allegedly.works/alerts
+        headers: |
+          Template: "yes"
+          Authorization: "Bearer {{ .alertmanager_token }}"
+          X-Title: "{{ `{{.involvedObject.kind}} {{.involvedObject.name}}` }}"
+          X-Message: "{{ `{{.severity}}: {{.reason}} - {{.message}}` }}"
+          X-Tags: "rotating_light"
+      engineVersion: v2
+      type: Opaque

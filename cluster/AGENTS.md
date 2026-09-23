@@ -253,8 +253,8 @@ per-app reasons: <docs/decisions.md> § "Parked application manifests".
 Every `*.k8s.yaml` under `cluster/k8s`, and the `kustomization.yaml` beside generated
 resources in `agentplane-{staging,testing}`, `litellm/app`,
 `agents/ha-mcp/app`, `aiquota`, `artifact-generators`, `clickhouse/schema`,
-`external-creds`, `haku/console{,/db,/migration}`, `monitoring/etcd`, `descheduler` and
-`agents/public-coder-agent/namespace`, is
+`external-creds`, `haku/console{,/db,/migration}`, `monitoring/etcd`, `descheduler`,
+`agents/mitmproxy` and `agents/public-coder-agent/namespace`, is
 `bb run //cluster/cdk8s:generate_manifests` output
 (`.gitattributes` lists them). Change the generator under `cluster/cdk8s/` and
 regenerate; `//cluster/cdk8s:test_generate_manifests` fails on drift. The layout rules in
