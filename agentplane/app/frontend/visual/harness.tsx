@@ -652,6 +652,7 @@ function payload(
     field,
     generation: "1",
     revision_cursor: String(revisionCursor),
+    chunk_count: "1",
   };
   payloadBodies.set(payloadKey(reference.owner_cursor, ownerId, field, "1", reference.revision_cursor), body);
   return reference;

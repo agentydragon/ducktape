@@ -42,6 +42,7 @@ const payloadRefSchema = z.object({
   field: z.enum(["text", "arguments", "output", "confirmed_input", "command_input"]),
   revision_cursor: z.string(),
   generation: z.string(),
+  chunk_count: z.string(),
 });
 
 const stateSchema = z.union([
