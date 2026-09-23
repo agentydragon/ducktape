@@ -124,6 +124,8 @@ exports_files(
         "agents/machine-access-tf/kustomization.yaml",
         "monitoring/alloy-otlp-bearer-token-tf/alloy-otlp-bearer-token.k8s.yaml",
         "monitoring/alloy-otlp-bearer-token-tf/kustomization.yaml",
+        "github-secrets-sync/github-secrets-sync.k8s.yaml",
+        "github-secrets-sync/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
