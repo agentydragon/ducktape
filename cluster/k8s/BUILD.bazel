@@ -75,6 +75,8 @@ exports_files(
         "agents/public-coder-agent/devbox/kustomization.yaml",
         "aiquota/aiquota.k8s.yaml",
         "aiquota/kustomization.yaml",
+        "clickhouse/operator/helmrelease.k8s.yaml",
+        "clickhouse/operator/kustomization.yaml",
         "clickhouse/operator/namespace.k8s.yaml",
         "clickhouse/schema/clickhouse-schema.k8s.yaml",
         "clickhouse/schema/kustomization.yaml",

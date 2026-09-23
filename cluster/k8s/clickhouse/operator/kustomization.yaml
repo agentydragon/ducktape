@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - namespace.k8s.yaml
   - operator-values.sops.yaml
-  - helmrelease.yaml
+  - helmrelease.k8s.yaml
