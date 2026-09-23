@@ -16,6 +16,7 @@ from cluster.cdk8s import (
     forgejo_image_automation,
     forgejo_images_flux_kustomizations,
     gateway_flux_kustomizations,
+    github_branch_protection,
     google_mcp,
     ha_mcp,
     haku_openclaw_spike_config,
@@ -55,7 +56,6 @@ from cluster.cdk8s.forgejo import flux_kustomizations as forgejo_flux_kustomizat
 from cluster.cdk8s.gaffer_private_source import flux_kustomizations as gaffer_private_source_flux_kustomizations
 from cluster.cdk8s.gatus import flux_kustomizations as gatus_flux_kustomizations
 from cluster.cdk8s.github_api_proxy import flux_kustomizations as github_api_proxy_flux_kustomizations
-from cluster.cdk8s.github_branch_protection import flux_kustomizations as github_branch_protection_flux_kustomizations
 from cluster.cdk8s.github_exporter import flux_kustomizations as github_exporter_flux_kustomizations
 from cluster.cdk8s.github_secrets_sync import flux_kustomizations as github_secrets_sync_flux_kustomizations
 from cluster.cdk8s.goldilocks import flux_kustomizations as goldilocks_flux_kustomizations
@@ -138,6 +138,7 @@ def generate_manifests(root: Path) -> None:
     dns_automation.write_manifests(root, mesh)
     litellm_keys.write_manifests(root)
     forgejo_image_automation.write_manifests(root)
+    github_branch_protection.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -536,8 +537,8 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         github_secrets_sync_secrets_kustomization,
     )
-    github_branch_protection_artifact = artifact("github-branch-protection", "cluster/k8s/github-branch-protection")
-    github_branch_protection_flux_kustomizations.github_branch_protection(
+    github_branch_protection_artifact = artifact("github-branch-protection", github_branch_protection.OUTPUT_DIR)
+    github_branch_protection.github_branch_protection(
         flux_chart,
         github_branch_protection_artifact,
         tofu_controller_kustomization,

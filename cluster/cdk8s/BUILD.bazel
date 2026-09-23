@@ -262,6 +262,20 @@ py_library(
 )
 
 py_library(
+    name = "github_branch_protection",
+    srcs = ["github_branch_protection.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":generation",
+        ":terraform",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "descheduler",
     srcs = ["descheduler.py"],
     deps = [
@@ -450,6 +464,7 @@ py_library(
         ":external_creds",
         ":flux",
         ":forgejo_image_automation",
+        ":github_branch_protection",
         ":google_mcp",
         ":ha_mcp",
         ":haku_openclaw_spike_config",
@@ -487,7 +502,6 @@ py_library(
         "//cluster/cdk8s/gaffer_private_source:flux_kustomizations",
         "//cluster/cdk8s/gatus:flux_kustomizations",
         "//cluster/cdk8s/github_api_proxy:flux_kustomizations",
-        "//cluster/cdk8s/github_branch_protection:flux_kustomizations",
         "//cluster/cdk8s/github_exporter:flux_kustomizations",
         "//cluster/cdk8s/github_secrets_sync:flux_kustomizations",
         "//cluster/cdk8s/goldilocks:flux_kustomizations",
@@ -618,6 +632,8 @@ py_test(
         "//cluster/k8s:flux-image-automation-forgejo/flux-image-automation-forgejo.k8s.yaml",
         "//cluster/k8s:flux-image-automation-forgejo/kustomization.yaml",
         "//cluster/k8s:flux/kustomizations.k8s.yaml",
+        "//cluster/k8s:github-branch-protection/github-branch-protection.k8s.yaml",
+        "//cluster/k8s:github-branch-protection/kustomization.yaml",
         "//cluster/k8s:haku/console/haku-console.k8s.yaml",
         "//cluster/k8s:haku/console/kustomization.yaml",
         "//cluster/k8s:litellm/keys-tf/litellm-keys.k8s.yaml",
