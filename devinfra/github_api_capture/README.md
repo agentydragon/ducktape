@@ -154,7 +154,7 @@ Its SHA-256 fingerprint is
 `6F:51:AD:39:F5:B9:7D:B7:E2:FB:6D:96:50:91:70:7F:74:CC:05:CB:1F:DB:90:6E:36:D2:A1:8E:3B:54:0C:55`.
 Certificate renewal requires explicit pin verification and app trust migration;
 the launcher never downloads a replacement. The cluster Certificate owner is
-<../../cluster/k8s/github-api-proxy/identity/certificates.yaml>.
+<../../cluster/cdk8s/github_api_proxy/proxy.py>.
 
 ### Migration and retirement
 
