@@ -10,7 +10,6 @@ from cluster.cdk8s import (
     cnpg_flux_kustomizations,
     descheduler,
     dns_automation,
-    dns_automation_flux_kustomizations,
     egress_fences,
     etcd,
     external_creds,
@@ -478,8 +477,8 @@ def generate_manifests(root: Path) -> None:
     authentik_kustomization = authentik_flux_kustomizations.authentik(
         flux_chart, authentik_artifact, cnpg_kustomization, monitoring_crds_kustomization
     )
-    dns_automation_artifact = artifact("dns-automation", "cluster/k8s/dns-automation")
-    dns_automation_flux_kustomizations.dns_automation(
+    dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
+    dns_automation.dns_automation(
         flux_chart,
         dns_automation_artifact,
         tofu_controller_kustomization,
