@@ -44,39 +44,6 @@ def alloy(
     )
 
 
-def cilium_monitoring(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "cilium-monitoring",
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="2m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=[
-                # ServiceMonitor
-                flux_kustomization_depends_on(monitoring_crds)
-            ],
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="monitoring.coreos.com/v1",
-                    kind="ServiceMonitor",
-                    name="cilium-agent",
-                    namespace="monitoring",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="monitoring.coreos.com/v1", kind="ServiceMonitor", name="hubble", namespace="monitoring"
-                ),
-            ],
-        ),
-    )
-
-
 def monitoring_crds(chart: Chart) -> Kustomization:
     return flux_kustomization(
         chart,

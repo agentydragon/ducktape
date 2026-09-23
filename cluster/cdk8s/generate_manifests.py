@@ -191,6 +191,7 @@ from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizatio
 from cluster.cdk8s.metrics_server import flux_kustomizations as metrics_server_flux_kustomizations
 from cluster.cdk8s.monitoring import (
     alloy_otlp_bearer_token,
+    cilium_monitoring,
     flux_kustomizations as monitoring_flux_kustomizations,
     grafana_helmrepository,
     grafana_operator,
@@ -298,6 +299,7 @@ def generate_manifests(root: Path) -> None:
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
     grafana_operator.write_manifests(root)
+    cilium_monitoring.write_manifests(root)
     langfuse_app.write_manifests(root)
     forgejo_app.write_manifests(root)
     forgejo_budget_namespace.write_manifests(root)
@@ -490,10 +492,8 @@ def generate_manifests(root: Path) -> None:
     flux_monitoring_flux_kustomizations.flux_monitoring(
         flux_chart, flux_monitoring_artifact, monitoring_crds_kustomization
     )
-    monitoring_cilium_artifact = artifact("monitoring-cilium", "cluster/k8s/monitoring/cilium")
-    monitoring_flux_kustomizations.cilium_monitoring(
-        flux_chart, monitoring_cilium_artifact, monitoring_crds_kustomization
-    )
+    monitoring_cilium_artifact = artifact("monitoring-cilium", cilium_monitoring.OUTPUT_DIR)
+    cilium_monitoring.cilium_monitoring(flux_chart, monitoring_cilium_artifact, monitoring_crds_kustomization)
     monitoring_etcd_artifact = artifact("monitoring-etcd", etcd.OUTPUT_DIR)
     etcd.etcd_monitoring(flux_chart, monitoring_etcd_artifact, root, mesh, monitoring_crds_kustomization)
     monitoring_rules_artifact = artifact("monitoring-rules", "cluster/k8s/monitoring/rules")

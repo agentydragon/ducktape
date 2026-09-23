@@ -181,6 +181,8 @@ _GENERATED_FILES = (
     "cluster/k8s/flux-grafana-secrets/kustomization.yaml",
     "cluster/k8s/monitoring/grafana-operator/grafana-operator.k8s.yaml",
     "cluster/k8s/monitoring/grafana-operator/kustomization.yaml",
+    "cluster/k8s/monitoring/cilium/cilium-monitoring.k8s.yaml",
+    "cluster/k8s/monitoring/cilium/kustomization.yaml",
     "cluster/k8s/langfuse/langfuse.k8s.yaml",
     "cluster/k8s/forgejo/app/forgejo.k8s.yaml",
     "cluster/k8s/forgejo/budget-namespace/namespace.k8s.yaml",
