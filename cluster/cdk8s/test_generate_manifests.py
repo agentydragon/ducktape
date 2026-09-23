@@ -147,6 +147,7 @@ _GENERATED_FILES = (
     "cluster/k8s/vector-talos-logs/kustomization.yaml",
     "cluster/k8s/openebs-lvm/openebs-lvm.k8s.yaml",
     "cluster/k8s/seaweedfs-csi/seaweedfs-csi.k8s.yaml",
+    "cluster/k8s/dcgm-exporter/dcgm-exporter.k8s.yaml",
 )
 
 
