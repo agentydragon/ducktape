@@ -257,12 +257,13 @@ async def test_switching_threads_starts_at_each_threads_tail(
         await page.goto(f"{ingress}/#/threads/{threads[0]}")
         await expect(page.locator('[data-thread-anchor="161"]')).to_be_visible()
         await expect(page.get_by_text("Thread 0 message 79", exact=True)).to_be_visible()
-        async with page.expect_request(lambda request: "/sync/interest?before_cursor=" in request.url):
+        async with page.expect_request(
+            lambda request: request.method == "POST" and "entity_index < $1" in (request.post_data or "")
+        ):
             await page.get_by_role("button", name="Load 30 earlier", exact=True).click()
         for number in (1, 0):
-            async with page.expect_request(f"**/threads/{threads[number]}/sync/interest*") as selected:
+            async with page.expect_request(f"**/threads/{threads[number]}/sync/scope"):
                 await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
-            assert "before_cursor" not in parse_qs(urlsplit((await selected.value).url).query)
             await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
                 f"Test navigation thread {number}"
             )
@@ -281,9 +282,9 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     draft = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
     await draft.fill("Draft survives projection replacement")
-    previous = await page.request.get(f"{thread_browser.browser_url}/threads/{thread}/sync/interest")
+    previous = await page.request.get(f"{thread_browser.browser_url}/threads/{thread}/sync/scope")
     assert previous.ok
-    old_interest = await previous.json()
+    old_scope = await previous.json()
     ready = asyncio.Event()
     release = asyncio.Event()
     finished = asyncio.Event()
@@ -346,10 +347,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
 
         stale = await page.request.get(
             f"{thread_browser.browser_url}/threads/{thread}/sync/entities",
-            params={
-                **{key: old_interest[key] for key in ("projection_epoch", "anchor_cursor", "tail_from")},
-                "offset": "now",
-            },
+            params={"projection_epoch": old_scope["projection_epoch"], "offset": "now"},
         )
         assert stale.status == 410
         await page.screenshot(path=undeclared_outputs_dir() / "projected-epoch-replacement.png")
@@ -402,7 +400,14 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
     )
     source.append(event_pb2.Event(tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json="{")))
     requests: list[str] = []
-    page.on("request", lambda request: requests.append(request.url))
+    body_reads: list[str] = []
+
+    def observe(request: Request) -> None:
+        requests.append(request.url)
+        if request.method == "POST" and "/sync/chunks/" in request.url:
+            body_reads.append(request.post_data or "")
+
+    page.on("request", observe)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with electric_service() as service:
         engine = connect(service.database_url)
@@ -424,10 +429,9 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 await expect(page.get_by_text("A newer browser item", exact=True)).to_be_visible()
                 await expect(page.get_by_text("On-demand reasoning", exact=True)).to_have_count(0)
                 await expect(page.get_by_text("On-demand tool output", exact=True)).to_have_count(0)
-                assert not any(
-                    parse_qs(urlsplit(url).query).get("owner_id", [None])[0] in {"reasoning", "tool"}
-                    for url in requests
-                )
+                # Closed disclosures read no bodies: no body subset names their owners.
+                assert body_reads
+                assert not any('"reasoning"' in read or '"tool"' in read for read in body_reads)
 
                 source.append(
                     event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" and streamed suffix"))
@@ -986,7 +990,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
 
 
 @pytest.mark.parametrize("outcome", ["failed", "noop"])
-async def test_settled_command_reason_survives_history_eviction_and_reload(
+async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
     thread_browser: ThreadBrowser, outcome: str
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
@@ -1375,7 +1379,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         await document.dispose()
 
 
-async def test_terminal_ready_command_shape_error_retains_rows_and_retries_fresh_shape(
+async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_window(
     thread_browser: ThreadBrowser,
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
@@ -1383,8 +1387,7 @@ async def test_terminal_ready_command_shape_error_retains_rows_and_retries_fresh
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
     await composer.fill("Command retained across terminal shape error")
-    async with page.expect_response(lambda response: "/sync/commands?" in response.url and response.status == 200):
-        await composer.press("Enter")
+    await composer.press("Enter")
     async with asyncio.timeout(15):
         command = await source.commands.get()
     pending = page.get_by_role("region", name="Pending commands")
@@ -1392,24 +1395,27 @@ async def test_terminal_ready_command_shape_error_retains_rows_and_retries_fresh
     await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
 
     async def terminal_shape_error(route: Route) -> None:
-        await route.fulfill(status=410, content_type="text/plain", body="command scope expired")
+        await route.fulfill(status=400, content_type="text/plain", body="shape rejected")
 
-    await page.route("**/sync/commands?*", terminal_shape_error, times=1)
+    await page.route("**/sync/entities?*", terminal_shape_error, times=1)
+    # Offline fails the waiting live request; the client's retry is the one the route answers.
     await page.context.set_offline(True)
     try:
-        async with page.expect_response(lambda response: "/sync/commands?" in response.url and response.status == 410):
+        async with page.expect_response(lambda response: "/sync/entities?" in response.url and response.status == 400):
             await page.context.set_offline(False)
-        stopped = page.get_by_role("alert").filter(has_text="Command synchronization stopped:")
+        stopped = page.get_by_role("alert").filter(has_text="Thread synchronization stopped:")
         await expect(stopped).to_be_visible()
+        await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
         await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
 
-        async with page.expect_response(lambda response: "/sync/commands?" in response.url and response.status == 200):
-            await stopped.get_by_role("button", name="Retry command synchronization", exact=True).click()
-        await expect(page.get_by_text("Command synchronization stopped:", exact=False)).to_have_count(0)
+        async with page.expect_response(lambda response: "/sync/scope" in response.url and response.status == 200):
+            await stopped.get_by_role("button", name="Refresh thread", exact=True).click()
+        await expect(page.get_by_text("Thread synchronization stopped:", exact=False)).to_have_count(0)
+        await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
         source.append(
             event_pb2.Event(
                 harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                    harness_message_id="test-command-after-terminal-shape-retry",
+                    harness_message_id="test-command-after-terminal-shape-refresh",
                     origin_command_ids=[command.command_id],
                     text=command.submit_input.text,
                     turn_id="test-browser-turn",
@@ -1422,7 +1428,7 @@ async def test_terminal_ready_command_shape_error_retains_rows_and_retries_fresh
         await expect(pending).to_have_count(0)
     finally:
         await page.context.set_offline(False)
-        await page.unroute("**/sync/commands?*", terminal_shape_error)
+        await page.unroute("**/sync/entities?*", terminal_shape_error)
 
 
 async def test_ahead_snapshot_is_not_a_thread_or_effective_model(thread_browser: ThreadBrowser) -> None:

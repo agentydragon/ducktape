@@ -2,8 +2,8 @@
 
 Status: **implementation in draft PRs; acceptance incomplete.** The server-side fold in
 `agentplane/app/agent_runtime/view/fold.py` is connected to PostgreSQL through the
-transactional writer. The integration uses Electric and its TanStack DB collection adapter;
-the browser consumes bounded metadata interests and explicitly selected payloads.
+transactional writer. The integration uses Electric through its published TypeScript client:
+one shape per thread and per payload field, with the browser's window loaded as subsets of them.
 See [app implementation notes](../app/README.md) for endpoints and storage details.
 The acceptance requirements below remain gates, including browser behavior and server
 memory; implementation presence is not evidence that they have passed.
@@ -129,7 +129,7 @@ filter or a subscription token. Missed deadlines report lag rather than stale su
 
 ## Reuse the synchronization engine
 
-**Selected integration: Electric with its TanStack DB collection.** Agentplane
+**Selected integration: Electric, through its published TypeScript client.** Agentplane
 owns projection, domain records, command admission and authorization. The engine should
 own snapshot/live handoff, transaction reconciliation, resumable delivery and refetch.
 Do not implement an Agentplane `Changes` journal, suffix wire messages, client replay
@@ -138,19 +138,27 @@ reducer or `FollowView` service before establishing a concrete gap in that integ
 Electric documents changes-only shape logs plus subset snapshots with ordering and limits;
 its snapshots carry PostgreSQL transaction metadata for reconciling concurrent changes.
 Shapes can select columns and are immutable. See the [HTTP API](https://electric-sql.com/docs/api/http)
-and [shape definitions](https://electric-sql.com/docs/guides/shapes). The
-[TanStack Electric collection](https://tanstack.com/db/latest/docs/collections/electric-collection)
-provides the existing client integration. These are capabilities to exercise against
-pinned versions, not evidence that Agentplane's acceptance cases already pass.
+and [shape definitions](https://electric-sql.com/docs/guides/shapes). These are capabilities
+to exercise against pinned versions, not evidence that Agentplane's acceptance cases already
+pass; `agentplane/app/test_electric_subset_window.py` pins the ones below against the deployed
+Electric.
 
-Mutable entity and command collections use changes-only logs and TanStack's on-demand
-snapshot reconciliation. Indexed predicates fix each shape to the selected tail, optional
-reading window and pending items, or explicitly selected command IDs. Bootstrap takes a
-current snapshot of that entire bounded shape; it does not replay earlier item revisions.
-The proxy accepts only a whole-shape subset query and owns all selection predicates.
-Payload shapes select one content field and generation. A pinned reference limits its
-chunk prefix; a following selection receives later chunks in that generation. A generation
-replacement selects a new shape. There is no persistent browser cache initially.
+A thread is one entity shape, and each payload field one chunk shape, both opened from now
+with changes-only logs; a shape's predicate names only the thread and its projection epoch,
+so it never changes. The browser loads its window as subset snapshots of those shapes, which
+Electric ANDs with the shape's predicate and reconciles with the live log through the
+snapshot's transaction metadata: the tail and each page before the oldest held row by
+`entity_index`, the view state, pending commands, commands by ID, and bodies by
+`(owner_id, generation)` pair. The proxy pins every shape and admits only those subset forms,
+with bounded limits. Nothing is replayed on open, and every later change to a held row
+arrives on the one live log, wherever the row is. A body renders as far as its reference's
+chunk count, so a chunk arriving ahead of the metadata that names it stays hidden. There is
+no persistent browser cache.
+
+**Deviation:** the live log carries every change in the thread, including rows outside a
+reader's window, which the client discards. Electric's client withholds a shape's
+`up-to-date` from a stream that reopens a shape it followed within the last minute, so the
+store gates subsets on the first subset's response, never on that message.
 
 Acceptance must still establish:
 
@@ -160,14 +168,12 @@ Acceptance must still establish:
    persisted-cache recovery paths that request a full shape even in on-demand mode.
    Initially omit persistent browser caching; still test handle expiry and library reset
    paths. Reject a configuration that silently falls back to full history.
-2. **Membership versus live traffic.** A limited subset snapshot does not necessarily
-   limit the underlying live shape. Measure updates to unloaded items and ensure large
-   bodies never enter a broad metadata shape. Evaluate bounded interest shapes if active
-   unloaded items otherwise dominate traffic. Shape replacement must use the library's
-   supported handoff and must preserve updates. Unsubscribing a query must release its
-   retained rows and bodies when no other active interest needs them; verify the adapter
-   actually evicts them. Live updates to unloaded or evicted items must not accumulate an
-   implicit full-history cache. A later query obtains their current committed state.
+2. **Membership versus live traffic.** A limited subset snapshot does not limit the
+   underlying live shape: the thread's shape carries updates to unloaded items, and each
+   field's shape every chunk of that field. Measure that traffic, and keep large bodies
+   out of the entity shape. Live updates to unloaded items must not accumulate an
+   implicit full-history cache; the store drops them, and a later subset obtains their
+   current committed state.
 3. **Atomic visibility.** PostgreSQL transaction atomicity does not establish atomic React
    publication across several collections. Evaluate one entity collection containing
    segments, controls/checkpoint and commands, with queryable kind/cursor/identity columns.
@@ -205,14 +211,14 @@ flowchart LR
     app --> pg[(Postgres conversation state)]
     pg --> electric[Electric sync service]
     electric --> proxy[Python app authorization proxy]
-    proxy --> client[TanStack DB in the browser]
+    proxy --> client[Electric client and thread store in the browser]
     client --> react[React conversation view]
 ```
 
 The Python app folds runner events and writes ordinary PostgreSQL transactions. Electric
 runs as a separate service, consumes committed changes through logical replication, and
-serves selected data over HTTP. Its TypeScript collection adapter updates TanStack DB;
-the browser renders projected records without folding raw harness events again.
+serves selected data over HTTP. Its TypeScript client feeds the browser's thread store,
+which renders projected records without folding raw harness events again.
 
 The app proxy authenticates callers and fixes the permitted conversation predicates,
 tables and columns. Client-supplied sync parameters must not widen those permissions,
@@ -312,9 +318,10 @@ older consistent view. Preserve the visible item and pixel offset after prependi
 
 ### Reconnect
 
-For a short disconnect, the engine resumes using its own token and deduplicates delivery.
-For expired history or excessive catch-up, discard the affected subscription generation
-and obtain fresh limited subsets. Restore an old reading position with by-ID and before/after
+For a disconnect, the engine resumes the same shape from its own token and deduplicates
+delivery. When Electric retires a shape's log, reload the rows held as fresh subsets while
+they stay on screen; when the projection epoch is gone, read the scope again and replace the
+window once the new one has caught up. Restore an old reading position with by-ID and before/after
 queries. Preserve drafts, disclosure state and reading position. Do not download the items
 between that position and the tail. Ignore late callbacks from superseded subscriptions.
 
@@ -323,8 +330,8 @@ between that position and the tail. Ignore late callbacks from superseded subscr
 An item points to output revision R. Hydrate that whole immutable value on demand and use
 the engine's supported content subscription for subsequent chunks/manifests. The reference
 is not a replacement for its sync token. If a newer manifest is selected before the read
-returns, cache the old immutable value without substituting it for the new one. Closing the
-panel releases interest and permits eviction. Content writes use field identity, so an
+returns, cache the old immutable value without substituting it for the new one. Content
+writes use field identity, so an
 output update cannot make an independently loaded arguments value appear stale.
 
 ### A command response is lost
@@ -362,8 +369,9 @@ or a sufficient retained checkpoint; it must not delete the only recoverable con
 
 ## Frontend ownership and acceptance
 
-One normalized server-state owner serves the open Thread. TanStack DB queries select loaded
-entities; do not copy them into another mutable React store. Payloads are immutable caches
+One normalized server-state owner serves the open Thread: the thread store holds loaded
+entities, and components read them from it rather than copying them into another mutable
+store. Payloads are immutable caches
 keyed by reference. Drafts, local unconfirmed commands and viewport/disclosure state retain
 their distinct local provenance. Logout clears subscriptions and user-scoped caches.
 
@@ -382,6 +390,9 @@ Closing a body or retiring a selection releases its subscriptions and outstandin
 references. Late callbacks must neither change the active selection nor repopulate retired
 caches. Shared data stays resident only while another active interest or bounded cache
 policy needs it. Persistent browser caches, if enabled later, also need eviction policies.
+
+**Not met:** the current store evicts nothing. It holds every row it has loaded and every row
+added at the tail since, and every body it has shown, until the thread is closed.
 
 Eviction is local, not a deletion from durable history. Retain only the necessary lightweight
 viewport anchors, drafts and local command state; rereading an evicted page obtains a fresh
@@ -407,7 +418,7 @@ Required evidence before accepting the integrated implementation:
   cost proportionally to its size; a fixed item count is not a fixed number of bytes.
 - Repeated scroll/load/evict/revisit and open/close body cycles, with background updates to
   evicted items: collection row counts, subscriptions and retained heap must stabilize for a
-  fixed set of interests as total history grows. Verify release in TanStack/Electric caches,
+  fixed set of interests as total history grows. Verify release in the thread store and Electric's client,
   not only disappearance from the DOM. Revisit must show current revisions; drafts and the
   visible scroll anchor survive eviction and reconnect.
 - Measure live traffic for updates outside selected windows separately from fetched snapshot
