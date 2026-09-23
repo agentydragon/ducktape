@@ -1,11 +1,10 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - seaweed.yaml
-  - replication-repair.yaml
-  # cdk8s-generated (cluster/cdk8s/stateful_infra.py) -- see cluster/docs/cdk8s.md.
+  # cdk8s-generated (cluster/cdk8s/seaweedfs/cluster.py, cluster/cdk8s/stateful_infra.py)
+  # -- see cluster/docs/cdk8s.md.
+  - seaweedfs.k8s.yaml
   - priorityclass.k8s.yaml
-  - poddisruptionbudget.yaml
 
 # Inject filer.toml into the Seaweed CR's spec.filer.config string field.
 # The intermediate ConfigMap exists only to carry the file content into a

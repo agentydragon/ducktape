@@ -1,0 +1,233 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweedfs
+  namespace: seaweedfs
+spec:
+  filer:
+    affinity:
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+            weight: 100
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: filer
+                app.kubernetes.io/name: seaweedfs
+            topologyKey: kubernetes.io/hostname
+    config: ""
+    env:
+      - name: GOMEMLIMIT
+        value: 700MiB
+      - name: WEED_POSTGRES2_USERNAME
+        valueFrom:
+          secretKeyRef:
+            key: username
+            name: seaweedfs-filer-db-ssd-creds
+      - name: WEED_POSTGRES2_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            key: password
+            name: seaweedfs-filer-db-ssd-creds
+    limits:
+      memory: 768Mi
+    metricsPort: 9326
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    priorityClassName: stateful-infra
+    replicas: 2
+    requests:
+      cpu: 50m
+      memory: 384Mi
+  image: chrislusf/seaweedfs:4.46
+  master:
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: master
+                app.kubernetes.io/name: seaweedfs
+            topologyKey: kubernetes.io/hostname
+    defaultReplication: "001"
+    limits:
+      memory: 512Mi
+    metricsPort: 9321
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    priorityClassName: stateful-infra
+    replicas: 3
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    volumeSizeLimitMB: 16000
+  s3:
+    annotations:
+      reloader.stakater.com/auto: "true"
+    configSecret:
+      key: seaweedfs_s3_config.json
+      name: seaweedfs-s3-config
+    env:
+      - name: GOMEMLIMIT
+        value: 1800MiB
+    extraArgs:
+      - -ip.bind=0.0.0.0
+    limits:
+      memory: 2Gi
+    metricsPort: 9327
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    priorityClassName: stateful-infra
+    replicas: 2
+    requests:
+      cpu: 50m
+      memory: 512Mi
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+  volumeServerDiskCount: 1
+  volumeTopology:
+    hdd:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: seaweedfs
+                  seaweedfs/topology: hdd
+              topologyKey: kubernetes.io/hostname
+      dataCenter: hil
+      env:
+        - name: GOMEMLIMIT
+          value: 1400MiB
+      extraArgs:
+        - -disk=hdd
+      limits:
+        memory: 1536Mi
+      maxVolumeCounts: 400
+      metricsPort: 9325
+      minFreeSpacePercent: 10
+      nodeSelector:
+        storage.allegedly.works/tier: hdd
+      priorityClassName: stateful-infra
+      rack: hil-ovh-h109b04
+      replicas: 3
+      requests:
+        cpu: 100m
+        memory: 512Mi
+        storage: 1800Gi
+      storageClassName: local-path-ovh-hdd
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+    ssd:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: seaweedfs
+                  seaweedfs/topology: ssd
+              topologyKey: kubernetes.io/hostname
+      dataCenter: hil
+      env:
+        - name: GOMEMLIMIT
+          value: 1400MiB
+      extraArgs:
+        - -disk=ssd
+      limits:
+        memory: 1536Mi
+      maxVolumeCounts: 200
+      metricsPort: 9325
+      minFreeSpacePercent: 10
+      nodeSelector:
+        storage.allegedly.works/tier: ssd
+      priorityClassName: stateful-infra
+      rack: hil-ovh-h108b01
+      replicas: 3
+      requests:
+        cpu: 100m
+        memory: 512Mi
+        storage: 250Gi
+      storageClassName: local-path-ovh-ssd
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: AdminScript
+metadata:
+  annotations:
+    description: Hourly copy-only repair of SeaweedFS volume replica placement.
+  name: replication-repair
+  namespace: seaweedfs
+spec:
+  activeDeadlineSeconds: 21600
+  backoffLimit: 0
+  clusterRef:
+    name: seaweedfs
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  restartPolicy: Never
+  schedule: 17 * * * *
+  script: |
+    lock
+    volume.fix.replication -apply -doDelete=false -maxParallelization=2 -maxParallelizationPerServer=1 -retry=5
+    unlock
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
+  timeZone: Etc/UTC
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: seaweedfs-master
+  namespace: seaweedfs
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: master
+      app.kubernetes.io/name: seaweedfs
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: seaweedfs-volume
+  namespace: seaweedfs
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: volume
+      app.kubernetes.io/name: seaweedfs
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: seaweedfs-filer
+  namespace: seaweedfs
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: filer
+      app.kubernetes.io/name: seaweedfs

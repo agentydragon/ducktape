@@ -100,6 +100,7 @@ exports_files(
         "ntfy/ntfy.k8s.yaml",
         "ntfy/kustomization.yaml",
         "seaweedfs/cluster/priorityclass.k8s.yaml",
+        "seaweedfs/cluster/seaweedfs.k8s.yaml",
         "seaweedfs/namespace/namespace.k8s.yaml",
         "seaweedfs/namespace/kustomization.yaml",
         "ssh-mcp/ssh-mcp.k8s.yaml",
@@ -276,8 +277,9 @@ filegroup(
     visibility = ["//cluster/validation/kyverno:__pkg__"],
 )
 
-exports_files(
-    ["seaweedfs/cluster/seaweed.yaml"],
+filegroup(
+    name = "seaweedfs_cluster_manifest",
+    srcs = ["seaweedfs/cluster/seaweedfs.k8s.yaml"],
     visibility = ["//cluster/validation:__pkg__"],
 )
 
