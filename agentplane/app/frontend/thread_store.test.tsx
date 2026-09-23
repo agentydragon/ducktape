@@ -8,7 +8,8 @@ import { act, type JSX, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { CommandSelection, PayloadBody, ThreadCollection, type ThreadEntity, type ThreadHistory } from "./thread_store";
+import { electricThreadSync } from "./thread_store";
+import { type PayloadRef, type ThreadEntity, type ThreadWindow } from "./thread_sync";
 
 type Json = Record<string, unknown>;
 
@@ -271,7 +272,17 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadHistory }): JSX.Element {
+function renderThread(children: ReactNode): Promise<HTMLDivElement> {
+  return render(<electricThreadSync.Thread threadId="thread">{children}</electricThreadSync.Thread>);
+}
+
+/** What a view shows of the thread: nothing until its window opens, and no rows until that has caught up. */
+function Shown({ children }: { children: (rows: ThreadEntity[], history: ThreadWindow) => JSX.Element }): JSX.Element {
+  const { window: shown } = electricThreadSync.useThread();
+  return shown === null ? <></> : children(shown.caughtUp ? shown.rows : [], shown);
+}
+
+function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadWindow }): JSX.Element {
   const items = rows.filter((row) => row.entityKind === "item");
   return (
     <>
@@ -281,6 +292,16 @@ function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadHistory 
       </button>
     </>
   );
+}
+
+function Body({ id, reference }: { id: string; reference: PayloadRef }): JSX.Element {
+  const { body } = electricThreadSync.usePayload(reference);
+  return <p data-body={id}>{body ?? "loading"}</p>;
+}
+
+function Commands({ ids }: { ids: readonly string[] }): JSX.Element {
+  const rows = electricThreadSync.useCommandRows(ids);
+  return <p data-testid="commands">{rows.map((row) => row.entityId).join(",")}</p>;
 }
 
 function itemsShown(container: HTMLElement): string[] {
@@ -294,9 +315,7 @@ function thread(sync: FakeSync, count: number, epoch = "epoch-1"): void {
 it("opens one shape on the tail and pages older rows into it", async () => {
   const sync = stubSync();
   thread(sync, 70);
-  const container = await render(
-    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
   expect(itemsShown(container)).toContain("item-41@41");
 
@@ -343,9 +362,7 @@ it("re-issues a scope read the server answered without a fold at once, and opens
 it("applies live changes to the rows it holds, and new rows, but not rows it has not loaded", async () => {
   const sync = stubSync();
   thread(sync, 70);
-  const container = await render(
-    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
 
   await sync.respond("entities", (relation) =>
@@ -364,9 +381,7 @@ it("applies live changes to the rows it holds, and new rows, but not rows it has
 it("keeps reading the live log from where it was when a subset answers from further along", async () => {
   const sync = stubSync();
   thread(sync, 70);
-  const container = await render(
-    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
   const reading = await sync.liveOffset("entities");
 
@@ -384,15 +399,15 @@ it("keeps reading the live log from where it was when a subset answers from furt
 it("re-reads a retired epoch's scope and swaps windows under the same children", async () => {
   const sync = stubSync();
   thread(sync, 3);
-  const container = await render(
-    <ThreadCollection threadId="thread">
+  const container = await renderThread(
+    <Shown>
       {(rows, history) => (
         <>
           <input aria-label="draft" />
           <Rows rows={rows} history={history} />
         </>
       )}
-    </ThreadCollection>
+    </Shown>
   );
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
   const draft = container.querySelector("input")!;
@@ -409,9 +424,7 @@ it("re-reads a retired epoch's scope and swaps windows under the same children",
 it("reloads as many rows as it held when Electric retires the shape's log, dropping deleted ones", async () => {
   const sync = stubSync();
   thread(sync, 70);
-  const container = await render(
-    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
   await act(async () => container.querySelector("button")!.click());
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(60));
@@ -435,20 +448,16 @@ it("loads the bodies in view in one read, as far as each reference spans, and fo
     item(2, "epoch-1", { text_ref: textRef("b", 1) }),
   ];
   sync.chunks = [chunk("a", 0, "Hel"), chunk("a", 1, "lo"), chunk("a", 2, " there"), chunk("b", 0, "Bye")];
-  const container = await render(
-    <ThreadCollection threadId="thread">
+  const container = await renderThread(
+    <Shown>
       {(rows) => (
         <>
           {rows.map((row) =>
-            row.textRef ? (
-              <PayloadBody key={row.entityId} reference={row.textRef}>
-                {(body) => <p data-body={row.entityId}>{body ?? "loading"}</p>}
-              </PayloadBody>
-            ) : null
+            row.textRef ? <Body key={row.entityId} id={row.entityId} reference={row.textRef} /> : null
           )}
         </>
       )}
-    </ThreadCollection>
+    </Shown>
   );
   const body = (id: string) => container.querySelector(`[data-body="${id}"]`)?.textContent;
   await vi.waitFor(() => expect([body("item-1"), body("item-2")]).toEqual(["Hello", "Bye"]));
@@ -476,15 +485,7 @@ it("loads commands by id as a quoted array", async () => {
     if (row.entity_kind === "item") row.entity_index = String(Number(row.entity_index) + 2);
   sync.entities.find((row) => row.entity_id === 'say "hi"')!.entity_index = "1";
   sync.entities.find((row) => row.entity_id === "other")!.entity_index = "2";
-  const container = await render(
-    <ThreadCollection threadId="thread">
-      {() => (
-        <CommandSelection commandIds={['say "hi"', "missing"]}>
-          {(rows) => <p data-testid="commands">{rows.map((row) => row.entityId).join(",")}</p>}
-        </CommandSelection>
-      )}
-    </ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{() => <Commands ids={['say "hi"', "missing"]} />}</Shown>);
   await vi.waitFor(() => expect(container.querySelector('[data-testid="commands"]')?.textContent).toBe('say "hi"'));
   expect(sync.posted("entities")).toContainEqual({
     where: "entity_kind = 'command' AND entity_id = ANY($1)",

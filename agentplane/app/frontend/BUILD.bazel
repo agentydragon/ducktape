@@ -657,11 +657,23 @@ ts_library(
 )
 
 ts_library(
+    name = "thread_sync",
+    srcs = ["thread_sync.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "thread_store",
     srcs = ["thread_store.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":thread_sync",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -676,6 +688,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":thread_store",
+        ":thread_sync",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -737,7 +750,7 @@ ts_library(
         ":local_commands",
         ":markdown",
         ":retained_disclosures",
-        ":thread_store",
+        ":thread_sync",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -797,6 +810,8 @@ ts_library(
         ":settings",
         ":shell_css",
         ":sidebar",
+        ":thread_store",
+        ":thread_sync",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",

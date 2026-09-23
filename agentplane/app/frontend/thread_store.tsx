@@ -17,36 +17,23 @@ import {
   type Row,
   type SubsetParams,
 } from "@electric-sql/client";
-import { createContext, type JSX, useContext, useEffect, useState, useSyncExternalStore } from "react";
+import { createContext, type JSX, type ReactNode, useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { z } from "zod";
 
-import { displayableError, threadScope, type ThreadEntityView, type ThreadScope } from "./client";
+import { displayableError, threadScope, type ThreadScope } from "./client";
+import {
+  decimalBigInt,
+  type Decimal,
+  type Payload,
+  type PayloadRef,
+  type ThreadEntity,
+  type ThreadState,
+  type ThreadSync,
+} from "./thread_sync";
 
-const decimal: z.ZodType<string | bigint> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
-type Decimal = z.output<typeof decimal>;
-export function decimalBigInt(value: Decimal): bigint {
-  return typeof value === "bigint" ? value : BigInt(value);
-}
-export type PayloadRef = NonNullable<ThreadEntityView["text_ref"]>;
+const decimal: z.ZodType<Decimal> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
 type PayloadField = PayloadRef["field"];
-type ThreadEntityState = ThreadEntityView["state"];
 
-export interface ThreadEntity {
-  threadId: string;
-  projectionEpoch: string;
-  entityKind: "view_state" | "item" | "confirmed_input" | "lifecycle" | "command";
-  entityId: string;
-  entityIndex: Decimal;
-  cursor: Decimal;
-  revisionCursor: Decimal;
-  pending: boolean;
-  turnId: string | null;
-  state: ThreadEntityState;
-  textRef: PayloadRef | null;
-  argumentsRef: PayloadRef | null;
-  outputRef: PayloadRef | null;
-  inputRef: PayloadRef | null;
-}
 const payloadRefSchema = z.object({
   projection_epoch: z.string(),
   owner_cursor: z.string(),
@@ -359,7 +346,7 @@ interface WindowState {
 }
 
 /** A thread's rows at one projection epoch: the pages a reader has loaded, and what it waits on. */
-class ThreadWindow extends Listeners {
+class EpochWindow extends Listeners {
   readonly scope: ThreadScope;
   readonly #threadId: string;
   readonly #shape: Shape;
@@ -533,14 +520,14 @@ class ThreadWindow extends Listeners {
 
 interface SyncState {
   /** The window on screen. A replacement stays off screen until it has caught up. */
-  window: ThreadWindow | null;
+  window: EpochWindow | null;
   error: string | null;
 }
 
 /** A thread's scope, and the window over it: replaced whole when its epoch is gone. */
-class ThreadSync extends Listeners {
+class ThreadEpochs extends Listeners {
   readonly #threadId: string;
-  #next: ThreadWindow | null = null;
+  #next: EpochWindow | null = null;
   #resolving: AbortController | null = null;
   #retry: number | undefined;
   #closed = false;
@@ -576,7 +563,7 @@ class ThreadSync extends Listeners {
       // The runner has recorded nothing for the whole of the server's hold: hold another read.
       if (scope === null) return this.refresh();
       this.#next?.close();
-      const next = new ThreadWindow(this.#threadId, scope, this.refresh);
+      const next = new EpochWindow(this.#threadId, scope, this.refresh);
       // The first window shows its own catch-up; a replacement takes over once it has caught up,
       // or has an error to show.
       if (this.#state.window === null) return this.#set({ window: next, error: null });
@@ -608,17 +595,17 @@ const NO_SYNC: SyncState = { window: null, error: null };
 const NO_WINDOW: WindowState = { rows: [], caughtUp: false, olderAvailable: false, error: null };
 const noSubscription = (): (() => void) => () => undefined;
 
-const WindowContext = createContext<ThreadWindow | null>(null);
+const ThreadContext = createContext<ThreadEpochs | null>(null);
 
-function useWindow(): ThreadWindow {
-  const current = useContext(WindowContext);
-  if (current === null) throw new Error("thread rows are read inside a ThreadCollection");
-  return current;
+function useEpochs(): SyncState {
+  const thread = useContext(ThreadContext);
+  return useSyncExternalStore(thread?.subscribe ?? noSubscription, thread?.getState ?? (() => NO_SYNC));
 }
 
-export interface ThreadHistory {
-  olderAvailable: boolean;
-  loadOlder: () => void;
+function useWindow(): EpochWindow {
+  const { window: shown } = useEpochs();
+  if (shown === null) throw new Error("thread rows are read inside a Thread, once its window is open");
+  return shown;
 }
 
 /** Settled commands are the command list's to show, by id, not the thread's. */
@@ -626,88 +613,54 @@ function threadRow(row: ThreadEntity): boolean {
   return row.entityKind !== "command" || row.pending;
 }
 
-export function ThreadCollection({
-  threadId,
-  children,
-}: {
-  threadId: string;
-  children: (rows: ThreadEntity[], history: ThreadHistory) => JSX.Element;
-}): JSX.Element {
-  const [sync, setSync] = useState<ThreadSync | null>(null);
+function Thread({ threadId, children }: { threadId: string; children: ReactNode }): JSX.Element {
+  const [thread, setThread] = useState<ThreadEpochs | null>(null);
   useEffect(() => {
-    const next = new ThreadSync(threadId);
-    setSync(next);
+    const next = new ThreadEpochs(threadId);
+    setThread(next);
     return () => next.close();
   }, [threadId]);
-  const { window: shown, error } = useSyncExternalStore(
-    sync?.subscribe ?? noSubscription,
-    sync?.getState ?? (() => NO_SYNC)
-  );
-  const state = useSyncExternalStore(shown?.subscribe ?? noSubscription, shown?.getState ?? (() => NO_WINDOW));
-  if (!sync || !shown) {
-    if (error) return <p role="alert">Thread sync failed: {error}</p>;
-    return <p role="status">Loading thread…</p>;
-  }
-  return (
-    <WindowContext.Provider value={shown}>
-      {error && <p role="alert">Thread sync failed: {error}; showing the current window and retrying.</p>}
-      {state.error && (
-        <p role="alert">
-          Thread synchronization stopped: {state.error} <button onClick={sync.refresh}>Refresh thread</button>
-        </p>
-      )}
-      {!state.error && !state.caughtUp && (
-        <p role="status" data-thread-catchup="true">
-          Catching up thread…
-        </p>
-      )}
-      {children(state.caughtUp ? state.rows.filter(threadRow) : [], {
-        olderAvailable: state.olderAvailable,
-        loadOlder: shown.loadOlder,
-      })}
-    </WindowContext.Provider>
-  );
+  return <ThreadContext.Provider value={thread}>{children}</ThreadContext.Provider>;
 }
 
-/** The command rows among `commandIds`, loaded by id: whether pending or settled, and however old. */
-export function CommandSelection({
-  commandIds,
-  children,
-}: {
-  commandIds: readonly string[];
-  children: (rows: ThreadEntity[]) => JSX.Element;
-}): JSX.Element {
-  const thread = useWindow();
-  const { rows } = useSyncExternalStore(thread.subscribe, thread.getState);
+function useThread(): ThreadState {
+  const thread = useContext(ThreadContext);
+  const { window: shown, error } = useEpochs();
+  const state = useSyncExternalStore(shown?.subscribe ?? noSubscription, shown?.getState ?? (() => NO_WINDOW));
+  return {
+    window:
+      thread === null || shown === null
+        ? null
+        : {
+            rows: state.rows.filter(threadRow),
+            caughtUp: state.caughtUp,
+            olderAvailable: state.olderAvailable,
+            loadOlder: shown.loadOlder,
+            error: state.error,
+            refresh: thread.refresh,
+          },
+    error,
+  };
+}
+
+function useCommandRows(commandIds: readonly string[]): ThreadEntity[] {
+  const shown = useWindow();
+  const { rows } = useSyncExternalStore(shown.subscribe, shown.getState);
   const key = [...new Set(commandIds)].sort().join("\u0000");
   useEffect(() => {
-    if (key) thread.selectCommands(key.split("\u0000"));
-  }, [key, thread]);
+    if (key) shown.selectCommands(key.split("\u0000"));
+  }, [key, shown]);
   const selected = new Set(commandIds);
-  return children(rows.filter((row) => row.entityKind === "command" && selected.has(row.entityId)));
+  return rows.filter((row) => row.entityKind === "command" && selected.has(row.entityId));
 }
 
-export function PayloadBody({
-  reference,
-  children,
-}: {
-  reference: PayloadRef;
-  children: (body: string | null) => JSX.Element;
-}): JSX.Element {
+function usePayload(reference: PayloadRef): Payload {
   const shape = useWindow().bodies(reference.field);
   useSyncExternalStore(shape.subscribe, shape.getVersion);
   useEffect(() => {
     shape.want(reference);
   }, [reference, shape]);
-  return (
-    <>
-      {shape.error && (
-        <p role="alert">
-          Payload synchronization stopped: {shape.error}{" "}
-          <button onClick={shape.retry}>Retry payload synchronization</button>
-        </p>
-      )}
-      {children(shape.body(reference))}
-    </>
-  );
+  return { body: shape.body(reference), error: shape.error, retry: shape.retry };
 }
+
+export const electricThreadSync: ThreadSync = { Thread, useThread, useCommandRows, usePayload };
