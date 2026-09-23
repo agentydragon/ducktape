@@ -15,8 +15,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from starlette.types import Receive, Scope, Send
 
-from agentplane.app.thread.content import ThreadEntityInterest, ThreadInterestExpiredError, ThreadPayloadSelection
-from agentplane.app.thread.store import ThreadStore
+from agentplane.app.thread.content import (
+    ContentStore,
+    ThreadEntityInterest,
+    ThreadInterestExpiredError,
+    ThreadPayloadSelection,
+)
 from agentplane.app.thread.views import SEGMENT_KINDS, EntityKind
 
 logger = logging.getLogger(__name__)
@@ -102,16 +106,16 @@ class ElectricStreamingResponse(StreamingResponse):
 
 
 class ElectricProxy:
-    def __init__(self, client: httpx.AsyncClient, store: ThreadStore) -> None:
+    def __init__(self, client: httpx.AsyncClient, content: ContentStore) -> None:
         self._client = client
-        self._store = store
+        self._content = content
 
     async def commands(
         self, request: Request, thread_id: UUID, projection_epoch: str, command_ids: list[str]
     ) -> StreamingResponse:
         if not command_ids or len(command_ids) > 128 or any(not command_id for command_id in command_ids):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "select between 1 and 128 nonempty command IDs")
-        scope = await self._store.current_scope(thread_id)
+        scope = await self._content.current_scope(thread_id)
         if scope is None or scope.projection_epoch != projection_epoch:
             raise HTTPException(status.HTTP_410_GONE, "the selected thread scope is unavailable")
         params = {"1": str(thread_id), "2": projection_epoch}
@@ -133,7 +137,7 @@ class ElectricProxy:
         self, thread_id: UUID, anchor_cursor: int | None, before_cursor: int | None
     ) -> ThreadEntityInterest:
         try:
-            interest = await self._store.entity_interest(
+            interest = await self._content.entity_interest(
                 thread_id, anchor_cursor=anchor_cursor, before_cursor=before_cursor, page_size=_PAGE_SIZE
             )
         except ThreadInterestExpiredError as error:
@@ -155,7 +159,7 @@ class ElectricProxy:
         generation: int,
         revision_cursor: int,
     ) -> ThreadPayloadSelection:
-        selection = await self._store.payload_selection(
+        selection = await self._content.payload_selection(
             thread_id,
             owner_cursor=owner_cursor,
             owner_id=owner_id,
@@ -178,7 +182,7 @@ class ElectricProxy:
         window_from: int | None,
         window_before: int | None,
     ) -> StreamingResponse:
-        current_scope = await self._store.current_scope(thread_id)
+        current_scope = await self._content.current_scope(thread_id)
         if current_scope is None or current_scope.projection_epoch != projection_epoch:
             raise HTTPException(status.HTTP_410_GONE, "the selected thread scope is unavailable")
         expected = await self.entity_interest(thread_id, anchor_cursor, window_before)

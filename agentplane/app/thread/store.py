@@ -1,14 +1,12 @@
 """`ThreadStore`, the thread component's API over PostgreSQL.
 
-It owns each transaction: it runs the levels' functions inside one, composes the writes that span
-levels, and sends the change notice after a write. What is set on a thread itself, its name and
-archive state, is read and written here.
+A thread is assembled from its event log: listing and reading it join the log with what an operator
+has set on the thread, its name and archive state, which is written here.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import datetime
 from uuid import UUID
 
 from google.protobuf.json_format import ParseDict
@@ -16,17 +14,10 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.app import thread_fold
-from agentplane.app.thread import content, event_log, ingestion_lease
-from agentplane.app.thread.content import ThreadEntityInterest, ThreadPayloadSelection, ThreadScope
-from agentplane.app.thread.event_log import EventReplicationError, FeedSnapshot, ThreadNotFoundError
-from agentplane.app.thread.ingestion_lease import IngestionLease
+from agentplane.app.thread.event_log import ThreadNotFoundError
 from agentplane.app.thread.models import Event, EventLog, FeedState, Thread
-from agentplane.app.thread.recording import ThreadFoldError, record_thread_fold, set_operational
 from agentplane.app.thread.updates import notify
 from agentplane.app.thread.views import ThreadView
-from agentplane.app.thread_debug import ArchivedObservationEntry, EvidencePage, NativeFramePage, ObservationPage
-from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -36,170 +27,6 @@ from agentplane.runner import protocol_pb2
 class ThreadStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def thread(self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec) -> UUID:
-        """The thread for a session: its event log, created from the spec on first sight."""
-        async with self._sessions.begin() as session:
-            created = await event_log.create(session, sandbox, session_id, spec)
-            if created is not None:
-                await notify(session)
-                return created
-            return await event_log.id_of(session, sandbox, session_id)
-
-    async def last_cursor(self, thread_id: UUID) -> int:
-        async with self._sessions() as session:
-            return await event_log.last_cursor(session, thread_id)
-
-    async def current_scope(self, thread_id: UUID) -> ThreadScope | None:
-        async with self._sessions() as session:
-            return await content.current_scope(session, thread_id)
-
-    async def entity_interest(
-        self,
-        thread_id: UUID,
-        *,
-        anchor_cursor: int | None = None,
-        before_cursor: int | None = None,
-        page_size: int = 30,
-    ) -> ThreadEntityInterest | None:
-        async with self._sessions() as session:
-            return await content.entity_interest(
-                session, thread_id, anchor_cursor=anchor_cursor, before_cursor=before_cursor, page_size=page_size
-            )
-
-    async def payload_selection(
-        self, thread_id: UUID, *, owner_cursor: int, owner_id: str, field: str, generation: int, revision_cursor: int
-    ) -> ThreadPayloadSelection | None:
-        async with self._sessions() as session:
-            return await content.payload_selection(
-                session,
-                thread_id,
-                owner_cursor=owner_cursor,
-                owner_id=owner_id,
-                field=field,
-                generation=generation,
-                revision_cursor=revision_cursor,
-            )
-
-    async def evidence(
-        self, thread_id: UUID, *, projection_epoch: str, entity_kind: str, entity_id: str, after_cursor: int, limit: int
-    ) -> EvidencePage:
-        async with self._sessions() as session:
-            return await content.evidence(
-                session,
-                thread_id,
-                projection_epoch=projection_epoch,
-                entity_kind=entity_kind,
-                entity_id=entity_id,
-                after_cursor=after_cursor,
-                limit=limit,
-            )
-
-    async def native_frames(
-        self,
-        thread_id: UUID,
-        *,
-        projection_epoch: str,
-        entity_kind: str,
-        entity_id: str,
-        observation_cursor: int,
-        after_sequence: int,
-        limit: int,
-    ) -> NativeFramePage:
-        async with self._sessions() as session:
-            return await content.native_frames(
-                session,
-                thread_id,
-                projection_epoch=projection_epoch,
-                entity_kind=entity_kind,
-                entity_id=entity_id,
-                observation_cursor=observation_cursor,
-                after_sequence=after_sequence,
-                limit=limit,
-            )
-
-    async def observations(
-        self, thread_id: UUID, *, before_cursor: int | None = None, after_cursor: int | None = None, limit: int = 30
-    ) -> ObservationPage:
-        async with self._sessions() as session:
-            return await event_log.observations(
-                session, thread_id, before_cursor=before_cursor, after_cursor=after_cursor, limit=limit
-            )
-
-    async def observation_entry(self, thread_id: UUID, cursor: int) -> ArchivedObservationEntry | None:
-        async with self._sessions() as session:
-            return await event_log.observation_entry(session, thread_id, cursor)
-
-    async def command_outcomes(
-        self, thread_id: UUID, projection_epoch: str, command_ids: Sequence[str]
-    ) -> dict[str, thread_fold.CommandOutcome | None]:
-        async with self._sessions() as session:
-            return await content.command_outcomes(session, thread_id, projection_epoch, command_ids)
-
-    async def record(
-        self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: IngestionLease
-    ) -> None:
-        """Atomically extend the contiguous prefix, accepting only identical replayed entries."""
-        if not entries:
-            return
-        async with self._sessions.begin() as session:
-            await ingestion_lease.fence(session, lease, thread_id)
-            inserted = await event_log.append(session, thread_id, entries)
-            if not inserted:
-                return
-            try:
-                await record_thread_fold(session, thread_id, inserted[0].origin.source_id, inserted)
-            except EventReplicationError:
-                raise
-            except (thread_fold.ObservationNotUnderstoodError, thread_fold.FoldContractError) as error:
-                raise ThreadFoldError(
-                    f"thread fold failed at cursor {error.cursor}: {error}", cursor=error.cursor
-                ) from error
-            except ValueError as error:
-                raise ThreadFoldError(f"thread fold failed: {error}") from error
-            # The maximum stored cursor is the checkpoint: the fenced transaction admits
-            # only a contiguous suffix, so there is no separately mutable progress counter.
-            await event_log.advance_feed(session, thread_id, inserted)
-            await notify(session)
-
-    async def acquire_ingestion(self, sandbox: str, duration: timedelta) -> IngestionLease | None:
-        async with self._sessions.begin() as session:
-            return await ingestion_lease.acquire(session, sandbox, duration)
-
-    async def renew_ingestion(self, lease: IngestionLease, duration: timedelta) -> bool:
-        async with self._sessions.begin() as session:
-            return await ingestion_lease.renew(session, lease, duration)
-
-    async def release_ingestion(self, lease: IngestionLease) -> None:
-        async with self._sessions.begin() as session:
-            await ingestion_lease.release(session, lease)
-
-    async def set_attached(self, thread_id: UUID, attached: protocol_pb2.Attached, *, lease: IngestionLease) -> None:
-        async with self._sessions.begin() as session:
-            await ingestion_lease.fence(session, lease, thread_id)
-            await event_log.set_attached(session, thread_id, attached)
-            await set_operational(session, thread_id, status="active", error=None)
-            await notify(session)
-
-    async def end_feed(
-        self, thread_id: UUID, *, lease: IngestionLease, error: str | None, error_cursor: int | None = None
-    ) -> None:
-        async with self._sessions.begin() as session:
-            await ingestion_lease.fence(session, lease, thread_id)
-            await event_log.end_feed(session, thread_id, error)
-            await set_operational(
-                session,
-                thread_id,
-                status="ended" if error is None else "failed",
-                error=error,
-                error_cursor=error_cursor,
-            )
-            await session.flush()
-            await notify(session)
-
-    async def feed_state(self, thread_id: UUID) -> FeedSnapshot | None:
-        async with self._sessions() as session:
-            return await event_log.feed_state(session, thread_id)
 
     async def list_threads(
         self, *, sandbox: str | None = None, session_id: str | None = None, include_archived: bool = False
@@ -241,10 +68,6 @@ class ThreadStore:
                 return None
             return _view(log, await session.get(Thread, thread_id), *await _last(session, thread_id))
 
-    async def admitted_command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry | None:
-        async with self._sessions() as session:
-            return await content.admitted_command(session, thread_id, command)
-
     async def rename(self, thread_id: UUID, name: str | None) -> ThreadView:
         """Set or, with None, clear the thread's name."""
         async with self._sessions.begin() as session:
@@ -264,10 +87,6 @@ class ThreadStore:
             view = await _set_thread(session, thread_id, archived=archived)
             await notify(session)
         return view
-
-    async def events(self, thread_id: UUID, *, after_cursor: int = 0, limit: int) -> list[event_log_pb2.EventEntry]:
-        async with self._sessions() as session:
-            return await event_log.events(session, thread_id, after_cursor=after_cursor, limit=limit)
 
 
 async def _last(session: AsyncSession, thread_id: UUID) -> tuple[int | None, datetime | None, dict[str, object] | None]:

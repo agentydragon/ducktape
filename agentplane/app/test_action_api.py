@@ -71,6 +71,8 @@ from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
+from agentplane.app.thread.content import ContentStore
+from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
 from agentplane.subjects import ServiceAccountRef
@@ -137,6 +139,8 @@ async def review(
     reviewer: TokenReviewer,
     operator_connection: str,
     direct_federation: bool,
+    event_logs: EventLogStore,
+    content: ContentStore,
 ) -> AsyncIterator[Review]:
     ACTIONS_RUNNER.apply(db_url)
     server = FastMCP("test-review")
@@ -300,6 +304,8 @@ async def review(
             oidc,
             reviewer,
             operator_actions=operator_client,
+            event_logs=event_logs,
+            content=content,
             thread_updates=thread_updates,
             operator_sessions=operator_sessions,
         )
@@ -325,6 +331,8 @@ async def review(
             operator_actions=None
             if operator_connection == "disabled"
             else FederatedOperatorActions(federation, oidc, downstream_http),
+            event_logs=EventLogStore(replica_engine),
+            content=ContentStore(replica_engine),
             # Never started: nothing here reads thread updates, only the shared operator sessions.
             thread_updates=ThreadUpdates(replica_engine.url),
             operator_sessions=OperatorSessionStore(replica_engine),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import AsyncIterator, Generator, Iterator
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
@@ -22,6 +23,7 @@ from agentplane.app.database_migrate import RUNNER
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
+from agentplane.app.ingestion import Ingestion
 from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
@@ -33,6 +35,8 @@ from agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
 )
+from agentplane.app.thread.content import ContentStore
+from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.ingestion_lease import IngestionLease
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
@@ -111,6 +115,21 @@ def store(engine: AsyncEngine) -> ThreadStore:
 
 
 @pytest.fixture
+def event_logs(engine: AsyncEngine) -> EventLogStore:
+    return EventLogStore(engine)
+
+
+@pytest.fixture
+def content(engine: AsyncEngine) -> ContentStore:
+    return ContentStore(engine)
+
+
+@pytest.fixture
+def ingestion(engine: AsyncEngine) -> Ingestion:
+    return Ingestion(engine)
+
+
+@pytest.fixture
 async def thread_updates(engine: AsyncEngine) -> AsyncIterator[ThreadUpdates]:
     updates = ThreadUpdates(engine.url)
     await updates.start()
@@ -120,12 +139,20 @@ async def thread_updates(engine: AsyncEngine) -> AsyncIterator[ThreadUpdates]:
         await updates.close()
 
 
+@dataclass(frozen=True)
+class Replica:
+    """Another app replica's stores, over its own connection pool on the same database."""
+
+    store: ThreadStore
+    event_logs: EventLogStore
+    ingestion: Ingestion
+
+
 @pytest.fixture
-async def replica(db_url: str) -> AsyncIterator[ThreadStore]:
-    """Another app replica's store: its own connection pool on the same database."""
+async def replica(db_url: str) -> AsyncIterator[Replica]:
     engine = connect(db_url)
     try:
-        yield ThreadStore(engine)
+        yield Replica(ThreadStore(engine), EventLogStore(engine), Ingestion(engine))
     finally:
         await engine.dispose()
 
@@ -141,8 +168,8 @@ SPEC = protocol_pb2.SessionSpec(
 
 
 @pytest.fixture
-async def lease(store: ThreadStore) -> IngestionLease:
-    lease = await store.acquire_ingestion("sb-1", timedelta(minutes=1))
+async def lease(ingestion: Ingestion) -> IngestionLease:
+    lease = await ingestion.acquire("sb-1", timedelta(minutes=1))
     assert lease is not None
     return lease
 
@@ -168,13 +195,21 @@ def core_v1() -> FakeCoreV1Api:
 
 
 @pytest.fixture
-def bridge(store: ThreadStore, thread_updates: ThreadUpdates) -> RunnerBridge:
+def bridge(
+    event_logs: EventLogStore, ingestion: Ingestion, content: ContentStore, thread_updates: ThreadUpdates
+) -> RunnerBridge:
     """A bridge with nothing to dial, for the inventory and thread routes."""
 
     async def unreachable(name: str) -> str:
         raise SandboxNotReachableError(name, ProvisioningState.WAITING_FOR_POD)
 
-    return RunnerBridge(address_of=unreachable, store=store, thread_changes=thread_updates.changes)
+    return RunnerBridge(
+        address_of=unreachable,
+        event_logs=event_logs,
+        ingestion=ingestion,
+        content=content,
+        thread_changes=thread_updates.changes,
+    )
 
 
 @pytest.fixture

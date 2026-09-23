@@ -32,6 +32,8 @@ from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.shutdown import drain_of
+from agentplane.app.thread.content import ContentStore
+from agentplane.app.thread.event_log import EventLogStore
 from agentplane.app.thread.models import SandboxIngestion
 from agentplane.app.thread.store import ThreadStore
 from agentplane.app.thread.updates import ThreadUpdates
@@ -176,6 +178,8 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_bridge_a
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     database: AsyncEngine,
+    event_logs: EventLogStore,
+    content: ContentStore,
 ) -> None:
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness
@@ -191,6 +195,8 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_bridge_a
         live_index,
         action_policy,
         reviewer=reviewer,
+        event_logs=event_logs,
+        content=content,
         thread_updates=thread_updates,
         operator_sessions=operator_sessions,
     )
