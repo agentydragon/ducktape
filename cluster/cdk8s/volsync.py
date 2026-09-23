@@ -28,7 +28,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeCrds,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -142,11 +142,6 @@ def volsync(
         artifact,
         timeout="5m",
         depends_on=[flux_kustomization_depends_on(snapshot_controller)],
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=NAME, namespace=NAMESPACE
-            )
-        ],
         # The token controller populates data.token asynchronously. Do not declare
         # the VolSync auth material ready until Alloy can actually use it.
         health_check_exprs=[

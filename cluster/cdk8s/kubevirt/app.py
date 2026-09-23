@@ -6,7 +6,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from kubevirt_kubevirt_crds.io.kubevirt import (
     KubeVirt,
     KubeVirtSpec,
@@ -116,20 +115,5 @@ def write_manifests(root: Path) -> None:
 
 def kubevirt(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, kubevirt_operator: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart,
-        NAME,
-        artifact,
-        timeout="10m",
-        depends_on=[flux_kustomization_depends_on(kubevirt_operator)],
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="virt-api", namespace=NAMESPACE
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="virt-controller", namespace=NAMESPACE
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="DaemonSet", name="virt-handler", namespace=NAMESPACE
-            ),
-        ],
+        chart, NAME, artifact, timeout="10m", depends_on=[flux_kustomization_depends_on(kubevirt_operator)]
     )

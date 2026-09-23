@@ -11,7 +11,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitor,
     PodMonitorSpec,
@@ -62,10 +61,5 @@ def flux_monitoring(
             # PodMonitor CRD ships with kube-prometheus-stack in monitoring-stack.
             # PodMonitor
             flux_kustomization_depends_on(monitoring_crds)
-        ],
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="monitoring.coreos.com/v1", kind="PodMonitor", name="flux-system", namespace="flux-system"
-            )
         ],
     )

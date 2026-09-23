@@ -13,7 +13,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
@@ -244,9 +243,6 @@ def loki_read_proxy(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
-        health_checks=[
-            KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=NAME, namespace=NAME)
-        ],
         description=(
             "Read-only namespace-filtering Loki query proxy so Haku can read logs "
             "for allowlisted namespaces without touching Loki "

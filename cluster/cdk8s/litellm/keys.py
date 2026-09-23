@@ -9,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
@@ -175,14 +174,6 @@ def litellm_keys_tf(
         # the tf-runner) so sops_file in tf/gitops/litellm-keys can read the virtual-key
         # SSOT. Added when that SOPS file arrived — previously this dir held only plain YAML.
         decryption=SOPS_DECRYPTION,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="infra.contrib.fluxcd.io/v1alpha2",
-                kind="Terraform",
-                name="litellm-keys",
-                namespace="flux-system",
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(
             # The app must serve (with its DB) before keys can mint.
             litellm,

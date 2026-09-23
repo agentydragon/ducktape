@@ -46,7 +46,7 @@ from clickhouse_keeper_installation_crds.com.altinity.clickhouse_keeper import (
     ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplates,
     ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitor,
     PodMonitorSpec,
@@ -667,20 +667,6 @@ def clickhouse(
         artifact,
         decryption=SOPS_DECRYPTION,
         timeout="20m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="clickhouse-keeper.altinity.com/v1",
-                kind="ClickHouseKeeperInstallation",
-                name="clickhouse-keeper",
-                namespace="clickhouse",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="clickhouse.altinity.com/v1",
-                kind="ClickHouseInstallation",
-                name="clickhouse",
-                namespace="clickhouse",
-            ),
-        ],
         health_check_exprs=[
             KustomizationSpecHealthCheckExprs(
                 api_version="clickhouse-keeper.altinity.com/v1",

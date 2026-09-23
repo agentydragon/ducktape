@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -25,9 +25,6 @@ def oci_cache(
         # Do not delete the cache namespace if this Flux owner is removed later.
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         decryption=SOPS_DECRYPTION,
-        health_checks=[
-            KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name="zot", namespace="oci-cache")
-        ],
         depends_on=flux_kustomization_depends_on_many(
             # Namespace, app, and ServiceMonitor are managed together here.
             valkey,

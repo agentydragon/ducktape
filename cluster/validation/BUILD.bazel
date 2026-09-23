@@ -732,6 +732,21 @@ py_test(
 )
 
 py_test(
+    name = "test_flux_wait_health_checks",
+    srcs = ["test_flux_wait_health_checks.py"],
+    data = [
+        "//cluster/k8s:cluster_all_files",
+        "//cluster/k8s:flux_system_files",
+    ],
+    deps = [
+        ":conftest",
+        ":flux",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_generator_namespace",
     srcs = ["test_generator_namespace.py"],
     data = ["//cluster/k8s:cluster_all_files"],

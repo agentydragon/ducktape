@@ -8,7 +8,6 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from tofu_controller.io.fluxcd.contrib.infra import TerraformV1Alpha2
 
@@ -85,14 +84,6 @@ def forgejo_claude(
         # tf/thrive-scrape) and agent sessions can depend on it.
         artifact,
         timeout="10m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="infra.contrib.fluxcd.io/v1alpha2",
-                kind="Terraform",
-                name=CLAUDE,
-                namespace=terraform.NAMESPACE,
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(
             # Forgejo API must be up (provider target)
             forgejo,
@@ -120,14 +111,6 @@ def haku_state(
         # haku-forgejo-git Secret) so scan runs can depend on it.
         artifact,
         timeout="10m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="infra.contrib.fluxcd.io/v1alpha2",
-                kind="Terraform",
-                name=HAKU_STATE,
-                namespace=terraform.NAMESPACE,
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(
             # Forgejo API must be up (provider target)
             forgejo,
@@ -156,14 +139,6 @@ def budget_ledger(
         # budget-ledger-git-creds Secret) so the exporter/Fava can depend on it.
         artifact,
         timeout="10m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="infra.contrib.fluxcd.io/v1alpha2",
-                kind="Terraform",
-                name=BUDGET_LEDGER,
-                namespace=terraform.NAMESPACE,
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(
             # Forgejo API must be up (provider target)
             forgejo,
@@ -190,14 +165,6 @@ def cpap_data(
         # cpap-data-git-{write,read} Secrets) so the sync CronJob can depend on it.
         artifact,
         timeout="10m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="infra.contrib.fluxcd.io/v1alpha2",
-                kind="Terraform",
-                name=CPAP_DATA,
-                namespace=terraform.NAMESPACE,
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(
             # Forgejo API must be up (provider target)
             forgejo,
@@ -223,14 +190,6 @@ def forgejo_agentydragon_repos(
         # collaborator service users/keys, and grants repo access).
         artifact,
         timeout="10m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="infra.contrib.fluxcd.io/v1alpha2",
-                kind="Terraform",
-                name=AGENTYDRAGON_REPOS,
-                namespace=terraform.NAMESPACE,
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(
             # Forgejo API must be up (provider target)
             forgejo,
@@ -248,13 +207,5 @@ def forgejo_agentydragon(
         AGENTYDRAGON,
         artifact,
         timeout="10m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="infra.contrib.fluxcd.io/v1alpha2",
-                kind="Terraform",
-                name=AGENTYDRAGON,
-                namespace=terraform.NAMESPACE,
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db),
     )

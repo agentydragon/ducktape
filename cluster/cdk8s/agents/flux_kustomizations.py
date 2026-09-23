@@ -22,14 +22,6 @@ def agent_sandbox_controller(chart: Chart, artifact: ArtifactGeneratorSpecArtifa
         name,
         artifact,
         timeout="5m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1",
-                kind="Deployment",
-                name="agent-sandbox-controller",
-                namespace="agent-sandbox-system",
-            )
-        ],
         description=(
             "kubernetes-sigs/agent-sandbox v0.5.5 combined release asset "
             "(Sandbox, SandboxTemplate, SandboxClaim, SandboxWarmPool CRDs)."
@@ -48,9 +40,6 @@ def airlock(
         suspend=False,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        health_checks=[
-            KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name="airlock", namespace="airlock")
-        ],
         depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
     )
 
@@ -140,23 +129,6 @@ def haku_openclaw_spike_app(
         timeout="10m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         depends_on=flux_kustomization_depends_on_many(external_secrets_operator, seaweedfs_operator),
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="Bucket",
-                name="haku-openclaw-spike-backups",
-                namespace="haku-openclaw-spike",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="S3Credentials",
-                name="haku-openclaw-spike-backups",
-                namespace="haku-openclaw-spike",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="haku-openclaw-spike", namespace="haku-openclaw-spike"
-            ),
-        ],
         description=(
             "Isolated OpenClaw gateway using Claude Code subscription inference through the Haku credential proxy."
         ),
@@ -183,17 +155,6 @@ def plaid_mcp(
         artifact,
         timeout="10m",
         decryption=SOPS_DECRYPTION,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="postgresql.cnpg.io/v1", kind="Cluster", name="plaid-mcp-db", namespace="plaid-mcp"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="plaid-mcp", namespace="plaid-mcp"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="plaid-db-mcp", namespace="plaid-mcp"
-            ),
-        ],
         depends_on=flux_kustomization_depends_on_many(
             forgejo_images,
             gateway,
@@ -292,20 +253,6 @@ def public_coder_agent_devbox(
             agent_shared_secrets,
             public_coder_agent_app_kustomization,
         ),
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="kubevirt.io/v1",
-                kind="VirtualMachine",
-                name="public-coder-devbox",
-                namespace="public-coder-agent",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name="buildbuddy-api-key",
-                namespace="public-coder-agent",
-            ),
-        ],
         description=(
             "KubeVirt build/test devbox for public-coder-agent "
             "(Bazel/BuildBuddy/direnv), with an ephemeral containerDisk root "
@@ -345,14 +292,6 @@ def tana_mcp(
         artifact,
         timeout="5m",
         decryption=SOPS_DECRYPTION,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="tana-mcp", namespace="tana-mcp"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="tana-mcp-facade", namespace="tana-mcp"
-            ),
-        ],
         depends_on=flux_kustomization_depends_on_many(
             external_creds,
             external_secrets_config,

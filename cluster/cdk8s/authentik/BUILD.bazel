@@ -79,7 +79,6 @@ py_library(
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cnpg:objectstore",
         "//cluster/cdk8s/crd_bindings/cnpg:scheduledbackup",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
         "//cluster/cdk8s/crd_bindings/seaweedfs:resourcereferencegrant",
         "//cluster/cdk8s/crd_bindings/seaweedfs:s3credentials",

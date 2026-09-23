@@ -6,7 +6,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
     S3Identity,
     S3IdentitySpec,
@@ -55,9 +54,4 @@ def seaweedfs_forgejo_bucket(
         artifact,
         depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
         timeout="5m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1", kind="S3Identity", name=NAME, namespace=namespace.NAME
-            )
-        ],
     )

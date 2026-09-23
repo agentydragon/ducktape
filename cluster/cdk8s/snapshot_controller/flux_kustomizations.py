@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecHealthChecks,
     KustomizationSpecImages,
     KustomizationSpecPatches,
     KustomizationSpecPatchesTarget,
@@ -38,11 +37,6 @@ def snapshot_controller(chart: Chart, snapshot_controller_crds: Kustomization) -
                     "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    "
                     "topology.kubernetes.io/zone: hil-ovh"
                 ),
-            )
-        ],
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="snapshot-controller", namespace="kube-system"
             )
         ],
     )

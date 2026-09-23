@@ -26,7 +26,6 @@ from cnpg_scheduledbackup_crds.io.cnpg.postgresql import (
     ScheduledBackupSpecMethod,
     ScheduledBackupSpecPluginConfiguration,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     Bucket,
     BucketSpec,
@@ -198,29 +197,6 @@ def authentik_db_backups(
         NAME,
         artifact,
         timeout="15m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="Bucket",
-                name="authentik-db-backups",
-                namespace="authentik",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="S3Identity",
-                name="authentik-db-backups",
-                namespace="authentik",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1",
-                kind="S3Credentials",
-                name="authentik-db-backups",
-                namespace="authentik",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="barmancloud.cnpg.io/v1", kind="ObjectStore", name="authentik-db-ovh", namespace="authentik"
-            ),
-        ],
         depends_on=flux_kustomization_depends_on_many(cnpg, seaweedfs_cluster),
         description="Creates the Authentik CNPG backup schedule and its SeaweedFS storage.",
     )

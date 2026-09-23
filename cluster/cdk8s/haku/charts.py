@@ -18,7 +18,6 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
-    KustomizationSpecHealthChecks,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -88,12 +87,12 @@ def console_chart(app: App) -> Chart:
     return chart
 
 
-def write_console_manifests(root: Path) -> Chart:
+def write_console_manifests(root: Path) -> None:
     """Synthesize the console resource chart and its directory Kustomize config."""
     out_dir = root / PATH
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
-    chart = console_chart(app)
+    console_chart(app)
     app.synth()
     write_yaml(
         out_dir / "kustomization.yaml",
@@ -104,13 +103,11 @@ def write_console_manifests(root: Path) -> Chart:
             config_map_generator=CONFIG_MAP_GENERATOR,
         ),
     )
-    return chart
 
 
 def haku_console(
     flux_chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    health_checks: list[KustomizationSpecHealthChecks],
     cnpg: Kustomization,
     local_path_provisioner: Kustomization,
     forgejo_images: Kustomization,
@@ -122,7 +119,7 @@ def haku_console(
     ssh_mcp: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
-    """Build the Flux graph node from health-check values and predecessor nodes."""
+    """Build the Flux graph node from its predecessor nodes."""
     return flux_kustomization(
         flux_chart,
         NAME,
@@ -134,7 +131,6 @@ def haku_console(
         decryption=sops_decryption(EXTRA_RESOURCES),
         # The two Jobs gate every dependent Kustomization: nothing downstream
         # reconciles until the schema is migrated and the indexer GRANTs applied.
-        health_checks=health_checks,
         health_check_exprs=[
             KustomizationSpecHealthCheckExprs(
                 api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY

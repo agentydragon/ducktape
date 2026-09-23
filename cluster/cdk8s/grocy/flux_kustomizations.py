@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -49,11 +48,6 @@ def grocy_mcp_sf(
         name,
         artifact,
         timeout="5m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="grocy-mcp-server", namespace="grocy-sf"
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_config,
             forgejo_images,
@@ -78,15 +72,10 @@ def grocy_sf_user_perms(
         artifact,
         timeout="5m",
         # Run only after grocy-sf is up (and self-migrated via its postStart hook); the
-        # Job-completion healthcheck makes this kustomization Ready only once the policy
+        # wait on the Job's completion makes this kustomization Ready only once the policy
         # in policy.yaml has actually been applied — so a fresh cluster converges to the
         # committed user→permission policy.
         depends_on=flux_kustomization_depends_on_many(forgejo_images, grocy_sf),
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="batch/v1", kind="Job", name="grocy-user-perms-provisioner", namespace="grocy-sf"
-            )
-        ],
     )
 
 
@@ -130,11 +119,6 @@ def grocy_mcp_vallejo(
         name,
         artifact,
         timeout="5m",
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="grocy-mcp-server", namespace="grocy-vallejo"
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_config,
             forgejo_images,
@@ -159,13 +143,8 @@ def grocy_vallejo_user_perms(
         artifact,
         timeout="5m",
         # Run only after grocy-vallejo is up (and self-migrated via its postStart hook);
-        # the Job-completion healthcheck makes this kustomization Ready only once the
+        # the wait on the Job's completion makes this kustomization Ready only once the
         # policy in policy.yaml has actually been applied — so a fresh cluster converges
         # to the committed user→permission policy.
         depends_on=flux_kustomization_depends_on_many(forgejo_images, grocy_vallejo),
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="batch/v1", kind="Job", name="grocy-user-perms-provisioner", namespace="grocy-vallejo"
-            )
-        ],
     )

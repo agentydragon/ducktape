@@ -19,7 +19,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecHealthChecks,
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
     KustomizationSpecPostBuildSubstituteFromKind,
@@ -102,12 +101,4 @@ def cert_manager_environment(
         depends_on=flux_kustomization_depends_on_many(
             cert_manager, cert_manager_trust, cert_manager_issuer_config, external_creds, external_secrets_config
         ),
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="cert-manager.io/v1", kind="ClusterIssuer", name="letsencrypt-prod", namespace=""
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="cert-manager.io/v1", kind="ClusterIssuer", name="letsencrypt-staging", namespace=""
-            ),
-        ],
     )

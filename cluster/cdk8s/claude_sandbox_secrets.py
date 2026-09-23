@@ -21,7 +21,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import (
@@ -105,10 +104,4 @@ def claude_sandbox_secrets(
         timeout="5m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_operator),
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1", kind="ExternalSecret", name=name, namespace=_NAMESPACE
-            )
-            for name in (_TELEGRAM_BOT_TOKEN, _BUILDBUDDY_API_KEY)
-        ],
     )

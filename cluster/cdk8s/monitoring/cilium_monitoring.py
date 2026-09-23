@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -91,16 +90,5 @@ def cilium_monitoring(
         depends_on=[
             # ServiceMonitor
             flux_kustomization_depends_on(monitoring_crds)
-        ],
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="monitoring.coreos.com/v1",
-                kind="ServiceMonitor",
-                name="cilium-agent",
-                namespace="monitoring",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="monitoring.coreos.com/v1", kind="ServiceMonitor", name="hubble", namespace="monitoring"
-            ),
         ],
     )

@@ -83,12 +83,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s import fleet_rules
 from cluster.cdk8s.agentplane import node_scheduling
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
-from cluster.cdk8s.flux import (
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    health_checks,
-    kustomize_kustomization,
-)
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import sops_decryption, write_yaml
 from cluster.cdk8s.metadata import metadata
@@ -396,7 +391,7 @@ def ntfy(
     out_dir = root / OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
-    rendered_chart = chart(app)
+    chart(app)
     app.synth()
 
     resources = ["ntfy.k8s.yaml", "credentials.sops.yaml"]
@@ -407,18 +402,6 @@ def ntfy(
         description="Self-hosted ntfy for Android and cluster alert notifications.",
         timeout="10m",
         decryption=sops_decryption(resources),
-        health_checks=health_checks(
-            rendered_chart,
-            (
-                "Namespace",
-                "ClusterSecretStore",
-                "Cluster",
-                "ExternalSecret",
-                "Deployment",
-                "HTTPRoute",
-                "ServiceMonitor",
-            ),
-        ),
         depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_config, gateway, monitoring_crds),
     )
     write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=resources))

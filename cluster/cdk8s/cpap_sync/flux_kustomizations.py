@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -24,9 +23,4 @@ def cpap_sync(
         decryption=SOPS_DECRYPTION,
         timeout="30m",
         depends_on=flux_kustomization_depends_on_many(external_secrets_config, kubevirt, forgejo_images),
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="kubevirt.io/v1", kind="VirtualMachine", name="cpap-gateway", namespace="cpap-sync"
-            )
-        ],
     )

@@ -23,7 +23,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallRemediation,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -164,32 +163,4 @@ def external_secrets_operator(
             # ESO uses Issuer resources
             cert_manager,
         ),
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2",
-                kind="HelmRelease",
-                name="external-secrets",
-                namespace="external-secrets-system",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="external-secrets", namespace="external-secrets-system"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1",
-                kind="Deployment",
-                name="external-secrets-webhook",
-                namespace="external-secrets-system",
-            ),
-            # Ensure both webhook configurations are registered before dependents create resources
-            KustomizationSpecHealthChecks(
-                api_version="admissionregistration.k8s.io/v1",
-                kind="ValidatingWebhookConfiguration",
-                name="externalsecret-validate",
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="admissionregistration.k8s.io/v1",
-                kind="ValidatingWebhookConfiguration",
-                name="secretstore-validate",
-            ),
-        ],
     )
