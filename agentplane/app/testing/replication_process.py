@@ -274,7 +274,11 @@ async def _serve(
             DecisionsClient(decisions_http),
             index,
             ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom),
-            electric=ElectricProxy(electric_http, content) if electric_url is not None else None,
+            electric=(
+                ElectricProxy(electric_http, content, event_logs=event_logs, thread_changes=thread_updates.changes)
+                if electric_url is not None
+                else None
+            ),
             event_logs=event_logs,
             content=content,
             thread_updates=thread_updates,

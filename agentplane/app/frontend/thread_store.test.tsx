@@ -147,6 +147,8 @@ interface Subset {
 class FakeSync {
   epoch = "epoch-1";
   through = "70";
+  /** Whether the thread has a fold: a scope read before it has one is held, as the proxy holds it. */
+  folded = true;
   entities: Json[] = [];
   chunks: Json[] = [];
   readonly requests: { method: string; path: string; query: URLSearchParams; subset: Subset | null }[] = [];
@@ -160,7 +162,7 @@ class FakeSync {
     const subset = typeof init?.body === "string" ? (JSON.parse(init.body) as Subset) : null;
     const path = url.pathname.split("/sync/")[1];
     this.requests.push({ method, path, query: url.searchParams, subset });
-    if (path === "scope") return Response.json({ projection_epoch: this.epoch, through_cursor: this.through });
+    if (path === "scope") return this.folded ? this.scope() : this.#hold(path, url.searchParams, init?.signal);
     if (url.searchParams.get("projection_epoch") !== this.epoch) return Response.json({}, { status: 410 });
     const relation = path === "entities" ? "thread_entity" : "thread_payload_chunk";
     // Electric resolves a shape's handle from its definition.
@@ -176,14 +178,22 @@ class FakeSync {
       );
     }
     if (url.searchParams.get("live") !== "true") return log(relation, handle, []);
+    return this.#hold(path, url.searchParams, init?.signal);
+  };
+
+  scope(): Response {
+    return Response.json({ projection_epoch: this.epoch, through_cursor: this.through });
+  }
+
+  #hold(path: string, query: URLSearchParams, signal?: AbortSignal | null): Promise<Response> {
     return new Promise((resolve, reject) => {
-      this.#live.set(path, { query: url.searchParams, resolve });
-      init?.signal?.addEventListener("abort", () => {
+      this.#live.set(path, { query, resolve });
+      signal?.addEventListener("abort", () => {
         this.#live.delete(path);
         reject(new DOMException("aborted", "AbortError"));
       });
     });
-  };
+  }
 
   /** The offset the shape's waiting live request reads from. */
   async liveOffset(path: string): Promise<string | null> {
@@ -191,7 +201,7 @@ class FakeSync {
     return this.#live.get(path)!.query.get("offset");
   }
 
-  /** Answer the shape's waiting live request. */
+  /** Answer the path's waiting request. */
   async respond(path: string, response: (relation: string) => Response): Promise<void> {
     await vi.waitFor(() => expect(this.#live.has(path)).toBe(true));
     const { resolve } = this.#live.get(path)!;
@@ -309,6 +319,25 @@ it("opens one shape on the tail and pages older rows into it", async () => {
   expect(new Set(sync.requests.map((request) => request.query.get("handle")).filter(Boolean))).toEqual(
     new Set(["entities-1"])
   );
+});
+
+it("re-issues a scope read the server answered without a fold at once, and opens the thread once it has one", async () => {
+  const sync = stubSync();
+  thread(sync, 3);
+  sync.folded = false;
+  const container = await render(
+    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
+  );
+
+  await sync.respond("scope", () => new Response(null, { status: 204 }));
+  // Already held again, before any timer could have fired.
+  expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
+  expect(container.textContent).toContain("Loading thread");
+
+  sync.folded = true;
+  await sync.respond("scope", () => sync.scope());
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
+  expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
 });
 
 it("applies live changes to the rows it holds, and new rows, but not rows it has not loaded", async () => {

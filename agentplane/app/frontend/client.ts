@@ -342,11 +342,14 @@ export function eventsUrl(threadId: string): string {
   return `/threads/${encodeURIComponent(threadId)}/events/stream`;
 }
 
-/** The epoch a thread's shapes are pinned to, or null while the thread has no fold yet. */
+/**
+ * The epoch a thread's shapes are pinned to. A long poll: the server holds the read until the
+ * thread has a fold, and answers null if it still has none when the hold runs out.
+ */
 export async function threadScope(threadId: string, signal?: AbortSignal): Promise<ThreadScope | null> {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/scope`, window.location.href);
   const response = await fetch(url, { signal });
-  if (response.status === 404) return null;
+  if (response.status === 204) return null;
   if (!response.ok) throw new Error(`Thread scope failed with ${response.status}`);
   return (await response.json()) as ThreadScope;
 }

@@ -31,6 +31,8 @@ representations remain implementation decisions to validate with the sync integr
 - The runner persists semantic batches before forwarding them; the app commits projected
   state before publication to browsers. Multiple replicas and listeners share committed
   state. Disconnecting a reader does not interrupt execution.
+- A reader learns of changes over a held request or a stream (long poll, SSE, WebSocket),
+  never by asking again on a timer. Only a failed request waits before the next.
 - Raw capture is independently optional in the target storage model. Retained evidence is
   accessible at the item or turn that produced it, as well as in original chronology.
 
@@ -309,6 +311,11 @@ to the sampled projection position through the engine. Selected text loads from 
 payload reference; loading is explicit until its whole revision is available. Follow
 concurrent changes using engine sync tokens. No replay of old token Events and no hidden
 background history load.
+
+A thread whose runner has recorded nothing yet has no fold to pin a shape to. Its scope
+read is a long poll: the proxy holds it until the first fold commits, for as long as
+Electric holds a live request (20 seconds), and answers 204 if there is still none; the
+store asks again at once.
 
 ### Scroll upward while an old item changes
 
