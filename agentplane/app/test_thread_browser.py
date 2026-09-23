@@ -713,23 +713,33 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-following.png")
 
     await history.hover()
+    # The app adopts the reader's position at the gesture's scrollend. Rows entering the window can
+    # still load and be re-measured after it, and the scroll correction for a re-measure lands a
+    # frame after its commit. Sample that same position once two consecutive frames agree.
+    gesture = await history.evaluate_handle(
+        "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
+    )
     await page.mouse.wheel(0, -600)
-    await page.wait_for_function(
-        """() => {
-            const area = document.querySelector('[aria-label="Thread history"]');
-            return area.scrollHeight - area.clientHeight - area.scrollTop > 400;
-        }"""
-    )
-    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    reading_anchor = await history.evaluate(
-        """area => {
-            const top = area.getBoundingClientRect().top;
-            const item = [...area.querySelectorAll('[data-thread-anchor]')].find(
-                item => item.getBoundingClientRect().bottom > top
-            );
-            return {cursor: item.dataset.threadAnchor, offset: item.getBoundingClientRect().top - top};
-        }"""
-    )
+    async with asyncio.timeout(30):
+        await gesture.evaluate("gesture => gesture.ended")
+        reading_anchor = await history.evaluate(
+            """area => new Promise(resolve => {
+                const sample = () => {
+                    const top = area.getBoundingClientRect().top;
+                    const item = [...area.querySelectorAll('[data-thread-anchor]')].find(
+                        item => item.getBoundingClientRect().bottom > top
+                    );
+                    return {cursor: item.dataset.threadAnchor, offset: item.getBoundingClientRect().top - top};
+                };
+                const settle = previous => requestAnimationFrame(() => {
+                    const current = sample();
+                    if (current.cursor === previous.cursor && current.offset === previous.offset) resolve(current);
+                    else settle(current);
+                });
+                requestAnimationFrame(() => settle(sample()));
+            })"""
+        )
+    await gesture.dispose()
     updated = source.append(
         event_pb2.Event(
             text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="\n\nTest output while reading")
