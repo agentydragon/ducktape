@@ -1,0 +1,35 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: seaweedfs-operator
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://seaweedfs.github.io/seaweedfs-operator/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: seaweedfs-operator
+  namespace: seaweedfs
+spec:
+  chart:
+    spec:
+      chart: seaweedfs-operator
+      interval: 12h
+      sourceRef:
+        kind: HelmRepository
+        name: seaweedfs-operator
+        namespace: flux-system
+      version: 0.1.42
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  interval: 30m
+  upgrade:
+    crds: CreateReplace
+  values:
+    replicaCount: 1
+    webhook:
+      enabled: false

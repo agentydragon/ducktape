@@ -1047,7 +1047,7 @@ http_file(
     urls = ["https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v0.5.5/sandbox-with-extensions.yaml"],
 )
 
-# Match the seaweedfs-operator chart version in cluster/k8s/seaweedfs/operator/helmrelease.yaml;
+# Match the seaweedfs-operator chart version in cluster/cdk8s/seaweedfs/operator_release.py;
 # the chart's CRD template equals these per-kind files at the same tag.
 http_file(
     name = "seaweed_adminscript_crd",

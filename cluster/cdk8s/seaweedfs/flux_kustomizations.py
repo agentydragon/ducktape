@@ -7,13 +7,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, Kustom
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def seaweedfs_cluster(
@@ -116,35 +110,6 @@ def seaweedfs_monitoring(
                 # PrometheusRule
                 monitoring_crds,
             ),
-        ),
-    )
-
-
-def seaweedfs_operator(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_namespace: Kustomization
-) -> Kustomization:
-    name = "seaweedfs-operator"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            suspend=False,
-            interval="10m",
-            retry_interval="1m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=[flux_kustomization_depends_on(seaweedfs_namespace)],
-            wait=True,
-            timeout="5m",
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2",
-                    kind="HelmRelease",
-                    name="seaweedfs-operator",
-                    namespace="seaweedfs",
-                )
-            ],
         ),
     )
 
