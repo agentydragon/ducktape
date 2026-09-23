@@ -119,6 +119,7 @@ from cluster.cdk8s.reflector import flux_kustomizations as reflector_flux_kustom
 from cluster.cdk8s.reloader import flux_kustomizations as reloader_flux_kustomizations
 from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
+    drivefs_artifacts_bucket as seaweedfs_drivefs_artifacts_bucket,
     flux_kustomizations as seaweedfs_flux_kustomizations,
     namespace as seaweedfs_namespace,
 )
@@ -192,6 +193,7 @@ def generate_manifests(root: Path) -> None:
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
     seaweedfs_namespace.write_manifests(root)
+    seaweedfs_drivefs_artifacts_bucket.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -638,10 +640,12 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_cluster_kustomization,
     )
     seaweedfs_drivefs_artifacts_bucket_artifact = artifact(
-        "seaweedfs-drivefs-artifacts-bucket", "cluster/k8s/seaweedfs/drivefs-artifacts-bucket"
+        "seaweedfs-drivefs-artifacts-bucket", seaweedfs_drivefs_artifacts_bucket.OUTPUT_DIR
     )
-    seaweedfs_drivefs_artifacts_bucket_kustomization = seaweedfs_flux_kustomizations.seaweedfs_drivefs_artifacts_bucket(
-        flux_chart, seaweedfs_drivefs_artifacts_bucket_artifact, seaweedfs_cluster_kustomization
+    seaweedfs_drivefs_artifacts_bucket_kustomization = (
+        seaweedfs_drivefs_artifacts_bucket.seaweedfs_drivefs_artifacts_bucket(
+            flux_chart, seaweedfs_drivefs_artifacts_bucket_artifact, seaweedfs_cluster_kustomization
+        )
     )
     seaweedfs_external_credentials_artifact = artifact(
         "seaweedfs-external-credentials", "cluster/k8s/seaweedfs/external-credentials"

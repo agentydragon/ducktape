@@ -70,34 +70,6 @@ def seaweedfs_filer_db(
     )
 
 
-def seaweedfs_drivefs_artifacts_bucket(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_cluster: Kustomization
-) -> Kustomization:
-    name = "seaweedfs-drivefs-artifacts-bucket"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)],
-            wait=True,
-            timeout="5m",
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="seaweed.seaweedfs.com/v1",
-                    kind="Bucket",
-                    name="drivefs-artifacts",
-                    namespace="seaweedfs",
-                )
-            ],
-        ),
-    )
-
-
 def seaweedfs_external_credentials(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,

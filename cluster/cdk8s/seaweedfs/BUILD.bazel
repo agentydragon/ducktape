@@ -47,3 +47,21 @@ py_library(
         "@pypi//constructs",
     ],
 )
+
+py_library(
+    name = "drivefs_artifacts_bucket",
+    srcs = ["drivefs_artifacts_bucket.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:cluster",
+        "//cluster/cdk8s/seaweedfs:namespace",
+        "@pypi//cdk8s",
+    ],
+)
