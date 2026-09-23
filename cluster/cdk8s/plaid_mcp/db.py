@@ -21,18 +21,12 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
 )
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
 )
 
 from cluster.cdk8s import cilium, cnpg
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
@@ -96,44 +90,30 @@ def _readonly_credentials(chart: Chart) -> None:
         spec=PasswordSpec(length=40, digits=8, symbols=0, no_upper=False, allow_repeat=True),
     )
     reflected_to = "augur,haku-sandbox"
-    ExternalSecret(
+    add_external_secret(
         chart,
         "readonly-external-secret",
-        metadata=metadata(_READONLY_SECRET, NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="8760h",
-            target=ExternalSecretSpecTarget(
-                name=_READONLY_SECRET,
-                template=ExternalSecretSpecTargetTemplate(
-                    metadata=ExternalSecretSpecTargetTemplateMetadata(
-                        annotations={
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": reflected_to,
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": reflected_to,
-                        }
-                    ),
-                    data={
-                        "username": _READONLY_ROLE,
-                        "password": "{{ .password }}",
-                        "host": _PRIMARY_HOST,
-                        "port": "5432",
-                        "dbname": _DATABASE,
-                        "DATABASE_URL": f"postgresql://{_READONLY_ROLE}:{{{{ .password }}}}@{_PRIMARY_HOST}:5432/{_DATABASE}",
-                    },
-                ),
+        name=_READONLY_SECRET,
+        namespace=NAMESPACE,
+        refresh="8760h",
+        data_from=[password_generator(_READONLY_GENERATOR)],
+        template=ExternalSecretSpecTargetTemplate(
+            metadata=ExternalSecretSpecTargetTemplateMetadata(
+                annotations={
+                    "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
+                    "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": reflected_to,
+                    "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
+                    "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": reflected_to,
+                }
             ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=_READONLY_GENERATOR,
-                        )
-                    )
-                )
-            ],
+            data={
+                "username": _READONLY_ROLE,
+                "password": "{{ .password }}",
+                "host": _PRIMARY_HOST,
+                "port": "5432",
+                "dbname": _DATABASE,
+                "DATABASE_URL": f"postgresql://{_READONLY_ROLE}:{{{{ .password }}}}@{_PRIMARY_HOST}:5432/{_DATABASE}",
+            },
         ),
     )
 

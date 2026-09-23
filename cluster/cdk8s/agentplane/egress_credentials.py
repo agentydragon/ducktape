@@ -9,18 +9,12 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Namespace, Role, RoleBinding, RolePolicyRule, ServiceAccount
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.metadata import metadata
 
 STAGING_NAMESPACE = "agentplane-staging-egress-credentials"
@@ -64,25 +58,15 @@ class EgressCredentials(Construct):
 def credential_external_secret(
     scope: Construct, *, namespace: str, target: str, source: str, key: str, store: str
 ) -> None:
-    """ESO copy of one credential into an egress-credentials namespace, as Secret `target`."""
-    ExternalSecret(
+    """ESO copy of one credential into `namespace`, as Secret `target`."""
+    add_external_secret(
         scope,
         target,
-        metadata=metadata(target, namespace),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE, name=store
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key=key, remote_ref=ExternalSecretSpecDataRemoteRef(key=source, property=key)
-                )
-            ],
-            target=ExternalSecretSpecTarget(
-                name=target,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-            ),
-        ),
+        name=target,
+        namespace=namespace,
+        refresh="1h",
+        store=cluster_secret_store(store),
+        data=[remote_data(source, key)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )

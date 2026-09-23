@@ -26,7 +26,7 @@ from agentplane.app.api import create_app
 from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
-from agentplane.app.electric import EntityInterestResponse, PayloadInterestResponse
+from agentplane.app.electric import ThreadScopeResponse
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
@@ -67,8 +67,7 @@ def openapi_document() -> dict[str, Any]:
         raise ValueError("OpenAPI document has no schema components")
     for name, adapter in (
         ("ThreadEntityView", TypeAdapter(ThreadEntityView)),
-        ("EntityInterestResponse", TypeAdapter(EntityInterestResponse)),
-        ("PayloadInterestResponse", TypeAdapter(PayloadInterestResponse)),
+        ("ThreadScopeResponse", TypeAdapter(ThreadScopeResponse)),
     ):
         schema = adapter.json_schema(ref_template="#/components/schemas/{model}")
         components["schemas"].update(schema.pop("$defs", {}))

@@ -2268,8 +2268,8 @@ data:
         client_id: configured-by-secret
         client_secret_file: /etc/agentplane-github/client_secret
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
-      kubernetes:
-        server_id: kubernetes
+      kubernetes_admin:
+        server_id: kubernetes_admin
         server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
         client_id: kubectl-passthrough-mcp
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
@@ -2290,16 +2290,16 @@ data:
             url: https://api.githubcopilot.com/mcp/
             server_id: github
             auth: oauth
-      kubernetes:
-        title: Kubernetes MCP
-        description: Kubernetes passthrough MCP tools; every Action remains subject to operator approval.
+      kubernetes_admin:
+        title: Kubernetes admin
+        description: The Kubernetes API with the linked operator's own permissions. Use it only for what your own Kubernetes identity cannot do; each call waits for the operator's approval.
         executor:
           kind: mcp
-          description: Kubernetes MCP executed with the linked operator Kubernetes identity.
+          description: kubectl-passthrough-mcp, run as the linked operator's Kubernetes identity.
           config:
             transport: streamable-http
             url: https://kubectl-passthrough-mcp.allegedly.works/mcp
-            server_id: kubernetes
+            server_id: kubernetes_admin
             auth: oauth
       grocy_sf:
         title: Grocy SF MCP
@@ -2331,7 +2331,7 @@ data:
         description: SSH commands on configured targets; every Action remains subject to operator approval.
         executor:
           kind: mcp
-          description: Standalone SSH MCP backend; Agentplane retains approval and execution authority.
+          description: SSH MCP backend (ssh-mcp); Agentplane retains approval and execution authority.
           config:
             transport: streamable-http
             url: http://ssh-mcp.ssh-mcp.svc.cluster.local:8080/mcp
@@ -2342,7 +2342,7 @@ data:
         description: Home Assistant tools; every Action remains subject to operator approval.
         executor:
           kind: mcp
-          description: Standalone Home Assistant MCP backend (ha-mcp).
+          description: Home Assistant MCP backend (ha-mcp).
           config:
             transport: streamable-http
             url: http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp
@@ -2353,7 +2353,7 @@ data:
         description: Tana read/write tools; every Action remains subject to operator approval.
         executor:
           kind: mcp
-          description: Standalone Tana MCP backend (tana-mcp).
+          description: Tana MCP backend (tana-mcp).
           config:
             transport: streamable-http
             url: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
@@ -2364,7 +2364,7 @@ data:
         description: Gmail read/write tools; every Action remains subject to operator approval.
         executor:
           kind: mcp
-          description: Standalone Gmail MCP backend (google-mcp), on a write-scoped Google credential.
+          description: Gmail MCP backend (google-mcp), on a write-scoped Google credential.
           config:
             transport: streamable-http
             url: http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp
@@ -2375,7 +2375,7 @@ data:
         description: Google Calendar read/write tools; every Action remains subject to operator approval.
         executor:
           kind: mcp
-          description: Standalone Google Calendar MCP backend (google-mcp), on a write-scoped Google credential.
+          description: Google Calendar MCP backend (google-mcp), on a write-scoped Google credential.
           config:
             transport: streamable-http
             url: http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp
@@ -2388,7 +2388,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: agentplane-actions-settings
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer,ha-mcp-bearer,tana-agentydragon-gmail-com-account-pat,google-mcp-bearer
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer,ha-mcp-client-bearer,tana-agentydragon-gmail-com-account-pat,google-mcp-bearer
   labels:
     app.kubernetes.io/name: agentplane-actions
   name: agentplane-actions
@@ -2525,7 +2525,7 @@ spec:
               name: secret-ssh-mcp-bearer
               readOnly: true
             - mountPath: /run/secrets/ha-mcp
-              name: secret-ha-mcp-bearer
+              name: secret-ha-mcp-client-bearer
               readOnly: true
             - mountPath: /run/secrets/tana-mcp
               name: secret-tana-agentydragon-gmail-com-account-pat
@@ -2641,12 +2641,12 @@ spec:
               - key: bearer-token
                 path: bearer-token
             secretName: ssh-mcp-bearer
-        - name: secret-ha-mcp-bearer
+        - name: secret-ha-mcp-client-bearer
           secret:
             items:
               - key: bearer-token
                 path: bearer-token
-            secretName: ha-mcp-bearer
+            secretName: ha-mcp-client-bearer
         - name: secret-tana-agentydragon-gmail-com-account-pat
           secret:
             items:
@@ -2953,6 +2953,26 @@ spec:
     creationPolicy: Owner
     deletionPolicy: Retain
     name: google-mcp-bearer
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ha-mcp-client-bearer
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: ha-mcp-bearer
+        property: bearer-token
+      secretKey: bearer-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-ha-mcp-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: ha-mcp-client-bearer
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password

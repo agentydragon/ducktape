@@ -27,18 +27,16 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
     ExternalSecretSpecDataFrom,
     ExternalSecretSpecDataFromSourceRef,
     ExternalSecretSpecDataFromSourceRefGeneratorRef,
     ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetTemplate,
 )
 
 from cluster.cdk8s import cnpg
 from cluster.cdk8s.agentplane import node_scheduling
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret
 from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "haku-console"
@@ -122,35 +120,30 @@ class Db(Construct):
             metadata=metadata(generator, NAMESPACE),
             spec=PasswordSpec(length=40, digits=8, symbols=0, no_upper=False, allow_repeat=True),
         )
-        ExternalSecret(
+        add_external_secret(
             self,
             "indexer-secret",
-            metadata=metadata(INDEXER_SECRET, NAMESPACE),
-            spec=ExternalSecretSpec(
-                refresh_interval="8760h",
-                target=ExternalSecretSpecTarget(
-                    name=INDEXER_SECRET,
-                    template=ExternalSecretSpecTargetTemplate(
-                        type="kubernetes.io/basic-auth",
-                        data={
-                            "username": INDEXER_ROLE,
-                            "password": "{{ .password }}",
-                            # The SQLAlchemy asyncpg form the worker consumes directly.
-                            "DATABASE_URL": (
-                                f"postgresql+asyncpg://{INDEXER_ROLE}:{{{{ .password }}}}"
-                                f"@{RW_HOST}:{_POSTGRES_PORT}/{DATABASE}"
-                            ),
-                        },
-                    ),
-                ),
-                data_from=[
-                    ExternalSecretSpecDataFrom(
-                        source_ref=ExternalSecretSpecDataFromSourceRef(
-                            generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                                kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD, name=generator
-                            )
+            name=INDEXER_SECRET,
+            namespace=NAMESPACE,
+            refresh="8760h",
+            data_from=[
+                ExternalSecretSpecDataFrom(
+                    source_ref=ExternalSecretSpecDataFromSourceRef(
+                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
+                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD, name=generator
                         )
                     )
-                ],
+                )
+            ],
+            template=ExternalSecretSpecTargetTemplate(
+                type="kubernetes.io/basic-auth",
+                data={
+                    "username": INDEXER_ROLE,
+                    "password": "{{ .password }}",
+                    # The SQLAlchemy asyncpg form the worker consumes directly.
+                    "DATABASE_URL": (
+                        f"postgresql+asyncpg://{INDEXER_ROLE}:{{{{ .password }}}}@{RW_HOST}:{_POSTGRES_PORT}/{DATABASE}"
+                    ),
+                },
             ),
         )

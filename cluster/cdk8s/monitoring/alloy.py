@@ -11,17 +11,10 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-)
 
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.monitoring import grafana_helmrepository
 
 _NAME = "alloy"
 _NAMESPACE = "monitoring"
@@ -31,49 +24,36 @@ _OTLP_HTTP_PORT = 4318
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    HelmRelease(
+    helm_release(
         chart,
-        "helm-release",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=_NAME,
-                    version="1.x",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name="grafana",
-                        namespace="flux-system",
-                    ),
-                    interval="12h",
-                )
-            ),
-            values={
-                "alloy": {
-                    # Config lives in config.alloy; generated into alloy-config ConfigMap by kustomization.yaml.
-                    "configMap": {"name": "alloy-config", "key": "config.alloy", "create": False},
-                    # The Grafana Alloy chart reads extraPorts from .Values.alloy and reuses
-                    # them for both the Service and the container port list.
-                    "extraPorts": [
-                        {"name": "otlp-http", "port": _OTLP_HTTP_PORT, "targetPort": _OTLP_HTTP_PORT, "protocol": "TCP"}
-                    ],
-                },
-                "controller": {
-                    "type": "deployment",
-                    # Single replica is load-bearing, not just sizing: config.alloy's
-                    # `loki.source.kubernetes_events` watches events cluster-wide, so a second
-                    # replica ingests every event a second time. Scaling this up means scoping
-                    # or removing that component first.
-                    "replicas": 1,
-                },
-                "serviceMonitor": {"enabled": True},
-                "resources": {
-                    "requests": {"cpu": "50m", "memory": "128Mi"},
-                    "limits": {"cpu": "500m", "memory": "512Mi"},
-                },
+        _NAME,
+        _NAMESPACE,
+        repository=grafana_helmrepository.SOURCE_REF,
+        chart=_NAME,
+        version="1.x",
+        interval="30m",
+        chart_interval="12h",
+        values={
+            "alloy": {
+                # Config lives in config.alloy; generated into alloy-config ConfigMap by kustomization.yaml.
+                "configMap": {"name": "alloy-config", "key": "config.alloy", "create": False},
+                # The Grafana Alloy chart reads extraPorts from .Values.alloy and reuses
+                # them for both the Service and the container port list.
+                "extraPorts": [
+                    {"name": "otlp-http", "port": _OTLP_HTTP_PORT, "targetPort": _OTLP_HTTP_PORT, "protocol": "TCP"}
+                ],
             },
-        ),
+            "controller": {
+                "type": "deployment",
+                # Single replica is load-bearing, not just sizing: config.alloy's
+                # `loki.source.kubernetes_events` watches events cluster-wide, so a second
+                # replica ingests every event a second time. Scaling this up means scoping
+                # or removing that component first.
+                "replicas": 1,
+            },
+            "serviceMonitor": {"enabled": True},
+            "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}, "limits": {"cpu": "500m", "memory": "512Mi"}},
+        },
     )
     k8s.KubeNetworkPolicy(
         chart,
