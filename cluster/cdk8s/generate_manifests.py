@@ -39,6 +39,7 @@ from cluster.cdk8s import (
     user_agentydragon,
     valkey,
     volsync,
+    vpa,
 )
 from cluster.cdk8s.activitywatch import flux_kustomizations as activitywatch_flux_kustomizations
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
@@ -136,7 +137,6 @@ from cluster.cdk8s.tofu_controller import flux_kustomizations as tofu_controller
 from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
 from cluster.cdk8s.vector_talos_logs import flux_kustomizations as vector_talos_logs_flux_kustomizations
 from cluster.cdk8s.vm_images_publisher import flux_kustomizations as vm_images_publisher_flux_kustomizations
-from cluster.cdk8s.vpa import flux_kustomizations as vpa_flux_kustomizations
 from cluster.cdk8s.website import flux_kustomizations as website_flux_kustomizations
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
@@ -210,6 +210,7 @@ def generate_manifests(root: Path) -> None:
     proxmox_proxy.write_manifests(root)
     volsync.write_manifests(root)
     reloader.write_manifests(root)
+    vpa.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -392,10 +393,8 @@ def generate_manifests(root: Path) -> None:
     claude_rbac_kustomization = agents_flux_kustomizations.claude_rbac(
         flux_chart, claude_rbac_artifact, kyverno_policies_kustomization
     )
-    vpa_artifact = artifact("vpa", "cluster/k8s/vpa")
-    vpa_kustomization = vpa_flux_kustomizations.vpa(
-        flux_chart, vpa_artifact, kyverno_kustomization, metrics_server_kustomization
-    )
+    vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
+    vpa_kustomization = vpa.vpa(flux_chart, vpa_artifact, kyverno_kustomization, metrics_server_kustomization)
     clickhouse_artifact = artifact("clickhouse", "cluster/k8s/clickhouse/cluster")
     clickhouse_kustomization = clickhouse_flux_kustomizations.clickhouse(
         flux_chart, clickhouse_artifact, clickhouse_operator_kustomization

@@ -149,6 +149,8 @@ _GENERATED_FILES = (
     "cluster/k8s/volsync/kustomization.yaml",
     "cluster/k8s/reloader/reloader.k8s.yaml",
     "cluster/k8s/reloader/kustomization.yaml",
+    "cluster/k8s/vpa/vpa.k8s.yaml",
+    "cluster/k8s/vpa/kustomization.yaml",
 )
 
 

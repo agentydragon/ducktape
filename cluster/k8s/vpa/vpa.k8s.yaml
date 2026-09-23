@@ -1,52 +1,58 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: fairwinds-stable
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://charts.fairwinds.com/stable
+---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: vpa
   namespace: kube-system
 spec:
-  interval: 30m
-  install:
-    remediation:
-      retries: 3
   chart:
     spec:
       chart: vpa
-      version: "5.0.1"
+      interval: 12h
       sourceRef:
         kind: HelmRepository
         name: fairwinds-stable
         namespace: flux-system
-      interval: 12h
+      version: 5.0.1
+  install:
+    remediation:
+      retries: 3
+  interval: 30m
   values:
-    recommender:
-      enabled: true
-      # 15m interval reduces control-plane system-disk writes.
-      extraArgs:
-        recommender-interval: 15m
-      resources:
-        requests:
-          cpu: 25m
-          memory: 256Mi
-        limits:
-          cpu: 200m
-          memory: 512Mi
-
-    updater:
-      enabled: true
-      resources:
-        requests:
-          cpu: 25m
-          memory: 128Mi
-        limits:
-          cpu: 200m
-          memory: 256Mi
-
     admissionController:
       enabled: true
       resources:
-        requests:
-          cpu: 25m
-          memory: 128Mi
         limits:
           cpu: 200m
           memory: 256Mi
+        requests:
+          cpu: 25m
+          memory: 128Mi
+    recommender:
+      enabled: true
+      extraArgs:
+        recommender-interval: 15m
+      resources:
+        limits:
+          cpu: 200m
+          memory: 512Mi
+        requests:
+          cpu: 25m
+          memory: 256Mi
+    updater:
+      enabled: true
+      resources:
+        limits:
+          cpu: 200m
+          memory: 256Mi
+        requests:
+          cpu: 25m
+          memory: 128Mi

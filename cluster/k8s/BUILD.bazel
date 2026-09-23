@@ -187,6 +187,8 @@ exports_files(
         "volsync/kustomization.yaml",
         "reloader/reloader.k8s.yaml",
         "reloader/kustomization.yaml",
+        "vpa/vpa.k8s.yaml",
+        "vpa/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
