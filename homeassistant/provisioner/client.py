@@ -87,6 +87,16 @@ class HomeAssistantClient:
     async def _verify_api_ready(self) -> None:
         await self.request_json("/api/", authenticated=False)
 
+    async def token_is_valid(self, token: str) -> bool:
+        """Whether Home Assistant accepts `token`."""
+        response = await self.http_client.get(
+            f"{self.settings.home_assistant_url}/api/", headers={"Authorization": f"Bearer {token}"}, timeout=30
+        )
+        if response.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+            return False
+        response.raise_for_status()
+        return True
+
     async def onboarding_status(self) -> set[OnboardingStep] | None:
         """Return completed onboarding steps, or None when onboarding views are absent."""
         try:
@@ -126,8 +136,8 @@ class HomeAssistantClient:
         auth_code = self.required_string(response, "auth_code")
         await self._exchange_token(auth_code)
 
-    async def login(self, password: str) -> None:
-        """Authenticate the local owner after a partially completed run."""
+    async def login(self, username: str, password: str) -> None:
+        """Authenticate `username` for subsequent API calls."""
         response = await self.request_json(
             "/auth/login_flow",
             authenticated=False,
@@ -141,7 +151,7 @@ class HomeAssistantClient:
         response = await self.request_json(
             f"/auth/login_flow/{flow_id}",
             authenticated=False,
-            data={"client_id": self.settings.client_id, "username": self.settings.username, "password": password},
+            data={"client_id": self.settings.client_id, "username": username, "password": password},
         )
         auth_code = self.required_string(response, "result")
         await self._exchange_token(auth_code)
@@ -211,5 +221,5 @@ class HomeAssistantClient:
             return
 
         await self.wait_until_ready()
-        await self.login(password)
+        await self.login(self.settings.username, password)
         await self.websocket_command({"id": 1, "type": "http/config/promote"})

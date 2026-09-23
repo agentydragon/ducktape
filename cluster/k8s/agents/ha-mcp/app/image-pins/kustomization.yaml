@@ -3,5 +3,3 @@ kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/mcp-oauth-facade
     newTag: devel-20260921002547-0e0af92 # {"$imagepolicy": "flux-system:mcp-oauth-facade:tag"}
-  - name: git.allegedly.works/ducktape-ci/ha-mcp-token-provisioner
-    newTag: devel-20260915084053-a8b1ac6 # {"$imagepolicy": "flux-system:ha-mcp-token-provisioner:tag"}

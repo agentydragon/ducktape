@@ -5,7 +5,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "app",
     srcs = ["app.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
@@ -17,6 +17,8 @@ py_library(
         "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
         "//cluster/cdk8s/crd_bindings/volsync:replicationsource",
         "//cluster/cdk8s/external_secrets:external_secret",
+        "//homeassistant/provisioner:settings",
+        "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

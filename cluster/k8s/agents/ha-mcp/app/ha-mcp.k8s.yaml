@@ -10,15 +10,15 @@ spec: {}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: ha-mcp-token-provisioner
-  namespace: home-assistant
+  name: home-assistant-token-reader
+  namespace: ha-mcp
 automountServiceAccountToken: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: ha-mcp-token-provisioner
-  namespace: ha-mcp
+  name: ha-mcp-home-assistant-token-reader
+  namespace: home-assistant
 rules:
   - apiGroups:
       - ""
@@ -28,185 +28,61 @@ rules:
       - secrets
     verbs:
       - get
-      - update
-      - patch
-  - apiGroups:
-      - ""
-    resources:
-      - secrets
-    verbs:
-      - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: ha-mcp-token-provisioner
+  name: ha-mcp-home-assistant-token-reader
+  namespace: home-assistant
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ha-mcp-home-assistant-token-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: home-assistant-token-reader
+    namespace: ha-mcp
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-ha-mcp-home-assistant-token-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - ha-mcp
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: home-assistant-token-reader
+      remoteNamespace: home-assistant
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ha-mcp-home-assistant-token
   namespace: ha-mcp
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: ha-mcp-token-provisioner
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: ha-mcp-token-provisioner
-    namespace: home-assistant
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: ha-mcp-token-provisioner
-  namespace: home-assistant
-rules:
-  - apiGroups:
-      - ""
-    resourceNames:
-      - agentplane-home-assistant-token
-    resources:
-      - secrets
-    verbs:
-      - get
-      - update
-      - patch
-  - apiGroups:
-      - ""
-    resources:
-      - secrets
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: ha-mcp-token-provisioner
-  namespace: home-assistant
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: ha-mcp-token-provisioner
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: ha-mcp-token-provisioner
-    namespace: home-assistant
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  annotations:
-    description: Validates and repairs the Home Assistant long-lived tokens HA-MCP and agentplane-staging's egress proxy hold.
-    kustomize.toolkit.fluxcd.io/force: enabled
-  name: ha-mcp-token-provisioner
-  namespace: home-assistant
 spec:
-  backoffLimit: 3
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: ha-mcp-token-provisioner
-        cdk8s.io/metadata.addr: ha-mcp-provisioner-job-c8d54df7
-    spec:
-      automountServiceAccountToken: true
-      containers:
-        - env:
-            - name: HOME_ASSISTANT_LOCAL_ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  key: password
-                  name: home-assistant-break-glass
-          image: git.allegedly.works/ducktape-ci/ha-mcp-token-provisioner:unset
-          imagePullPolicy: Always
-          name: provision-token
-          resources:
-            limits:
-              memory: 256Mi
-            requests:
-              cpu: 20m
-              memory: 64Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
-      dnsPolicy: ClusterFirst
-      hostNetwork: false
-      imagePullSecrets:
-        - name: forgejo-images-creds
-      restartPolicy: OnFailure
-      securityContext:
-        fsGroupChangePolicy: Always
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
-      serviceAccountName: ha-mcp-token-provisioner
-      setHostnameAsFQDN: false
-      shareProcessNamespace: false
-      terminationGracePeriodSeconds: 30
-  ttlSecondsAfterFinished: 3600
----
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: ha-mcp-token-provisioner
-  namespace: home-assistant
-spec:
-  concurrencyPolicy: Forbid
-  failedJobsHistoryLimit: 3
-  jobTemplate:
-    spec:
-      backoffLimit: 3
-      template:
-        metadata:
-          labels:
-            app.kubernetes.io/name: ha-mcp-token-provisioner
-            cdk8s.io/metadata.addr: ha-mcp-provisioner-cronjob-c8c082f5
-        spec:
-          automountServiceAccountToken: true
-          containers:
-            - env:
-                - name: HOME_ASSISTANT_LOCAL_ADMIN_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      key: password
-                      name: home-assistant-break-glass
-              image: git.allegedly.works/ducktape-ci/ha-mcp-token-provisioner:unset
-              imagePullPolicy: Always
-              name: provision-token
-              resources:
-                limits:
-                  memory: 256Mi
-                requests:
-                  cpu: 20m
-                  memory: 64Mi
-              securityContext:
-                allowPrivilegeEscalation: false
-                capabilities:
-                  drop:
-                    - ALL
-                privileged: false
-                readOnlyRootFilesystem: false
-                runAsNonRoot: true
-          dnsPolicy: ClusterFirst
-          hostNetwork: false
-          imagePullSecrets:
-            - name: forgejo-images-creds
-          restartPolicy: OnFailure
-          securityContext:
-            fsGroupChangePolicy: Always
-            runAsNonRoot: true
-            seccompProfile:
-              type: RuntimeDefault
-          serviceAccountName: ha-mcp-token-provisioner
-          setHostnameAsFQDN: false
-          shareProcessNamespace: false
-          terminationGracePeriodSeconds: 30
-  schedule: 0 4 * * 0
-  startingDeadlineSeconds: 10
-  successfulJobsHistoryLimit: 3
-  suspend: false
+  data:
+    - remoteRef:
+        key: ha-mcp-home-assistant-token
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-ha-mcp-home-assistant-token-secret-store
+  target:
+    creationPolicy: Owner
+    name: ha-mcp-home-assistant-token
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret

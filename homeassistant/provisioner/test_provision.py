@@ -10,59 +10,10 @@ import respx
 from client import HomeAssistantClient
 from httpx2.websockets import ASGIWebSocketTransport
 from pydantic import ValidationError
-from settings import ComponentConfig, HttpConfig, ProvisionerSettings
+from settings import ProvisionerSettings
 
 BASE_URL = "http://home-assistant.test:8123"
 pytestmark = pytest.mark.httpx2(base_url=BASE_URL, assert_all_called=False)
-
-
-@pytest.fixture
-def provisioner_settings() -> ProvisionerSettings:
-    return ProvisionerSettings(
-        home_assistant_url="http://home-assistant.test:8123",
-        client_id="https://home.test/",
-        redirect_uri="https://home.test/",
-        username="test-admin",
-        display_name="Test Administrator",
-        local_admin_password="secret-password",
-        http_config=HttpConfig(
-            server_host=["127.0.0.1"],
-            server_port=8124,
-            cors_allowed_origins=["https://cast.test"],
-            use_x_forwarded_for=True,
-            trusted_proxies=["127.0.0.1/32"],
-            login_attempts_threshold=-1,
-            ip_ban_enabled=True,
-            ssl_profile="modern",
-            use_x_frame_options=True,
-        ),
-        components=(
-            ComponentConfig(
-                version="2.2.1",
-                url="https://example.test/component.zip",
-                sha256="0" * 64,
-                archive_path="*/custom_components/example",
-                install_dir="example",
-                manifest_domain="example",
-            ),
-            ComponentConfig(
-                version="1.1.1",
-                url="https://example.test/root-component.zip",
-                sha256="0" * 64,
-                archive_path=".",
-                install_dir="root_component",
-                manifest_domain=None,
-                config_files=("automations.yaml", "scripts.yaml", "scenes.yaml"),
-            ),
-        ),
-        onboarding_enabled=True,
-    )
-
-
-@pytest.fixture
-async def home_assistant_client(provisioner_settings: ProvisionerSettings):
-    async with httpx2.AsyncClient() as http_client:
-        yield HomeAssistantClient(http_client, provisioner_settings)
 
 
 def disable_http_configuration(monkeypatch):
@@ -296,7 +247,7 @@ async def test_configure_http_restarts_and_promotes(monkeypatch, home_assistant_
     async def wait_until_ready():
         return None
 
-    async def login(password):
+    async def login(username, password):
         home_assistant_client._access_token = "refreshed-token"
 
     monkeypatch.setattr(home_assistant_client, "wait_until_ready", wait_until_ready)

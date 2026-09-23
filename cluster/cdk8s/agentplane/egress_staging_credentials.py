@@ -35,9 +35,9 @@ from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_STORE,
     GITHUB_PAT_SECRET,
     credential_external_secret,
-    single_secret_store,
 )
-from cluster.cdk8s.ha_mcp import AGENTPLANE_READER_TOKEN_SECRET_NAME
+from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
+from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
 from cluster.cdk8s.metadata import metadata
 
 # Written by tf/gitops/agent-machine-access/grocy-sf.tf into agents-infra, named after the Authentik
@@ -274,14 +274,14 @@ def _home_assistant_readonly(
         scope,
         namespace=credentials_namespace,
         target="home-assistant-readonly",
-        source=AGENTPLANE_READER_TOKEN_SECRET_NAME,
+        source=AGENTPLANE_READER_TOKEN.secret_name,
         key="token",
         store=single_secret_store(
             scope,
             "agentplane-staging-home-assistant",
             reader=reader,
-            source_namespace="home-assistant",
-            source_secret=AGENTPLANE_READER_TOKEN_SECRET_NAME,
+            source_namespace=AGENTPLANE_READER_TOKEN.secret_namespace,
+            source_secret=AGENTPLANE_READER_TOKEN.secret_name,
             consumer_namespace=credentials_namespace,
         ),
     )
@@ -292,8 +292,8 @@ def _home_assistant_readonly(
         spec=EgressCredentialSpec(
             description=(
                 "A long-lived token of `agentplane-reader`, a Home Assistant user in the read-only "
-                "group, which cluster/provisioners/ha_mcp_token_provisioner creates and keeps valid; "
-                "ESO copies it into this namespace. Home Assistant refuses that user every service "
+                "group, which the Home Assistant provisioner (homeassistant/provisioner) creates and "
+                "keeps valid; ESO copies it into this namespace. Home Assistant refuses that user every service "
                 "call, and `home-assistant-readonly`'s rule presents the token only on GETs of "
                 "entity states and their history."
             ),

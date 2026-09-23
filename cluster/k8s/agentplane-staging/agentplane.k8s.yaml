@@ -3979,7 +3979,7 @@ metadata:
   name: home-assistant-readonly
   namespace: agentplane-staging
 spec:
-  description: A long-lived token of `agentplane-reader`, a Home Assistant user in the read-only group, which cluster/provisioners/ha_mcp_token_provisioner creates and keeps valid; ESO copies it into this namespace. Home Assistant refuses that user every service call, and `home-assistant-readonly`'s rule presents the token only on GETs of entity states and their history.
+  description: A long-lived token of `agentplane-reader`, a Home Assistant user in the read-only group, which the Home Assistant provisioner (homeassistant/provisioner) creates and keeps valid; ESO copies it into this namespace. Home Assistant refuses that user every service call, and `home-assistant-readonly`'s rule presents the token only on GETs of entity states and their history.
   source:
     secretRef:
       name: home-assistant-readonly

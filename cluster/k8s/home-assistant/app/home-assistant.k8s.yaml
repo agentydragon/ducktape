@@ -208,10 +208,11 @@ spec:
   template:
     metadata:
       annotations:
-        home-assistant.allegedly.works/bootstrap-revision: "3"
+        home-assistant.allegedly.works/bootstrap-revision: "4"
       labels:
         app.kubernetes.io/name: home-assistant-onboarding
     spec:
+      automountServiceAccountToken: true
       containers:
         - command:
             - /homeassistant/provisioner/provision_bin
@@ -223,6 +224,8 @@ spec:
                 secretKeyRef:
                   key: password
                   name: home-assistant-break-glass
+            - name: HOME_ASSISTANT_PROVISIONER_TOKENS
+              value: "[{\"client_name\": \"ha-mcp-cluster\", \"read_only_user\": null, \"secret_name\": \"ha-mcp-home-assistant-token\", \"secret_namespace\": \"home-assistant\", \"description\": \"Long-lived token of Home Assistant's local owner, which ha-mcp copies\"}, {\"client_name\": \"agentplane-egress\", \"read_only_user\": \"agentplane-reader\", \"secret_name\": \"agentplane-home-assistant-token\", \"secret_namespace\": \"home-assistant\", \"description\": \"Long-lived token of Home Assistant's read-only agentplane-reader user, which agentplane-staging's egress proxy presents\"}]"
           image: git.allegedly.works/ducktape-ci/homeassistant-provisioner:unset
           imagePullPolicy: Always
           name: onboarding
@@ -244,6 +247,7 @@ spec:
       nodeSelector:
         kubernetes.io/hostname: optiplex
       restartPolicy: OnFailure
+      serviceAccountName: home-assistant-token-provisioner
       volumes:
         - name: config
           persistentVolumeClaim:
@@ -251,6 +255,118 @@ spec:
         - configMap:
             name: home-assistant-provisioner-config
           name: provisioner-config
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: home-assistant-token-provisioner
+  namespace: home-assistant
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: home-assistant-token-provisioner
+  namespace: home-assistant
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - ha-mcp-home-assistant-token
+      - agentplane-home-assistant-token
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: home-assistant-token-provisioner
+  namespace: home-assistant
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: home-assistant-token-provisioner
+subjects:
+  - kind: ServiceAccount
+    name: home-assistant-token-provisioner
+    namespace: home-assistant
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels:
+    app.kubernetes.io/name: home-assistant-token-provisioner
+  name: home-assistant-token-provisioner
+  namespace: home-assistant
+spec:
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: home-assistant-token-provisioner
+        spec:
+          automountServiceAccountToken: true
+          containers:
+            - command:
+                - /homeassistant/provisioner/provision_bin
+              env:
+                - name: HOME_ASSISTANT_PROVISIONER_CONFIG_FILE
+                  value: /etc/homeassistant/provisioner.yaml
+                - name: HOME_ASSISTANT_PROVISIONER_LOCAL_ADMIN_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: password
+                      name: home-assistant-break-glass
+                - name: HOME_ASSISTANT_PROVISIONER_TOKENS
+                  value: "[{\"client_name\": \"ha-mcp-cluster\", \"read_only_user\": null, \"secret_name\": \"ha-mcp-home-assistant-token\", \"secret_namespace\": \"home-assistant\", \"description\": \"Long-lived token of Home Assistant's local owner, which ha-mcp copies\"}, {\"client_name\": \"agentplane-egress\", \"read_only_user\": \"agentplane-reader\", \"secret_name\": \"agentplane-home-assistant-token\", \"secret_namespace\": \"home-assistant\", \"description\": \"Long-lived token of Home Assistant's read-only agentplane-reader user, which agentplane-staging's egress proxy presents\"}]"
+                - name: HOME_ASSISTANT_PROVISIONER_ONBOARDING_ENABLED
+                  value: "false"
+                - name: HOME_ASSISTANT_PROVISIONER_COMPONENTS
+                  value: "[]"
+              image: git.allegedly.works/ducktape-ci/homeassistant-provisioner:unset
+              imagePullPolicy: Always
+              name: provision-tokens
+              resources:
+                limits:
+                  memory: 256Mi
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - mountPath: /etc/homeassistant/provisioner.yaml
+                  name: provisioner-config
+                  readOnly: true
+                  subPath: provisioner.yaml
+          imagePullSecrets:
+            - name: forgejo-images-creds
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: home-assistant-token-provisioner
+          volumes:
+            - configMap:
+                name: home-assistant-provisioner-config
+              name: provisioner-config
+  schedule: 17 * * * *
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
