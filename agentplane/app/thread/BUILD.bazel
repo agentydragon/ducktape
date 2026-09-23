@@ -137,17 +137,13 @@ py_test(
     size = "medium",
     srcs = ["test_store.py"],
     deps = [
-        ":content",
         ":event_log",
         ":ingestion_lease",
-        ":models",
         ":store",
-        ":updates",
         "//:conftest",
         "//agentplane/app:conftest",
         "//agentplane/app:ingestion",
         "//agentplane/app:presets",
-        "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
@@ -193,6 +189,60 @@ py_library(
     srcs = ["ingestion_lease.py"],
     deps = [
         ":models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_content",
+    size = "medium",
+    srcs = ["test_content.py"],
+    deps = [
+        ":content",
+        ":event_log",
+        ":ingestion_lease",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/app:ingestion",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_event_log",
+    size = "medium",
+    srcs = ["test_event_log.py"],
+    deps = [
+        ":event_log",
+        ":ingestion_lease",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/app:ingestion",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_updates",
+    size = "medium",
+    srcs = ["test_updates.py"],
+    deps = [
+        ":event_log",
+        ":ingestion_lease",
+        ":store",
+        ":updates",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/app:ingestion",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
