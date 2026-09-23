@@ -426,3 +426,23 @@ spec:
       timeouts:
         backendRequest: 60s
         request: 60s
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: haku-mail-token
+spec:
+  externalSecretSpec:
+    data:
+      - remoteRef:
+          key: haku-mail-token
+          property: jwt
+        secretKey: jwt
+    refreshInterval: 1m
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: kubernetes-flux-system-secret-store
+    target:
+      name: haku-mail-token
+  namespaces:
+    - haku-sandbox
