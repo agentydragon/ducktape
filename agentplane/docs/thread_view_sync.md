@@ -172,12 +172,11 @@ SSE responses in a row have ended within a second. Electric answers a reader beh
 rather than holding the connection, so a shape that changes faster than the client reconnects can
 drop to long polling. Both read the same log.
 
-Against the [requirements](thread_sync_requirements.md), it falls short in four places:
+Against the [requirements](thread_sync_requirements.md), it falls short in three places:
 
 - **E5:** the live log re-sends nothing a reader holds, but it carries rows the reader discards.
 - **O2:** Electric runs one active instance per replication slot, with shape logs on local disk.
 - **P10:** nothing evicts ([§ Retained browser state](#retained-browser-state)).
-- **E6:** a thread with no fold yet has its scope re-read on a one-second timer.
 
 Shapes per thread, shared by every reader of it: one entity shape, plus one per payload field in use.
 
