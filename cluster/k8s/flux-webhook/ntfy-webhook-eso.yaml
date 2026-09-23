@@ -20,11 +20,14 @@ spec:
       type: Opaque
       data:
         address: https://ntfy.allegedly.works/alerts
+        # ntfy fills the X-Title/X-Message placeholders from Flux's webhook payload
+        # (Template: yes). They are Go raw strings here so ESO's own template engine emits
+        # them untouched instead of failing on the missing `involvedObject` key.
         headers: |
           Template: "yes"
           Authorization: "Bearer {{ .alertmanager_token }}"
-          X-Title: "{{.involvedObject.kind}} {{.involvedObject.name}}"
-          X-Message: "{{.severity}}: {{.reason}} - {{.message}}"
+          X-Title: "{{ `{{.involvedObject.kind}} {{.involvedObject.name}}` }}"
+          X-Message: "{{ `{{.severity}}: {{.reason}} - {{.message}}` }}"
           X-Tags: "rotating_light"
   data:
     - secretKey: alertmanager_token

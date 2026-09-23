@@ -221,7 +221,6 @@ spec:
 
             - receiver: "null"
               matchers:
-                # 10066 -- one ExternalSecret dead ~14d (airlock google-access-token).
                 # 10049 -- CDI storage profiles incomplete (info).
                 #  9926 -- version drift: iguana/rugged/wyrm2 on v1.36.2 vs v1.35.1 elsewhere.
                 #  7935 -- wyrm2's disk is genuinely nearly full.
@@ -230,7 +229,7 @@ spec:
                 #  3231 -- a quota fully used (info).
                 #   614 -- containers stuck Waiting.
                 #   157 -- major page faults.
-                - alertname =~ "ExternalSecretNotReady|CDIStorageProfilesIncomplete|KubeVersionMismatch|NodeFilesystemAlmostOutOfSpace|TanaMcpFacadeProbeStale|CPUThrottlingHigh|KubeQuotaFullyUsed|KubeContainerWaiting|NodeMemoryMajorPagesFaults"
+                - alertname =~ "CDIStorageProfilesIncomplete|KubeVersionMismatch|NodeFilesystemAlmostOutOfSpace|TanaMcpFacadeProbeStale|CPUThrottlingHigh|KubeQuotaFullyUsed|KubeContainerWaiting|NodeMemoryMajorPagesFaults"
 
             # Same category, but specifically the fallout of roaming laptops
             # leaving the cluster. Unlike KubeNodeNotReady/KubeNodeUnreachable

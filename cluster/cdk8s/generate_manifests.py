@@ -37,7 +37,10 @@ from cluster.cdk8s.artifact_generators import (
     write_artifact_generators,
 )
 from cluster.cdk8s.atuin import flux_kustomizations as atuin_flux_kustomizations
-from cluster.cdk8s.authentik import flux_kustomizations as authentik_flux_kustomizations
+from cluster.cdk8s.authentik import (
+    flux_kustomizations as authentik_flux_kustomizations,
+    namespace as authentik_namespace,
+)
 from cluster.cdk8s.cert_manager import flux_kustomizations as cert_manager_flux_kustomizations
 from cluster.cdk8s.cli_proxy_api import flux_kustomizations as cli_proxy_api_flux_kustomizations
 from cluster.cdk8s.clickhouse import (
@@ -151,6 +154,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_image_automation.write_manifests(root)
     agents_namespaces.write_manifests(root)
     tofu_state_namespace.write_manifests(root)
+    authentik_namespace.write_manifests(root)
     clickhouse_namespace.write_manifests(root)
     github_branch_protection.write_manifests(root)
     agent_machine_access.write_manifests(root)
@@ -1201,7 +1205,7 @@ def generate_manifests(root: Path) -> None:
         litellm_kustomization,
         litellm_keys_tf_kustomization,
     )
-    haku_console_artifact = artifact("haku-console", haku_charts.PATH, "cluster/k8s/haku/console-namespace")
+    haku_console_artifact = artifact("haku-console", haku_charts.PATH)
     haku_charts.haku_console(
         flux_chart,
         haku_console_artifact,
