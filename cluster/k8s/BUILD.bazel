@@ -168,6 +168,8 @@ exports_files(
         "proxmox-proxy/kustomization.yaml",
         "volsync/volsync.k8s.yaml",
         "volsync/kustomization.yaml",
+        "reloader/reloader.k8s.yaml",
+        "reloader/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

@@ -670,6 +670,22 @@ py_library(
 )
 
 py_library(
+    name = "reloader",
+    srcs = ["reloader.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     data = [
@@ -710,6 +726,7 @@ py_library(
         ":public_coder_agent_config",
         ":public_coder_devbox",
         ":reflector",
+        ":reloader",
         ":stateful_infra",
         ":user_agentydragon",
         ":valkey",
@@ -783,7 +800,6 @@ py_library(
         "//cluster/cdk8s/ollama:flux_kustomizations",
         "//cluster/cdk8s/openebs_lvm:flux_kustomizations",
         "//cluster/cdk8s/parked:flux_kustomizations",
-        "//cluster/cdk8s/reloader:flux_kustomizations",
         "//cluster/cdk8s/seaweedfs:flux_kustomizations",
         "//cluster/cdk8s/seaweedfs_csi:flux_kustomizations",
         "//cluster/cdk8s/snapshot_controller:flux_kustomizations",
@@ -945,6 +961,8 @@ py_test(
         "//cluster/k8s:proxmox-proxy/proxmox-proxy.k8s.yaml",
         "//cluster/k8s:reflector/kustomization.yaml",
         "//cluster/k8s:reflector/reflector.k8s.yaml",
+        "//cluster/k8s:reloader/kustomization.yaml",
+        "//cluster/k8s:reloader/reloader.k8s.yaml",
         "//cluster/k8s:seaweedfs/cluster/priorityclass.k8s.yaml",
         "//cluster/k8s:ssh-mcp/kustomization.yaml",
         "//cluster/k8s:ssh-mcp/ssh-mcp.k8s.yaml",
