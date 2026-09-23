@@ -39,7 +39,7 @@ registry proxy (`props.allegedly.works` → `git.allegedly.works/props/*`).
      in `k8s/flux-image-automation-ghcr/`
    - Add `{"$imagepolicy": "flux-system:<policy-name>"}` comment to the image field
    - **GHCR only: add the `ImageRepository` to the GitHub webhook receiver** at
-     `k8s/flux-webhook/github-webhook-receiver.yaml` — without this, the image only
+     `cdk8s/flux_webhook/chart.py` — without this, the image only
      gets picked up on the 5m poll interval instead of immediately on push. Forgejo
      images ride the poll; the webhook is GitHub's.
    - Flux updates the tag in-repo on each new push

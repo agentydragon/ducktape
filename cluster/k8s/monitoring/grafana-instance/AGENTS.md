@@ -1,7 +1,10 @@
 # Grafana dashboards — agent instructions
 
 Before creating or changing a dashboard in this directory, read and use
-[`cluster/skills/grafana/SKILL.md`](../../../skills/grafana/SKILL.md).
+[`cluster/skills/grafana/SKILL.md`](../../../skills/grafana/SKILL.md). The dashboard JSON
+and its `configMapGenerator` entry are hand-written here; the `GrafanaDashboard` objects
+are generated from `cluster/cdk8s/monitoring/grafana_instance.py`, so a new dashboard
+also needs its line there (the skill lists the edits).
 
 The Grafana skill is mandatory. A valid JSON file, a successful Kustomize build,
 or a manually substituted PromQL probe is not a working-dashboard check. Run its

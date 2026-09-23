@@ -189,7 +189,7 @@ def _deployment(scope: Construct) -> None:
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     # No explicit zone nodeSelector: the PVC's seaweedfs-ovh StorageClass already
                     # pins scheduling to topology.kubernetes.io/zone=hil-ovh via WaitForFirstConsumer
-                    # + allowedTopologies (cluster/k8s/seaweedfs-csi/sc-seaweedfs-ovh.yaml), and the
+                    # + allowedTopologies (seaweedfs_csi/driver.py), and the
                     # already-bound PV carries that same zone in its own nodeAffinity.
                     # hil-ovh's only schedulable workers (ovh-ns103711, ovh-ns102453) run hot enough
                     # that the descheduler's LowNodeUtilization plugin (cluster/cdk8s/descheduler.py)
@@ -325,7 +325,7 @@ def _network_policy(scope: Construct) -> None:
             # existing cli-proxy-api.allegedly.works /v1 HTTPRoute, which routes straight to this
             # Service, unauthenticated, for LiteLLM's model traffic.
             cilium.ingress_from_gateway(_PORT),
-            # LiteLLM's codex-*/chatgpt-* upstreams (k8s/litellm/app/proxy-config.yaml) call the
+            # LiteLLM's codex-*/chatgpt-* upstreams (litellm/config.py) call the
             # in-cluster Service by cluster DNS, not through the Gateway.
             cilium.ingress_from(cilium.endpoint_labels("litellm", "litellm"), ports=[_PORT]),
             # aiquota retrieves Claude and Codex subscription usage through the authenticated

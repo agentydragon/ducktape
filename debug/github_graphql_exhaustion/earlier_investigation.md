@@ -5,7 +5,7 @@ Current status and evidence: [investigation entry point](README.md) and
 historical narrative's universal cadence, Desktop
 proxy-switch, Hubble keep-alive, and missing-query-cost claims. Statements below
 describe successive hypotheses and are not all still supported. GraphQL quota
-alerts now exist in `cluster/k8s/monitoring/rules/github-quota-prometheus-rule.yaml`.
+alerts now exist in `cluster/cdk8s/monitoring/rules.py`.
 
 Historical status: **the burn is reproducible on demand, and its shape matches neither documented
 consumer.** Sampled at 5-second resolution on 2026-09-05, the personal bucket takes

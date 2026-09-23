@@ -21,7 +21,7 @@ token can push to repositories and open pull requests as `agentydragon-agent`.
 Rotation touches the ExternalSecret source, not the manifests: the value comes
 from `ClusterSecretStore/kubernetes-claude-sandbox-secret-store`, key
 `github-token`, property `token`, consumed by
-<../../cluster/k8s/agents/public-coder-agent/app/github-token-eso.yaml> and by
+<../../cluster/cdk8s/public_coder_agent_config.py> and by
 the OpenShell `agentydragon-github` provider. Both pick up a new value on the
 next refresh (1h) with no manifest change.
 

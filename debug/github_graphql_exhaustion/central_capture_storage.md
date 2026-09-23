@@ -15,7 +15,7 @@ Sources: [driver capabilities](https://github.com/seaweedfs/seaweedfs-csi-driver
 ## Native collection budget
 
 The replacement rules live in
-[the proxy PrometheusRule](../../cluster/k8s/github-api-proxy/app/prometheus-rule.yaml).
+[the proxy PrometheusRule](../../cluster/cdk8s/github_api_proxy/proxy.py).
 SeaweedFS 4.44 already exports
 `SeaweedFS_volumeServer_total_disk_size{type="normal",collection="<PV name>"}`.
 The driver's default collection is the basename of its filer path, which is the

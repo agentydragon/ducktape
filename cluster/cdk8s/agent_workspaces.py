@@ -100,7 +100,7 @@ def _codex_template(chart: Chart) -> SandboxTemplate:
                     # No explicit region nodeSelector: the workspace volumeClaimTemplate's
                     # seaweedfs-ovh StorageClass already pins scheduling to
                     # topology.kubernetes.io/zone=hil-ovh via WaitForFirstConsumer +
-                    # allowedTopologies (cluster/k8s/seaweedfs-csi/sc-seaweedfs-ovh.yaml).
+                    # allowedTopologies (seaweedfs_csi/driver.py).
                     automount_service_account_token=False,
                     security_context=SandboxTemplateSpecPodTemplateSpecSecurityContext(
                         run_as_non_root=True,

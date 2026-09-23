@@ -154,8 +154,8 @@ Follow-up on the mechanism itself:
 Goldilocks VPA enabled (auto mode) for nix-cache, ollama, and litellm —
 will recommend limits.
 
-- `nix-cache/deployment.yaml` — attic container missing `resources:`
-- `ollama/deployment.yaml` — auth-proxy sidecar missing `resources:`
+- `cdk8s/nix_cache/attic.py` — attic container missing `resources:`
+- `cdk8s/ollama/app.py` — auth-proxy sidecar missing `resources:`
 
 ## SecurityContext
 
@@ -205,7 +205,7 @@ Options to consider:
 ## Gateway: `allowedRoutes` Selector (belt-and-suspenders; deferred)
 
 Agent self-exposure — an HTTPRoute in any namespace attaching to the public gateway and
-bypassing Authentik (`cluster/k8s/gateway/gateway.yaml` listeners are all `allowedRoutes:
+bypassing Authentik (`cluster/cdk8s/gateway.py`'s listeners are all `allowedRoutes:
 namespaces: from: All`) — is **already fenced**: the `restrict-agent-gateway-routes`
 Kyverno ClusterPolicy denies route/Gateway creation in the agent namespaces, and
 `haku-sandbox-admin`/`claude-sandbox-admin` omit `httproutes`/`gateways` anyway. So the
@@ -379,7 +379,7 @@ as of 2026-08-04 (operator-facing summary: `haku/docs/security.md`):
       spike's policy opens `toEntities: [world, remote-node, host]` on 443 and
       `claude-iron.yaml` carries no `allowlist` transform.
 - [ ] Route cluster-internal traffic through the proxies too. The Kyverno injection
-      (`kyverno/policies/inject-haku-egress-proxy.yaml`) sets `NO_PROXY` to
+      (`cluster/cdk8s/kyverno/proxy_injection.py`) sets `NO_PROXY` to
       `*.allegedly.works`, `.svc`, `.svc.cluster.local` and `10.0.0.0/8`, so anything
       under the operator's own domains or the cluster network is reached with no proxy
       in the path and no allowlist applied.

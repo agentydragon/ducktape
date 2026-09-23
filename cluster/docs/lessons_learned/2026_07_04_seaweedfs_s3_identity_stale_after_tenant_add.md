@@ -28,11 +28,11 @@ the config at different times.
 `weed s3` reads its identities from the **static `-s3.config` file** — the
 `seaweedfs-s3-config` Secret, wired via the CR's `spec.s3.configSecret` — **only at
 startup**. Adding/rotating a tenant makes ESO reassemble that Secret (see
-`cluster/k8s/seaweedfs/secrets/externalsecret-s3-config.yaml`), but a running gateway does
+`cluster/cdk8s/seaweedfs/s3_config.py`), but a running gateway does
 **not** hot-reload it.
 
 Reloader is supposed to cover this (`autoReloadAll: true`, see
-`cluster/k8s/reloader/reloader.yaml`) and **does fire** — reloader logs show
+`cluster/cdk8s/reloader.py`) and **does fire** — reloader logs show
 `Changes detected in 'seaweedfs-s3-config' … updated 'seaweedfs-s3'`. But the roll does
 **not stick**: the SeaweedFS **operator owns the `seaweedfs-s3` Deployment** and
 reconciles it back to its CR-derived pod template, **reverting Reloader's patch**. On
@@ -87,7 +87,7 @@ fix. The static-`configSecret` model is the constraint.
    Secret made Reloader add `reloader.stakater.com/last-reloaded-from` to the generated
    S3 Deployment's pod template, Kubernetes rolled to a new ReplicaSet, and forced
    Seaweed operator reconciles preserved the annotation and active RS. The one-line
-   durable fix lives in `cluster/k8s/reloader/reloader.yaml`. Caveat: `reloadStrategy`
+   durable fix lives in `cluster/cdk8s/reloader.py`. Caveat: `reloadStrategy`
    is a **global** Reloader setting (affects every managed workload), but `annotations`
    is the less invasive patch mode for operator-owned workloads because it avoids
    mutating container specs.

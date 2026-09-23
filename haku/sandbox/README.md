@@ -53,5 +53,5 @@ misreads its own claims.
 The deployment must supply the upstream `Sandbox`, `SandboxClaim`, and
 `SandboxWarmPool` CRDs/controller, the configured warm pool and Pod container, and
 permission for Console's ServiceAccount to manage claims, read Sandboxes/Pods, and
-call `pods/exec` (<../../cluster/k8s/haku/workspaces/app/haku-console-sandbox-role.yaml>).
+call `pods/exec` (<../../cluster/cdk8s/haku/workspaces.py>).
 Those resources intentionally remain outside this package.

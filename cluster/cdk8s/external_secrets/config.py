@@ -84,7 +84,7 @@ def chart(app: App) -> Chart:
         remote_namespace="cli-proxy-api",
     )
     # Mirrors the read-only ActivityWatch bearer into Haku's own namespace
-    # (cluster/k8s/haku/workspaces/app/activitywatch-read-token-eso.yaml).
+    # (haku/workspaces.py).
     #
     # ESO rather than the reflector annotations on the source Secret: the source is
     # SOPS-encrypted to the cluster key only, and an agent without that key cannot

@@ -104,7 +104,7 @@ kubectl -n grocy-vallejo get pod -o wide
 ```
 
 The Grocy application deployment must use `strategy.type: Recreate`. It does in
-`cluster/k8s/grocy/app-base/deployment.yaml`.
+`cluster/cdk8s/grocy/app.py`.
 
 ## Phase 1: Prepare Destination
 

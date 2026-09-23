@@ -11,7 +11,7 @@ handshake (400)` → SPDY fallback also fails → empty error.
 
 ## Root cause
 
-The `kubeapi-proxy` nginx (`cluster/k8s/kube-api-proxy/service.yaml`), which bridges
+The `kubeapi-proxy` nginx (`cluster/cdk8s/kube_api_proxy.py`), which bridges
 the Cilium Gateway (TLS terminate) to the apiserver (HTTPS re-encrypt), was missing
 WebSocket-upgrade config. Default nginx proxies as HTTP/1.0 and drops the hop-by-hop
 `Upgrade`/`Connection` headers, so the apiserver received a plain `GET` to `/exec`

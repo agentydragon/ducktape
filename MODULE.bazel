@@ -1251,7 +1251,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/kyverno/kyverno.io_cleanuppolicies.yaml"],
 )
 
-# Match the volsync chart 0.16.0 in cluster/k8s/volsync/helmrelease.yaml; the chart templates these CRDs verbatim.
+# Match the volsync chart 0.16.0 in cluster/cdk8s/volsync.py; the chart templates these CRDs verbatim.
 http_file(
     name = "volsync_replicationdestination_crd",
     downloaded_file_path = "volsync.backube_replicationdestinations.yaml",
@@ -1291,7 +1291,7 @@ http_file(
     urls = ["https://github.com/kubevirt/containerized-data-importer/releases/download/v1.65.0/cdi-operator.yaml"],
 )
 
-# Match the keda chart 2.20.2 in cluster/k8s/keda/helmrelease.yaml.
+# Match the keda chart 2.20.2 in cluster/cdk8s/keda.py.
 http_file(
     name = "keda_scaledjob_crd",
     downloaded_file_path = "keda.sh_scaledjobs.yaml",

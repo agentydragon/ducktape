@@ -80,10 +80,10 @@ services → NixOS workers) plus per-layer recovery procedures.
 ## Let's Encrypt Issuer Toggle
 
 Two always-present ClusterIssuers (`letsencrypt-prod`, `letsencrypt-staging`).
-A single ConfigMap controls which is active:
+A single ConfigMap, rendered by `cdk8s/cert_manager/issuer_config.py`, controls which is
+active:
 
 ```yaml
-# k8s/cert-manager/issuer-config/configmap.yaml
 data:
   LETSENCRYPT_ISSUER: letsencrypt-prod # or letsencrypt-staging
 ```

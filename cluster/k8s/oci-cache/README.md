@@ -47,7 +47,7 @@ that fallback is intentionally not a reliable path through the egress fence.
 ## Consumers
 
 - **haku-ci dind** pulls Docker Hub base images via `--registry-mirror` (see
-  `cluster/k8s/haku-ci/scaledjob.yaml`); the Docker Hub FQDNs are consequently dropped
+  `cluster/cdk8s/haku_ci/runner.py`); the Docker Hub FQDNs are consequently dropped
   from the `haku-egress-proxy` allowlist. ghcr/quay aren't mirrored through haku-ci yet,
   but this is intentionally downprioritized while Haku image builds move to Bazel
   `rules_oci`: the remaining haku-ci Dockerfile path uses Docker Hub bases, which are
