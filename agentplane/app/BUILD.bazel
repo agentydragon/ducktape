@@ -41,6 +41,7 @@ py_library(
         ":decisions",
         ":egress",
         ":electric",
+        ":event_stream",
         ":identity",
         ":inventory",
         ":live",
@@ -348,6 +349,7 @@ py_test(
         ":database",
         ":decisions",
         ":egress",
+        ":event_stream",
         ":identity",
         ":ingestion",
         ":inventory",
@@ -1185,5 +1187,15 @@ py_library(
     deps = [
         "@pypi//asyncpg",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "event_stream",
+    srcs = ["event_stream.py"],
+    deps = [
+        ":changes",
+        "//agentplane/app/thread:event_log",
+        "@pypi//protobuf",
     ],
 )

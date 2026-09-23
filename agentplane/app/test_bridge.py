@@ -30,6 +30,7 @@ from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH
 from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
+from agentplane.app.event_stream import follow
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.ingestion import Ingestion
 from agentplane.app.inventory import SandboxInventory
@@ -582,6 +583,9 @@ async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_no
 class Replicas:
     owner: RunnerBridge
     survivor: RunnerBridge
+    # What the survivor streams a thread from: its own pool and its own listener.
+    survivor_event_logs: EventLogStore
+    survivor_changes: Changes
 
 
 @pytest.fixture
@@ -607,9 +611,10 @@ async def replicas(
         content=content,
         thread_changes=thread_updates.changes,
     )
+    survivor_event_logs = EventLogStore(replica_engine)
     survivor = RunnerBridge(
         address_of=address_of,
-        event_logs=EventLogStore(replica_engine),
+        event_logs=survivor_event_logs,
         ingestion=Ingestion(replica_engine),
         content=ContentStore(replica_engine),
         thread_changes=replica_updates.changes,
@@ -617,7 +622,7 @@ async def replicas(
     await owner.start([SANDBOX])
     await owner.reconcile()
     try:
-        yield Replicas(owner, survivor)
+        yield Replicas(owner, survivor, survivor_event_logs, replica_updates.changes)
     finally:
         await owner.close()
         await survivor.close()
@@ -800,7 +805,9 @@ async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit
 ) -> None:
     await replicas.owner.open_session(SANDBOX, SESSION, spec)
     thread = await event_logs.open(SANDBOX, SESSION, spec)
-    async with aclosing(replicas.survivor.events(thread, after_cursor=0)) as frames:
+    async with aclosing(
+        follow(replicas.survivor_event_logs, replicas.survivor_changes, thread, after_cursor=0)
+    ) as frames:
         lines = frame_lines(frames)
         assert (await next_message(lines)).event == "attached"
         await replicas.survivor.command(
@@ -906,14 +913,18 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
         thread, command_pb2.Command(command_id="seed-input", submit_input=command_pb2.SubmitInput(text="BEFORE_RESUME"))
     )
     await model.reply(await model.request(), Text("BEFORE_RESUME"))
-    async with aclosing(replicas.survivor.events(thread, after_cursor=0)) as frames:
+    async with aclosing(
+        follow(replicas.survivor_event_logs, replicas.survivor_changes, thread, after_cursor=0)
+    ) as frames:
         async with asyncio.timeout(10):
             await read_until(frame_lines(frames), "turnCompleted")
     await replicas.survivor.command(
         thread,
         command_pb2.Command(command_id="stop-before-resume", stop_runner_session=command_pb2.StopRunnerSession()),
     )
-    async with aclosing(replicas.survivor.events(thread, after_cursor=0)) as frames:
+    async with aclosing(
+        follow(replicas.survivor_event_logs, replicas.survivor_changes, thread, after_cursor=0)
+    ) as frames:
         lines = frame_lines(frames)
         assert (await next_message(lines)).event == "attached"
         async with asyncio.timeout(10):
@@ -922,7 +933,9 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
     cursor = stopped[-1].id
     assert cursor is not None
     await replicas.survivor.open_session(SANDBOX, SESSION, spec)
-    async with aclosing(replicas.survivor.events(thread, after_cursor=cursor)) as frames:
+    async with aclosing(
+        follow(replicas.survivor_event_logs, replicas.survivor_changes, thread, after_cursor=cursor)
+    ) as frames:
         lines = frame_lines(frames)
         assert (await next_message(lines)).event == "attached"
         await replicas.survivor.command(
@@ -955,7 +968,9 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
     thread = await event_logs.open(SANDBOX, SESSION, spec)
     stop = command_pb2.Command(command_id="stop-for-offline", stop_runner_session=command_pb2.StopRunnerSession())
     admitted = await replicas.survivor.command(thread, stop)
-    async with aclosing(replicas.survivor.events(thread, after_cursor=0)) as frames:
+    async with aclosing(
+        follow(replicas.survivor_event_logs, replicas.survivor_changes, thread, after_cursor=0)
+    ) as frames:
         lines = frame_lines(frames)
         await next_message(lines)
         async with asyncio.timeout(10):
@@ -983,7 +998,10 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
         # sandbox disappears: this answer must not attempt a new runner attachment.
         assert await offline.command(thread, stop) == admitted
         assert not tried_to_contact_runner
-        async with asyncio.timeout(10), aclosing(offline.events(thread, after_cursor=0)) as frames:
+        async with (
+            asyncio.timeout(10),
+            aclosing(follow(event_logs, thread_updates.changes, thread, after_cursor=0)) as frames,
+        ):
             lines = frame_lines(frames)
             assert (await next_message(lines)).event == "attached"
             assert await read_until(lines, "harnessExited") == stored
