@@ -331,8 +331,6 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/app/**"
           to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/app/"
-        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/namespace/**"
-          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/namespace/"
       name: haku-openclaw-spike-app
       originRevision: "@repo"
     - copy:
@@ -444,8 +442,6 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/clickhouse/operator/**"
           to: "@artifact/cluster/k8s/clickhouse/operator/"
-        - from: "@repo/cluster/k8s/clickhouse/namespace/**"
-          to: "@artifact/cluster/k8s/clickhouse/namespace/"
       name: clickhouse-operator
       originRevision: "@repo"
     - copy:

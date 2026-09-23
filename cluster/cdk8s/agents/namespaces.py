@@ -25,3 +25,24 @@ def write_manifests(root: Path) -> None:
             "name": "haku-egress-proxy",
         },
     )
+    write_namespace(
+        root,
+        "cluster/k8s/agents/mitmproxy",
+        name="agents-mitmproxy",
+        labels={
+            "goldilocks.fairwinds.com/enabled": "true",
+            "goldilocks.fairwinds.com/vpa-update-mode": "auto",
+            "name": "agents-mitmproxy",
+        },
+    )
+    write_namespace(
+        root,
+        "cluster/k8s/agents/haku-openclaw-spike/app",
+        name="haku-openclaw-spike",
+        labels={
+            "goldilocks.fairwinds.com/enabled": "true",
+            "goldilocks.fairwinds.com/vpa-update-mode": "auto",
+            "name": "haku-openclaw-spike",
+        },
+        annotations={"description": "Isolated OpenClaw plus Claude Code subscription compatibility spike for Haku."},
+    )
