@@ -126,9 +126,14 @@ node taking values, then dependents).
   (`forgejo/{agentydragon,agentydragon-repos,budget-ledger,claude,cpap-data,haku-state}`,
   `github-branch-protection`, `agents/machine-access-tf`,
   `monitoring/alloy-otlp-bearer-token-tf`), one exemplar then the rest.
-- **Namespace Kustomizations.** Remaining `*-namespace` directories (a Namespace,
-  at most an ExternalSecret) need either conversion or consolidation into their
-  application's owner. SSH-MCP includes its namespace in the application owner.
+- **Namespaces.** A namespace subdirectory already applied by its app's Kustomization
+  folds into that directory as `namespace.k8s.yaml` (`generation.write_namespace`), one
+  PR each: `agents/{mitmproxy,haku-egress-proxy,haku-openclaw-spike}`, `tofu-state`,
+  `forgejo`, `authentik`, `litellm`, `clickhouse/operator`, `home-assistant`; `ssh-mcp`
+  and `haku/console` into their app charts. A namespace several Kustomizations deploy
+  into (`seaweedfs`, `monitoring`, `haku-sandbox`, `kube-system`) or whose contents are
+  written at runtime (`budget`, `agentydragon`) keeps its own Kustomization and converts
+  standalone.
 - **Single-CNPG-`Cluster` directories** (`forgejo/db`, `tofu-state/db`, `authentik/db`):
   identical rendered objects, no rename or ownership change.
 - **Half-converted workload directories**, one PR each: `agents/mitmproxy`,
