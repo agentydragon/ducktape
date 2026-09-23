@@ -54,7 +54,8 @@ def build_oauth_providers(oauth_config: OAuthConfig, default_redirect_uri: str) 
     """
     providers: dict[str, GenericOAuth2Provider] = {}
     for p in oauth_config.providers:
-        prefix = p.name.upper()
+        # `google-write` reads GOOGLE_WRITE_*: a hyphen is not valid in a POSIX env var name.
+        prefix = p.name.upper().replace("-", "_")
         client_id = os.environ[f"{prefix}_CLIENT_ID"]
         client_secret = os.environ[f"{prefix}_CLIENT_SECRET"]
         providers[p.name] = GenericOAuth2Provider(p, client_id, client_secret, default_redirect_uri)
