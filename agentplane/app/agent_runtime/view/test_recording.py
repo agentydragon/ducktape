@@ -132,6 +132,8 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
         "field": "text",
         "revision_cursor": "3",
         "generation": "1",
+        # The revision spans both chunks its generation has so far: what a reader may render.
+        "chunk_count": "2",
     }
     assert [(manifest.revision_cursor, manifest.generation, manifest.chunk_count) for manifest in manifests] == [
         (2, 1, 1),
@@ -160,6 +162,7 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     assert item is not None
     assert item.text_ref is not None
     assert item.text_ref["generation"] == item.text_ref["revision_cursor"] == "4"
+    assert item.text_ref["chunk_count"] == "0"
 
     with pytest.raises(ThreadFoldError, match="cursor 5"):
         await ingestion.record(thread, [event_entry(5)], lease=lease)
