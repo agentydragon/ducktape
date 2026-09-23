@@ -8,7 +8,8 @@ import { act, type JSX, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { CommandSelection, PayloadBody, ThreadCollection, type ThreadEntity, type ThreadHistory } from "./thread_store";
+import { electricThreadSync } from "./thread_store";
+import { type PayloadRef, type ThreadEntity, type ThreadWindow } from "./thread_sync";
 
 type Json = Record<string, unknown>;
 
@@ -53,20 +54,18 @@ function change(relation: string, operation: "insert" | "update" | "delete", row
   return { key: key(relation, row), value: row, headers: { relation: ["public", relation], operation } };
 }
 
-function headers(relation: string, handle: string): HeadersInit {
+function headers(relation: string, handle: string, offset = "0_0"): HeadersInit {
   return {
     "content-type": "application/json",
     "electric-handle": handle,
-    "electric-offset": "0_0",
+    "electric-offset": offset,
     "electric-cursor": "1",
     "electric-schema": JSON.stringify(SCHEMAS[relation]),
   };
 }
 
-function log(relation: string, handle: string, messages: Json[]): Response {
-  return new Response(JSON.stringify([...messages, { headers: { control: "up-to-date" } }]), {
-    headers: { ...headers(relation, handle), "electric-up-to-date": "" },
-  });
+function relationOf(path: string): string {
+  return path === "entities" ? "thread_entity" : "thread_payload_chunk";
 }
 
 function item(index: number, epoch = "epoch-1", extra: Json = {}): Json {
@@ -143,14 +142,25 @@ interface Subset {
   limit?: number;
 }
 
-/** The proxy's routes over in-memory rows, one Electric shape per path. */
+/** A live read's SSE connection: what it asked for, and where its events go. */
+interface Connection {
+  query: URLSearchParams;
+  events: ReadableStreamDefaultController<Uint8Array>;
+}
+
+/**
+ * The proxy's routes over in-memory rows, one Electric shape per path. A live read is an SSE
+ * connection, open until the reader leaves or a test ends it.
+ */
 class FakeSync {
   epoch = "epoch-1";
   through = "70";
   entities: Json[] = [];
   chunks: Json[] = [];
   readonly requests: { method: string; path: string; query: URLSearchParams; subset: Subset | null }[] = [];
-  readonly #live = new Map<string, { query: URLSearchParams; resolve: (response: Response) => void }>();
+  readonly #live = new Map<string, Connection>();
+  // Handles Electric has rotated away from, each with the one its 409 names instead.
+  readonly #rotated = new Map<string, string>();
   // Each subset answers from further along the log than any stream has read.
   #snapshots = 0;
 
@@ -162,9 +172,11 @@ class FakeSync {
     this.requests.push({ method, path, query: url.searchParams, subset });
     if (path === "scope") return Response.json({ projection_epoch: this.epoch, through_cursor: this.through });
     if (url.searchParams.get("projection_epoch") !== this.epoch) return Response.json({}, { status: 410 });
-    const relation = path === "entities" ? "thread_entity" : "thread_payload_chunk";
+    const relation = relationOf(path);
     // Electric resolves a shape's handle from its definition.
     const handle = url.searchParams.get("handle") ?? `${path}-1`;
+    const successor = this.#rotated.get(handle);
+    if (successor !== undefined) return Response.json([], { status: 409, headers: headers(relation, successor) });
     if (subset !== null) {
       const rows = relation === "thread_entity" ? this.#entitySubset(subset) : this.#bodySubset(subset);
       return new Response(
@@ -172,37 +184,67 @@ class FakeSync {
           data: rows.map((row) => change(relation, "insert", row)),
           metadata: { snapshot_mark: 1, database_lsn: "1", xip_list: [], xmin: "1", xmax: "1" },
         }),
-        { headers: { ...headers(relation, handle), "electric-offset": `${++this.#snapshots}00_0` } }
+        { headers: headers(relation, handle, `${++this.#snapshots}00_0`) }
       );
     }
-    if (url.searchParams.get("live") !== "true") return log(relation, handle, []);
-    return new Promise((resolve, reject) => {
-      this.#live.set(path, { query: url.searchParams, resolve });
-      init?.signal?.addEventListener("abort", () => {
-        this.#live.delete(path);
-        reject(new DOMException("aborted", "AbortError"));
+    const offset = url.searchParams.get("offset") ?? "now";
+    // Nothing has changed since any offset a reader names, so a catch-up read hands it back.
+    const position = offset === "now" || offset === "-1" ? "0_0" : offset;
+    if (url.searchParams.get("live") !== "true")
+      return Response.json([{ headers: { control: "up-to-date" } }], {
+        headers: { ...headers(relation, handle, position), "electric-up-to-date": "" },
       });
+    if (url.searchParams.get("live_sse") !== "true")
+      return Response.json({ message: "the store follows shapes over SSE" }, { status: 400 });
+    const body = new ReadableStream<Uint8Array>({
+      start: (events) => {
+        this.#live.set(path, { query: url.searchParams, events });
+        init?.signal?.addEventListener("abort", () => {
+          if (this.#live.get(path)?.events === events) this.#live.delete(path);
+          events.error(new DOMException("aborted", "AbortError"));
+        });
+      },
+    });
+    return new Response(body, {
+      headers: { ...headers(relation, handle, position), "content-type": "text/event-stream" },
     });
   };
 
-  /** The offset the shape's waiting live request reads from. */
+  /** The offset the shape's open SSE connection reads from. */
   async liveOffset(path: string): Promise<string | null> {
-    await vi.waitFor(() => expect(this.#live.has(path)).toBe(true));
-    return this.#live.get(path)!.query.get("offset");
+    return (await this.#connection(path)).query.get("offset");
   }
 
-  /** Answer the shape's waiting live request. */
-  async respond(path: string, response: (relation: string) => Response): Promise<void> {
-    await vi.waitFor(() => expect(this.#live.has(path)).toBe(true));
-    const { resolve } = this.#live.get(path)!;
+  /** Deliver changes on the shape's SSE connection as Electric does: an event each, then up-to-date. */
+  async send(path: string, messages: (relation: string) => Json[]): Promise<void> {
+    const { events } = await this.#connection(path);
+    const batch = [...messages(relationOf(path)), { headers: { control: "up-to-date" } }];
+    const stream = batch.map((message) => `data: ${JSON.stringify(message)}\n\n`).join("");
+    await act(async () => events.enqueue(new TextEncoder().encode(stream)));
+  }
+
+  /** End the shape's SSE connection, as Electric does once it has been open a minute. */
+  async close(path: string): Promise<void> {
+    const { events } = await this.#connection(path);
     this.#live.delete(path);
-    await act(async () => resolve(response(path === "entities" ? "thread_entity" : "thread_payload_chunk")));
+    await act(async () => events.close());
+  }
+
+  /** Rotate the shape to `successor`, as Electric does when it retires a log: the reconnect gets 409. */
+  async rotate(path: string, successor: string): Promise<void> {
+    this.#rotated.set((await this.#connection(path)).query.get("handle")!, successor);
+    await this.close(path);
   }
 
   posted(path: string): Subset[] {
     return this.requests
       .filter((request) => request.method === "POST" && request.path === path)
       .map((request) => request.subset!);
+  }
+
+  async #connection(path: string): Promise<Connection> {
+    await vi.waitFor(() => expect(this.#live.has(path)).toBe(true));
+    return this.#live.get(path)!;
   }
 
   #entitySubset(subset: Subset): Json[] {
@@ -261,7 +303,17 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadHistory }): JSX.Element {
+function renderThread(children: ReactNode): Promise<HTMLDivElement> {
+  return render(<electricThreadSync.Thread threadId="thread">{children}</electricThreadSync.Thread>);
+}
+
+/** What a view shows of the thread: nothing until its window opens, and no rows until that has caught up. */
+function Shown({ children }: { children: (rows: ThreadEntity[], history: ThreadWindow) => JSX.Element }): JSX.Element {
+  const { window: shown } = electricThreadSync.useThread();
+  return shown === null ? <></> : children(shown.caughtUp ? shown.rows : [], shown);
+}
+
+function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadWindow }): JSX.Element {
   const items = rows.filter((row) => row.entityKind === "item");
   return (
     <>
@@ -271,6 +323,16 @@ function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadHistory 
       </button>
     </>
   );
+}
+
+function Body({ id, reference }: { id: string; reference: PayloadRef }): JSX.Element {
+  const { body } = electricThreadSync.usePayload(reference);
+  return <p data-body={id}>{body ?? "loading"}</p>;
+}
+
+function Commands({ ids }: { ids: readonly string[] }): JSX.Element {
+  const rows = electricThreadSync.useCommandRows(ids);
+  return <p data-testid="commands">{rows.map((row) => row.entityId).join(",")}</p>;
 }
 
 function itemsShown(container: HTMLElement): string[] {
@@ -284,9 +346,7 @@ function thread(sync: FakeSync, count: number, epoch = "epoch-1"): void {
 it("opens one shape on the tail and pages older rows into it", async () => {
   const sync = stubSync();
   thread(sync, 70);
-  const container = await render(
-    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
   expect(itemsShown(container)).toContain("item-41@41");
 
@@ -314,18 +374,14 @@ it("opens one shape on the tail and pages older rows into it", async () => {
 it("applies live changes to the rows it holds, and new rows, but not rows it has not loaded", async () => {
   const sync = stubSync();
   thread(sync, 70);
-  const container = await render(
-    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
 
-  await sync.respond("entities", (relation) =>
-    log(relation, "entities-1", [
-      change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" })),
-      change(relation, "update", item(5, "epoch-1", { revision_cursor: "72" })),
-      change(relation, "insert", item(71)),
-    ])
-  );
+  await sync.send("entities", (relation) => [
+    change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" })),
+    change(relation, "update", item(5, "epoch-1", { revision_cursor: "72" })),
+    change(relation, "insert", item(71)),
+  ]);
 
   await vi.waitFor(() => expect(itemsShown(container)).toContain("item-71@71"));
   expect(itemsShown(container)).toContain("item-70@71");
@@ -335,9 +391,7 @@ it("applies live changes to the rows it holds, and new rows, but not rows it has
 it("keeps reading the live log from where it was when a subset answers from further along", async () => {
   const sync = stubSync();
   thread(sync, 70);
-  const container = await render(
-    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
   const reading = await sync.liveOffset("entities");
 
@@ -346,51 +400,67 @@ it("keeps reading the live log from where it was when a subset answers from furt
 
   // The stream reads on from where it was, so what the subset's position is past still reaches it.
   expect(await sync.liveOffset("entities")).toBe(reading);
-  await sync.respond("entities", (relation) =>
-    log(relation, "entities-1", [change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" }))])
-  );
+  await sync.send("entities", (relation) => [
+    change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" })),
+  ]);
   await vi.waitFor(() => expect(itemsShown(container)).toContain("item-70@71"));
 });
 
 it("re-reads a retired epoch's scope and swaps windows under the same children", async () => {
   const sync = stubSync();
   thread(sync, 3);
-  const container = await render(
-    <ThreadCollection threadId="thread">
+  const container = await renderThread(
+    <Shown>
       {(rows, history) => (
         <>
           <input aria-label="draft" />
           <Rows rows={rows} history={history} />
         </>
       )}
-    </ThreadCollection>
+    </Shown>
   );
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
   const draft = container.querySelector("input")!;
 
   sync.epoch = "epoch-2";
   thread(sync, 4, "epoch-2");
-  await sync.respond("entities", () => Response.json({}, { status: 410 }));
+  // The proxy refuses the reconnect for the old epoch.
+  await sync.close("entities");
 
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(4));
   expect(container.querySelector("input")).toBe(draft);
   expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
 });
 
+it("re-reads the scope as soon as the live log retires its epoch", async () => {
+  const sync = stubSync();
+  thread(sync, 3);
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
+  const retired = sync.entities;
+  const asked = sync.requests.length;
+
+  sync.epoch = "epoch-2";
+  thread(sync, 4, "epoch-2");
+  // A rebuild moves every row out of the old epoch's shape, whose SSE connection stays open.
+  await sync.send("entities", (relation) => retired.map((row) => change(relation, "delete", row)));
+
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(4));
+  expect(sync.requests.slice(asked).filter((request) => request.query.get("projection_epoch") === "epoch-1")).toEqual(
+    []
+  );
+});
+
 it("reloads as many rows as it held when Electric retires the shape's log, dropping deleted ones", async () => {
   const sync = stubSync();
   thread(sync, 70);
-  const container = await render(
-    <ThreadCollection threadId="thread">{(rows, history) => <Rows rows={rows} history={history} />}</ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
   await act(async () => container.querySelector("button")!.click());
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(60));
 
   sync.entities = sync.entities.filter((row) => row.entity_id !== "item-50");
-  await sync.respond("entities", (relation) =>
-    Response.json([], { status: 409, headers: { ...headers(relation, "entities-2") } })
-  );
+  await sync.rotate("entities", "entities-2");
 
   await vi.waitFor(() => expect(itemsShown(container)).not.toContain("item-50@50"));
   expect(itemsShown(container)).toHaveLength(60);
@@ -406,20 +476,16 @@ it("loads the bodies in view in one read, as far as each reference spans, and fo
     item(2, "epoch-1", { text_ref: textRef("b", 1) }),
   ];
   sync.chunks = [chunk("a", 0, "Hel"), chunk("a", 1, "lo"), chunk("a", 2, " there"), chunk("b", 0, "Bye")];
-  const container = await render(
-    <ThreadCollection threadId="thread">
+  const container = await renderThread(
+    <Shown>
       {(rows) => (
         <>
           {rows.map((row) =>
-            row.textRef ? (
-              <PayloadBody key={row.entityId} reference={row.textRef}>
-                {(body) => <p data-body={row.entityId}>{body ?? "loading"}</p>}
-              </PayloadBody>
-            ) : null
+            row.textRef ? <Body key={row.entityId} id={row.entityId} reference={row.textRef} /> : null
           )}
         </>
       )}
-    </ThreadCollection>
+    </Shown>
   );
   const body = (id: string) => container.querySelector(`[data-body="${id}"]`)?.textContent;
   await vi.waitFor(() => expect([body("item-1"), body("item-2")]).toEqual(["Hello", "Bye"]));
@@ -429,12 +495,10 @@ it("loads the bodies in view in one read, as far as each reference spans, and fo
   const params = read.params!;
   expect(new Set([`${params["1"]}@${params["2"]}`, `${params["3"]}@${params["4"]}`])).toEqual(new Set(["a@1", "b@1"]));
 
-  await sync.respond("chunks/text", (relation) =>
-    log(relation, "chunks/text-1", [change(relation, "insert", chunk("a", 3, "!"))])
-  );
-  await sync.respond("entities", (relation) =>
-    log(relation, "entities-1", [change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 4) }))])
-  );
+  await sync.send("chunks/text", (relation) => [change(relation, "insert", chunk("a", 3, "!"))]);
+  await sync.send("entities", (relation) => [
+    change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 4) })),
+  ]);
   await vi.waitFor(() => expect(body("item-1")).toBe("Hello there!"));
 });
 
@@ -447,15 +511,7 @@ it("loads commands by id as a quoted array", async () => {
     if (row.entity_kind === "item") row.entity_index = String(Number(row.entity_index) + 2);
   sync.entities.find((row) => row.entity_id === 'say "hi"')!.entity_index = "1";
   sync.entities.find((row) => row.entity_id === "other")!.entity_index = "2";
-  const container = await render(
-    <ThreadCollection threadId="thread">
-      {() => (
-        <CommandSelection commandIds={['say "hi"', "missing"]}>
-          {(rows) => <p data-testid="commands">{rows.map((row) => row.entityId).join(",")}</p>}
-        </CommandSelection>
-      )}
-    </ThreadCollection>
-  );
+  const container = await renderThread(<Shown>{() => <Commands ids={['say "hi"', "missing"]} />}</Shown>);
   await vi.waitFor(() => expect(container.querySelector('[data-testid="commands"]')?.textContent).toBe('say "hi"'));
   expect(sync.posted("entities")).toContainEqual({
     where: "entity_kind = 'command' AND entity_id = ANY($1)",

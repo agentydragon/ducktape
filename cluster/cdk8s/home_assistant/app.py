@@ -1,6 +1,7 @@
-"""Home Assistant: the Deployment with its Caddy metrics proxy, the onboarding Job, the
-config volume and its VolSync backup, pull credentials, metrics token, route, the backup
-mover's egress policy, and the ServiceMonitor and PrometheusRule.
+"""Home Assistant: the Deployment with its Caddy metrics proxy, the onboarding Job, the CronJob
+that keeps other workloads' tokens valid, the config volume and its VolSync backup, pull
+credentials, metrics token, route, the backup mover's egress policy, and the ServiceMonitor and
+PrometheusRule.
 
 The provisioner image tag is the placeholder "unset"; the hand-written
 `cluster/k8s/home-assistant/app/image-pins/kustomization.yaml` overrides it at
@@ -10,6 +11,7 @@ output: the `configMapGenerator` inputs, the SOPS break-glass Secret and the `ku
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from cdk8s import App, Chart
@@ -60,6 +62,8 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.metadata import metadata
+from homeassistant.provisioner.settings import ProvisionerSettings, TokenConfig
+from util.settings_contract import env_name
 
 _OUTPUT_DIR = "cluster/k8s/home-assistant/app"
 _NAME = "home-assistant"
@@ -78,6 +82,39 @@ _PROVISIONER_CONFIG = "/etc/homeassistant/provisioner.yaml"
 _CONFIGURATION_CONFIG_MAP = "home-assistant-configuration"
 _PROVISIONER_CONFIG_MAP = "home-assistant-provisioner-config"
 _CADDY_CONFIG_MAP = "home-assistant-caddy"
+_TOKEN_PROVISIONER = "home-assistant-token-provisioner"
+
+# The long-lived tokens the provisioner keeps valid. It writes only in this namespace; a workload
+# holding one copies it with ESO.
+HA_MCP_TOKEN = TokenConfig(
+    client_name="ha-mcp-cluster",
+    secret_name="ha-mcp-home-assistant-token",
+    secret_namespace=_NAMESPACE,
+    description="Long-lived token of Home Assistant's local owner, which ha-mcp copies",
+)
+AGENTPLANE_READER_TOKEN = TokenConfig(
+    client_name="agentplane-egress",
+    read_only_user="agentplane-reader",
+    secret_name="agentplane-home-assistant-token",
+    secret_namespace=_NAMESPACE,
+    description=(
+        "Long-lived token of Home Assistant's read-only agentplane-reader user, which agentplane-staging's egress "
+        "proxy presents"
+    ),
+)
+_TOKENS = (HA_MCP_TOKEN, AGENTPLANE_READER_TOKEN)
+
+_CONFIG_FILE_ENV = k8s.EnvVar(name=ProvisionerSettings.config_file_env, value=_PROVISIONER_CONFIG)
+_LOCAL_ADMIN_PASSWORD_ENV = k8s.EnvVar(
+    name=env_name(ProvisionerSettings, "local_admin_password"),
+    value_from=k8s.EnvVarSource(
+        secret_key_ref=k8s.SecretKeySelector(name="home-assistant-break-glass", key="password")
+    ),
+)
+_TOKENS_ENV = k8s.EnvVar(
+    name=env_name(ProvisionerSettings, "tokens"), value=json.dumps([token.model_dump() for token in _TOKENS])
+)
+_ONBOARDING_DISABLED_ENV = k8s.EnvVar(name=env_name(ProvisionerSettings, "onboarding_enabled"), value="false")
 
 
 def _quantities(**values: str) -> dict[str, k8s.Quantity]:
@@ -133,10 +170,8 @@ def _deployment(scope: Construct) -> None:
                             image=_PROVISIONER_IMAGE,
                             image_pull_policy="Always",
                             command=_PROVISIONER_COMMAND,
-                            env=[
-                                k8s.EnvVar(name="HOME_ASSISTANT_PROVISIONER_CONFIG_FILE", value=_PROVISIONER_CONFIG),
-                                k8s.EnvVar(name="HOME_ASSISTANT_PROVISIONER_ONBOARDING_ENABLED", value="false"),
-                            ],
+                            args=["setup"],
+                            env=[_CONFIG_FILE_ENV, _ONBOARDING_DISABLED_ENV],
                             volume_mounts=_provisioner_mounts(),
                         )
                     ],
@@ -232,7 +267,7 @@ def _onboarding_job(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(
                     # Bump when bootstrap behavior changes so Flux replaces the immutable Job.
-                    annotations={"home-assistant.allegedly.works/bootstrap-revision": "3"},
+                    annotations={"home-assistant.allegedly.works/bootstrap-revision": "4"},
                     labels={"app.kubernetes.io/name": "home-assistant-onboarding"},
                 ),
                 spec=k8s.PodSpec(
@@ -245,17 +280,8 @@ def _onboarding_job(scope: Construct) -> None:
                             image=_PROVISIONER_IMAGE,
                             image_pull_policy="Always",
                             command=_PROVISIONER_COMMAND,
-                            env=[
-                                k8s.EnvVar(name="HOME_ASSISTANT_PROVISIONER_CONFIG_FILE", value=_PROVISIONER_CONFIG),
-                                k8s.EnvVar(
-                                    name="HOME_ASSISTANT_PROVISIONER_LOCAL_ADMIN_PASSWORD",
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(
-                                            name="home-assistant-break-glass", key="password"
-                                        )
-                                    ),
-                                ),
-                            ],
+                            args=["setup"],
+                            env=[_CONFIG_FILE_ENV, _LOCAL_ADMIN_PASSWORD_ENV],
                             resources=k8s.ResourceRequirements(
                                 requests=_quantities(cpu="20m", memory="64Mi"), limits=_quantities(memory="256Mi")
                             ),
@@ -264,6 +290,91 @@ def _onboarding_job(scope: Construct) -> None:
                     ],
                     volumes=[_config_volume(), _config_map_volume("provisioner-config", _PROVISIONER_CONFIG_MAP)],
                 ),
+            ),
+        ),
+    )
+
+
+def _token_provisioner(scope: Construct) -> None:
+    """The identity that writes the token Secrets, and the CronJob that keeps them valid: it mints
+    each token that is missing, the first ones after a bootstrap included, and replaces one Home
+    Assistant refuses after expiry, revocation or a restore."""
+    k8s.KubeServiceAccount(
+        scope, "token-provisioner", metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=_NAMESPACE)
+    )
+    k8s.KubeRole(
+        scope,
+        "token-provisioner-role",
+        metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=_NAMESPACE),
+        rules=[
+            k8s.PolicyRule(
+                api_groups=[""],
+                resources=["secrets"],
+                resource_names=[token.secret_name for token in _TOKENS],
+                verbs=["get", "update", "patch"],
+            ),
+            k8s.PolicyRule(api_groups=[""], resources=["secrets"], verbs=["create"]),
+        ],
+    )
+    k8s.KubeRoleBinding(
+        scope,
+        "token-provisioner-binding",
+        metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=_NAMESPACE),
+        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_TOKEN_PROVISIONER),
+        subjects=[k8s.Subject(kind="ServiceAccount", name=_TOKEN_PROVISIONER, namespace=_NAMESPACE)],
+    )
+    labels = {"app.kubernetes.io/name": _TOKEN_PROVISIONER}
+    k8s.KubeCronJob(
+        scope,
+        "token-provisioner-cronjob",
+        metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=_NAMESPACE, labels=labels),
+        spec=k8s.CronJobSpec(
+            # A valid token costs one request, so the interval is what bounds how long a missing or
+            # refused one lasts.
+            schedule="*/15 * * * *",
+            concurrency_policy="Forbid",
+            job_template=k8s.JobTemplateSpec(
+                spec=k8s.JobSpec(
+                    backoff_limit=3,
+                    template=k8s.PodTemplateSpec(
+                        metadata=k8s.ObjectMeta(labels=labels),
+                        spec=k8s.PodSpec(
+                            image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
+                            restart_policy="OnFailure",
+                            service_account_name=_TOKEN_PROVISIONER,
+                            automount_service_account_token=True,
+                            security_context=k8s.PodSecurityContext(
+                                run_as_non_root=True, seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
+                            ),
+                            containers=[
+                                k8s.Container(
+                                    name="provision-tokens",
+                                    image=_PROVISIONER_IMAGE,
+                                    image_pull_policy="Always",
+                                    command=_PROVISIONER_COMMAND,
+                                    args=["tokens"],
+                                    env=[_CONFIG_FILE_ENV, _LOCAL_ADMIN_PASSWORD_ENV, _TOKENS_ENV],
+                                    resources=k8s.ResourceRequirements(
+                                        requests=_quantities(cpu="20m", memory="64Mi"),
+                                        limits=_quantities(memory="256Mi"),
+                                    ),
+                                    security_context=k8s.SecurityContext(
+                                        allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
+                                    ),
+                                    volume_mounts=[
+                                        k8s.VolumeMount(
+                                            name="provisioner-config",
+                                            mount_path=_PROVISIONER_CONFIG,
+                                            sub_path="provisioner.yaml",
+                                            read_only=True,
+                                        )
+                                    ],
+                                )
+                            ],
+                            volumes=[_config_map_volume("provisioner-config", _PROVISIONER_CONFIG_MAP)],
+                        ),
+                    ),
+                )
             ),
         ),
     )
@@ -452,6 +563,7 @@ def chart(app: App) -> Chart:
     _metrics_token(chart)
     _deployment(chart)
     _onboarding_job(chart)
+    _token_provisioner(chart)
     https_route(
         chart,
         "route",

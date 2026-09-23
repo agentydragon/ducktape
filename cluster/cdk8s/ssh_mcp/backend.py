@@ -34,7 +34,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
-    ExternalSecretSpecTargetTemplateMetadata,
 )
 
 from cluster.cdk8s import cilium
@@ -67,6 +66,9 @@ _KEY_VOLUMES = (
 
 
 def _bearer_credentials(scope: Construct) -> None:
+    """agentplane-staging copies it with ESO through a store that can read this one Secret
+    (cluster/cdk8s/agentplane/staging.py): this namespace also holds every target's SSH private
+    key, which no store may reach."""
     Password(
         scope,
         "bearer-password-generator",
@@ -81,18 +83,7 @@ def _bearer_credentials(scope: Construct) -> None:
         refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
         data_from=[password_generator(BEARER_SECRET_NAME)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        template=ExternalSecretSpecTargetTemplate(
-            type="Opaque",
-            metadata=ExternalSecretSpecTargetTemplateMetadata(
-                annotations={
-                    "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                    "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "^haku-console$,^agentplane-staging$",
-                    "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                    "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "^haku-console$,^agentplane-staging$",
-                }
-            ),
-            data={BEARER_SECRET_KEY: "{{ .password }}"},
-        ),
+        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={BEARER_SECRET_KEY: "{{ .password }}"}),
     )
 
 
@@ -231,9 +222,7 @@ class SshMcp(Construct):
             selector=LABELS,
             ingress=[
                 cilium.ingress_from(
-                    cilium.endpoint_labels("agentplane-staging", "agentplane-actions"),
-                    cilium.endpoint_labels("haku-console", "haku-console"),
-                    ports=[HTTP_PORT],
+                    cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[HTTP_PORT]
                 )
             ],
             egress=_egress(mesh, config),

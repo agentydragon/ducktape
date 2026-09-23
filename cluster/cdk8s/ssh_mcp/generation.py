@@ -42,7 +42,7 @@ def ssh_mcp(
         flux_chart,
         config.NAME,
         artifact,
-        description="SSH MCP backend for haku-console and Agentplane staging.",
+        description="SSH MCP backend for Agentplane staging.",
         timeout="5m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         decryption=sops_decryption(_KEY_FILES),

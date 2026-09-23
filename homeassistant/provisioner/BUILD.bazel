@@ -42,6 +42,18 @@ py_library(
 )
 
 py_library(
+    name = "tokens",
+    srcs = ["tokens.py"],
+    imports = ["."],
+    deps = [
+        ":client",
+        ":settings",
+        "@pypi//kubernetes",
+        "@pypi//more_itertools",
+    ],
+)
+
+py_library(
     name = "provision",
     srcs = ["provision.py"],
     imports = ["."],
@@ -50,7 +62,23 @@ py_library(
         ":client",
         ":component_installer",
         ":settings",
+        ":tokens",
         "@pypi//httpx2",
+        "@pypi//kubernetes",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["."],
+    deps = [
+        ":client",
+        ":settings",
+        "@pypi//httpx2",
+        "@pypi//pytest",
     ],
 )
 
@@ -60,11 +88,31 @@ py_test(
     imports = ["."],
     deps = [
         ":client",
+        ":conftest",
         ":provision",
         ":settings",
         "//:conftest",
         "@pypi//httpx2",
         "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pytest_httpx2",  # keep: pytest plugin (auto-loaded), not a direct import
+        "@pypi//respx",
+    ],
+)
+
+py_test(
+    name = "test_tokens",
+    srcs = ["test_tokens.py"],
+    imports = ["."],
+    deps = [
+        ":client",
+        ":conftest",
+        ":settings",
+        ":tokens",
+        "//:conftest",
+        "@pypi//httpx2",
+        "@pypi//kubernetes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pytest_httpx2",  # keep: pytest plugin (auto-loaded), not a direct import

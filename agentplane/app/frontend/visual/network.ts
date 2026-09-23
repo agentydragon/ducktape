@@ -96,10 +96,10 @@ export function electricShape(rows: readonly ElectricShapeMessage[], handle: str
 }
 
 /**
- * A valid live response whose body has not received a change yet. Fetch itself settles, while
- * Electric's body reader waits until the store closes the shape.
+ * A live SSE response that has not carried a change yet. Fetch itself settles, while Electric's
+ * event reader waits until the store closes the shape.
  */
-export function electricLongPoll(handle: string, relation?: string, signal?: AbortSignal): Response {
+export function electricLive(handle: string, relation?: string, signal?: AbortSignal): Response {
   const schema = ELECTRIC_SCHEMAS[relation ?? "thread_entity"];
   if (schema === undefined) throw new Error(`no Electric schema for ${relation}`);
   let onAbort: (() => void) | undefined;
@@ -121,7 +121,7 @@ export function electricLongPoll(handle: string, relation?: string, signal?: Abo
       removeAbortListener();
     },
   });
-  return new Response(body, { headers: shapeHeaders(handle, schema) });
+  return new Response(body, { headers: { ...shapeHeaders(handle, schema), "content-type": "text/event-stream" } });
 }
 
 /**

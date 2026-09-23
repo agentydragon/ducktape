@@ -102,7 +102,6 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s:public_coder_devbox",
         "//cluster/cdk8s/agentplane:conftest",
-        "//cluster/cdk8s/haku:console_config",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",

@@ -22,7 +22,6 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesExclude,
     ClusterPolicySpecRulesExcludeAny,
     ClusterPolicySpecRulesExcludeAnyResources,
-    ClusterPolicySpecRulesExcludeAnyResourcesSelector,
     ClusterPolicySpecRulesExcludeAnySubjects,
     ClusterPolicySpecRulesGenerate,
     ClusterPolicySpecRulesMatch,
@@ -237,9 +236,7 @@ def default_disable_service_links_chart(app: App) -> Chart:
 
     Pod-only and CREATE-only deliberately: mutating controller templates would create
     Flux/SSA ownership conflicts, while every Pod (including Pods created by custom
-    operators) still passes through admission. The HA-MCP token provisioner is the
-    intentional exception; its existing pod label excludes it and its manifests retain
-    enableServiceLinks: true.
+    operators) still passes through admission.
     """
     chart = _chart(app, "default-disable-service-links")
     ClusterPolicy(
@@ -255,8 +252,7 @@ def default_disable_service_links_chart(app: App) -> Chart:
                 subject="Pod",
                 description=(
                     "Sets enableServiceLinks to false on newly created Pods to prevent legacy Service environment "
-                    "variables from colliding with application settings. The HA-MCP token provisioner is explicitly "
-                    "excluded because it relies on those variables."
+                    "variables from colliding with application settings."
                 ),
             ),
         ),
@@ -267,18 +263,6 @@ def default_disable_service_links_chart(app: App) -> Chart:
                 ClusterPolicySpecRules(
                     name="default-disable-service-links",
                     match=_match(ClusterPolicySpecRulesMatchAnyResources(kinds=["Pod"], operations=[_CREATE])),
-                    exclude=ClusterPolicySpecRulesExclude(
-                        any=[
-                            ClusterPolicySpecRulesExcludeAny(
-                                resources=ClusterPolicySpecRulesExcludeAnyResources(
-                                    namespaces=["home-assistant"],
-                                    selector=ClusterPolicySpecRulesExcludeAnyResourcesSelector(
-                                        match_labels={"app.kubernetes.io/name": "ha-mcp-token-provisioner"}
-                                    ),
-                                )
-                            )
-                        ]
-                    ),
                     mutate=ClusterPolicySpecRulesMutate(patch_strategic_merge={"spec": {"enableServiceLinks": False}}),
                 )
             ],

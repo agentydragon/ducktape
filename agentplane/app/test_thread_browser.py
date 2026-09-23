@@ -43,7 +43,7 @@ from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import ElectricService, electric_service
-from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate, http2_proxy
+from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -95,7 +95,7 @@ class ThreadBrowser:
     content: ContentStore
     opened: Opened
     app: AppProcess
-    browser_url: str
+    ingress: Ingress
 
 
 @pytest.fixture
@@ -159,7 +159,7 @@ async def thread_browser(
     ):
         async with asyncio.timeout(30):
             opened = await source.opened.get()
-            await page.goto(f"{ingress}/#/threads/{thread_id}")
+            await page.goto(f"{ingress.url}/#/threads/{thread_id}")
         yield ThreadBrowser(page, source, store, event_logs, content, opened, app, ingress)
 
 
@@ -187,7 +187,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
-        url = f"{ingress}/#/threads/{thread_id}"
+        url = f"{ingress.url}/#/threads/{thread_id}"
         await page.goto(url)
         await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value("Test archived thread")
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
@@ -254,7 +254,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
-        await page.goto(f"{ingress}/#/threads/{threads[0]}")
+        await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
         await expect(page.locator('[data-thread-anchor="161"]')).to_be_visible()
         await expect(page.get_by_text("Thread 0 message 79", exact=True)).to_be_visible()
         async with page.expect_request(
@@ -282,7 +282,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     draft = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
     await draft.fill("Draft survives projection replacement")
-    previous = await page.request.get(f"{thread_browser.browser_url}/threads/{thread}/sync/scope")
+    previous = await page.request.get(f"{thread_browser.ingress.url}/threads/{thread}/sync/scope")
     assert previous.ok
     old_scope = await previous.json()
     ready = asyncio.Event()
@@ -346,7 +346,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         await expect(page.get_by_text("Test replaced prefix", exact=True)).to_be_visible()
 
         stale = await page.request.get(
-            f"{thread_browser.browser_url}/threads/{thread}/sync/entities",
+            f"{thread_browser.ingress.url}/threads/{thread}/sync/entities",
             params={"projection_epoch": old_scope["projection_epoch"], "offset": "now"},
         )
         assert stale.status == 410
@@ -424,7 +424,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
             ):
                 opened = await source.opened.get()
                 opened.replay.set()
-                await page.goto(f"{ingress}/#/threads/{thread}")
+                await page.goto(f"{ingress.url}/#/threads/{thread}")
                 await expect(page.get_by_text("Projected browser prefix", exact=True)).to_be_visible()
                 await expect(page.get_by_text("A newer browser item", exact=True)).to_be_visible()
                 await expect(page.get_by_text("On-demand reasoning", exact=True)).to_have_count(0)
@@ -497,6 +497,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reloaded.png")
                 reads_before_disconnect = len(body_reads)
                 await page.context.set_offline(True)
+                await ingress.drop_connections()
                 source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
                 async with asyncio.timeout(10):
                     while True:
@@ -504,7 +505,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                         if scope is not None and scope.through_cursor >= source.entries[-1].cursor:
                             break
                         await asyncio.sleep(0.01)
-                # A long poll already open may still deliver the delta; nothing shown is withdrawn.
+                # Whether or not the delta beat the drop, nothing shown is withdrawn.
                 await expect(
                     page.get_by_text("Projected browser prefix and streamed suffix", exact=False)
                 ).to_have_count(1)
@@ -659,7 +660,7 @@ async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thre
     await archived_switch.press("Space")
     await expect(archived_switch).to_be_checked()
     await expect(sidebar.get_by_text("Test rename from another replica", exact=True)).to_be_visible()
-    await expect(page).to_have_url(f"{thread_browser.browser_url}/#/threads/{thread.id}")
+    await expect(page).to_have_url(f"{thread_browser.ingress.url}/#/threads/{thread.id}")
     await page.screenshot(path=undeclared_outputs_dir() / "sidebar-replica-updates.png")
 
 
@@ -1402,11 +1403,11 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
         await route.fulfill(status=400, content_type="text/plain", body="shape rejected")
 
     await page.route("**/sync/entities?*", terminal_shape_error, times=1)
-    # Offline fails the waiting live request; the client's retry is the one the route answers.
-    await page.context.set_offline(True)
     try:
+        # Dropping the connection ends the live SSE response; the client's reconnect is the one the
+        # route answers.
         async with page.expect_response(lambda response: "/sync/entities?" in response.url and response.status == 400):
-            await page.context.set_offline(False)
+            await thread_browser.ingress.drop_connections()
         stopped = page.get_by_role("alert").filter(has_text="Thread synchronization stopped:")
         await expect(stopped).to_be_visible()
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -1431,7 +1432,6 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
         )
         await expect(pending).to_have_count(0)
     finally:
-        await page.context.set_offline(False)
         await page.unroute("**/sync/entities?*", terminal_shape_error)
 
 

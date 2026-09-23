@@ -371,6 +371,7 @@ py_library(
 py_library(
     name = "ha_mcp",
     srcs = ["ha_mcp.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
     deps = [
         ":artifact_generators",
         ":cilium",
@@ -387,6 +388,8 @@ py_library(
         "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "//cluster/cdk8s/external_secrets:external_secret",
+        "//cluster/cdk8s/external_secrets:single_secret_store",
+        "//cluster/cdk8s/home_assistant:app",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

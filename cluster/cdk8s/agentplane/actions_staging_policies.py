@@ -47,6 +47,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
+    HOME_ASSISTANT_READONLY_POLICY,
     KUBERNETES_POLICY,
     PACKAGES_POLICY,
 )
@@ -444,6 +445,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 PACKAGES_POLICY,
                 GOOGLE_READONLY_POLICY,
                 GROCY_SF_READONLY_POLICY,
+                HOME_ASSISTANT_READONLY_POLICY,
                 COINBASE_POLICY,
             ],
         ),
