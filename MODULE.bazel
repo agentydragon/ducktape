@@ -1250,6 +1250,14 @@ http_file(
     urls = ["https://raw.githubusercontent.com/backube/volsync/v0.16.0/config/crd/bases/volsync.backube_replicationsources.yaml"],
 )
 
+# Match the external-snapshotter tag in cluster/k8s/flux/sources/snapshot-controller.yaml.
+http_file(
+    name = "external_snapshotter_volumesnapshotclass_crd",
+    downloaded_file_path = "snapshot.storage.k8s.io_volumesnapshotclasses.yaml",
+    sha256 = "75e6565aac2c0f2949ed13ea884bbaa388cb7be576b558b709cf1168e011828d",
+    urls = ["https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.6.0/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml"],
+)
+
 # The release assets cluster/k8s/kubevirt/{operator,cdi-operator}/kustomization.yaml install; the bindings
 # BUILD extracts the operator CRs' CRDs. The operators create their other CRDs
 # (VirtualMachine, StorageProfile) at runtime, and upstream publishes no YAML for them.
