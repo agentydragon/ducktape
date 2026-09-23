@@ -60,6 +60,7 @@ def helmrelease_chart(app: App) -> Chart:
                     chart=NAME,
                     # Pinned: the inline tofu render reads this version too, so Flux + bootstrap
                     # stay reproducible and a chart bump can't silently move defaults.
+                    # renovate: datasource=docker depName=ghcr.io/siderolabs/charts/talos-cloud-controller-manager
                     version="0.5.7",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

@@ -185,6 +185,7 @@ def _cron_job(scope: Construct) -> None:
                             containers=[
                                 k8s.Container(
                                     name="publish",
+                                    # renovate: datasource=docker
                                     image="nixos/nix:2.35.2",
                                     image_pull_policy="IfNotPresent",
                                     resources=k8s.ResourceRequirements(

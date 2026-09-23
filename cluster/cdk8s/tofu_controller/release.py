@@ -57,6 +57,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart="tofu-controller",
+                    # renovate: datasource=helm depName=tofu-controller registryUrl=https://flux-iac.github.io/tofu-controller
                     version="0.16.5",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

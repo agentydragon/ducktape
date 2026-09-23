@@ -34,6 +34,7 @@ NAME = "seaweedfs-csi"
 NAMESPACE = "seaweedfs-csi-system"
 RELEASE = "seaweedfs-csi-driver"
 OUTPUT_DIR = "cluster/k8s/seaweedfs-csi"
+# renovate: datasource=docker depName=chrislusf/seaweedfs-csi-driver
 _VERSION = "v1.4.30"
 _ZONE = "topology.kubernetes.io/zone"
 _OVH_AFFINITY = {
@@ -217,6 +218,7 @@ def chart(app: App) -> Chart:
         spec=GitRepositorySpec(
             interval="24h",
             url="https://github.com/seaweedfs/seaweedfs-csi-driver",
+            # renovate: datasource=github-tags depName=seaweedfs/seaweedfs-csi-driver
             ref=GitRepositorySpecRef(tag="v1.4.31"),
             ignore="/*\n!/deploy/helm/seaweedfs-csi-driver\n",
         ),

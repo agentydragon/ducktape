@@ -72,6 +72,7 @@ def _deployment(chart: Chart) -> None:
                     containers=[
                         k8s.Container(
                             name="server",
+                            # renovate: datasource=docker
                             image="ghcr.io/containers/kubernetes-mcp-server:v0.0.66",
                             image_pull_policy="IfNotPresent",
                             # Config is public-only — the OAuth2 provider is public (PKCE),

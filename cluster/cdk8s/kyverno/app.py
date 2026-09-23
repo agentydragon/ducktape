@@ -157,6 +157,7 @@ def chart(app: App) -> Chart:
                 spec=HelmReleaseSpecChartSpec(
                     chart="kyverno",
                     # MODULE.bazel pins the kyverno.io CRD bindings to this chart's appVersion.
+                    # renovate: datasource=helm depName=kyverno registryUrl=https://kyverno.github.io/kyverno/
                     version="3.9.1",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

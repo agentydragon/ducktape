@@ -206,6 +206,7 @@ def _deployment(scope: Construct) -> None:
                     init_containers=[
                         k8s.Container(
                             name="init-auth-dir",
+                            # renovate: datasource=docker
                             image="busybox:1.38",
                             command=["sh", "-c", "mkdir -p /data/auth"],
                             volume_mounts=[k8s.VolumeMount(name="data", mount_path="/data")],

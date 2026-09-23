@@ -41,6 +41,7 @@ from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 _NAMESPACE = "agentplane-testing"
 
 MCP_EVERYTHING_NAME = "agentplane-mcp-everything"
+# renovate: datasource=docker
 _MCP_EVERYTHING_IMAGE = (
     "docker.io/tzolov/mcp-everything-server@sha256:96c4aa07420dd2a8dee0315763a8ea27de72fd054483c781894f6280cd3f56e7"
 )

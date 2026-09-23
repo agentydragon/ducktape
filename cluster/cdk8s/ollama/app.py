@@ -83,6 +83,7 @@ def _ollama_container() -> k8s.Container:
     probe_action = k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("ollama"))
     return k8s.Container(
         name="ollama",
+        # renovate: datasource=docker
         image="ollama/ollama:0.34.0",
         ports=[k8s.ContainerPort(name="ollama", container_port=_OLLAMA_PORT, protocol="TCP")],
         env=[
@@ -110,6 +111,7 @@ def _ollama_container() -> k8s.Container:
 def _auth_proxy_container() -> k8s.Container:
     return k8s.Container(
         name="auth-proxy",
+        # renovate: datasource=docker
         image="nginx:1.31-alpine",
         ports=[k8s.ContainerPort(name="auth-proxy", container_port=_AUTH_PROXY_PORT, protocol="TCP")],
         env=[
@@ -254,6 +256,7 @@ def _setup_job(scope: Construct) -> None:
                         k8s.Container(
                             name="setup",
                             # curl + busybox awk; we hit /api/pull directly (no ollama CLI needed).
+                            # renovate: datasource=docker
                             image="curlimages/curl:8.22.0",
                             command=["/scripts/setup-gpt-oss-v2.sh"],
                             env=[

@@ -40,6 +40,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart=_NAME,
+                    # renovate: datasource=helm depName=alloy registryUrl=https://grafana.github.io/helm-charts
                     version="1.x",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

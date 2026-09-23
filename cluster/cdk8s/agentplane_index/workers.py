@@ -111,6 +111,7 @@ def _database(chart: Chart) -> None:
         metadata=metadata(_DB_CLUSTER, NAME),
         spec=ClusterSpec(
             instances=2,
+            # renovate: datasource=docker
             image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
             probes=ClusterSpecProbes(
                 liveness=ClusterSpecProbesLiveness(

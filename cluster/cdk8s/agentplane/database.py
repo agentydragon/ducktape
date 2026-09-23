@@ -49,6 +49,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cnpg import OFF_CONTROL_PLANE_NODE_AFFINITY
 
 _CLUSTER_NAME = "postgres"
+# renovate: datasource=docker
 _IMAGE_NAME = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
 _STORAGE_CLASS = "local-path-ovh-ssd"
 _STORAGE_SIZE = "5Gi"

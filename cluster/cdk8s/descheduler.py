@@ -113,6 +113,7 @@ class Descheduler(Construct):
                 chart=HelmReleaseSpecChart(
                     spec=HelmReleaseSpecChartSpec(
                         chart="descheduler",
+                        # renovate: datasource=helm depName=descheduler registryUrl=https://kubernetes-sigs.github.io/descheduler
                         version="0.36.0",
                         source_ref=HelmReleaseSpecChartSpecSourceRef(
                             kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

@@ -104,6 +104,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart="lvm-localpv",
+                    # renovate: datasource=helm depName=lvm-localpv registryUrl=https://openebs.github.io/lvm-localpv
                     version="1.10.1",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

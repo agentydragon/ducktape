@@ -174,6 +174,7 @@ def chart(app: App) -> Chart:
                     containers=[
                         k8s.Container(
                             name="nginx",
+                            # renovate: datasource=docker
                             image="nginxinc/nginx-unprivileged:1.31-alpine",
                             ports=[k8s.ContainerPort(container_port=_PORT)],
                             resources=k8s.ResourceRequirements(

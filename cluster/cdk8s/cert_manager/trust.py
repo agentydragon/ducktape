@@ -52,6 +52,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart="trust-manager",
+                    # renovate: datasource=helm depName=trust-manager registryUrl=https://charts.jetstack.io
                     version="0.25.*",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

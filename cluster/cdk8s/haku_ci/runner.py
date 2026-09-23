@@ -167,6 +167,7 @@ def _dind() -> keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainers:
     mount = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersVolumeMounts
     return keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainers(
         name="dind",
+        # renovate: datasource=docker
         image="docker:29-dind-rootless",
         restart_policy="Always",
         args=[
@@ -244,6 +245,7 @@ def _runner() -> keda.ScaledJobSpecJobTargetRefTemplateSpecContainers:
         # CI behaviour.
         # Crossing 8.0.0 means workflows are now schema-validated and will REFUSE to run if they
         # don't parse -- see README, "Upgrading the runner image".
+        # renovate: datasource=docker
         image="code.forgejo.org/forgejo/runner:12.13.2",
         command=["sh", "-c"],
         # --ephemeral tells Forgejo to DELETE this runner registration once it has run one job. The

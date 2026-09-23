@@ -60,6 +60,7 @@ def _database(chart: Chart) -> None:
         metadata=metadata(_DB_CLUSTER, NAMESPACE),
         spec=ClusterSpec(
             instances=2,
+            # renovate: datasource=docker
             image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
             probes=ClusterSpecProbes(
                 liveness=ClusterSpecProbesLiveness(
@@ -108,6 +109,7 @@ def _server(chart: Chart) -> None:
                     containers=[
                         k8s.Container(
                             name=NAME,
+                            # renovate: datasource=docker
                             image="ghcr.io/atuinsh/atuin:18.22.0",
                             args=["start"],
                             ports=[k8s.ContainerPort(container_port=_PORT, name="http")],

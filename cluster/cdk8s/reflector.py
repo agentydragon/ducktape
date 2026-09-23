@@ -28,6 +28,7 @@ from cluster.cdk8s.metadata import metadata
 NAME = "reflector"
 NAMESPACE = "reflector-system"
 OUTPUT_DIR = "cluster/k8s/reflector"
+# renovate: datasource=helm depName=reflector registryUrl=https://emberstack.github.io/helm-charts
 _VERSION = "10.0.65"
 
 

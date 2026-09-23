@@ -50,6 +50,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart=NAME,
+                    # renovate: datasource=helm depName=goldilocks registryUrl=https://charts.fairwinds.com/stable
                     version="11.1.0",
                     # Declared by the vpa directory, which this one's Kustomization depends on.
                     source_ref=HelmReleaseSpecChartSpecSourceRef(

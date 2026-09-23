@@ -110,6 +110,7 @@ def _aw_server_container() -> k8s.Container:
 def _readonly_proxy_container() -> k8s.Container:
     return k8s.Container(
         name="readonly-proxy",
+        # renovate: datasource=docker
         image="nginx:alpine",
         ports=[k8s.ContainerPort(container_port=_READONLY_PORT, name="readonly")],
         volume_mounts=[k8s.VolumeMount(name="readonly-proxy-config", mount_path="/etc/nginx/conf.d", read_only=True)],
@@ -130,6 +131,7 @@ def _readonly_proxy_container() -> k8s.Container:
 def _bearer_proxy_container() -> k8s.Container:
     return k8s.Container(
         name="bearer-proxy",
+        # renovate: datasource=docker
         image="nginx:alpine",
         # One nginx gating both token-checked routes: 5602 write (shared write
         # token) and 5603 read (distinct read token, read methods only). aw-server

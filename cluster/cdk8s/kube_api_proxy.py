@@ -95,6 +95,7 @@ def _deployment(chart: Chart) -> None:
                     containers=[
                         k8s.Container(
                             name="nginx",
+                            # renovate: datasource=docker
                             image="nginxinc/nginx-unprivileged:1.31-alpine",
                             ports=[k8s.ContainerPort(container_port=_PORT)],
                             volume_mounts=[

@@ -362,6 +362,7 @@ class HaMcpApp(Construct):
 
         deployment.add_container(
             name="ha-mcp",
+            # renovate: datasource=docker
             image="ghcr.io/homeassistant-ai/ha-mcp:8.4.3@sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456",
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             args=["ha-mcp-web"],

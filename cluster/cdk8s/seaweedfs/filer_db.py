@@ -74,6 +74,7 @@ def chart(app: App) -> Chart:
         ),
         spec=ClusterSpec(
             instances=2,
+            # renovate: datasource=docker
             image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
             probes=ClusterSpecProbes(
                 liveness=ClusterSpecProbesLiveness(

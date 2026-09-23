@@ -193,6 +193,7 @@ def _helm_release(chart: Chart) -> None:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart="authentik",
+                    # renovate: datasource=helm depName=authentik registryUrl=https://charts.goauthentik.io
                     version="2026.8.2",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

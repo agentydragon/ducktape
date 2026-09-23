@@ -140,6 +140,7 @@ def _database(scope: Construct) -> None:
         metadata=metadata("langfuse-db", _NAMESPACE),
         spec=ClusterSpec(
             instances=2,
+            # renovate: datasource=docker
             image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
             # CNPG 1.27+ kills isolated primaries by default (liveness probe).
             # Disable to prevent false positives from transient network blips.
@@ -286,6 +287,7 @@ def _valkey(scope: Construct) -> None:
         spec=RedisReplicationSpec(
             cluster_size=2,
             kubernetes_config=RedisReplicationSpecKubernetesConfig(
+                # renovate: datasource=docker
                 image="valkey/valkey:9-alpine",
                 image_pull_policy="IfNotPresent",
                 resources=RedisReplicationSpecKubernetesConfigResources(
@@ -368,6 +370,7 @@ def _values() -> dict[str, object]:
         "langfuse": {
             # Chart 2.1.0's appVersion trails the current release; pin both web and
             # worker to the same current Langfuse image explicitly.
+            # renovate: datasource=docker depName=langfuse/langfuse
             "image": {"tag": "4.35.0"},
             "features": {
                 # SSO-only: email/password login is disabled below via
@@ -552,6 +555,7 @@ def _helm_release(scope: Construct) -> None:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart=_NAME,
+                    # renovate: datasource=helm depName=langfuse registryUrl=https://langfuse.github.io/langfuse-k8s
                     version="2.1.0",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

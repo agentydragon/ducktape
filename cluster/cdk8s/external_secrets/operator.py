@@ -128,6 +128,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart="external-secrets",
+                    # renovate: datasource=helm depName=external-secrets registryUrl=https://charts.external-secrets.io
                     version="2.10.0",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,

@@ -51,6 +51,7 @@ def chart(app: App) -> Chart:
             chart=HelmReleaseSpecChart(
                 spec=HelmReleaseSpecChartSpec(
                     chart=NAME,
+                    # renovate: datasource=docker depName=ghcr.io/grafana/helm-charts/grafana-operator versioning=helm
                     version="~5.22",
                     source_ref=HelmReleaseSpecChartSpecSourceRef(
                         kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY, name=NAME, namespace="flux-system"

@@ -114,6 +114,10 @@ _TOLERATE_NO_SCHEDULE = [{"effect": "NoSchedule", "operator": "Exists"}]
 # Enforced by //cluster/validation:test_roaming_daemonset_capacity (which
 # derives the count from nebula-mesh.json); incident write-up in
 # cluster/docs/lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md.
+# renovate: datasource=helm depName=loki registryUrl=https://grafana.github.io/helm-charts
+_LOKI_CHART_VERSION = "7.x"
+# renovate: datasource=helm depName=promtail registryUrl=https://grafana.github.io/helm-charts
+_PROMTAIL_CHART_VERSION = "6.x"
 _ROAMING_SAFE_UPDATE_STRATEGY = {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}}
 
 
@@ -373,6 +377,7 @@ def _loki_values() -> dict[str, object]:
             "extraContainers": [
                 {
                     "name": "dnsmasq",
+                    # renovate: datasource=docker
                     "image": "4km3/dnsmasq:2.90-r3-alpine-3.22.2",
                     "args": ["-k", "--no-hosts", "--listen-address=127.0.0.1", "--port=8053", "--cache-size=150"],
                     "ports": [{"name": "dns", "containerPort": 8053, "protocol": "UDP"}],
@@ -513,7 +518,7 @@ def _helm_releases(chart: Chart) -> None:
         spec=HelmReleaseSpec(
             interval="30m",
             install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=_grafana_chart("loki", "7.x"),
+            chart=_grafana_chart("loki", _LOKI_CHART_VERSION),
             values=_loki_values(),
         ),
     )
@@ -530,7 +535,7 @@ def _helm_releases(chart: Chart) -> None:
                 # on offline nodes, causing the HelmRelease to hit RetriesExceeded and stall.
                 disable_wait=True
             ),
-            chart=_grafana_chart("promtail", "6.x"),
+            chart=_grafana_chart("promtail", _PROMTAIL_CHART_VERSION),
             values=_promtail_values(),
         ),
     )
@@ -553,7 +558,7 @@ def _helm_releases(chart: Chart) -> None:
                 # be offline, so don't block the release on their Pending/Terminating pods.
                 disable_wait=True
             ),
-            chart=_grafana_chart("promtail", "6.x"),
+            chart=_grafana_chart("promtail", _PROMTAIL_CHART_VERSION),
             values=_promtail_journal_values(),
         ),
     )

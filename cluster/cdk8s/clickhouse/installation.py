@@ -441,10 +441,8 @@ def keeper_chart(app: App) -> Chart:
                             "containers": [
                                 {
                                     "name": "clickhouse-keeper",
-                                    "image": (
-                                        "clickhouse/clickhouse-keeper:26.8.3.105"
-                                        "@sha256:d9aced52deafda7ca716983bc80766641bcde30c23f3f7abdf6cacc9f244bd74"
-                                    ),
+                                    # renovate: datasource=docker
+                                    "image": "clickhouse/clickhouse-keeper:26.8.3.105@sha256:d9aced52deafda7ca716983bc80766641bcde30c23f3f7abdf6cacc9f244bd74",
                                     "imagePullPolicy": "IfNotPresent",
                                     "resources": {
                                         "requests": {"cpu": "100m", "memory": "256Mi"},

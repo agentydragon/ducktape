@@ -48,6 +48,7 @@ from cluster.cdk8s.metadata import metadata
 BASE_DIR = "cluster/k8s/grocy/app-base"
 _NAME = "grocy"
 _LABELS = {"app.kubernetes.io/name": _NAME}
+# renovate: datasource=docker
 _IMAGE = "lscr.io/linuxserver/grocy:v4.6.0-ls318"
 _CONFIG_CLAIM = "grocy-config-ovh"
 _BACKUP = "grocy-config-ovh-backup"

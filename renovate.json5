@@ -3,6 +3,9 @@
   extends: ["config:recommended"],
   dependencyDashboard: true,
   prCreation: "approval",
+  // The manifest regeneration workflow pushes to Renovate's branches as this
+  // App; Renovate keeps rebasing a branch whose only foreign commits are its.
+  gitIgnoredAuthors: ["281469510+ducktape-automation[bot]@users.noreply.github.com"],
   // Keep approved updates arriving as a controlled stream. This limits the
   // number of independently merged changes that can be waiting for devel CI.
   prConcurrentLimit: 3,
@@ -13,10 +16,10 @@
   nix: {
     enabled: true,
   },
-  // The flux manager defaults to bootstrap's gotk-components.yaml only. Our
-  // Flux resources live under cluster/k8s and are generated into artifacts,
-  // so scan the source manifests for HelmRelease/HelmRepository pins and
-  // image references in Helm values.
+  // The flux manager defaults to bootstrap's gotk-components.yaml only. Scan
+  // the hand-written manifests under cluster/k8s for HelmRelease/HelmRepository
+  // pins and image references in Helm values; generated `*.k8s.yaml` files are
+  // in ignorePaths and their pins live in the cdk8s custom manager below.
   flux: {
     managerFilePatterns: ["/^cluster\\/k8s\\/.+\\.ya?ml$/"],
   },
@@ -27,6 +30,21 @@
     managerFilePatterns: ["/^cluster\\/k8s\\/.+\\.ya?ml$/"],
   },
   customManagers: [
+    {
+      // Versions the cdk8s generators render into cluster/k8s/**/*.k8s.yaml,
+      // each behind a `# renovate:` comment (format: cluster/cdk8s/AGENTS.md).
+      // The first form names the dependency and the next line's last string
+      // literal is the version; the bare `datasource=docker` form reads a whole
+      // image reference. Either may sit on the line after an opening `(`.
+      // .github/workflows/renovate-regenerate.yml regenerates the manifests.
+      customType: "regex",
+      managerFilePatterns: ["/^cluster\\/cdk8s\\/.+\\.py$/"],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)(?: registryUrl=(?<registryUrl>\\S+))?(?: versioning=(?<versioning>\\S+))?\\n(?:[^\\n]*\\(\\n)?[^\\n]*"(?<currentValue>[^"@\\s]+)(?:@(?<currentDigest>sha256:[0-9a-f]+))?"[^"\\n]*\\n',
+        '# renovate: datasource=(?<datasource>docker)\\n(?:[^\\n]*\\(\\n)?[^\\n]*"(?<depName>[^"@:\\s]+)(?::(?<currentValue>[^"@\\s]+))?(?:@(?<currentDigest>sha256:[0-9a-f]+))?"[^"\\n]*\\n',
+      ],
+      depTypeTemplate: "cdk8s",
+    },
     {
       // rules_tf keeps its hermetic provider mirror in a nonstandard MODULE.bazel map.
       customType: "regex",
@@ -48,6 +66,9 @@
     ],
   },
   ignorePaths: [
+    // Rendered by //cluster/cdk8s:generate_manifests; the cdk8s custom manager
+    // updates the generator source instead.
+    "cluster/k8s/**/*.k8s.yaml",
     "props/specimens/**",
     "devinfra/claude/web_env/**",
     // Generated from pyproject.toml; Renovate should update the source instead.
@@ -96,6 +117,32 @@
       groupName: null,
       automerge: false,
       minimumReleaseAge: "3 days",
+    },
+    {
+      description: "Keep cdk8s generator pin updates isolated",
+      matchDepTypes: ["cdk8s"],
+      matchUpdateTypes: ["major", "minor", "patch", "pin", "pinDigest", "digest"],
+      groupName: null,
+      automerge: false,
+      minimumReleaseAge: "3 days",
+    },
+    {
+      description: "Move the Prometheus Operator CRD source with kube-prometheus-stack",
+      matchDepTypes: ["cdk8s"],
+      matchPackageNames: ["kube-prometheus-stack", "prometheus-operator/prometheus-operator"],
+      groupName: "kube-prometheus-stack",
+    },
+    {
+      description: "Move the External Secrets CRD source with its chart",
+      matchDepTypes: ["cdk8s"],
+      matchPackageNames: ["external-secrets", "external-secrets/external-secrets"],
+      groupName: "external-secrets",
+    },
+    {
+      description: "Move the SeaweedFS CSI images with their chart source",
+      matchDepTypes: ["cdk8s"],
+      matchPackageNames: ["seaweedfs/seaweedfs-csi-driver", "chrislusf/seaweedfs-csi-driver"],
+      groupName: "seaweedfs-csi-driver",
     },
     {
       description: "Keep mirrored Terraform provider updates isolated",

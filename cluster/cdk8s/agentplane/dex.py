@@ -56,6 +56,7 @@ from cluster.cdk8s.probes import http_probe
 
 _NAMESPACE = "agentplane-testing"
 _NAME = "agentplane-testing-dex"
+# renovate: datasource=docker
 _IMAGE = "ghcr.io/dexidp/dex:v2.45.1"
 _PORT = 5556
 _LABELS = {"app.kubernetes.io/name": _NAME}

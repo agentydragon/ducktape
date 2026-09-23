@@ -101,6 +101,7 @@ OUTPUT_DIR = "cluster/k8s/ntfy"
 NAMESPACE = NAME
 HOSTNAME = "ntfy.allegedly.works"
 PORT = 2586
+# renovate: datasource=docker
 _IMAGE = "binwiederhier/ntfy:v2.28.0"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _DATABASE_CLUSTER = "ntfy-db"
@@ -255,6 +256,7 @@ def _database(scope: Construct) -> None:
         metadata=metadata(_DATABASE_CLUSTER, NAMESPACE),
         spec=ClusterSpec(
             instances=2,
+            # renovate: datasource=docker
             image_name="ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie",
             probes=ClusterSpecProbes(
                 liveness=ClusterSpecProbesLiveness(
