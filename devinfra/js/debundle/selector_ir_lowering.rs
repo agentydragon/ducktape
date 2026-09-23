@@ -2812,7 +2812,13 @@ fn native_child_list_patterns(
             .map(|(_index, child)| *child)
             .collect::<Vec<_>>();
         let mut hole_positions = BTreeSet::new();
+        let mut floating_positions = BTreeSet::new();
         for (index, child) in children.iter().enumerate() {
+            if parent_kind == NodeKind::VarDecl
+                && native_floating_declarator(*child, &node_kind, &children_by_parent, &ident_name)
+            {
+                floating_positions.insert(index);
+            }
             if let Some(ident) = native_child_list_carrier_ident(
                 parent_kind,
                 *child,
@@ -2826,7 +2832,7 @@ fn native_child_list_patterns(
                 collect_native_child_list_subtree(*child, &children_by_parent, skipped_nodes);
             }
         }
-        if hole_positions.is_empty() {
+        if hole_positions.is_empty() && floating_positions.is_empty() {
             if child_list_hole_nodes.is_empty()
                 && let Some(declarator) =
                     single_declarator_segment(parent_kind, &children, &node_kind)
@@ -2845,7 +2851,7 @@ fn native_child_list_patterns(
         }
 
         let (segments, anchored_left, anchored_right) =
-            child_list_segments(&children, &hole_positions);
+            child_list_segments(&children, &hole_positions, &floating_positions);
         if segments.is_empty() && !native_all_hole_child_list_pattern_supported(parent_kind) {
             return None;
         }
@@ -3007,6 +3013,48 @@ fn object_props_carrier_ident(
     }
 }
 
+/// Mirrors the matcher: a declarator initializer that is more than a
+/// placeholder (absent, `null`, or a hole).
+fn native_informative_init(
+    declarator: NodeId,
+    node_kind: &BTreeMap<NodeId, NodeKind>,
+    children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>,
+    ident_name: &BTreeMap<NodeId, &str>,
+) -> bool {
+    children_by_parent
+        .get(&declarator)
+        .and_then(|children| children.iter().find(|(ordinal, _)| *ordinal == 1))
+        .is_some_and(|(_, init)| {
+            node_kind.get(init) != Some(&NodeKind::NullLit)
+                && !(node_kind.get(init) == Some(&NodeKind::Ident)
+                    && ident_name.get(init).is_some_and(|name| {
+                        hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
+                            || hole_name_for(name, EXPR_HOLE_KEYWORD).is_some()
+                    }))
+        })
+}
+
+/// Mirrors the matcher's floating declarator: `ANYTHING = <init>` with an
+/// informative initializer is one declarator with gaps allowed on both sides.
+fn native_floating_declarator(
+    node: NodeId,
+    node_kind: &BTreeMap<NodeId, NodeKind>,
+    children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>,
+    ident_name: &BTreeMap<NodeId, &str>,
+) -> bool {
+    node_kind.get(&node) == Some(&NodeKind::VarDeclarator)
+        && children_by_parent
+            .get(&node)
+            .and_then(|children| children.iter().find(|(ordinal, _)| *ordinal == 0))
+            .is_some_and(|(_, name)| {
+                node_kind.get(name) == Some(&NodeKind::BindingIdent)
+                    && ident_name
+                        .get(name)
+                        .is_some_and(|name| hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some())
+            })
+        && native_informative_init(node, node_kind, children_by_parent, ident_name)
+}
+
 fn declarators_carrier_ident(
     node: NodeId,
     node_kind: &BTreeMap<NodeId, NodeKind>,
@@ -3020,7 +3068,8 @@ fn declarators_carrier_ident(
     if node_kind.get(binding) == Some(&NodeKind::BindingIdent)
         && ident_name.get(binding).is_some_and(|name| {
             labeled_hole_name_for(name, DECLARATORS_HOLE_KEYWORD).is_some()
-                || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
+                || (hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
+                    && !native_informative_init(node, node_kind, children_by_parent, ident_name))
         })
     {
         Some(*binding)
@@ -3091,6 +3140,7 @@ fn collect_native_child_list_subtree(
 fn child_list_segments(
     children: &[NodeId],
     hole_positions: &BTreeSet<usize>,
+    floating_positions: &BTreeSet<usize>,
 ) -> (Vec<Vec<NodeId>>, bool, bool) {
     let mut segments = Vec::new();
     let mut index = 0;
@@ -3100,13 +3150,21 @@ fn child_list_segments(
             continue;
         }
         let start = index;
-        while index < children.len() && !hole_positions.contains(&index) {
+        if floating_positions.contains(&index) {
             index += 1;
+        } else {
+            while index < children.len()
+                && !hole_positions.contains(&index)
+                && !floating_positions.contains(&index)
+            {
+                index += 1;
+            }
         }
         segments.push(children[start..index].to_vec());
     }
-    let anchored_left = !children.is_empty() && !hole_positions.contains(&0);
-    let anchored_right = !children.is_empty() && !hole_positions.contains(&(children.len() - 1));
+    let anchored = |i: usize| !hole_positions.contains(&i) && !floating_positions.contains(&i);
+    let anchored_left = !children.is_empty() && anchored(0);
+    let anchored_right = !children.is_empty() && anchored(children.len() - 1);
     (segments, anchored_left, anchored_right)
 }
 

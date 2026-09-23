@@ -494,8 +494,8 @@ position:
   (`const ANYTHING = null, selected = ...;`, or `= ANYTHING`), it behaves like
   anonymous `DECLARATORS` and absorbs a run of sibling declarators. With any
   other initializer (`const ANYTHING = config.limit;`) it is one declarator
-  whose name is a hole and whose initializer must match; reach a declarator
-  that shares its statement with others by adding `DECLARATORS`.
+  whose name is a hole and whose initializer must match, found anywhere among
+  the statement's declarators (minifiers merge consecutive declarations).
 - As a class field with no initializer (`class K { ANYTHING; method() {} }`),
   it absorbs a run of class members.
 

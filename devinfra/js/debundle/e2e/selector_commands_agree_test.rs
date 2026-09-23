@@ -3,8 +3,8 @@
 //! `spec match-selector`. Each case also pins a matching rule the commands must
 //! share: same-spelled locals in sibling blocks, loop heads, `switch` bodies and
 //! named function expressions are independent bindings, `var` hoists to the
-//! enclosing function, and a `const ANYTHING = <init>` declarator still matches
-//! its initializer.
+//! enclosing function, and a `const ANYTHING = <init>` declarator matches its
+//! initializer wherever it sits in its statement.
 
 use std::fs;
 use std::path::Path;
@@ -281,8 +281,8 @@ export { a, c };
     subject: "a",
 };
 
-/// A declarator that shares its statement with others is reached with
-/// `DECLARATORS`, not by `ANYTHING` swallowing the list.
+/// Minifiers merge consecutive declarations, so an `ANYTHING = <init>`
+/// declarator floats: it matches one declarator anywhere in its statement.
 const ANYTHING_DECLARATOR_AMONG_OTHERS: Case = Case {
     chunk: r#"function a(n) {
   const e = n.distinctive.leaf?.name, t = 1;
@@ -296,7 +296,7 @@ console.log(a({ distinctive: { leaf: { name: "x" } } }), c({ other: "y" }));
 export { a, c };
 "#,
     selector: r#"function readable(ANYTHING) {
-  const ANYTHING = ANYTHING.distinctive.leaf?.name, DECLARATORS;
+  const ANYTHING = ANYTHING.distinctive.leaf?.name;
   STMT_LIST;
 }"#,
     local: "readable",
@@ -309,6 +309,6 @@ fn anything_declarator_keeps_its_initializer() {
 }
 
 #[test]
-fn anything_declarator_among_others_needs_declarators() {
+fn anything_declarator_floats_among_others() {
     assert_all_commands_resolve(&ANYTHING_DECLARATOR_AMONG_OTHERS);
 }
