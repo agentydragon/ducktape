@@ -227,6 +227,7 @@ from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
     drivefs_artifacts_bucket as seaweedfs_drivefs_artifacts_bucket,
     flux_kustomizations as seaweedfs_flux_kustomizations,
+    forgejo_bucket as seaweedfs_forgejo_bucket,
     loom_gym_bucket as seaweedfs_loom_gym_bucket,
     namespace as seaweedfs_namespace,
 )
@@ -325,6 +326,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_namespace.write_manifests(root)
     seaweedfs_drivefs_artifacts_bucket.write_manifests(root)
     seaweedfs_loom_gym_bucket.write_manifests(root)
+    seaweedfs_forgejo_bucket.write_manifests(root)
     grafana_operator.write_manifests(root)
     cilium_monitoring.write_manifests(root)
     monitoring_stack.write_manifests(root)
@@ -844,8 +846,8 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_secrets_kustomization,
         seaweedfs_cluster_kustomization,
     )
-    seaweedfs_forgejo_bucket_artifact = artifact("seaweedfs-forgejo-bucket", "cluster/k8s/seaweedfs/forgejo-bucket")
-    seaweedfs_flux_kustomizations.seaweedfs_forgejo_bucket(
+    seaweedfs_forgejo_bucket_artifact = artifact("seaweedfs-forgejo-bucket", seaweedfs_forgejo_bucket.OUTPUT_DIR)
+    seaweedfs_forgejo_bucket.seaweedfs_forgejo_bucket(
         flux_chart, seaweedfs_forgejo_bucket_artifact, seaweedfs_cluster_kustomization
     )
     seaweedfs_loom_gym_bucket_artifact = artifact("seaweedfs-loom-gym-bucket", seaweedfs_loom_gym_bucket.OUTPUT_DIR)
