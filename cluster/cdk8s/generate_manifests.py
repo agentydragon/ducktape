@@ -72,8 +72,8 @@ from cluster.cdk8s.gatus import flux_kustomizations as gatus_flux_kustomizations
 from cluster.cdk8s.github_api_proxy import flux_kustomizations as github_api_proxy_flux_kustomizations
 from cluster.cdk8s.github_exporter import flux_kustomizations as github_exporter_flux_kustomizations
 from cluster.cdk8s.github_secrets_sync import (
-    flux_kustomizations as github_secrets_sync_flux_kustomizations,
     gitops_module as github_secrets_sync_gitops_module,
+    secrets as github_secrets_sync_secrets,
 )
 from cluster.cdk8s.goldilocks import flux_kustomizations as goldilocks_flux_kustomizations
 from cluster.cdk8s.grafana import flux_kustomizations as grafana_flux_kustomizations
@@ -179,6 +179,7 @@ def generate_manifests(root: Path) -> None:
     alloy_otlp_bearer_token.write_manifests(root)
     drift_watch.write_manifests(root)
     github_secrets_sync_gitops_module.write_manifests(root)
+    github_secrets_sync_secrets.write_manifests(root)
     forgejo_images.write_manifests(root)
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
@@ -503,9 +504,9 @@ def generate_manifests(root: Path) -> None:
         haku_rbac_kustomization,
     )
     github_secrets_sync_secrets_artifact = artifact(
-        "github-secrets-sync-secrets", "cluster/k8s/github-secrets-sync/secrets"
+        "github-secrets-sync-secrets", github_secrets_sync_secrets.OUTPUT_DIR
     )
-    github_secrets_sync_secrets_kustomization = github_secrets_sync_flux_kustomizations.github_secrets_sync_secrets(
+    github_secrets_sync_secrets_kustomization = github_secrets_sync_secrets.github_secrets_sync_secrets(
         flux_chart,
         github_secrets_sync_secrets_artifact,
         external_creds_kustomization,
