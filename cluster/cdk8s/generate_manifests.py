@@ -57,7 +57,7 @@ from cluster.cdk8s.cpap_sync import flux_kustomizations as cpap_sync_flux_kustom
 from cluster.cdk8s.dcgm_exporter import flux_kustomizations as dcgm_exporter_flux_kustomizations
 from cluster.cdk8s.external_secrets import flux_kustomizations as external_secrets_flux_kustomizations
 from cluster.cdk8s.flux import health_checks as flux_health_checks
-from cluster.cdk8s.flux_grafana_secrets import flux_kustomizations as flux_grafana_secrets_flux_kustomizations
+from cluster.cdk8s.flux_grafana_secrets import flux_grafana_secrets
 from cluster.cdk8s.flux_image_automation_ghcr import (
     flux_kustomizations as flux_image_automation_ghcr_flux_kustomizations,
 )
@@ -187,6 +187,7 @@ def generate_manifests(root: Path) -> None:
     alloy_otlp_bearer_token.write_manifests(root)
     monitoring_namespace.write_manifests(root)
     grafana_helmrepository.write_manifests(root)
+    flux_grafana_secrets.write_manifests(root)
     drift_watch.write_manifests(root)
     github_secrets_sync_gitops_module.write_manifests(root)
     forgejo_images.write_manifests(root)
@@ -810,8 +811,8 @@ def generate_manifests(root: Path) -> None:
     )
     haku_ci_artifact = artifact("haku-ci", "cluster/k8s/haku-ci")
     haku_ci_flux_kustomizations.haku_ci(flux_chart, haku_ci_artifact, keda_kustomization)
-    flux_grafana_secrets_artifact = artifact("flux-grafana-secrets", "cluster/k8s/flux-grafana-secrets")
-    flux_grafana_secrets_flux_kustomizations.flux_grafana_secrets(
+    flux_grafana_secrets_artifact = artifact("flux-grafana-secrets", flux_grafana_secrets.OUTPUT_DIR)
+    flux_grafana_secrets.flux_grafana_secrets(
         flux_chart, flux_grafana_secrets_artifact, grafana_instance_kustomization, grafana_operator_kustomization
     )
     clickhouse_grafana_artifact = artifact("clickhouse-grafana", "cluster/k8s/grafana")
