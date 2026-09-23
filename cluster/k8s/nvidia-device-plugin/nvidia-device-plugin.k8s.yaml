@@ -1,3 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: nvidia-device-plugin
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
@@ -14,22 +21,17 @@ metadata:
   name: nvidia-device-plugin
   namespace: nvidia-device-plugin
 spec:
-  interval: 15m
-  install:
-    remediation:
-      retries: 3
   chart:
     spec:
       chart: nvidia-device-plugin
-      version: "0.20.0"
       sourceRef:
         kind: HelmRepository
         name: nvidia
         namespace: nvidia-device-plugin
+      version: 0.20.0
+  install:
+    remediation:
+      retries: 3
+  interval: 15m
   values:
-    # nvidia-container-runtime.cdi (in containerd, via RuntimeClass) injects
-    # /dev/nvidia*, driver libs, and glibc via host CDI specs. The device plugin
-    # only needs NVML access (provided by the runtime) to enumerate GPUs.
-    # Default envvar strategy: plugin sets NVIDIA_VISIBLE_DEVICES on workload
-    # containers; the CDI runtime translates that to CDI device injection.
     runtimeClassName: nvidia

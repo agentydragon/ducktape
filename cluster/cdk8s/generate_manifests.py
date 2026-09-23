@@ -31,6 +31,7 @@ from cluster.cdk8s import (
     metrics_server,
     node_feature_discovery,
     ntfy,
+    nvidia_device_plugin,
     nvidia_runtimeclass,
     proxmox_proxy,
     public_coder_agent_config,
@@ -115,7 +116,6 @@ from cluster.cdk8s.litellm import (
 from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizations
 from cluster.cdk8s.monitoring import alloy_otlp_bearer_token, flux_kustomizations as monitoring_flux_kustomizations
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
-from cluster.cdk8s.nvidia_device_plugin import flux_kustomizations as nvidia_device_plugin_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations
 from cluster.cdk8s.ollama import flux_kustomizations as ollama_flux_kustomizations
 from cluster.cdk8s.openebs_lvm import flux_kustomizations as openebs_lvm_flux_kustomizations
@@ -202,6 +202,7 @@ def generate_manifests(root: Path) -> None:
     reloader.write_manifests(root)
     vpa.write_manifests(root)
     node_feature_discovery.write_manifests(root)
+    nvidia_device_plugin.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -352,8 +353,8 @@ def generate_manifests(root: Path) -> None:
     grafana_operator_kustomization = monitoring_flux_kustomizations.grafana_operator(
         flux_chart, grafana_operator_artifact, monitoring_namespace_kustomization
     )
-    nvidia_device_plugin_artifact = artifact("nvidia-device-plugin", "cluster/k8s/nvidia-device-plugin")
-    nvidia_device_plugin_kustomization = nvidia_device_plugin_flux_kustomizations.nvidia_device_plugin(
+    nvidia_device_plugin_artifact = artifact("nvidia-device-plugin", nvidia_device_plugin.OUTPUT_DIR)
+    nvidia_device_plugin_kustomization = nvidia_device_plugin.nvidia_device_plugin(
         flux_chart,
         nvidia_device_plugin_artifact,
         nvidia_runtimeclass_kustomization,
