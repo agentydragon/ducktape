@@ -4,11 +4,15 @@ metadata:
   name: loom-gym
   namespace: seaweedfs
 spec:
-  name: loom-gym
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: claude-reader
   clusterRef:
     name: seaweedfs
     namespace: seaweedfs
+  name: loom-gym
   reclaimPolicy: Retain
-  access:
-    - user: claude-reader
-      actions: [Read, Write, List, Tagging]
