@@ -183,6 +183,8 @@ exports_files(
         "headlamp/kustomization.yaml",
         "proxmox-proxy/proxmox-proxy.k8s.yaml",
         "proxmox-proxy/kustomization.yaml",
+        "volsync/volsync.k8s.yaml",
+        "volsync/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

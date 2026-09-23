@@ -37,6 +37,7 @@ from cluster.cdk8s import (
     stateful_infra,
     user_agentydragon,
     valkey,
+    volsync,
 )
 from cluster.cdk8s.activitywatch import flux_kustomizations as activitywatch_flux_kustomizations
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
@@ -135,7 +136,6 @@ from cluster.cdk8s.tofu_controller import flux_kustomizations as tofu_controller
 from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
 from cluster.cdk8s.vector_talos_logs import flux_kustomizations as vector_talos_logs_flux_kustomizations
 from cluster.cdk8s.vm_images_publisher import flux_kustomizations as vm_images_publisher_flux_kustomizations
-from cluster.cdk8s.volsync import flux_kustomizations as volsync_flux_kustomizations
 from cluster.cdk8s.vpa import flux_kustomizations as vpa_flux_kustomizations
 from cluster.cdk8s.website import flux_kustomizations as website_flux_kustomizations
 from cluster.scripts import nebula_mesh
@@ -208,6 +208,7 @@ def generate_manifests(root: Path) -> None:
     goldilocks.write_manifests(root)
     headlamp.write_manifests(root)
     proxmox_proxy.write_manifests(root)
+    volsync.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -428,10 +429,8 @@ def generate_manifests(root: Path) -> None:
     tofu_controller_kustomization = tofu_controller_flux_kustomizations.tofu_controller(
         flux_chart, tofu_controller_artifact, cert_manager_kustomization, kyverno_kustomization
     )
-    volsync_artifact = artifact("volsync", "cluster/k8s/volsync")
-    volsync_kustomization = volsync_flux_kustomizations.volsync(
-        flux_chart, volsync_artifact, snapshot_controller_kustomization
-    )
+    volsync_artifact = artifact("volsync", volsync.OUTPUT_DIR)
+    volsync_kustomization = volsync.volsync(flux_chart, volsync_artifact, snapshot_controller_kustomization)
     agent_shared_rbac_artifact = artifact("agent-shared-rbac", "cluster/k8s/agents/shared-rbac")
     agents_flux_kustomizations.agent_shared_rbac(
         flux_chart, agent_shared_rbac_artifact, claude_rbac_kustomization, kyverno_policies_kustomization
