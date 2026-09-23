@@ -103,7 +103,9 @@ from cluster.cdk8s.clickhouse import (
     schema as clickhouse_schema,
 )
 from cluster.cdk8s.coredns_custom import flux_kustomizations as coredns_custom_flux_kustomizations
-from cluster.cdk8s.cpap_sync import flux_kustomizations as cpap_sync_flux_kustomizations
+from cluster.cdk8s.cpap_sync import app as cpap_sync_app, flux_kustomizations as cpap_sync_flux_kustomizations
+from cluster.cdk8s.dcgm_exporter import flux_kustomizations as dcgm_exporter_flux_kustomizations
+from cluster.cdk8s.external_secrets import flux_kustomizations as external_secrets_flux_kustomizations
 from cluster.cdk8s.dcgm_exporter import (
     exporter as dcgm_exporter_exporter,
     flux_kustomizations as dcgm_exporter_flux_kustomizations,
@@ -112,7 +114,6 @@ from cluster.cdk8s.external_secrets import (
     config as external_secrets_config,
     flux_kustomizations as external_secrets_flux_kustomizations,
     operator as external_secrets_operator,
-)
 from cluster.cdk8s.flux import health_checks as flux_health_checks
 from cluster.cdk8s.flux_grafana_secrets import flux_kustomizations as flux_grafana_secrets_flux_kustomizations
 from cluster.cdk8s.flux_image_automation_ghcr import (
@@ -275,6 +276,7 @@ def generate_manifests(root: Path) -> None:
     clickhouse_installation.write_manifests(root)
     kubevirt_app.write_manifests(root)
     kubevirt_cdi.write_manifests(root)
+    cpap_sync_app.write_manifests(root)
     authentik_app.write_manifests(root)
     authentik_proxy_routes.write_manifests(root)
     authentik_db_backups.write_manifests(root)
@@ -1060,7 +1062,7 @@ def generate_manifests(root: Path) -> None:
         sso_providers_tf_kustomization,
         forgejo_images_kustomization,
     )
-    cpap_sync_artifact = artifact("cpap-sync", "cluster/k8s/cpap-sync")
+    cpap_sync_artifact = artifact("cpap-sync", cpap_sync_app.OUTPUT_DIR)
     cpap_sync_kustomization = cpap_sync_flux_kustomizations.cpap_sync(
         flux_chart,
         cpap_sync_artifact,
