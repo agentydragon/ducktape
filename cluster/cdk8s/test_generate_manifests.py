@@ -117,6 +117,7 @@ _GENERATED_FILES = (
     "cluster/k8s/external-secrets/config/external-secrets-config.k8s.yaml",
     "cluster/k8s/external-secrets/config/kustomization.yaml",
     "cluster/k8s/external-secrets/operator/external-secrets-operator.k8s.yaml",
+    "cluster/k8s/flux/ducktape-flux/ducktape-flux.k8s.yaml",
 )
 
 

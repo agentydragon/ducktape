@@ -202,6 +202,17 @@ py_library(
 )
 
 py_library(
+    name = "ducktape_flux",
+    srcs = ["ducktape_flux.py"],
+    deps = [
+        ":flux",
+        ":generation",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "pod_spec_patches",
     srcs = ["pod_spec_patches.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -497,6 +508,7 @@ py_library(
         ":public_coder_devbox",
         ":stateful_infra",
         "//cluster/cdk8s:flux_kustomizations_cnpg",
+        "//cluster/cdk8s:ducktape_flux",
         "//cluster/cdk8s:flux_kustomizations_dns_automation",
         "//cluster/cdk8s:flux_kustomizations_forgejo_images",
         "//cluster/cdk8s:flux_kustomizations_gateway",
@@ -705,6 +717,7 @@ py_test(
         "//cluster/k8s:flux-image-automation-forgejo/kustomization.yaml",
         "//cluster/k8s:flux-webhook-token/flux-webhook-token.k8s.yaml",
         "//cluster/k8s:flux-webhook-token/kustomization.yaml",
+        "//cluster/k8s:flux/ducktape-flux/ducktape-flux.k8s.yaml",
         "//cluster/k8s:flux/kustomizations.k8s.yaml",
         "//cluster/k8s:forgejo-images/forgejo-images.k8s.yaml",
         "//cluster/k8s:forgejo/agentydragon-repos/forgejo-agentydragon-repos.k8s.yaml",

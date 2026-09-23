@@ -11,6 +11,7 @@ from cluster.cdk8s import (
     descheduler,
     dns_automation,
     dns_automation_flux_kustomizations,
+    ducktape_flux,
     egress_fences,
     etcd,
     external_creds,
@@ -205,6 +206,7 @@ def generate_manifests(root: Path) -> None:
     cert_manager_cluster_ca.write_manifests(root)
     external_secrets_config.write_manifests(root)
     external_secrets_operator.write_manifests(root)
+    ducktape_flux.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
