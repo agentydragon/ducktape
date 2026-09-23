@@ -133,7 +133,7 @@ from cluster.cdk8s.vector_talos_logs import flux_kustomizations as vector_talos_
 from cluster.cdk8s.vm_images_publisher import flux_kustomizations as vm_images_publisher_flux_kustomizations
 from cluster.cdk8s.volsync import flux_kustomizations as volsync_flux_kustomizations
 from cluster.cdk8s.vpa import flux_kustomizations as vpa_flux_kustomizations
-from cluster.cdk8s.website import flux_kustomizations as website_flux_kustomizations
+from cluster.cdk8s.website import website
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
@@ -185,6 +185,7 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.write_manifests(root)
     flux_webhook_token.write_manifests(root)
     sso_providers.write_manifests(root)
+    website.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
@@ -462,8 +463,8 @@ def generate_manifests(root: Path) -> None:
     )
     proxmox_proxy_artifact = artifact("proxmox-proxy", "cluster/k8s/proxmox-proxy")
     proxmox_proxy_flux_kustomizations.proxmox_proxy(flux_chart, proxmox_proxy_artifact, gateway_kustomization)
-    website_artifact = artifact("website", "cluster/k8s/website")
-    website_flux_kustomizations.website(flux_chart, website_artifact, gateway_kustomization)
+    website_artifact = artifact("website", website.OUTPUT_DIR)
+    website.website(flux_chart, website_artifact, gateway_kustomization)
     kube_system_artifact = artifact("kube-system", "cluster/k8s/kube-system")
     kube_system_flux_kustomizations.kube_system(flux_chart, kube_system_artifact, goldilocks_kustomization)
     agents_flux_kustomizations.agents_mitmproxy(flux_chart, cert_manager_trust_kustomization)
