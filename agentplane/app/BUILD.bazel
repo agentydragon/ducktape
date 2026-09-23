@@ -1042,15 +1042,26 @@ py_library(
 
 py_test(
     name = "test_ingestion",
+    size = "medium",
     srcs = ["test_ingestion.py"],
     deps = [
         ":conftest",
         ":ingestion",
         "//:conftest",
+        "//agentplane/app/thread:event_log",
+        "//agentplane/app/thread:ingestion_lease",
+        "//agentplane/app/thread:models",
+        "//agentplane/app/thread:store",
+        "//agentplane/app/thread:updates",
+        "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
         "//agentplane/runner:client",
+        "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
