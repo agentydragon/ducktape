@@ -60,6 +60,7 @@ _GENERATED_FILES = (
     "cluster/k8s/ntfy/kustomization.yaml",
     "cluster/k8s/agents/plaid-mcp/namespace.k8s.yaml",
     "cluster/k8s/tofu-state/namespace.k8s.yaml",
+    "cluster/k8s/agents/haku-egress-proxy/namespace.k8s.yaml",
     "cluster/k8s/authentik/namespace.k8s.yaml",
     "cluster/k8s/github-branch-protection/github-branch-protection.k8s.yaml",
     "cluster/k8s/github-branch-protection/kustomization.yaml",

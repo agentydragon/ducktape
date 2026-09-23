@@ -27,6 +27,7 @@ from playwright.async_api import (
 )
 from sqlalchemy import select, update
 
+from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
@@ -389,7 +390,8 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
     page.on("request", lambda request: requests.append(request.url))
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with electric_service() as service:
-        store = ThreadStore.connect(service.database_url)
+        engine = connect(service.database_url)
+        store = ThreadStore(engine)
         try:
             thread = await store.thread(SANDBOX, SESSION, source.attached.spec)
             async with (
@@ -491,7 +493,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 ).to_have_count(1)
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reconnected.png")
         finally:
-            await store.close()
+            await engine.dispose()
 
 
 @pytest.mark.parametrize("phone", [False, True])
