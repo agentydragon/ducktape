@@ -5,6 +5,4 @@ resources:
   - langfuse.k8s.yaml
   # Hand-written: cdk8s drops the null Helm values it sets.
   - helmrelease.yaml
-  # Hand-written: no RedisReplication CRD binding exists for cdk8s.
-  - valkey-ovh-instance.yaml
   - langfuse-secrets.sops.yaml

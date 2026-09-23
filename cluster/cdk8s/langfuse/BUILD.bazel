@@ -26,6 +26,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cnpg:cluster",
+        "//cluster/cdk8s/crd_bindings/redis_operator:redisreplication",
         "//cluster/cdk8s/crd_bindings/seaweedfs:bucket",
         "//cluster/cdk8s/crd_bindings/seaweedfs:resourcereferencegrant",
         "//cluster/cdk8s/crd_bindings/seaweedfs:s3credentials",

@@ -1,10 +1,10 @@
-"""Langfuse's namespace, Postgres, S3 bucket and credentials, route and log-reader RBAC.
+"""Langfuse's namespace, Postgres, S3 bucket and credentials, route, log-reader RBAC and
+queue/cache Valkey.
 
 Hand-written beside the generated output: `helmrelease.yaml` (its values set
 `redis.auth.{username,password}` to null to delete chart defaults, and cdk8s drops null values
-at synth, JSON patches included), `valkey-ovh-instance.yaml` (the Opstree `RedisReplication`,
-which has no CRD binding), `langfuse-secrets.sops.yaml` and the `kustomization.yaml` listing
-them.
+at synth, JSON patches included), `langfuse-secrets.sops.yaml` and the `kustomization.yaml`
+listing them.
 """
 
 from __future__ import annotations
@@ -27,6 +27,31 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecStorage,
 )
 from constructs import Construct
+from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
+    RedisReplication,
+    RedisReplicationSpec,
+    RedisReplicationSpecAffinity,
+    RedisReplicationSpecAffinityNodeAffinity,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
+    RedisReplicationSpecAffinityPodAntiAffinity,
+    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector,
+    RedisReplicationSpecKubernetesConfig,
+    RedisReplicationSpecKubernetesConfigResources,
+    RedisReplicationSpecKubernetesConfigResourcesLimits,
+    RedisReplicationSpecKubernetesConfigResourcesRequests,
+    RedisReplicationSpecRedisConfig,
+    RedisReplicationSpecStorage,
+    RedisReplicationSpecStorageVolumeClaimTemplate,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpec,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpecResources,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests,
+)
 from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     Bucket,
     BucketSpec,
@@ -68,6 +93,7 @@ _ZONE = "hil-ovh"
 _SEAWEEDFS = "seaweedfs"
 _SEAWEED_GROUP = "seaweed.seaweedfs.com"
 _S3_CREDENTIALS_SECRET = "langfuse-seaweedfs-credentials"
+_VALKEY = "langfuse-valkey-ovh"
 
 
 def _namespace(scope: Construct) -> None:
@@ -224,6 +250,87 @@ def _log_reader(scope: Construct) -> None:
     )
 
 
+def _valkey(scope: Construct) -> None:
+    RedisReplication(
+        scope,
+        "valkey",
+        metadata=metadata(
+            _VALKEY, _NAMESPACE, annotations={"description": "OVH Valkey for Langfuse queue/cache state"}
+        ),
+        spec=RedisReplicationSpec(
+            cluster_size=2,
+            kubernetes_config=RedisReplicationSpecKubernetesConfig(
+                image="valkey/valkey:9-alpine",
+                image_pull_policy="IfNotPresent",
+                resources=RedisReplicationSpecKubernetesConfigResources(
+                    requests={
+                        "cpu": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("50m"),
+                        "memory": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("128Mi"),
+                    },
+                    limits={
+                        "cpu": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("500m"),
+                        "memory": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("512Mi"),
+                    },
+                ),
+            ),
+            redis_config=RedisReplicationSpecRedisConfig(max_memory_percent_of_limit=80),
+            storage=RedisReplicationSpecStorage(
+                volume_claim_template=RedisReplicationSpecStorageVolumeClaimTemplate(
+                    spec=RedisReplicationSpecStorageVolumeClaimTemplateSpec(
+                        access_modes=["ReadWriteOnce"],
+                        storage_class_name="local-path-ovh",
+                        resources=RedisReplicationSpecStorageVolumeClaimTemplateSpecResources(
+                            requests={
+                                "storage": RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests.from_string(
+                                    "2Gi"
+                                )
+                            }
+                        ),
+                    )
+                )
+            ),
+            affinity=RedisReplicationSpecAffinity(
+                node_affinity=RedisReplicationSpecAffinityNodeAffinity(
+                    required_during_scheduling_ignored_during_execution=RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                        node_selector_terms=[
+                            RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                                match_expressions=[
+                                    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                        key="topology.kubernetes.io/zone", operator="In", values=["hil-ovh"]
+                                    )
+                                ]
+                            )
+                        ]
+                    ),
+                    # Prefer ordinary workers when this workload tolerates control planes.
+                    preferred_during_scheduling_ignored_during_execution=[
+                        RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution(
+                            weight=100,
+                            preference=RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
+                                match_expressions=[
+                                    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
+                                        key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                                    )
+                                ]
+                            ),
+                        )
+                    ],
+                ),
+                pod_anti_affinity=RedisReplicationSpecAffinityPodAntiAffinity(
+                    required_during_scheduling_ignored_during_execution=[
+                        RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                            label_selector=RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
+                                match_labels={"app": _VALKEY}
+                            ),
+                            topology_key="kubernetes.io/hostname",
+                        )
+                    ]
+                ),
+            ),
+        ),
+    )
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     _namespace(chart)
@@ -240,6 +347,7 @@ def chart(app: App) -> Chart:
         listener=None,
     )
     _log_reader(chart)
+    _valkey(chart)
     return chart
 
 

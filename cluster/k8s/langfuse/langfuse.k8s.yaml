@@ -172,3 +172,55 @@ subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
+---
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  annotations:
+    description: OVH Valkey for Langfuse queue/cache state
+  name: langfuse-valkey-ovh
+  namespace: langfuse
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          weight: 100
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                  - hil-ovh
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: langfuse-valkey-ovh
+          topologyKey: kubernetes.io/hostname
+  clusterSize: 2
+  kubernetesConfig:
+    image: valkey/valkey:9-alpine
+    imagePullPolicy: IfNotPresent
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi
+  redisConfig:
+    maxMemoryPercentOfLimit: 80
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+        storageClassName: local-path-ovh
