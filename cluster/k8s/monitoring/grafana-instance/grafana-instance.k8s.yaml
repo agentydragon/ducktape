@@ -1,0 +1,367 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: grafana-db-ovh
+  namespace: monitoring
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          weight: 100
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    topologyKey: kubernetes.io/hostname
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 2
+  monitoring:
+    enablePodMonitor: true
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 2Gi
+    storageClass: local-path-ovh
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  labels:
+    dashboards: grafana
+  name: grafana
+  namespace: monitoring
+spec:
+  client:
+    useKubeAuth: true
+  config:
+    auth.generic_oauth:
+      allow_sign_up: "true"
+      api_url: http://authentik-server.authentik/application/o/userinfo/
+      auth_url: https://auth.allegedly.works/application/o/authorize/
+      client_id: ${GF_AUTH_GENERIC_OAUTH_CLIENT_ID}
+      client_secret: ${GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
+      enabled: "true"
+      name: Authentik
+      role_attribute_path: contains(groups[*], 'Grafana Admins') && 'Admin' || 'Viewer'
+      scopes: openid email profile
+      token_url: http://authentik-server.authentik/application/o/token/
+    auth.jwt:
+      auto_sign_up: "true"
+      email_claim: sub
+      enabled: "true"
+      expect_claims: '{"aud": "operator.grafana.com"}'
+      header_name: Authorization
+      jwk_set_bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      jwk_set_url: https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}/openid/v1/jwks
+      role_attribute_path: contains(sub, 'system:serviceaccount:monitoring:grafana-operator') && 'GrafanaAdmin' || 'None'
+      username_claim: sub
+    database:
+      host: grafana-db-ovh-rw.monitoring.svc.cluster.local:5432
+      name: grafana
+      password: ${GF_DATABASE_PASSWORD}
+      ssl_mode: require
+      type: postgres
+      user: grafana
+    plugins:
+      preinstall: grafana-clock-panel,grafana-clickhouse-datasource@4.20.0
+    security:
+      admin_password: ${GF_SECURITY_ADMIN_PASSWORD}
+      admin_user: ${GF_SECURITY_ADMIN_USER}
+    server:
+      root_url: https://grafana.allegedly.works
+  deployment:
+    spec:
+      template:
+        metadata:
+          annotations:
+            reloader.stakater.com/auto: "true"
+        spec:
+          containers:
+            - env:
+                - name: SSL_CERT_DIR
+                  value: /etc/ssl/certs:/var/run/secrets/kubernetes.io/serviceaccount
+                - name: GF_SECURITY_ADMIN_USER
+                  valueFrom:
+                    secretKeyRef:
+                      key: admin-user
+                      name: grafana-admin-password
+                - name: GF_SECURITY_ADMIN_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: admin-password
+                      name: grafana-admin-password
+                - name: GF_DATABASE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: password
+                      name: grafana-db-app
+                - name: GF_AUTH_GENERIC_OAUTH_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      key: GF_AUTH_GENERIC_OAUTH_CLIENT_ID
+                      name: grafana-oidc-config
+                - name: GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      key: GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
+                      name: grafana-oidc-config
+              name: grafana
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  hostnames:
+    - grafana.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: grafana-service
+          port: 3000
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: mimir
+  namespace: monitoring
+spec:
+  datasource:
+    access: proxy
+    editable: true
+    isDefault: true
+    name: Mimir
+    type: prometheus
+    uid: mimir
+    url: http://mimir-gateway.monitoring.svc.cluster.local/prometheus
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: loki
+  namespace: monitoring
+spec:
+  datasource:
+    access: proxy
+    editable: true
+    isDefault: false
+    jsonData:
+      maxLines: 1000
+    name: Loki
+    type: loki
+    url: http://loki-read.loki.svc.cluster.local:3100
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: tempo
+  namespace: monitoring
+spec:
+  datasource:
+    access: proxy
+    editable: true
+    isDefault: false
+    jsonData:
+      httpMethod: GET
+      tracesToLogsV2:
+        datasourceUid: loki
+        filterBySpanID: false
+        filterByTraceID: true
+        spanEndTimeShift: 1h
+        spanStartTimeShift: -1h
+    name: Tempo
+    type: tempo
+    url: http://tempo.monitoring.svc.cluster.local:3200
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: flux-cluster
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: flux-cluster.json
+    name: flux-cluster-dashboard
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cert-manager
+  namespace: monitoring
+spec:
+  datasources:
+    - datasourceName: Mimir
+      inputName: datasource
+  grafanaCom:
+    id: 20842
+    revision: 3
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: authentik
+  namespace: monitoring
+spec:
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_PROMETHEUS
+  grafanaCom:
+    id: 14837
+    revision: 2
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cloudnative-pg
+  namespace: monitoring
+spec:
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_PROMETHEUS
+  grafanaCom:
+    id: 20417
+    revision: 3
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cilium-agent
+  namespace: monitoring
+spec:
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_PROMETHEUS
+  grafanaCom:
+    id: 16611
+    revision: 1
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: etcd
+  namespace: monitoring
+spec:
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_PROMETHEUS
+  grafanaCom:
+    id: 3070
+    revision: 3
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: gpu
+  namespace: monitoring
+spec:
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_PROMETHEUS
+  grafanaCom:
+    id: 12239
+    revision: 2
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: interface-flap-frequency
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: interface-flap-frequency.json
+    name: interface-flap-frequency-dashboard
+  datasources:
+    - datasourceName: Loki
+      inputName: DS_LOKI
+    - datasourceName: Mimir
+      inputName: DS_PROMETHEUS
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: node-exporter-full
+  namespace: monitoring
+spec:
+  datasources:
+    - datasourceName: Mimir
+      inputName: ds_prometheus
+  grafanaCom:
+    id: 1860
+    revision: 45
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: rugged-power
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: rugged-power.json
+    name: rugged-power-dashboard
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_PROMETHEUS
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cluster-storage-io
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: cluster-storage-io.json
+    name: cluster-storage-io-dashboard
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_MIMIR
+    - datasourceName: Loki
+      inputName: DS_LOKI
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana

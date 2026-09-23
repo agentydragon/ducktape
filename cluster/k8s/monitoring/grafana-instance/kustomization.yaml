@@ -1,23 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - postgres-cluster-ovh.yaml
-  - grafana.yaml
-  - httproute.yaml
-  - flux-cluster.yaml
-  - cert-manager.yaml
-  - authentik.yaml
-  - cloudnative-pg.yaml
-  - cilium-agent.yaml
-  - etcd.yaml
-  - gpu.yaml
-  - interface-flap-frequency.yaml
-  - node-exporter-full.yaml
-  - rugged-power.yaml
-  - cluster-storage-io.yaml
-  - mimir.yaml
-  - loki.yaml
-  - tempo.yaml
+  # cdk8s-generated (cluster/cdk8s/monitoring/grafana_instance.py).
+  - grafana-instance.k8s.yaml
 configMapGenerator:
   - name: flux-cluster-dashboard
     namespace: monitoring
