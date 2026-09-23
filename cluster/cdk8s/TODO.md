@@ -144,11 +144,6 @@ differs keeps building the object directly.
 
 - **`valkey_instance(...)`** for the six `RedisReplication`s (~80 near-identical
   lines each): size, storage class, zone affinity and description differ.
-- **`helm_release(...)`** for the HelmRepository + HelmRelease pair in ~33 modules
-  (~1,500 lines); values stay a plain dict. One call shape also gives the Renovate
-  annotation one place to live.
-- **ExternalSecrets onto `add_external_secret`**: 46 built directly in 39 modules
-  (~1,300 lines); 3 use the helper. Move the ones whose shape it covers.
 - **CNPG `Cluster`s onto `cnpg.py`**: 18 built in 18 modules (~670 lines).
 
 ## Parked — lower priority

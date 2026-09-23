@@ -30,23 +30,15 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPorts,
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-    HelmReleaseSpecUpgrade,
-)
+from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.seaweedfs import namespace, s3
 
 NAME = "loki"
@@ -80,19 +72,6 @@ _TOLERATE_NO_SCHEDULE = [{"effect": "NoSchedule", "operator": "Exists"}]
 # derives the count from nebula-mesh.json); incident write-up in
 # cluster/docs/lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md.
 _ROAMING_SAFE_UPDATE_STRATEGY = {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}}
-
-
-def _grafana_chart(chart: str, version: str) -> HelmReleaseSpecChart:
-    return HelmReleaseSpecChart(
-        spec=HelmReleaseSpecChartSpec(
-            chart=chart,
-            version=version,
-            source_ref=HelmReleaseSpecChartSpecSourceRef(
-                kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY, name="grafana", namespace="flux-system"
-            ),
-            interval="12h",
-        )
-    )
 
 
 def _storage(chart: Chart) -> None:
@@ -419,33 +398,35 @@ def _promtail_journal_values() -> dict[str, object]:
 
 
 def _helm_releases(chart: Chart) -> None:
-    HelmRelease(
+    helm_release(
         chart,
-        "loki",
-        metadata=metadata(NAME, NAME),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=_grafana_chart("loki", "7.x"),
-            values=_loki_values(),
-        ),
+        NAME,
+        NAME,
+        repository=grafana_helmrepository.SOURCE_REF,
+        chart="loki",
+        version="7.x",
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        values=_loki_values(),
     )
-    HelmRelease(
+    helm_release(
         chart,
         "promtail",
-        metadata=metadata("promtail", NAME),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            upgrade=HelmReleaseSpecUpgrade(
-                # DaemonSet runs on roaming nodes (rugged, iguana) that may be offline.
-                # Without this, Helm waits for all pods including those stuck Pending/Terminating
-                # on offline nodes, causing the HelmRelease to hit RetriesExceeded and stall.
-                disable_wait=True
-            ),
-            chart=_grafana_chart("promtail", "6.x"),
-            values=_promtail_values(),
+        NAME,
+        repository=grafana_helmrepository.SOURCE_REF,
+        chart="promtail",
+        version="6.x",
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        upgrade=HelmReleaseSpecUpgrade(
+            # DaemonSet runs on roaming nodes (rugged, iguana) that may be offline.
+            # Without this, Helm waits for all pods including those stuck Pending/Terminating
+            # on offline nodes, causing the HelmRelease to hit RetriesExceeded and stall.
+            disable_wait=True
         ),
+        values=_promtail_values(),
     )
     # Deviation from the stock promtail chart (whose default is pod-log tailing): this
     # release is journal-only. It scrapes the systemd journal on the NixOS nodes
@@ -454,21 +435,22 @@ def _helm_releases(chart: Chart) -> None:
     # retention instead of dying with the node's ~5-day local journal. Talos nodes
     # have no journald and are handled separately (cluster/k8s/vector-talos-logs/);
     # the main pod-log promtail above is untouched and still runs on every node.
-    HelmRelease(
+    helm_release(
         chart,
         "promtail-journal",
-        metadata=metadata("promtail-journal", NAME),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            upgrade=HelmReleaseSpecUpgrade(
-                # Same rationale as the pod-log promtail: roaming nodes (rugged, iguana) may
-                # be offline, so don't block the release on their Pending/Terminating pods.
-                disable_wait=True
-            ),
-            chart=_grafana_chart("promtail", "6.x"),
-            values=_promtail_journal_values(),
+        NAME,
+        repository=grafana_helmrepository.SOURCE_REF,
+        chart="promtail",
+        version="6.x",
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        upgrade=HelmReleaseSpecUpgrade(
+            # Same rationale as the pod-log promtail: roaming nodes (rugged, iguana) may
+            # be offline, so don't block the release on their Pending/Terminating pods.
+            disable_wait=True
         ),
+        values=_promtail_journal_values(),
     )
 
 

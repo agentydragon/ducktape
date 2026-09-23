@@ -13,13 +13,6 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
@@ -35,6 +28,7 @@ from external_secrets_secretstore_crds.io.external_secrets import (
     SecretStoreSpecProviderKubernetesServerCaProviderType,
 )
 
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data, secret_store
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.metadata import metadata
@@ -102,33 +96,25 @@ def _repository(scope: Construct) -> None:
             )
         ),
     )
-    ExternalSecret(
+    add_external_secret(
         scope,
         "repository",
-        metadata=metadata(_REPOSITORY_SECRET, _NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.SECRET_STORE, name=_SECRET_STORE
-            ),
-            target=ExternalSecretSpecTarget(
-                name=_REPOSITORY_SECRET,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(type="Opaque"),
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key=key, remote_ref=ExternalSecretSpecDataRemoteRef(key=secret, property=key)
-                )
-                for key, secret in (
-                    ("RESTIC_REPOSITORY", _RESTIC_SECRET),
-                    ("RESTIC_PASSWORD", _RESTIC_SECRET),
-                    ("AWS_DEFAULT_REGION", _RESTIC_SECRET),
-                    ("AWS_ACCESS_KEY_ID", _S3_CREDENTIALS_SECRET),
-                    ("AWS_SECRET_ACCESS_KEY", _S3_CREDENTIALS_SECRET),
-                )
-            ],
-        ),
+        name=_REPOSITORY_SECRET,
+        namespace=_NAMESPACE,
+        refresh="1h",
+        store=secret_store(_SECRET_STORE),
+        data=[
+            remote_data(secret, key)
+            for key, secret in (
+                ("RESTIC_REPOSITORY", _RESTIC_SECRET),
+                ("RESTIC_PASSWORD", _RESTIC_SECRET),
+                ("AWS_DEFAULT_REGION", _RESTIC_SECRET),
+                ("AWS_ACCESS_KEY_ID", _S3_CREDENTIALS_SECRET),
+                ("AWS_SECRET_ACCESS_KEY", _S3_CREDENTIALS_SECRET),
+            )
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(type="Opaque"),
     )
 
 

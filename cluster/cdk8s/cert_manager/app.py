@@ -10,16 +10,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecPostBuild,
     KustomizationSpecPostBuildSubstituteFrom,
@@ -36,6 +26,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.metadata import metadata
 
 NAME = "cert-manager"
@@ -137,27 +128,17 @@ def chart(app: App) -> Chart:
         metadata=metadata("jetstack", "flux-system"),
         spec=HelmRepositorySpec(interval="24h", url="https://charts.jetstack.io"),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="cert-manager",
-                    version="v1.21.2",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name=repository.name,
-                        namespace=repository.metadata.namespace,
-                    ),
-                    interval="12h",
-                )
-            ),
-            values=_values(),
-        ),
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart="cert-manager",
+        version="v1.21.2",
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        values=_values(),
     )
     _service_monitor(chart, "cert-manager", component="controller", port="tcp-prometheus-servicemonitor")
     _service_monitor(chart, "cert-manager-webhook", component="webhook", port="metrics")

@@ -15,6 +15,10 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetDeletionPolicy,
+)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -53,7 +57,8 @@ from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests,
 )
 
-from cluster.cdk8s.external_creds import add_external_secret
+from cluster.cdk8s import external_creds
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -576,10 +581,14 @@ def chart(app: App) -> Chart:
     add_external_secret(
         chart,
         "tana-pat",
+        name=_PAT_SECRET,
         namespace=_NAMESPACE,
-        source_name=_PAT_SECRET,
-        properties=("token",),
-        description="ESO copy of the canonical Tana PAT from external-creds.",
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[remote_data(_PAT_SECRET, "token")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
     )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
     _resigner(chart)

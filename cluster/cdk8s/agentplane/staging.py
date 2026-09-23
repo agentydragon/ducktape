@@ -9,18 +9,7 @@ from cdk8s import App, Chart, Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute, ServiceAccount
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
-    ExternalSecretSpecDataRemoteRef,
     ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
@@ -48,6 +37,12 @@ from cluster.cdk8s.agentplane.environment import (
     Environment,
     LlmIngressProps,
     ReplicaProfile,
+)
+from cluster.cdk8s.external_secrets.external_secret import (
+    add_external_secret,
+    cluster_secret_store,
+    password_generator,
+    remote_data,
 )
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
@@ -370,39 +365,29 @@ def chart(app: App) -> Chart:
     ServiceAccount(
         chart, "external-creds-reader", metadata=metadata("external-creds-reader", _NAMESPACE), automount_token=False
     )
-    external_creds.add_external_secret(
+    add_external_secret(
         chart,
         "tana-pat-external-secret",
+        name=_TANA_MCP_BEARER_SECRET,
         namespace=_NAMESPACE,
-        source_name=_TANA_MCP_BEARER_SECRET,
-        properties=("token",),
-        description="ESO copy of the canonical Tana PAT from external-creds.",
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[remote_data(_TANA_MCP_BEARER_SECRET, "token")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
     )
-    ExternalSecret(
+    add_external_secret(
         chart,
         "google-mcp-bearer-external-secret",
-        metadata=metadata(
-            _GOOGLE_MCP_BEARER_SECRET,
-            _NAMESPACE,
-            annotations={"description": "ESO copy of google-mcp's own caller-facing bearer."},
-        ),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE, name=_GOOGLE_MCP_SECRET_STORE
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key="bearer-token",
-                    remote_ref=ExternalSecretSpecDataRemoteRef(key=_GOOGLE_MCP_BEARER_SECRET, property="bearer-token"),
-                )
-            ],
-            target=ExternalSecretSpecTarget(
-                name=_GOOGLE_MCP_BEARER_SECRET,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-            ),
-        ),
+        name=_GOOGLE_MCP_BEARER_SECRET,
+        namespace=_NAMESPACE,
+        refresh="1h",
+        store=cluster_secret_store(_GOOGLE_MCP_SECRET_STORE),
+        data=[remote_data(_GOOGLE_MCP_BEARER_SECRET, "bearer-token")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        annotations={"description": "ESO copy of google-mcp's own caller-facing bearer."},
     )
     credential_external_secret(
         chart,
@@ -435,35 +420,18 @@ def _add_session_secret(scope: Chart) -> None:
         metadata=metadata(_OIDC_SESSION_SECRET, _NAMESPACE),
         spec=PasswordSpec(length=64, digits=16, symbols=0, no_upper=False, allow_repeat=True),
     )
-    ExternalSecret(
+    add_external_secret(
         scope,
         "session-external-secret",
-        metadata=metadata(
-            _OIDC_SESSION_SECRET,
-            _NAMESPACE,
-            annotations={"description": "ESO-generated Agentplane staging session-signing key."},
-        ),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-            target=ExternalSecretSpecTarget(
-                name=_OIDC_SESSION_SECRET,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-                immutable=True,
-                template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"session-secret": "{{ .password }}"}),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=_OIDC_SESSION_SECRET,
-                        )
-                    )
-                )
-            ],
-        ),
+        name=_OIDC_SESSION_SECRET,
+        namespace=_NAMESPACE,
+        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+        data_from=[password_generator(_OIDC_SESSION_SECRET)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"session-secret": "{{ .password }}"}),
+        immutable=True,
+        annotations={"description": "ESO-generated Agentplane staging session-signing key."},
     )
 
 

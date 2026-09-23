@@ -7,21 +7,12 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import vpa
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 
 NAME = "goldilocks"
 NAMESPACE = "goldilocks"
@@ -38,45 +29,35 @@ def chart(app: App) -> Chart:
             labels={"goldilocks.fairwinds.com/enabled": "true", "goldilocks.fairwinds.com/vpa-update-mode": "auto"},
         ),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart=NAME,
-                    version="11.1.0",
-                    # Declared by the vpa directory, which this one's Kustomization depends on.
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.HELM_REPOSITORY,
-                        name="fairwinds-stable",
-                        namespace="flux-system",
-                    ),
-                    interval="12h",
-                )
-            ),
-            values={
-                "vpa": {"enabled": False},
-                "controller": {
-                    "flags": {"on-by-default": "true"},
-                    "resources": {
-                        "requests": {"cpu": "25m", "memory": "256Mi"},
-                        "limits": {"cpu": "200m", "memory": "512Mi"},
-                    },
-                },
-                "dashboard": {
-                    "enabled": True,
-                    "replicaCount": 1,
-                    "resources": {
-                        "requests": {"cpu": "25m", "memory": "128Mi"},
-                        "limits": {"cpu": "200m", "memory": "256Mi"},
-                    },
+        NAME,
+        NAMESPACE,
+        # Declared by the vpa directory, which this one's Kustomization depends on.
+        repository=vpa.REPOSITORY_SOURCE_REF,
+        chart=NAME,
+        version="11.1.0",
+        interval="30m",
+        chart_interval="12h",
+        install=RETRY_FAILED_INSTALL,
+        values={
+            "vpa": {"enabled": False},
+            "controller": {
+                "flags": {"on-by-default": "true"},
+                "resources": {
+                    "requests": {"cpu": "25m", "memory": "256Mi"},
+                    "limits": {"cpu": "200m", "memory": "512Mi"},
                 },
             },
-        ),
+            "dashboard": {
+                "enabled": True,
+                "replicaCount": 1,
+                "resources": {
+                    "requests": {"cpu": "25m", "memory": "128Mi"},
+                    "limits": {"cpu": "200m", "memory": "256Mi"},
+                },
+            },
+        },
     )
     k8s.KubeNetworkPolicy(
         chart,
