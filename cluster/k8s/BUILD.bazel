@@ -97,6 +97,7 @@ exports_files(
         "ssh-mcp/ssh-mcp.k8s.yaml",
         "ssh-mcp/kustomization.yaml",
         "agents/plaid-mcp/namespace.k8s.yaml",
+        "authentik/namespace.k8s.yaml",
         "forgejo/agentydragon/forgejo-agentydragon.k8s.yaml",
         "forgejo/agentydragon/kustomization.yaml",
         "forgejo/agentydragon-repos/forgejo-agentydragon-repos.k8s.yaml",
