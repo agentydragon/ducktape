@@ -70,6 +70,7 @@ cluster/k8s/agents/public-coder-agent/namespace/kustomization.yaml linguist-gene
 cluster/k8s/agents/public-coder-agent/sshpiper/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/mitmproxy/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/db/kustomization.yaml linguist-generated=true
+cluster/k8s/langfuse/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/claude-sandbox-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/loki-read-proxy/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/kustomization.yaml linguist-generated=true

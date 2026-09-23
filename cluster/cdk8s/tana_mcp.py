@@ -5,9 +5,8 @@ Services, HTTPRoute, ServiceMonitor and PrometheusRule.
 The images' tags are the placeholder "unset"; the hand-written `image-pins/kustomization.yaml`
 overrides them at `kustomize build` time via Flux's image-automation markers
 (cluster/cdk8s/AGENTS.md § the `:tag` Setters marker). Also hand-written beside the generated
-output: `kustomization.yaml` (its configMapGenerator renders `nginx-auth-proxy.conf`), the
-refresh-token SOPS Secret and the facade's OAuth-state `RedisReplication`, which has no
-binding.
+output: `kustomization.yaml` (its configMapGenerator renders `nginx-auth-proxy.conf`) and the
+refresh-token SOPS Secret.
 """
 
 from __future__ import annotations
@@ -29,6 +28,30 @@ from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
     PrometheusRuleSpecGroupsRules,
     PrometheusRuleSpecGroupsRulesExpr,
 )
+from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
+    RedisReplication,
+    RedisReplicationSpec,
+    RedisReplicationSpecAffinity,
+    RedisReplicationSpecAffinityNodeAffinity,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
+    RedisReplicationSpecAffinityPodAntiAffinity,
+    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector,
+    RedisReplicationSpecKubernetesConfig,
+    RedisReplicationSpecKubernetesConfigResources,
+    RedisReplicationSpecKubernetesConfigResourcesLimits,
+    RedisReplicationSpecKubernetesConfigResourcesRequests,
+    RedisReplicationSpecStorage,
+    RedisReplicationSpecStorageVolumeClaimTemplate,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpec,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpecResources,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests,
+)
 
 from cluster.cdk8s.external_creds import add_external_secret
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
@@ -47,6 +70,7 @@ _RESIGNER_CONFIG = "tana-firebase-resigner-config"
 _REFRESH_TOKEN_SECRET = "tana-firebase-refresh-token"
 _PAT_SECRET = "tana-agentydragon-gmail-com-account-pat"
 _FACADE_OIDC_SECRET = "tana-mcp-facade-oidc"
+_VALKEY = "mcp-valkey-ovh"
 _TANA_PORT = 8262
 _PROXY_PORT = 8263
 _NOVNC_PORT = 6080
@@ -237,8 +261,8 @@ def _facade(chart: Chart) -> None:
             "MCP_FACADE_UPSTREAM__KIND": "http",
             "MCP_FACADE_UPSTREAM__URL": f"http://{_NAME}.{_NAMESPACE}.svc.cluster.local:{_PROXY_PORT}/mcp",
             "MCP_FACADE_PERSISTENCE__KIND": "valkey",
-            # The hand-written mcp-valkey-ovh RedisReplication's primary Service.
-            "MCP_FACADE_PERSISTENCE__HOST": f"mcp-valkey-ovh-master.{_NAMESPACE}.svc.cluster.local",
+            # The RedisReplication's primary Service.
+            "MCP_FACADE_PERSISTENCE__HOST": f"{_VALKEY}-master.{_NAMESPACE}.svc.cluster.local",
             "MCP_FACADE_PERSISTENCE__DB": "0",
             # Let Uvicorn's existing access log report the original client when requests
             # arrive through trusted in-cluster Gateway/Envoy paths.
@@ -445,6 +469,86 @@ def _facade(chart: Chart) -> None:
     )
 
 
+def _valkey(chart: Chart) -> None:
+    RedisReplication(
+        chart,
+        "valkey",
+        metadata=metadata(
+            _VALKEY, _NAMESPACE, annotations={"description": "Replacement OVH Valkey for Tana MCP facade OAuth state"}
+        ),
+        spec=RedisReplicationSpec(
+            cluster_size=2,
+            kubernetes_config=RedisReplicationSpecKubernetesConfig(
+                image="valkey/valkey:9-alpine",
+                image_pull_policy="IfNotPresent",
+                resources=RedisReplicationSpecKubernetesConfigResources(
+                    requests={
+                        "cpu": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("50m"),
+                        "memory": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("64Mi"),
+                    },
+                    limits={
+                        "cpu": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("200m"),
+                        "memory": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("128Mi"),
+                    },
+                ),
+            ),
+            storage=RedisReplicationSpecStorage(
+                volume_claim_template=RedisReplicationSpecStorageVolumeClaimTemplate(
+                    spec=RedisReplicationSpecStorageVolumeClaimTemplateSpec(
+                        access_modes=["ReadWriteOnce"],
+                        storage_class_name="local-path-ovh",
+                        resources=RedisReplicationSpecStorageVolumeClaimTemplateSpecResources(
+                            requests={
+                                "storage": RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests.from_string(
+                                    "1Gi"
+                                )
+                            }
+                        ),
+                    )
+                )
+            ),
+            affinity=RedisReplicationSpecAffinity(
+                node_affinity=RedisReplicationSpecAffinityNodeAffinity(
+                    required_during_scheduling_ignored_during_execution=RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                        node_selector_terms=[
+                            RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                                match_expressions=[
+                                    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                        key="topology.kubernetes.io/zone", operator="In", values=["hil-ovh"]
+                                    )
+                                ]
+                            )
+                        ]
+                    ),
+                    # Prefer ordinary workers when this workload tolerates control planes.
+                    preferred_during_scheduling_ignored_during_execution=[
+                        RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution(
+                            weight=100,
+                            preference=RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
+                                match_expressions=[
+                                    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
+                                        key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                                    )
+                                ]
+                            ),
+                        )
+                    ],
+                ),
+                pod_anti_affinity=RedisReplicationSpecAffinityPodAntiAffinity(
+                    required_during_scheduling_ignored_during_execution=[
+                        RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                            label_selector=RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
+                                match_labels={"app": _VALKEY}
+                            ),
+                            topology_key="kubernetes.io/hostname",
+                        )
+                    ]
+                ),
+            ),
+        ),
+    )
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     k8s.KubeNamespace(
@@ -501,6 +605,7 @@ def chart(app: App) -> Chart:
         ),
     )
     _facade(chart)
+    _valkey(chart)
     return chart
 
 

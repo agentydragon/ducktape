@@ -4,8 +4,6 @@ resources:
   # cdk8s-generated (cluster/cdk8s/tana_mcp.py) -- see cluster/docs/cdk8s.md.
   - tana-mcp.k8s.yaml
   - tana-firebase-refresh-token.sops.yaml
-  # Hand-written: no RedisReplication binding exists for cdk8s.
-  - facade-valkey-ovh-instance.yaml
 components:
   - ./image-pins
 generatorOptions:

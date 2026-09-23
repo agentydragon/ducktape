@@ -106,17 +106,23 @@ lands and reconciles before it.
 
 ## Wave 3: skip Kustomize where nothing is kustomized
 
-- Verify kustomize-controller's generated-`kustomization.yaml` rule on one directory
-  (which files it includes, how it treats subdirectories such as `image-pins/`), then
-  remove `kustomization.yaml` from every directory with no `components`,
-  `configMapGenerator` or ordering-sensitive hand-written siblings. The PR's report
-  names every directory that still needs one and why.
+Single-resource directories carry no `kustomization.yaml` any more; kustomize-controller
+generates one (<../docs/cdk8s.md> § Shapes of a directory). Still wrapping one resource:
+
+- **A subdirectory is its own Flux node** (`atuin` over `user-provisioner/`,
+  `github-secrets-sync` over `secrets/`): a generated kustomization would pull the
+  subdirectory in. Move the subdirectory out first.
+- **Another kustomization lists the directory as a resource** (`authentik/{db,proxy-routes}`,
+  `litellm/db`, `grocy/{app-base,mcp-servicemonitor-base}`,
+  `github-api-proxy/identity`, `agents/plaid-mcp/servicemonitor`,
+  `agents/public-coder-agent/namespace`, `cert-manager/cluster-ca/base`,
+  `flux/ducktape-flux`): Kustomize needs the file there. Folding the resource into its
+  referrer removes it.
 
 **Pause after Wave 3.** Image pinning. The 31 `image-pins/` Components exist because
 Flux image automation commits tags into a file the generator would otherwise own.
 Options: keep the Component and a `kustomization.yaml` in those directories
 indefinitely; or tags move into Python with CI regenerating after the bot commits.
-Decide from the count Wave 3 reports, not before.
 
 ## Wave 4: close the graph
 
@@ -161,17 +167,16 @@ kustomizations; ConfigMaps carrying `$imagepolicy` markers.
 
 Open decisions, each "stays" or a conversion:
 
-- **`langfuse/helmrelease.yaml`**: its values carry explicit `null`s
-  (`redis.auth.{username,password}`), which cdk8s drops on synth.
 - **The `airlock` and `study-casino` Deployments**: an image marker on an env value as
   well as on `image:`, which the `image-pins/` Component (a Kustomize `images:` override)
   cannot reach.
 - **`gaffer-private-source/bridge.yaml`**: a Flux Kustomization outside the generated
   graph, reconciling another repository's tree.
-- **`RedisReplication`** (Opstree): its binding's generated package path contains the
-  Python keyword `in`, so it cannot be imported as generated.
-- **kubevirt `VirtualMachine` and CDI `StorageProfile`**: their schemas exist only in
-  the Go sources, not as a CRD `cdk8s import` can read.
+- **kubevirt `VirtualMachine` and CDI `StorageProfile`**: upstream publishes no CRD
+  YAML; the schemas are YAML strings in generated Go at the release tags
+  (kubevirt `pkg/virt-operator/resource/generate/components/validations_generated.go`,
+  schema only; CDI `pkg/operator/resources/crds_generated.go`, a whole CRD), which a
+  binding would extract.
 
 ## Wave 5: rules that need the whole tree
 

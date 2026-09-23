@@ -8,8 +8,7 @@ image-automation marker (cluster/cdk8s/AGENTS.md § the `:tag` Setters marker).
 
 Hand-written beside the generated output in each household's `mcp/`: the
 `kustomization.yaml` (its configMapGenerator renders `config.yaml`, its patch points the
-secret env at the household's OIDC Secret) and the OAuth-state `RedisReplication`, which
-has no binding.
+secret env at the household's OIDC Secret).
 """
 
 from __future__ import annotations
@@ -23,6 +22,30 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecSelector,
+)
+from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
+    RedisReplication,
+    RedisReplicationSpec,
+    RedisReplicationSpecAffinity,
+    RedisReplicationSpecAffinityNodeAffinity,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
+    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
+    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
+    RedisReplicationSpecAffinityPodAntiAffinity,
+    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector,
+    RedisReplicationSpecKubernetesConfig,
+    RedisReplicationSpecKubernetesConfigResources,
+    RedisReplicationSpecKubernetesConfigResourcesLimits,
+    RedisReplicationSpecKubernetesConfigResourcesRequests,
+    RedisReplicationSpecStorage,
+    RedisReplicationSpecStorageVolumeClaimTemplate,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpec,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpecResources,
+    RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests,
 )
 
 from cluster.cdk8s.flux import kustomize_kustomization
@@ -185,7 +208,94 @@ def servicemonitor_base_chart(app: App) -> Chart:
     return chart
 
 
-def household_chart(app: App, *, household: str) -> Chart:
+def _valkey(chart: Chart, *, household: str, display_name: str, namespace: str) -> None:
+    name = f"grocy-{household}-valkey-ovh"
+    RedisReplication(
+        chart,
+        "valkey",
+        metadata=metadata(
+            name,
+            namespace,
+            annotations={"description": f"Replacement OVH Valkey for Grocy {display_name} MCP OAuth state"},
+        ),
+        spec=RedisReplicationSpec(
+            cluster_size=2,
+            kubernetes_config=RedisReplicationSpecKubernetesConfig(
+                image="valkey/valkey:9-alpine",
+                image_pull_policy="IfNotPresent",
+                resources=RedisReplicationSpecKubernetesConfigResources(
+                    requests={
+                        "cpu": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("50m"),
+                        "memory": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("64Mi"),
+                    },
+                    limits={
+                        "cpu": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("200m"),
+                        # TODO(vpa-memory-audit): 128Mi -> 384Mi. VPA observed 256Mi for both
+                        # request and upper bound — double the old limit. This valkey backs the
+                        # Grocy MCP cache; 256Mi resident suggests unbounded key growth rather
+                        # than a working set, so check the eviction policy.
+                        "memory": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string("384Mi"),
+                    },
+                ),
+            ),
+            storage=RedisReplicationSpecStorage(
+                volume_claim_template=RedisReplicationSpecStorageVolumeClaimTemplate(
+                    spec=RedisReplicationSpecStorageVolumeClaimTemplateSpec(
+                        access_modes=["ReadWriteOnce"],
+                        storage_class_name="local-path-ovh",
+                        resources=RedisReplicationSpecStorageVolumeClaimTemplateSpecResources(
+                            requests={
+                                "storage": RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests.from_string(
+                                    "1Gi"
+                                )
+                            }
+                        ),
+                    )
+                )
+            ),
+            affinity=RedisReplicationSpecAffinity(
+                node_affinity=RedisReplicationSpecAffinityNodeAffinity(
+                    required_during_scheduling_ignored_during_execution=RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                        node_selector_terms=[
+                            RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                                match_expressions=[
+                                    RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                        key="topology.kubernetes.io/zone", operator="In", values=["hil-ovh"]
+                                    )
+                                ]
+                            )
+                        ]
+                    ),
+                    # Prefer ordinary workers when this workload tolerates control planes.
+                    preferred_during_scheduling_ignored_during_execution=[
+                        RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution(
+                            weight=100,
+                            preference=RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference(
+                                match_expressions=[
+                                    RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions(
+                                        key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                                    )
+                                ]
+                            ),
+                        )
+                    ],
+                ),
+                pod_anti_affinity=RedisReplicationSpecAffinityPodAntiAffinity(
+                    required_during_scheduling_ignored_during_execution=[
+                        RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                            label_selector=RedisReplicationSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
+                                match_labels={"app": name}
+                            ),
+                            topology_key="kubernetes.io/hostname",
+                        )
+                    ]
+                ),
+            ),
+        ),
+    )
+
+
+def household_chart(app: App, *, household: str, display_name: str) -> Chart:
     namespace = f"grocy-{household}"
     chart = Chart(app, f"grocy-mcp-{household}", disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=namespace)
@@ -202,6 +312,7 @@ def household_chart(app: App, *, household: str) -> Chart:
         hsts=False,
         listener=None,
     )
+    _valkey(chart, household=household, display_name=display_name, namespace=namespace)
     return chart
 
 
@@ -216,5 +327,9 @@ def write_manifests(root: Path) -> None:
         root / SERVICEMONITOR_BASE_DIR / "kustomization.yaml",
         kustomize_kustomization(resources=["grocy-mcp-servicemonitor.k8s.yaml"]),
     )
-    write_charts(root, "cluster/k8s/grocy/sf/mcp", lambda app: household_chart(app, household="sf"))
-    write_charts(root, "cluster/k8s/grocy/vallejo/mcp", lambda app: household_chart(app, household="vallejo"))
+    write_charts(root, "cluster/k8s/grocy/sf/mcp", lambda app: household_chart(app, household="sf", display_name="SF"))
+    write_charts(
+        root,
+        "cluster/k8s/grocy/vallejo/mcp",
+        lambda app: household_chart(app, household="vallejo", display_name="Vallejo"),
+    )

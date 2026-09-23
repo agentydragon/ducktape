@@ -124,6 +124,7 @@ from cluster.cdk8s.flux_webhook_token import flux_webhook_token
 from cluster.cdk8s.forgejo import (
     app as forgejo_app,
     budget_namespace as forgejo_budget_namespace,
+    cache as forgejo_cache,
     db as forgejo_db,
     flux_kustomizations as forgejo_flux_kustomizations,
     gitops_modules as forgejo_gitops_modules,
@@ -178,7 +179,7 @@ from cluster.cdk8s.kubevirt import (
     flux_kustomizations as kubevirt_flux_kustomizations,
 )
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
-from cluster.cdk8s.langfuse import app as langfuse_app, flux_kustomizations as langfuse_flux_kustomizations
+from cluster.cdk8s.langfuse import app as langfuse_app
 from cluster.cdk8s.litellm import (
     credentials as litellm_credentials,
     database as litellm_database,
@@ -304,6 +305,7 @@ def generate_manifests(root: Path) -> None:
     authentik_db_backups.write_manifests(root)
     forgejo_namespace.write_manifests(root)
     forgejo_db.write_manifests(root)
+    forgejo_cache.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
     github_branch_protection.write_manifests(root)
     agent_machine_access.write_manifests(root)
@@ -566,8 +568,8 @@ def generate_manifests(root: Path) -> None:
     snapshot_controller_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller(
         flux_chart, snapshot_controller_crds_kustomization
     )
-    forgejo_cache_artifact = artifact("forgejo-cache", "cluster/k8s/forgejo/cache")
-    forgejo_flux_kustomizations.forgejo_cache(
+    forgejo_cache_artifact = artifact("forgejo-cache", forgejo_cache.OUTPUT_DIR)
+    forgejo_cache.forgejo_cache(
         flux_chart, forgejo_cache_artifact, valkey_kustomization, local_path_provisioner_kustomization
     )
     haku_forgejo_tea_artifact = artifact(haku_forgejo_tea.NAME, haku_forgejo_tea.OUTPUT_DIR)
@@ -913,8 +915,8 @@ def generate_manifests(root: Path) -> None:
         external_secrets_config_kustomization,
         gateway_kustomization,
     )
-    langfuse_artifact = artifact("langfuse", "cluster/k8s/langfuse")
-    langfuse_flux_kustomizations.langfuse(
+    langfuse_artifact = artifact("langfuse", langfuse_app.OUTPUT_DIR)
+    langfuse_app.langfuse(
         flux_chart, langfuse_artifact, cnpg_kustomization, valkey_kustomization, seaweedfs_operator_kustomization
     )
     vector_talos_logs_artifact = artifact("vector-talos-logs", vector_talos_logs.OUTPUT_DIR)

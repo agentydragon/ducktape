@@ -53,25 +53,3 @@ def forgejo(
             ),
         ),
     )
-
-
-def forgejo_cache(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, valkey: Kustomization, local_path_provisioner: Kustomization
-) -> Kustomization:
-    name = "forgejo-cache"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            # Retry until the forgejo aggregate creates the Namespace. Waiting for
-            # Forgejo readiness would deadlock its cache-dependent startup.
-            depends_on=flux_kustomization_depends_on_many(valkey, local_path_provisioner),
-        ),
-    )

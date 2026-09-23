@@ -50,13 +50,11 @@ the Kustomization that owns it through `generation.write_namespace`.
   and the `kustomization.yaml` that carries the generator where it is hand-written.
 - `image-pins/` Components and the ConfigMaps whose data carries a `$imagepolicy` marker
   (§ Live image automation).
-- Objects whose kind has no usable schema to import: Opstree `RedisReplication`
-  (`*valkey*-instance.yaml`), kubevirt `VirtualMachine`
+- Objects whose kind has no binding yet: kubevirt `VirtualMachine`
   (`agents/public-coder-agent/devbox`, `cpap-sync`) and CDI `StorageProfile`
   (`kubevirt/cdi`).
 - One-offs: `gaffer-private-source/bridge.yaml` (a Flux Kustomization reconciling
-  another repository, outside the generated graph); `langfuse/helmrelease.yaml`, whose
-  values carry explicit `null`s that cdk8s drops on synth; and the `airlock` and
+  another repository, outside the generated graph); and the `airlock` and
   `study-casino` Deployments, which carry an image marker on an env value as well as on
   `image:`.
 
