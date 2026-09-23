@@ -178,6 +178,8 @@ exports_files(
         "nvidia-device-plugin/kustomization.yaml",
         "kube-api-proxy/kube-api-proxy.k8s.yaml",
         "kube-api-proxy/kustomization.yaml",
+        "vector-talos-logs/vector-talos-logs.k8s.yaml",
+        "vector-talos-logs/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
