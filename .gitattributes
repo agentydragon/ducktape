@@ -85,6 +85,7 @@ cluster/k8s/atuin/kustomization.yaml linguist-generated=true
 cluster/k8s/atuin/user-provisioner/kustomization.yaml linguist-generated=true
 cluster/k8s/flux-webhook-token/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/sso-providers-tf/kustomization.yaml linguist-generated=true
+cluster/k8s/nvidia-device-plugin/kustomization.yaml linguist-generated=true
 cluster/k8s/node-feature-discovery/kustomization.yaml linguist-generated=true
 cluster/k8s/vpa/kustomization.yaml linguist-generated=true
 cluster/k8s/reloader/kustomization.yaml linguist-generated=true

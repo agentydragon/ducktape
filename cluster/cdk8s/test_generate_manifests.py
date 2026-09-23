@@ -153,6 +153,8 @@ _GENERATED_FILES = (
     "cluster/k8s/vpa/kustomization.yaml",
     "cluster/k8s/node-feature-discovery/node-feature-discovery.k8s.yaml",
     "cluster/k8s/node-feature-discovery/kustomization.yaml",
+    "cluster/k8s/nvidia-device-plugin/nvidia-device-plugin.k8s.yaml",
+    "cluster/k8s/nvidia-device-plugin/kustomization.yaml",
 )
 
 

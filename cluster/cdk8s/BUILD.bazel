@@ -749,6 +749,23 @@ py_library(
 )
 
 py_library(
+    name = "nvidia_device_plugin",
+    srcs = ["nvidia_device_plugin.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":generation",
+        ":metadata",
+        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     data = [
@@ -786,6 +803,7 @@ py_library(
         ":node_feature_discovery",
         ":mitmproxy",
         ":ntfy",
+        ":nvidia_device_plugin",
         ":nvidia_runtimeclass",
         ":proxmox_proxy",
         ":public_coder_agent_config",
@@ -862,7 +880,6 @@ py_library(
         "//cluster/cdk8s/monitoring:alloy_otlp_bearer_token",
         "//cluster/cdk8s/monitoring:flux_kustomizations",
         "//cluster/cdk8s/nix_cache:flux_kustomizations",
-        "//cluster/cdk8s/nvidia_device_plugin:flux_kustomizations",
         "//cluster/cdk8s/oci_cache:flux_kustomizations",
         "//cluster/cdk8s/ollama:flux_kustomizations",
         "//cluster/cdk8s/openebs_lvm:flux_kustomizations",
@@ -1064,6 +1081,8 @@ py_test(
         "//cluster/k8s:node-feature-discovery/node-feature-discovery.k8s.yaml",
         "//cluster/k8s:ntfy/kustomization.yaml",
         "//cluster/k8s:ntfy/ntfy.k8s.yaml",
+        "//cluster/k8s:nvidia-device-plugin/kustomization.yaml",
+        "//cluster/k8s:nvidia-device-plugin/nvidia-device-plugin.k8s.yaml",
         "//cluster/k8s:nvidia-runtimeclass/kustomization.yaml",
         "//cluster/k8s:nvidia-runtimeclass/nvidia-runtimeclass.k8s.yaml",
         "//cluster/k8s:proxmox-proxy/kustomization.yaml",
