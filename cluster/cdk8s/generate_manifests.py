@@ -29,6 +29,7 @@ from cluster.cdk8s import (
     kube_system,
     local_path_provisioner,
     metrics_server,
+    node_feature_discovery,
     ntfy,
     nvidia_runtimeclass,
     proxmox_proxy,
@@ -114,7 +115,6 @@ from cluster.cdk8s.litellm import (
 from cluster.cdk8s.matrix import flux_kustomizations as matrix_flux_kustomizations
 from cluster.cdk8s.monitoring import alloy_otlp_bearer_token, flux_kustomizations as monitoring_flux_kustomizations
 from cluster.cdk8s.nix_cache import flux_kustomizations as nix_cache_flux_kustomizations
-from cluster.cdk8s.node_feature_discovery import flux_kustomizations as node_feature_discovery_flux_kustomizations
 from cluster.cdk8s.nvidia_device_plugin import flux_kustomizations as nvidia_device_plugin_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations
 from cluster.cdk8s.ollama import flux_kustomizations as ollama_flux_kustomizations
@@ -201,6 +201,7 @@ def generate_manifests(root: Path) -> None:
     volsync.write_manifests(root)
     reloader.write_manifests(root)
     vpa.write_manifests(root)
+    node_feature_discovery.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -265,8 +266,8 @@ def generate_manifests(root: Path) -> None:
     monitoring_namespace_kustomization = monitoring_flux_kustomizations.monitoring_namespace(
         flux_chart, monitoring_namespace_artifact
     )
-    node_feature_discovery_artifact = artifact("node-feature-discovery", "cluster/k8s/node-feature-discovery")
-    node_feature_discovery_kustomization = node_feature_discovery_flux_kustomizations.node_feature_discovery(
+    node_feature_discovery_artifact = artifact("node-feature-discovery", node_feature_discovery.OUTPUT_DIR)
+    node_feature_discovery_kustomization = node_feature_discovery.node_feature_discovery(
         flux_chart, node_feature_discovery_artifact
     )
     nvidia_runtimeclass_artifact = artifact("nvidia-runtimeclass", nvidia_runtimeclass.OUTPUT_DIR)

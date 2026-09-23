@@ -172,6 +172,8 @@ exports_files(
         "reloader/kustomization.yaml",
         "vpa/vpa.k8s.yaml",
         "vpa/kustomization.yaml",
+        "node-feature-discovery/node-feature-discovery.k8s.yaml",
+        "node-feature-discovery/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
