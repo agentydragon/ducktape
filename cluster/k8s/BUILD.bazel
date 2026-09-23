@@ -164,6 +164,8 @@ exports_files(
         "goldilocks/kustomization.yaml",
         "headlamp/headlamp.k8s.yaml",
         "headlamp/kustomization.yaml",
+        "proxmox-proxy/proxmox-proxy.k8s.yaml",
+        "proxmox-proxy/kustomization.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )

@@ -31,6 +31,7 @@ from cluster.cdk8s import (
     metrics_server,
     ntfy,
     nvidia_runtimeclass,
+    proxmox_proxy,
     public_coder_agent_config,
     public_coder_devbox,
     reflector,
@@ -116,7 +117,6 @@ from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustom
 from cluster.cdk8s.ollama import flux_kustomizations as ollama_flux_kustomizations
 from cluster.cdk8s.openebs_lvm import flux_kustomizations as openebs_lvm_flux_kustomizations
 from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
-from cluster.cdk8s.proxmox_proxy import flux_kustomizations as proxmox_proxy_flux_kustomizations
 from cluster.cdk8s.reloader import flux_kustomizations as reloader_flux_kustomizations
 from cluster.cdk8s.seaweedfs import flux_kustomizations as seaweedfs_flux_kustomizations
 from cluster.cdk8s.seaweedfs_csi import flux_kustomizations as seaweedfs_csi_flux_kustomizations
@@ -197,6 +197,7 @@ def generate_manifests(root: Path) -> None:
     local_path_provisioner.write_manifests(root)
     goldilocks.write_manifests(root)
     headlamp.write_manifests(root)
+    proxmox_proxy.write_manifests(root)
 
     flux_output = root / "cluster/k8s/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -467,8 +468,8 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_namespace_kustomization,
         external_secrets_operator_kustomization,
     )
-    proxmox_proxy_artifact = artifact("proxmox-proxy", "cluster/k8s/proxmox-proxy")
-    proxmox_proxy_flux_kustomizations.proxmox_proxy(flux_chart, proxmox_proxy_artifact, gateway_kustomization)
+    proxmox_proxy_artifact = artifact("proxmox-proxy", proxmox_proxy.OUTPUT_DIR)
+    proxmox_proxy.proxmox_proxy(flux_chart, proxmox_proxy_artifact, gateway_kustomization)
     website_artifact = artifact("website", "cluster/k8s/website")
     website_flux_kustomizations.website(flux_chart, website_artifact, gateway_kustomization)
     kube_system_artifact = artifact("kube-system", kube_system.OUTPUT_DIR)
