@@ -24,6 +24,7 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.thread.models import (
     Event,
+    EventLog,
     FeedState,
     SandboxIngestion,
     Thread,
@@ -150,10 +151,10 @@ class ThreadStore:
         return self._updates.connected
 
     async def thread(self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec) -> UUID:
-        """The thread for a session, created from its spec on first sight."""
+        """The thread for a session: its event log, created from the spec on first sight."""
         async with self._sessions.begin() as session:
             created = await session.scalar(
-                insert(Thread)
+                insert(EventLog)
                 .values(
                     sandbox=sandbox,
                     session_id=session_id,
@@ -161,15 +162,15 @@ class ThreadStore:
                     model=spec.model,
                     cwd=spec.cwd,
                 )
-                .on_conflict_do_nothing(index_elements=[Thread.sandbox, Thread.session_id])
-                .returning(Thread.id)
+                .on_conflict_do_nothing(index_elements=[EventLog.sandbox, EventLog.session_id])
+                .returning(EventLog.id)
             )
             if created is not None:
                 await notify(session)
                 return created
             return (
                 await session.scalars(
-                    select(Thread.id).where(Thread.sandbox == sandbox, Thread.session_id == session_id)
+                    select(EventLog.id).where(EventLog.sandbox == sandbox, EventLog.session_id == session_id)
                 )
             ).one()
 
@@ -420,7 +421,7 @@ class ThreadStore:
         """Current outcomes for a finite browser-held command-id set, keyed by entity primary key."""
         requested = tuple(dict.fromkeys(command_ids))
         async with self._sessions() as session:
-            if await session.get(Thread, thread_id) is None:
+            if await session.get(EventLog, thread_id) is None:
                 raise ThreadNotFoundError(thread_id)
             checkpoint = await session.get(ThreadCheckpoint, thread_id)
             if checkpoint is None or checkpoint.projection_epoch != projection_epoch:
@@ -522,7 +523,7 @@ class ThreadStore:
                 state.attached = MessageToDict(attached)
                 if attached.spec.model != previous_model:
                     await session.execute(
-                        update(Thread).where(Thread.id == thread_id).values(model=attached.spec.model)
+                        update(EventLog).where(EventLog.id == thread_id).values(model=attached.spec.model)
                     )
                 await session.flush()
             await notify(session)
@@ -581,7 +582,7 @@ class ThreadStore:
                 .values(thread_id=thread_id, **values)
                 .on_conflict_do_update(index_elements=[FeedState.thread_id], set_=values)
             )
-            await session.execute(update(Thread).where(Thread.id == thread_id).values(model=attached.spec.model))
+            await session.execute(update(EventLog).where(EventLog.id == thread_id).values(model=attached.spec.model))
             await set_operational(session, thread_id, status="active", error=None)
             await notify(session)
 
@@ -619,37 +620,38 @@ class ThreadStore:
         threads are excluded unless asked for, mirroring the Sandbox inventory's own default."""
         last_cursor = (
             select(Event.cursor)
-            .where(Event.thread_id == Thread.id)
+            .where(Event.thread_id == EventLog.id)
             .order_by(Event.cursor.desc())
             .limit(1)
             .scalar_subquery()
         )
         last_at = (
-            select(Event.at).where(Event.thread_id == Thread.id).order_by(Event.at.desc()).limit(1).scalar_subquery()
+            select(Event.at).where(Event.thread_id == EventLog.id).order_by(Event.at.desc()).limit(1).scalar_subquery()
         )
         query = (
-            select(Thread, last_cursor, last_at, FeedState.attached)
-            .outerjoin(FeedState, FeedState.thread_id == Thread.id)
-            .order_by(Thread.created_at.desc())
+            select(EventLog, Thread, last_cursor, last_at, FeedState.attached)
+            .outerjoin(Thread, Thread.id == EventLog.id)
+            .outerjoin(FeedState, FeedState.thread_id == EventLog.id)
+            .order_by(EventLog.created_at.desc())
         )
         if sandbox is not None:
-            query = query.where(Thread.sandbox == sandbox)
+            query = query.where(EventLog.sandbox == sandbox)
         if session_id is not None:
-            query = query.where(Thread.session_id == session_id)
+            query = query.where(EventLog.session_id == session_id)
         if not include_archived:
-            query = query.where(Thread.archived.is_(False))
+            query = query.where(Thread.archived.is_not(True))
         async with self._sessions() as session:
             return [
-                _view(thread, last_cursor, last_at, attached)
-                for thread, last_cursor, last_at, attached in await session.execute(query)
+                _view(log, thread, last_cursor, last_at, attached)
+                for log, thread, last_cursor, last_at, attached in await session.execute(query)
             ]
 
     async def get_thread(self, thread_id: UUID) -> ThreadView | None:
         async with self._sessions() as session:
-            thread = await session.get(Thread, thread_id)
-            if thread is None:
+            log = await session.get(EventLog, thread_id)
+            if log is None:
                 return None
-            return _view(thread, *await _last(session, thread_id))
+            return _view(log, await session.get(Thread, thread_id), *await _last(session, thread_id))
 
     async def admitted_command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry | None:
         """The archived admission of this immutable command, if the Thread has one.
@@ -659,7 +661,7 @@ class ThreadStore:
         a reused id with different work is a conflict, never an implicit new command.
         """
         async with self._sessions() as session:
-            if await session.get(Thread, thread_id) is None:
+            if await session.get(EventLog, thread_id) is None:
                 raise ThreadNotFoundError(thread_id)
             checkpoint = await session.get(ThreadCheckpoint, thread_id)
             if checkpoint is None:
@@ -688,12 +690,7 @@ class ThreadStore:
     async def rename(self, thread_id: UUID, name: str | None) -> ThreadView:
         """Set or, with None, clear the thread's name."""
         async with self._sessions.begin() as session:
-            thread = await session.get(Thread, thread_id)
-            if thread is None:
-                raise ThreadNotFoundError(thread_id)
-            thread.name = name
-            await session.flush()
-            renamed = _view(thread, *await _last(session, thread_id))
+            renamed = await _set_thread(session, thread_id, name=name)
             await notify(session)
         return renamed
 
@@ -706,12 +703,7 @@ class ThreadStore:
 
     async def _set_archived(self, thread_id: UUID, archived: bool) -> ThreadView:
         async with self._sessions.begin() as session:
-            thread = await session.get(Thread, thread_id)
-            if thread is None:
-                raise ThreadNotFoundError(thread_id)
-            thread.archived = archived
-            await session.flush()
-            view = _view(thread, *await _last(session, thread_id))
+            view = await _set_thread(session, thread_id, archived=archived)
             await notify(session)
         return view
 
@@ -755,7 +747,7 @@ async def _fence(session: AsyncSession, lease: IngestionLease, thread_id: UUID) 
     now = (await session.scalars(select(func.clock_timestamp()))).one()
     if owned is None or owned.token != lease.token or owned.expires_at <= now:
         raise IngestionLeaseLostError(lease.sandbox)
-    sandbox = await session.scalar(select(Thread.sandbox).where(Thread.id == thread_id))
+    sandbox = await session.scalar(select(EventLog.sandbox).where(EventLog.id == thread_id))
     if sandbox != lease.sandbox:
         raise IngestionLeaseLostError("lease does not own this thread's sandbox")
 
@@ -787,8 +779,26 @@ async def _last(session: AsyncSession, thread_id: UUID) -> tuple[int | None, dat
     return last_cursor, last_at, (state.attached if state is not None else None)
 
 
+async def _set_thread(session: AsyncSession, thread_id: UUID, **values: object) -> ThreadView:
+    """Write what an operator set on a thread, creating its row the first time."""
+    log = await session.get(EventLog, thread_id)
+    if log is None:
+        raise ThreadNotFoundError(thread_id)
+    thread = await session.scalar(
+        insert(Thread)
+        .values(id=thread_id, **values)
+        .on_conflict_do_update(index_elements=[Thread.id], set_=values)
+        .returning(Thread)
+    )
+    return _view(log, thread, *await _last(session, thread_id))
+
+
 def _view(
-    thread: Thread, last_cursor: int | None, last_at: datetime | None, attached: dict[str, object] | None
+    log: EventLog,
+    thread: Thread | None,
+    last_cursor: int | None,
+    last_at: datetime | None,
+    attached: dict[str, object] | None,
 ) -> ThreadView:
     harness_state = (
         ParseDict(attached, protocol_pb2.Attached()).harness_state
@@ -796,15 +806,15 @@ def _view(
         else protocol_pb2.HARNESS_STATE_UNSPECIFIED
     )
     return ThreadView(
-        id=thread.id,
-        sandbox=thread.sandbox,
-        session_id=thread.session_id,
-        harness=thread.harness,
-        model=thread.model,
-        cwd=thread.cwd,
-        created_at=thread.created_at,
-        name=thread.name,
-        archived=thread.archived,
+        id=log.id,
+        sandbox=log.sandbox,
+        session_id=log.session_id,
+        harness=log.harness,
+        model=log.model,
+        cwd=log.cwd,
+        created_at=log.created_at,
+        name=None if thread is None else thread.name,
+        archived=thread is not None and thread.archived,
         last_cursor=last_cursor or 0,
         last_event_at=last_at,
         harness_state=protocol_pb2.HarnessState.Name(harness_state),
