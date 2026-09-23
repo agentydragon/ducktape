@@ -11,6 +11,7 @@ from cluster.cdk8s import (
     agent_workspaces,
     aiquota,
     airlock,
+    alloy_otlp_bearer,
     authentik_jwt_rotation,
     claude_sandbox_secrets,
     cnpg_operator,
@@ -274,6 +275,7 @@ def generate_manifests(root: Path) -> None:
     haku_mailbox.write_manifests(root)
     haku_ci_runner.write_manifests(root)
     agent_workspaces.write_manifests(root)
+    alloy_otlp_bearer.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
     public_coder_proxy.write_manifests(root)
     public_coder_sshpiper.write_manifests(root)
@@ -703,8 +705,8 @@ def generate_manifests(root: Path) -> None:
     infra_drift_flux_kustomizations.infra_drift(
         flux_chart, infra_drift_artifact, tofu_controller_kustomization, tofu_state_db_kustomization
     )
-    alloy_otlp_bearer_artifact = artifact("alloy-otlp-bearer", "cluster/k8s/agents/alloy-otlp-bearer")
-    agents_flux_kustomizations.alloy_otlp_bearer(
+    alloy_otlp_bearer_artifact = artifact("alloy-otlp-bearer", alloy_otlp_bearer.OUTPUT_DIR)
+    alloy_otlp_bearer.alloy_otlp_bearer(
         flux_chart,
         alloy_otlp_bearer_artifact,
         external_secrets_config_kustomization,

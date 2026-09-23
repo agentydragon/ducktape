@@ -360,6 +360,20 @@ py_library(
 )
 
 py_library(
+    name = "alloy_otlp_bearer",
+    srcs = ["alloy_otlp_bearer.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":generation",
+        "//cluster/cdk8s/crd_bindings/external_secrets:clusterexternalsecret",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "claude_sandbox_secrets",
     srcs = ["claude_sandbox_secrets.py"],
     deps = [
@@ -1095,6 +1109,7 @@ py_library(
         ":agent_workspaces",
         ":aiquota",
         ":airlock",
+        ":alloy_otlp_bearer",
         ":artifact_generators",
         ":authentik_jwt_rotation",
         ":claude_sandbox_secrets",
@@ -1380,6 +1395,8 @@ py_test(
         "//cluster/k8s:agents/agent-sandbox/workspaces/agent-workspaces.k8s.yaml",
         "//cluster/k8s:agents/agent-sandbox/workspaces/kustomization.yaml",
         "//cluster/k8s:agents/airlock/airlock.k8s.yaml",
+        "//cluster/k8s:agents/alloy-otlp-bearer/alloy-otlp-bearer.k8s.yaml",
+        "//cluster/k8s:agents/alloy-otlp-bearer/kustomization.yaml",
         "//cluster/k8s:agents/authentik-jwt-rotation/authentik-jwt-rotation.k8s.yaml",
         "//cluster/k8s:agents/claude-sandbox-secrets/claude-sandbox-secrets.k8s.yaml",
         "//cluster/k8s:agents/claude-sandbox-secrets/kustomization.yaml",

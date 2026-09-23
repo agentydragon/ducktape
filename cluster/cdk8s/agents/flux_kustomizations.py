@@ -76,36 +76,6 @@ def airlock(
     )
 
 
-def alloy_otlp_bearer(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
-    claude_rbac: Kustomization,
-    haku_rbac: Kustomization,
-) -> Kustomization:
-    name = "alloy-otlp-bearer"
-    return flux_kustomization(
-        chart,
-        name,
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(
-                # ClusterSecretStore + CRDs
-                external_secrets_config,
-                # claude-sandbox namespace
-                claude_rbac,
-                # haku-sandbox namespace
-                haku_rbac,
-            ),
-            timeout="2m",
-            decryption=SOPS_DECRYPTION,
-        ),
-    )
-
-
 def authentik_jwt_rotation(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
 ) -> Kustomization:
