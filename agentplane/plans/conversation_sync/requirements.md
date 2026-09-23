@@ -193,6 +193,10 @@ bounding held pages, and a client that keeps them cached avoids it.
 - **D4 — streaming costs the delta.** Tokens appended to a body cost the client traffic in
   proportion to what was appended, not a re-send of the prefix it already holds. Owner, 2026-09-23.
 
+- **D5 — a completed body is eventually stored once.** Once a message has finished streaming, it
+  is at some point compacted to its final version: a constant number of rows per completed body,
+  not one chunk per appending batch and one manifest per revision. Owner, 2026-09-23.
+
 **D4 is mostly given by the storage.** A body is insert-only chunks: each ingestion batch that
 appends to a body writes one new chunk row holding only that batch's text
 (`agent_runtime/view/payloads.py`). A design that syncs chunk rows therefore transfers the delta,
@@ -200,3 +204,20 @@ at batch rather than token granularity. What fails D4 is re-sending a body whole
 A0, or an engine that re-sends a whole value or query result. Two costs ride on each append
 regardless: the entity row whose reference moved (whole, under Electric's `replica=full`), and a
 replacement, which starts a new generation and so is a new body.
+
+**D5 is safe to do because the fold is derived (C4)**: an intermediate revision's body can always be
+rebuilt from the event log, so compaction deletes nothing that is not recoverable. What it touches
+in sync:
+
+- **A reader holding the body.** Compaction rewrites rows that reader holds. Written as a new
+  generation holding the whole text, it costs each reader of that body one re-send of it — once per
+  body rather than per token, so D4 still holds for the streaming itself. Doing it late, rather
+  than at completion, makes it cost nothing to readers who opened the thread afterwards.
+- **S1.** A reference that names a compacted revision must stop resolving (`410`, like a stale
+  epoch), so a reader holding it moves to the current reference rather than rendering chunks that
+  no longer add up to what it names.
+- **Reading an old revision's body** stops being possible once compacted. Nothing needs it outside
+  debugging, and the event log keeps it.
+
+It is a storage change every option can take; they differ only in how a reader learns the
+reference moved, which each already handles for any edit.
