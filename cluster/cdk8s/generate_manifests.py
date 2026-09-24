@@ -1145,7 +1145,7 @@ def generate_manifests(root: Path) -> None:
         forgejo_images_kustomization,
         seaweedfs_pr_visuals_bucket_kustomization,
     )
-    grocy_sf_artifact = artifact("grocy-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/app", grocy_app.BASE_DIR)
+    grocy_sf_artifact = artifact("grocy-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/app")
     grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
         flux_chart,
         grocy_sf_artifact,
@@ -1156,7 +1156,7 @@ def generate_manifests(root: Path) -> None:
         authentik_kustomization,
         volsync_kustomization,
     )
-    grocy_vallejo_artifact = artifact("grocy-vallejo", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/app", grocy_app.BASE_DIR)
+    grocy_vallejo_artifact = artifact("grocy-vallejo", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/app")
     grocy_vallejo_kustomization = grocy_flux_kustomizations.grocy_vallejo(
         flux_chart,
         grocy_vallejo_artifact,
@@ -1281,9 +1281,7 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         cpap_sync_kustomization,
     )
-    grocy_mcp_sf_artifact = artifact(
-        "grocy-mcp-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR, grocy_mcp.SERVICEMONITOR_BASE_DIR
-    )
+    grocy_mcp_sf_artifact = artifact("grocy-mcp-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR)
     grocy_flux_kustomizations.grocy_mcp_sf(
         flux_chart,
         grocy_mcp_sf_artifact,
@@ -1303,10 +1301,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, grocy_sf_user_perms_artifact, forgejo_images_kustomization, grocy_sf_kustomization
     )
     grocy_mcp_vallejo_artifact = artifact(
-        "grocy-mcp-vallejo",
-        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp",
-        grocy_mcp.BASE_DIR,
-        grocy_mcp.SERVICEMONITOR_BASE_DIR,
+        "grocy-mcp-vallejo", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp", grocy_mcp.BASE_DIR
     )
     grocy_flux_kustomizations.grocy_mcp_vallejo(
         flux_chart,

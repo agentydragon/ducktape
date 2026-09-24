@@ -277,15 +277,11 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/grocy/sf/app/**"
           to: "@artifact/cluster/k8s/grocy/sf/app/"
-        - from: "@repo/cluster/k8s/grocy/app-base/**"
-          to: "@artifact/cluster/k8s/grocy/app-base/"
       name: grocy-sf
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/grocy/vallejo/app/**"
           to: "@artifact/cluster/k8s/grocy/vallejo/app/"
-        - from: "@repo/cluster/k8s/grocy/app-base/**"
-          to: "@artifact/cluster/k8s/grocy/app-base/"
       name: grocy-vallejo
       originRevision: "@repo"
     - copy:
@@ -579,8 +575,6 @@ spec:
           to: "@artifact/cluster/k8s/grocy/sf/mcp/"
         - from: "@repo/cluster/k8s/grocy/mcp-base/**"
           to: "@artifact/cluster/k8s/grocy/mcp-base/"
-        - from: "@repo/cluster/k8s/grocy/mcp-servicemonitor-base/**"
-          to: "@artifact/cluster/k8s/grocy/mcp-servicemonitor-base/"
       name: grocy-mcp-sf
       originRevision: "@repo"
     - copy:
@@ -595,8 +589,6 @@ spec:
           to: "@artifact/cluster/k8s/grocy/vallejo/mcp/"
         - from: "@repo/cluster/k8s/grocy/mcp-base/**"
           to: "@artifact/cluster/k8s/grocy/mcp-base/"
-        - from: "@repo/cluster/k8s/grocy/mcp-servicemonitor-base/**"
-          to: "@artifact/cluster/k8s/grocy/mcp-servicemonitor-base/"
       name: grocy-mcp-vallejo
       originRevision: "@repo"
     - copy:
