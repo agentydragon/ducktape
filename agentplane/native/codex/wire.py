@@ -77,6 +77,8 @@ class Turn(Wire):
     # Left-to-right, since smart mode would take the plain string for known statuses too.
     status: TurnStatus | str = Field(union_mode="left_to_right")
     error: TurnError | None = None
+    # The turn's wall time on Codex's own clock, set on `turn/completed` when Codex knows it.
+    duration_ms: int | None = None
 
 
 class TurnResult(Wire):
