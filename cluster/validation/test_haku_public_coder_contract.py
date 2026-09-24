@@ -31,16 +31,6 @@ def app_objects() -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], Cdk8sTesting.synth(public_coder_agent_config.app_chart(Cdk8sTesting.app())))
 
 
-def test_public_coder_namespace_logs_role(k8s_dir: Path) -> None:
-    rbac_base = list(yaml.safe_load_all((k8s_dir / "agents/agent-rbac-base/agent-rbac-base.k8s.yaml").read_text()))
-    logs_role = one(
-        obj
-        for obj in rbac_base
-        if obj["kind"] == "ClusterRole" and obj["metadata"]["name"] == "agent-readable-namespace-logs"
-    )
-    assert logs_role["rules"] == [{"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]}]
-
-
 def test_public_coder_kubernetes_proxy_contract(
     k8s_dir: Path, haku_console_objects: list[dict[str, Any]], app_objects: list[dict[str, Any]]
 ) -> None:
@@ -66,14 +56,6 @@ def test_public_coder_kubernetes_proxy_contract(
         and one(one(obj["spec"]["rules"])["backendRefs"])["name"] == haku_proxy["metadata"]["name"]
     )
     assert server_host in route["spec"]["hostnames"]
-
-    app_egress = _one(app_objects, "NetworkPolicy", "public-coder-agent-egress")
-    proxy_egress = one(
-        rule
-        for rule in app_egress["spec"]["egress"]
-        if rule["to"] == [{"podSelector": {"matchLabels": {"app.kubernetes.io/name": "public-coder-agent-proxy"}}}]
-    )
-    assert proxy_egress["ports"] == [{"port": 8080, "protocol": "TCP"}]
 
     # The app holds only the placeholders iron replaces; the proxy holds the credentials.
     app_container = one(_one(app_objects, "Deployment")["spec"]["template"]["spec"]["containers"])

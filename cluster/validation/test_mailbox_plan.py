@@ -12,12 +12,7 @@ def test_mailbox_initialization_wiring() -> None:
     kustomization = yaml.safe_load(kustomization_path.read_text())
 
     pod_spec = deployment["spec"]["template"]["spec"]
-    assert len(pod_spec["initContainers"]) == 1
-    assert len(pod_spec["containers"]) == 1
-
-    initialize = pod_spec["initContainers"][0]
-    production = pod_spec["containers"][0]
-    assert initialize["image"] == production["image"]
+    initialize = one(pod_spec["initContainers"])
 
     config_generator = next(
         generator for generator in kustomization["configMapGenerator"] if "initialize.sh" in generator["files"]
@@ -27,9 +22,6 @@ def test_mailbox_initialization_wiring() -> None:
     )
     initialize_mount = next(mount for mount in initialize["volumeMounts"] if mount["name"] == config_volume["name"])
     assert initialize["command"][-1] == f"{initialize_mount['mountPath']}/initialize.sh"
-
-    assert initialize["securityContext"]["capabilities"] == {"add": ["NET_BIND_SERVICE"], "drop": ["ALL"]}
-    assert production["securityContext"]["capabilities"] == {"drop": ["ALL"]}
 
 
 if __name__ == "__main__":

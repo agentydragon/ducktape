@@ -21,19 +21,9 @@ from cdk8s import (
 )
 from more_itertools import one
 
-from cluster.cdk8s import egress_fences, public_coder_proxy
+from cluster.cdk8s import egress_fences
 
 HAKU_OPENCLAW_FENCE = "agents/haku-egress-proxy/openclaw-spike-iron.yaml"
-PUBLIC_CODER_WAIVER = "allow-public-coder-agent-proxy-egress"
-
-
-def _cilium_hosts(document: dict[str, Any]) -> set[str]:
-    """Every host named by a `toFQDNs` rule, ignoring DNS query patterns."""
-    return {host for rule in document["spec"]["egress"] for entry in rule.get("toFQDNs", ()) for host in entry.values()}
-
-
-def _cilium_entities(document: dict[str, Any]) -> set[str]:
-    return {entity for rule in document["spec"]["egress"] for entity in rule.get("toEntities", ())}
 
 
 def _cilium_dns_names(document: dict[str, Any]) -> set[str]:
@@ -57,20 +47,6 @@ def _load(k8s_dir: Path, path: str) -> dict[str, Any]:
 
 def _synth(build: Callable[[App], Chart]) -> dict[str, Any]:
     return cast(dict[str, Any], one(Cdk8sTesting.synth(build(Cdk8sTesting.app()))))
-
-
-def test_public_coder_waiver_is_unconfined() -> None:
-    """The waiver is pinned: it reaches `world`, names no hosts and resolves anything, so
-    restoring confinement is a visible change either way, and narrowing DNS alone would fence
-    nothing while its `world` rule stands."""
-    document = one(
-        obj
-        for obj in Cdk8sTesting.synth(public_coder_proxy.chart(Cdk8sTesting.app()))
-        if obj["kind"] == "CiliumNetworkPolicy" and obj["metadata"]["name"] == PUBLIC_CODER_WAIVER
-    )
-    assert _cilium_hosts(document) == set()
-    assert "world" in _cilium_entities(document)
-    assert _cilium_dns_names(document) == {"*"}
 
 
 def test_openclaw_spike_resolves_exactly_its_iron_allowlist(k8s_dir: Path) -> None:

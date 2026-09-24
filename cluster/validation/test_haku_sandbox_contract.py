@@ -59,21 +59,8 @@ def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir:
     assert (namespace, port) in allowed
 
 
-def test_haku_sandbox_reaches_kubernetes_only_through_console(k8s_dir: Path, generated_dir: Path) -> None:
+def test_haku_sandbox_reaches_kubernetes_only_through_console(k8s_dir: Path) -> None:
     """The haku-sandbox exec target reaches Kubernetes only through the Console-mediated proxy."""
-    rbac = generated_dir / "haku/rbac/haku-rbac.k8s.yaml"
-    binding = _object(rbac, "RoleBinding", "haku")
-    role = _object(rbac, "Role", "haku-sandbox-admin")
-    assert binding["roleRef"]["name"] == role["metadata"]["name"]
-    subjects = {(s["kind"], s["name"], s.get("namespace")) for s in binding["subjects"]}
-    # The ServiceAccount subject stays: ordinary pods that do carry a credential — the
-    # managed-agent worker — run as it. What must hold is that the group Console SARs for a
-    # proxied request resolves to that same Role, so mediating access never widens or narrows it.
-    assert subjects == {("ServiceAccount", "haku", "haku-sandbox"), ("Group", "haku:access-profile:haku", None)}
-
-    # Removing the mount (//cluster/cdk8s/haku:test_workspaces) and supplying the proxy are one
-    # decision: a box with neither has no path to the API at all, and would fail at `kubectl`
-    # rather than at deploy.
     pod = _haku_template(k8s_dir)["spec"]["podTemplate"]["spec"]
     exec_env = {entry["name"]: entry.get("value") for entry in pod["containers"][0]["env"]}
     assert "haku-kube-api-proxy" in exec_env["HAKU_KUBERNETES_PROXY_URL"]

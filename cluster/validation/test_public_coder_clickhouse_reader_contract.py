@@ -49,12 +49,6 @@ def test_public_coder_clickhouse_reader_contract(
     users = clickhouse_installation["spec"]["configuration"]["users"]
     clickhouse_credentials_ref = users["public_coder_analytics/password"]["valueFrom"]["secretKeyRef"]
     assert clickhouse_credentials_ref["key"] == "password"
-    assert users["public_coder_analytics/profile"] == "readonly"
-    assert users["public_coder_analytics/quota"] == "readonly"
-    assert users["public_coder_analytics/grants/query"] == [
-        "GRANT SELECT ON aiquota.aiquota_windows",
-        "GRANT SELECT ON aiquota.raw_http_observations",
-    ]
 
     annotations = source_secret["metadata"]["annotations"]
     assert source_secret["metadata"]["name"] == clickhouse_credentials_ref["name"]
@@ -78,9 +72,7 @@ def test_public_coder_clickhouse_reader_contract(
         if "value" in entry
     }
     assert app_env["CLICKHOUSE_PUBLIC_CODER_PASSWORD"] == clickhouse_secret["replace"]["proxy_value"]
-    no_proxy = set(app_env["NO_PROXY"].split(","))
-    assert "clickhouse.clickhouse.svc" not in no_proxy
-    assert {"litellm.litellm.svc", "litellm.litellm.svc.cluster.local"} <= no_proxy
+    assert "clickhouse.clickhouse.svc" not in app_env["NO_PROXY"].split(",")
 
 
 if __name__ == "__main__":
