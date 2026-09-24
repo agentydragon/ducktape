@@ -61,9 +61,6 @@ tests.
    `anonymous_resolution.rs` (edit gate, `peel`) and `validate --source-file`
    call the shared resolve.
 6. **Truthful outcomes.**
-   - Prove uniqueness with one extra solve that forbids the found assignment,
-     instead of enumerating every solution. Search per entity for at most N
-     alternatives only when that solve succeeds.
    - Cap candidates per entity (after already-fixed references narrow them);
      over the cap is `too_broad`, rejected without a solve.
    - `resolved_by: elimination` warning: after the solve, filter the entity's
@@ -102,7 +99,6 @@ a later sweep.
     decision record citing
     `debug/perf/2026_09_17_matcher_vs_native_lowering.md`.
 - **Step 6 (truthful outcomes):**
-  - the sidecar's enumerate-every-solution loop;
   - the decoder mapping an unknown solve to an outcome for every target;
   - the deprecated no-op `--keep-going` flag.
 - **Step 7 (one program across chunks):**

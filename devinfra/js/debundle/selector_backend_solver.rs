@@ -17,7 +17,8 @@ use analysis::{OwnerId, StatementOrdinal};
 use selector_constraint_backend::{
     BackendAssignment, BackendAssignmentCoverage, BackendAssignmentError, BackendSolveResult,
     BackendSolveStatus, BackendVariableAssignment, CompiledSelectorProblem, ConstraintValue,
-    ConstraintVariableId, PresolveScope, SelectorProblemBackend, TargetBindingProjection,
+    ConstraintVariableId, MAX_ALTERNATIVES_PER_VARIABLE, PresolveScope, SelectorProblemBackend,
+    TargetBindingProjection,
 };
 use selector_constraint_model_builder::{
     CompiledSelectorProblemBuildError, SelectorModelBuildSummary, compile_selector_problem,
@@ -646,22 +647,34 @@ fn decode_backend_result<E>(
                 .unwrap_or_else(|| "selector backend returned unknown".to_string()),
         )),
         BackendSolveStatus::Satisfiable | BackendSolveStatus::Ambiguous => {
-            if result.assignment_coverage != BackendAssignmentCoverage::TargetSupportComplete {
-                return Ok(unsupported_result(
-                    program,
-                    result.diagnostic.unwrap_or_else(|| {
-                        "selector backend returned sample assignments, not complete target support"
-                            .to_string()
-                    }),
-                ));
-            }
+            let capped = match result.assignment_coverage {
+                BackendAssignmentCoverage::TargetSupportComplete => false,
+                BackendAssignmentCoverage::TargetSupportCapped => true,
+                BackendAssignmentCoverage::Sample => {
+                    return Ok(unsupported_result(
+                        program,
+                        result.diagnostic.unwrap_or_else(|| {
+                            "selector backend returned sample assignments, not complete target \
+                             support"
+                                .to_string()
+                        }),
+                    ));
+                }
+            };
             if result.assignments.is_empty() {
                 return Err(SelectorBackendSolveError::EmptySatisfyingAssignments {
                     status: result.status,
                 });
             }
             let conflicts = conflict_outcomes(program, &result.conflicts)?;
-            decode_satisfying_assignments(program, facts, problem, &result.assignments, &conflicts)
+            decode_satisfying_assignments(
+                program,
+                facts,
+                problem,
+                &result.assignments,
+                capped,
+                &conflicts,
+            )
         }
     }
 }
@@ -701,6 +714,7 @@ fn decode_satisfying_assignments<E>(
     facts: &SelectorFactStore,
     problem: &CompiledSelectorProblem,
     assignments: &[BackendAssignment],
+    capped: bool,
     conflicts: &BTreeMap<SelectorTargetId, ClaimOutcome>,
 ) -> Result<SolverResult, SelectorBackendSolveError<E>> {
     let facts = MaterializationFacts::from_store(facts);
@@ -766,9 +780,10 @@ fn decode_satisfying_assignments<E>(
                 target: target.id,
                 outcome: match conflicts.get(&target.id) {
                     Some(outcome) => outcome.clone(),
-                    None => {
-                        claims_to_outcome(claims_by_target.remove(&target.id).unwrap_or_default())
-                    }
+                    None => claims_to_outcome(
+                        claims_by_target.remove(&target.id).unwrap_or_default(),
+                        capped,
+                    ),
                 },
             })
             .collect(),
@@ -806,13 +821,18 @@ fn assigned_string<E>(
     }
 }
 
-fn claims_to_outcome(claims: Vec<ResolvedClaim>) -> ClaimOutcome {
+/// `capped`: the backend stopped listing some variable's values at
+/// `MAX_ALTERNATIVES_PER_VARIABLE`, so a target with that many candidates may have more.
+fn claims_to_outcome(claims: Vec<ResolvedClaim>, capped: bool) -> ClaimOutcome {
     match claims.as_slice() {
         [] => ClaimOutcome::NoMatch,
         [claim] => ClaimOutcome::Unique {
             claim: claim.clone(),
         },
-        _ => ClaimOutcome::Ambiguous { candidates: claims },
+        _ => ClaimOutcome::Ambiguous {
+            candidates_truncated: capped && claims.len() >= MAX_ALTERNATIVES_PER_VARIABLE as usize,
+            candidates: claims,
+        },
     }
 }
 
@@ -1312,7 +1332,10 @@ mod tests {
         let result = solve_with_backend(&program, &facts(), &backend).unwrap();
 
         match result.outcome_for(target) {
-            Some(ClaimOutcome::Ambiguous { candidates }) => {
+            Some(ClaimOutcome::Ambiguous {
+                candidates,
+                candidates_truncated: false,
+            }) => {
                 assert_eq!(candidates.len(), 2);
                 assert!(candidates.iter().any(|claim| claim.owner == OwnerId(1)));
                 assert!(candidates.iter().any(|claim| claim.owner == OwnerId(2)));

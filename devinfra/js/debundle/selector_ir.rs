@@ -1315,6 +1315,8 @@ pub enum ClaimOutcome {
     NoMatch,
     Ambiguous {
         candidates: Vec<ResolvedClaim>,
+        /// The backend stopped listing alternatives, so there may be more candidates.
+        candidates_truncated: bool,
     },
     Duplicate {
         owner: OwnerId,

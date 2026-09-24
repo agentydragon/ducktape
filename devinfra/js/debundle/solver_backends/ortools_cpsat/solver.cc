@@ -528,80 +528,175 @@ ProjectionRow ProjectionRowFromSolution(
   return row;
 }
 
-void AddForbiddenProjectionRow(
-    const ProjectionRow& row,
-    const std::vector<ProjectionVariable>& projection_variables,
-    sat::CpModelBuilder* model) {
-  std::vector<sat::IntVar> variables;
-  variables.reserve(projection_variables.size());
-  for (const ProjectionVariable& projection_variable : projection_variables) {
-    variables.push_back(projection_variable.variable);
+void AddRows(const std::set<ProjectionRow>& rows,
+             SelectorCpSatResponse* response) {
+  for (const ProjectionRow& row : rows) {
+    AssignmentRow* assignment_row = response->add_assignments();
+    for (const auto& [variable_id, value] : row.values) {
+      Assignment* assignment = assignment_row->add_values();
+      assignment->set_variable_id(variable_id);
+      assignment->set_value(value);
+    }
   }
-  sat::TableConstraint forbidden = model->AddForbiddenAssignments(variables);
-  std::vector<int64_t> values;
-  values.reserve(row.values.size());
-  for (const auto& [_variable_id, value] : row.values) {
-    values.push_back(value);
-  }
-  forbidden.AddTuple(values);
 }
 
-SelectorCpSatResponse ResponseFromSolver(
-    const sat::CpSolverResponse& solver_response,
-    const std::set<ProjectionRow>& projection_rows, bool complete) {
-  SelectorCpSatResponse response;
-  response.set_solver_response_stats(sat::CpSolverResponseStats(solver_response));
+// Collects projected rows until every projection variable is either proven
+// fixed or has its alternative values listed (up to a per-variable cap).
+// Full enumeration of projected rows is exponential on ambiguous programs;
+// this needs at most (#ambiguous variables + 1) solves to prove which variables
+// are fixed, plus at most `max_alternatives` solves per ambiguous variable.
+class SupportSearch {
+ public:
+  SupportSearch(const sat::CpModelBuilder& base_model,
+                const std::vector<ProjectionVariable>& projection_variables,
+                const sat::SatParameters& parameters)
+      : base_model_(base_model),
+        projection_variables_(projection_variables),
+        parameters_(parameters),
+        values_(projection_variables.size()) {}
 
-  if (!projection_rows.empty()) {
-    if (!complete) {
-      response.set_status(SOLVER_STATUS_UNKNOWN);
-      response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
-      response.set_diagnostic(
-          "CP-SAT stopped before proving complete target support");
-    } else {
-      response.set_status(projection_rows.size() == 1 ? SOLVER_STATUS_SATISFIABLE
-                                                      : SOLVER_STATUS_AMBIGUOUS);
-      response.set_assignment_coverage(
-          ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE);
+  SelectorCpSatResponse Run(size_t max_alternatives) {
+    switch (Solve([](sat::CpModelBuilder*) {})) {
+      case Outcome::kFeasible:
+        break;
+      case Outcome::kInfeasible: {
+        SelectorCpSatResponse response;
+        response.set_status(SOLVER_STATUS_UNSATISFIABLE);
+        response.set_assignment_coverage(
+            ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE);
+        response.set_solver_response_stats(
+            sat::CpSolverResponseStats(last_response_));
+        return response;
+      }
+      case Outcome::kStopped:
+        return *stopped_;
     }
-    for (const ProjectionRow& row : projection_rows) {
-      AssignmentRow* assignment_row = response.add_assignments();
-      for (const auto& [variable_id, value] : row.values) {
-        Assignment* assignment = assignment_row->add_values();
-        assignment->set_variable_id(variable_id);
-        assignment->set_value(value);
+    const ProjectionRow first_row = *rows_.begin();
+
+    // A variable is settled while every row found so far agrees with the first
+    // row on it. Each feasible round evicts at least one settled variable; an
+    // infeasible round proves every remaining settled variable fixed.
+    for (;;) {
+      std::vector<sat::IntVar> settled;
+      std::vector<int64_t> first_values;
+      for (size_t i = 0; i < projection_variables_.size(); ++i) {
+        if (values_[i].size() == 1) {
+          settled.push_back(projection_variables_[i].variable);
+          first_values.push_back(first_row.values[i].second);
+        }
+      }
+      if (settled.empty()) {
+        break;
+      }
+      const Outcome outcome = Solve([&](sat::CpModelBuilder* model) {
+        model->AddForbiddenAssignments(settled).AddTuple(first_values);
+      });
+      if (outcome == Outcome::kInfeasible) {
+        break;
+      }
+      if (outcome == Outcome::kStopped) {
+        return *stopped_;
       }
     }
+
+    bool capped = false;
+    for (size_t i = 0; i < projection_variables_.size(); ++i) {
+      if (values_[i].size() == 1) {
+        continue;
+      }
+      const sat::IntVar variable = projection_variables_[i].variable;
+      const size_t domain_size = static_cast<size_t>(variable.Domain().Size());
+      // Rows found for other variables may also add values to this one.
+      bool exhausted = values_[i].size() == domain_size;
+      while (!exhausted && values_[i].size() < max_alternatives) {
+        const Outcome outcome = Solve([&](sat::CpModelBuilder* model) {
+          sat::TableConstraint forbidden =
+              model->AddForbiddenAssignments(std::vector<sat::IntVar>{variable});
+          for (const int64_t value : values_[i]) {
+            forbidden.AddTuple({value});
+          }
+        });
+        if (outcome == Outcome::kStopped) {
+          return *stopped_;
+        }
+        exhausted = outcome == Outcome::kInfeasible ||
+                    values_[i].size() == domain_size;
+      }
+      capped = capped || !exhausted;
+    }
+
+    SelectorCpSatResponse response;
+    response.set_solver_response_stats(
+        sat::CpSolverResponseStats(last_response_));
+    response.set_status(rows_.size() == 1 ? SOLVER_STATUS_SATISFIABLE
+                                          : SOLVER_STATUS_AMBIGUOUS);
+    response.set_assignment_coverage(
+        capped ? ASSIGNMENT_COVERAGE_TARGET_SUPPORT_CAPPED
+               : ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE);
+    AddRows(rows_, &response);
     return response;
   }
 
-  switch (solver_response.status()) {
-    case sat::CpSolverStatus::INFEASIBLE:
-      response.set_status(SOLVER_STATUS_UNSATISFIABLE);
-      response.set_assignment_coverage(
-          ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE);
-      return response;
-    case sat::CpSolverStatus::OPTIMAL:
-    case sat::CpSolverStatus::FEASIBLE:
-      response.set_status(SOLVER_STATUS_UNKNOWN);
-      response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
-      response.set_diagnostic(
-          "CP-SAT found a feasible solve but returned no projected rows");
-      return response;
-    case sat::CpSolverStatus::MODEL_INVALID:
-      response.set_status(SOLVER_STATUS_INVALID);
-      response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
-      response.set_diagnostic("CP-SAT reported MODEL_INVALID");
-      return response;
-    case sat::CpSolverStatus::UNKNOWN:
-    default:
-      response.set_status(SOLVER_STATUS_UNKNOWN);
-      response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
-      response.set_diagnostic("CP-SAT returned UNKNOWN");
-      return response;
+ private:
+  enum class Outcome { kFeasible, kInfeasible, kStopped };
+
+  // Solves the base model plus the constraints `add_constraints` adds to a copy of
+  // it. A feasible solve records its projected row; kStopped leaves the
+  // response to return in `stopped_`.
+  template <typename AddConstraints>
+  Outcome Solve(const AddConstraints& add_constraints) {
+    sat::CpModelBuilder model = base_model_;
+    add_constraints(&model);
+    sat::Model solver_model;
+    solver_model.Add(sat::NewSatParameters(parameters_));
+    const sat::CpModelProto& model_proto = model.Build();
+    last_response_ = sat::SolveCpModel(model_proto, &solver_model);
+    switch (last_response_.status()) {
+      case sat::CpSolverStatus::OPTIMAL:
+      case sat::CpSolverStatus::FEASIBLE: {
+        ProjectionRow row =
+            ProjectionRowFromSolution(last_response_, projection_variables_);
+        for (size_t i = 0; i < row.values.size(); ++i) {
+          values_[i].insert(row.values[i].second);
+        }
+        rows_.insert(std::move(row));
+        return Outcome::kFeasible;
+      }
+      case sat::CpSolverStatus::INFEASIBLE:
+        return Outcome::kInfeasible;
+      case sat::CpSolverStatus::MODEL_INVALID:
+        stopped_ = InvalidModelResponse(last_response_, model_proto);
+        return Outcome::kStopped;
+      case sat::CpSolverStatus::UNKNOWN:
+      default:
+        stopped_ = UnknownResponse();
+        return Outcome::kStopped;
+    }
   }
-  return response;
-}
+
+  SelectorCpSatResponse UnknownResponse() const {
+    SelectorCpSatResponse response;
+    response.set_status(SOLVER_STATUS_UNKNOWN);
+    response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
+    response.set_solver_response_stats(
+        sat::CpSolverResponseStats(last_response_));
+    response.set_diagnostic(
+        rows_.empty() ? "CP-SAT returned UNKNOWN"
+                      : "CP-SAT stopped before proving complete target support");
+    AddRows(rows_, &response);
+    return response;
+  }
+
+  const sat::CpModelBuilder& base_model_;
+  const std::vector<ProjectionVariable>& projection_variables_;
+  const sat::SatParameters& parameters_;
+  // Rows found so far, deduplicated.
+  std::set<ProjectionRow> rows_;
+  // Distinct values of projection_variables_[i] across rows_.
+  std::vector<std::set<int64_t>> values_;
+  sat::CpSolverResponse last_response_;
+  std::optional<SelectorCpSatResponse> stopped_;
+};
 
 // With `literals`, attributed constraints hold only while their targets'
 // literals do; without, every constraint is hard.
@@ -627,51 +722,13 @@ absl::Status BuildCpModel(const SelectorCpSatRequest& request,
   return absl::OkStatus();
 }
 
-// Enumerates every distinct projection row by forbidding each one found.
-SelectorCpSatResponse EnumerateProjectionRows(
-    const std::vector<ProjectionVariable>& projection_variables,
-    const sat::SatParameters& parameters, sat::CpModelBuilder* model) {
-  std::set<ProjectionRow> projection_rows;
-  for (;;) {
-    sat::Model solver_model;
-    solver_model.Add(sat::NewSatParameters(parameters));
-
-    const sat::CpModelProto& model_proto = model->Build();
-    const sat::CpSolverResponse solver_response =
-        sat::SolveCpModel(model_proto, &solver_model);
-    switch (solver_response.status()) {
-      case sat::CpSolverStatus::OPTIMAL:
-      case sat::CpSolverStatus::FEASIBLE: {
-        ProjectionRow row =
-            ProjectionRowFromSolution(solver_response, projection_variables);
-        projection_rows.insert(row);
-        if (projection_variables.empty()) {
-          return ResponseFromSolver(solver_response, projection_rows,
-                                    /*complete=*/true);
-        }
-        AddForbiddenProjectionRow(row, projection_variables, model);
-        break;
-      }
-      case sat::CpSolverStatus::INFEASIBLE:
-        return ResponseFromSolver(solver_response, projection_rows,
-                                  /*complete=*/true);
-      case sat::CpSolverStatus::MODEL_INVALID:
-        return InvalidModelResponse(solver_response, model_proto);
-      case sat::CpSolverStatus::UNKNOWN:
-      default:
-        return ResponseFromSolver(solver_response, projection_rows,
-                                  /*complete=*/false);
-    }
-  }
-}
-
 constexpr char kHardInfeasibleDiagnostic[] =
     "constraints attributed to no target are unsatisfiable on their own";
 
 // Runs once the plain model is infeasible. Solves with one assumption per
 // target and takes CP-SAT's sufficient assumptions as a conflict set, disables
-// those targets and repeats until the rest is feasible, then enumerates the
-// remaining targets' rows with the conflicting targets disabled.
+// those targets and repeats until the rest is feasible, then runs the support
+// search over the remaining targets with the conflicting targets disabled.
 SelectorCpSatResponse LocalizeConflicts(const SelectorCpSatRequest& request,
                                         const sat::SatParameters& parameters) {
   sat::CpModelBuilder model;
@@ -764,7 +821,8 @@ SelectorCpSatResponse LocalizeConflicts(const SelectorCpSatRequest& request,
     return InvalidResponse(projection_variables.status());
   }
   SelectorCpSatResponse response =
-      EnumerateProjectionRows(*projection_variables, parameters, &model);
+      SupportSearch(model, *projection_variables, parameters)
+          .Run(request.max_alternatives_per_variable());
   if (response.status() == SOLVER_STATUS_UNSATISFIABLE) {
     // Still infeasible with every conflict set disabled, so the hard
     // constraints alone are, and the cores above explain nothing.
@@ -781,6 +839,10 @@ SelectorCpSatResponse LocalizeConflicts(const SelectorCpSatRequest& request,
 }  // namespace
 
 SelectorCpSatResponse SolveSelectorCpSat(const SelectorCpSatRequest& request) {
+  if (request.max_alternatives_per_variable() == 0) {
+    return InvalidResponse(absl::InvalidArgumentError(
+        "max_alternatives_per_variable must be positive"));
+  }
   sat::CpModelBuilder model;
   VariableMap variables;
   const absl::Status build_status =
@@ -800,7 +862,8 @@ SelectorCpSatResponse SolveSelectorCpSat(const SelectorCpSatRequest& request) {
   }
 
   SelectorCpSatResponse response =
-      EnumerateProjectionRows(*projection_variables, *parameters, &model);
+      SupportSearch(model, *projection_variables, *parameters)
+          .Run(request.max_alternatives_per_variable());
   if (response.status() != SOLVER_STATUS_UNSATISFIABLE) {
     return response;
   }
