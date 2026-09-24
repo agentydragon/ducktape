@@ -1,9 +1,11 @@
-# haku-state: `main` ref lost its content on Forgejo during a PR merge (SeaweedFS FUSE torn write)
+# haku-state: `main` ref lost its content on Forgejo during a PR merge
 
 **Date**: 2026-09-24
-**Status**: Resolved — `main` ref restored on both replicas, pushes confirmed working again.
-Root cause confirmed at the byte level. Underlying SeaweedFS torn-write trigger not
-investigated further (repair took priority; see "Open follow-up" below).
+**Status**: Data recovered, service restored — `main` ref rewritten on both replicas,
+pushes confirmed working again. **Root cause / trigger mechanism NOT established** — what
+follows is a precisely characterized symptom (exact byte state, exact timing, what's been
+ruled out), not an explanation of why the write landed empty. Left for follow-up
+investigation; see "Open follow-up" below.
 
 ## Symptom
 
@@ -37,7 +39,7 @@ false`, a nonzero `size` — the repo itself was not empty or newly created.
     GetMergeBase: exit status 128 - warning: ignoring broken ref refs/heads/main
   ```
 
-## Root cause — confirmed
+## What's confirmed: the exact state and timing (not why)
 
 `refs/heads/main` on Forgejo's git storage (`/data/git/gitea-repositories/haku/haku-state.git`,
 a SeaweedFS FUSE mount on the RWX `forgejo-git-rwx-ssd` PVC, shared by both Forgejo
@@ -64,21 +66,40 @@ So: Forgejo's merge handler correctly computed and wrote the merge commit object
 the reflog, but the actual bytes of the small loose-ref file `refs/heads/main` were never
 written/flushed — landing as an empty file instead of the 41-byte SHA+newline it should
 contain. Metadata (mtime, reflog) was coherent; file _data_ was lost. This repo has no
-`packed-refs` file, so `refs/heads/main` is a plain loose-ref file — the kind git updates
-via write-new-content-then-rename, which is exactly the write pattern a FUSE coherence bug
-would be positioned to corrupt.
+`packed-refs` file, so `refs/heads/main` is a plain loose-ref file.
 
-This is the same storage backend and general failure class as three prior incidents
-(`2026_07_04_seaweedfs_stale_mount_cache_after_evacuation.md`,
+**What this is not**: three prior incidents document SeaweedFS FUSE coherence problems on
+this same storage backend (`2026_07_04_seaweedfs_stale_mount_cache_after_evacuation.md`,
 `2026_08_24_descheduler_filer_eviction_loop_sigbus.md`,
-`2026_08_31_forgejo_seaweedfs_fuse_coherence_recurrence.md`), but **not the same shape**:
-those three were all _read_-path faults (SIGBUS on `mmap`, stale directory listings) where
-a client's cache was stale but the underlying stored data was intact and readable from
-elsewhere. This is a _write_-path fault where the stored data itself came back empty — both
-Forgejo replicas read the identical empty file directly from the shared RWX mount (this
-was never a split-brain "one replica has bad cache, the other is fine" situation, unlike
-Aug 31). That the underlying data was actually lost, not just cached wrong, is a more
-serious failure mode than the three prior incidents and is not yet explained by them.
+`2026_08_31_forgejo_seaweedfs_fuse_coherence_recurrence.md`), and it's tempting to file
+this under the same cause. Resist that — none of their signatures are present here (no
+SIGBUS, no `unsynchronized dir`, no `possible coherence bug`), their trigger (a filer
+restart/eviction) did not happen this time (checked below), and their failure shape is
+different in kind: all three were _read_-path staleness where a client's cache was wrong
+but the underlying stored data was intact elsewhere; this is stored data itself coming
+back empty, and both Forgejo replicas read the identical empty file directly from the
+shared RWX mount (never a "one replica has bad cache" split, unlike Aug 31). **The
+similarity is "same storage backend, git broke anyway" — that is pattern-matching, not a
+mechanism.** Do not write this up elsewhere as a confirmed SeaweedFS FUSE incident; it
+resembles one superficially and does not yet meet the bar the three prior writeups do
+(direct fault evidence, a fsck/probe comparison, or an identified trigger).
+
+**Checked and ruled out as the trigger**, all via `kubectl get events`/`describe`/`df`
+in the `forgejo` and `seaweedfs` namespaces, ~20 minutes after the incident (well within
+default event retention):
+
+- No SeaweedFS filer/volume-server/master pod restart, eviction, or event of any kind in
+  the `seaweedfs` namespace around `23:55:30–23:55:41Z` (or at all in the visible window).
+- No `seaweedfs-csi-driver-mount`/`-node`/`-controller` pod restart around that time —
+  every mount pod's last restart was 2+ days prior to the incident.
+- No disk pressure: `/data` inside the Forgejo pod reads `200.0G, 4.9G used, 2%` — nowhere
+  near ENOSPC.
+- No Forgejo pod restart (`RESTARTS: 0` on both replicas, ages predating the incident).
+
+None of the obvious candidate triggers panned out. What's left unexplained: a
+network/RPC-level hiccup between the FUSE client and the filer that produced no k8s-visible
+event; something in Forgejo's own git library's ref-write code path (version, error
+handling); or something else not yet considered.
 
 ## Recovery
 
@@ -116,13 +137,15 @@ and it was independently re-derivable from the reflog plus object-graph verifica
 
 ## Open follow-up
 
-- **What actually caused the torn write is not established.** No SIGBUS, no
-  `unsynchronized dir`, no other FUSE coherence log signature was found in Forgejo's logs
-  around the merge (only the downstream `ignoring broken ref` / `not our ref 0000...`
-  symptoms). Whether this was a SeaweedFS filer/volume-server event, a FUSE client race, or
-  something else was not confirmed — repair took priority over root-causing the trigger.
-  Worth checking, if revisited: `kubectl get pods -n seaweedfs` / SeaweedFS component logs
-  for anything around `2026-09-23T23:55:30–23:55:41Z`.
+- **What actually caused the torn write is not established.** The obvious candidates (filer/
+  volume-server/mount-pod restart, disk pressure) are ruled out — see above. Not checked:
+  actual pod/container logs from the SeaweedFS filer and the specific
+  `seaweedfs-csi-driver-mount`/`-node` pod backing this PVC's mount for anything around
+  `23:55:30–23:55:41Z` (only `kubectl get events`/`describe` were checked, not `kubectl
+logs` on those components); Forgejo's own git library version and how it performs a ref
+  update (single write, or lock-then-rename — assumed but not verified from source); whether
+  any other operation was concurrently touching `refs/heads/main` at that exact second
+  (Flux's `gitrepository/haku-state` reconciler, a CI job, etc.).
 - **This failure mode isn't covered by the existing SeaweedFS lessons-learned docs**, which
   all describe read-path staleness recoverable by rolling the consumer pod. A `main`-branch
   ref rewritten as empty is data loss on the write path that a pod roll would not have
