@@ -1,3 +1,38 @@
+/* `StatusDot`'s shape and focus affordance; the color comes from an inline `--mantine-color-*`
+   variable per call site. It must not shrink away in a `nowrap` row on a phone. */
+.agentplane-status-dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  outline-offset: 2px;
+}
+
+/* A state that is still settling pulses, so it reads as ongoing rather than settled. Visual tests
+   disable all animations, so a screenshot lands on one still frame. */
+.agentplane-breathing-dot {
+  animation: agentplane-breathe 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agentplane-breathing-dot {
+    animation: none;
+  }
+}
+
+@keyframes agentplane-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
 /* The operator's own input: a filled bubble at the right, where every other row is a bordered
    full-width card, so role reads from position and colour without a "user" label. The capped width
    keeps a short message from stretching edge to edge. Mantine's light variant follows the colour

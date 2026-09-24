@@ -840,6 +840,7 @@ ts_library(
     srcs = ["projected_session.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":projected_session",
         ":retained_disclosures",
         ":thread_sync",
