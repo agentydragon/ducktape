@@ -44,7 +44,9 @@ The resolve is two halves, so `run` can do the first per chunk in parallel:
    chunk facts (`selector_ir_lowering`); candidates enter as one table of rows
    per entity. `all_different` spans every non-pin target of the chunk, with
    one representative per group, whichever module or tree it comes from.
-   Anchors of relational selectors resolve by export name within the chunk.
+   Anchors of relational selectors resolve by export name within the chunk,
+   except `intrinsic_alias`'s `referenced_by`, which resolves within the
+   member's own module.
    `FactDomains` (`selector_constraint_model_builder`) derives exactly the
    relation tables the program's atoms read.
 4. **Decision.** The program splits into groups of targets that interact: an
@@ -157,8 +159,8 @@ Two properties make it near-linear rather than quadratic in selector count:
 needle-only validation is hoisted out of the candidate loop, and exact-mode
 identifier spellings are indexed so an identifier-only needle prunes through
 postings instead of scanning every top-level statement. Scaling on a synthetic
-corpus of the same shape class measures an exponent of ≈1.30
-(<../debug/perf/2026_06_21_fact_resolver.md>).
+corpus of the same shape class measures an exponent of ≈1.30 (synthetic
+10k/40k-statement corpus, 2026-06-21).
 
 `chunk_facts` extraction is fail-closed: a construct it cannot project
 faithfully is `Unsupported` rather than approximated.
@@ -173,9 +175,10 @@ took 7.1s for one, almost all of it model construction (the CP-SAT search of
 that request took 0.02s), and a whole spec timed out at 120s before reaching
 the solver. A finite-domain solver has no index over AST shape, so the encoding
 rebuilds what `selector_match::Index` already provides. Cross-selector
-references, negation and counting do not need it: they are relation atoms over
-chunk facts. Measurements:
-<../debug/perf/2026_09_17_matcher_vs_native_lowering.md>.
+references do not need it: they are relation atoms over chunk facts, and
+negation and counting (not expressible yet, <selectors.md> § Relational
+selectors) would be too. Measured `-c opt` on a 4-core host, 2026-09-17; the
+ratio is the result.
 
 ## Interactive budget
 

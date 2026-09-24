@@ -66,8 +66,12 @@ distinctive — and for shapeless delegators, empty subclasses, registry targets
 and bundler-helper copies it never is — pin the entity by an invariant
 **relation** instead. These live under `members[].selector` and are one-of with
 `binding`; each names another spec member by its readable `name:`, written
-`@Name` in prose, and resolves through the owner graph in the same joint solve
-as every other selector.
+`@Name` in prose. They match through facts derived from the chunk, not through
+templates (<../SPEC.md> § Matching), in the same joint program as every other
+selector. An anchor names a member anywhere in the chunk, except that
+`intrinsic_alias`'s `referenced_by` names a member of the entity's own module:
+esbuild emits a byte-identical helper per module, so the helpers' readable names
+repeat across modules.
 
 | Selector              | Pins the entity that…                                       | Required fields               |
 | --------------------- | ----------------------------------------------------------- | ----------------------------- |
@@ -106,8 +110,11 @@ intrinsic method names — while adjacency to an unrelated declaration is exactl
 what a rebuild destroys.
 
 What the relational language cannot express yet: negation, counting/uniqueness,
-transitive reachability, combining a shape and a relation for one target, and
-referring to `@Name` from inside a `source_match` body. Those are open
+transitive reachability, combining a shape and a relation for one target,
+referring to `@Name` from inside a `source_match` body, and sub-owner targets.
+Selectors resolve at owner granularity (one top-level statement), so a property
+inside one declaration's object literal — a getter of a returned accessor
+object — is not a place of its own; pin the whole declaration. Those are open
 selector-language work.
 
 ## Matcher pitfalls
