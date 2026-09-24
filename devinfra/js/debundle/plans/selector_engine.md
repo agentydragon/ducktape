@@ -95,7 +95,7 @@ Each item is deleted in the PR that lands the step making it removable, not in
 a later sweep.
 
 - **Step 5 (one engine):**
-  - the AST-atom lowering in `selector_ir_lowering.rs` and its encoding in
+  - the AST selector atoms (`selector_ir.rs`) and their encoding in
     `selector_constraint_model_builder.rs`, keeping only what candidate,
     reference and relation tables need;
   - `solver_backends/ortools_spike`;
