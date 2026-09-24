@@ -2149,6 +2149,35 @@ pub fn run_match_selector(source_file: &Path, selector: &str, extra_args: &[&str
     })
 }
 
+/// The `outcomes` of the `static/app` chunk's `selector_diagnostics.json`
+/// under a `debundle run --dry-run` report root.
+pub fn read_selector_outcomes(report_root: &Path) -> Vec<Value> {
+    let report_path = report_root
+        .join("static")
+        .join("app")
+        .join("selector_diagnostics.json");
+    let report: Value = serde_json::from_str(
+        &fs::read_to_string(&report_path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", report_path.display())),
+    )
+    .unwrap_or_else(|error| panic!("parse {}: {error}", report_path.display()));
+    report["outcomes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("outcomes must be an array: {report:#}"))
+        .clone()
+}
+
+/// The outcome record of `kind` whose entity is the export `export_name`.
+pub fn find_outcome<'a>(outcomes: &'a [Value], kind: &str, export_name: &str) -> &'a Value {
+    outcomes
+        .iter()
+        .find(|record| {
+            record["outcome"]["kind"] == kind
+                && record["placement"]["entity"]["export"] == export_name
+        })
+        .unwrap_or_else(|| panic!("missing {kind} outcome for export {export_name}: {outcomes:#?}"))
+}
+
 fn spawn_transform(spec_path: &Path) -> CommandResult {
     run_debundler(spec_path, &[])
 }

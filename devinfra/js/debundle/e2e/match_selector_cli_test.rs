@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn debundle_binary() -> PathBuf {
     let runfiles_path = std::env::var("RUNFILES_DIR")
@@ -59,6 +59,11 @@ fn match_selector(source: &Path, match_source: &str, extra: &[&str]) -> Value {
     })
 }
 
+/// The one outcome a match-selector report carries.
+fn outcome(report: &Value) -> &Value {
+    &report["outcomes"][0]["outcome"]
+}
+
 // leftPanel and rightPanel differ only by their string argument; widgetConfig is
 // the lone `makeWidget` call; errorState is the lone object literal; computeTotal
 // is the lone function declaration.
@@ -88,11 +93,19 @@ fn unique_match_reports_the_bound_target() {
         "const w = makeWidget(\"widget\", 3, theme);",
         &["--target-binding", "w"],
     );
-    assert_eq!(report["unique"], Value::Bool(true));
-    let matches = report["matches"].as_array().unwrap();
-    assert_eq!(matches.len(), 1);
-    assert_eq!(matches[0]["body_index"], 1);
-    assert_eq!(matches[0]["binding_name"], "widgetConfig");
+    assert_eq!(
+        report["outcomes"][0]["outcome"],
+        json!({
+            "kind": "resolved",
+            "owner": 1,
+            "binding": "widgetConfig",
+            "resolved_by": {"by": "own_selector"},
+        }),
+        "{report:#}"
+    );
+    assert_eq!(report["counts"], json!({"resolved": 1}));
+    assert_eq!(report["outcomes"][0]["severity"], "ok");
+    assert_eq!(report["outcomes"][0]["target_binding"], "w");
 }
 
 #[test]
@@ -109,11 +122,9 @@ fn split_declarator_match_reports_pre_split_body_index() {
         "const first = build(\"left\"), second = build(\"right\");",
         &["--target-binding", "second", "--no-slack"],
     );
-    assert_eq!(report["unique"], Value::Bool(true));
-    let matches = report["matches"].as_array().unwrap();
-    assert_eq!(matches.len(), 1);
-    assert_eq!(matches[0]["body_index"], 0);
-    assert_eq!(matches[0]["binding_name"], "runtimeSecond");
+    assert_eq!(outcome(&report)["kind"], "resolved", "{report:#}");
+    assert_eq!(outcome(&report)["owner"], 0);
+    assert_eq!(outcome(&report)["binding"], "runtimeSecond");
 }
 
 #[test]
@@ -124,28 +135,31 @@ fn no_match_is_not_unique() {
         "const w = { kind: \"missing\" };",
         &["--target-binding", "w"],
     );
-    assert_eq!(report["unique"], Value::Bool(false));
-    assert!(report["matches"].as_array().unwrap().is_empty());
+    assert_eq!(outcome(&report)["kind"], "no_match", "{report:#}");
     // Slack is undefined for a non-unique selector.
     assert!(report.get("slack").is_none());
 }
 
 #[test]
-fn ambiguous_match_lists_every_candidate_in_body_order() {
+fn ambiguous_match_lists_candidates_in_body_order() {
     let (_dir, source) = fixture();
     let report = match_selector(
         &source,
         "const p = renderPanel(ANYTHING);",
         &["--target-binding", "p"],
     );
-    assert_eq!(report["unique"], Value::Bool(false));
-    let names: Vec<&str> = report["matches"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|matched| matched["binding_name"].as_str().unwrap())
-        .collect();
-    assert_eq!(names, vec!["leftPanel", "rightPanel"]);
+    assert_eq!(
+        *outcome(&report),
+        json!({
+            "kind": "ambiguous",
+            "candidates": [
+                {"owner": 0, "binding": "leftPanel"},
+                {"owner": 2, "binding": "rightPanel"},
+            ],
+            "truncated": false,
+        }),
+        "{report:#}"
+    );
 }
 
 #[test]
@@ -158,7 +172,7 @@ fn over_pinned_selector_reports_holeable_slack() {
         "const w = makeWidget(\"widget\", 3, theme);",
         &["--target-binding", "w"],
     );
-    assert_eq!(report["unique"], Value::Bool(true));
+    assert_eq!(outcome(&report)["kind"], "resolved", "{report:#}");
     let slack = report["slack"].as_array().unwrap();
     assert!(!slack.is_empty(), "expected over-pin slack, got {report}");
     for relaxation in slack {
@@ -184,8 +198,8 @@ fn minimally_pinned_selector_reports_empty_slack() {
         "const p = renderPanel(\"left\");",
         &["--target-binding", "p"],
     );
-    assert_eq!(report["unique"], Value::Bool(true));
-    assert_eq!(report["matches"][0]["binding_name"], "leftPanel");
+    assert_eq!(outcome(&report)["kind"], "resolved", "{report:#}");
+    assert_eq!(outcome(&report)["binding"], "leftPanel");
     assert!(report["slack"].as_array().unwrap().is_empty());
 }
 
@@ -197,7 +211,7 @@ fn no_slack_flag_skips_slack_analysis() {
         "const w = makeWidget(\"widget\", 3, theme);",
         &["--target-binding", "w", "--no-slack"],
     );
-    assert_eq!(report["unique"], Value::Bool(true));
+    assert_eq!(outcome(&report)["kind"], "resolved", "{report:#}");
     // With --no-slack the field is omitted even though the selector is unique.
     assert!(report.get("slack").is_none());
 }
@@ -212,8 +226,8 @@ fn slack_drops_an_unneeded_object_property() {
         "const e = { kind: \"error\", code: 500, retry: false };",
         &["--target-binding", "e"],
     );
-    assert_eq!(report["unique"], Value::Bool(true));
-    assert_eq!(report["matches"][0]["binding_name"], "errorState");
+    assert_eq!(outcome(&report)["kind"], "resolved", "{report:#}");
+    assert_eq!(outcome(&report)["binding"], "errorState");
     let slack = report["slack"].as_array().unwrap();
     // A property-drop relaxation removes the `code` kvp entirely (key and value),
     // which value-holing alone could never do.
@@ -236,8 +250,8 @@ fn slack_drops_a_statement_from_an_over_pinned_body() {
         "function f(items) { const base = items.length; const tax = base * 2; return base + tax; }",
         &["--target-binding", "f"],
     );
-    assert_eq!(report["unique"], Value::Bool(true));
-    assert_eq!(report["matches"][0]["binding_name"], "computeTotal");
+    assert_eq!(outcome(&report)["kind"], "resolved", "{report:#}");
+    assert_eq!(outcome(&report)["binding"], "computeTotal");
     let slack = report["slack"].as_array().unwrap();
     assert!(
         slack.iter().any(|relaxation| relaxation["relaxed_match"]
@@ -264,8 +278,8 @@ fn slack_drops_a_destructure_pattern_property() {
         "const { primary, secondary, tertiary } = loadConfig();",
         &["--target-binding", "primary"],
     );
-    assert_eq!(report["unique"], Value::Bool(true));
-    assert_eq!(report["matches"][0]["binding_name"], "primary");
+    assert_eq!(outcome(&report)["kind"], "resolved", "{report:#}");
+    assert_eq!(outcome(&report)["binding"], "primary");
     let slack = report["slack"].as_array().unwrap();
     // A pattern-prop drop removes the `secondary` binding from the destructure
     // entirely (not just holing a value), while the target `primary` stays
@@ -292,8 +306,8 @@ fn slack_drops_a_top_level_context_statement() {
         "const widgetConfig = makeWidget(\"widget\", 3, theme);\nconst rightPanel = renderPanel(\"right\");",
         &["--target-binding", "widgetConfig"],
     );
-    assert_eq!(report["unique"], Value::Bool(true));
-    assert_eq!(report["matches"][0]["binding_name"], "widgetConfig");
+    assert_eq!(outcome(&report)["kind"], "resolved", "{report:#}");
+    assert_eq!(outcome(&report)["binding"], "widgetConfig");
     let slack = report["slack"].as_array().unwrap();
     // The context-statement drop removes the whole `rightPanel` statement (binding
     // and all) while keeping the `makeWidget` target — distinct from value-holing,
