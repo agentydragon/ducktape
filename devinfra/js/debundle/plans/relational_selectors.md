@@ -53,16 +53,15 @@ becomes a table constraint in the one CP-SAT solve.
 
 ## Landing a new relation
 
-1. Prototype the rule in `selector_solve` and prove it on an `owner_graph.json`
-   the real pipeline emits, not a synthetic EDB — see
-   <../e2e/selector_solve_cross_reference_test.rs>. Real graphs model
-   `export { … }` and side-effect statements as owners that reference every
-   binding they touch, which is the discriminating case synthetic fixtures miss.
-2. Add the fact to `chunk_facts` if it is not derivable from what is there.
+1. Add the fact to `chunk_facts` if it is not derivable from what is there.
    Extraction stays fail-closed.
-3. Lower it to a table over candidate ids in the resolve engine
+2. Lower it to a table over candidate ids in the resolve engine
    (<selector_engine.md>), with a compiled encoding in
    `selector_constraint_model_builder`.
+3. Prove it through `debundle run` on a fixture whose chunk also exports and
+   uses the anchor, as <../e2e/cross_ref_lowering_test.rs> does: real graphs
+   model `export { … }` and side-effect statements as owners that reference
+   every binding they touch, which is the discriminating case bare fixtures miss.
 4. Extend `docs/selectors.md` — a selector kind that is not documented there
    does not exist for authors.
 

@@ -190,9 +190,6 @@ Read-out:
   (`chunk_facts::extract_facts`, `selector_match::Index::build` at 0.08% self) is
   a cheap once-per-chunk build and never surfaces in the top inclusive list. The
   cost is per-selector _matching_, not fact extraction.
-- **`selector_solve` does not appear at all.** It is the relational-selector
-  prototype behind the `selector-solve` subcommand, not on the `run` /
-  `validate` path. What is hot is `chunk_resolver` + `selector_match`.
 - **Known suspects (`JsChunk` linear scans, `split_entry_body` clone) are not
   hot** on this workload — they are below threshold, dwarfed by the matcher.
 
