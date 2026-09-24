@@ -73,7 +73,6 @@ exports_files(
         "agentplane-crds/crd-egressbindings.yaml",
         "agentplane-crds/crd-egresscredentials.yaml",
         "agentplane-crds/crd-egresspolicies.yaml",
-        "agents/public-coder-agent/proxy/iron.yaml",
         "clickhouse/cluster/clickhouse.k8s.yaml",
         "clickhouse/cluster/public-coder-credentials.sops.yaml",
         "kustomization.yaml",
@@ -93,7 +92,6 @@ filegroup(
     srcs = [
         "agentplane-staging/agentplane.k8s.yaml",
         "agents/haku-egress-proxy/haku-egress-proxy.k8s.yaml",
-        "agents/public-coder-agent/proxy/iron.yaml",
         "haku-ci/haku-ci.k8s.yaml",
         "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
         "haku/workspaces/app/haku-workspaces.k8s.yaml",
