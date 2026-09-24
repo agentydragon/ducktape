@@ -1,8 +1,9 @@
 //! Every command that resolves a selector gives the same answer for the same
 //! selector and chunk, because they all call one resolve: `debundle run
 //! --dry-run`, `spec validate` (`--spec` and `--source-file`), `spec
-//! match-selector` and the `synthesize-selectors` proof. They emit equal
-//! outcome records for it — `no_match`, `ambiguous` with the same candidates, `too_broad`,
+//! match-selector`, the `synthesize-selectors` proof and the graph-backed
+//! commands (`describe` and the edit gate). They emit equal outcome records
+//! for it — `no_match`, `ambiguous` with the same candidates, `too_broad`,
 //! resolved by elimination — or all resolve it. `match-selector` resolves its
 //! probe alone, so a selector unique only by elimination is ambiguous there.
 //!
@@ -15,9 +16,10 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use debundle_e2e_support::{
-    BindingGroup, FixtureOpts, Member, assert_module_exports, logical_module,
+    BindingGroup, FixtureOpts, Member, assert_module_exports, debundler_path, logical_module,
     logical_module_with_source_matches, parse_stdout_json, read_selector_outcomes,
     run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture, run_match_selector,
     run_source_only_validate, run_spec_validate, run_synthesize_selectors,
@@ -594,8 +596,9 @@ fn elimination_fixture() -> FixtureOpts<'static> {
 }
 
 /// The modules of [`elimination_fixture`] as module files, beside the chunk
-/// at `root/chunk.js`.
-fn write_elimination_tree(root: &Path) -> (PathBuf, PathBuf) {
+/// at `root/chunk.js`, with an owner graph of the chunk at
+/// `root/owner_graph.json` for the graph-backed commands.
+fn write_elimination_tree(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
     let source = root.join("chunk.js");
     write(&source, ELIMINATION_CHUNK);
     let modules = root.join("modules");
@@ -619,12 +622,44 @@ fn write_elimination_tree(root: &Path) -> (PathBuf, PathBuf) {
         &modules.join("elimination/third.yaml"),
         "members:\n  - name: Third\n    selector: { binding: { name: third } }\n",
     );
-    (source, modules)
+    let node = |ordinal: usize, lines: (usize, usize), binding: Option<&str>, destination: &str| {
+        json!({
+            "id": format!("owner:{ordinal}"),
+            "statement_ordinal": ordinal,
+            "source_location": {"source_path": "chunk.js", "start_line": lines.0, "end_line": lines.1},
+            "declared_bindings": binding
+                .map(|binding| vec![json!({"binding": binding, "export_name": binding})])
+                .unwrap_or_default(),
+            "statement_kind": if binding.is_some() { "fn_decl" } else { "side_effect" },
+            "purity": {"kind": "pure"},
+            "destination": destination,
+        })
+    };
+    let graph = root.join("owner_graph.json");
+    write(
+        &graph,
+        &json!({
+            "chunk_id": "static/app",
+            "nodes": [
+                node(0, (1, 3), Some("first"), "elimination/either"),
+                node(1, (4, 6), Some("second"), "elimination/other"),
+                node(2, (7, 9), Some("third"), "elimination/third"),
+                node(3, (10, 10), None, "residual"),
+            ],
+            "edges": [],
+            "module_graph": {"nodes": [], "edges": [], "sccs": []},
+            "atomic_graph": {"nodes": [], "edges": []},
+        })
+        .to_string(),
+    );
+    (source, modules, graph)
 }
 
 /// Every command that resolves a spec resolves `Either` jointly, by
 /// elimination, with the same warning record; `match-selector`, which asks
-/// about one selector on its own, finds it ambiguous.
+/// about one selector on its own, finds it ambiguous. The graph-backed
+/// commands (`describe` through `peel`, and the edit gate) claim `first` for
+/// it the way `run` does.
 #[test]
 fn resolution_by_elimination_is_shared_by_every_spec_command() {
     let fixture = run_dry_run_fixture(elimination_fixture());
@@ -655,7 +690,7 @@ fn resolution_by_elimination_is_shared_by_every_spec_command() {
     );
 
     let dir = tempfile::tempdir().unwrap();
-    let (source, modules) = write_elimination_tree(dir.path());
+    let (source, modules, graph) = write_elimination_tree(dir.path());
     let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
     assert!(out.status.success(), "stderr={}", out.stderr);
     let report: Value = serde_json::from_str(&out.stdout).unwrap();
@@ -681,6 +716,50 @@ fn resolution_by_elimination_is_shared_by_every_spec_command() {
         }),
         "spec match-selector"
     );
+
+    let describe = graph_command(
+        &graph,
+        &modules,
+        dir.path(),
+        &["describe", "elimination/either", "--format", "json"],
+    );
+    assert!(describe.status.success(), "{describe:?}");
+    let describe: Value = serde_json::from_slice(&describe.stdout).unwrap();
+    assert_eq!(describe["owner_ids"], json!(["owner:0"]), "describe");
+
+    // The edit gate resolves every module's claims before accepting an edit.
+    let unassign = graph_command(
+        &graph,
+        &modules,
+        dir.path(),
+        &["bindings", "unassign", "third"],
+    );
+    let stderr = String::from_utf8_lossy(&unassign.stderr);
+    assert!(unassign.status.success(), "edit gate: {stderr}");
+    assert!(
+        stderr.contains("resolved by elimination"),
+        "edit gate: {stderr}"
+    );
+}
+
+/// A `debundle` graph-backed command over `graph` and `modules`, with chunk
+/// sources under `source_root`.
+fn graph_command(
+    graph: &Path,
+    modules: &Path,
+    source_root: &Path,
+    args: &[&str],
+) -> std::process::Output {
+    Command::new(debundler_path())
+        .args(args)
+        .arg("--graph")
+        .arg(graph)
+        .arg("--modules")
+        .arg(modules)
+        .arg("--source-root")
+        .arg(source_root)
+        .output()
+        .expect("spawn debundle")
 }
 
 /// The record of the export `export_name` in `outcomes`, if one is listed.
