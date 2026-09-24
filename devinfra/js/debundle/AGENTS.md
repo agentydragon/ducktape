@@ -100,7 +100,8 @@ of re-deriving the fact in another stage.
 
 How a spec's selectors become outcomes — one resolve every command calls,
 `ChunkResolver` generating candidates for shape (`source_match`) selectors and
-one joint CP-SAT solve per chunk — is <docs/selector_resolution.md>. Read it
+one program over every chunk, each group of interacting entities one CP-SAT
+request — is <docs/selector_resolution.md>. Read it
 before touching `selector_resolve.rs`, `source_match/`, `selector_ir_lowering`,
 or `selector_constraint_model_builder`. A command never decides exactly-one
 itself: it resolves, and one that needs a selector unique on its own resolves

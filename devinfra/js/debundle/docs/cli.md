@@ -164,10 +164,18 @@ rejection still writes `owner_graph.json` plus the rejection evidence, so
 the `gate` queries work on the rejection that was just reported.
 
 Broad spec migrations continue through selector failures by default and
-report every one from that pass, leaving each failed entity unclaimed. Use
-`--fail-fast` only when the first failing selector or claim is the useful
-debugging target: the first error-severity selector outcome stops the run, with
-that outcome's line as the error. Warnings never stop it.
+report every one from that pass, leaving each failed entity unclaimed; the
+run fails with the report of the first failing chunk in chunk-id order, and
+every chunk's report is in its `selector_diagnostics.json`. Use `--fail-fast`
+only when the first failing selector or claim is the useful debugging target:
+the first error-severity selector outcome stops the run, with that outcome's
+line as the error. "First" is fixed: every chunk's own claims (duplicate
+claims) in chunk-id order, then every chunk's resolve outcomes in chunk-id
+order (<selector_resolution.md> § Order). Warnings never stop it.
+
+Every chunk's selectors resolve as one program. In a tree spec, several
+module trees may scope to one chunk (`module_roots`, <../README.md>); their
+entities never claim the same place.
 
 `debundle spec validate` is `debundle run` in dry-run keep-going mode
 reporting every selector problem: it takes the **same inputs** (`--spec` /
@@ -179,7 +187,7 @@ the same resolve as `run`. Only the pipeline sees duplicate claims across
 modules, and a name pin on a binding the chunk does not declare is `no_match`
 in this mode but an unmatched claim in `run`.
 
-When selectors interact, the resolve runs the CP-SAT sidecar, found in the
+Each group of interacting selectors is one request to the CP-SAT sidecar, found in the
 `debundle` runfiles or through `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER` — in
 source-only `validate`, and in the edit gate, `describe` and `peel` when they
 resolve source claims. `match-selector` and `synthesize-selectors` resolve one
