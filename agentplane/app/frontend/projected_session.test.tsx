@@ -134,11 +134,13 @@ function viewState({
 function threadState({
   rows = [viewState()],
   caughtUp = true,
+  reconnecting = false,
   windowError = null,
   error = null,
 }: {
   rows?: ThreadEntity[];
   caughtUp?: boolean;
+  reconnecting?: boolean;
   windowError?: string | null;
   error?: string | null;
 } = {}): ThreadState {
@@ -149,6 +151,7 @@ function threadState({
       olderAvailable: false,
       loadingOlder: false,
       loadOlder: () => {},
+      reconnecting,
       error: windowError,
       refresh: () => {},
     },
@@ -291,12 +294,13 @@ it("disables shutdown while the harness is not running", async () => {
 // still settling breathes.
 it.each([
   [
-    { windowError: "test shape gone", error: "test fetch failed" },
+    { windowError: "test shape gone", error: "test fetch failed", reconnecting: true },
     "red",
     false,
     "Thread sync stopped: test shape gone",
   ],
   [{ error: "test fetch failed", rows: [viewState({ harness: "lost" })] }, "yellow", true, "Reconnecting…"],
+  [{ reconnecting: true, caughtUp: false, rows: [viewState({ harness: "lost" })] }, "yellow", true, "Reconnecting…"],
   [{ caughtUp: false, rows: [viewState({ status: "failed" })] }, "yellow", true, "Catching up…"],
   [{ rows: [viewState({ status: "failed", harness: "lost" })] }, "red", false, "Runner feed failed"],
   [{ rows: [viewState({ status: "ended", harness: "lost" })] }, "red", false, "Harness lost"],
@@ -363,6 +367,15 @@ it.each([
 ])("names why %o shows no model: %s", async (state, placeholder) => {
   const picker = (await render(threadState(state))).querySelector<HTMLInputElement>('input[aria-label="Model"]');
   expect(picker?.placeholder).toBe(placeholder);
+});
+
+// A stopped window shows its alert and refresh instead.
+it.each([
+  [{ reconnecting: true }, ["Reconnecting to the thread. What is on screen may be out of date."]],
+  [{ reconnecting: true, windowError: "test shape gone" }, []],
+])("shows the thread's status for %o: %o", async (state, statuses) => {
+  const container = await render(threadState(state));
+  expect([...container.querySelectorAll('[role="status"]')].map((node) => node.textContent)).toEqual(statuses);
 });
 
 function message(commandId: string): Command {

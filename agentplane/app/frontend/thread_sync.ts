@@ -42,6 +42,9 @@ export interface ThreadWindow {
    * stopped or its epoch is gone, so a view may call it whenever the reader nears the oldest row. */
   loadingOlder: boolean;
   loadOlder: () => void;
+  /** Whether a read of the thread failed and is being retried. Until one succeeds, `rows` may be
+   * out of date. */
+  reconnecting: boolean;
   /** Why the window stopped following the thread; `refresh` opens it again. */
   error: string | null;
   refresh: () => void;
