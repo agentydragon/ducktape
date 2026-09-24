@@ -1003,7 +1003,6 @@ rust_library(
         ":selector_debt",
         ":selector_diagnostics",
         ":selector_ir_lowering",
-        ":selector_solve",
         ":source_match",
         ":spec",
         ":spec_modules",
@@ -1240,27 +1239,6 @@ rust_binary(
         "@crates//:clap",
         "@crates//:swc_common",
     ],
-)
-
-# The relational-selector prototype: in-process Datalog (Ascent) over the
-# owner-graph EDB, exposed as `debundle selector-solve`. Not on the `run` path
-# (see docs/selector_resolution.md); new relations are proven here against real
-# pipeline output before they are lowered into the selector IR.
-rust_library(
-    name = "selector_solve",
-    srcs = ["selector_solve.rs"],
-    edition = "2024",
-    deps = [
-        "@crates//:ascent",
-        "@crates//:serde",
-        "@crates//:serde_json",
-    ],
-)
-
-rust_test(
-    name = "selector_solve_test",
-    crate = ":selector_solve",
-    edition = "2024",
 )
 
 # P1 of the Datalog selector resolver: a faithful, fail-closed projection of a

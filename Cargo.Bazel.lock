@@ -1,5 +1,5 @@
 {
-  "checksum": "1c0f6c7dda9c030ce47927198304e7a8fa8ac3d384508d7d9ae51ff58258acad",
+  "checksum": "c5f6c5e4f4fdff340b86340ad52cbbcda5326278daf5d5cd7e5d2f1ca3070114",
   "conditions": {
     "aarch64-apple-darwin": [
       "aarch64-apple-darwin"
@@ -2254,184 +2254,6 @@
         }
       ],
       "version": "0.2.1"
-    },
-    "ascent 0.8.1": {
-      "common_attrs": {
-        "crate_features": [
-          "dashmap",
-          "default",
-          "once_cell",
-          "par",
-          "rayon"
-        ],
-        "deps": [
-          {
-            "id": "ascent_base 0.8.1",
-            "target": "ascent_base"
-          },
-          {
-            "id": "boxcar 0.1.0",
-            "target": "boxcar"
-          },
-          {
-            "id": "cfg-if 1.0.4",
-            "target": "cfg_if"
-          },
-          {
-            "id": "dashmap 5.5.3",
-            "target": "dashmap"
-          },
-          {
-            "id": "hashbrown 0.14.5",
-            "target": "hashbrown"
-          },
-          {
-            "id": "once_cell 1.21.4",
-            "target": "once_cell"
-          },
-          {
-            "id": "rayon 1.12.0",
-            "target": "rayon"
-          },
-          {
-            "id": "rustc-hash 2.1.3",
-            "target": "rustc_hash"
-          },
-          {
-            "id": "web-time 1.1.0",
-            "target": "web_time"
-          }
-        ],
-        "edition": "2021",
-        "proc_macro_deps": [
-          {
-            "id": "ascent_macro 0.8.1",
-            "target": "ascent_macro"
-          },
-          {
-            "id": "pastey 0.2.3",
-            "target": "pastey"
-          }
-        ]
-      },
-      "library_target_name": "ascent",
-      "license": "MIT",
-      "license_ids": [
-        "MIT"
-      ],
-      "name": "ascent",
-      "package_url": "https://github.com/s-arash/ascent",
-      "repository": {
-        "Http": {
-          "sha256": "4b69c5a0326edc45aea8469a51f84be0ff28ea1e3a4d087665468793be061682",
-          "url": "https://static.crates.io/crates/ascent/0.8.1/download"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "ascent",
-            "crate_root": "src/lib.rs"
-          }
-        }
-      ],
-      "version": "0.8.1"
-    },
-    "ascent_base 0.8.1": {
-      "common_attrs": {
-        "edition": "2021",
-        "proc_macro_deps": [
-          {
-            "id": "pastey 0.2.3",
-            "target": "pastey"
-          }
-        ]
-      },
-      "library_target_name": "ascent_base",
-      "license": "MIT",
-      "license_ids": [
-        "MIT"
-      ],
-      "name": "ascent_base",
-      "package_url": "https://github.com/s-arash/ascent",
-      "repository": {
-        "Http": {
-          "sha256": "792af0babe403e49368d8717763605fe978b3a1eb7d51b52e3d0a5cb97e6eb74",
-          "url": "https://static.crates.io/crates/ascent_base/0.8.1/download"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "ascent_base",
-            "crate_root": "src/lib.rs"
-          }
-        }
-      ],
-      "version": "0.8.1"
-    },
-    "ascent_macro 0.8.1": {
-      "common_attrs": {
-        "deps": [
-          {
-            "id": "ascent_base 0.8.1",
-            "target": "ascent_base"
-          },
-          {
-            "id": "itertools 0.15.0",
-            "target": "itertools"
-          },
-          {
-            "id": "petgraph 0.8.3",
-            "target": "petgraph"
-          },
-          {
-            "id": "proc-macro2 1.0.106",
-            "target": "proc_macro2"
-          },
-          {
-            "id": "quote 1.0.45",
-            "target": "quote"
-          },
-          {
-            "id": "syn 2.0.117",
-            "target": "syn"
-          }
-        ],
-        "edition": "2021",
-        "proc_macro_deps": [
-          {
-            "id": "derive-syn-parse 0.2.0",
-            "target": "derive_syn_parse"
-          },
-          {
-            "id": "duplicate 2.0.1",
-            "target": "duplicate"
-          }
-        ]
-      },
-      "library_target_name": "ascent_macro",
-      "license": "MIT",
-      "license_ids": [
-        "MIT"
-      ],
-      "name": "ascent_macro",
-      "package_url": "https://github.com/s-arash/ascent",
-      "repository": {
-        "Http": {
-          "sha256": "1ac2662b20bf37fd66d21687c0ef91f1c64320a7ca985a34d1c3e60cc9ba940a",
-          "url": "https://static.crates.io/crates/ascent_macro/0.8.1/download"
-        }
-      },
-      "targets": [
-        {
-          "ProcMacro": {
-            "crate_name": "ascent_macro",
-            "crate_root": "src/lib.rs"
-          }
-        }
-      ],
-      "version": "0.8.1"
     },
     "ascii 1.1.0": {
       "common_attrs": {
@@ -4708,34 +4530,6 @@
         }
       ],
       "version": "1.6.1"
-    },
-    "boxcar 0.1.0": {
-      "common_attrs": {
-        "edition": "2021"
-      },
-      "library_target_name": "boxcar",
-      "license": "MIT",
-      "license_file": "LICENSE",
-      "license_ids": [
-        "MIT"
-      ],
-      "name": "boxcar",
-      "package_url": "https://github.com/ibraheemdev/boxcar",
-      "repository": {
-        "Http": {
-          "sha256": "38c99613cb3cd7429889a08dfcf651721ca971c86afa30798461f8eee994de47",
-          "url": "https://static.crates.io/crates/boxcar/0.1.0/download"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "boxcar",
-            "crate_root": "src/lib.rs"
-          }
-        }
-      ],
-      "version": "0.1.0"
     },
     "brotli 8.0.4": {
       "common_attrs": {
@@ -8333,64 +8127,6 @@
       ],
       "version": "0.3.9"
     },
-    "dashmap 5.5.3": {
-      "common_attrs": {
-        "crate_features": [
-          "raw-api",
-          "rayon"
-        ],
-        "deps": [
-          {
-            "id": "cfg-if 1.0.4",
-            "target": "cfg_if"
-          },
-          {
-            "id": "hashbrown 0.14.5",
-            "target": "hashbrown"
-          },
-          {
-            "id": "lock_api 0.4.14",
-            "target": "lock_api"
-          },
-          {
-            "id": "once_cell 1.21.4",
-            "target": "once_cell"
-          },
-          {
-            "id": "parking_lot_core 0.9.12",
-            "target": "parking_lot_core"
-          },
-          {
-            "id": "rayon 1.12.0",
-            "target": "rayon"
-          }
-        ],
-        "edition": "2018"
-      },
-      "library_target_name": "dashmap",
-      "license": "MIT",
-      "license_file": "LICENSE",
-      "license_ids": [
-        "MIT"
-      ],
-      "name": "dashmap",
-      "package_url": "https://github.com/xacrimon/dashmap",
-      "repository": {
-        "Http": {
-          "sha256": "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856",
-          "url": "https://static.crates.io/crates/dashmap/5.5.3/download"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "dashmap",
-            "crate_root": "src/lib.rs"
-          }
-        }
-      ],
-      "version": "5.5.3"
-    },
     "dashmap 6.2.1": {
       "common_attrs": {
         "deps": [
@@ -11062,49 +10798,6 @@
       ],
       "version": "2.2.0"
     },
-    "derive-syn-parse 0.2.0": {
-      "common_attrs": {
-        "deps": [
-          {
-            "id": "proc-macro2 1.0.106",
-            "target": "proc_macro2"
-          },
-          {
-            "id": "quote 1.0.45",
-            "target": "quote"
-          },
-          {
-            "id": "syn 2.0.117",
-            "target": "syn"
-          }
-        ],
-        "edition": "2018"
-      },
-      "library_target_name": "derive_syn_parse",
-      "license": "MIT OR Apache-2.0",
-      "license_file": "LICENSE-APACHE",
-      "license_ids": [
-        "Apache-2.0",
-        "MIT"
-      ],
-      "name": "derive-syn-parse",
-      "package_url": "https://github.com/sharnoff/derive-syn-parse",
-      "repository": {
-        "Http": {
-          "sha256": "d65d7ce8132b7c0e54497a4d9a55a1c2a0912a0d786cf894472ba818fba45762",
-          "url": "https://static.crates.io/crates/derive-syn-parse/0.2.0/download"
-        }
-      },
-      "targets": [
-        {
-          "ProcMacro": {
-            "crate_name": "derive_syn_parse",
-            "crate_root": "src/lib.rs"
-          }
-        }
-      ],
-      "version": "0.2.0"
-    },
     "derive-where 1.6.1": {
       "common_attrs": {
         "deps": [
@@ -11963,10 +11656,6 @@
             "target": "anyhow"
           },
           {
-            "id": "ascent 0.8.1",
-            "target": "ascent"
-          },
-          {
             "id": "axum 0.8.9",
             "target": "axum"
           },
@@ -12399,35 +12088,6 @@
         }
       ],
       "version": "0.9.1"
-    },
-    "duplicate 2.0.1": {
-      "common_attrs": {
-        "edition": "2021"
-      },
-      "library_target_name": "duplicate",
-      "license": "MIT OR Apache-2.0",
-      "license_file": "LICENSE-APACHE",
-      "license_ids": [
-        "Apache-2.0",
-        "MIT"
-      ],
-      "name": "duplicate",
-      "package_url": "https://github.com/Emoun/duplicate",
-      "repository": {
-        "Http": {
-          "sha256": "8e92f10a49176cbffacaedabfaa11d51db1ea0f80a83c26e1873b43cd1742c24",
-          "url": "https://static.crates.io/crates/duplicate/2.0.1/download"
-        }
-      },
-      "targets": [
-        {
-          "ProcMacro": {
-            "crate_name": "duplicate",
-            "crate_root": "src/lib.rs"
-          }
-        }
-      ],
-      "version": "2.0.1"
     },
     "dyn-clone 1.0.20": {
       "common_attrs": {
@@ -15877,8 +15537,7 @@
           "allocator-api2",
           "default",
           "inline-more",
-          "raw",
-          "rayon"
+          "raw"
         ],
         "deps": [
           {
@@ -15888,10 +15547,6 @@
           {
             "id": "allocator-api2 0.2.21",
             "target": "allocator_api2"
-          },
-          {
-            "id": "rayon 1.12.0",
-            "target": "rayon"
           }
         ],
         "edition": "2021"
@@ -48711,7 +48366,6 @@
   "direct_deps": [
     "alphavantage 0.7.1",
     "anyhow 1.0.104",
-    "ascent 0.8.1",
     "async-trait 0.1.92",
     "axum 0.8.9",
     "base64 0.23.1",

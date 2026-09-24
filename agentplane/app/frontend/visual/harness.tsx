@@ -1426,6 +1426,18 @@ if (scenario.openToolPayloads) {
   openToolPayloads.observe(document, { childList: true, subtree: true });
 }
 
+if (scenario.openEvidence) {
+  const openEvidence = new MutationObserver(() => {
+    const button = document.querySelector<HTMLButtonElement>(
+      `[data-thread-anchor="${scenario.openEvidence}"] button[aria-label="Evidence"]`
+    );
+    if (!button) return;
+    openEvidence.disconnect();
+    button.click();
+  });
+  openEvidence.observe(document, { childList: true, subtree: true });
+}
+
 if (scenario.preselectReconnect) {
   const selectExisting = new MutationObserver(() => {
     const connection = document.querySelector<HTMLSelectElement>('select[name="connection"]');

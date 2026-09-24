@@ -5,8 +5,7 @@
 //! of by the target's own minified name. This is the stable identity of the ~72
 //! TS codegen helpers, currently name-pinned.
 //!
-//! Unlike `selector_solve_test` (which exercises the kernel directly on a
-//! synthetic owner graph), these tests drive the real `debundle` binary: the
+//! These tests drive the real `debundle` binary: the
 //! spec carries `reads_member` selectors, the member-read facts are derived from
 //! the chunk's AST and joined to the owner graph, and we assert the resolved
 //! binding lands in the right module and the emitted tree runs under Node.

@@ -1,8 +1,30 @@
-import { ActionIcon, Badge, Button, Group, Paper, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
+import {
+  ActionIcon,
+  Badge,
+  Button,
+  Group,
+  Paper,
+  Select,
+  Stack,
+  Text,
+  Textarea,
+  TextInput,
+  Tooltip,
+} from "@mantine/core";
 import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
-import { type JSX, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import IconZoomCode from "@tabler/icons-react/dist/esm/icons/IconZoomCode.mjs";
+import {
+  type CSSProperties,
+  type JSX,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
@@ -23,7 +45,7 @@ import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./l
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { HighlightedText, JsonView } from "./json_view";
 import { Markdown } from "./markdown";
-import { RetainedDisclosure, RetainedDisclosureProvider } from "./retained_disclosures";
+import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { ChronologicalDebugLink, ChronologicalDebugProvider } from "./chronological_debug";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
@@ -233,7 +255,7 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
     <Stack gap="xs">
       {error && <Text c="red">{error}</Text>}
       {page?.observations.map((observation) => (
-        <Stack gap="xs" key={observation.observation_cursor}>
+        <Stack gap="xs" key={observation.observation_cursor} data-evidence-observation={observation.observation_cursor}>
           {observation.has_native ? (
             <EvidenceFrames
               key={observation.observation_cursor}
@@ -263,13 +285,35 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
   );
 }
 
-function Evidence({ threadId, entity }: { threadId: string; entity: ThreadEntity }): JSX.Element {
-  const id = `${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:evidence`;
+function evidenceDisclosure(entity: ThreadEntity): string {
+  return `${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:evidence`;
+}
+
+/** An icon, not a disclosure row, so it adds no height to its card: it sits in the card's header
+ * row where there is one, and is pinned out of flow at a corner (`style`) where there is not. */
+function EvidenceToggle({ entity, style }: { entity: ThreadEntity; style?: CSSProperties }): JSX.Element {
+  const [open, setOpen] = useRetainedDisclosure(evidenceDisclosure(entity));
   return (
-    <RetainedDisclosure id={id} summary="Evidence">
-      <EvidencePageView key={id} threadId={threadId} entity={entity} />
-    </RetainedDisclosure>
+    <Tooltip label="Evidence" events={{ hover: true, focus: true, touch: false }}>
+      <ActionIcon
+        size="xs"
+        variant={open ? "light" : "subtle"}
+        color="gray"
+        aria-label="Evidence"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        style={style}
+      >
+        <IconZoomCode size={14} />
+      </ActionIcon>
+    </Tooltip>
   );
+}
+
+function EvidencePanel({ threadId, entity }: { threadId: string; entity: ThreadEntity }): JSX.Element {
+  const id = evidenceDisclosure(entity);
+  const [open] = useRetainedDisclosure(id);
+  return open ? <EvidencePageView key={id} threadId={threadId} entity={entity} /> : <></>;
 }
 
 export function EntityCard({
@@ -283,10 +327,13 @@ export function EntityCard({
 }): JSX.Element {
   if (entity.entityKind === "confirmed_input") {
     return (
-      <Group justify="flex-end" data-thread-anchor={entity.cursor.toString()}>
+      <Group justify="flex-end" align="flex-start" gap="xs" wrap="nowrap" data-thread-anchor={entity.cursor.toString()}>
+        {/* The bubble has no header row: beside its top corner, in the width it leaves free, the
+            icon neither grows the bubble nor covers its text. */}
+        <EvidenceToggle entity={entity} />
         <Paper className="agentplane-user-bubble" p="sm" withBorder maw="80%">
           <Body reference={entity.inputRef} format="text" />
-          <Evidence threadId={threadId} entity={entity} />
+          <EvidencePanel threadId={threadId} entity={entity} />
         </Paper>
       </Group>
     );
@@ -296,10 +343,11 @@ export function EntityCard({
     const event = "event" in entity.state ? entity.state.event : null;
     const presentation = lifecyclePresentation(observation, event);
     return (
-      <Stack gap="xs" data-thread-anchor={entity.cursor.toString()}>
+      <Stack gap="xs" style={{ position: "relative" }} data-thread-anchor={entity.cursor.toString()}>
         <Text size="xs" c={presentation.diagnostic || observation === "harness_lost" ? "red" : "dimmed"}>
           {presentation.label}
         </Text>
+        <EvidenceToggle entity={entity} style={{ position: "absolute", top: 0, right: 0 }} />
         {presentation.diagnostic && (
           <Text c="red" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
             {presentation.diagnostic}
@@ -311,7 +359,7 @@ export function EntityCard({
             <JsonView value={entity.state.event} />
           </details>
         )}
-        <Evidence threadId={threadId} entity={entity} />
+        <EvidencePanel threadId={threadId} entity={entity} />
       </Stack>
     );
   }
@@ -326,16 +374,19 @@ export function EntityCard({
     <Paper p="sm" withBorder data-thread-anchor={entity.cursor.toString()}>
       <Group justify="space-between" mb="xs">
         <Badge variant="light">{kind === ItemKind.TOOL_CALL ? tool || "tool" : "assistant"}</Badge>
-        {streaming && (
-          <Badge role="img" aria-label="Streaming">
-            Streaming
-          </Badge>
-        )}
-        {completion === null && !streaming && (
-          <Badge role="img" aria-label="Incomplete">
-            Incomplete
-          </Badge>
-        )}
+        <Group gap="xs">
+          {streaming && (
+            <Badge role="img" aria-label="Streaming">
+              Streaming
+            </Badge>
+          )}
+          {completion === null && !streaming && (
+            <Badge role="img" aria-label="Incomplete">
+              Incomplete
+            </Badge>
+          )}
+          <EvidenceToggle entity={entity} />
+        </Group>
       </Group>
       {entity.textRef &&
         (reasoning ? (
@@ -345,7 +396,7 @@ export function EntityCard({
         ))}
       {entity.argumentsRef && <LazyBody label="Arguments" reference={entity.argumentsRef} format="code" />}
       {entity.outputRef && <LazyBody label="Output" reference={entity.outputRef} format="code" />}
-      <Evidence threadId={threadId} entity={entity} />
+      <EvidencePanel threadId={threadId} entity={entity} />
     </Paper>
   );
 }
@@ -873,7 +924,14 @@ function ProjectedSessionBody({
         {hasPendingCommands && (
           <Stack role="region" aria-label="Pending commands" gap="xs">
             {projectedCommands.map((row) => (
-              <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder>
+              <Paper
+                key={row.entityId}
+                data-command-id={row.entityId}
+                p="xs"
+                withBorder
+                style={{ position: "relative" }}
+              >
+                <EvidenceToggle entity={row} style={{ position: "absolute", top: 4, right: 4 }} />
                 <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
                   {row.state.outcome === "pending"
                     ? "Saved · awaiting effect"
@@ -881,7 +939,7 @@ function ProjectedSessionBody({
                   {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
                 </Text>
                 {row.inputRef && <Body reference={row.inputRef} format="text" />}
-                <Evidence threadId={threadId} entity={row} />
+                <EvidencePanel threadId={threadId} entity={row} />
               </Paper>
             ))}
           </Stack>
