@@ -148,7 +148,7 @@ cluster/
 │   └── main/               # Single TF root (PG backend, all resources)
 ├── generated/              # Flux Kustomization directories cdk8s writes in full (same sub-paths as k8s/; never edit)
 ├── k8s/                    # Flux-managed manifests with a hand-written file (config only — source lives in rotators/, provisioners/, proxies/)
-│   ├── agents/             # Agent infra (public-coder-agent, airlock, agent-rbac-base, tana-mcp, ...)
+│   ├── agents/             # Agent infra (public-coder-agent, airlock, tana-mcp, ...)
 │   ├── authentik/          # SSO (app, blueprints, db, secrets, proxy-routes, ...)
 │   ├── monitoring/         # Observability (stack, loki, alloy, tempo, ...)
 │   ├── <service>/          # Grouped: subdirs per flux-kustomization (namespace, secrets, app, db)

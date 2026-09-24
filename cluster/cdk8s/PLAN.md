@@ -83,8 +83,6 @@ left is moving each remaining directory once nothing hand-written is left in it:
   - `agents-mitmproxy`: read through the bootstrap `flux-system` GitRepository, whose
     `sparseCheckout` (`gotk-sync.yaml`) covers only `cluster/k8s/`. The same holds for
     `flux/` and `external-creds` once they stop being mixed, unless bootstrap changes.
-  - `claude-rbac`: `agents/agent-rbac-base` is also the RBAC docs hub the root
-    `AGENTS.md` links.
   - `clickhouse-schema`, `proxmox-proxy`, `vector-talos-logs`: a `configMapGenerator`
     reads a hand-written input (`schema.sql`, `nginx.conf`, `vector.toml`) from the
     directory. They move with the input, or once it is rendered from Python.
