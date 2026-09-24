@@ -222,7 +222,7 @@ the runtimes differ in where the sandbox runs — see
   haku-console keeps the logic in reviewed code. Works on Runtime A today; not
   coupled to the runtime question. Under the Agent SDK this is simpler still —
   hooks there are in-process callbacks and Python has both `PreCompact` and `Stop`
-  (see <plans/agent_sdk_sandbox_runtime.md>).
+  (see <docs/agent_sdk_runtime.md>).
 - **Cut the sandbox over to the Nix image** — `cluster/k8s/haku/workspaces/image/default.nix`
   builds in CI and publishes to `haku-sandbox-image-nix`, but the SandboxTemplate still pulls
   the apt/Dockerfile build. The blocker is a **runtime** question a green build can't answer:
