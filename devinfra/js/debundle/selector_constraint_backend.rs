@@ -1909,8 +1909,16 @@ pub enum BackendSolveStatus {
 pub enum BackendAssignmentCoverage {
     #[default]
     Sample,
+    /// Every value each projected variable can take appears in some assignment.
     TargetSupportComplete,
+    /// As `TargetSupportComplete`, except that some ambiguous variable stopped at
+    /// `MAX_ALTERNATIVES_PER_VARIABLE` values without proving it has no more.
+    TargetSupportCapped,
 }
+
+/// Distinct values a backend lists per ambiguous projected variable before it reports
+/// `BackendAssignmentCoverage::TargetSupportCapped`.
+pub const MAX_ALTERNATIVES_PER_VARIABLE: u32 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackendSolveResult {

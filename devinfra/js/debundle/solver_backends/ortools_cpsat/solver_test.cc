@@ -1,6 +1,8 @@
 #include "devinfra/js/debundle/solver_backends/ortools_cpsat/solver.h"
 
+#include <cstdint>
 #include <cstdlib>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -11,11 +13,26 @@ namespace cpsat = ducktape::debundle::solver_backends::ortools_cpsat;
 
 namespace {
 
+// Requests default to 5 alternatives per variable; the textproto may override.
 cpsat::SelectorCpSatRequest ParseRequest(const char* textproto) {
   cpsat::SelectorCpSatRequest request;
-  EXPECT_TRUE(google::protobuf::TextFormat::ParseFromString(textproto, &request))
+  request.set_max_alternatives_per_variable(5);
+  EXPECT_TRUE(google::protobuf::TextFormat::MergeFromString(textproto, &request))
       << textproto;
   return request;
+}
+
+std::set<int64_t> ValuesOf(const cpsat::SelectorCpSatResponse& response,
+                           uint32_t variable_id) {
+  std::set<int64_t> values;
+  for (const cpsat::AssignmentRow& row : response.assignments()) {
+    for (const cpsat::Assignment& assignment : row.values()) {
+      if (assignment.variable_id() == variable_id) {
+        values.insert(assignment.value());
+      }
+    }
+  }
+  return values;
 }
 
 bool RowHas(const cpsat::AssignmentRow& row, uint32_t variable_id,
@@ -385,6 +402,132 @@ TEST(SelectorCpSatSolverTest, InvalidMaxTimeSecondsEnvIsInvalidResponse) {
   EXPECT_EQ(response.status(), cpsat::SOLVER_STATUS_INVALID);
   EXPECT_NE(response.diagnostic().find(
                 "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS"),
+            std::string::npos);
+}
+
+TEST(SelectorCpSatSolverTest, UniqueProgramReturnsOneRow) {
+  const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
+    variables { id: 0 debug_name: "a" dense_domain { value_count: 3 } }
+    variables { id: 1 debug_name: "b" dense_domain { value_count: 3 } }
+    variables { id: 2 debug_name: "c" dense_domain { value_count: 3 } }
+    all_different { id: 0 variable_ids: [ 0, 1, 2 ] }
+    allowed_tables {
+      id: 0
+      variable_ids: [ 0, 1 ]
+      allowed_rows { values: [ 2, 0 ] }
+      allowed_rows { values: [ 2, 2 ] }
+    }
+    target_projections { target_id: 0 owner_variable_id: 0 }
+    target_projections { target_id: 1 owner_variable_id: 1 }
+    target_projections { target_id: 2 owner_variable_id: 2 }
+  )pb");
+
+  const cpsat::SelectorCpSatResponse response =
+      cpsat::SolveSelectorCpSat(request);
+
+  EXPECT_EQ(response.status(), cpsat::SOLVER_STATUS_SATISFIABLE);
+  EXPECT_EQ(response.assignment_coverage(),
+            cpsat::ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE);
+  ASSERT_EQ(response.assignments_size(), 1);
+  EXPECT_TRUE(RowHas(response.assignments(0), 0, 2));
+  EXPECT_TRUE(RowHas(response.assignments(0), 1, 0));
+  EXPECT_TRUE(RowHas(response.assignments(0), 2, 1));
+}
+
+// 5 variables all-different over 5 values have 5! = 120 solutions. Every
+// variable's full value set is listed without enumerating them: one first row,
+// at most one row per variable proven ambiguous, and at most 4 more values per
+// variable.
+TEST(SelectorCpSatSolverTest, PermutationListsEveryValueWithoutEnumerating) {
+  const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
+    variables { id: 0 debug_name: "v0" dense_domain { value_count: 5 } }
+    variables { id: 1 debug_name: "v1" dense_domain { value_count: 5 } }
+    variables { id: 2 debug_name: "v2" dense_domain { value_count: 5 } }
+    variables { id: 3 debug_name: "v3" dense_domain { value_count: 5 } }
+    variables { id: 4 debug_name: "v4" dense_domain { value_count: 5 } }
+    all_different { id: 0 variable_ids: [ 0, 1, 2, 3, 4 ] }
+    target_projections { target_id: 0 owner_variable_id: 0 }
+    target_projections { target_id: 1 owner_variable_id: 1 }
+    target_projections { target_id: 2 owner_variable_id: 2 }
+    target_projections { target_id: 3 owner_variable_id: 3 }
+    target_projections { target_id: 4 owner_variable_id: 4 }
+  )pb");
+
+  const cpsat::SelectorCpSatResponse response =
+      cpsat::SolveSelectorCpSat(request);
+
+  EXPECT_EQ(response.status(), cpsat::SOLVER_STATUS_AMBIGUOUS);
+  EXPECT_EQ(response.assignment_coverage(),
+            cpsat::ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE);
+  EXPECT_LE(response.assignments_size(), 1 + 5 + 5 * 4);
+  const std::set<int64_t> all_values = {0, 1, 2, 3, 4};
+  for (uint32_t variable_id = 0; variable_id < 5; ++variable_id) {
+    EXPECT_EQ(ValuesOf(response, variable_id), all_values) << variable_id;
+  }
+}
+
+TEST(SelectorCpSatSolverTest, FixedVariableAgreesAcrossAmbiguousRows) {
+  const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
+    variables { id: 0 debug_name: "fixed" dense_domain { value_count: 4 } }
+    variables { id: 1 debug_name: "free_a" dense_domain { value_count: 4 } }
+    variables { id: 2 debug_name: "free_b" dense_domain { value_count: 4 } }
+    all_different { id: 0 variable_ids: [ 0, 1, 2 ] }
+    allowed_tables {
+      id: 0
+      variable_ids: 0
+      allowed_rows { values: 3 }
+    }
+    allowed_tables {
+      id: 1
+      variable_ids: [ 1, 2 ]
+      allowed_rows { values: [ 0, 1 ] }
+      allowed_rows { values: [ 1, 0 ] }
+      allowed_rows { values: [ 1, 2 ] }
+    }
+    target_projections { target_id: 0 owner_variable_id: 0 }
+    target_projections { target_id: 1 owner_variable_id: 1 }
+    target_projections { target_id: 2 owner_variable_id: 2 }
+  )pb");
+
+  const cpsat::SelectorCpSatResponse response =
+      cpsat::SolveSelectorCpSat(request);
+
+  EXPECT_EQ(response.status(), cpsat::SOLVER_STATUS_AMBIGUOUS);
+  EXPECT_EQ(response.assignment_coverage(),
+            cpsat::ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE);
+  EXPECT_EQ(ValuesOf(response, 0), std::set<int64_t>({3}));
+  EXPECT_EQ(ValuesOf(response, 1), std::set<int64_t>({0, 1}));
+  EXPECT_EQ(ValuesOf(response, 2), std::set<int64_t>({0, 1, 2}));
+}
+
+TEST(SelectorCpSatSolverTest, AlternativesStopAtTheCap) {
+  const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
+    max_alternatives_per_variable: 3
+    variables { id: 0 debug_name: "owner" dense_domain { value_count: 10 } }
+    target_projections { target_id: 0 owner_variable_id: 0 }
+  )pb");
+
+  const cpsat::SelectorCpSatResponse response =
+      cpsat::SolveSelectorCpSat(request);
+
+  EXPECT_EQ(response.status(), cpsat::SOLVER_STATUS_AMBIGUOUS);
+  EXPECT_EQ(response.assignment_coverage(),
+            cpsat::ASSIGNMENT_COVERAGE_TARGET_SUPPORT_CAPPED);
+  EXPECT_EQ(ValuesOf(response, 0).size(), 3u);
+}
+
+TEST(SelectorCpSatSolverTest, ZeroMaxAlternativesIsInvalid) {
+  const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
+    max_alternatives_per_variable: 0
+    variables { id: 0 debug_name: "owner" dense_domain { value_count: 1 } }
+    target_projections { target_id: 0 owner_variable_id: 0 }
+  )pb");
+
+  const cpsat::SelectorCpSatResponse response =
+      cpsat::SolveSelectorCpSat(request);
+
+  EXPECT_EQ(response.status(), cpsat::SOLVER_STATUS_INVALID);
+  EXPECT_NE(response.diagnostic().find("max_alternatives_per_variable"),
             std::string::npos);
 }
 

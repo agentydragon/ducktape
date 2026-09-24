@@ -10,6 +10,10 @@ message SelectorCpSatRequest {
   repeated TargetProjection target_projections = 5;
   repeated AllowedRowSet allowed_row_sets = 7;
   repeated SharedSparseDomain shared_sparse_domains = 8;
+  // Per ambiguous projection variable, how many distinct values the solver
+  // collects before it stops looking (ASSIGNMENT_COVERAGE_TARGET_SUPPORT_CAPPED).
+  // Must be positive.
+  uint32 max_alternatives_per_variable = 9;
 }
 
 message Variable {
@@ -86,7 +90,13 @@ enum SolverStatus {
 enum AssignmentCoverage {
   ASSIGNMENT_COVERAGE_UNSPECIFIED = 0;
   ASSIGNMENT_COVERAGE_SAMPLE = 1;
+  // Every value each projection variable can take appears in some row. The
+  // rows do not enumerate every combination of those values.
   ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE = 2;
+  // Every projection variable's value set is complete, except that some
+  // ambiguous variable stopped at max_alternatives_per_variable values without
+  // proving it has no more.
+  ASSIGNMENT_COVERAGE_TARGET_SUPPORT_CAPPED = 3;
 }
 
 message AssignmentRow {
