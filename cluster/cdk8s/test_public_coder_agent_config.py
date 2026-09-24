@@ -2,8 +2,7 @@
 
 The profile's RBAC is spread over the rbac-base, Haku console, ClickHouse diagnostics,
 ducktape-flux and public-coder app charts; its traffic over the app and its credential proxy.
-The seam with the hand-written iron config stays in
-`//cluster/validation:test_haku_public_coder_contract`, and the ClickHouse reader's in
+The ClickHouse reader's hand-written Secret is checked in
 `//cluster/validation:test_public_coder_clickhouse_reader_contract`.
 """
 
