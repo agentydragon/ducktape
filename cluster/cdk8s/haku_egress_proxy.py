@@ -653,55 +653,6 @@ def _sandbox_fence(chart: Chart) -> None:
     )
 
 
-def _agent_runner_fence(chart: Chart) -> None:
-    """Console-owned Haku Agent runners are isolated from Haku's general sandbox namespace. They
-    can reach Haku Console's runner-protocol endpoint, the OAuth-substituting proxy, the in-cluster
-    Forgejo they check haku-state out of, and the Console's authorization proxy -- but have no
-    direct internet, general cluster access, or general-purpose proxy."""
-    CiliumClusterwideNetworkPolicy(
-        chart,
-        "haku-agent-runner-egress",
-        metadata=ApiObjectMetadata(name="haku-agent-runner-egress"),
-        spec=CiliumClusterwideNetworkPolicySpec(
-            endpoint_selector=CiliumClusterwideNetworkPolicySpecEndpointSelector(
-                match_labels={
-                    "app.kubernetes.io/name": "haku-harness-runner",
-                    "haku.allegedly.works/access-profile-id": "haku",
-                },
-                match_expressions=[_namespace_selector("haku-runtime-sandbox")],
-            ),
-            egress=[
-                _DNS,
-                # Cilium evaluates the destination endpoint after Service translation.
-                # haku-console Service port 9090 targets the API container's `api` port 8080.
-                _to_endpoint("haku-console", {"k8s:app.kubernetes.io/name": "haku-console"}, 8080),
-                _to_endpoint(NAME, {"k8s:app.kubernetes.io/name": _CLAUDE_PROXY}, 8180),
-                # Colocated Console egress fence (#4670): the runner's HTTPS_PROXY now points here
-                # (haku-egress-proxy.haku-console.svc:8888), carrying its inference to the
-                # in-cluster LiteLLM gateway and its GitHub traffic. The sidecar shares the Console
-                # pod's network namespace, so it is selected by the Console pod label on the
-                # proxy's container port. The haku-claude-oauth-proxy rule above stays until that
-                # iron proxy retires, so reverting the runner's proxy needs no policy change.
-                _to_endpoint("haku-console", {"k8s:app.kubernetes.io/name": "haku-console"}, 8888),
-                # Kubernetes access is mediated by the Haku Console authorization proxy. The runner
-                # writes an ephemeral tokenFile kubeconfig only when Console selects this route; no
-                # ServiceAccount token is mounted in the runner pod and there is no direct
-                # apiserver path. The proxy's TLS listener, because kubectl sends credentials only
-                # to an https server.
-                _to_endpoint("haku-console", {"k8s:app.kubernetes.io/name": "haku-kube-api-proxy"}, 8443),
-                # haku-state, so the session starts with Haku's manual rather than an empty
-                # workspace. In-cluster and plaintext, the way the haku-sandbox exec target already
-                # clones it -- so no credential passes through the OAuth-substituting proxy, which
-                # knows one host and one header and has no business rewriting git auth. The runner
-                # writes the same haku Forgejo account into ~/.netrc; a public git.allegedly.works
-                # route is deliberately NOT opened, since it would hairpin out through the Gateway
-                # for a service one hop away.
-                _to_endpoint("forgejo", {"k8s:app.kubernetes.io/name": "forgejo"}, 3000),
-            ],
-        ),
-    )
-
-
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
@@ -714,7 +665,6 @@ def chart(app: App) -> Chart:
     _claude_proxy(chart)
     _openclaw_spike_proxy(chart)
     _sandbox_fence(chart)
-    _agent_runner_fence(chart)
     return chart
 
 
