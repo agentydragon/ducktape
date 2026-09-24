@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "flux_kustomizations",
@@ -258,5 +258,20 @@ py_library(
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
         "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_cluster",
+    srcs = ["test_cluster.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":cluster",
+        "//:conftest",
+        "//cluster/cdk8s:stateful_infra",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
     ],
 )

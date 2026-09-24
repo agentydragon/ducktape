@@ -75,9 +75,7 @@ exports_files(
         "agentplane-crds/crd-egresspolicies.yaml",
         "agents/public-coder-agent/proxy/iron.yaml",
         "clickhouse/cluster/clickhouse.k8s.yaml",
-        "clickhouse/cluster/networkpolicy.k8s.yaml",
         "clickhouse/cluster/public-coder-credentials.sops.yaml",
-        "github-api-proxy/app/github-api-proxy.k8s.yaml",
         "kustomization.yaml",
     ],
     visibility = [
@@ -98,15 +96,12 @@ filegroup(
         "agents/haku-egress-proxy/haku-egress-proxy.k8s.yaml",
         "agents/public-coder-agent/app/agent-kubeconfig.yaml",
         "agents/public-coder-agent/proxy/iron.yaml",
-        "clickhouse/cluster/agent-diagnostics-rbac.k8s.yaml",
-        "flux/ducktape-flux/ducktape-flux.k8s.yaml",
         "haku-ci/haku-ci.k8s.yaml",
         "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
         "haku/workspaces/app/haku-workspaces.k8s.yaml",
         "haku/workspaces/app/kustomization.yaml",
         "haku/workspaces/image/haku-sandbox-setup.sh",
         "kustomization.yaml",
-        "//cluster:generated/agents/shared-rbac/agent-shared-rbac.k8s.yaml",
         "//cluster:generated/haku/rbac/haku-rbac.k8s.yaml",
         "//cluster:generated/keda/keda.k8s.yaml",
     ],
@@ -133,17 +128,8 @@ filegroup(
 )
 
 filegroup(
-    name = "seaweedfs_cluster_manifest",
-    srcs = ["seaweedfs/cluster/seaweedfs.k8s.yaml"],
-    visibility = ["//cluster/validation:__pkg__"],
-)
-
-filegroup(
     name = "ntfy_manifest_contract_files",
-    srcs = [
-        "ntfy/ntfy.k8s.yaml",
-        "//cluster:generated/flux-webhook/flux-webhook.k8s.yaml",
-    ],
+    srcs = ["ntfy/ntfy.k8s.yaml"],
     visibility = ["//cluster/validation:__pkg__"],
 )
 

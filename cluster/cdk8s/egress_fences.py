@@ -177,7 +177,7 @@ OPENCLAW_SPIKE_ALLOWLIST = (
 # internet.
 _MITMPROXY_GROUPS: tuple[tuple[str, ...], ...] = (
     # The build-registry bucket: public package, source and toolchain registries, granted
-    # all-or-none (//cluster/validation:test_egress_allowlists).
+    # all-or-none (//cluster/cdk8s:test_egress_fences).
     (
         "bcr.bazel.build",
         "cache.nixos.org",
