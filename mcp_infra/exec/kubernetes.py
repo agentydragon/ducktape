@@ -14,6 +14,7 @@ a remote `TimedOut` from a `Killed`.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import shlex
 from dataclasses import dataclass, field
@@ -58,6 +59,19 @@ def _handshake_error(status: int, message: str) -> str:
         case _:
             cause = "check that the pod exists and its target container is ready"
     return f"Kubernetes rejected the exec WebSocket handshake ({detail}); {cause}"
+
+
+def _exit_code(status_frame: bytes) -> int:
+    """The command's exit code, from the `Status` the API server ends an exec with.
+
+    Only `Success` and a `NonZeroExitCode` failure carry one. Any other failure means the command
+    never ran (its executable is missing from the image, say), and the kubelet puts the runtime's
+    error where the exit code would be, so the message is the only account of why.
+    """
+    status = json.loads(status_frame)
+    if status.get("status") == "Success" or status.get("reason") == "NonZeroExitCode":
+        return WsApiClient.parse_error_data(status_frame)
+    raise PodExecError(f"Kubernetes could not run the command: {status.get('message')}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,7 +229,7 @@ class KubernetesWebSocketExecRunner:
         if not error_data:
             raise PodExecError("Kubernetes exec ended without a command status frame; retry or inspect the pod")
         try:
-            exit_code = WsApiClient.parse_error_data(bytes(error_data))
+            exit_code = _exit_code(bytes(error_data))
         except (KeyError, TypeError, ValueError) as error:
             raise PodExecError("Kubernetes exec returned a malformed command status frame") from error
 
