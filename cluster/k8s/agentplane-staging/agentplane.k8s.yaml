@@ -61,6 +61,18 @@ data:
         - anthropic-max20/ant-messages/claude-sonnet-5
         - anthropic-max20/ant-messages/claude-fable-5
         - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
+        - ollama/oai-chat/gpt-oss-20b-128k
+        - ollama/olm-chat/gpt-oss-20b-128k
+        - ollama/oai-chat/gpt-oss-20b-256k
+        - ollama/olm-chat/gpt-oss-20b-256k
+        - ollama/oai-chat/gpt-oss-20b-512k
+        - ollama/olm-chat/gpt-oss-20b-512k
+        - ollama/oai-chat/gpt-oss-20b-1m
+        - ollama/olm-chat/gpt-oss-20b-1m
+        - ollama/oai-chat/gpt-oss-120b-128k
+        - ollama/olm-chat/gpt-oss-120b-128k
+        - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+        - ollama/olm-chat/gemma4-31b-it-q8_0-128k
       HARNESS_CODEX:
         - chatgpt/oai-responses/gpt-6-astra
         - chatgpt/oai-responses/gpt-6-sol
@@ -70,6 +82,18 @@ data:
         - chatgpt/oai-responses/gpt-5.6-sol
         - chatgpt/oai-responses/gpt-5.6-terra
         - chatgpt/oai-responses/gpt-5.6-luna
+        - ollama/oai-chat/gpt-oss-20b-128k
+        - ollama/olm-chat/gpt-oss-20b-128k
+        - ollama/oai-chat/gpt-oss-20b-256k
+        - ollama/olm-chat/gpt-oss-20b-256k
+        - ollama/oai-chat/gpt-oss-20b-512k
+        - ollama/olm-chat/gpt-oss-20b-512k
+        - ollama/oai-chat/gpt-oss-20b-1m
+        - ollama/olm-chat/gpt-oss-20b-1m
+        - ollama/oai-chat/gpt-oss-120b-128k
+        - ollama/olm-chat/gpt-oss-120b-128k
+        - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+        - ollama/olm-chat/gemma4-31b-it-q8_0-128k
     agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
     thread_presets:
