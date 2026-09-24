@@ -352,6 +352,21 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ['[data-thread-anchor="34"]'],
     captureViewport: true,
   },
+  // An unnamed thread: the title field shows the thread id as its placeholder and nothing beside it.
+  session_unnamed: {
+    element: "#app",
+    route: "/threads/5f1c4a2e-0000-4000-8000-000000000000",
+    viewport: { width: 1200, height: 900 },
+    readySelectors: ['[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_unnamed_phone: {
+    element: "#app",
+    route: "/threads/5f1c4a2e-0000-4000-8000-000000000000",
+    viewport: PHONE,
+    readySelectors: ['[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
   session_reasoning: {
     element: "#app",
     route: SESSION_ROUTE,
