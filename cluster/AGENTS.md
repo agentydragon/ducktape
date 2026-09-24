@@ -180,8 +180,10 @@ read <skills/seaweed_operator/SKILL.md> before operating on them.
 ## Flux Kustomization Wiring
 
 Flux `Kustomization` resources are defined together in the generated
-`cluster/k8s/flux/kustomizations.k8s.yaml`, applied from the **root**
-`cluster/k8s/kustomization.yaml` through `flux/`. A directory's own `kustomization.yaml`
+`cluster/k8s/flux/kustomizations.k8s.yaml`, applied by the bootstrap `flux-system`
+Kustomization from `./cluster/k8s/flux` (`flux/flux-system/gotk-sync.yaml`). Nothing
+applies the root `cluster/k8s/kustomization.yaml`; it is the runfiles anchor validation
+tests locate `cluster/k8s` by. A directory's own `kustomization.yaml`
 lists only the manifests Flux applies at `spec.path` — never its Flux Kustomization,
 which lives in the central chart.
 
