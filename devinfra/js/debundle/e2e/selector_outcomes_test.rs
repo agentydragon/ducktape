@@ -212,6 +212,94 @@ fn anonymous_statement_unique_only_by_elimination_warns() {
     assert_eq!(validate["outcomes"], json!([either]), "{validate:#}");
 }
 
+const RENAMED_METHOD: &str = r#"class a {
+  open() {
+    return 1;
+  }
+  close() {
+    return 2;
+  }
+}
+class b {
+  start() {
+    return 3;
+  }
+}
+console.log(new a().open(), new b().start());
+"#;
+
+/// `close` was renamed upstream from the `shut` the selector still names.
+const WIDGET: &str =
+    "class Widget {\n  open() {\n    STMT_LIST;\n  }\n  shut() {\n    STMT_LIST;\n  }\n}";
+
+fn renamed_method_fixture(
+    extra: Vec<debundle_e2e_support::LogicalModuleEntry>,
+) -> FixtureOpts<'static> {
+    let mut modules = vec![logical_module(
+        "widgets/widget",
+        &[Member::source_alpha("Widget", WIDGET)],
+    )];
+    modules.extend(extra);
+    FixtureOpts::new(RENAMED_METHOD, modules)
+}
+
+fn nearest_bindings(outcome: &Value) -> Vec<Value> {
+    outcome["outcome"]["nearest_unclaimed"]
+        .as_array()
+        .map(|near| near.iter().map(|near| near["bindings"].clone()).collect())
+        .unwrap_or_default()
+}
+
+/// A `no_match` template lists the unclaimed statements it comes closest to,
+/// with where each diverges, in `run` and `spec validate` alike.
+#[test]
+fn no_match_lists_the_nearest_unclaimed_statements() {
+    let rejected = run_dry_run_rejection_fixture(renamed_method_fixture(Vec::new()));
+    let outcomes = read_selector_outcomes(&rejected.report_root);
+    let widget = find_outcome(&outcomes, "no_match", "Widget");
+    assert_eq!(nearest_bindings(widget)[0], json!(["a"]), "{widget:#}");
+    assert!(
+        rejected
+            .stderr
+            .contains("nearest unclaimed: body[0] declaring `a`"),
+        "{}",
+        rejected.stderr
+    );
+
+    let validate = validate_json(renamed_method_fixture(Vec::new()));
+    assert_eq!(validate["outcomes"], json!([widget]), "{validate:#}");
+}
+
+/// A statement another entity claimed is never offered, however close.
+#[test]
+fn nearest_unclaimed_skips_claimed_statements() {
+    let rejected = run_dry_run_rejection_fixture(renamed_method_fixture(vec![logical_module(
+        "widgets/other",
+        &[Member::renamed("Other", "a")],
+    )]));
+    let outcomes = read_selector_outcomes(&rejected.report_root);
+    let widget = find_outcome(&outcomes, "no_match", "Widget");
+    assert!(
+        !nearest_bindings(widget).contains(&json!(["a"])),
+        "{widget:#}"
+    );
+}
+
+/// Nothing close enough: the record has no `nearest_unclaimed`.
+#[test]
+fn no_match_without_a_near_statement_lists_none() {
+    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
+        "console.log(1);\n",
+        vec![logical_module(
+            "widgets/widget",
+            &[Member::source_alpha("Widget", WIDGET)],
+        )],
+    ));
+    let outcomes = read_selector_outcomes(&rejected.report_root);
+    let widget = find_outcome(&outcomes, "no_match", "Widget");
+    assert_eq!(widget["outcome"], json!({"kind": "no_match"}), "{widget:#}");
+}
+
 fn validate_json(opts: FixtureOpts<'_>) -> Value {
     let fixture = write_validate_fixture_spec(opts);
     let out = run_spec_validate(&fixture.spec_path, &["--format", "json"]);

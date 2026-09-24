@@ -317,7 +317,7 @@ fn one_place<'o, 's>(
     let mut truncated = false;
     for source in outcomes {
         match &source.outcome.outcome {
-            Outcome::NoMatch => {}
+            Outcome::NoMatch { .. } => {}
             Outcome::Resolved { owner, binding, .. } => {
                 places.push((
                     Candidate {

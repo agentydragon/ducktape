@@ -25,7 +25,7 @@ use selector_ir_lowering::{
 };
 use selector_outcome::{
     Candidate, Entity, EntityRef, FreeIdentifier, IdentifierMeaning, MAX_CANDIDATES_PER_SELECTOR,
-    Outcome, Placement, ResolvedBy, SelectorKind, SelectorOutcome, TemplateIdentifiers,
+    NearMiss, Outcome, Placement, ResolvedBy, SelectorKind, SelectorOutcome, TemplateIdentifiers,
 };
 use selector_runtime::solve_global_selector_program;
 use source_match::ParsedSourceMatchSelector;
@@ -606,8 +606,72 @@ pub fn solve(chunks: Vec<(&Chunk<'_>, &[SpecModule], Projection)>) -> Result<Vec
     chunks
         .into_iter()
         .zip(decided)
-        .map(|((chunk, modules, projection), result)| projection.record(chunk, modules, &result))
+        .map(|((chunk, modules, projection), result)| {
+            let mut resolution = projection.record(chunk, modules, &result)?;
+            add_nearest_unclaimed(chunk, modules, &mut resolution)?;
+            Ok(resolution)
+        })
         .collect()
+}
+
+/// Near misses scoring below this are too far off to help a repair.
+const NEAREST_UNCLAIMED_MIN_SCORE: usize = 30;
+const NEAREST_UNCLAIMED_LIMIT: usize = 3;
+
+/// Gives each `no_match` template entity the top-level statements, among
+/// those no entity of the chunk claimed, that its template comes closest to.
+fn add_nearest_unclaimed(
+    chunk: &Chunk<'_>,
+    modules: &[SpecModule],
+    resolution: &mut Resolution,
+) -> Result<()> {
+    let claimed = resolution
+        .outcomes
+        .iter()
+        .filter_map(|entity| match &entity.outcome.outcome {
+            Outcome::Resolved { owner, .. } => Some(*owner),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let unclaimed = (0..chunk.module.body.len())
+        .filter(|body_idx| !claimed.contains(body_idx))
+        .collect::<Vec<_>>();
+    for entity in &mut resolution.outcomes {
+        let Outcome::NoMatch { nearest_unclaimed } = &mut entity.outcome.outcome else {
+            continue;
+        };
+        let module = &modules[entity.module];
+        let template = match entity.entity {
+            EntityIndex::Member(member_index) => match &module.members[member_index].selector {
+                MemberSelector::SourceMatch(parsed) => Some(parsed),
+                _ => None,
+            },
+            EntityIndex::AnonymousStatement(index) => module
+                .anonymous_statements
+                .iter()
+                .find(|statement| statement.index == index)
+                .map(|statement| &statement.selector),
+        };
+        let Some(template) = template else {
+            continue;
+        };
+        *nearest_unclaimed = source_match::fact_near_misses(
+            chunk.module,
+            template,
+            unclaimed.iter().copied(),
+            NEAREST_UNCLAIMED_MIN_SCORE,
+            NEAREST_UNCLAIMED_LIMIT,
+        )?
+        .into_iter()
+        .map(|near_miss| NearMiss {
+            owner: near_miss.body_idx,
+            bindings: near_miss.declared_bindings,
+            score: near_miss.score,
+            reason: near_miss.reason,
+        })
+        .collect();
+    }
+    Ok(())
 }
 
 /// `result` of a program slice, with its targets named as in the whole
@@ -933,7 +997,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         for (target, places) in &pin_places {
             if places.is_empty() {
                 let (module_index, member_index) = self.members[target];
-                self.push_member(module_index, member_index, Outcome::NoMatch);
+                self.push_member(module_index, member_index, Outcome::no_match());
             }
         }
         Ok(Projection {
@@ -1788,7 +1852,7 @@ impl Rejection {
 
     fn outcome(self) -> Outcome {
         match self {
-            Self::NoCandidates => Outcome::NoMatch,
+            Self::NoCandidates => Outcome::no_match(),
             Self::Conflict(with) => Outcome::Conflict { with },
             Self::TooBroad(count) => Outcome::too_broad(count),
             Self::Invalid(error) => Outcome::Invalid { error },
@@ -2155,7 +2219,7 @@ fn claim_outcome(
     outcome: &ClaimOutcome,
 ) -> Result<Outcome> {
     Ok(match outcome {
-        ClaimOutcome::NoMatch => Outcome::NoMatch,
+        ClaimOutcome::NoMatch => Outcome::no_match(),
         ClaimOutcome::Conflict { with } => Outcome::Conflict {
             with: target_entity_refs(program, with),
         },

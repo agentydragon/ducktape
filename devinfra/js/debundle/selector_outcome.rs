@@ -119,6 +119,38 @@ pub struct Candidate {
     pub binding: Option<String>,
 }
 
+/// A top-level statement a selector does not match, with where it first
+/// diverges; higher `score` is closer.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct NearMiss {
+    /// Index of the statement in the chunk body.
+    pub owner: usize,
+    /// The bindings it declares.
+    pub bindings: Vec<String>,
+    pub score: usize,
+    pub reason: String,
+}
+
+impl NearMiss {
+    fn render(&self) -> String {
+        let declares = match self.bindings.as_slice() {
+            [] => String::new(),
+            bindings => format!(
+                " declaring {}",
+                bindings
+                    .iter()
+                    .map(|binding| format!("`{binding}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        };
+        format!(
+            "body[{}]{declares} (score {}): {}",
+            self.owner, self.score, self.reason
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Outcome {
@@ -128,7 +160,12 @@ pub enum Outcome {
         binding: Option<String>,
         resolved_by: ResolvedBy,
     },
-    NoMatch,
+    NoMatch {
+        /// The unclaimed top-level statements closest to the selector, closest
+        /// first.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        nearest_unclaimed: Vec<NearMiss>,
+    },
     Ambiguous {
         candidates: Vec<Candidate>,
         /// More candidates exist than are listed.
@@ -223,11 +260,17 @@ impl Serialize for OutcomeKind {
 impl Outcome {
     /// The outcome of a selector matched on its own, from every place it
     /// matched.
+    pub fn no_match() -> Self {
+        Self::NoMatch {
+            nearest_unclaimed: Vec::new(),
+        }
+    }
+
     pub fn from_matches(mut candidates: Vec<Candidate>) -> Self {
         candidates.sort();
         candidates.dedup();
         match candidates.len() {
-            0 => Self::NoMatch,
+            0 => Self::no_match(),
             1 => {
                 let Candidate { owner, binding } = candidates.remove(0);
                 Self::Resolved {
@@ -264,7 +307,7 @@ impl Outcome {
     pub fn kind(&self) -> OutcomeKind {
         match self {
             Self::Resolved { .. } => OutcomeKind::Resolved,
-            Self::NoMatch => OutcomeKind::NoMatch,
+            Self::NoMatch { .. } => OutcomeKind::NoMatch,
             Self::Ambiguous { .. } => OutcomeKind::Ambiguous,
             Self::Conflict { .. } => OutcomeKind::Conflict,
             Self::TooBroad { .. } => OutcomeKind::TooBroad,
@@ -319,7 +362,17 @@ impl Outcome {
                     ),
                 }
             }
-            Self::NoMatch => format!("did not match any {places}"),
+            Self::NoMatch { nearest_unclaimed } if nearest_unclaimed.is_empty() => {
+                format!("did not match any {places}")
+            }
+            Self::NoMatch { nearest_unclaimed } => format!(
+                "did not match any {places}; nearest unclaimed: {}",
+                nearest_unclaimed
+                    .iter()
+                    .map(NearMiss::render)
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ),
             Self::Ambiguous {
                 candidates,
                 truncated,

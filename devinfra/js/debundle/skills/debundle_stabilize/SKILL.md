@@ -69,7 +69,8 @@ resort:
 - **`spec validate`** — the whole-spec keep-going sweep: one outcome per selector
   that did not resolve (`no_match` / `ambiguous` / `conflict` / `too_broad` over
   100 places / `duplicate_claim` / `invalid` / `undecided`), plus warnings for selectors
-  resolved only by elimination (below). It also lists what each matched
+  resolved only by elimination (below). A `no_match` lists the
+  `nearest_unclaimed` statements: start a repair from the first one. It also lists what each matched
   template's free identifiers mean: check that every `reference` names the
   entity you meant. The full mode runs the pipeline (Bazel
   `:debundle`, package roots); the source-only preflight (`--modules` plus

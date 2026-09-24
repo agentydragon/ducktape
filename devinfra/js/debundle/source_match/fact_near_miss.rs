@@ -290,33 +290,68 @@ pub fn fact_source_match_body_debt(
     )?;
     let mode = selector_mode(selector);
     let exact_groups = fact_exact_groups(runtime_module, &parsed.body, mode);
-    let [needle] = parsed.body.as_slice() else {
-        return Ok(SourceMatchBodyDebt {
-            exact_groups,
-            near_misses: Vec::new(),
-        });
-    };
-    if module_item_list_hole_name(needle).is_some() {
-        return Ok(SourceMatchBodyDebt {
-            exact_groups,
-            near_misses: Vec::new(),
-        });
-    }
     let exact_body_indices = exact_groups
         .iter()
         .flat_map(|group| group.iter().flatten().copied())
         .collect::<BTreeSet<_>>();
+    let near_misses = near_misses_among(
+        runtime_module,
+        &parsed.body,
+        mode,
+        (0..runtime_module.body.len()).filter(|body_idx| !exact_body_indices.contains(body_idx)),
+        min_score,
+        limit,
+    )?;
+    Ok(SourceMatchBodyDebt {
+        exact_groups,
+        near_misses,
+    })
+}
+
+/// The near misses of `parsed`'s template among the top-level statements
+/// `candidates` of `runtime_module`: see [`near_misses_among`].
+pub fn fact_near_misses(
+    runtime_module: &Module,
+    parsed: &ParsedSourceMatchSelector,
+    candidates: impl IntoIterator<Item = usize>,
+    min_score: usize,
+    limit: usize,
+) -> Result<Vec<SourceMatchNearMiss>> {
+    near_misses_among(
+        runtime_module,
+        parsed.body(),
+        selector_mode(parsed.selector()),
+        candidates,
+        min_score,
+        limit,
+    )
+}
+
+/// Each of `candidates` (body indices) the one-statement template `body`
+/// does not match, with its first structural divergence
+/// ([`fact_first_mismatch_reason`]), when it scores `>= min_score`. Rows are
+/// sorted `(score desc, body_idx asc)` and truncated to `limit` (0 = no
+/// limit). A template of several statements, or of holes only, has none.
+fn near_misses_among(
+    runtime_module: &Module,
+    body: &[ModuleItem],
+    mode: Mode,
+    candidates: impl IntoIterator<Item = usize>,
+    min_score: usize,
+    limit: usize,
+) -> Result<Vec<SourceMatchNearMiss>> {
+    let [needle] = body else {
+        return Ok(Vec::new());
+    };
+    if module_item_list_hole_name(needle).is_some() {
+        return Ok(Vec::new());
+    }
     let Some(needle_index) = item_index(needle) else {
-        return Ok(SourceMatchBodyDebt {
-            exact_groups,
-            near_misses: Vec::new(),
-        });
+        return Ok(Vec::new());
     };
     let mut near_misses = Vec::new();
-    for (body_idx, candidate) in runtime_module.body.iter().enumerate() {
-        if exact_body_indices.contains(&body_idx) {
-            continue;
-        }
+    for body_idx in candidates {
+        let candidate = &runtime_module.body[body_idx];
         let Some(reason) = fact_first_mismatch_reason(needle, &needle_index, candidate, mode)?
         else {
             continue;
@@ -324,13 +359,12 @@ pub fn fact_source_match_body_debt(
         if reason.score < min_score {
             continue;
         }
-        let declared_bindings = declared_bindings(candidate)
-            .into_iter()
-            .map(|binding| binding.binding_name)
-            .collect::<Vec<_>>();
         near_misses.push(SourceMatchNearMiss {
             body_idx,
-            declared_bindings,
+            declared_bindings: declared_bindings(candidate)
+                .into_iter()
+                .map(|binding| binding.binding_name)
+                .collect(),
             score: reason.score,
             reason: reason.reason,
         });
@@ -344,10 +378,7 @@ pub fn fact_source_match_body_debt(
     if limit > 0 {
         near_misses.truncate(limit);
     }
-    Ok(SourceMatchBodyDebt {
-        exact_groups,
-        near_misses,
-    })
+    Ok(near_misses)
 }
 
 /// The scored first structural divergence between `needle` and `candidate`:
