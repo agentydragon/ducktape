@@ -229,8 +229,8 @@
       "sha256": "e26/1eyT6ReNRuD+KcfIV1Ml6cAMaBvSbx++Cby85wI="
     },
     "agentplane-runner": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-06400b42d29c/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
-      "sha256": "BkALQtKcgC8uwuXfYfKK2HBt6ilT59+sci+SdnJNgiQ="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-d3ca95cd4d4d/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
+      "sha256": "08qVzU1Nt9UaPrZVLDKXU3KLJwLjnX/I82UVj6UpStY="
     }
   }
 }
