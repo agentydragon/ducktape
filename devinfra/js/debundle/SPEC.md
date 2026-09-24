@@ -38,8 +38,9 @@ alpha-renamed. In order, it is:
 4. otherwise alpha-renamed.
 
 A place matches a reference only where the free name binds, throughout the
-match, the one chunk identifier the referenced entity takes. A reference to an
-entity pinned by a relational selector alpha-renames.
+match, the one chunk identifier the referenced entity takes, whichever selector
+pins that entity. A reference to an entity whose own selector fails before the
+joint solve (`no_match`, `too_broad`, `invalid`) alpha-renames.
 
 An anonymous statement written with a bare `match:` rather than `source_match:`
 skips alpha-renaming: its identifiers must equal the chunk's. Literals,

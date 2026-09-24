@@ -179,6 +179,50 @@ fn anonymous_statement_reference_picks_the_agreeing_statement() {
     );
 }
 
+/// A relational selector's binding is known only in the solve: the template
+/// matches where its free name is the binding `generateId` takes there.
+#[test]
+fn reference_to_a_relational_entity_constrains_the_solve() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const s = { nextUniqueId: 0 };
+function g() {
+  return s.nextUniqueId++;
+}
+function h() {
+  return 1;
+}
+const a = () => g();
+const b = () => h();
+console.log(a(), b());
+"#,
+        vec![
+            logical_module(
+                "ids/generate",
+                &[Member::reads_member(
+                    "generateId",
+                    "nextUniqueId",
+                    None,
+                    Some("function_declaration"),
+                )],
+            ),
+            logical_module(
+                "ids/use",
+                &[Member::source_alpha(
+                    "useId",
+                    "const useId = () => generateId();",
+                )],
+            ),
+        ],
+    ));
+    assert_no_outcomes(&fixture);
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/ids/use.js",
+        &["source bindings: a."],
+        &[],
+    );
+}
+
 /// `Widget` is exported by two modules and the template's own module exports
 /// neither, so which entity it names is undefined.
 #[test]

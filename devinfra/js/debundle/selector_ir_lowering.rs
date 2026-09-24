@@ -328,6 +328,27 @@ impl MemberSelectorProgramBuilder {
         binding
     }
 
+    /// The binding variable of export `export_name`, pinned by a relational
+    /// selector, for templates that reference it: the variable ranges over
+    /// the bindings its owner declares.
+    pub fn relational_binding_variable(
+        &mut self,
+        logical_module: &str,
+        export_name: &str,
+    ) -> SelectorVariableId {
+        let key = (logical_module.to_string(), export_name.to_string());
+        if let Some(binding) = self.projected_bindings.get(&key) {
+            return *binding;
+        }
+        let binding = self.projected_binding_variable(logical_module, export_name);
+        let owner = self.owner_for_local_export(logical_module, export_name);
+        self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: owner_term(owner),
+            binding: string_term(binding),
+        });
+        binding
+    }
+
     /// Each row is a candidate place and, per `references` variable, the chunk
     /// identifier the template bound at that reference.
     pub fn lower_projected_source_match_candidates(

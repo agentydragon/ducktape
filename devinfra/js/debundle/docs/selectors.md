@@ -306,8 +306,8 @@ this way is `resolved_by: own_references`; one whose matches all construct
 another class is `conflict` with `Widget`.
 
 References work in every template: `source_match` members, `source_matches[]`
-and anonymous statements. A reference to an entity pinned by a relational
-selector still alpha-renames.
+and anonymous statements, and name any entity, whether pinned by name, shape
+or relation.
 
 ## Binding claims and context windows
 

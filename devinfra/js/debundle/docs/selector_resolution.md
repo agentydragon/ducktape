@@ -99,7 +99,7 @@ chunk identifier each free template name bound throughout that match (a name
 that bound two identifiers is absent). Before the solve, the resolve classifies each free name
 (<../SPEC.md> § Matching) and narrows the entity's rows: a global must have
 bound itself, a name-pin reference the pinned name, and a reference to a
-projected `source_match` entity must be present at all.
+projected `source_match` or relational entity must be present at all.
 
 `settle_references` then repeats to a fixpoint: a referenced entity whose rows
 all bind one name for that export filters its referencers' rows to that name
