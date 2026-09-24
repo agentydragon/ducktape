@@ -25,7 +25,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import external_creds, public_coder_proxy, public_coder_sshpiper
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.config_format import json5_config
+from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator, remote_data
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, console_config, kube_api_proxy
@@ -282,36 +282,32 @@ def kubeconfig_chart(app: App) -> Chart:
     """kubectl's config: haku-kube-api-proxy's public route, reached through the egress proxy,
     with the bearer placeholder the proxy swaps."""
     chart = Chart(app, _KUBECONFIG_CONFIG_MAP_NAME, disable_resource_name_hashes=True)
-    kubeconfig = textwrap.dedent(
-        f"""\
-        apiVersion: v1
-        kind: Config
-        clusters:
-          - name: in-cluster
-            cluster:
-              server: https://{kube_api_proxy.HOSTNAME}
-              proxy-url: {_EGRESS_PROXY}
-              certificate-authority: {_CA_BUNDLE}
-        contexts:
-          - name: in-cluster
-            context:
-              cluster: in-cluster
-              namespace: {_NAMESPACE}
-              user: haku-agent
-        current-context: in-cluster
-        users:
-          - name: haku-agent
-            user:
-              # iron-proxy substitutes the original Haku Agent bearer only for the dedicated Haku
-              # Kubernetes proxy hostname. No Kubernetes credential enters this container.
-              token: {_HAKU_CONSOLE_TOKEN_PLACEHOLDER}
-        """
-    )
+    kubeconfig = {
+        "apiVersion": "v1",
+        "kind": "Config",
+        "clusters": [
+            {
+                "name": "in-cluster",
+                "cluster": {
+                    "server": f"https://{kube_api_proxy.HOSTNAME}",
+                    "proxy-url": _EGRESS_PROXY,
+                    "certificate-authority": _CA_BUNDLE,
+                },
+            }
+        ],
+        "contexts": [
+            {"name": "in-cluster", "context": {"cluster": "in-cluster", "namespace": _NAMESPACE, "user": "haku-agent"}}
+        ],
+        "current-context": "in-cluster",
+        # iron-proxy substitutes the original Haku Agent bearer only for the dedicated Haku
+        # Kubernetes proxy hostname. No Kubernetes credential enters this container.
+        "users": [{"name": "haku-agent", "user": {"token": _HAKU_CONSOLE_TOKEN_PLACEHOLDER}}],
+    }
     k8s.KubeConfigMap(
         chart,
         "config",
         metadata=k8s.ObjectMeta(name=_KUBECONFIG_CONFIG_MAP_NAME, namespace=_NAMESPACE),
-        data={"config": kubeconfig},
+        data={"config": yaml_config(kubeconfig)},
     )
     return chart
 
