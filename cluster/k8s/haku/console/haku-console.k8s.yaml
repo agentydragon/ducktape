@@ -330,178 +330,6 @@ metadata:
 data:
   config.yaml: |
     auto_approval_policies:
-      - id: github_reads
-        type: exact_tools
-        tools:
-          github:
-            - get_me
-            - get_team_members
-            - get_teams
-            - ui_get
-            - find_duplicate
-            - get_label
-            - issue_dependency_read
-            - issue_read
-            - list_issue_fields
-            - list_issue_types
-            - list_issues
-            - search_issues
-            - list_pull_requests
-            - pull_request_read
-            - search_pull_requests
-            - get_commit
-            - get_file_blame
-            - get_file_contents
-            - get_latest_release
-            - get_release_by_tag
-            - get_tag
-            - list_branches
-            - list_commits
-            - list_releases
-            - list_repository_collaborators
-            - list_tags
-            - search_code
-            - search_commits
-            - search_repositories
-            - search_users
-      - id: github_identity_reads
-        type: exact_tools
-        tools:
-          github:
-            - get_me
-      - id: public_ducktape_reads
-        type: github_repository
-        server: github
-        owner: agentydragon
-        repository: ducktape
-        tools:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_issues
-          - search_pull_requests
-          - search_code
-      - id: public_ducktape_fork_reads
-        type: github_repository
-        server: github
-        owner: agentydragon-agent
-        repository: ducktape
-        tools:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_issues
-          - search_pull_requests
-          - search_code
-      - id: public_gaffer_private_reads
-        type: github_repository
-        server: github
-        owner: agentydragon
-        repository: gaffer-private
-        tools:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_issues
-          - search_pull_requests
-          - search_code
-      - id: public_github_reads
-        type: github_public_repository
-        server: github
-        tools:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_issues
-          - search_pull_requests
-          - search_code
-      - id: public_coder_github_reads
-        type: any_of
-        policies:
-          - public_ducktape_reads
-          - public_ducktape_fork_reads
-          - public_gaffer_private_reads
-          - public_github_reads
       - id: kubernetes_reads
         type: exact_tools
         tools:
@@ -529,8 +357,6 @@ data:
       - id: public_coder_v1
         type: any_of
         policies:
-          - public_coder_github_reads
-          - github_identity_reads
           - kubernetes_reads
           - grants_self_introspection
           - grants_own_revoke
@@ -546,8 +372,6 @@ data:
       - id: haku_v1
         type: any_of
         policies:
-          - github_reads
-          - github_identity_reads
           - haku_sandbox_control
           - kubernetes_reads
           - grants_self_introspection
@@ -610,24 +434,6 @@ data:
         access_profile_id: public-coder
     mcp:
       servers:
-        github:
-          id: github
-          catalog_refresh_interval_seconds: 900
-          agent_tool_denylist:
-            - assign_copilot_to_issue
-            - create_pull_request_with_copilot
-            - get_copilot_job_status
-            - request_copilot_review
-          backend:
-            kind: remote_mcp
-            url: https://api.githubcopilot.com/mcp/
-            headers:
-              X-MCP-Toolsets: default,actions
-            auth:
-              kind: remote_server_oauth
-              client_registration:
-                kind: preregistered
-                token_endpoint_auth_method: client_secret_post
         sandbox:
           id: sandbox
           backend:
@@ -647,7 +453,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: aiquota-api-bearer-haku-console,haku-console-agent-api,haku-console-github-mcp-client-credentials,haku-console-oidc,haku-console-public-coder-agent,haku-console-web-push-vapid,haku-routine-launch-token
+    secret.reloader.stakater.com/reload: aiquota-api-bearer-haku-console,haku-console-agent-api,haku-console-oidc,haku-console-public-coder-agent,haku-console-web-push-vapid,haku-routine-launch-token
   labels:
     app.kubernetes.io/name: haku-console
   name: haku-console
@@ -765,18 +571,6 @@ spec:
                   key: token
                   name: haku-console-public-coder-agent
                   optional: false
-            - name: HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  key: client_id
-                  name: haku-console-github-mcp-client-credentials
-                  optional: true
-            - name: HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  key: client_secret
-                  name: haku-console-github-mcp-client-credentials
-                  optional: true
             - name: HAKU_CONSOLE__STATIC_AGENTS__HAKU__OPERATOR_SUBJECT
               valueFrom:
                 secretKeyRef:

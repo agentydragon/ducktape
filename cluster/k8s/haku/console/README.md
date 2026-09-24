@@ -101,43 +101,11 @@ indexes out of connected MCP-client catalogs. The `recall_index` schema/data and
 `haku_indexer` database role remain in place for now; no migration drops them. Re-enabling Recall
 must restore the catalog, access-profile grants, and maintenance workers as one reviewed change.
 
-## One-time bootstrap: GitHub's hosted MCP server
+## `haku-console-github-mcp-client-credentials` belongs to agentplane-staging
 
-GitHub's hosted MCP endpoint is `https://api.githubcopilot.com/mcp/`. It discovers its OAuth
-authorization server normally, but GitHub does **not** support Dynamic Client Registration, so the
-Console needs an organization-owned, pre-registered **GitHub App**. The Console uses GitHub's normal
-endpoint: its upstream catalog includes write tools, but `console_config.py` explicitly auto-approves only
-the reviewed read-only tool names for Haku. The same entry denies the Copilot delegation tools to every Agent, including stale-schema and generic-dispatch calls. Other GitHub tools remain per-call operator approval.
-
-1. Create a private GitHub App owned by the organization. Set its user-authorization callback URL
-   to `https://haku.allegedly.works/api/mcp/operator-auth/callback`. Grant only the repository and
-   write permissions the intended toolset needs; Console approval never widens the App's GitHub
-   permissions. Install/approve the App for the intended organization and
-   repositories. Do not substitute a PAT or the OAuth client embedded in GitHub's local MCP binary.
-2. Put the App's `client_id` and `client_secret` in a new SOPS-encrypted Secret named
-   `haku-console-github-mcp-client-credentials`, with those exact keys, listed in the `haku-console`
-   directory's `extra_resources` (`cluster/cdk8s/haku/charts.py`). The Deployment overlays the values directly at
-   `HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_{ID,SECRET}`
-   and tolerates the Secret being absent until this step is complete.
-3. Keep the existing keyed `mcp.servers.github` entry in `console_config.py`. Its non-secret shape (as YAML) is:
-
-   ```yaml
-   github:
-     id: github
-     backend:
-       kind: remote_mcp
-       url: https://api.githubcopilot.com/mcp/
-       auth:
-         kind: remote_server_oauth
-         client_registration:
-           kind: preregistered
-           token_endpoint_auth_method: client_secret_post
-   ```
-
-4. In Console Settings → Access, connect the GitHub server and complete GitHub's authorization
-   prompt. The Console stores each operator's grant separately; disconnecting replaces only that
-   operator's link. Haku's reviewed reads execute immediately; GitHub writes always enter the
-   Console's per-call approval queue.
-
-GitHub's host guide describes the prerequisite and explicitly notes that its remote MCP server has
-no Dynamic Client Registration: <https://github.com/github/github-mcp-server/blob/main/docs/host-integration.md>.
+The console reads nothing from this SOPS Secret, the pre-registered OAuth client of the GitHub App
+behind GitHub's hosted MCP. It stays in this directory because its Reflector annotations copy it
+into `agentplane-staging`, whose Action Service links GitHub with it
+(<../../agentplane-staging/README.md> § MCP OAuth callbacks); deleting it here breaks that linkage.
+Moving it there means re-encrypting it under that namespace, which needs the cluster decryption
+identity (the SOPS MAC covers `metadata.namespace`).

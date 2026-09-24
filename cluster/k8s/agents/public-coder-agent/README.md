@@ -120,10 +120,9 @@ Haku Console privileged calls use the same mediated shape. Terraform generates a
 `public-coder-agent` static-Agent bearer and delivers it only to Haku Console and iron-proxy. The
 OpenClaw container sees `proxy-haku-console-placeholder`, which is replaced only in the
 `Authorization` header for `haku.allegedly.works`. Haku Console assigns this Agent the
-`public-coder` access profile: its typed repository policy auto-approves only reviewed reads of
-`agentydragon/ducktape` and `agentydragon/gaffer-private`. Every other downstream tool remains an
-operator-reviewed request, including the cluster-admin-backed kubectl passthrough surface, and the
-Agent bearer cannot approve requests. Ordinary public GitHub writes should instead use the
+`public-coder` access profile, which auto-approves only the Agent's own `grants` reads and
+revocations. Every other downstream tool remains an operator-reviewed request, and the Agent
+bearer cannot approve requests. Haku Console serves no GitHub tools: GitHub goes through the
 proxy-mediated `agentydragon-agent` token directly; see <TOOLING.md> for the operational
 playbook.
 
