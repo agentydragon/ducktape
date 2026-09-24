@@ -118,7 +118,7 @@ observation above was not rechecked at that time.
 | Root (`scsi0`)                      | 500 GiB            | 500 GiB             | 105 GiB free after cleanup                                      |
 | Games, containerd, Kubernetes disks | Existing           | Existing            | No expansion needed for this program                            |
 
-Rename the model mount from `/var/lib/colibri` to **`/var/lib/llm-models`**,
+Rename the model mount from `/var/lib/colibri` to **`/var/lib/llm-models-ssd`**,
 with the human-facing description **SSD model storage**. Keep the existing virtual
 disk and ext4 filesystem. The generic name describes all inference runtimes;
 Colibri remains the name of that runtime's checkout and historical experiments.
