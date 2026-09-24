@@ -17,7 +17,8 @@ same command semantics:
 Read other bundled references as needed:
 
 - `references/workflow.md` for the shared multi-agent workflow
-- `references/README.md` for the crate pitch + Bazel integration + Comments
+- `references/README.md` for the crate pitch + Comments
+- `references/bazel_integration.md` for the `debundle_pipeline` rule and profiling targets
 - `references/module_shape.md` for when to route to architect or lane workers
 
 ## Adapter Contract
