@@ -99,7 +99,7 @@ async def test_summaries_report_the_published_log_not_a_batch_in_progress(tmp_pa
     session = await runner._load("test-session")
     try:
         async with session.journal.batch():
-            await session.emit(event_pb2.TurnStarted(turn_id="test-turn"))
+            await session.emit(event_pb2.TurnStarted(turn_id="test-turn"), sources=[])
             (summary,) = runner.summaries()
             assert (summary.last_cursor, summary.active_turn_id) == (0, "")
         (summary,) = runner.summaries()

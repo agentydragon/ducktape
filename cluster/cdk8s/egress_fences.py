@@ -114,9 +114,8 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
     ("*.ankiweb.net",),
 )
 
-# openclaw-spike-iron.yaml's `allowlist` transform, which bounds that proxy at L7; the DNS rule
-# built from it is the fence's second layer. //cluster/validation:test_egress_allowlists keeps
-# the two equal until the iron config is generated from here too (cluster/cdk8s/TODO.md).
+# The openclaw spike proxy's iron `allowlist` transform (haku_egress_proxy.py), which bounds it
+# at L7; the DNS rule built from it is the fence's second layer.
 # forgejo-http.forgejo is listed for parity with the iron allowlist; it is never queried in that
 # form, since the search path resolves it as forgejo-http.forgejo.svc.cluster.local first.
 OPENCLAW_SPIKE_ALLOWLIST = (

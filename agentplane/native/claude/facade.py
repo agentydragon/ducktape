@@ -61,18 +61,18 @@ class ClaudeHarness:
         return frames
 
     async def interrupt(self, *, cancel_queued: bool, reason: str = "capture") -> ClaudeReceipt:
-        request = driver.interrupt(cancel_queued=cancel_queued, reason=reason)
-        receipt = await self.transport.request(
-            request, matches=lambda frame: _is_control_response(frame, request.request_id)
-        )
-        return _receipt(receipt)
+        return await self.request(driver.interrupt(cancel_queued=cancel_queued, reason=reason))
 
     async def signal_interrupt(self, *, cancel_queued: bool, reason: str) -> None:
         """Send an interrupt without waiting for Claude's control acknowledgement."""
         await self.transport.send(driver.interrupt(cancel_queued=cancel_queued, reason=reason))
 
     async def set_model(self, model: str) -> ClaudeReceipt:
-        request = driver.set_model(model)
+        return await self.request(driver.set_model(model))
+
+    async def request(self, request: wire.InterruptRequest | wire.SetModelRequest) -> ClaudeReceipt:
+        """Send one control request and return Claude's response to it. A caller that translates the
+        answer itself builds the request with `driver`, so it knows the request id before sending."""
         receipt = await self.transport.request(
             request, matches=lambda frame: _is_control_response(frame, request.request_id)
         )

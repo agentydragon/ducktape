@@ -27,7 +27,7 @@ errors with `--noverify` or `SSL_VERIFY=false`; notify the user if recovery fail
 
 Prefer the `haku-console` MCP server's Kubernetes passthrough tools — they keep the
 operator-linked authorization boundary. RBAC source of truth:
-<cluster/k8s/agents/agent-rbac-base/README.md> — check it before assuming namespace
+<cluster/docs/agent_rbac.md> — check it before assuming namespace
 coverage or write permissions. Escape hatch: `Bash(kubectl ...)` uses the personal (CLI)
 or session (web) kubeconfig for higher privileges. In-cluster OAuth MCP variants:
 <cluster/docs/mcp_oauth_authentik_notes.md>.

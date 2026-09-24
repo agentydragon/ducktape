@@ -12,6 +12,14 @@ from typing import Any
 
 
 class HarnessAdapter(abc.ABC):
+    """Launches one harness, sends it commands, and translates its stdout.
+
+    `on_frame` records every Event derived from the harness's output, in the order the frames
+    arrived. A command method only sends. Where a reply is what proves the command's effect, it
+    keeps what that reply means under the request's native id before sending, and `on_frame`
+    records the effect when the reply arrives.
+    """
+
     @abc.abstractmethod
     def command(self) -> list[str]: ...
 
@@ -36,8 +44,8 @@ class HarnessAdapter(abc.ABC):
     async def on_frame(self, frame: dict[str, Any], source_sequence: int) -> None:
         """Translate one parsed stdout frame into session events, answering the harness if it asked.
 
-        ``source_sequence`` is the Native Event which carried ``frame``. It commits no later than
-        the Events derived from it, and before any frame sent in answer. An adapter may wait for a
-        small native cohort before emitting one observation, so it must retain the source rather
-        than relying on the Session's ambient translating frame.
+        ``source_sequence`` is the Native Event which carried ``frame``, and the Events derived from
+        it name it among their sources. It commits no later than they do, and before any frame sent
+        in answer. An adapter that waits for a small native cohort before emitting one observation
+        keeps each member's source.
         """

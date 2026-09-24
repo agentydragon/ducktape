@@ -26,8 +26,8 @@ spec:
       name: agentplane-testing
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/agent-rbac-base/**"
-          to: "@artifact/cluster/k8s/agents/agent-rbac-base/"
+        - from: "@repo/cluster/generated/agents/agent-rbac-base/**"
+          to: "@artifact/cluster/generated/agents/agent-rbac-base/"
       name: claude-rbac
       originRevision: "@repo"
     - copy:
@@ -700,6 +700,11 @@ spec:
         - from: "@repo/cluster/generated/metrics-server/**"
           to: "@artifact/cluster/generated/metrics-server/"
       name: metrics-server
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/agents/mitmproxy/**"
+          to: "@artifact/cluster/generated/agents/mitmproxy/"
+      name: agents-mitmproxy
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/monitoring/alloy/**"

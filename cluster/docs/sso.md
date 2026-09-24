@@ -12,8 +12,8 @@ applications, access policies, and consumer Secrets.
 in `authentik` namespace → Reflector mirrors to consumer namespace(s).
 
 There are two current provider sources of truth: search Terraform for
-`authentik_provider_{oauth2,proxy}` and read the blueprint file list in
-`k8s/authentik/app/kustomization.yaml`. Do not hand-maintain an application enumeration
+`authentik_provider_{oauth2,proxy}` and read the blueprints in
+`k8s/authentik/app/blueprints/` (every file there is deployed). Do not hand-maintain an application enumeration
 here; ownership is still being consolidated under
 <https://github.com/agentydragon/ducktape/issues/987>.
 

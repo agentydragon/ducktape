@@ -120,7 +120,7 @@ def _external_secrets(scope: Construct) -> None:
 
 def _ca(scope: Construct) -> None:
     """A dedicated interception root, separate from the cluster internal CA, and the trust
-    bundle publishing it. Standard TLS-interception trust pattern; see agents/mitmproxy/README.md
+    bundle publishing it. Standard TLS-interception trust pattern; see `cluster/cdk8s/mitmproxy.md`
     for the rotation constraint (publish both roots in the Bundle before switching signing keys).
 
     ECDSA P-256 is deliberate and fine: iron-proxy accepts an ECDSA root and mints working leaves
@@ -316,7 +316,7 @@ def _secret_env(name: str, secret_name: str, key: str) -> k8s.EnvVar:
     )
 
 
-def _container() -> k8s.Container:
+def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
     return k8s.Container(
         name="iron-proxy",
         # Bootstrap on upstream 0.49.0. Once CI publishes the commit-pinned Forgejo image, Flux
@@ -339,7 +339,7 @@ def _container() -> k8s.Container:
             # The same bearer used by aiquota-api. It is reflected here solely for iron-proxy to
             # substitute into the agent's placeholder on the two read endpoints; the OpenClaw
             # workload never receives it.
-            _secret_env(_AIQUOTA_BEARER_ENV, "aiquota-api-bearer-public-coder", "bearer-token"),
+            k8s.EnvVar(name=_AIQUOTA_BEARER_ENV, value_from=k8s.EnvVarSource(secret_key_ref=aiquota_bearer)),
             # The Brave Search API key is consumed only by iron-proxy. The OpenClaw Pod gets a
             # non-secret placeholder that is swapped only for Brave's X-Subscription-Token header
             # on its API host. Synced into this namespace from the external-creds source at
@@ -368,7 +368,7 @@ def _container() -> k8s.Container:
     )
 
 
-def _deployment(scope: Construct, config_map: k8s.KubeConfigMap) -> None:
+def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer: k8s.SecretKeySelector) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
@@ -397,7 +397,7 @@ def _deployment(scope: Construct, config_map: k8s.KubeConfigMap) -> None:
                         run_as_group=65532,
                         seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                     ),
-                    containers=[_container()],
+                    containers=[_container(aiquota_bearer)],
                     volumes=[
                         k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=config_map.name)),
                         # iron-proxy reads the CA certificate and key straight from these paths, so
@@ -431,7 +431,7 @@ def _service(scope: Construct) -> None:
     )
 
 
-def _ingress_policy(scope: Construct) -> None:
+def _ingress_policy(scope: Construct, app_namespace: str, app_labels: dict[str, str]) -> None:
     """The proxy confers every credential it mediates to callers that present the corresponding
     non-secret placeholder. Keep that capability reachable only from the two intended clients:
     the OpenClaw Agent pod and its KubeVirt devbox. In particular, namespace co-tenancy is not
@@ -444,8 +444,7 @@ def _ingress_policy(scope: Construct) -> None:
         selector=LABELS,
         ingress=[
             cilium.ingress_from(
-                # Spelled here: public_coder_agent_config imports this module for the proxy's address.
-                _endpoint(NAMESPACE, {"app.kubernetes.io/name": "public-coder-agent"}),
+                _endpoint(app_namespace, app_labels),
                 _endpoint(public_coder_devbox.NAMESPACE, public_coder_devbox.POD_LABELS),
                 ports=[PROXY_PORT],
             )
@@ -508,16 +507,25 @@ def _egress_policy(scope: Construct) -> None:
     )
 
 
-def chart(app: App) -> Chart:
+def chart(app: App, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: k8s.SecretKeySelector) -> Chart:
+    """`app_namespace` and `app_labels` are the OpenClaw Agent pod's: public_coder_agent_config
+    exports them, and imports this module for the proxy's address. `aiquota_bearer` is the
+    mirror aiquota writes into this namespace."""
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _external_secrets(chart)
     _ca(chart)
-    _deployment(chart, _config_map(chart))
+    _deployment(chart, _config_map(chart), aiquota_bearer)
     _service(chart)
-    _ingress_policy(chart)
+    _ingress_policy(chart, app_namespace, app_labels)
     _egress_policy(chart)
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+def write_manifests(
+    root: Path, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: k8s.SecretKeySelector
+) -> None:
+    write_charts(
+        root,
+        OUTPUT_DIR,
+        lambda app: chart(app, app_namespace=app_namespace, app_labels=app_labels, aiquota_bearer=aiquota_bearer),
+    )

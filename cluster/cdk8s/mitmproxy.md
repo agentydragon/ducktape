@@ -1,4 +1,4 @@
-# Mitmproxy Trust Management
+# agents-mitmproxy trust management
 
 This stack uses a dedicated mitmproxy root CA, separate from the cluster
 internal CA:
