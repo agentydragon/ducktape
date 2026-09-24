@@ -1,4 +1,16 @@
-import { ActionIcon, Badge, Button, Group, Paper, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
+import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Button,
+  Group,
+  Paper,
+  Select,
+  Stack,
+  Text,
+  Textarea,
+  TextInput,
+} from "@mantine/core";
 import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
@@ -32,22 +44,48 @@ export function pruneCommandErrors(errors: Map<string, string>, commandIds: Read
   return new Map(Array.from(errors).filter(([id]) => commandIds.has(id)));
 }
 
-const LIFECYCLE_LABELS: Record<string, string> = {
-  turn_started: "Turn started",
-  turn_completed: "Turn completed",
-  model_changed: "Model changed",
-  harness_started: "Harness started",
-  harness_exited: "Harness exited",
-  harness_lost: "Harness connection lost",
+type AlertColor = "red" | "orange";
+
+/** A null color is a turn that ended normally. */
+const TURN_OUTCOMES: Record<TurnStatus, { label: string; color: AlertColor | null }> = {
+  [TurnStatus.UNSPECIFIED]: { label: "Turn ended without a status", color: "red" },
+  [TurnStatus.COMPLETED]: { label: "Turn completed", color: null },
+  [TurnStatus.INTERRUPTED]: { label: "Turn interrupted", color: "orange" },
+  [TurnStatus.FAILED]: { label: "Turn failed", color: "red" },
+  [TurnStatus.PROCESS_LOST]: { label: "Turn lost", color: "red" },
 };
 
-function lifecyclePresentation(observation: string, event: unknown): { label: string; diagnostic: string | null } {
-  const parsed = event === null || event === undefined ? null : fromJson(EventSchema, event as JsonValue);
-  const completed = parsed?.observation.case === "turnCompleted" ? parsed.observation.value : null;
-  const diagnostic = completed?.error || null;
-  if (completed?.status === TurnStatus.FAILED) return { label: "Turn failed", diagnostic };
-  if (completed?.status === TurnStatus.INTERRUPTED) return { label: "Turn interrupted", diagnostic };
-  return { label: LIFECYCLE_LABELS[observation] ?? observation.replaceAll("_", " "), diagnostic };
+interface LifecyclePresentation {
+  label: string;
+  /** Null for an ordinary observation, which reads as one dimmed line. */
+  alert: { color: AlertColor; diagnostic: string | null } | null;
+}
+
+function lifecyclePresentation(observation: string, event: unknown): LifecyclePresentation {
+  const parsed = fromJson(EventSchema, event as JsonValue).observation;
+  switch (parsed.case) {
+    case "turnStarted":
+      return { label: "Turn started", alert: null };
+    case "turnCompleted": {
+      const { status, error } = parsed.value;
+      const { label, color } = TURN_OUTCOMES[status];
+      const diagnostic = error || (status === TurnStatus.FAILED ? "The harness reported no error details." : null);
+      return { label, alert: color && { color, diagnostic } };
+    }
+    case "modelChanged":
+      return { label: `Model changed to ${parsed.value.model}`, alert: null };
+    case "harnessStarted":
+      return { label: "Harness started", alert: null };
+    case "harnessExited":
+      return {
+        label: parsed.value.exitCode ? `Harness exited with code ${parsed.value.exitCode}` : "Harness exited",
+        alert: null,
+      };
+    case "harnessLost":
+      return { label: "Harness lost", alert: { color: "red", diagnostic: null } };
+    default:
+      return { label: observation.replaceAll("_", " "), alert: null };
+  }
 }
 
 function Body({ reference, plain = false }: { reference: PayloadRef | null; plain?: boolean }): JSX.Element {
@@ -255,7 +293,7 @@ function Evidence({ threadId, entity }: { threadId: string; entity: ThreadEntity
   );
 }
 
-function EntityCard({
+export function EntityCard({
   threadId,
   entity,
   live,
@@ -274,30 +312,27 @@ function EntityCard({
       </Group>
     );
   }
-  if (entity.entityKind === "lifecycle") {
-    const observation = "observation" in entity.state ? entity.state.observation : "lifecycle";
-    const event = "event" in entity.state ? entity.state.event : null;
-    const presentation = lifecyclePresentation(observation, event);
+  if (entity.entityKind === "lifecycle" && "observation" in entity.state) {
+    const { label, alert } = lifecyclePresentation(entity.state.observation, entity.state.event);
+    if (alert === null) {
+      return (
+        <Stack gap={0} data-thread-anchor={entity.cursor.toString()}>
+          <Text size="xs" c="dimmed">
+            {label}
+          </Text>
+          <Evidence threadId={threadId} entity={entity} />
+        </Stack>
+      );
+    }
     return (
-      <Stack gap="xs" data-thread-anchor={entity.cursor.toString()}>
-        <Text size="xs" c={presentation.diagnostic || observation === "harness_lost" ? "red" : "dimmed"}>
-          {presentation.label}
-        </Text>
-        {presentation.diagnostic && (
-          <Text c="red" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {presentation.diagnostic}
+      <Alert color={alert.color} title={label} role="alert" data-thread-anchor={entity.cursor.toString()}>
+        {alert.diagnostic && (
+          <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            {alert.diagnostic}
           </Text>
         )}
-        {"event" in entity.state && (
-          <details>
-            <summary>Lifecycle details</summary>
-            <Text component="pre" size="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {JSON.stringify(entity.state.event, null, 2)}
-            </Text>
-          </details>
-        )}
         <Evidence threadId={threadId} entity={entity} />
-      </Stack>
+      </Alert>
     );
   }
   if (entity.entityKind === "command" || entity.entityKind === "view_state") return <></>;

@@ -769,7 +769,16 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":projected_session",
+        ":retained_disclosures",
+        ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/protocol:event_pb",
     ],
 )
 
