@@ -153,6 +153,11 @@ pub enum Outcome {
     Invalid {
         error: String,
     },
+    /// The solver stopped (a time limit) before proving the entity unique or
+    /// listing its alternatives.
+    Undecided {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -175,6 +180,7 @@ pub enum OutcomeKind {
     TooBroad,
     DuplicateClaim,
     Invalid,
+    Undecided,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,6 +204,7 @@ impl OutcomeKind {
             Self::TooBroad => "too_broad",
             Self::DuplicateClaim => "duplicate_claim",
             Self::Invalid => "invalid",
+            Self::Undecided => "undecided",
         }
     }
 }
@@ -258,6 +265,7 @@ impl Outcome {
             Self::TooBroad { .. } => OutcomeKind::TooBroad,
             Self::DuplicateClaim { .. } => OutcomeKind::DuplicateClaim,
             Self::Invalid { .. } => OutcomeKind::Invalid,
+            Self::Undecided { .. } => OutcomeKind::Undecided,
         }
     }
 
@@ -336,6 +344,9 @@ impl Outcome {
                 },
             ),
             Self::Invalid { error } => error.clone(),
+            Self::Undecided { reason } => {
+                format!("was not decided: the solver stopped before deciding it ({reason})")
+            }
         }
     }
 }

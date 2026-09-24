@@ -68,7 +68,7 @@ resort:
   candidates / `too_broad`) and over-pin slack.
 - **`spec validate`** — the whole-spec keep-going sweep: one outcome per selector
   that did not resolve (`no_match` / `ambiguous` / `conflict` / `too_broad` over
-  100 places / `duplicate_claim` / `invalid`), plus warnings for selectors
+  100 places / `duplicate_claim` / `invalid` / `undecided`), plus warnings for selectors
   resolved only by elimination (below). The full mode runs the pipeline (Bazel
   `:debundle`, package roots); the source-only preflight (`--modules` plus
   `--source-file`) needs only the binary and checks each selector on its own —

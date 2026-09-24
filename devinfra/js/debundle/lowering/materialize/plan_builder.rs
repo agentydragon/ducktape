@@ -5,13 +5,10 @@
 //! being open-coded per phase.
 
 use super::super::ordinal::body_index_for_statement_ordinal;
+use super::outcome_sink::OutcomeSink;
 use super::*;
 use crate::plans::{AnonymousStatementRequest, RelationalSelector};
 use analysis::{DepKind, OwnerId, StatementOrdinal};
-
-/// Outcome lines a failing chunk prints; `selector_diagnostics.json` keeps them
-/// all.
-const HUMAN_OUTCOME_REPORT_LIMIT: usize = 200;
 
 #[derive(Debug, Clone)]
 struct AnonymousStatementTargetInfo {
@@ -249,19 +246,6 @@ fn unprojected_outcome(
 
 fn too_broad_reason(row_count: usize) -> String {
     format!("{row_count} candidate rows exceed the cap of {MAX_CANDIDATES_PER_SELECTOR}")
-}
-
-/// The run-failure report: a header, then one line per failed selector.
-fn render_failed_outcomes(outcomes: &[&SelectorOutcome]) -> String {
-    let mut report = String::from(
-        "Selector outcome report: in keep-going mode, selectors that did not resolve are left \
-         unclaimed so the rest of the chunk can still be checked.\n",
-    );
-    SelectorOutcomeReport {
-        outcomes: outcomes.iter().map(|outcome| (*outcome).clone()).collect(),
-    }
-    .render_text(&mut report, Some(HUMAN_OUTCOME_REPORT_LIMIT));
-    report
 }
 
 fn member_selector_ref_for_global_solver(
@@ -1008,18 +992,16 @@ pub(super) struct ChunkPlanBuilder {
     /// solver program so the existing duplicate-claim report remains the
     /// primary diagnostic.
     duplicate_deferred_binding_names: BTreeSet<String>,
-    /// Every selector that did not resolve, and every resolved-by-elimination
-    /// warning. In keep-going mode a failed selector is left out of canonical
-    /// ownership, so later modules in the chunk can still be checked; the
-    /// chunk fails in `finalize` if any outcome is an error.
-    outcomes: Vec<SelectorOutcome>,
-    /// When false, the first failed selector fails the chunk.
-    keep_going: bool,
+    /// Every selector outcome worth reporting. In keep-going mode a failed
+    /// selector is left out of canonical ownership, so later modules in the
+    /// chunk can still be checked; the chunk fails in `finalize` if any
+    /// outcome is an error.
+    outcomes: OutcomeSink,
 }
 
 #[allow(dead_code)]
 impl ChunkPlanBuilder {
-    pub(super) fn new(keep_going: bool) -> Self {
+    pub(super) fn new(fail_fast: bool) -> Self {
         Self {
             binding_assignment: HashMap::new(),
             anonymous_ordinal_assignment: BTreeMap::new(),
@@ -1030,8 +1012,7 @@ impl ChunkPlanBuilder {
             catalogue_index_by_name: HashMap::new(),
             deferred_binding_claims_by_name: HashMap::new(),
             duplicate_deferred_binding_names: BTreeSet::new(),
-            outcomes: Vec::new(),
-            keep_going,
+            outcomes: OutcomeSink::new(fail_fast),
         }
     }
 
@@ -1067,7 +1048,7 @@ impl ChunkPlanBuilder {
                         request,
                         member,
                     );
-                    self.outcomes.push(duplicate);
+                    self.outcomes.record(duplicate)?;
                     duplicate_bindings.insert(member.binding.clone());
                     if member.resolves_after_chunk_analysis() {
                         self.duplicate_deferred_binding_names
@@ -1079,7 +1060,7 @@ impl ChunkPlanBuilder {
                     .deferred_binding_claims_by_name
                     .get(member.binding.as_str())
                 {
-                    self.outcomes.push(member_outcome(
+                    self.outcomes.record(member_outcome(
                         ctx.chunk_id,
                         request,
                         member,
@@ -1087,7 +1068,7 @@ impl ChunkPlanBuilder {
                             binding: member.binding.clone(),
                             claimed_by: existing.clone(),
                         },
-                    ));
+                    ))?;
                     duplicate_bindings.insert(member.binding.clone());
                     self.duplicate_deferred_binding_names
                         .insert(member.binding.clone());
@@ -1274,16 +1255,8 @@ impl ChunkPlanBuilder {
         )
     }
 
-    /// Keeps `outcome` for the report; without keep-going an error fails the
-    /// chunk at once.
     fn record(&mut self, outcome: SelectorOutcome) -> Result<()> {
-        match outcome.severity() {
-            Severity::Error if !self.keep_going => bail!("{}", outcome.render_line()),
-            Severity::Warning => eprintln!("{}", outcome.render_line()),
-            Severity::Ok | Severity::Error => {}
-        }
-        self.outcomes.push(outcome);
-        Ok(())
+        self.outcomes.record(outcome)
     }
 
     fn record_all(&mut self, outcomes: Vec<SelectorOutcome>) -> Result<()> {
@@ -1293,7 +1266,7 @@ impl ChunkPlanBuilder {
     }
 
     fn has_recorded_anonymous_statement_failure(&self, request: &LogicalRequest) -> bool {
-        self.outcomes.iter().any(|outcome| {
+        self.outcomes.outcomes().iter().any(|outcome| {
             outcome.severity() == Severity::Error
                 && matches!(
                     &outcome.placement,
@@ -1828,13 +1801,16 @@ impl ChunkPlanBuilder {
                         conflicting_targets,
                     );
                 }
-                Some(ClaimOutcome::Unsupported { message }) => {
-                    bail!(
-                        "logical_module {}: global selector solver does not support anonymous \
-                         statement selector: {}",
-                        request.id,
-                        message,
-                    );
+                Some(ClaimOutcome::Undecided { reason }) => {
+                    self.record(anonymous_statement_outcome(
+                        chunk_id,
+                        request,
+                        info.statement_index,
+                        &info.statement,
+                        Outcome::Undecided {
+                            reason: reason.clone(),
+                        },
+                    ))?;
                 }
                 None => {
                     bail!(
@@ -1930,15 +1906,15 @@ impl ChunkPlanBuilder {
                         conflicting_targets,
                     );
                 }
-                Some(ClaimOutcome::Unsupported { message }) => {
-                    bail!(
-                        "logical_module {}: global selector solver does not support selector \
-                         member `{}` ({}): {}",
-                        request.id,
-                        member.export_name,
-                        member.claim_origin,
-                        message,
-                    );
+                Some(ClaimOutcome::Undecided { reason }) => {
+                    self.record(member_outcome(
+                        chunk_id,
+                        request,
+                        member,
+                        Outcome::Undecided {
+                            reason: reason.clone(),
+                        },
+                    ))?;
                 }
                 None => {
                     bail!(
@@ -2249,8 +2225,8 @@ impl ChunkPlanBuilder {
             })
     }
 
-    pub(super) fn keep_going(&self) -> bool {
-        self.keep_going
+    pub(super) fn fail_fast(&self) -> bool {
+        self.outcomes.fail_fast()
     }
 
     /// Drop the name-keyed catalogue scratch index now that the
@@ -2664,26 +2640,12 @@ impl ChunkPlanBuilder {
         self.residual_plan_index
     }
 
-    /// Every recorded outcome, sorted; `None` when there are none.
     pub(super) fn selector_outcome_report(&self) -> Option<SelectorOutcomeReport> {
-        if self.outcomes.is_empty() {
-            return None;
-        }
-        let mut outcomes = self.outcomes.clone();
-        outcomes.sort();
-        Some(SelectorOutcomeReport { outcomes })
+        self.outcomes.report()
     }
 
     pub(super) fn finalize(self) -> Result<ChunkPlan> {
-        let mut failed = self
-            .outcomes
-            .iter()
-            .filter(|outcome| outcome.severity() == Severity::Error)
-            .collect::<Vec<_>>();
-        if !failed.is_empty() {
-            failed.sort();
-            bail!("{}", render_failed_outcomes(&failed));
-        }
+        self.outcomes.finish()?;
         Ok(ChunkPlan {
             module_plans: self.module_plans,
             binding_assignment: self.binding_assignment,

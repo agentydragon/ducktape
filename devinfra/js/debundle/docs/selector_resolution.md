@@ -57,9 +57,15 @@ Each entity comes out as one `SelectorOutcome` (`selector_outcome.rs`), the
 record every command emits: `resolved` (by its own selector, or by
 elimination), `no_match`, `ambiguous` (at most `MAX_LISTED_CANDIDATES`
 candidates, 5, the bound the solver enumerates to), `conflict`, `too_broad`,
-`duplicate_claim`, or `invalid` (the selector could not be evaluated). Severity
-is derived from the kind: a resolution by elimination is a `warning`, every
-non-resolved kind an `error`.
+`duplicate_claim`, `invalid` (the selector could not be evaluated), or
+`undecided`. Severity is derived from the kind: a resolution by elimination is a
+`warning`, every non-resolved kind an `error`.
+
+`undecided` means the CP-SAT sidecar stopped (its
+`DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS` limit) before deciding the
+entity. The sidecar reports which projected variables it had proven fixed by
+then; an entity all of whose variables are among them still resolves, and a
+conflict set found before the stop still stands.
 
 ## Resolved by elimination
 

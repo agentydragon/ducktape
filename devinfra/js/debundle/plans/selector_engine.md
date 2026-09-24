@@ -60,9 +60,7 @@ tests.
 5. **One engine.** Delete native `source_match` lowering and `FactDomains`.
    `anonymous_resolution.rs` (edit gate, `peel`) and `validate --source-file`
    call the shared resolve.
-6. **Truthful outcomes.**
-   - Fast-fail stops at the first failed entity; keep-going reports every
-     outcome and continues with failed entities unclaimed.
+6. **Truthful outcomes.** Done.
 7. **One program across chunks**, with per-tree chunk scope and several trees
    per chunk.
 
@@ -92,8 +90,6 @@ a later sweep.
     rejection of encoding tree matching as solver constraints stays as a short
     decision record citing
     `debug/perf/2026_09_17_matcher_vs_native_lowering.md`.
-- **Step 6 (truthful outcomes):**
-  - the decoder mapping an unknown solve to an outcome for every target.
 - **Step 7 (one program across chunks):**
   - per-chunk CP-SAT request and summary files, the `selector_problem` output
     group in `pipeline.bzl`, and the
