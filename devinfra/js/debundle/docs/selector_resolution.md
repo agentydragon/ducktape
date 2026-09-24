@@ -126,8 +126,11 @@ other candidates are claimed by other selectors. After a solve, each unique
 `source_match` or anonymous-statement entity's candidate rows are filtered by dropping every row whose
 owner or binding another `all_different` target's solved value holds. When it
 had several rows and one survives, its outcome is `resolved` with
-`resolved_by: elimination` naming the claimers. Such a selector silently moves
-when a claimer is edited, so it should be anchored on its own.
+`resolved_by: elimination` naming the claimers. When several survive and it
+still resolved, a template that references it picked the place:
+`resolved_by: referenced_by` naming those referrers. Either selector silently
+moves when a claimer or referrer is edited, so it should be anchored on its
+own.
 
 ## Nearest unclaimed
 
@@ -194,6 +197,19 @@ others; a set of one is that target's own constraints failing and comes out
 conflicting one, such as a relation anchored on it, loses that relation with it
 and may come out ambiguous. Only when the hard constraints alone are
 unsatisfiable does every target of the group come out `no_match`.
+
+## Landing a new relation
+
+1. Add the fact to `chunk_facts` if it is not derivable from what is there.
+   Extraction stays fail-closed.
+2. Lower it to a table over candidate ids in the resolve, with a compiled
+   encoding in `selector_constraint_model_builder`.
+3. Prove it through `debundle run` on a fixture whose chunk also exports and
+   uses the anchor, as <../e2e/cross_ref_lowering_test.rs> does: real graphs
+   model `export { … }` and side-effect statements as owners that reference
+   every binding they touch, which is the discriminating case bare fixtures miss.
+4. Document it in <selectors.md>: a selector kind that is not documented there
+   does not exist for authors.
 
 ## The shape matcher
 

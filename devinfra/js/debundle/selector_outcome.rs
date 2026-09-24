@@ -240,6 +240,11 @@ pub enum ResolvedBy {
     Elimination {
         claimers: Vec<EntityRef>,
     },
+    /// Its selector matches several places; the templates of `referrers`,
+    /// which name it, pick one. It moves silently when one of them is edited.
+    ReferencedBy {
+        referrers: Vec<EntityRef>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -354,7 +359,7 @@ impl Outcome {
                 ..
             } => Severity::Ok,
             Self::Resolved {
-                resolved_by: ResolvedBy::Elimination { .. },
+                resolved_by: ResolvedBy::Elimination { .. } | ResolvedBy::ReferencedBy { .. },
                 ..
             } => Severity::Warning,
             _ => Severity::Error,
@@ -389,6 +394,11 @@ impl Outcome {
                     ResolvedBy::Elimination { claimers } => format!(
                         "resolved by elimination to {target}: its other matches are claimed by {}",
                         render_refs(claimers)
+                    ),
+                    ResolvedBy::ReferencedBy { referrers } => format!(
+                        "resolved to {target} only because {} name it there; its selector alone \
+                         matches several places",
+                        render_refs(referrers)
                     ),
                 }
             }

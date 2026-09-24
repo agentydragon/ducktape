@@ -2,8 +2,8 @@
 set -euo pipefail
 
 RUN_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-CHECKOUT=${COLIBRI_CHECKOUT:-/var/lib/colibri/src/colibri}
-MODEL=${COLIBRI_MODEL:-/var/lib/colibri/glm-5.2-colibri-int4-with-int8-mtp}
+CHECKOUT=${COLIBRI_CHECKOUT:-/var/lib/llm-models-ssd/src/colibri}
+MODEL=${COLIBRI_MODEL:-/var/lib/llm-models-ssd/glm-5.2-colibri-int4-with-int8-mtp}
 OUT=${COLIBRI_RESULTS:-$RUN_DIR/results/$(date +%Y%m%dT%H%M%S)}
 PROMPT='Briefly explain why the sky appears blue.'
 USAGE=$MODEL/.coli_usage

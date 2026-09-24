@@ -1853,11 +1853,29 @@ impl Projection {
                         .collect(),
                 })
             } else {
-                elimination_claimers(&agreeing, &entity.targets, result, &exclusive).map(
-                    |claimers| ResolvedBy::Elimination {
+                elimination_claimers(&agreeing, &entity.targets, result, &exclusive)
+                    .map(|claimers| ResolvedBy::Elimination {
                         claimers: target_entity_refs(&self.program, &claimers),
-                    },
-                )
+                    })
+                    .or_else(|| {
+                        // Several of its places survive every claim, yet it
+                        // resolved: a template naming it picked one.
+                        let referrers = self
+                            .projected
+                            .iter()
+                            .filter(|referrer| {
+                                referrer.references.iter().any(|reference| {
+                                    reference
+                                        .target
+                                        .is_some_and(|target| entity.targets.contains(&target))
+                                })
+                            })
+                            .flat_map(|referrer| referrer.targets.iter().copied())
+                            .collect::<BTreeSet<_>>();
+                        (!referrers.is_empty()).then(|| ResolvedBy::ReferencedBy {
+                            referrers: target_entity_refs(&self.program, &referrers),
+                        })
+                    })
             };
             if let Some(how) = how {
                 for target in &entity.targets {
