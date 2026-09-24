@@ -274,8 +274,15 @@ def generate_manifests(root: Path) -> None:
     agent_workspaces.write_manifests(root)
     alloy_otlp_bearer.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
-    public_coder_proxy.write_manifests(root)
-    public_coder_sshpiper.write_manifests(root)
+    public_coder_proxy.write_manifests(
+        root,
+        app_namespace=public_coder_agent_config.NAMESPACE,
+        app_labels=public_coder_agent_config.LABELS,
+        aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key_selector,
+    )
+    public_coder_sshpiper.write_manifests(
+        root, app_namespace=public_coder_agent_config.NAMESPACE, app_labels=public_coder_agent_config.LABELS
+    )
     public_coder_backup.write_manifests(root)
     descheduler.write_manifests(root)
     kyverno_app.write_manifests(root)
@@ -408,7 +415,7 @@ def generate_manifests(root: Path) -> None:
     local_path_provisioner.write_manifests(root)
     goldilocks.write_manifests(root)
     headlamp.write_manifests(root)
-    proxmox_proxy.write_manifests(root)
+    proxmox_proxy.write_manifests(root, mesh)
     volsync.write_manifests(root)
     reloader.write_manifests(root)
     vpa.write_manifests(root)
@@ -670,7 +677,8 @@ def generate_manifests(root: Path) -> None:
     proxmox_proxy.proxmox_proxy(flux_chart, proxmox_proxy_artifact, gateway_kustomization)
     kube_system_artifact = artifact("kube-system", kube_system.OUTPUT_DIR)
     kube_system.kube_system(flux_chart, kube_system_artifact, goldilocks_kustomization)
-    mitmproxy.agents_mitmproxy(flux_chart, root, cert_manager_trust_kustomization)
+    agents_mitmproxy_artifact = artifact("agents-mitmproxy", mitmproxy.OUTPUT_DIR)
+    mitmproxy.agents_mitmproxy(flux_chart, agents_mitmproxy_artifact, root, cert_manager_trust_kustomization)
     docker_ci_artifact = artifact("docker-ci", f"{HAND_WRITTEN_ROOT}/parked/docker-ci")
     parked_flux_kustomizations.docker_ci(
         flux_chart, docker_ci_artifact, cert_manager_environment_kustomization, claude_rbac_kustomization
@@ -1436,7 +1444,6 @@ def generate_manifests(root: Path) -> None:
     public_coder_agent_app_artifact = artifact(
         "public-coder-agent-app",
         f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app",
-        public_coder_devbox.NAMESPACE_OUTPUT_DIR,
         public_coder_proxy.OUTPUT_DIR,
         public_coder_sshpiper.OUTPUT_DIR,
     )
@@ -1611,6 +1618,7 @@ def generate_manifests(root: Path) -> None:
             matrix_app_artifact,
             matrix_user_provisioner_artifact,
             metrics_server_artifact,
+            agents_mitmproxy_artifact,
             monitoring_alloy_artifact,
             monitoring_alloy_otlp_bearer_token_tf_artifact,
             monitoring_cilium_artifact,

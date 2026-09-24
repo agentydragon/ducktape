@@ -57,10 +57,12 @@ py_library(
 py_library(
     name = "app",
     srcs = ["app.py"],
+    data = ["//cluster/k8s:authentik_blueprints"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":db",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
@@ -70,6 +72,7 @@ py_library(
         "//cluster/cdk8s/crd_bindings/flux:helmrepository",
         "//cluster/cdk8s/crd_bindings/gateway_api:httproute",
         "//cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

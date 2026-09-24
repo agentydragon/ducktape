@@ -19,8 +19,9 @@ resource "authentik_provider_oauth2" "tana_mcp_facade" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://tana-mcp-facade.allegedly.works/auth/callback"
+      matching_mode     = "strict"
+      url               = "https://tana-mcp-facade.allegedly.works/auth/callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }

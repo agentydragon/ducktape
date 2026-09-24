@@ -590,6 +590,8 @@ py_library(
     srcs = ["haku_egress_proxy.py"],
     deps = [
         ":cilium",
+        ":config_format",
+        ":egress_fences",
         ":external_creds",
         ":forgejo_images",
         ":generation",
@@ -725,6 +727,7 @@ py_library(
         ":metadata",
         ":pod_spec_patches",
         ":probes",
+        ":public_coder_proxy",
         "//aiquota:api",
         "//aiquota:config",
         "//cluster/cdk8s/cli_proxy_api",
@@ -948,6 +951,7 @@ py_library(
         "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumclusterwidenetworkpolicy",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -1174,6 +1178,7 @@ py_library(
         ":generation",
         ":manifest_roots",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -1308,8 +1313,10 @@ py_library(
         ":generation",
         ":manifest_roots",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/monitoring:loki",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//tomli_w",
     ],
 )
 

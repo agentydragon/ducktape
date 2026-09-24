@@ -26,8 +26,8 @@ spec:
       name: agentplane-testing
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/agent-rbac-base/**"
-          to: "@artifact/cluster/k8s/agents/agent-rbac-base/"
+        - from: "@repo/cluster/generated/agents/agent-rbac-base/**"
+          to: "@artifact/cluster/generated/agents/agent-rbac-base/"
       name: claude-rbac
       originRevision: "@repo"
     - copy:
@@ -215,8 +215,8 @@ spec:
       name: clickhouse
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/github-secrets-sync/secrets/**"
-          to: "@artifact/cluster/k8s/github-secrets-sync/secrets/"
+        - from: "@repo/cluster/k8s/github-secrets-sync-secrets/**"
+          to: "@artifact/cluster/k8s/github-secrets-sync-secrets/"
       name: github-secrets-sync-secrets
       originRevision: "@repo"
     - copy:
@@ -361,8 +361,6 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/agents/public-coder-agent/app/**"
           to: "@artifact/cluster/k8s/agents/public-coder-agent/app/"
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/namespace/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/namespace/"
         - from: "@repo/cluster/k8s/agents/public-coder-agent/proxy/**"
           to: "@artifact/cluster/k8s/agents/public-coder-agent/proxy/"
         - from: "@repo/cluster/k8s/agents/public-coder-agent/sshpiper/**"
@@ -425,8 +423,8 @@ spec:
       name: atuin
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/atuin/user-provisioner/**"
-          to: "@artifact/cluster/generated/atuin/user-provisioner/"
+        - from: "@repo/cluster/generated/atuin-user-provisioner/**"
+          to: "@artifact/cluster/generated/atuin-user-provisioner/"
       name: atuin-user-provisioner
       originRevision: "@repo"
     - copy:
@@ -702,6 +700,11 @@ spec:
       name: metrics-server
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/agents/mitmproxy/**"
+          to: "@artifact/cluster/generated/agents/mitmproxy/"
+      name: agents-mitmproxy
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/monitoring/alloy/**"
           to: "@artifact/cluster/k8s/monitoring/alloy/"
       name: monitoring-alloy
@@ -762,8 +765,8 @@ spec:
       name: openebs-lvm
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/proxmox-proxy/**"
-          to: "@artifact/cluster/k8s/proxmox-proxy/"
+        - from: "@repo/cluster/generated/proxmox-proxy/**"
+          to: "@artifact/cluster/generated/proxmox-proxy/"
       name: proxmox-proxy
       originRevision: "@repo"
     - copy:
@@ -827,8 +830,8 @@ spec:
       name: user-agentydragon
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/vector-talos-logs/**"
-          to: "@artifact/cluster/k8s/vector-talos-logs/"
+        - from: "@repo/cluster/generated/vector-talos-logs/**"
+          to: "@artifact/cluster/generated/vector-talos-logs/"
       name: vector-talos-logs
       originRevision: "@repo"
     - copy:

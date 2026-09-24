@@ -74,10 +74,14 @@ the supported-storage and escaped-process boundary.
 The stdout reader commits in groups (`Journal.batch`): the lines one pipe read delivered and the
 Events derived from them share a transaction, so a burst of output costs one commit rather than one
 per Event. It commits early before writing to the harness, so the record precedes the write, and
-before waiting on the session lock. A request's native reply reaches it only after the reply
-commits. A requester that derives Events from its reply (Codex's `turn/start`, Claude's
-`set_model`) takes it in `Session.ordered_reply`, and the reader translates no later frame until
-that block ends.
+before waiting on the session lock.
+
+The adapter's `on_frame`, called by the reader in frame order, records every Event derived from the
+harness's output, and each such Event names its Native sources. A command whose effect a reply
+proves (Codex's `turn/start`, Claude's `set_model`) keeps what the reply means under the request's
+native id before sending it, and `on_frame` records the effect when the reply arrives. The requester
+still waits for the reply, only to dispatch normal commands one at a time; it gets the reply once
+the batch recording it and its translation commits.
 
 Keep `journal.sqlite` and any recovery journal together on the surviving state volume. The checked-in
 staging/testing templates mount `/state` from `local-path-ovh-hdd` PVCs. Network filesystems

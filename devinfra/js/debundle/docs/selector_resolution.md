@@ -13,8 +13,8 @@ per entity. Every command that resolves selectors calls it, directly or as
 | Caller                                                    | Chunks and entities                                                                                                                                                    | Uses the outcomes                                                                                       |
 | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `run` (`lowering/materialize/`)                           | every chunk, with every module of it (of every tree scoped to it), less what `run` claims itself: import-specifier pins, duplicate claims, pins on undeclared bindings | claims each resolved entity, records the rest (and elimination warnings) in `selector_diagnostics.json` |
-| `spec validate --spec`                                    | as `run` (it is a keep-going dry run)                                                                                                                                  | reports every non-`ok` outcome                                                                          |
-| `spec validate --source-file` (`cli/validate.rs`)         | one chunk file, with every module file                                                                                                                                 | reports every non-`ok` outcome                                                                          |
+| `spec validate --spec`                                    | as `run` (it is a keep-going dry run)                                                                                                                                  | reports every non-`ok` outcome and lists each matched template's free identifiers                       |
+| `spec validate --source-file` (`cli/validate.rs`)         | one chunk file, with every module file                                                                                                                                 | reports every non-`ok` outcome and lists each matched template's free identifiers                       |
 | `spec match-selector` (`match_selector.rs`)               | the probe alone                                                                                                                                                        | reports its outcome                                                                                     |
 | `synthesize-selectors` proof (`selector_codemod.rs`)      | the candidate selector alone                                                                                                                                           | proven only when `resolved_by: own_selector` at the intended declaration                                |
 | edit gate, `describe`, `peel` (`anonymous_resolution.rs`) | every chunk source the owner graph names, each with every module's `source_matches[]` and anonymous statements                                                         | an entity must resolve in one source and match in no other                                              |
@@ -91,6 +91,30 @@ the solver's alternative search (`MAX_ALTERNATIVES_PER_VARIABLE`), so an
 deciding the entity. The sidecar reports which projected variables it had proven fixed by
 then; an entity all of whose variables are among them still resolves, and a
 conflict set found before the stop still stands.
+
+## Template references
+
+Every `source_match` row carries `free_bindings`: the chunk identifier each free
+template name bound throughout that match (a name that bound two identifiers is
+absent). Before the solve, the resolve classifies each free name
+(<../SPEC.md> § Matching) and narrows the entity's rows: a global must have
+bound itself, a name-pin reference the pinned name, and a reference to a
+projected `source_match` entity must be present at all.
+
+`settle_references` then repeats to a fixpoint: a referenced entity whose rows
+all bind one name for that export filters its referencers' rows to that name
+directly. Only a reference to an entity still open reaches the solver, as a
+column of the referencer's candidate table over the referenced entity's binding
+variable (`projected_binding_variable`), so equality comes from the shared
+variable. Settling first keeps groups small: with a column for every reference,
+the Tana web spec chained 9,055 targets into one request and the sidecar was
+killed for memory (2026-09-24). An entity whose rows all disagree with a
+reference is `conflict` with the entities referenced.
+
+After the solve, an entity that had several rows before its references narrowed
+them resolves `resolved_by: own_references` when exactly one row agrees with
+the solved bindings of the entities it references; otherwise elimination below
+decides.
 
 ## Resolved by elimination
 

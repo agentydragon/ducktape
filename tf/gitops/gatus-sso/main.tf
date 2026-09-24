@@ -77,8 +77,9 @@ resource "authentik_provider_oauth2" "gatus" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://status.allegedly.works/authorization-code/callback"
+      matching_mode     = "strict"
+      url               = "https://status.allegedly.works/authorization-code/callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }

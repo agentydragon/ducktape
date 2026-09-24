@@ -2,7 +2,7 @@
 //! keep-going differ in exactly one branch.
 
 use anyhow::{Result, bail};
-use selector_outcome::{SelectorOutcome, SelectorOutcomeReport, Severity};
+use selector_outcome::{SelectorOutcome, SelectorOutcomeReport, Severity, TemplateIdentifiers};
 
 /// Outcome lines a failing chunk prints; `selector_diagnostics.json` keeps them
 /// all.
@@ -16,13 +16,22 @@ const HUMAN_OUTCOME_REPORT_LIMIT: usize = 200;
 pub(super) struct OutcomeSink {
     outcomes: Vec<SelectorOutcome>,
     fail_fast: bool,
+    /// `Some` when the report lists template identifiers.
+    templates: Option<Vec<TemplateIdentifiers>>,
 }
 
 impl OutcomeSink {
-    pub(super) fn new(fail_fast: bool) -> Self {
+    pub(super) fn new(fail_fast: bool, list_template_identifiers: bool) -> Self {
         Self {
             outcomes: Vec::new(),
             fail_fast,
+            templates: list_template_identifiers.then(Vec::new),
+        }
+    }
+
+    pub(super) fn list_templates(&mut self, templates: Vec<TemplateIdentifiers>) {
+        if let Some(listed) = &mut self.templates {
+            listed.extend(templates);
         }
     }
 
@@ -40,14 +49,20 @@ impl OutcomeSink {
         Ok(())
     }
 
-    /// Every recorded outcome, sorted; `None` when there are none.
+    /// Every recorded outcome, sorted, and the listed templates; `None` when
+    /// there are no outcomes and templates are not listed.
     pub(super) fn report(&self) -> Option<SelectorOutcomeReport> {
-        if self.outcomes.is_empty() {
+        if self.outcomes.is_empty() && self.templates.is_none() {
             return None;
         }
         let mut outcomes = self.outcomes.clone();
         outcomes.sort();
-        Some(SelectorOutcomeReport { outcomes })
+        let mut templates = self.templates.clone().unwrap_or_default();
+        templates.sort();
+        Some(SelectorOutcomeReport {
+            outcomes,
+            templates,
+        })
     }
 
     /// Fails with a header and one line per error, if there is any.
@@ -65,8 +80,11 @@ impl OutcomeSink {
             "Selector outcome report: in keep-going mode, selectors that did not resolve are \
              left unclaimed so the rest of the chunk can still be checked.\n",
         );
-        SelectorOutcomeReport { outcomes: failed }
-            .render_text(&mut report, Some(HUMAN_OUTCOME_REPORT_LIMIT));
+        SelectorOutcomeReport {
+            outcomes: failed,
+            templates: Vec::new(),
+        }
+        .render_text(&mut report, Some(HUMAN_OUTCOME_REPORT_LIMIT));
         bail!("{report}")
     }
 }

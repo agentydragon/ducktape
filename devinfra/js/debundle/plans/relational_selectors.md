@@ -30,9 +30,6 @@ member is pinned by shape or by a relation, never by both. "Emits this literal
 **and** is imported by `@settingsModule`" needs conjunction across the two
 families.
 
-**R5 — `@Name` inside a shape.** The template-references step of
-<selector_engine.md>.
-
 ## Landing a new relation
 
 1. Add the fact to `chunk_facts` if it is not derivable from what is there.
@@ -71,5 +68,5 @@ Workers converting fragile name pins stop where the language needs: inverse
 use-site selectors (target-as-call-argument, setter/callback assignment, owner
 that reads a stable member); state slot / setter / getter families; identifying
 one target inside a mixed `let`/`const` run by family evidence rather than
-position; and membership in an object/array roster. These are R1–R5 in
+position; and membership in an object/array roster. These are R1–R4 and template references in
 authoring terms — treat them as the acceptance cases, not as separate features.

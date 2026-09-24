@@ -12,8 +12,8 @@ applications, access policies, and consumer Secrets.
 in `authentik` namespace → Reflector mirrors to consumer namespace(s).
 
 There are two current provider sources of truth: search Terraform for
-`authentik_provider_{oauth2,proxy}` and read the blueprint file list in
-`k8s/authentik/app/kustomization.yaml`. Do not hand-maintain an application enumeration
+`authentik_provider_{oauth2,proxy}` and read the blueprints in
+`k8s/authentik/app/blueprints/` (every file there is deployed). Do not hand-maintain an application enumeration
 here; ownership is still being consolidated under
 <https://github.com/agentydragon/ducktape/issues/987>.
 
@@ -30,6 +30,11 @@ app-specific. Compare:
   secret keys `client-id`/`client-secret` plus an app-specific
   `random_password`-generated `session-secret`, and an `authentik_policy_binding`
   gating login to `data.authentik_group.admins`.
+
+**Gotcha — give every `allowed_redirect_uris` entry a `redirect_uri_type`.** Authentik
+defaults an omitted type to `authorization`; provider 2026.8.0 stores that on read and
+diffs it against the omitted key, so the plan never converges and every 15-minute
+reconcile PUTs the provider.
 
 ### Blueprint-managed providers (migration backlog)
 

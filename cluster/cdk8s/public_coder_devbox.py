@@ -1,5 +1,5 @@
-"""The public-coder-agent namespace (with its default ServiceAccount), and the devbox: its
-KubeVirt VirtualMachine, SSH Service, Bazel cache claim and BuildBuddy API key.
+"""The public-coder-agent devbox: its KubeVirt VirtualMachine, SSH Service, Bazel cache claim and
+BuildBuddy API key.
 
 Hand-written beside the generated output: the sshd host key's SOPS Secret, and `image-pins/`,
 whose image-automation marker overrides the VM's placeholder containerDisk tag
@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import Namespace, Pods, Protocol, Service, ServicePort, ServiceType, k8s
+from cdk8s import App, Chart
+from cdk8s_plus_34 import Pods, Protocol, Service, ServicePort, ServiceType, k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -64,8 +64,6 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "public-coder-agent"
-NAMESPACE_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/namespace"
-NAMESPACE_MANIFEST = "public-coder-agent.k8s.yaml"
 SERVICE_NAME = "public-coder-devbox-ssh"
 VM_NAME = "public-coder-devbox"
 SSH_PORT = 22
@@ -76,44 +74,7 @@ _BAZEL_CACHE_CLAIM = "public-coder-devbox-bazel-cache"
 _BUILDBUDDY_API_KEY = "buildbuddy-api-key"
 # The tag comes from image-pins/kustomization.yaml.
 _IMAGE = "git.allegedly.works/ducktape-ci/public-coder-devbox:unset"
-_NAMESPACE_LABELS = {
-    "goldilocks.fairwinds.com/enabled": "true",
-    "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-    "name": NAMESPACE,
-    "rbac.ducktape.io/agent-readable-metadata": "true",
-}
-_NAMESPACE_ANNOTATIONS = {
-    "description": (
-        "Second OpenClaw agent, egress-confined to a CONNECT proxy and reachable only through the Authentik proxy "
-        "outpost. Opens pull requests against public repositories as agentydragon-agent."
-    )
-}
-_NAMESPACE_RESOURCES = [NAMESPACE_MANIFEST]
 _DEVBOX_RESOURCES = ["ssh-host-key.sops.yaml", "public-coder-devbox.k8s.yaml"]
-
-
-def namespace(scope: Construct) -> Namespace:
-    """Create the namespace shared by the public-coder-agent components."""
-    return Namespace(
-        scope,
-        "namespace",
-        metadata=ApiObjectMetadata(name=NAMESPACE, labels=_NAMESPACE_LABELS, annotations=_NAMESPACE_ANNOTATIONS),
-    )
-
-
-def default_service_account(scope: Construct, namespace: Namespace) -> None:
-    """Give the namespace's `default` ServiceAccount the pull secret for ducktape-ci images.
-
-    ducktape-ci is a private tenant in the in-cluster Forgejo registry; cluster/k8s/forgejo-images
-    reflects `forgejo-images-creds` into this namespace. Workloads that don't set their own
-    imagePullSecrets (the devbox VM's containerDisk pull) need it here.
-    """
-    k8s.KubeServiceAccount(
-        scope,
-        "default-service-account",
-        metadata=k8s.ObjectMeta(name="default", namespace=namespace.name),
-        image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
-    )
 
 
 def ssh_service(scope: Construct) -> Service:
@@ -313,15 +274,7 @@ def virtual_machine(scope: Construct) -> VirtualMachine:
 
 
 def write_manifests(root: Path) -> Service:
-    """Write the namespace and devbox manifests and return the generated SSH Service."""
-    namespace_dir = root / NAMESPACE_OUTPUT_DIR
-    namespace_dir.mkdir(parents=True, exist_ok=True)
-    namespace_app = App(outdir=str(namespace_dir))
-    namespace_chart = Chart(namespace_app, NAMESPACE, disable_resource_name_hashes=True)
-    default_service_account(namespace_chart, namespace(namespace_chart))
-    namespace_app.synth()
-    write_yaml(namespace_dir / "kustomization.yaml", kustomize_kustomization(resources=_NAMESPACE_RESOURCES))
-
+    """Write the devbox manifests and return the generated SSH Service."""
     out_dir = root / OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))

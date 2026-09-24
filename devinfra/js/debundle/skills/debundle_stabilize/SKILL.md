@@ -69,7 +69,9 @@ resort:
 - **`spec validate`** — the whole-spec keep-going sweep: one outcome per selector
   that did not resolve (`no_match` / `ambiguous` / `conflict` / `too_broad` over
   100 places / `duplicate_claim` / `invalid` / `undecided`), plus warnings for selectors
-  resolved only by elimination (below). The full mode runs the pipeline (Bazel
+  resolved only by elimination (below). It also lists what each matched
+  template's free identifiers mean: check that every `reference` names the
+  entity you meant. The full mode runs the pipeline (Bazel
   `:debundle`, package roots); the source-only preflight (`--modules` plus
   `--source-file`) needs no pipeline build and resolves the modules together
   just as the full mode does, short of duplicate claims across modules; when
@@ -233,6 +235,9 @@ Prefer (identity / contract — behavior-causal, human-meaningful):
   they only help when the build keeps them (in this app, member names generally
   survive);
 - API / operation identities (GraphQL op names, action types);
+- another spec entity, named by its readable export name in the template
+  (`new Widget(ANYTHING)`): the match must use that entity's own binding
+  (<../../docs/selectors.md> § Naming other entities);
 - a **stable prefix** of an otherwise volatile string, via a regex anchor.
 
 Disprefer (implementation / incidental — churned by refactors and rebuilds):
@@ -247,7 +252,8 @@ Disprefer (implementation / incidental — churned by refactors and rebuilds):
   moves; `match-selector` checks the selector alone, so a candidate it proves
   unique does not have this problem;
 - bare numbers (`0`, `1`), booleans, ubiquitous literals; a generic object key with
-  its value holed (`{ name: ANYTHING }`); minified identifiers (already wildcarded);
+  its value holed (`{ name: ANYTHING }`); minified identifiers (wildcarded, but one spelled like another entity's export
+  name becomes a reference to it);
 - **content hashes and generated ids** — hashed CSS-module class names
   (`Button-module_root__a1b2c3`), hashed asset URLs (`/static/app.7f3e9c.js`),
   build-id query params, cache-busting suffixes: the _most_ volatile thing in the
