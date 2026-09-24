@@ -76,7 +76,9 @@ def actions(binding: SandboxExecutorBinding) -> dict[str, ActionDefinition]:
                 f'{SandboxAction.INFO} until its {READY_CONDITION!r} condition has status "True". '
                 f"Idempotent on the name, so polling with {SandboxAction.CREATE} would also work but "
                 f"tells you nothing more. Environments: {offered}. Defaults to "
-                f"{binding.default_environment!r}."
+                f"{binding.default_environment!r}. The box and everything in it is deleted at its "
+                f"`expires_at`, {binding.initial_ttl_seconds}s after creation unless an {SandboxAction.EXEC} "
+                "keeps it longer."
             ),
             input_schema=_schema(CreateArgs),
         ),
@@ -84,7 +86,9 @@ def actions(binding: SandboxExecutorBinding) -> dict[str, ActionDefinition]:
             description=(
                 "Run one bounded Bash script in a ready sandbox of yours. A nonzero exit is a normal "
                 f"result, not a failure. Timeout is capped at {binding.max_timeout_seconds}s and "
-                f"retained output at {binding.max_output_bytes} bytes per stream, whatever you ask for."
+                f"retained output at {binding.max_output_bytes} bytes per stream, whatever you ask for. "
+                f"Each run first keeps the box at least {binding.exec_ttl_extension_seconds}s past its start; "
+                "a box already past its `expires_at` is refused."
             ),
             input_schema=_schema(ExecArgs),
         ),

@@ -2148,6 +2148,7 @@ rules:
       - get
       - list
       - watch
+      - patch
       - delete
   - apiGroups:
       - ""

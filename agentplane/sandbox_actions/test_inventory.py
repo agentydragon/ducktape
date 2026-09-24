@@ -10,6 +10,7 @@ because the executor's tests fake this class out entirely.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -22,7 +23,7 @@ from agentplane.sandbox_actions.models import READY_CONDITION
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import CommandResult
 from mcp_infra.exec.models import Exited
-from util.agent_sandbox import POD_NAME_ANNOTATION
+from util.agent_sandbox import POD_NAME_ANNOTATION, TEMPLATES_PLURAL
 
 NAMESPACE = "agentplane-test"
 CALLER = ServiceAccountRef(namespace=NAMESPACE, name="caller-one")
@@ -38,10 +39,20 @@ BINDING = SandboxExecutorBinding(
         )
     },
     default_environment="default",
+    initial_ttl_seconds=8 * 3600,
+    exec_ttl_extension_seconds=2 * 3600,
 )
 
+NOW = datetime(2026, 9, 24, 12, 0, tzinfo=UTC)
 
-def _sandbox(*, ready: bool, pod_annotation: str | None, reason: str | None = None) -> dict[str, Any]:
+
+def _sandbox(
+    *,
+    ready: bool,
+    pod_annotation: str | None,
+    reason: str | None = None,
+    expires_at: datetime = NOW + timedelta(hours=5),
+) -> dict[str, Any]:
     """One Sandbox as the API server returns it."""
     condition = {
         "type": READY_CONDITION,
@@ -63,16 +74,40 @@ def _sandbox(*, ready: bool, pod_annotation: str | None, reason: str | None = No
             },
             **({"annotations": {POD_NAME_ANNOTATION: pod_annotation}} if pod_annotation is not None else {}),
         },
+        "spec": {"shutdownTime": expires_at.isoformat()},
         "status": {"conditions": [condition]},
     }
 
 
 @dataclass
 class FakeCustomObjects:
-    sandbox: dict[str, Any]
+    """The one Sandbox, absent until created, and the template `create` stamps it from."""
 
-    async def get_namespaced_custom_object(self, *args: object) -> dict[str, Any]:
+    sandbox: dict[str, Any] | None
+    created: list[dict[str, Any]] = field(default_factory=list)
+    patches: list[object] = field(default_factory=list)
+
+    async def get_namespaced_custom_object(
+        self, group: str, version: str, namespace: str, plural: str, name: str
+    ) -> dict[str, Any]:
+        if plural == TEMPLATES_PLURAL:
+            return {"spec": {"podTemplate": {"spec": {"containers": [{"name": "workspace"}]}}}}
+        if self.sandbox is None:
+            raise ApiException(status=404, reason="Not Found")
         return self.sandbox
+
+    async def create_namespaced_custom_object(
+        self, group: str, version: str, namespace: str, plural: str, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        self.created.append(body)
+        self.sandbox = body
+        return body
+
+    async def patch_namespaced_custom_object(
+        self, group: str, version: str, namespace: str, plural: str, name: str, body: object, *, _content_type: str
+    ) -> object:
+        self.patches.append(body)
+        return body
 
 
 @dataclass
@@ -98,12 +133,16 @@ class FakeExecRunner:
         return CommandResult(exit=Exited(exit_code=0), stdout="", stderr="", duration_seconds=0.1)
 
 
-def _inventory(sandbox: dict[str, Any], core_v1: FakeCoreV1, runner: FakeExecRunner) -> SandboxInventory:
+def _inventory(
+    api: dict[str, Any] | FakeCustomObjects, core_v1: FakeCoreV1, runner: FakeExecRunner
+) -> SandboxInventory:
+    """Over `api` where a test reads back what was written, else over a fake holding just that Sandbox."""
     return SandboxInventory(
         BINDING,
-        custom_objects=FakeCustomObjects(sandbox),  # type: ignore[arg-type]
+        custom_objects=api if isinstance(api, FakeCustomObjects) else FakeCustomObjects(api),  # type: ignore[arg-type]
         core_v1=core_v1,  # type: ignore[arg-type]
         exec_runner=runner,  # `ExecRunner` is a Protocol, so this one needs no ignore.
+        now=lambda: NOW,
     )
 
 
@@ -201,6 +240,46 @@ async def test_a_box_with_no_reachable_pod_says_which_of_the_two_it_is(ready: bo
     )
     with pytest.raises(SandboxActionError, match=expected):
         await inventory.execute(CALLER, "box", script="true", cwd=None, timeout_seconds=5, max_output_bytes=100)
+
+
+async def test_create_stamps_a_box_the_controller_deletes_after_the_initial_ttl() -> None:
+    api = FakeCustomObjects(None)
+    info = await _inventory(api, FakeCoreV1(), FakeExecRunner()).create(CALLER, "box", None)
+    (body,) = api.created
+    assert body["spec"]["shutdownPolicy"] == "Delete"
+    assert datetime.fromisoformat(body["spec"]["shutdownTime"]) == NOW + timedelta(hours=8)
+    assert info.expires_at == NOW + timedelta(hours=8)
+
+
+@pytest.mark.parametrize(
+    ("expires_in", "pushed_to"),
+    [
+        # Under the extension: the exec keeps the box two hours past its start.
+        (timedelta(minutes=30), NOW + timedelta(hours=2)),
+        # Already past it: an exec never shortens a box's life, and does not write at all.
+        (timedelta(hours=5), None),
+    ],
+)
+async def test_exec_keeps_the_box_at_least_the_extension_past_its_start(
+    expires_in: timedelta, pushed_to: datetime | None
+) -> None:
+    api = FakeCustomObjects(_sandbox(ready=True, pod_annotation="sandbox-pod-abc123", expires_at=NOW + expires_in))
+    runner = FakeExecRunner()
+    inventory = _inventory(api, FakeCoreV1(pods={"sandbox-pod-abc123"}), runner)
+    await inventory.execute(CALLER, "box", script="true", cwd=None, timeout_seconds=5, max_output_bytes=100)
+    assert runner.ran_against == ["sandbox-pod-abc123"]
+    assert api.patches == ([] if pushed_to is None else [{"spec": {"shutdownTime": pushed_to.isoformat()}}])
+
+
+async def test_exec_refuses_an_expired_box_rather_than_reviving_it() -> None:
+    """The controller may not have marked it yet, and pushing its time forward would race the
+    teardown the controller has already begun."""
+    api = FakeCustomObjects(_sandbox(ready=True, pod_annotation="sandbox-pod-abc123", expires_at=NOW))
+    runner = FakeExecRunner()
+    inventory = _inventory(api, FakeCoreV1(pods={"sandbox-pod-abc123"}), runner)
+    with pytest.raises(SandboxActionError, match="has expired"):
+        await inventory.execute(CALLER, "box", script="true", cwd=None, timeout_seconds=5, max_output_bytes=100)
+    assert (runner.ran_against, api.patches) == ([], [])
 
 
 if __name__ == "__main__":

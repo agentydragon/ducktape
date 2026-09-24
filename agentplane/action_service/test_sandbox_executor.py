@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -31,6 +31,7 @@ NAMESPACE = "agentplane-test"
 CALLER = ServiceAccountRef(namespace=NAMESPACE, name="caller-one")
 OTHER = ServiceAccountRef(namespace=NAMESPACE, name="caller-two")
 ELSEWHERE = ServiceAccountRef(namespace="somewhere-else", name="caller-one")
+EXPIRES_AT = datetime(2026, 9, 24, 20, 0, tzinfo=UTC)
 
 BINDING = SandboxExecutorBinding(
     description="test sandboxes",
@@ -78,15 +79,17 @@ class FakeInventory:
 
     async def create(self, caller: ServiceAccountRef, name: str, environment_name: str | None) -> SandboxInfo:
         self._record(caller)
-        return SandboxInfo(name=name, conditions=[_ready()], environment=environment_name or "default")
+        return SandboxInfo(
+            name=name, conditions=[_ready()], environment=environment_name or "default", expires_at=EXPIRES_AT
+        )
 
     async def info(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
         self._record(caller)
-        return SandboxInfo(name=name, conditions=[_ready()], environment="default")
+        return SandboxInfo(name=name, conditions=[_ready()], environment="default", expires_at=EXPIRES_AT)
 
     async def list(self, caller: ServiceAccountRef) -> list[SandboxInfo]:
         self._record(caller)
-        return [SandboxInfo(name="one", conditions=[_ready()], environment="default")]
+        return [SandboxInfo(name="one", conditions=[_ready()], environment="default", expires_at=EXPIRES_AT)]
 
     async def dispose(self, caller: ServiceAccountRef, name: str) -> bool:
         self._record(caller)

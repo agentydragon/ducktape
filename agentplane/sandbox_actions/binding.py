@@ -48,9 +48,21 @@ class SandboxExecutorBinding(BaseModel):
     default_environment: str = Field(min_length=1, description="Which of them a caller that names none gets.")
     max_timeout_seconds: int = Field(default=1800, gt=0, le=3600)
     max_output_bytes: int = Field(default=200_000, ge=0, le=1_000_000)
+    initial_ttl_seconds: int = Field(
+        default=8 * 3600, gt=0, description="How long after `create` the controller deletes a box nobody runs in."
+    )
+    exec_ttl_extension_seconds: int = Field(
+        default=2 * 3600, gt=0, description="How long past its start every `exec` keeps the box, at least."
+    )
 
     @model_validator(mode="after")
     def _default_exists(self) -> SandboxExecutorBinding:
         if self.default_environment not in self.environments:
             raise ValueError("default_environment must name one of environments")
+        return self
+
+    @model_validator(mode="after")
+    def _box_outlasts_any_exec(self) -> SandboxExecutorBinding:
+        if self.exec_ttl_extension_seconds < self.max_timeout_seconds:
+            raise ValueError("exec_ttl_extension_seconds must be at least max_timeout_seconds")
         return self

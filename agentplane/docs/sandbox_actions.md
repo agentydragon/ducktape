@@ -116,6 +116,13 @@ not ready", and only the controller's own `reason` distinguishes them.
 quota, or stopped on a `ReconcilerError` -- so a waiting `create` would spend its whole timeout to
 report a deadline, where `info` reports the controller's own reason for it.
 
+**A box nobody runs anything in expires.** `create` stamps it `shutdownPolicy: Delete` with a
+`shutdownTime` `initial_ttl_seconds` out (8 h by default), and each `exec` first pushes that to at
+least `exec_ttl_extension_seconds` past its own start (2 h); at that time the controller deletes the
+box and its volumes. `info` and `list` report it as `expires_at`. The binding keeps the extension
+above the exec timeout ceiling, so a command never outlives its box, and an `exec` on a box already
+past its time is refused rather than reviving one the controller is tearing down.
+
 Shapes follow <../../haku/console/tools/sandbox.py>, the surface already in daily use: one
 bounded Bash script per call, a per-environment ceiling on timeout and retained output patched into
 the advertised schema, and a nonzero exit reported as a result rather than a transport error.
