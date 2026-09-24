@@ -49,7 +49,8 @@ _SEAWEEDFS = "seaweedfs"
 _LEGACY_CREDENTIALS_SECRET = "loki-s3-credentials"
 # Written by the tenant-local S3Credentials; what the Loki pods read.
 _CREDENTIALS_SECRET = "loki-seaweedfs-credentials"
-_PUSH_URL = "http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push"
+WRITE_URL = "http://loki-write.loki.svc.cluster.local:3100"
+_PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
 _ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
 # Prefer ordinary workers when this workload tolerates control planes.
 _PREFER_WORKERS_AFFINITY = {
@@ -434,7 +435,7 @@ def _helm_releases(chart: Chart) -> None:
     # (wyrm2, rugged, iguana) so kernel messages — notably the RTX 5090
     # `Xid 79 "GPU has fallen off the bus"` events — reach Loki with cluster
     # retention instead of dying with the node's ~5-day local journal. Talos nodes
-    # have no journald and are handled separately (cluster/k8s/vector-talos-logs/);
+    # have no journald and are handled separately (cluster/cdk8s/vector_talos_logs.py);
     # the main pod-log promtail above is untouched and still runs on every node.
     helm_release(
         chart,
