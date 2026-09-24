@@ -23,4 +23,4 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate
     newTag: devel-20260923195523-e8d4376 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture
-    newTag: devel-20260921002531-0e0af92 # {"$imagepolicy": "flux-system:agentplane-oauth-fixture:tag"}
+    newTag: devel-20260924010350-5ce04fd # {"$imagepolicy": "flux-system:agentplane-oauth-fixture:tag"}

@@ -22,7 +22,7 @@ clusters:
       # The terminate+re-encrypt Gateway route, NOT api.allegedly.works. That one
       # is TLS passthrough to the apiserver's cluster-CA cert, which a MITM proxy
       # cannot validate upstream; this route serves the public LE wildcard and
-      # accepts bearer tokens only. cluster/k8s/kube-api-proxy/README.md.
+      # accepts bearer tokens only. cluster/cdk8s/kube_api_proxy.md.
       server: https://kubeapi.allegedly.works
       # The same bundle every other client here trusts, carrying the egress-proxy
       # interception root. kubectl therefore verifies the proxy, not the

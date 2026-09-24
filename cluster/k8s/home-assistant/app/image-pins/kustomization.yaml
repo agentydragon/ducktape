@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/homeassistant-component-installer
-    newTag: devel-20260924001657-9b6d8a1 # {"$imagepolicy": "flux-system:homeassistant-component-installer:tag"}
+    newTag: devel-20260924010430-5ce04fd # {"$imagepolicy": "flux-system:homeassistant-component-installer:tag"}
   - name: git.allegedly.works/ducktape-ci/homeassistant-onboarding
     newTag: devel-20260924001636-9b6d8a1 # {"$imagepolicy": "flux-system:homeassistant-onboarding:tag"}
   - name: git.allegedly.works/ducktape-ci/homeassistant-token-provisioner
