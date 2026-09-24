@@ -33,9 +33,10 @@ until the YAML is read.
 ```yaml
 budget:
   source:
-    # ENV var that holds the postgres URL for the plaid mirror DB. In-cluster the
-    # secret `plaid-mcp-db-readonly` is reflected to namespace `augur`; mount its
-    # DATABASE_URL key as this env var on the augur API Deployment.
+    # ENV var that holds the postgres URL for the plaid mirror DB. In-cluster, the
+    # augur API Deployment's namespace needs its own ESO copy of the secret
+    # `plaid-mcp-db-readonly` (cluster/cdk8s/plaid_mcp/db.py); mount its
+    # DATABASE_URL key as this env var.
     database_url_env: AUGUR_PLAID_DATABASE_URL
     # Optional: subset of plaid_utils.accounts.account_id values to include.
     # Empty = every account the connection sees.
