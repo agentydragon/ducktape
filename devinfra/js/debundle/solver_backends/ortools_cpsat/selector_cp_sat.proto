@@ -35,11 +35,17 @@ message SharedSparseDomain {
   repeated int64 values = 2;
 }
 
+// `target_ids` attributes a constraint to the targets whose selectors it
+// encodes. Attribution only matters once the plain solve is infeasible: the
+// sidecar then enforces the constraint only while every listed target is
+// enabled, and reports which targets had to be disabled (see
+// `SelectorCpSatResponse.conflicts`). An empty list keeps the constraint hard.
 message TableConstraint {
   uint32 id = 1;
   repeated uint32 variable_ids = 2;
   repeated Tuple allowed_rows = 3;
   optional uint32 row_set_id = 4;
+  repeated uint32 target_ids = 5;
 }
 
 message AllowedRowSet {
@@ -55,6 +61,14 @@ message Tuple {
 message AllDifferent {
   uint32 id = 1;
   repeated uint32 variable_ids = 2;
+  // Parallel to `variable_ids`: the targets each entry is attributed to, with
+  // `TableConstraint.target_ids` semantics. A disabled entry leaves the
+  // constraint; the remaining entries stay pairwise distinct.
+  repeated TargetSet entry_targets = 3;
+}
+
+message TargetSet {
+  repeated uint32 target_ids = 1;
 }
 
 message TargetProjection {
@@ -72,6 +86,17 @@ message SelectorCpSatResponse {
   repeated AssignmentRow assignments = 3;
   string diagnostic = 4;
   string solver_response_stats = 5;
+  // Set only when the plain solve was infeasible. Each entry is one
+  // infeasible core (CP-SAT's sufficient assumptions, not necessarily
+  // minimal): with all its targets enabled, the attributed constraints have no
+  // solution. `status`, `assignment_coverage` and `assignments` then describe
+  // the targets outside every conflict set, solved with the conflicting
+  // targets disabled.
+  repeated ConflictSet conflicts = 6;
+}
+
+message ConflictSet {
+  repeated uint32 target_ids = 1;
 }
 
 enum SolverStatus {

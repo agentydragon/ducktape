@@ -606,7 +606,6 @@ fn selector_error_diagnostic(
         source_match_hash,
         source_match_body_hash,
         duplicate_claim: None,
-        root_isolation: None,
         message,
         recommended_next_action: format!(
             "Repair this selector in {module_path}; re-run `debundle spec validate --modules \

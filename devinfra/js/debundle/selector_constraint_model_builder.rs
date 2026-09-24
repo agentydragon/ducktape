@@ -9,7 +9,7 @@ use analysis::{OwnerId, StatementOrdinal};
 use selector_constraint_backend::{
     AllDifferentReason, AllowedTupleRowsId, BackendValueId, CompiledSelectorProblem,
     CompiledSelectorProblemBuilder, CompiledSelectorProblemError, ConstraintValue,
-    ConstraintVariableId, SharedVariableDomainId, TargetBindingProjection,
+    ConstraintVariableId, PresolveScope, SharedVariableDomainId, TargetBindingProjection,
 };
 use selector_ir::{
     ClaimKind, OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
@@ -19,8 +19,9 @@ use selector_ir::{
 pub fn compile_selector_problem(
     program: &SelectorProgram,
     facts: &SelectorFactStore,
+    presolve_scope: PresolveScope,
 ) -> Result<CompiledSelectorProblem, CompiledSelectorProblemBuildError> {
-    Ok(compile_selector_problem_with_summary(program, facts)?.problem)
+    Ok(compile_selector_problem_with_summary(program, facts, presolve_scope)?.problem)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +41,7 @@ pub struct SelectorModelBuildSummary {
 pub fn compile_selector_problem_with_summary(
     program: &SelectorProgram,
     facts: &SelectorFactStore,
+    presolve_scope: PresolveScope,
 ) -> Result<CompiledSelectorProblemWithSummary, CompiledSelectorProblemBuildError> {
     let total_start = Instant::now();
 
@@ -61,7 +63,7 @@ pub fn compile_selector_problem_with_summary(
     domains.discard_unneeded_raw_relations();
     let target_binding_projections = TargetBindingProjections::from_program(program)?;
 
-    let mut model = CompiledSelectorProblemBuilder::default();
+    let mut model = CompiledSelectorProblemBuilder::new(presolve_scope);
     for domain in [VariableDomain::Owner, VariableDomain::String] {
         model.add_full_domain_values(domain, domains.values_for(domain))?;
     }
@@ -936,7 +938,13 @@ fn add_projected_allowed_tuples(
         .iter()
         .map(|row| row.iter().cloned().map(projected_value).collect())
         .collect::<Vec<Vec<_>>>();
-    if let [row] = tuples.as_slice() {
+    let prunable = constraint_variables
+        .iter()
+        .map(|variable| model.may_prune(&constraint_variables, *variable))
+        .collect::<Vec<_>>();
+    if let [row] = tuples.as_slice()
+        && prunable.iter().all(|prunable| *prunable)
+    {
         for (variable, value) in constraint_variables.iter().zip(row) {
             let value = intern_constraint_value(model, value.clone())?;
             model.restrict_variable_to_encoded_values(*variable, [value])?;
@@ -949,8 +957,12 @@ fn add_projected_allowed_tuples(
             column_values[column].push(intern_constraint_value(model, value.clone())?);
         }
     }
-    for (variable, values) in constraint_variables.iter().zip(column_values) {
-        model.restrict_variable_to_encoded_values(*variable, values)?;
+    for ((variable, values), prunable) in
+        constraint_variables.iter().zip(column_values).zip(prunable)
+    {
+        if prunable {
+            model.restrict_variable_to_encoded_values(*variable, values)?;
+        }
     }
     model
         .add_allowed_tuples(constraint_variables, tuples)
@@ -2427,7 +2439,8 @@ mod tests {
             owner_reference(30, "a", "eager_use"),
         ]);
 
-        let model = compile_selector_problem(&program, &facts).unwrap();
+        let model =
+            compile_selector_problem(&program, &facts, PresolveScope::AcrossTargets).unwrap();
 
         assert_eq!(
             decoded_variable_domain(&model, ConstraintVariableId(0)),
@@ -2449,7 +2462,9 @@ mod tests {
             reason: "projected singleton test".to_string(),
         });
 
-        let model = compile_selector_problem(&program, &fact_store(vec![])).unwrap();
+        let model =
+            compile_selector_problem(&program, &fact_store(vec![]), PresolveScope::AcrossTargets)
+                .unwrap();
 
         assert_eq!(model.allowed_tuples, vec![]);
         assert_eq!(
@@ -2482,7 +2497,9 @@ mod tests {
             reason: "projected correlation test".to_string(),
         });
 
-        let model = compile_selector_problem(&program, &fact_store(vec![])).unwrap();
+        let model =
+            compile_selector_problem(&program, &fact_store(vec![]), PresolveScope::AcrossTargets)
+                .unwrap();
 
         assert_eq!(
             decoded_variable_domain(&model, ConstraintVariableId(0)),
@@ -2546,7 +2563,8 @@ mod tests {
             declared_binding(20, "specific"),
         ]);
 
-        let model = compile_selector_problem(&program, &facts).unwrap();
+        let model =
+            compile_selector_problem(&program, &facts, PresolveScope::AcrossTargets).unwrap();
 
         assert_eq!(model.target_projections.len(), 2);
         assert_eq!(model.target_projections[0].target, broad_target);
@@ -2620,7 +2638,8 @@ mod tests {
             declared_binding(10, "widget"),
         ]);
 
-        let model = compile_selector_problem(&program, &facts).unwrap();
+        let model =
+            compile_selector_problem(&program, &facts, PresolveScope::AcrossTargets).unwrap();
 
         assert_eq!(model.all_different, Vec::<AllDifferentConstraint>::new());
         assert_eq!(
@@ -2657,7 +2676,8 @@ mod tests {
             declared_binding(8, "other"),
         ]);
 
-        let model = compile_selector_problem(&program, &facts).unwrap();
+        let model =
+            compile_selector_problem(&program, &facts, PresolveScope::AcrossTargets).unwrap();
 
         assert_eq!(model.target_projections.len(), 1);
         assert_eq!(model.target_projections[0].target, target);
@@ -2831,7 +2851,8 @@ mod tests {
             owner_reference(90, "define", "read"),
         ]);
 
-        let model = compile_selector_problem(&program, &facts).unwrap();
+        let model =
+            compile_selector_problem(&program, &facts, PresolveScope::AcrossTargets).unwrap();
 
         assert_eq!(
             satisfying_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(8)]),
@@ -2956,7 +2977,8 @@ mod tests {
             declared_binding(50, "otherRegistry"),
         ]);
 
-        let model = compile_selector_problem(&program, &facts).unwrap();
+        let model =
+            compile_selector_problem(&program, &facts, PresolveScope::AcrossTargets).unwrap();
 
         assert_eq!(
             decoded_variable_domain(&model, ConstraintVariableId(0)),
@@ -2990,7 +3012,8 @@ mod tests {
 
         let facts = fact_store(vec![owner_fact(10, 0, "var")]);
 
-        let err = compile_selector_problem(&program, &facts).unwrap_err();
+        let err =
+            compile_selector_problem(&program, &facts, PresolveScope::AcrossTargets).unwrap_err();
         assert!(matches!(
             err,
             CompiledSelectorProblemBuildError::UnsupportedAtom { .. }
@@ -3009,7 +3032,8 @@ mod tests {
 
         let facts = fact_store(vec![owner_fact(10, 0, "var")]);
 
-        let err = compile_selector_problem(&program, &facts).unwrap_err();
+        let err =
+            compile_selector_problem(&program, &facts, PresolveScope::AcrossTargets).unwrap_err();
         assert!(matches!(
             err,
             CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied { .. }

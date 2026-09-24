@@ -55,7 +55,7 @@ impl DuplicateBindingClaim {
 // `selector_diagnostics` crate so writer and reader cannot drift.
 use selector_diagnostics::{
     DuplicateClaimReport, DuplicateClaimSiteReport, SelectorDiagnosticEntry,
-    SelectorDiagnosticsReport, SelectorRootIsolationClassification, SelectorRootIsolationReport,
+    SelectorDiagnosticsReport,
 };
 use selector_ir::{
     ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
@@ -491,7 +491,6 @@ struct SourceMatchDiagnostic {
     category: String,
     body_indices: Vec<usize>,
     first_mismatch: Option<String>,
-    root_isolation: Option<SelectorRootIsolationReport>,
 }
 
 impl SourceMatchDiagnostic {
@@ -516,7 +515,6 @@ impl SourceMatchDiagnostic {
             category: classify_source_match_failure(&message).to_string(),
             body_indices,
             first_mismatch,
-            root_isolation: None,
             message,
         }
     }
@@ -540,27 +538,15 @@ impl SourceMatchDiagnostic {
             category: classify_source_match_failure(&message).to_string(),
             body_indices,
             first_mismatch,
-            root_isolation: None,
             message,
         }
     }
 
-    fn with_root_isolation(mut self, root_isolation: Option<SelectorRootIsolationReport>) -> Self {
-        self.root_isolation = root_isolation;
-        self
-    }
-
     fn render(&self) -> String {
-        let mut rendered = format!(
+        format!(
             "module {} as `{}` ({}): {}",
             self.module_id, self.export_name, self.claim_origin, self.message
-        );
-        if let Some(root_isolation) = &self.root_isolation {
-            rendered.push_str(" [root-isolation: ");
-            rendered.push_str(&root_isolation.detail);
-            rendered.push(']');
-        }
-        rendered
+        )
     }
 }
 
@@ -571,9 +557,9 @@ struct SelectorResolutionDiagnostic {
     export_name: String,
     claim_origin: String,
     selector_kind: String,
+    category: &'static str,
     message: String,
     first_mismatch: Option<String>,
-    root_isolation: Option<SelectorRootIsolationReport>,
 }
 
 impl SelectorResolutionDiagnostic {
@@ -585,28 +571,20 @@ impl SelectorResolutionDiagnostic {
             export_name: member.export_name.clone(),
             claim_origin: member.claim_origin.clone(),
             selector_kind: member_selector_kind(member).to_string(),
+            category: match classify_source_match_failure(&message) {
+                "conflicting_selector" => "conflicting_selector",
+                _ => "selector_resolution_error",
+            },
             message,
             first_mismatch,
-            root_isolation: None,
         }
-    }
-
-    fn with_root_isolation(mut self, root_isolation: Option<SelectorRootIsolationReport>) -> Self {
-        self.root_isolation = root_isolation;
-        self
     }
 
     fn render(&self) -> String {
-        let mut rendered = format!(
+        format!(
             "module {} as `{}` ({}): {}",
             self.module_id, self.export_name, self.claim_origin, self.message
-        );
-        if let Some(root_isolation) = &self.root_isolation {
-            rendered.push_str(" [root-isolation: ");
-            rendered.push_str(&root_isolation.detail);
-            rendered.push(']');
-        }
-        rendered
+        )
     }
 }
 
@@ -708,7 +686,9 @@ fn first_relevant_error_line(message: &str) -> Option<String> {
 }
 
 fn classify_source_match_failure(message: &str) -> &'static str {
-    if message.contains(" is ambiguous") {
+    if message.contains(CONFLICTS_WITH) {
+        "conflicting_selector"
+    } else if message.contains(" is ambiguous") {
         "ambiguous_selector"
     } else if message.contains("valid global selector assignment")
         || message.contains("global selector solver")
@@ -721,8 +701,45 @@ fn classify_source_match_failure(message: &str) -> &'static str {
     }
 }
 
+/// Marks a message as a `Conflict` outcome for [`classify_source_match_failure`].
+const CONFLICTS_WITH: &str = " conflicts with ";
+
+/// Names a target in a conflict message the way its own diagnostics name it.
+fn selector_target_label(target: &selector_ir::SelectorTarget) -> String {
+    match (&target.claim, &target.origin) {
+        (
+            selector_ir::ClaimKind::Binding {
+                export_name: Some(export_name),
+            },
+            _,
+        )
+        | (selector_ir::ClaimKind::BindingGroupMember { export_name, .. }, _) => {
+            format!("`{export_name}` in {}", target.logical_module)
+        }
+        (_, selector_ir::ClaimOrigin::AnonymousStatement { index }) => {
+            format!("anonymous_statements[{index}] in {}", target.logical_module)
+        }
+        _ => format!("an unnamed selector in {}", target.logical_module),
+    }
+}
+
+fn conflict_message(program: &SelectorProgram, subject: &str, with: &[SelectorTargetId]) -> String {
+    let others = with
+        .iter()
+        .map(|other| selector_target_label(&program.targets[other.0]))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "{subject}{CONFLICTS_WITH}{others}: these selectors admit no joint assignment \
+         (the listed set need not be minimal)"
+    )
+}
+
 fn recommended_source_match_action(category: &str) -> &'static str {
     match category {
+        "conflicting_selector" => {
+            "Compare this selector with the ones it conflicts with: they compete for the same declarations or impose contradictory relations; narrow or correct one of them."
+        }
         "ambiguous_selector" => {
             "Refine the selector, choose the intended local binding in source_matches[].bindings[], or narrow the matched source context."
         }
@@ -765,116 +782,6 @@ fn member_selector_kind(member: &MemberRequest) -> &'static str {
         Some(RelationalSelector::IntrinsicAlias(_)) => "members.intrinsic_alias",
         None => "members.selector",
     }
-}
-
-fn root_isolation_for_known_unsat(
-    program: &SelectorProgram,
-    full_result: &selector_ir::SolverResult,
-) -> BTreeMap<SelectorTargetId, SelectorRootIsolationReport> {
-    let Some(global_diagnostic) = &full_result.global_diagnostic else {
-        return BTreeMap::new();
-    };
-    if global_diagnostic.category != "known_unsat" || !all_targets_no_match(program, full_result) {
-        return BTreeMap::new();
-    }
-
-    let debug_name = known_unsat_debug_name(&global_diagnostic.reason);
-    program
-        .targets
-        .iter()
-        .map(|target| {
-            let classification = match debug_name
-                .as_deref()
-                .and_then(|debug_name| selector_debug_name_matches_target(debug_name, target))
-            {
-                Some(true) => SelectorRootIsolationClassification::RootUnsatCandidate,
-                Some(false) => SelectorRootIsolationClassification::CascadedFromKnownUnsat,
-                None => SelectorRootIsolationClassification::Unknown,
-            };
-            let detail = match classification {
-                SelectorRootIsolationClassification::RootUnsatCandidate => {
-                    "root_unsat_candidate; known-UNSAT debug_name matches this selector target"
-                        .to_string()
-                }
-                SelectorRootIsolationClassification::CascadedFromKnownUnsat => {
-                    "cascaded_from_known_unsat; full selector program was known-UNSAT before backend solving"
-                        .to_string()
-                }
-                SelectorRootIsolationClassification::Unknown => {
-                    "unknown; known-UNSAT reason did not include a parseable selector debug_name"
-                        .to_string()
-                }
-            };
-            (
-                target.id,
-                SelectorRootIsolationReport {
-                    classification,
-                    full_program_outcome: "no_match".to_string(),
-                    known_unsat_reason: global_diagnostic.reason.clone(),
-                    implicated_debug_name: debug_name.clone(),
-                    detail,
-                },
-            )
-        })
-        .collect()
-}
-
-fn all_targets_no_match(program: &SelectorProgram, result: &selector_ir::SolverResult) -> bool {
-    program
-        .targets
-        .iter()
-        .all(|target| matches!(result.outcome_for(target.id), Some(ClaimOutcome::NoMatch)))
-}
-
-fn known_unsat_debug_name(reason: &str) -> Option<String> {
-    let (_, after) = reason.split_once("debug_name=")?;
-    let debug_name = after.trim_end_matches(')').trim();
-    (!debug_name.is_empty() && debug_name != "<none>").then(|| debug_name.to_string())
-}
-
-fn selector_debug_name_matches_target(
-    debug_name: &str,
-    target: &selector_ir::SelectorTarget,
-) -> Option<bool> {
-    let Some(rest) = debug_name.strip_prefix(&format!("{}::", target.logical_module)) else {
-        return Some(false);
-    };
-    match &target.claim {
-        selector_ir::ClaimKind::Binding { export_name } => export_name
-            .as_deref()
-            .map(|export_name| {
-                rest.starts_with(&format!("source_match.{export_name}."))
-                    || rest
-                        .strip_prefix("source_matches.")
-                        .is_some_and(|label| binding_group_debug_label_contains(label, export_name))
-            })
-            .or(Some(false)),
-        selector_ir::ClaimKind::BindingGroupMember { target_binding, .. } => Some(
-            rest.strip_prefix("source_matches.")
-                .is_some_and(|label| binding_group_debug_label_contains(label, target_binding)),
-        ),
-        selector_ir::ClaimKind::AnonymousStatement => match target.origin {
-            selector_ir::ClaimOrigin::AnonymousStatement { index } => {
-                Some(anonymous_statement_debug_label_matches(rest, index))
-            }
-            _ => Some(false),
-        },
-    }
-}
-
-fn anonymous_statement_debug_label_matches(label: &str, index: usize) -> bool {
-    let prefix = format!("anonymous_statement.{index}");
-    label == prefix
-        || label
-            .strip_prefix(&prefix)
-            .is_some_and(|suffix| suffix.starts_with('.'))
-}
-
-fn binding_group_debug_label_contains(label: &str, export_name: &str) -> bool {
-    let Some((target_list, _suffix)) = label.split_once('.') else {
-        return false;
-    };
-    target_list.split(',').any(|target| target == export_name)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -1582,7 +1489,6 @@ impl ChunkPlanBuilder {
         request: &LogicalRequest,
         statement: &AnonymousStatementRequest,
         message: String,
-        root_isolation: Option<SelectorRootIsolationReport>,
     ) -> Result<()> {
         if self.keep_going {
             self.anonymous_statement_diagnostics
@@ -1590,7 +1496,6 @@ impl ChunkPlanBuilder {
                     module_id: request.id.clone(),
                     selector: statement.selector.clone(),
                     message,
-                    root_isolation,
                 });
             return Ok(());
         }
@@ -1804,7 +1709,7 @@ impl ChunkPlanBuilder {
                         request.id, statement.selector.match_source,
                     )
                 };
-                self.record_anonymous_statement_failure_or_bail(request, statement, message, None)?;
+                self.record_anonymous_statement_failure_or_bail(request, statement, message)?;
             }
         }
         for (request_index, group) in pending_source_match_groups {
@@ -2071,11 +1976,6 @@ impl ChunkPlanBuilder {
             }
         }
         let result = solve_global_selector_program(&program, &facts)?;
-        let root_isolation_by_target = if self.keep_going {
-            root_isolation_for_known_unsat(&program, &result)
-        } else {
-            BTreeMap::new()
-        };
 
         for info in anonymous_statement_targets {
             let request = &explicit_requests[info.request_index];
@@ -2094,7 +1994,21 @@ impl ChunkPlanBuilder {
                         request,
                         &info.statement,
                         anonymous_statement_no_match_message(request, &info.statement),
-                        root_isolation_by_target.get(&info.target).cloned(),
+                    )?;
+                    continue;
+                }
+                Some(ClaimOutcome::Conflict { with }) => {
+                    self.record_anonymous_statement_failure_or_bail(
+                        request,
+                        &info.statement,
+                        conflict_message(
+                            &program,
+                            &format!(
+                                "logical_module {}: anonymous_statements[].match",
+                                request.id
+                            ),
+                            with,
+                        ),
                     )?;
                     continue;
                 }
@@ -2117,7 +2031,6 @@ impl ChunkPlanBuilder {
                             candidates.len(),
                             &body_indices,
                         ),
-                        None,
                     )?;
                     continue;
                 }
@@ -2193,18 +2106,14 @@ impl ChunkPlanBuilder {
                 Some(ClaimOutcome::NoMatch) => {
                     if let Some(message) = source_match_no_match_message(request, member) {
                         if self.keep_going {
-                            self.source_match_diagnostics.push(
-                                SourceMatchDiagnostic::new(
+                            self.source_match_diagnostics
+                                .push(SourceMatchDiagnostic::new(
                                     &request.id,
                                     &request.target_path,
                                     member,
                                     Vec::new(),
                                     message,
-                                )
-                                .with_root_isolation(
-                                    root_isolation_by_target.get(&target).cloned(),
-                                ),
-                            );
+                                ));
                             continue;
                         }
                         bail!("{message}");
@@ -2222,15 +2131,37 @@ impl ChunkPlanBuilder {
                         request.id, member.export_name, member.claim_origin, member.relational,
                     );
                     if self.keep_going {
-                        self.selector_resolution_diagnostics.push(
-                            SelectorResolutionDiagnostic::new(request, member, message)
-                                .with_root_isolation(
-                                    root_isolation_by_target.get(&target).cloned(),
-                                ),
-                        );
+                        self.selector_resolution_diagnostics
+                            .push(SelectorResolutionDiagnostic::new(request, member, message));
                         continue;
                     }
                     bail!("{message}");
+                }
+                Some(ClaimOutcome::Conflict { with }) => {
+                    let message = conflict_message(
+                        &program,
+                        &format!(
+                            "logical_module {}: {} for export `{}`",
+                            request.id, member.claim_origin, member.export_name
+                        ),
+                        with,
+                    );
+                    if !self.keep_going {
+                        bail!("{message}");
+                    }
+                    if member.source_match.is_some() {
+                        self.source_match_diagnostics
+                            .push(SourceMatchDiagnostic::new(
+                                &request.id,
+                                &request.target_path,
+                                member,
+                                Vec::new(),
+                                message,
+                            ));
+                    } else {
+                        self.selector_resolution_diagnostics
+                            .push(SelectorResolutionDiagnostic::new(request, member, message));
+                    }
                 }
                 Some(ClaimOutcome::Ambiguous { candidates }) => {
                     let message = source_match_ambiguous_message(request, member, candidates);
@@ -2980,7 +2911,6 @@ impl ChunkPlanBuilder {
                 source_match_hash: Some(source_match::selector_key(&diagnostic.selector)),
                 source_match_body_hash: Some(source_match::selector_body_key(&diagnostic.selector)),
                 duplicate_claim: None,
-                root_isolation: diagnostic.root_isolation.clone(),
                 message: diagnostic.message.clone(),
                 recommended_next_action: recommended_source_match_action(&diagnostic.category)
                     .to_string(),
@@ -2988,7 +2918,7 @@ impl ChunkPlanBuilder {
         }
         for diagnostic in &self.selector_resolution_diagnostics {
             diagnostics.push(SelectorDiagnosticEntry {
-                category: "selector_resolution_error".to_string(),
+                category: diagnostic.category.to_string(),
                 module_id: diagnostic.module_id.clone(),
                 module_path: Some(diagnostic.module_path.clone()),
                 export_name: Some(diagnostic.export_name.clone()),
@@ -3001,7 +2931,6 @@ impl ChunkPlanBuilder {
                 source_match_hash: None,
                 source_match_body_hash: None,
                 duplicate_claim: None,
-                root_isolation: diagnostic.root_isolation.clone(),
                 message: diagnostic.message.clone(),
                 recommended_next_action:
                     "Repair the member selector or replace the fragile relation with a source_matches[] claim that has current candidates."
@@ -3026,7 +2955,6 @@ impl ChunkPlanBuilder {
                 source_match_hash: None,
                 source_match_body_hash: None,
                 duplicate_claim: None,
-                root_isolation: diagnostic.root_isolation.clone(),
                 message: diagnostic.message.clone(),
                 recommended_next_action: recommended_source_match_action(category).to_string(),
             });
@@ -3051,7 +2979,6 @@ impl ChunkPlanBuilder {
                     existing: DuplicateClaimSiteReport::from(&duplicate.existing),
                     duplicate: DuplicateClaimSiteReport::from(&duplicate.duplicate),
                 }),
-                root_isolation: None,
                 message: duplicate.render(),
                 recommended_next_action: "Move duplicate claims into one logical module, remove the duplicate member, or expose aliases from the same module."
                     .to_string(),

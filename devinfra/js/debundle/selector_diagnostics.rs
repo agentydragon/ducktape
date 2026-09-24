@@ -26,10 +26,14 @@
 //! - `selector_resolution_error` — the selector failed to resolve for a
 //!   reason other than a classified no-match / ambiguity (including native
 //!   solver no-assignment diagnostics, parse / schema / unsupported hole);
+//! - `conflicting_selector` — the selector is in an unsatisfiable core of the
+//!   joint solve: it cannot resolve together with the selectors its message
+//!   names (the named set need not be minimal). Selectors outside every core
+//!   still resolve;
 //! - `duplicate_claim` — two selectors resolved to the same declaration
 //!   identity in the same chunk.
 //!
-//! The first three categories cover both source-backed binding selectors and
+//! All but `duplicate_claim` cover both source-backed binding selectors and
 //! `anonymous_statements[].match` selectors;
 //! [`SelectorDiagnosticEntry::selector_kind`] distinguishes them
 //! (`source_matches` / `members.source_match` /
@@ -78,32 +82,8 @@ pub struct SelectorDiagnosticEntry {
     pub source_match_hash: Option<String>,
     pub source_match_body_hash: Option<String>,
     pub duplicate_claim: Option<DuplicateClaimReport>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub root_isolation: Option<SelectorRootIsolationReport>,
     pub message: String,
     pub recommended_next_action: String,
-}
-
-/// Advisory classification derived from a whole-program selector known-UNSAT
-/// diagnostic. This never changes ownership; it tells repair tooling which
-/// selector target was named by the unsat variable debug name and which targets
-/// are likely hidden by that joint failure.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SelectorRootIsolationReport {
-    pub classification: SelectorRootIsolationClassification,
-    pub full_program_outcome: String,
-    pub known_unsat_reason: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub implicated_debug_name: Option<String>,
-    pub detail: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SelectorRootIsolationClassification {
-    RootUnsatCandidate,
-    CascadedFromKnownUnsat,
-    Unknown,
 }
 
 /// Two selectors resolving to the same declaration identity in one chunk.

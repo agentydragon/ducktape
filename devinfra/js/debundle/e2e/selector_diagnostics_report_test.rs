@@ -198,9 +198,97 @@ export { keepMe };
     );
 
     let diagnostics = keep_going_diagnostics(opts);
-    let missing = find_entry(&diagnostics, "unresolved_selector", "MissingFormatter");
-    assert!(missing["root_isolation"].is_null(), "{missing:#}");
+    find_entry(&diagnostics, "unresolved_selector", "MissingFormatter");
     assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+}
+
+/// Two pairs of selectors each compete for the one declaration both members
+/// of the pair match, under the injectivity `all_different`. Each pair is its
+/// own contradiction: its selectors name each other, and neither pair takes
+/// down the other or the independent selector.
+#[test]
+fn keep_going_localizes_each_selector_conflict() {
+    let opts = FixtureOpts::new(
+        r#"function alphaOne() {
+  return "alpha";
+}
+function betaOne() {
+  return "beta";
+}
+function gammaOne(value) {
+  return value.trim();
+}
+console.log(alphaOne(), betaOne(), gammaOne(" ok "));
+export { alphaOne, betaOne, gammaOne };
+"#,
+        vec![
+            logical_module(
+                "conflicts/alpha_left",
+                &[Member::source_alpha(
+                    "AlphaLeft",
+                    "function left() {\n  return \"alpha\";\n}",
+                )],
+            ),
+            logical_module(
+                "conflicts/alpha_right",
+                &[Member::source_alpha(
+                    "AlphaRight",
+                    "function right() {\n  return \"alpha\";\n}",
+                )],
+            ),
+            logical_module(
+                "conflicts/beta_left",
+                &[Member::source_alpha(
+                    "BetaLeft",
+                    "function left() {\n  return \"beta\";\n}",
+                )],
+            ),
+            logical_module(
+                "conflicts/beta_right",
+                &[Member::source_alpha(
+                    "BetaRight",
+                    "function right() {\n  return \"beta\";\n}",
+                )],
+            ),
+            logical_module(
+                "independent/gamma",
+                &[Member::source_alpha(
+                    "Gamma",
+                    "function g(value) {\n  return value.trim();\n}",
+                )],
+            ),
+            // A name pin on `gammaOne`: the duplicate claim it draws is the
+            // witness that the independent selector resolved.
+            logical_module("witness/gamma", &[Member::renamed("GammaPin", "gammaOne")]),
+        ],
+    );
+
+    let diagnostics = keep_going_diagnostics(opts);
+    for (export_name, partner) in [
+        ("AlphaLeft", "AlphaRight"),
+        ("AlphaRight", "AlphaLeft"),
+        ("BetaLeft", "BetaRight"),
+        ("BetaRight", "BetaLeft"),
+    ] {
+        let entry = find_entry(&diagnostics, "conflicting_selector", export_name);
+        let message = entry["message"].as_str().unwrap();
+        assert!(
+            message.contains(&format!("conflicts with `{partner}`")),
+            "{entry:#}"
+        );
+        let other_pair = if export_name.starts_with("Alpha") {
+            "Beta"
+        } else {
+            "Alpha"
+        };
+        assert!(!message.contains(other_pair), "{entry:#}");
+    }
+    let duplicate = diagnostics
+        .iter()
+        .find(|entry| entry["category"] == "duplicate_claim")
+        .unwrap_or_else(|| panic!("missing duplicate-claim witness: {diagnostics:#?}"));
+    assert_eq!(duplicate["duplicate_claim"]["binding"], "gammaOne");
+    assert_eq!(diagnostics.len(), 5, "{diagnostics:#?}");
 }
 
 #[test]
