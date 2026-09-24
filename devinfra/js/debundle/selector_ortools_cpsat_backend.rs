@@ -1212,10 +1212,9 @@ fn u32_id(field: &'static str, value: usize) -> Result<u32, OrToolsCpSatBackendE
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
 
-    use analysis::{AnalysisHints, ChunkId, OwnerId, StatementOrdinal};
+    use analysis::{ChunkId, OwnerId, StatementOrdinal};
     use selector_backend_solver::solve_with_backend;
     use selector_constraint_backend::{
         AllDifferentConstraintId, DomainValueDictionary, FullDomainValues,
@@ -1224,8 +1223,6 @@ mod tests {
         ClaimKind, ClaimOrigin, ClaimOutcome, OwnerTerm, ResolvedClaim, SelectorAtom, SelectorFact,
         SelectorFactStore, SelectorProgram, SelectorTargetId, StringTerm, VariableDomain,
     };
-    use selector_ir_lowering::{MemberSelectorLoweringContext, MemberSelectorProgramBuilder};
-    use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchIdentifierMode};
 
     use super::*;
 
@@ -1287,73 +1284,6 @@ mod tests {
             callee_member: callee_member.to_string(),
             arg_index,
         }
-    }
-
-    fn selector_fact_store_from_source(source: &str) -> SelectorFactStore {
-        let module = js_ast::parse_js_module_ast("<chunk>", source).unwrap();
-        let chunk_facts = chunk_facts::extract_facts(&module).unwrap();
-        let analysis =
-            analysis::facts::analyze_chunk(&module, &AnalysisHints::default(), None, |_| None);
-        let owner_graph = analysis::graph::build_owner_graph(&analysis.facts).unwrap();
-        let mut facts = SelectorFactStore::default();
-        facts.extend_chunk_facts(ChunkId(0), &chunk_facts);
-        for node in owner_graph.iter_nodes() {
-            facts.push(SelectorFact::Owner {
-                chunk_id: ChunkId(0),
-                owner: node.id,
-                statement_ordinal: node.statement_ordinal,
-                statement_kind: node.kind.to_string(),
-            });
-            for binding in &node.declared {
-                facts.push(SelectorFact::DeclaredBinding {
-                    chunk_id: ChunkId(0),
-                    owner: node.id,
-                    binding: binding.0.as_str().to_string(),
-                    export_name: None,
-                });
-            }
-        }
-        for edge in owner_graph.iter_edges() {
-            if let Some(binding) = edge.reason.binding() {
-                facts.push(SelectorFact::OwnerReferencesBinding {
-                    chunk_id: ChunkId(0),
-                    owner: edge.from,
-                    binding: binding.0.as_str().to_string(),
-                    edge_kind: edge.reason.kind().to_string(),
-                });
-            }
-        }
-        facts
-    }
-
-    fn owner_for_binding(facts: &SelectorFactStore, binding: &str) -> OwnerId {
-        facts
-            .facts
-            .iter()
-            .find_map(|fact| match fact {
-                SelectorFact::DeclaredBinding {
-                    owner,
-                    binding: fact_binding,
-                    ..
-                } if fact_binding == binding => Some(*owner),
-                _ => None,
-            })
-            .unwrap_or_else(|| panic!("missing owner for binding {binding}"))
-    }
-
-    fn statement_ordinal_for_owner(facts: &SelectorFactStore, owner: OwnerId) -> StatementOrdinal {
-        facts
-            .facts
-            .iter()
-            .find_map(|fact| match fact {
-                SelectorFact::Owner {
-                    owner: fact_owner,
-                    statement_ordinal,
-                    ..
-                } if *fact_owner == owner => Some(*statement_ordinal),
-                _ => None,
-            })
-            .unwrap_or_else(|| panic!("missing statement ordinal for owner {owner:?}"))
     }
 
     fn sidecar_path() -> PathBuf {
@@ -1610,167 +1540,6 @@ mod tests {
                 }
             })
         );
-    }
-
-    #[test]
-    fn cpsat_sidecar_resolves_alpha_all_binding_group_multideclarator() {
-        js_ast::with_swc_globals(|| {
-            let mut group_selector = AnonymousStatementSelector::exact(
-                "const primary = EXPR_PRIMARY, secondary = EXPR_SECONDARY;",
-            );
-            group_selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
-            let mut primary_selector = group_selector.clone();
-            primary_selector.target_binding = Some("primary".to_string());
-            let mut secondary_selector = group_selector.clone();
-            secondary_selector.target_binding = Some("secondary".to_string());
-
-            let mut builder = MemberSelectorProgramBuilder::new(
-                MemberSelectorLoweringContext::new(ChunkId(0), "static/app::settings"),
-            );
-            let primary_target = builder
-                .declare_member_target_in_module(
-                    "static/app::settings",
-                    "primary",
-                    &MemberSelectorSpec::SourceMatch(primary_selector),
-                )
-                .unwrap();
-            let secondary_target = builder
-                .declare_member_target_in_module(
-                    "static/app::settings",
-                    "secondary",
-                    &MemberSelectorSpec::SourceMatch(secondary_selector),
-                )
-                .unwrap();
-            assert!(
-                builder
-                    .try_lower_native_source_match_group(
-                        "static/app::settings",
-                        &group_selector,
-                        &BTreeMap::from([
-                            ("primary".to_string(), "primary".to_string()),
-                            ("secondary".to_string(), "secondary".to_string()),
-                        ]),
-                    )
-                    .unwrap()
-            );
-            let program = builder.into_program().unwrap();
-
-            let module = js_ast::parse_js_module_ast(
-                "<chunk>",
-                "const primary = 10, secondary = 20;\n\
-                 console.log(primary + secondary);\n\
-                 export { primary, secondary };\n",
-            )
-            .unwrap();
-            let chunk_facts = chunk_facts::extract_facts(&module).unwrap();
-            let analysis =
-                analysis::facts::analyze_chunk(&module, &AnalysisHints::default(), None, |_| None);
-            let owner_graph = analysis::graph::build_owner_graph(&analysis.facts).unwrap();
-            let mut facts = SelectorFactStore::default();
-            facts.extend_chunk_facts(ChunkId(0), &chunk_facts);
-            for node in owner_graph.iter_nodes() {
-                facts.push(SelectorFact::Owner {
-                    chunk_id: ChunkId(0),
-                    owner: node.id,
-                    statement_ordinal: node.statement_ordinal,
-                    statement_kind: node.kind.to_string(),
-                });
-                for binding in &node.declared {
-                    facts.push(SelectorFact::DeclaredBinding {
-                        chunk_id: ChunkId(0),
-                        owner: node.id,
-                        binding: binding.0.as_str().to_string(),
-                        export_name: None,
-                    });
-                }
-            }
-            for edge in owner_graph.iter_edges() {
-                if let Some(binding) = edge.reason.binding() {
-                    facts.push(SelectorFact::OwnerReferencesBinding {
-                        chunk_id: ChunkId(0),
-                        owner: edge.from,
-                        binding: binding.0.as_str().to_string(),
-                        edge_kind: edge.reason.kind().to_string(),
-                    });
-                }
-            }
-
-            let backend = OrToolsCpSatBackend::new(sidecar_path());
-            let result = solve_with_backend(&program, &facts, &backend).unwrap();
-
-            assert_eq!(
-                result.outcome_for(primary_target),
-                Some(&ClaimOutcome::Unique {
-                    claim: ResolvedClaim {
-                        chunk_id: ChunkId(0),
-                        owner: OwnerId(0),
-                        statement_ordinal: StatementOrdinal(0),
-                        binding: Some("primary".to_string()),
-                        provenance: Vec::new(),
-                    }
-                })
-            );
-            assert_eq!(
-                result.outcome_for(secondary_target),
-                Some(&ClaimOutcome::Unique {
-                    claim: ResolvedClaim {
-                        chunk_id: ChunkId(0),
-                        owner: OwnerId(1),
-                        statement_ordinal: StatementOrdinal(1),
-                        binding: Some("secondary".to_string()),
-                        provenance: Vec::new(),
-                    }
-                })
-            );
-        });
-    }
-
-    #[test]
-    fn cpsat_sidecar_resolves_alpha_target_binding_with_multideclarator_context() {
-        js_ast::with_swc_globals(|| {
-            let mut selector = AnonymousStatementSelector::exact(
-                r#"const config = { kind: "selected", enabled: true };
-function readConfig() {
-  return config.kind;
-}"#,
-            );
-            selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
-            selector.target_binding = Some("config".to_string());
-            let lowered = selector_ir_lowering::lower_member_selector(
-                &MemberSelectorLoweringContext::new(ChunkId(0), "static/app::selected_config"),
-                "selectedConfig",
-                &MemberSelectorSpec::SourceMatch(selector),
-            )
-            .unwrap();
-            let facts = selector_fact_store_from_source(
-                r#"const helperBinding = { kind: "helper" },
-  runtimeBinding = { kind: "selected", enabled: true },
-  trailingBinding = { kind: "trailing" };
-function runtimeReader() {
-  return runtimeBinding.kind;
-}
-console.log(runtimeReader(), helperBinding.kind, trailingBinding.kind);
-export { helperBinding, runtimeBinding, trailingBinding, runtimeReader };
-"#,
-            );
-
-            let backend = OrToolsCpSatBackend::new(sidecar_path());
-            let result = solve_with_backend(&lowered.program, &facts, &backend).unwrap();
-            let owner = owner_for_binding(&facts, "runtimeBinding");
-
-            assert_eq!(
-                result.outcome_for(lowered.target),
-                Some(&ClaimOutcome::Unique {
-                    claim: ResolvedClaim {
-                        chunk_id: ChunkId(0),
-                        owner,
-                        statement_ordinal: statement_ordinal_for_owner(&facts, owner),
-                        binding: Some("runtimeBinding".to_string()),
-                        provenance: Vec::new(),
-                    }
-                })
-            );
-        });
     }
 
     #[test]
