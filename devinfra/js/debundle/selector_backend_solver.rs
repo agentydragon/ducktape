@@ -86,8 +86,6 @@ fn singleton_no_constraint_backend_result(
     // constraints remain and every variable has exactly one possible value.
     if problem.known_unsat.is_some()
         || !problem.allowed_tuples.is_empty()
-        || !problem.binary_constraints.is_empty()
-        || !problem.linear_constraints.is_empty()
         || !problem.all_different.is_empty()
     {
         return None;
@@ -450,21 +448,10 @@ fn model_build_summary_json(summary: &SelectorModelBuildSummary) -> serde_json::
 }
 
 fn compiled_problem_summary_json(problem: &CompiledSelectorProblem) -> serde_json::Value {
-    let mut constraint_count_by_kind = BTreeMap::from([
+    let constraint_count_by_kind = BTreeMap::from([
         ("allowed_table", problem.allowed_tuples.len()),
-        ("linear", problem.linear_constraints.len()),
         ("all_different", problem.all_different.len()),
     ]);
-    for constraint in &problem.binary_constraints {
-        let key = match constraint.kind {
-            selector_constraint_backend::BinaryConstraintKind::Equal => "binary_equal",
-            selector_constraint_backend::BinaryConstraintKind::NotEqual => "binary_not_equal",
-            selector_constraint_backend::BinaryConstraintKind::OrdinalBefore => {
-                "binary_ordinal_before"
-            }
-        };
-        *constraint_count_by_kind.entry(key).or_insert(0) += 1;
-    }
     let domain_sizes = problem
         .variables
         .iter()
@@ -510,9 +497,7 @@ fn compiled_problem_summary_json(problem: &CompiledSelectorProblem) -> serde_jso
         "max_domain_values": domain_sizes.into_iter().max().unwrap_or(0),
         "full_domain_value_counts": {
             "owner": problem.full_domains.owners.len(),
-            "ast_node": problem.full_domains.ast_nodes.len(),
             "string": problem.full_domains.strings.len(),
-            "statement_ordinal": problem.full_domains.statement_ordinals.len(),
         },
         "value_dictionary_count": problem.value_dictionary.total_len(),
         "shared_sparse_domain_count": problem.shared_variable_domains.len(),
@@ -527,10 +512,6 @@ fn compiled_problem_summary_json(problem: &CompiledSelectorProblem) -> serde_jso
         "allowed_cell_count": allowed_table_cells.into_iter().sum::<usize>(),
         "shared_allowed_row_count": shared_allowed_row_count,
         "shared_allowed_cell_count": shared_allowed_cell_count,
-        "binary_constraint_count": problem.binary_constraints.len(),
-        "binary_constraint_count_by_kind": keyed_count(problem.binary_constraints.iter().map(|constraint| binary_constraint_kind_name(constraint.kind))),
-        "linear_constraint_count": problem.linear_constraints.len(),
-        "linear_constraint_arity_histogram": usize_histogram(problem.linear_constraints.iter().map(|constraint| constraint.variables.len())),
         "all_different_count": problem.all_different.len(),
         "all_different_count_by_reason": keyed_count(problem.all_different.iter().map(|constraint| all_different_reason_name(&constraint.reason))),
         "all_different_arity_histogram": usize_histogram(problem.all_different.iter().map(|constraint| constraint.variables.len())),
@@ -557,9 +538,7 @@ fn keyed_count(keys: impl IntoIterator<Item = &'static str>) -> BTreeMap<&'stati
 fn variable_domain_name(domain: selector_ir::VariableDomain) -> &'static str {
     match domain {
         selector_ir::VariableDomain::Owner => "owner",
-        selector_ir::VariableDomain::AstNode => "ast_node",
         selector_ir::VariableDomain::String => "string",
-        selector_ir::VariableDomain::StatementOrdinal => "statement_ordinal",
     }
 }
 
@@ -574,31 +553,12 @@ fn claim_kind_name(claim: &ClaimKind) -> &'static str {
 fn selector_atom_kind_name(atom: &SelectorAtom) -> &'static str {
     match atom {
         SelectorAtom::OwnerKind { .. } => "owner_kind",
-        SelectorAtom::OwnerStatementOrdinal { .. } => "owner_statement_ordinal",
-        SelectorAtom::OwnerTopLevelRoot { .. } => "owner_top_level_root",
         SelectorAtom::OwnerDeclaresBinding { .. } => "owner_declares_binding",
         SelectorAtom::ProjectedAllowedTuples { .. } => "projected_allowed_tuples",
         SelectorAtom::OwnerExportName { .. } => "owner_export_name",
         SelectorAtom::OwnerReferencesBinding { .. } => "owner_references_binding",
         SelectorAtom::OwnerReferencesOwner { .. } => "owner_references_owner",
         SelectorAtom::OwnerAliasesOwner { .. } => "owner_aliases_owner",
-        SelectorAtom::AstKind { .. } => "ast_kind",
-        SelectorAtom::AstChild { .. } => "ast_child",
-        SelectorAtom::AstChildListPattern { .. } => "ast_child_list_pattern",
-        SelectorAtom::AstSuperClass { .. } => "ast_super_class",
-        SelectorAtom::AstChildCount { .. } => "ast_child_count",
-        SelectorAtom::AstStringLiteral { .. } => "ast_string_literal",
-        SelectorAtom::AstStringLiteralMatchingRegex { .. } => "ast_string_literal_matching_regex",
-        SelectorAtom::AstNumberLiteral { .. } => "ast_number_literal",
-        SelectorAtom::AstBoolLiteral { .. } => "ast_bool_literal",
-        SelectorAtom::AstIdentifierName { .. } => "ast_identifier_name",
-        SelectorAtom::AstPropertyName { .. } => "ast_property_name",
-        SelectorAtom::AstBareProperty { .. } => "ast_bare_property",
-        SelectorAtom::AstOperator { .. } => "ast_operator",
-        SelectorAtom::AstRegexLiteral { .. } => "ast_regex_literal",
-        SelectorAtom::AstTopLevel { .. } => "ast_top_level",
-        SelectorAtom::OrdinalOffset { .. } => "ordinal_offset",
-        SelectorAtom::OrdinalBefore { .. } => "ordinal_before",
         SelectorAtom::ReadsMember { .. } => "reads_member",
         SelectorAtom::ReadsMemberOfOwner { .. } => "reads_member_of_owner",
         SelectorAtom::ConsumesModuleMember { .. } => "consumes_module_member",
@@ -607,18 +567,6 @@ fn selector_atom_kind_name(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::MakesDecorateCall { .. } => "makes_decorate_call",
         SelectorAtom::MakesDecorateCallForOwner { .. } => "makes_decorate_call_for_owner",
         SelectorAtom::IntrinsicAlias { .. } => "intrinsic_alias",
-        SelectorAtom::Equal { .. } => "equal",
-        SelectorAtom::NotEqual { .. } => "not_equal",
-    }
-}
-
-fn binary_constraint_kind_name(
-    kind: selector_constraint_backend::BinaryConstraintKind,
-) -> &'static str {
-    match kind {
-        selector_constraint_backend::BinaryConstraintKind::Equal => "equal",
-        selector_constraint_backend::BinaryConstraintKind::NotEqual => "not_equal",
-        selector_constraint_backend::BinaryConstraintKind::OrdinalBefore => "ordinal_before",
     }
 }
 
@@ -860,7 +808,6 @@ impl MaterializationFacts {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
     use std::convert::Infallible;
 
     use analysis::{ChunkId, OwnerId, StatementOrdinal};
@@ -870,7 +817,7 @@ mod tests {
         BackendValueId, BackendVariableAssignment,
     };
     use selector_constraint_model_builder::compile_selector_problem_with_summary;
-    use selector_ir::{ClaimOrigin, NodeTerm, OwnerTerm, SelectorAtom, StringTerm, VariableDomain};
+    use selector_ir::{ClaimOrigin, OwnerTerm, SelectorAtom, StringTerm, VariableDomain};
     use serde_json::json;
 
     use super::*;
@@ -925,44 +872,6 @@ mod tests {
         }
     }
 
-    #[derive(Debug)]
-    struct CountingBackend {
-        calls: Cell<usize>,
-        assignments: Vec<Vec<(ConstraintVariableId, ConstraintValue)>>,
-        coverage: BackendAssignmentCoverage,
-        status: BackendSolveStatus,
-    }
-
-    impl SelectorProblemBackend for CountingBackend {
-        type Error = Infallible;
-
-        fn solve(
-            &self,
-            problem: &CompiledSelectorProblem,
-        ) -> Result<BackendSolveResult, Self::Error> {
-            self.calls.set(self.calls.get() + 1);
-            let mut assignments = Vec::new();
-            for assignment in &self.assignments {
-                assignments.push(BackendAssignment {
-                    values: assignment
-                        .iter()
-                        .map(|(variable, value)| BackendVariableAssignment {
-                            variable: *variable,
-                            value: backend_value_for(problem, value),
-                        })
-                        .collect(),
-                });
-            }
-            Ok(BackendSolveResult {
-                status: self.status.clone(),
-                assignment_coverage: self.coverage,
-                assignments,
-                diagnostic: None,
-                solver_response_stats: None,
-            })
-        }
-    }
-
     fn backend_value_for(
         problem: &CompiledSelectorProblem,
         value: &ConstraintValue,
@@ -996,14 +905,6 @@ mod tests {
             owner,
             binding: binding.to_string(),
             export_name: Some(export_name.to_string()),
-        }
-    }
-
-    fn ast_identifier_name_fact(node: u32, value: &str) -> SelectorFact {
-        SelectorFact::AstIdentifierName {
-            chunk_id: ChunkId(0),
-            node,
-            value: value.to_string(),
         }
     }
 
@@ -1051,38 +952,6 @@ mod tests {
                 value: "minA".to_string(),
             },
         });
-        (program, target)
-    }
-
-    fn singleton_with_binary_constraint_program() -> (SelectorProgram, SelectorTargetId) {
-        let mut program = SelectorProgram::default();
-        let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
-        let left = program.add_variable(VariableDomain::String, Some("left".to_string()));
-        let right = program.add_variable(VariableDomain::String, Some("right".to_string()));
-        let target = program.add_target(
-            ChunkId(0),
-            owner,
-            "module",
-            ClaimKind::Binding {
-                export_name: Some("Readable".to_string()),
-            },
-            ClaimOrigin::Synthetic,
-        );
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: owner },
-            binding: StringTerm::Const {
-                value: "minA".to_string(),
-            },
-        });
-        program.add_atom(SelectorAtom::AstIdentifierName {
-            node: NodeTerm::Const { node: 100 },
-            value: StringTerm::Var { id: left },
-        });
-        program.add_atom(SelectorAtom::AstIdentifierName {
-            node: NodeTerm::Const { node: 200 },
-            value: StringTerm::Var { id: right },
-        });
-        program.add_atom(SelectorAtom::Equal { left, right });
         (program, target)
     }
 
@@ -1237,10 +1106,6 @@ mod tests {
         assert_eq!(
             summary["compiled_problem"]["constraint_count_by_kind"]["allowed_table"],
             json!(1)
-        );
-        assert_eq!(
-            summary["compiled_problem"]["constraint_count_by_kind"]["linear"],
-            json!(0)
         );
     }
 
@@ -1442,40 +1307,6 @@ mod tests {
                 .contains("variable restriction has empty domain"),
             "{}",
             diagnostic.reason
-        );
-    }
-
-    #[test]
-    fn singleton_problem_with_remaining_constraint_still_uses_backend() {
-        let (program, target) = singleton_with_binary_constraint_program();
-        let mut facts = facts();
-        facts.push(ast_identifier_name_fact(100, "same"));
-        facts.push(ast_identifier_name_fact(200, "same"));
-        let backend = CountingBackend {
-            calls: Cell::new(0),
-            status: BackendSolveStatus::Satisfiable,
-            coverage: BackendAssignmentCoverage::TargetSupportComplete,
-            assignments: vec![vec![
-                (ConstraintVariableId(0), owner(1)),
-                (ConstraintVariableId(1), string("same")),
-                (ConstraintVariableId(2), string("same")),
-            ]],
-        };
-
-        let result = solve_with_backend(&program, &facts, &backend).unwrap();
-
-        assert_eq!(backend.calls.get(), 1);
-        assert_eq!(
-            result.outcome_for(target),
-            Some(&ClaimOutcome::Unique {
-                claim: ResolvedClaim {
-                    chunk_id: ChunkId(0),
-                    owner: OwnerId(1),
-                    statement_ordinal: StatementOrdinal(10),
-                    binding: Some("minA".to_string()),
-                    provenance: Vec::new(),
-                }
-            })
         );
     }
 }
