@@ -79,7 +79,7 @@ from agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
-from agentplane.runner.client import RunnerError
+from agentplane.runner.client import OpenTimeoutError, RunnerError
 from agentplane.subjects import ServiceAccountRef
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -924,7 +924,10 @@ def create_app(
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
     @app.exception_handler(runner_bridge.RunnerAdmissionTimeoutError)
-    async def _admission_timed_out(_request: Request, error: runner_bridge.RunnerAdmissionTimeoutError) -> JSONResponse:
+    @app.exception_handler(OpenTimeoutError)
+    async def _runner_timed_out(
+        _request: Request, error: runner_bridge.RunnerAdmissionTimeoutError | OpenTimeoutError
+    ) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_504_GATEWAY_TIMEOUT, content={"detail": str(error)})
 
     @app.exception_handler(grpc.aio.AioRpcError)

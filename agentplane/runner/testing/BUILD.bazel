@@ -64,3 +64,13 @@ py_library(
     name = "storage_image",
     srcs = ["storage_image.py"],
 )
+
+py_library(
+    name = "unanswering_runner",
+    srcs = ["unanswering_runner.py"],
+    deps = [
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import socket
 from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
@@ -44,6 +45,7 @@ from agentplane.app.testing.kubernetes import (
 )
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
+from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -541,6 +543,72 @@ def test_a_runner_that_does_not_answer_is_a_503(
             response = client.get("/sandboxes/live/sessions")
     assert response.status_code == 503
     assert "not answering" in response.json()["detail"]
+
+
+async def test_a_runner_that_never_answers_open_is_a_504_naming_the_session(
+    monkeypatch: pytest.MonkeyPatch,
+    inventory: SandboxInventory,
+    store: ThreadStore,
+    thread_updates: ThreadUpdates,
+    operator_sessions: OperatorSessionStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+    event_logs: EventLogStore,
+    content: ContentStore,
+    ingestion: Ingestion,
+) -> None:
+    """A runner that takes the command's Attach but never answers its Open, as a wedged one: the
+    route answers rather than holding the request, and lets go of the runner's stream."""
+    monkeypatch.setattr("agentplane.runner.client.OBSERVE_ANSWER_S", 1)
+    live_index.sandboxes["live"] = sandbox("live")
+    live_index.pods["live"] = pod("live", phase="Running", ready=True, ip="127.0.0.1")
+    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    thread_id = await event_logs.open("live", "test-unanswered", spec)
+    wedged = UnansweringRunner()
+    async with wedged.serve() as port:
+        runners = Runners(live_index, port)
+        ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
+        app = create_app(
+            inventory,
+            RunnerBridge(
+                runners=runners,
+                event_logs=event_logs,
+                content=content,
+                ingester=ingester,
+                thread_changes=thread_updates.changes,
+            ),
+            store,
+            TEST_MODELS,
+            egress,
+            decisions,
+            live_index,
+            action_policy,
+            reviewer=reviewer,
+            event_logs=event_logs,
+            content=content,
+            thread_updates=thread_updates,
+            operator_sessions=operator_sessions,
+        )
+        try:
+            async with (
+                httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+                ) as http,
+                asyncio.timeout(10),
+            ):
+                response = await http.post(
+                    f"/threads/{thread_id}/commands",
+                    json={"commandId": "test-unanswered-command", "submitInput": {"text": "never admitted"}},
+                )
+                assert response.status_code == 504, response.text
+                assert "'test-unanswered'" in response.json()["detail"]
+                assert await wedged.cancelled.get() == "test-unanswered"
+        finally:
+            await ingester.close()
+            await runners.close()
 
 
 def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> None:
