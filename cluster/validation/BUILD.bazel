@@ -397,19 +397,6 @@ py_test(
 )
 
 py_test(
-    name = "test_haku_ci_keda_contract",
-    srcs = ["test_haku_ci_keda_contract.py"],
-    data = ["//cluster/k8s:haku_manifest_contract_files"],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
     name = "test_haku_dispatch_zones_contract",
     srcs = ["test_haku_dispatch_zones_contract.py"],
     data = [

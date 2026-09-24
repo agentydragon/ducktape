@@ -56,11 +56,11 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cli-proxy-api"
-_NAME = "cli-proxy-api"
-_NAMESPACE = "cli-proxy-api"
-_LABELS = {"app.kubernetes.io/name": _NAME}
+NAME = "cli-proxy-api"
+NAMESPACE = "cli-proxy-api"
+_LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/cli-proxy-api:unset"
-_PORT = 8317
+PORT = 8317
 _CONFIG_SECRET = "cli-proxy-api-config"
 _DATA_CLAIM = "cli-proxy-api-data"
 _ADMIN_OIDC_SECRET = "cli-proxy-api-admin-oidc"
@@ -91,7 +91,7 @@ def _namespace(scope: Construct) -> None:
         scope,
         "namespace",
         metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
+            name=NAMESPACE,
             labels={
                 "goldilocks.fairwinds.com/enabled": "true",
                 "goldilocks.fairwinds.com/vpa-update-mode": "auto",
@@ -107,7 +107,7 @@ def _data_claim(scope: Construct) -> None:
     k8s.KubePersistentVolumeClaim(
         scope,
         "data",
-        metadata=k8s.ObjectMeta(name=_DATA_CLAIM, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_DATA_CLAIM, namespace=NAMESPACE),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
             storage_class_name="seaweedfs-ovh",
@@ -123,7 +123,7 @@ def _config(scope: Construct) -> None:
         scope,
         "config",
         name=_CONFIG_SECRET,
-        namespace=_NAMESPACE,
+        namespace=NAMESPACE,
         refresh="1h",
         store=cluster_secret_store("kubernetes-cli-proxy-api-secret-store"),
         data=[remote_data("cli-proxy-api-client-key", "client-key", secret_key="client_key")],
@@ -148,12 +148,12 @@ def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
 
 
 def _deployment(scope: Construct) -> None:
-    tcp_probe = k8s.TcpSocketAction(port=k8s.IntOrString.from_number(_PORT))
+    tcp_probe = k8s.TcpSocketAction(port=k8s.IntOrString.from_number(PORT))
     k8s.KubeDeployment(
         scope,
         "deployment",
         metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
+            name=NAME, namespace=NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,
@@ -191,7 +191,7 @@ def _deployment(scope: Construct) -> None:
                     ],
                     containers=[
                         k8s.Container(
-                            name=_NAME,
+                            name=NAME,
                             image=_IMAGE,
                             args=["-config", "/config/config.yaml"],
                             env=[
@@ -207,7 +207,7 @@ def _deployment(scope: Construct) -> None:
                                     )
                                 ),
                             ],
-                            ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
+                            ports=[k8s.ContainerPort(name="http", container_port=PORT, protocol="TCP")],
                             readiness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=30, period_seconds=30),
                             resources=k8s.ResourceRequirements(
@@ -243,13 +243,11 @@ def _service(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
         spec=k8s.ServiceSpec(
             selector=_LABELS,
             ports=[
-                k8s.ServicePort(
-                    name="http", port=_PORT, target_port=k8s.IntOrString.from_string("http"), protocol="TCP"
-                )
+                k8s.ServicePort(name="http", port=PORT, target_port=k8s.IntOrString.from_string("http"), protocol="TCP")
             ],
         ),
     )
@@ -259,7 +257,7 @@ def _routes(scope: Construct) -> None:
     HttpRoute(
         scope,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=metadata(NAME, NAMESPACE),
         spec=HttpRouteSpec(
             parent_refs=[cluster_gateway_parent_ref()],
             hostnames=["cli-proxy-api.allegedly.works"],
@@ -274,7 +272,7 @@ def _routes(scope: Construct) -> None:
                             )
                         )
                     ],
-                    backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=_PORT)],
+                    backend_refs=[HttpRouteSpecRulesBackendRefs(name=NAME, port=PORT)],
                 )
             ],
         ),
@@ -282,10 +280,10 @@ def _routes(scope: Construct) -> None:
     https_route(
         scope,
         "admin-route",
-        metadata=metadata("cli-proxy-api-admin", _NAMESPACE),
+        metadata=metadata("cli-proxy-api-admin", NAMESPACE),
         hostname="cli-proxy-api-admin.allegedly.works",
-        backend=_NAME,
-        port=_PORT,
+        backend=NAME,
+        port=PORT,
         hsts=False,
         listener=None,
     )
@@ -296,19 +294,19 @@ def _network_policy(scope: Construct) -> None:
     cilium.network_policy(
         scope,
         "network-policy",
-        metadata=metadata("cli-proxy-api-ingress", _NAMESPACE),
+        metadata=metadata("cli-proxy-api-ingress", NAMESPACE),
         selector=_LABELS,
         ingress=[
             # cilium-envoy hostNetwork traffic carries reserved:ingress identity. Preserves the
             # existing cli-proxy-api.allegedly.works /v1 HTTPRoute, which routes straight to this
             # Service, unauthenticated, for LiteLLM's model traffic.
-            cilium.ingress_from_gateway(_PORT),
+            cilium.ingress_from_gateway(PORT),
             # LiteLLM's codex-*/chatgpt-* upstreams (litellm/config.py) call the
             # in-cluster Service by cluster DNS, not through the Gateway.
-            cilium.ingress_from(cilium.endpoint_labels("litellm", "litellm"), ports=[_PORT]),
+            cilium.ingress_from(cilium.endpoint_labels("litellm", "litellm"), ports=[PORT]),
             # aiquota retrieves Claude and Codex subscription usage through the authenticated
             # CLIProxyAPI management endpoint.
-            cilium.ingress_from(cilium.endpoint_labels(_NAMESPACE, "aiquota"), ports=[_PORT]),
+            cilium.ingress_from(cilium.endpoint_labels(NAMESPACE, "aiquota"), ports=[PORT]),
             # Kubelet readiness/liveness tcpSocket probes originate from the node host.
             CiliumNetworkPolicySpecIngress(
                 from_entities=[CiliumNetworkPolicySpecIngressFromEntities.HOST],
@@ -316,7 +314,7 @@ def _network_policy(scope: Construct) -> None:
                     CiliumNetworkPolicySpecIngressToPorts(
                         ports=[
                             CiliumNetworkPolicySpecIngressToPortsPorts(
-                                port=str(_PORT), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
+                                port=str(PORT), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
                             )
                         ]
                     )
@@ -327,7 +325,7 @@ def _network_policy(scope: Construct) -> None:
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, _NAME, disable_resource_name_hashes=True)
+    chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _namespace(chart)
     _data_claim(chart)
     _config(chart)
@@ -342,7 +340,7 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml", *_KEY_FILES], components=["./image-pins"]),
+        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml", *_KEY_FILES], components=["./image-pins"]),
     )
 
 

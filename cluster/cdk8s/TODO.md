@@ -79,8 +79,8 @@ Entries are removed once landed — this is a burn-down, not a changelog.
     Testing checked `litellm-key-cheap-experiments` from `litellm-credentials/`.
   - aiquota: `aiquota-api-bearer` from SOPS, `cli-proxy-api-management` from
     `cli-proxy-api`, `aiquota-oidc` from `agent-machine-access-tf`, and
-    `clickhouse-aiquota-credentials` from `reflector`; ConfigMaps generated from
-    `config.toml` and `schema.sql`.
+    `clickhouse-aiquota-credentials` from `reflector`; the `aiquota-api-config` and
+    `schema.sql` ConfigMaps.
   - ClickHouse schema: `clickhouse-admin-credentials` from `clickhouse` and the
     `schema.sql` ConfigMap.
   - Haku console: Secrets `forgejo-images-creds`, `haku-console-oidc`,
@@ -121,20 +121,16 @@ retiring a test means deriving both sides from one value.
   - `proxy/iron.yaml`, a hand-written `configMapGenerator` input:
     `test_haku_public_coder_contract.py` and `test_public_coder_clickhouse_reader_contract.py`
     check the app's placeholders, the kubeconfig's bearer and host, and the ClickHouse host
-    against it. In the `<name>-config.k8s.yaml` shape the ConfigMap loses the generator's
-    name hash (the proxy's `reloader.stakater.com/auto` already rolls it on a content
-    change) and its comments move into Python, so rendering it is a rendered change and
-    waits for the operator.
+    against it.
   - The proxy's and the piper's ingress rules spell the app's labels, because
     `public_coder_agent_config` imports both modules for their addresses
     (`test_public_coder_agent_config.py`'s `test_proxy_admits_the_app`).
   - The `aiquota-api-bearer-public-coder` mirror `aiquota.py` writes for the proxy
     (`test_proxy_aiquota_bearer_is_mirrored_into_its_namespace`).
-- **`agents/haku-egress-proxy` script contract** — `test_haku_sandbox_contract.py`
-  regex-extracts required env vars and a clone host:port from `haku-sandbox-setup.sh`
-  (an image build input) and checks the generated SandboxTemplate
-  (`haku/workspaces.py`) and egress policy cover them. Closing it fully needs the script
-  to declare its requirements in a checkable form.
+- **`haku/workspaces` script contract** — `test_haku_sandbox_contract.py`
+  regex-extracts required env vars from `haku-sandbox-setup.sh` (an image build input)
+  and checks the generated SandboxTemplate (`haku/workspaces.py`) covers them. Closing
+  it fully needs the script to declare its requirements in a checkable form.
 - **`authentik/app`** — `test_authentik_blueprint_contracts.py`'s
   `configMapGenerator.files` list vs. a glob of `blueprints/*.yaml`: the
   `kustomization.yaml` is still hand-written, so a generated one listing the glob would

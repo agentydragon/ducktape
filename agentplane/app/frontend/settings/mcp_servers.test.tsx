@@ -186,7 +186,14 @@ it("shows a bearer-auth group with a live health badge and no link/disconnect bu
         executor_kind: "mcp",
         executor_description: "Tana MCP tools",
         available: true,
-        health: { state: "available", reason: null, last_discovery_at: null, retry_at: null, failures: 0 },
+        health: {
+          state: "available",
+          reason: null,
+          detail: null,
+          last_discovery_at: null,
+          retry_at: null,
+          failures: 0,
+        },
         actions: [],
       },
     ]
@@ -198,7 +205,7 @@ it("shows a bearer-auth group with a live health badge and no link/disconnect bu
   expect(buttons).not.toContain("Disconnect");
 });
 
-it("surfaces a linked-but-disconnected mismatch that the oauth-only view would hide", async () => {
+it("labels a linked-but-disconnected server's two states and says why it cannot connect", async () => {
   const container = await render(
     async () => [
       {
@@ -224,6 +231,7 @@ it("surfaces a linked-but-disconnected mismatch that the oauth-only view would h
         health: {
           state: "disconnected",
           reason: "connect_failed",
+          detail: "RuntimeError: Client failed to connect: All connection attempts failed",
           last_discovery_at: null,
           retry_at: null,
           failures: 3,
@@ -232,8 +240,9 @@ it("surfaces a linked-but-disconnected mismatch that the oauth-only view would h
       },
     ]
   );
-  expect(container.textContent).toContain("linked");
-  expect(container.textContent).toContain("connect_failed");
+  expect(container.textContent).toContain("OAuth linklinked");
+  expect(container.textContent).toContain("Connectionconnect_failed");
+  expect(container.textContent).toContain("RuntimeError: Client failed to connect: All connection attempts failed");
 });
 
 it("renders an oauth linkage with no matching health row exactly as before", async () => {

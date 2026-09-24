@@ -57,7 +57,7 @@ def test_configured_groups_and_actions_are_discoverable() -> None:
     catalog = _catalog()
 
     assert isinstance(catalog.groups["github"].executor, McpExecutorBinding)
-    views = {view.key: view for view in catalog.group_views()}
+    views = {view.key: view for view in catalog.group_views(with_detail=False)}
 
     assert views.keys() == {"github", "calendar"}
     github = views["github"]
@@ -74,7 +74,7 @@ def test_configured_groups_and_actions_are_discoverable() -> None:
 def test_executor_backend_configuration_never_reaches_a_view() -> None:
     catalog = _catalog()
 
-    rendered = "\n".join(view.model_dump_json() for view in catalog.group_views())
+    rendered = "\n".join(view.model_dump_json() for view in catalog.group_views(with_detail=False))
 
     assert "github-mcp-account" not in rendered
     assert "github-mcp.internal.example" not in rendered

@@ -44,6 +44,9 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku-ci"
 _RUNNER = "haku-runner"
 _LABELS = {"app.kubernetes.io/name": _RUNNER}
 _AUTH = "haku-ci-forgejo"
+# The hand-written SOPS Secret (haku/forgejo-tea) Reflector copies into NAMESPACE for KEDA.
+FORGEJO_TOKEN_SECRET = "haku-forgejo-tea"
+FORGEJO_TOKEN_KEY = "token"
 _FORGEJO_URL = "http://forgejo-http.forgejo:3000"
 _PROXY_URL = "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
 _NO_PROXY = (
@@ -365,7 +368,9 @@ def _add_runner(chart: Chart) -> None:
         metadata=metadata(_AUTH, NAMESPACE),
         spec=TriggerAuthenticationSpec(
             secret_target_ref=[
-                TriggerAuthenticationSpecSecretTargetRef(parameter="token", name="haku-forgejo-tea", key="token")
+                TriggerAuthenticationSpecSecretTargetRef(
+                    parameter="token", name=FORGEJO_TOKEN_SECRET, key=FORGEJO_TOKEN_KEY
+                )
             ]
         ),
     )
