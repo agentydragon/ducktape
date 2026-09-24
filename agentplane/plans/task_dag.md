@@ -493,9 +493,8 @@ ownership: an account's bindings must not fight a reconciler for the same object
 
 **Deferred migration:** the Haku console's `auto_approval_policies`
 (`cluster/cdk8s/haku/console_config.py`) is the reviewed authority the Action policy model
-replaces; its GitHub policies exist as sets in `cluster/k8s/agentplane-staging/`. What
-remains, each with what it needs; an entry leaves when its set is written or another route
-replaces it.
+replaces. What remains, each with what it needs; an entry leaves when its set is written or
+another route replaces it.
 
 - **`exact_tools` for servers with no ActionGroup**: the console's own in-process `sandbox`
   (`haku_sandbox_control`) and `grants` servers (`kubernetes_reads`, `grants_whoami`,
@@ -521,26 +520,20 @@ replaces it.
   admission before persisting anything, so the audit row the console keeps does not exist here;
   matching it needs `DENY_LISTS` and a recorded, denied Decision for the schema miss.
 
-**The composition layer, which the list above omits.** Four of the console's sixteen entries are
-`any_of` bundles rather than leaves, and they are what is actually bound to an agent:
-`public_coder_github_reads` (four public GitHub read policies), `public_coder_v1`, `haku_v1`
-(six leaves), and `manual_review`, which is `type: never`.
+**The composition layer, which the list above omits.** Three of the console's nine entries are
+what is actually bound to an agent: the `any_of` bundles `public_coder_v1` and `haku_v1`, and
+`manual_review`, which is `type: never`.
 
 These need no kind. `ActionPolicyBinding.policySets` is a list and evaluation unions across every
 set of every binding a subject has, so an `any_of` bundle is one binding naming several sets, and
 `manual_review` is the absence of a binding. What the bundles do is turn the leaf list into
 per-agent progress:
 
-- **`public_coder_v1`** = `public_coder_github_reads` + `github_identity_reads` +
-  `kubernetes_reads` + `grants_self_introspection` + `grants_own_revoke`. The GitHub half is
-  **fully ported** -- all four leaves under `public_coder_github_reads` plus
-  `github_identity_reads` are sets already. What is left is the `grants` trio, which the list
-  above puts behind the Action Service having its own grant surface. That trio is the whole
-  remaining distance for this agent, and it is the same blocker `PC_EGRESS` meets from the other
-  side.
-- **`haku_v1`** = six leaves spanning GitHub, the console's `sandbox` server and the `grants`
-  trio. What is left is `haku_sandbox_control` and the `grants` trio, which makes it the
-  long pole.
+- **`public_coder_v1`** = `kubernetes_reads` + `grants_self_introspection` +
+  `grants_own_revoke`, the `grants` trio, which the list above puts behind the Action Service
+  having its own grant surface. That trio is the whole remaining distance for this agent, and it
+  is the same blocker `PC_EGRESS` meets from the other side.
+- **`haku_v1`** = `haku_sandbox_control` plus the `grants` trio, which makes it the long pole.
 
 Nothing waits on this except `RETIRE_APPROVAL_QUEUE`, which needs policy parity for the
 affordances it retires.

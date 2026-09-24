@@ -285,33 +285,6 @@ class Console(Construct):
                 # public-coder-agent's bearer reaches only its iron-proxy; the OpenClaw
                 # container sees a non-secret placeholder.
                 self._from_secret("haku-console-public-coder-agent", "token", "static_agents", "public_coder", "token"),
-                # GitHub's hosted MCP has no Dynamic Client Registration; its organization-owned
-                # GitHub App is this pre-registered confidential client. Optional so the console
-                # deploys while the App is being registered.
-                self._from_secret(
-                    "haku-console-github-mcp-client-credentials",
-                    "client_id",
-                    "mcp",
-                    "servers",
-                    "github",
-                    "backend",
-                    "auth",
-                    "client_registration",
-                    "client_id",
-                    optional=True,
-                ),
-                self._from_secret(
-                    "haku-console-github-mcp-client-credentials",
-                    "client_secret",
-                    "mcp",
-                    "servers",
-                    "github",
-                    "backend",
-                    "auth",
-                    "client_registration",
-                    "client_secret",
-                    optional=True,
-                ),
                 # The Operator each static Agent acts as when it reaches an operator_oauth
                 # server: the controller-fed Authentik user id, resolved through the identity
                 # trust domain to a canonical Operator UUID and never live request authority.

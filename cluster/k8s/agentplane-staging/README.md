@@ -63,6 +63,6 @@ GitHub uses the existing GitHub App credentials reflected from
 `haku-console/haku-console-github-mcp-client-credentials`. The App registration is managed
 outside this repository. Its owner must include
 `https://agentplane-staging.allegedly.works/mcp-linkage/callback` among the user-authorization
-callback URLs, retaining Haku Console's existing callback. GitHub Apps support
+callback URLs. GitHub Apps support
 [multiple callback URLs](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-user-authorization-callback-url).
 Changing this deployment's `redirect_uri` does not update the registration.

@@ -13,8 +13,7 @@ history holds the original full design rationale. The **actionable build checkli
   server safe for Haku, cheapest first: (1) **console-side auto-approval** — when
   haku-console already reaches the upstream's full-tool server (`remote_server_oauth`/
   `static_bearer`), allowlist the specific safe tools in `console/auto_approval.py`
-  instead of standing up a second Deployment or a dedicated credential (GitHub's
-  `github_reads` works this way); (2)
+  instead of standing up a second Deployment or a dedicated credential; (2)
   **credential-scoping** — no facade at all, when the upstream itself enforces per-user
   permissions and Haku only ever needs read access with no path to writes-with-approval:
   cheaper than (1), but a dead end if write access is ever wanted, since the credential's

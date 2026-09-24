@@ -8,50 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-# Every fixed-repository GitHub read policy grants the same tool list; only the trusted
-# owner/repository differs. search_pull_requests is safe only with its matching owner/repo
-# arguments and no query-level `repo:` qualifier; search_code only with one unquoted
-# `repo:<owner>/<repo>` qualifier. The typed policy evaluator verifies both boundaries.
-_REPO_READ_TOOLS = [
-    "actions_get",
-    "actions_list",
-    "find_duplicate",
-    "get_commit",
-    "get_file_blame",
-    "get_file_contents",
-    "get_job_logs",
-    "get_label",
-    "get_latest_release",
-    "get_release_by_tag",
-    "get_tag",
-    "issue_dependency_read",
-    "issue_read",
-    "list_branches",
-    "list_commits",
-    "list_issue_fields",
-    "list_issue_types",
-    "list_issues",
-    "list_pull_requests",
-    "list_releases",
-    "list_repository_collaborators",
-    "list_tags",
-    "pull_request_read",
-    "search_issues",
-    "search_pull_requests",
-    "search_code",
-]
-
-
-def _repository_reads(policy_id: str, owner: str, repository: str) -> dict[str, Any]:
-    return {
-        "id": policy_id,
-        "type": "github_repository",
-        "server": "github",
-        "owner": owner,
-        "repository": repository,
-        "tools": list(_REPO_READ_TOOLS),
-    }
-
 
 def _exact_tools(policy_id: str, server: str, tools: list[str]) -> dict[str, Any]:
     return {"id": policy_id, "type": "exact_tools", "tools": {server: tools}}
@@ -68,84 +24,6 @@ def _any_of(policy_id: str, *policies: str) -> dict[str, Any]:
 # policy below.
 def _auto_approval_policies() -> list[dict[str, Any]]:
     return [
-        # GitHub MCP's normal endpoint exposes its default catalog, including writes. This is
-        # the explicit 2026-08-14 upstream read-only subset: new upstream tools intentionally
-        # stay manual until reviewed here. `ui_get` reads an MCP App UI resource, not GitHub
-        # repository state.
-        _exact_tools(
-            "github_reads",
-            "github",
-            [
-                "get_me",
-                "get_team_members",
-                "get_teams",
-                "ui_get",
-                "find_duplicate",
-                "get_label",
-                "issue_dependency_read",
-                "issue_read",
-                "list_issue_fields",
-                "list_issue_types",
-                "list_issues",
-                "search_issues",
-                "list_pull_requests",
-                "pull_request_read",
-                "search_pull_requests",
-                "get_commit",
-                "get_file_blame",
-                "get_file_contents",
-                "get_latest_release",
-                "get_release_by_tag",
-                "get_tag",
-                "list_branches",
-                "list_commits",
-                "list_releases",
-                "list_repository_collaborators",
-                "list_tags",
-                "search_code",
-                "search_commits",
-                "search_repositories",
-                "search_users",
-            ],
-        ),
-        # `get_me` returns only the authenticated caller's own GitHub identity and has no
-        # repository or mutation surface. Kept separate so every configured Agent can use the
-        # identity read without widening repository-scoped GitHub policies.
-        _exact_tools("github_identity_reads", "github", ["get_me"]),
-        # public-coder-agent may inspect this public source repository, but not use the
-        # Operator's GitHub credential to read other public or private repositories.
-        _repository_reads("public_ducktape_reads", "agentydragon", "ducktape"),
-        # The coder Agent's own fork, used to stage branches before opening PRs into
-        # agentydragon/ducktape. It already has write access there (that's how it opens PRs),
-        # so a read grant on its own fork's content adds no exposure beyond what it can
-        # already write.
-        _repository_reads("public_ducktape_fork_reads", "agentydragon-agent", "ducktape"),
-        # public-coder-agent may also inspect the private Gaffer repository. A separate
-        # repository-scoped atom, so adding one private source does not widen the Ducktape
-        # boundary or accidentally grant access to other repositories.
-        _repository_reads("public_gaffer_private_reads", "agentydragon", "gaffer-private"),
-        # Any repository confirmed genuinely public -- not bounded to a fixed owner/repo
-        # allowlist. `github_public_repository` positively confirms the target repository's
-        # visibility with a live, unauthenticated GitHub API call before approving
-        # (github_policy/repository.py) rather than inferring "public" from the absence of a
-        # restriction: the operator's GitHub OAuth token behind this connection can also reach
-        # private repos it can see (agentydragon/gaffer-private included), so a bare owner/repo
-        # match would let a call read any of those just by naming it. The target repository is
-        # derived the same way as for the fixed-repo policies, then checked for public
-        # visibility instead of compared against a configured pair.
-        {
-            "id": "public_github_reads",
-            "type": "github_public_repository",
-            "server": "github",
-            "tools": list(_REPO_READ_TOOLS),
-        },
-        _any_of(
-            "public_coder_github_reads",
-            "public_ducktape_reads",
-            "public_ducktape_fork_reads",
-            "public_gaffer_private_reads",
-            "public_github_reads",
-        ),
         # Side-effect-free reads on the shared `grants` server (#4918): `kubernetes_can_i`
         # (SAR access inspection) and `get_grant`. `get_grant` is actor-scoped by
         # construction -- it returns only a grant owned by and applicable to the calling
@@ -156,10 +34,10 @@ def _auto_approval_policies() -> list[dict[str, Any]]:
         # `revoke_grants` (own-relinquish, narrowing) is click-free via `grants_own_revoke`.
         _exact_tools("kubernetes_reads", "grants", ["kubernetes_can_i", "get_grant"]),
         # An Agent listing its OWN grants -- `list_grants(principal=self)` -- is click-free
-        # (argument-conditional, the same shape as `public_*_github_reads` confirming a safe
-        # scope before approving). The read is actor-scoped regardless (the grant service
-        # filters to the caller's own grants), so this only removes the click; omitting
-        # `principal` (the reserved broader read) stays manual.
+        # (argument-conditional: it confirms a safe scope before approving). The read is
+        # actor-scoped regardless (the grant service filters to the caller's own grants), so
+        # this only removes the click; omitting `principal` (the reserved broader read) stays
+        # manual.
         {"id": "grants_own_list", "type": "grant_self_list", "server": "grants"},
         # `whoami` returns the caller's own resolved console/MCP principal (durable Agent id +
         # live session id + access profile, or Operator id). It takes no arguments and has no
@@ -176,27 +54,14 @@ def _auto_approval_policies() -> list[dict[str, Any]]:
         # `owner_agent_id` is operator-only and rejected for an Agent. A narrowing
         # self-service operation, so click-free, while `create_grant` (widening) stays manual.
         _exact_tools("grants_own_revoke", "grants", ["revoke_grants"]),
-        _any_of(
-            "public_coder_v1",
-            "public_coder_github_reads",
-            "github_identity_reads",
-            "kubernetes_reads",
-            "grants_self_introspection",
-            "grants_own_revoke",
-        ),
+        _any_of("public_coder_v1", "kubernetes_reads", "grants_self_introspection", "grants_own_revoke"),
         _exact_tools(
             "haku_sandbox_control",
             "sandbox",
             ["provision_sandbox", "exec_sandbox", "get_sandbox_info", "list_sandboxes", "dispose_sandbox"],
         ),
         _any_of(
-            "haku_v1",
-            "github_reads",
-            "github_identity_reads",
-            "haku_sandbox_control",
-            "kubernetes_reads",
-            "grants_self_introspection",
-            "grants_own_revoke",
+            "haku_v1", "haku_sandbox_control", "kubernetes_reads", "grants_self_introspection", "grants_own_revoke"
         ),
         {"id": "manual_review", "type": "never"},
     ]
@@ -204,48 +69,6 @@ def _auto_approval_policies() -> list[dict[str, Any]]:
 
 def _mcp_servers() -> dict[str, Any]:
     return {
-        # The root endpoint exposes GitHub's normal default toolsets, including writes. Haku
-        # receives transparent access only to the explicit github_reads policy; every other
-        # tool stays in the Console's per-call operator approval queue; tools in
-        # agent_tool_denylist are unavailable to Agents entirely.
-        "github": {
-            "id": "github",
-            # GitHub's hosted MCP catalog is expensive to reflect and changes infrequently:
-            # refresh it at most every 15 minutes (other servers keep the shared 60s default).
-            "catalog_refresh_interval_seconds": 900,
-            # GitHub Copilot delegation mutates repositories and creates external Agent jobs;
-            # unavailable to every Haku Agent even when a client retains an older tool schema.
-            "agent_tool_denylist": [
-                "assign_copilot_to_issue",
-                "create_pull_request_with_copilot",
-                "get_copilot_job_status",
-                "request_copilot_review",
-            ],
-            "backend": {
-                "kind": "remote_mcp",
-                "url": "https://api.githubcopilot.com/mcp/",
-                # Actions is not in GitHub MCP's default toolsets. Keep the default catalog
-                # and add its read/write Actions catalog; policy still decides which calls
-                # receive standing authority.
-                "headers": {"X-MCP-Toolsets": "default,actions"},
-                "auth": {
-                    "kind": "remote_server_oauth",
-                    # No `scopes` key: `scopes: []` sends an explicit *empty*-scope OAuth
-                    # request (mcp/operator_oauth.py's `oauth.scopes is not None` check),
-                    # while omitting it asks GitHub's server for its own default, "the full
-                    # supported set". The real permission boundary is the OAuth App's
-                    # allowed scopes on GitHub's side plus haku-console's own approval policy.
-                    # GitHub's hosted MCP does not support Dynamic Client Registration, so
-                    # its organization-owned GitHub App supplies this pre-registered
-                    # confidential client; client_id/client_secret arrive from the
-                    # haku-console-github-mcp-client-credentials Secret.
-                    "client_registration": {
-                        "kind": "preregistered",
-                        "token_endpoint_auth_method": "client_secret_post",
-                    },
-                },
-            },
-        },
         # `sandbox` (haku/console/tools/sandbox.py): claim a warm Haku sandbox from the
         # `agent_sandbox` pool, bootstrap it, run bounded bash via pods/exec, dispose it.
         # Credential-free -- Console's own ServiceAccount holds the claim/exec RBAC
@@ -346,9 +169,8 @@ def config() -> dict[str, Any]:
                 "display_name": "Haku",
                 "access_profile_id": "haku",
             },
-            # Coder may read the explicitly named Ducktape and Gaffer repositories without
-            # interrupting the Operator. Everything else remains approval-wrapped, and Coder
-            # cannot approve its own requests.
+            # Everything outside `public_coder_v1` remains approval-wrapped, and Coder cannot
+            # approve its own requests.
             "public_coder": {
                 "agent_id": "43a833f3-2b1c-4a04-9b8c-1df0cedfb79e",
                 "display_name": "public-coder-agent",

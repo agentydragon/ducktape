@@ -12,9 +12,7 @@ from cluster.cdk8s.model_rosters import codex_responses_name
 _NAMESPACE = "agentplane-staging"
 # The ActionPolicySet objects actions_staging_policies creates for the public-coder
 # preset, named here because the preset binds them: reads of confirmed-public
-# repositories, of ducktape and its fork, and of the private Gaffer repository -- what
-# the console's `public_coder_github_reads` grants public-coder-agent
-# (cluster/cdk8s/haku/console_config.py).
+# repositories, of ducktape and its fork, and of the private Gaffer repository.
 PUBLIC_GITHUB_READS_SET = "public-github-reads"
 PUBLIC_DUCKTAPE_READS_SET = "public-ducktape-reads"
 PUBLIC_DUCKTAPE_FORK_READS_SET = "public-ducktape-fork-reads"
