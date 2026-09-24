@@ -40,10 +40,10 @@ For each `proposals[]` entry with `landable_today: true`:
 - flag ambiguous or oversized proposals for the architect
 - skip `diagnostics[]` as dispatchable work
 
-Entries with `landable_today: false` are not dispatchable as-is.
-`status: blocked_residual_dependency` rows read other residual cells
-(`other_residual_cells_referenced`); seed them only as a combined
-closure with the cells they reference, or flag them for the architect.
+Entries with `landable_today: false` are not dispatchable as-is. Seed
+`status: blocked_residual_dependency` rows only as a combined closure with
+the cells they reference (`references/cli.md` § `--batch` JSON format), or
+flag them for the architect.
 Unaddressable-anonymous rows stay advisory until the selector question
 is resolved.
 

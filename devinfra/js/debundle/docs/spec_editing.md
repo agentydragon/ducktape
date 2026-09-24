@@ -13,11 +13,9 @@ Use the factorizer to surface what's currently extractable:
    explaining why a closed atomic-DAG set could not become a proposal
    (currently `exceeds_size_cap`: the spec edit is larger than
    `--size-cap-lines`).
-3. **Apply reviewed binding-only proposals** (see the move workflow
-   below). `bindings assign --batch` accepts selected proposal objects
-   when every selected row maps to member moves: `landable_today: true`,
-   non-empty `binding_ids`, no `merge_into`, and no
-   `anonymous_statement_owner_ids`.
+3. **Apply reviewed binding-only proposals** with `bindings assign --batch`
+   (see the move workflow below). Which rows it accepts, and what the
+   others need: <cli.md> § `--batch` JSON format.
 
 ```bash
 jq '[.proposals[]
@@ -28,18 +26,6 @@ jq '[.proposals[]
   proposals.json > selected-proposals.json
 debundle bindings assign --batch selected-proposals.json --dry-run
 ```
-
-`merge_into` rows are emitted-output proposal evidence, not direct
-`bindings assign` moves; use `debundle modules merge --target ...` or
-manual YAML after choosing the target. Rows with
-`anonymous_statement_owner_ids` need `anonymous_statements:` edits.
-
-Rows with `status: blocked_residual_dependency` are never
-`landable_today`: the cell reads other residual cells
-(`other_residual_cells_referenced`), so promoting it alone would trip
-the realizability gate. Grow the closure — assign the proposal
-together with the referenced cells in one batch — or co-locate the
-owners manually before assigning.
 
 For aggregate counts before drilling in:
 
@@ -116,15 +102,9 @@ JSON shape:
 ]
 ```
 
-`--batch` also accepts `modules propose --format json` output, or a
-filtered proposal array, when every selected proposal maps cleanly to
-member moves. It refuses non-landable rows, `merge_into` rows, rows
-without `binding_ids`, and rows containing
-`anonymous_statement_owner_ids`; use an explicit move array when you
-need `readable` renames.
-
-`sym` and `module` are required; `readable` is optional. Duplicate and
-contradictory entries: <cli.md> § Batch atomicity.
+`sym` and `module` are required; `readable` is optional. `--batch` also
+accepts selected `modules propose` rows: <cli.md> § `--batch` JSON format.
+Duplicate and contradictory entries: <cli.md> § Batch atomicity.
 
 ### Default validation, `--dry-run`, `--no-verify`
 
@@ -203,7 +183,7 @@ varies by toolchain but the body is always
 `__decorate([…decorators], <Class>.prototype, "<member>"[, <kind>])`
 where the wrapping function name is minified (`t0`, `Q0`, `b0t`,
 `__decorate`, etc.). They surface as anonymous statements in the
-bundled output. Two reliable signals:
+bundled output. Reliable signals:
 
 1. The first positional argument is an array literal of decorator
    references (`[Z]`, `[oe]`, `[ee, ie]`, …) — the bundler doesn't
@@ -264,11 +244,6 @@ anonymous_statements:
       match: "registerFoo(foo);"
     note: "uncertain: looks like a registration side effect"
 ```
-
-`comment:` is accepted on `anonymous_statements:` entries even
-though the field originated at module and per-member level — the
-spec rejects unknown fields otherwise, and authors who reach for
-the familiar spelling shouldn't hit a cryptic parse error.
 
 ## Workflow: merging two modules
 
@@ -338,14 +313,14 @@ debundle bindings comment a
 # Remove the comment entirely.
 debundle bindings comment a --clear
 
-# Same three modes for module-level comments.
+# The same modes for module-level comments.
 debundle modules comment runtime/foo --edit
 ```
 
 `<sym>` accepts minified or readable; `<module>` is the module path
 relative to `$DEBUNDLE_MODULES`.
 
-Move semantics (CLI surface, not a separate feature):
+Move semantics:
 
 - `bindings assign` carries a binding's `annotations.<export_name>` entry with
   the binding as it moves between modules.
@@ -357,43 +332,10 @@ Move semantics (CLI surface, not a separate feature):
   provenance in the target's module-level `note:` (see <../README.md> →
   "Comments").
 
-CLI editing is live for module and member comments; anonymous
-statement comments are authored directly in YAML.
+Anonymous-statement comments have no CLI; author them in YAML.
 
-When a binding cannot yet be stabilized because the selector language lacks a
-concise matcher, leave `annotations.<export_name>.note` recording the concrete
-matcher/tooling blocker and the desired future feature instead of silently
-keeping minified binding debt. Use `note:`, **not** `comment:`: `note:` is inert
-(YAML-only, never emitted to generated JS), so it annotates the debt without
-changing byte-identical output:
-
-```yaml
-annotations:
-  ExportName:
-    note: |
-      blocked on Ducktape support for <specific matcher/tooling capability needed here>
-```
-
-For grouped selectors, put per-export debt under
-`annotations.<export_name>.note`. `comment` emits into generated JS; `note` does
-not.
-
-```yaml
-source_matches:
-  - match: "const x = EXPR_X, y = EXPR_Y;"
-    bindings:
-      - local: x
-        name: exportedX
-      - local: y
-        name: exportedY
-annotations:
-  exportedX:
-    note: "TODO: minimize selector once this helper has a narrower anchor."
-```
-
-Do not leave blocker notes for selector patterns Ducktape now supports, such
-as matching one declarator inside a multi-declarator declaration or bracketing
-object literal properties with `ANYTHING`.
+A binding that cannot yet be stabilized records its blocker in a `note:`:
+<selectors.md> § Selector debt.
 
 ## Renaming or disabling a module
 
