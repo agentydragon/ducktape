@@ -85,7 +85,7 @@ resource "kubernetes_secret" "cheap_experiments" {
 
 resource "litellm_key" "agentplane_staging" {
   key_alias       = "agentplane-staging"
-  models          = concat(var.model_allowlists.oai_lane_models, var.model_allowlists.claude_client_models)
+  models          = concat(var.model_allowlists.oai_lane_models, var.model_allowlists.claude_client_models, var.model_allowlists.ollama_chat_client_models)
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
@@ -104,7 +104,7 @@ resource "kubernetes_secret" "agentplane_staging" {
     name      = "litellm-key-agentplane-staging"
     namespace = "agentplane-staging"
     annotations = {
-      description = "Server-held OpenAI and Claude subscription key for Agentplane staging; never mounted into runner Pods"
+      description = "Server-held key for OpenAI/Claude subscription and local Ollama chat routes in Agentplane staging; never mounted into runner Pods"
     }
   }
 

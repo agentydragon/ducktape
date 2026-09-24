@@ -357,6 +357,6 @@ fn gate_rejects_anonymous_selector_matching_two_statements() {
 
     assert_gate_error(
         &out,
-        "anonymous statement selector matched 2 source statement groups",
+        "anonymous statement selector matched 2 source statements",
     );
 }
