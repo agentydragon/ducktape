@@ -284,29 +284,6 @@ class HomeAssistantEntityControlAutoApprovalPolicy(AutoApprovalPolicyBase):
         return value
 
 
-class GitHubRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
-    """Conditionally auto-approve reviewed GitHub reads for one repository."""
-
-    type: Literal["github_repository"] = "github_repository"
-    server: str = Field(min_length=1)
-    owner: str = Field(min_length=1)
-    repository: str = Field(min_length=1)
-    tools: set[str] = Field(min_length=1)
-
-
-class GitHubPublicRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
-    """Conditionally auto-approve reviewed GitHub reads for any repository confirmed public.
-
-    Unlike ``GitHubRepositoryAutoApprovalPolicy``, the target repository is not fixed by config —
-    it is derived from the call the same way, then checked live for public visibility rather than
-    compared against a configured pair. See ``github_policy/repository.py``.
-    """
-
-    type: Literal["github_public_repository"] = "github_public_repository"
-    server: str = Field(min_length=1)
-    tools: set[str] = Field(min_length=1)
-
-
 class GrantSelfListAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Conditionally auto-approve an Agent listing its OWN grants (`list_grants(principal='self')`).
 
@@ -343,9 +320,7 @@ class NeverAutoApprovalPolicy(AutoApprovalPolicyBase):
 type AutoApprovalPolicy = Annotated[
     ExactToolsAutoApprovalPolicy
     | GmailLabelNamespaceAutoApprovalPolicy
-    | GitHubRepositoryAutoApprovalPolicy
     | HomeAssistantEntityControlAutoApprovalPolicy
-    | GitHubPublicRepositoryAutoApprovalPolicy
     | GrantSelfListAutoApprovalPolicy
     | KubernetesPassthroughAutoApprovalPolicy
     | AnyOfAutoApprovalPolicy
@@ -530,17 +505,7 @@ class ConsoleConfigFile(BaseModel):
                     raise ValueError(
                         f"auto-approval policy {policy.id!r} references unknown MCP servers {sorted(unknown_servers)!r}"
                     )
-            elif (
-                isinstance(
-                    policy,
-                    (
-                        GmailLabelNamespaceAutoApprovalPolicy,
-                        GitHubRepositoryAutoApprovalPolicy,
-                        GitHubPublicRepositoryAutoApprovalPolicy,
-                    ),
-                )
-                and policy.server not in server_ids
-            ):
+            elif isinstance(policy, GmailLabelNamespaceAutoApprovalPolicy) and policy.server not in server_ids:
                 raise ValueError(f"auto-approval policy {policy.id!r} references unknown MCP server {policy.server!r}")
 
         for policy in policies.values():
