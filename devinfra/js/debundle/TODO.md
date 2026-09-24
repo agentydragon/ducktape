@@ -12,7 +12,7 @@ plans and evidence live here:
   the architecture is shaped that way.
 - <plans/relational_selectors.md> — the remaining selector-language work.
 - <plans/automated_spec_workflows.md> — automation-first CLI/workflow design,
-  including version porting.
+  including porting a spec to the next bundle version.
 - <plans/factor_vocabulary_rename.md> — "factor" terminology rename (P3).
 - <SELECTOR_BUGS.md> — matcher/diagnostic bugs with anonymized examples.
 - <ARCHITECTURE_BACKLOG.md> — deeper refactors, urgent only when they block this
@@ -24,10 +24,12 @@ Planning hygiene: keep active dispatch order here. When a plan's core work is
 complete, summarize only its remaining tail here instead of leaving the plan as
 a second priority queue.
 
-### P0 — version porting
+### P0 — porting to the next bundle version
 
-Carry a spec across bundle versions: <plans/automated_spec_workflows.md>
-§ Flow 3, with the held-out `debundle_stabilize` evaluation built on it.
+Each spec is for one version's bundles; a new version's spec starts as a copy of
+the previous one. Make repairing that copy cheap:
+<plans/automated_spec_workflows.md> § Flow 3, with the held-out
+`debundle_stabilize` evaluation built on it.
 
 ### P1 — automation product flows over the solver
 
