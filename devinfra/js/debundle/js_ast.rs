@@ -283,8 +283,8 @@ pub fn emit_module_source(module: &Module) -> Result<String> {
 /// dropping the paren reparses the `{` as a block), a precedence-protecting paren
 /// (`(a + b) * c` — dropping it rebinds `*` over `+`; `a || (a = b())` — dropping
 /// it rebinds `||` tighter than `=`). The naive "strip every `Expr::Paren`"
-/// corrupted exactly these, the shapes <devinfra/js/debundle/SELECTOR_BUGS.md>
-/// flagged (arrow-returns-object, parenthesized sequence/assignment bodies); SWC's
+/// corrupted exactly these, leaving arrow-returns-object and parenthesized
+/// sequence/assignment bodies un-writable as selectors; SWC's
 /// codegen prints an explicit `Paren` node verbatim and does **not** re-insert a
 /// required one, so dropping a load-bearing paren silently changes the parse.
 ///
@@ -901,11 +901,10 @@ mod tests {
 
     // An arrow whose concise body is a parenthesized object literal
     // (`() => ({ … })`) must keep that paren: dropping it reparses the leading
-    // `{` as a block, silently turning the object into a block body. The old
-    // unconditional stripper did exactly that, which is why
-    // SELECTOR_BUGS.md flagged arrow-returns-object selectors as un-writable —
-    // the slack/minimizer normalization corrupted them before the matcher saw
-    // them. Redundant parens *inside* the kept object body are still dropped.
+    // `{` as a block, silently turning the object into a block body, and the
+    // slack/minimizer normalization would corrupt arrow-returns-object
+    // selectors before the matcher saw them. Redundant parens *inside* the kept
+    // object body are still dropped.
     #[test]
     fn strip_parens_preserves_arrow_returned_object_literal() {
         let stripped = strip_parens_emit("const X = () => ({ k: ((1 + 2)) });");
@@ -927,9 +926,8 @@ mod tests {
     // the outer `return (…)` paren around the sequence is redundant (a `return`
     // statement parses a bare sequence the same way), but the inner
     // `(instance = build())` paren is load-bearing — dropping it rebinds `||`
-    // tighter than `=`, which is a syntax error. The old unconditional stripper
-    // dropped both and corrupted the body; SELECTOR_BUGS.md flagged this and the
-    // esbuild decorate-helper as un-pinnable for it.
+    // tighter than `=`, which is a syntax error. Dropping both corrupts the
+    // body and leaves this idiom and the esbuild decorate-helper un-pinnable.
     #[test]
     fn strip_parens_preserves_precedence_protecting_assignment_paren() {
         let stripped = strip_parens_emit(

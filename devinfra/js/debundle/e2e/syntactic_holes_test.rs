@@ -318,8 +318,7 @@ export { actual };
 // (`(props) => ({ … })`) is the idiomatic component/factory shape; the returned
 // object is the stable, re-minify-proof anchor. The selector pins the factory by
 // its returned object's distinctive `kind` key (with `ANYTHING` absorbing the
-// noisy generated members), end to end through the lowering pipeline. Closes the
-// SELECTOR_BUGS.md "arrow whose body is a parenthesized object literal" gap.
+// noisy generated members), end to end through the lowering pipeline.
 #[test]
 fn member_source_match_arrow_returning_object_literal_selects_factory() {
     let fixture = run_fixture(FixtureOpts::new(
@@ -370,8 +369,7 @@ export { makeWidget };
 // esbuild/TypeScript `__decorate` shape `(applyDecorators(t, d), t)` — is pinned
 // by that distinctive sequence body, end to end. The `Seq` and its inner call
 // survive parsing/lowering (parens are transparent grouping), so the selector
-// asserts the structure rather than the minified name. Closes the
-// SELECTOR_BUGS.md "parenthesized sequence or assignment expression body" gap.
+// asserts the structure rather than the minified name.
 #[test]
 fn member_source_match_parenthesized_sequence_body_selects_helper() {
     let fixture = run_fixture(FixtureOpts::new(
@@ -413,7 +411,6 @@ export { decorate };
 // A long array-literal initializer is pinned by `ARRAY_ELEMENTS` anchoring on its
 // few stable elements (the leading and trailing entries) while the run hole
 // absorbs the noisy middle, end to end — instead of over-pinning every element.
-// Closes the SELECTOR_BUGS.md "no array-element-run hole" gap.
 #[test]
 fn member_source_match_array_elements_hole_anchors_stable_endpoints() {
     let fixture = run_fixture(FixtureOpts::new(
@@ -464,8 +461,7 @@ export { palette };
 // `source_match` asserting that nested anchor — the resolver matches the
 // single-declarator needle against each declarator of the owner, so the nested
 // `"GET"` / `"POST"` distinguishes the otherwise-identical siblings. Each resolves
-// to its own module. Closes the SELECTOR_BUGS.md "comma-list sibling
-// disambiguation by nested body" gap.
+// to its own module.
 #[test]
 fn member_source_match_comma_list_siblings_disambiguated_by_nested_value() {
     let fixture = run_fixture(FixtureOpts::new(
