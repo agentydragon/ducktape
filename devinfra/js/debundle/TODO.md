@@ -37,8 +37,7 @@ resolve, repair from the keep-going report, the inventory/plan/apply/validate
 CLI model, and new-app bootstrap. Every flow is held to the interactive budget
 in <docs/selector_resolution.md> § Interactive budget.
 
-1. **Selector diagnostics.** A smallest-differentiator diagnostic for
-   `ambiguous` outcomes, and sharper first-mismatch reasons for `no_match`'s
+1. **Selector diagnostics.** Sharper first-mismatch reasons for `no_match`'s
    `nearest_unclaimed`: the first unmatched item of a multi-declaration range,
    the first incompatible identifier binding or sub-expression, a
    parameter-pattern mismatch, and list-hole binding spans; and near misses

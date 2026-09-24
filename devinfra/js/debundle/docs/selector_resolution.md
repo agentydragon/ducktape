@@ -141,6 +141,20 @@ bounded by `NEAREST_UNCLAIMED_MIN_SCORE` and `NEAREST_UNCLAIMED_LIMIT`). It
 runs after the solve because "unclaimed" needs every entity's result; only a
 one-statement template that is not all holes is scored.
 
+## Differentiators
+
+Each `ambiguous` entity whose places are all listed then gets, per listed
+place, the best-ranked anchor that sets its statement apart
+(`add_differentiators`): a `ShapeIndex` built over just the listed places'
+statements reads off, by `ShapeIndex::distinguishing_feature`, a feature no
+other of them has — a literal, object key, class member, member-path call,
+declaration kind or arity; never a shape skeleton, which names no token, nor a
+volatile literal. A place with none is retried against the statements just
+before the other places, then just after. Places that share a statement never
+get one. The index covers at most `MAX_LISTED_CANDIDATES` statements per side,
+so the pass stays within the interactive budget; with `truncated`, an unlisted
+place might share the anchor, so none is given.
+
 ## Unsatisfiable programs
 
 A contradiction stays inside its group, since each group is its own request.

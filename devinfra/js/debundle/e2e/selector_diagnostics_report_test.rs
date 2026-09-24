@@ -97,6 +97,10 @@ export { renderCard, decoratePrimary, decorateSecondary };
                 {"owner": 2, "binding": "decorateSecondary"},
             ],
             "truncated": false,
+            "differentiators": [
+                {"owner": 1, "statement": 0, "anchor": "property access `.trim`"},
+                {"owner": 2, "statement": 1, "anchor": "string literal \"shared\""},
+            ],
         })
     );
 
