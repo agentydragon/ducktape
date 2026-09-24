@@ -49,8 +49,8 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 ## Attachments
 
 - One `Attach` stream is one attachment. The first client message is `Open`; the first server
-  message is `Attached`, carrying the spec, the harness state, the active turn id, and
-  `last_cursor`, the log position at attach time.
+  message is `Attached`, carrying the spec, the harness state, `last_cursor`, the log position at
+  attach time, and the active turn id as of that position.
 - The runner then replays every `EventEntry` with a cursor greater than `Open.follow.after_cursor`,
   in order, and continues with live entries. A client that passes the last cursor it processed sees
   neither a gap nor a duplicate; a cursor beyond `last_cursor` ends the stream with an error.

@@ -236,7 +236,7 @@ class Runner:
                 harness_state=protocol_pb2.HARNESS_STATE_RUNNING
                 if session.running
                 else protocol_pb2.HARNESS_STATE_STOPPED,
-                active_turn_id=session.active_turn_id,
+                active_turn_id=session.journal.recovery_state.active_turn_id,
             )
             for session in sorted(self.sessions.values(), key=lambda session: session.session_id)
         ]
@@ -307,17 +307,19 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
                 f"whose last cursor is {session.journal.last_cursor}"
             )
             return
-        opened_cursor = session.journal.last_cursor
-        ended = not session.harness_running
+        # The published log, not the stdout reader's batch in progress, which is not durable yet.
+        published = session.journal.recovery_state
+        opened_cursor = published.through_cursor
+        ended = not published.harness_running
         yield protocol_pb2.ServerMessage(
             attached=protocol_pb2.Attached(
                 session_id=session.session_id,
                 spec=session.record.spec(),
-                last_cursor=session.journal.last_cursor,
+                last_cursor=opened_cursor,
                 harness_state=protocol_pb2.HARNESS_STATE_RUNNING
                 if session.running
                 else protocol_pb2.HARNESS_STATE_STOPPED,
-                active_turn_id=session.active_turn_id,
+                active_turn_id=published.active_turn_id,
             )
         )
         closing = asyncio.Event()

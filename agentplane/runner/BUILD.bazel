@@ -713,6 +713,7 @@ py_test(
         ":service",
         ":store",
         "//:conftest",
+        "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -731,6 +732,27 @@ py_test(
         "//agentplane/protocol:event_pb2",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_session",
+    srcs = ["test_session.py"],
+    deps = [
+        ":adapter",
+        ":config",
+        ":conftest",
+        ":journal",
+        ":session",
+        ":store",
+        "//:conftest",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//aiosqlite",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

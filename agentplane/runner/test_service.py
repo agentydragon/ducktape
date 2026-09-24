@@ -1,4 +1,5 @@
-"""Runner lifetime owns database connections, and a harness launch that fails says why."""
+"""Runner lifetime owns database connections, a harness launch that fails says why, and session
+summaries describe the published log."""
 
 import textwrap
 from pathlib import Path
@@ -6,6 +7,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient, RunnerError
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
@@ -86,6 +88,24 @@ async def test_a_harness_the_supervisor_cannot_start_names_the_spawn_failure(
         await client.attach("launch-failure-2", spec=spec)
     assert "exit_code=125" in str(raised.value)
     assert "harness supervisor: start native harness" in str(raised.value)
+
+
+async def test_summaries_report_the_published_log_not_a_batch_in_progress(tmp_path: Path) -> None:
+    runner = Runner(RunnerConfig(state_dir=tmp_path, environment={}))
+    runner.store.write(
+        "test-session",
+        SessionRecord.from_spec(protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, model="test-model")),
+    )
+    session = await runner._load("test-session")
+    try:
+        async with session.journal.batch():
+            await session.emit(event_pb2.TurnStarted(turn_id="test-turn"))
+            (summary,) = runner.summaries()
+            assert (summary.last_cursor, summary.active_turn_id) == (0, "")
+        (summary,) = runner.summaries()
+        assert (summary.last_cursor, summary.active_turn_id) == (1, "test-turn")
+    finally:
+        await runner.stop()
 
 
 if __name__ == "__main__":

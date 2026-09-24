@@ -11,6 +11,9 @@ from pathlib import Path
 
 # Tool results ride inside single frames, so a line can run to megabytes.
 _LINE_LIMIT = 64 * 1024 * 1024
+# The most stdout one read takes. The lines it completes are one journal batch, so this bounds how
+# long that batch holds the journal from the session's other writers and readers.
+_READ_BYTES = 64 * 1024
 # Beside this module in the Bazel runfiles tree and in the installed runner wheel alike.
 _SUPERVISOR = Path(__file__).with_name("harness_supervisor")
 # How much of the end of its stderr `describe_exit` reports; the supervisor's own failure is one line.
@@ -95,12 +98,24 @@ class HarnessProcess:
             stdin.write(line.encode() + b"\n")
             await stdin.drain()
 
-    async def lines(self) -> AsyncIterator[str]:
-        """stdout lines without their newline, until EOF."""
+    async def line_batches(self) -> AsyncIterator[list[str]]:
+        """stdout lines without their newline, until EOF: each batch the lines one read completes.
+
+        A read returns what the pipe already holds and waits only while it holds nothing, so a
+        batch is what arrived while the caller handled the one before, and no line waits for more.
+        """
         stdout = self.process.stdout
         assert stdout is not None
-        while line := await stdout.readline():
-            yield line.rstrip(b"\r\n").decode()
+        buffered = bytearray()
+        while chunk := await stdout.read(_READ_BYTES):
+            buffered += chunk
+            if b"\n" in chunk:
+                *lines, buffered = buffered.split(b"\n")
+                yield [line.rstrip(b"\r").decode() for line in lines]
+            if len(buffered) > _LINE_LIMIT:
+                raise ValueError(f"a harness stdout line exceeds {_LINE_LIMIT} bytes")
+        if buffered:
+            yield [buffered.rstrip(b"\r").decode()]
 
     async def stderr_chunks(self) -> AsyncIterator[str]:
         stderr = self.process.stderr

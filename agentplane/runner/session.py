@@ -6,8 +6,10 @@ import asyncio
 import json
 import logging
 from collections import deque
-from collections.abc import Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -34,6 +36,21 @@ class HarnessGoneError(RuntimeError):
     """The harness ended while a native response was still awaited."""
 
 
+@dataclass
+class _ReplyHandling:
+    """An `ordered_reply` block, whose end the stdout reader awaits once it has handed over the reply."""
+
+    done: asyncio.Event = field(default_factory=asyncio.Event)
+    requested: bool = False
+
+
+@dataclass(frozen=True)
+class _Request:
+    matches: FrameMatcher
+    reply: asyncio.Future[NativeReceipt]
+    handling: _ReplyHandling | None
+
+
 class Session:
     def __init__(
         self,
@@ -54,6 +71,8 @@ class Session:
         self.make_adapter = make_adapter
         self.directory = store.directory(session_id)
         self.journal = journal
+        # The writer's view, including the stdout reader's batch before it commits. What a client
+        # may be told is the published log's, `journal.recovery_state`.
         self.harness_running = journal.recovery_state.harness_running
         self.active_turn_id = journal.recovery_state.active_turn_id
         # Per-process only. A restarted runner consults the durable journal and intentionally
@@ -70,8 +89,11 @@ class Session:
         self.process: HarnessProcess | None = None
         self.adapter: HarnessAdapter | None = None
         self._tasks: list[asyncio.Task[None]] = []
-        self._waiters: list[tuple[FrameMatcher, asyncio.Future[NativeReceipt]]] = []
+        self._waiters: list[_Request] = []
+        # Replies the stdout reader has matched, held until the batch recording them commits.
+        self._replies: list[tuple[_Request, NativeReceipt]] = []
         self._translating: ContextVar[int] = ContextVar("native_source", default=0)
+        self._reply_handling: ContextVar[_ReplyHandling | None] = ContextVar("reply_handling", default=None)
         self._stopping = False
         self._lock = asyncio.Lock()
         self._shutdown_lock = asyncio.Lock()
@@ -334,10 +356,13 @@ class Session:
         ):
             return
         await self.emit(event_pb2.DebugCheckpoint(name=name, command_id=command_id), sources=[])
+        await self._commit_batch()
         await asyncio.Event().wait()
 
     async def turn_completed(self, turn_id: str, status: event_pb2.TurnStatus, error: str = "") -> None:
         """Translate one native terminal turn result and release commands waiting on it."""
+        # The session lock's holder may be waiting for the journal, which the reader's batch holds.
+        await self._commit_batch()
         async with self._lock:
             await self._record_turn_completed(turn_id, status, error)
             await self._reconcile_commands()
@@ -396,46 +421,53 @@ class Session:
             raise HarnessGoneError("the harness is not running")
         line = frame.model_dump_json(by_alias=True)
         await self.emit(event_pb2.Native(direction=event_pb2.DIRECTION_TO_HARNESS, line=line), sources=[])
+        await self._commit_batch()
         await self.process.write_line(line)
 
     async def request(self, frame: BaseModel, *, matches: FrameMatcher, timeout_s: float = 60) -> NativeReceipt:
-        """Write a frame and return the first later frame `matches` accepts."""
-        waiter: asyncio.Future[NativeReceipt] = asyncio.get_running_loop().create_future()
-        self._waiters.append((matches, waiter))
+        """Write a frame and return the first later frame `matches` accepts, once that is committed."""
+        if (handling := self._reply_handling.get()) is not None:
+            if handling.requested:
+                raise RuntimeError("an ordered_reply block awaits one reply; the reader waits for the block's end")
+            handling.requested = True
+        request = _Request(matches, asyncio.get_running_loop().create_future(), handling)
+        self._waiters.append(request)
         try:
             await self.send(frame)
-            return await asyncio.wait_for(waiter, timeout=timeout_s)
+            return await asyncio.wait_for(request.reply, timeout=timeout_s)
         finally:
-            self._waiters = [entry for entry in self._waiters if entry[1] is not waiter]
+            self._waiters = [waiting for waiting in self._waiters if waiting is not request]
             # When the send fails on a dead harness's pipe, nothing awaits the HarnessGoneError the
             # stdout reader then sets; HarnessExited reports that exit either way.
-            if waiter.done() and not waiter.cancelled():
-                waiter.exception()
+            if request.reply.done() and not request.reply.cancelled():
+                request.reply.exception()
+
+    @asynccontextmanager
+    async def ordered_reply(self) -> AsyncIterator[None]:
+        """Handle the reply to this block's one `request` before the frames after it are translated.
+
+        The stdout reader hands the reply over and waits for the block to end, so the Events the
+        block derives from the reply precede those of later frames. The block only records: it must
+        not wait on the harness or the session lock.
+        """
+        handling = _ReplyHandling()
+        token = self._reply_handling.set(handling)
+        try:
+            yield
+        finally:
+            self._reply_handling.reset(token)
+            handling.done.set()
 
     async def _read_stdout(self, process: HarnessProcess, adapter: HarnessAdapter) -> None:
         try:
-            async for line in process.lines():
-                entry = await self.emit(
-                    event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line=line), sources=[]
-                )
-                try:
-                    frame = json.loads(line)
-                except ValueError:
-                    logger.warning("session %s: non-JSON line on the harness stdout: %r", self.session_id, line[:200])
-                    continue
-                if not isinstance(frame, dict):
-                    logger.warning("session %s: non-object frame on the harness stdout", self.session_id)
-                    continue
-                self._resolve_waiters(frame, entry.origin.sequence)
-                token = self._translating.set(entry.origin.sequence)
-                try:
-                    await adapter.on_frame(frame, entry.origin.sequence)
-                except OSError:
-                    raise
-                except Exception:  # a frame the adapter cannot translate must not stop the reader
-                    logger.exception("session %s: frame %d not translated", self.session_id, entry.origin.sequence)
-                finally:
-                    self._translating.reset(token)
+            async for lines in process.line_batches():
+                # The lines one read delivered and the Events derived from them share a transaction,
+                # unless `_commit_batch` ends it early.
+                async with self.journal.batch():
+                    for line in lines:
+                        await self._receive(line, adapter)
+                        if self._replies:
+                            await self._commit_batch()
         except OSError:
             await process.stop()
             raise
@@ -443,11 +475,47 @@ class Session:
             exit_code = await process.wait()
             await self._harness_ended(exit_code)
 
+    async def _receive(self, line: str, adapter: HarnessAdapter) -> None:
+        entry = await self.emit(event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line=line), sources=[])
+        try:
+            frame = json.loads(line)
+        except ValueError:
+            logger.warning("session %s: non-JSON line on the harness stdout: %r", self.session_id, line[:200])
+            return
+        if not isinstance(frame, dict):
+            logger.warning("session %s: non-object frame on the harness stdout", self.session_id)
+            return
+        self._match_replies(frame, entry.origin.sequence)
+        token = self._translating.set(entry.origin.sequence)
+        try:
+            await adapter.on_frame(frame, entry.origin.sequence)
+        except OSError:
+            raise
+        except Exception:  # a frame the adapter cannot translate must not stop the reader
+            logger.exception("session %s: frame %d not translated", self.session_id, entry.origin.sequence)
+        finally:
+            self._translating.reset(token)
+
+    async def _commit_batch(self) -> None:
+        """In the stdout reader, commit its batch so far and hand over the replies it holds: after a
+        frame that answers a request, before a native write, which must follow its record, and
+        before waiting on anything a task blocked on the journal may hold."""
+        if not self.journal.batching():
+            return
+        await self.journal.commit_batch()
+        replies, self._replies = self._replies, []
+        for request, receipt in replies:
+            if not request.reply.done():
+                request.reply.set_result(receipt)
+        for request, _ in replies:
+            if request.handling is not None:
+                await request.handling.done.wait()
+
     async def _harness_ended(self, exit_code: int) -> None:
-        for _, waiter in self._waiters:
-            if not waiter.done():
-                waiter.set_exception(HarnessGoneError(f"the harness exited with {exit_code=}"))
-        self._waiters = []
+        for request in [*self._waiters, *(request for request, _ in self._replies)]:
+            if not request.reply.done():
+                request.reply.set_exception(HarnessGoneError(f"the harness exited with {exit_code=}"))
+        self._waiters, self._replies = [], []
         stop_command_id = self._stop_command_id if self._stopping else ""
         if stop_command_id:
             observation = event_pb2.HarnessExited(
@@ -466,10 +534,15 @@ class Session:
                 f"the harness exited with {exit_code=} during the turn",
             )
 
-    def _resolve_waiters(self, frame: Frame, sequence: int) -> None:
-        for matches, waiter in self._waiters:
-            if not waiter.done() and matches(frame):
-                waiter.set_result(NativeReceipt(frame, sequence))
+    def _match_replies(self, frame: Frame, sequence: int) -> None:
+        """Take the requests `frame` answers, so a later frame cannot, and hold their reply until it commits."""
+        waiting = []
+        for request in self._waiters:
+            if not request.reply.done() and request.matches(frame):
+                self._replies.append((request, NativeReceipt(frame, sequence)))
+            else:
+                waiting.append(request)
+        self._waiters = waiting
 
     async def _read_stderr(self, process: HarnessProcess) -> None:
         try:

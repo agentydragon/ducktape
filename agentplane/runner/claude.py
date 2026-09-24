@@ -105,12 +105,16 @@ class ClaudeAdapter(HarnessAdapter):
         await self.harness.signal_interrupt(cancel_queued=False, reason="agentplane")
 
     async def change_model(self, command_id: str, model: str) -> None:
-        receipt = await self.harness.set_model(model)
-        response = receipt.response
-        if not isinstance(response, wire.ControlResponseFrame) or response.response.subtype != "success":
-            detail = response.response.error if isinstance(response, wire.ControlResponseFrame) else "invalid response"
-            raise RuntimeError(f"Claude Code refused model switch: {detail}")
-        await self.session.model_changed(command_id, model, sources=[receipt.sequence])
+        # A turn that starts in the frames after the response starts with the model it selects.
+        async with self.session.ordered_reply():
+            receipt = await self.harness.set_model(model)
+            response = receipt.response
+            if not isinstance(response, wire.ControlResponseFrame) or response.response.subtype != "success":
+                detail = (
+                    response.response.error if isinstance(response, wire.ControlResponseFrame) else "invalid response"
+                )
+                raise RuntimeError(f"Claude Code refused model switch: {detail}")
+            await self.session.model_changed(command_id, model, sources=[receipt.sequence])
 
     async def on_frame(self, frame: Frame, source_sequence: int) -> None:
         parsed = wire.parse_frame(frame)
