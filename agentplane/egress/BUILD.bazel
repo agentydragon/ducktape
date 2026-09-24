@@ -122,6 +122,7 @@ py_library(
     srcs = ["proxy.py"],
     deps = [
         ":addon",
+        ":upstream",
         "@pypi//mitmproxy",
     ],
 )
@@ -151,6 +152,7 @@ py_library(
         ":informer",
         ":policy",
         ":resources",
+        ":upstream",
         "//agentplane:subjects",
         "//agentplane/testing:fake_apiserver",
         "//util:kubernetes",
