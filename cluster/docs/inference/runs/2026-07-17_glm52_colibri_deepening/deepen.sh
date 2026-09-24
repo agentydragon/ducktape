@@ -6,9 +6,9 @@
 # Run on wyrm2 after that bundle's setup.sh has built c/glm.
 set -euo pipefail
 
-CHECKOUT=${COLIBRI_CHECKOUT:-/var/lib/colibri/src/colibri}
-MODEL=${COLIBRI_MODEL:-/var/lib/colibri/glm-5.2-colibri-int4-with-int8-mtp}
-OUT=${COLIBRI_RESULTS:-/var/lib/colibri/deepen-$(date +%Y%m%dT%H%M%S)}
+CHECKOUT=${COLIBRI_CHECKOUT:-/var/lib/llm-models-ssd/src/colibri}
+MODEL=${COLIBRI_MODEL:-/var/lib/llm-models-ssd/glm-5.2-colibri-int4-with-int8-mtp}
+OUT=${COLIBRI_RESULTS:-/var/lib/llm-models-ssd/deepen-$(date +%Y%m%dT%H%M%S)}
 PROMPT='Briefly explain why the sky appears blue.'
 USAGE=$MODEL/.coli_usage
 

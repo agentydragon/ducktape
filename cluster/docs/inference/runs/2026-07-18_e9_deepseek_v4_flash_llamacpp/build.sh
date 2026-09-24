@@ -19,7 +19,7 @@
 set -euo pipefail
 
 REPO=${LLAMACPP_DIR:-$HOME/llama-cpp-main}
-MODEL_DIR=${DSV4_MODEL_DIR:-/var/lib/colibri/dsv4-iq2}
+MODEL_DIR=${DSV4_MODEL_DIR:-/var/lib/llm-models-ssd/dsv4-iq2}
 GGUF="$MODEL_DIR/UD-IQ2_XXS/DeepSeek-V4-Flash-UD-IQ2_XXS-00001-of-00003.gguf"
 export NIXPKGS_ALLOW_UNFREE=1
 

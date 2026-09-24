@@ -2,7 +2,7 @@
 set -euo pipefail
 
 RUN_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-CHECKOUT=${COLIBRI_CHECKOUT:-/var/lib/colibri/src/colibri}
+CHECKOUT=${COLIBRI_CHECKOUT:-/var/lib/llm-models-ssd/src/colibri}
 REVISION=6d3ed7e62b1b4c05d8e656a5263e91b983aa26ba
 
 if [[ ! -d "$CHECKOUT/.git" ]]; then
