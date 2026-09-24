@@ -95,7 +95,6 @@ filegroup(
     name = "haku_manifest_contract_files",
     srcs = [
         "agentplane-staging/agentplane.k8s.yaml",
-        "agents/public-coder-agent/app/agent-kubeconfig.yaml",
         "agents/public-coder-agent/proxy/iron.yaml",
         "kustomization.yaml",
     ],

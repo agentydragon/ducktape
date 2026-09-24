@@ -53,7 +53,7 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
-from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s import cilium, external_creds, public_coder_devbox
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
@@ -302,8 +302,9 @@ def _ingress_policy(scope: Construct) -> None:
         selector=LABELS,
         ingress=[
             cilium.ingress_from(
-                {"k8s:io.kubernetes.pod.namespace": NAMESPACE, "k8s:app.kubernetes.io/name": "public-coder-agent"},
-                {"k8s:io.kubernetes.pod.namespace": NAMESPACE, "k8s:kubevirt.io/domain": "public-coder-devbox"},
+                # Spelled here: public_coder_agent_config imports this module for the proxy's address.
+                _endpoint(NAMESPACE, {"app.kubernetes.io/name": "public-coder-agent"}),
+                _endpoint(public_coder_devbox.NAMESPACE, public_coder_devbox.POD_LABELS),
                 ports=[PROXY_PORT],
             )
         ],
