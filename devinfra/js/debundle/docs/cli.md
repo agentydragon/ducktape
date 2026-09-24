@@ -163,18 +163,64 @@ parse/facts/gate checks without writing emitted JS or reports; a gate
 rejection still writes `owner_graph.json` plus the rejection evidence, so
 the `gate` queries work on the rejection that was just reported.
 
-Broad spec migrations continue through supported diagnostic failures by
-default and report all findings from that pass (currently: unresolved
-source-match selectors and duplicate binding claims, with
-module/export/origin evidence). Use `--fail-fast` only when the first
-failing selector or claim is the useful debugging target.
+Broad spec migrations continue through selector failures by default and
+report every one from that pass, leaving each failed entity unclaimed. Use
+`--fail-fast` only when the first failing selector or claim is the useful
+debugging target: the first error-severity selector outcome stops the run, with
+that outcome's line as the error. Warnings never stop it.
 
 `debundle spec validate` is `debundle run` in dry-run keep-going mode
 reporting every selector problem: it takes the **same inputs** (`--spec` /
 `--tree-config` + package roots) and needs the full pipeline, so run it via
 the Bazel `:debundle` target, not the standalone binary. Its source-only
 preflight mode (`--modules` plus `--source-file` or `--source-root
---chunk`) needs only the binary and the chunk.
+--chunk`) needs only the binary and the chunk; without the joint solve it
+cannot report conflicts, resolution by elimination, duplicate claims or
+relational selectors.
+
+### Selector outcomes
+
+`run --dry-run` (per chunk, `reports/tree/<chunk-id>/selector_diagnostics.json`),
+`spec validate` and `spec match-selector` all report selectors as
+`SelectorOutcome` records (`selector_outcome.rs`; kinds in
+<selector_resolution.md> § Outcomes). JSON is `{counts, outcomes}`; `run` and
+`validate` list only selectors that did not resolve plus warnings,
+`match-selector` its one probe (with `slack`). Text is one line per record:
+
+```text
+[ambiguous] static/app::ui/panel as `Panel` (source_matches[].bindings[`p`]): is ambiguous -- matched 2 top-level declarations: `a` (body[0]), `b` (body[1]) -- selector: const p = renderPanel(ANYTHING);
+```
+
+```json
+{
+  "counts": { "ambiguous": 1 },
+  "outcomes": [
+    {
+      "chunk": "static/app",
+      "placement": {
+        "logical_module": "ui/panel",
+        "entity": { "export": "Panel" },
+        "selector_kind": "source_matches"
+      },
+      "target_binding": "p",
+      "selector_preview": "const p = renderPanel(ANYTHING);",
+      "outcome": {
+        "kind": "ambiguous",
+        "candidates": [
+          { "owner": 0, "binding": "a" },
+          { "owner": 1, "binding": "b" }
+        ],
+        "truncated": false
+      },
+      "severity": "error"
+    }
+  ]
+}
+```
+
+`owner` is the matched statement's index in the chunk body. `validate
+--format ndjson` streams one record per line, then a `summary` line with the
+counts.
 
 ## Batch atomicity (`bindings assign`)
 

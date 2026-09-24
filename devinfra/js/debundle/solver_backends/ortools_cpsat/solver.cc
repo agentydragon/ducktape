@@ -592,6 +592,11 @@ class SupportSearch {
         model->AddForbiddenAssignments(settled).AddTuple(first_values);
       });
       if (outcome == Outcome::kInfeasible) {
+        for (size_t i = 0; i < projection_variables_.size(); ++i) {
+          if (values_[i].size() == 1) {
+            proven_fixed_.push_back(projection_variables_[i].id);
+          }
+        }
         break;
       }
       if (outcome == Outcome::kStopped) {
@@ -684,6 +689,8 @@ class SupportSearch {
         rows_.empty() ? "CP-SAT returned UNKNOWN"
                       : "CP-SAT stopped before proving complete target support");
     AddRows(rows_, &response);
+    response.mutable_fixed_variable_ids()->Add(proven_fixed_.begin(),
+                                               proven_fixed_.end());
     return response;
   }
 
@@ -694,6 +701,8 @@ class SupportSearch {
   std::set<ProjectionRow> rows_;
   // Distinct values of projection_variables_[i] across rows_.
   std::vector<std::set<int64_t>> values_;
+  // Ids of the projection variables the settle rounds proved fixed.
+  std::vector<uint32_t> proven_fixed_;
   sat::CpSolverResponse last_response_;
   std::optional<SelectorCpSatResponse> stopped_;
 };
@@ -781,6 +790,10 @@ SelectorCpSatResponse LocalizeConflicts(const SelectorCpSatRequest& request,
           sat::CpSolverResponseStats(solver_response));
       response.set_diagnostic(
           "CP-SAT returned UNKNOWN while localizing an infeasible program");
+      for (const std::vector<uint32_t>& conflict : conflicts) {
+        response.add_conflicts()->mutable_target_ids()->Add(conflict.begin(),
+                                                            conflict.end());
+      }
       return response;
     }
     std::vector<uint32_t> conflict;

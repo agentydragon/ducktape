@@ -42,59 +42,36 @@ Fixes to what exists come first; features follow. Each step lands with the
 command-level e2e tests that pin its behaviour. An internal test that encodes a
 rule gets a command-level equivalent before the code it tests is deleted.
 Consumer specs migrate in lockstep, gated by their generated-output diff
-tests.
+tests. Each step moves the part of the goal it achieves into <../SPEC.md>.
 
-1. **Semantics doc.** Write the goal above as `SPEC.md` for selector
-   resolution.
-2. **Every command agrees.** A command-level test runs one fixture through each
-   command that resolves selectors and requires the same answer. Teach the
-   matcher block, `switch` and named-function-expression identifier scopes, which
-   today only native lowering has.
-3. **`const ANYTHING = <expr>` holes only the name.** Today the hole swallows the
-   whole declarator, initializer included.
-4. **Pin current behaviour worth keeping.** Every `alpha_all` scoping rule that
-   only native lowering's internal tests pin gets a command-level agreement case.
-   Injectivity forcing and chained relational selectors are already covered end
-   to end (`e2e/global_selector_assignment_test.rs`,
-   `e2e/intrinsic_alias_lowering_test.rs`).
-5. **One engine.** Delete native `source_match` lowering and `FactDomains`.
-   `anonymous_resolution.rs` (edit gate, `peel`) and `validate --source-file`
-   call the shared resolve.
-6. **Truthful outcomes.**
-   - Fast-fail stops at the first failed entity; keep-going reports every
-     outcome and continues with failed entities unclaimed.
-7. **One program across chunks**, with per-tree chunk scope and several trees
+1. **One resolve function.** `run`, `spec validate` (both modes),
+   `spec match-selector`, the `synthesize-selectors` proof and the edit gate call
+   one `resolve`. `FactDomains` shrinks to what candidate, reference and relation
+   tables need.
+2. **One program across chunks**, with per-tree chunk scope and several trees
    per chunk.
 
 Features, after the steps above:
 
-8. **Template references.** Entity names in templates become constraints.
+3. **Template references.** Entity names in templates become constraints.
    `validate` lists each template's free identifiers by kind.
-9. **Pinning by use site.** An entity with no distinctive shape (a helper copy)
+4. **Pinning by use site.** An entity with no distinctive shape (a helper copy)
    is pinned through a template that mentions it.
-10. **Bump tooling.** Failing selectors reported next to unclaimed code;
-    evidence from the previous version's spec directory; a hint when a selector
-    no longer matches in its chunk but matches in another; a cross-chunk
-    `same_as` relation for mirrored module trees.
+5. **Bump tooling.** Failing selectors reported next to unclaimed code;
+   evidence from the previous version's spec directory; a hint when a selector
+   no longer matches in its chunk but matches in another; a cross-chunk
+   `same_as` relation for mirrored module trees.
 
 ## Cleanup
 
 Each item is deleted in the PR that lands the step making it removable, not in
 a later sweep.
 
-- **Step 5 (one engine):**
-  - the AST selector atoms (`selector_ir.rs`) and their encoding in
-    `selector_constraint_model_builder.rs`, keeping only what candidate,
-    reference and relation tables need;
-  - the internal tests of deleted code, once their rules have command-level
-    equivalents;
-  - `docs/selector_resolution.md`, rewritten for the new engine. Its measured
-    rejection of encoding tree matching as solver constraints stays as a short
-    decision record citing
-    `debug/perf/2026_09_17_matcher_vs_native_lowering.md`.
-- **Step 6 (truthful outcomes):**
-  - the decoder mapping an unknown solve to an outcome for every target.
-- **Step 7 (one program across chunks):**
+- **Step 1 (one resolve function):** `docs/selector_resolution.md`, rewritten
+  for the one resolve. Its measured rejection of encoding tree matching as
+  solver constraints stays as a short decision record citing
+  `debug/perf/2026_09_17_matcher_vs_native_lowering.md`.
+- **Step 2 (one program across chunks):**
   - per-chunk CP-SAT request and summary files, the `selector_problem` output
     group in `pipeline.bzl`, and the
     `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_{REQUEST_PROTO,SUMMARY_JSON,DUMP_ONLY}`

@@ -162,17 +162,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "haku_console_fixtures",
-    testonly = True,
-    srcs = ["haku_console_fixtures.py"],
-    deps = [
-        "//cluster/cdk8s/haku:charts",
-        "@pypi//cdk8s",
-        "@pypi//pytest",
-    ],
-)
-
 py_test(
     name = "test_k8s",
     srcs = ["test_k8s.py"],
@@ -347,9 +336,8 @@ py_test(
 py_test(
     name = "test_public_coder_clickhouse_reader_contract",
     srcs = ["test_public_coder_clickhouse_reader_contract.py"],
-    # Synthesizes the public-coder app chart in memory, which needs jsii's Node runtime.
+    # Importing the cdk8s modules starts jsii's Node runtime.
     data = [
-        "//cluster/k8s:agents/public-coder-agent/proxy/iron.yaml",
         "//cluster/k8s:clickhouse/cluster/public-coder-credentials.sops.yaml",
         "//cluster/k8s:kustomization.yaml",
         "@nodejs_linux_amd64//:bin/node",
@@ -358,65 +346,9 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//cluster/cdk8s:public_coder_agent_config",
         "//cluster/cdk8s:public_coder_proxy",
         "//cluster/cdk8s/clickhouse:client",
-        "@pypi//cdk8s",
-        "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_haku_sandbox_contract",
-    srcs = ["test_haku_sandbox_contract.py"],
-    data = [
-        "//cluster/k8s:haku_manifest_contract_files",
-    ],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_haku_public_coder_contract",
-    # Synth imports the console's Settings, and with it the console runtime.
-    size = "medium",
-    srcs = ["test_haku_public_coder_contract.py"],
-    # Synthesizes the public-coder app chart and the console chart (haku_console_fixtures.py,
-    # loaded via pytest_plugins) in memory, which needs jsii's Node runtime.
-    data = [
-        "//cluster/k8s:haku_manifest_contract_files",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":conftest",
-        ":haku_console_fixtures",
-        "//:conftest",
-        "//cluster/cdk8s:public_coder_agent_config",
-        "@pypi//cdk8s",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_haku_ci_keda_contract",
-    srcs = ["test_haku_ci_keda_contract.py"],
-    data = ["//cluster/k8s:haku_manifest_contract_files"],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

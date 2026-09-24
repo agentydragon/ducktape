@@ -79,8 +79,8 @@ Entries are removed once landed — this is a burn-down, not a changelog.
     Testing checked `litellm-key-cheap-experiments` from `litellm-credentials/`.
   - aiquota: `aiquota-api-bearer` from SOPS, `cli-proxy-api-management` from
     `cli-proxy-api`, `aiquota-oidc` from `agent-machine-access-tf`, and
-    `clickhouse-aiquota-credentials` from `reflector`; ConfigMaps generated from
-    `config.toml` and `schema.sql`.
+    `clickhouse-aiquota-credentials` from `reflector`; the `aiquota-api-config` and
+    `schema.sql` ConfigMaps.
   - ClickHouse schema: `clickhouse-admin-credentials` from `clickhouse` and the
     `schema.sql` ConfigMap.
   - Haku console: Secrets `forgejo-images-creds`, `haku-console-oidc`,
@@ -108,26 +108,27 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   `test_openclaw_spike_resolves_exactly_its_iron_allowlist`). The spike's Cilium DNS
   rule is generated from `egress_fences.OPENCLAW_SPIKE_ALLOWLIST`, but the iron config
   it mirrors is still a hand-written `configMapGenerator` input. Render the iron
-  ConfigMap from the same tuple (the `<name>-config.k8s.yaml` shape
-  `agents/public-coder-agent/app` uses) and the pin collapses.
+  ConfigMap from the same tuple (as `public_coder_proxy.py` renders its iron config) and
+  the pin collapses.
 
 ## Reachable since the one-to-one conversion — the manifests are generated, the tests remain
 
 Each side the test compares is now a construct, except the hand-written inputs named;
 retiring a test means deriving both sides from one value.
 
-- **`agents/public-coder-agent/{app,proxy,devbox}`, `agent-rbac-base` and
-  `clickhouse/cluster`** — `test_public_coder_agent_config.py` checks subject,
-  selector and port agreement across RBAC, NetworkPolicies and the proxy over the
-  synthesized charts; `test_haku_public_coder_contract.py` and
-  `test_public_coder_clickhouse_reader_contract.py` check the same against the still
-  hand-written Iron transform configs (`proxy/iron.yaml`) and the app's
-  `agent-kubeconfig.yaml`, both `configMapGenerator` inputs.
-- **`agents/haku-egress-proxy` script contract** — `test_haku_sandbox_contract.py`
-  regex-extracts required env vars and a clone host:port from `haku-sandbox-setup.sh`
-  (an image build input) and checks the generated SandboxTemplate
-  (`haku/workspaces.py`) and egress policy cover them. Closing it fully needs the script
-  to declare its requirements in a checkable form.
+- **`agents/public-coder-agent/{app,proxy}`** — what the tests still compare:
+  - The proxy's and the piper's ingress rules spell the app's labels, because
+    `public_coder_agent_config` imports both modules for their addresses
+    (`test_public_coder_agent_config.py`'s `test_proxy_admits_the_app`).
+  - The `aiquota-api-bearer-public-coder` mirror `aiquota.py` writes for the proxy
+    (`test_proxy_aiquota_bearer_is_mirrored_into_its_namespace`).
+- **`haku/workspaces` setup-script contract** — `test_haku_sandbox_setup.py`
+  regex-extracts the variables `haku-sandbox-setup.sh` (an image build input) requires and
+  checks the synthesized SandboxTemplate (`haku/workspaces.py`) sets them. No `Settings`
+  reads this env: `haku/runtime/agent/config.py` shares the `HAKU_GIT_*` names but
+  configures another, undeployed binary. Closing it needs the script's requirements in a
+  form the generator reads (a Python bootstrap with its own `Settings`, or a declaration in
+  the script), a design for the operator.
 - **`authentik/app`** — `test_authentik_blueprint_contracts.py`'s
   `configMapGenerator.files` list vs. a glob of `blueprints/*.yaml`: the
   `kustomization.yaml` is still hand-written, so a generated one listing the glob would

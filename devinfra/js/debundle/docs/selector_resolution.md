@@ -44,10 +44,28 @@ assignment. A selector the matcher places nowhere never reaches the solver: it
 is reported unmatched without a solve.
 
 A target whose projected candidate rows exceed `MAX_CANDIDATES_PER_SELECTOR`
-(100, `lowering/materialize/plan_builder.rs`) is likewise rejected before the
-solve, as `too_broad_selector`: a selector that loose names no declaration, and
-its rows would only swell the request. This holds for member selectors,
-`source_matches[]` groups and anonymous statements alike.
+(100, `selector_outcome.rs`) is likewise rejected before the solve, as
+`too_broad`: a selector that loose names no declaration, and its rows would
+only swell the request. This holds for member selectors, `source_matches[]`
+groups and anonymous statements alike, and for the matcher-only commands
+(`spec validate --source-file`, `spec match-selector`), which count matches the
+same way.
+
+## Outcomes
+
+Each entity comes out as one `SelectorOutcome` (`selector_outcome.rs`), the
+record every command emits: `resolved` (by its own selector, or by
+elimination), `no_match`, `ambiguous` (at most `MAX_LISTED_CANDIDATES`
+candidates, 5, the bound the solver enumerates to), `conflict`, `too_broad`,
+`duplicate_claim`, `invalid` (the selector could not be evaluated), or
+`undecided`. Severity is derived from the kind: a resolution by elimination is a
+`warning`, every non-resolved kind an `error`.
+
+`undecided` means the CP-SAT sidecar stopped (its
+`DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS` limit) before deciding the
+entity. The sidecar reports which projected variables it had proven fixed by
+then; an entity all of whose variables are among them still resolves, and a
+conflict set found before the stop still stands.
 
 ## Resolved by elimination
 
@@ -55,11 +73,11 @@ its rows would only swell the request. This holds for member selectors,
 other candidates are claimed by other selectors. After a successful solve, each
 unique `source_match` target's own candidate rows are filtered by dropping every
 row whose owner or binding another `all_different` target's solved value holds.
-When it had several rows and one survives, it resolved by elimination and gets a
-`resolved_by_elimination` diagnostic naming the claimers. That entry has
-severity `warning`: the run still succeeds, and the entry appears in
-`selector_diagnostics.json` and `spec validate`. Such a selector silently moves
-when a claimer is edited, so it should be anchored on its own.
+When it had several rows and one survives, its outcome is `resolved` with
+`resolved_by: elimination` naming the claimers. That is a `warning`: the run
+still succeeds, and the outcome appears in `selector_diagnostics.json` and
+`spec validate`. Such a selector silently moves when a claimer is edited, so it
+should be anchored on its own.
 
 ### Rejected: let the solver consume AST facts natively instead of candidate rows
 
@@ -152,7 +170,7 @@ conflict set may name a target that is not strictly needed for the
 contradiction.
 
 Each target in a conflict set of two or more comes out `Conflict { with }`,
-naming the others (`conflicting_selector` in keep-going diagnostics); a set of
+naming the others (a `conflict` outcome); a set of
 one is that target's own constraints failing and comes out `NoMatch`. Every
 other target resolves as usual. A target that depends on a conflicting one, such
 as a relation anchored on it, loses that relation with it and may come out

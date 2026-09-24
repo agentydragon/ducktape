@@ -4,6 +4,7 @@
 //! `apply_materialized_logical_chunks`.
 
 mod apply;
+mod outcome_sink;
 mod plan_builder;
 
 use std::io::Write;
@@ -174,7 +175,7 @@ pub(super) fn materialize_logical_chunk(
         .collect::<Vec<_>>();
     let residual_request = requests.iter().find(|request| request.residual).cloned();
 
-    let mut builder = ChunkPlanBuilder::new(keep_going);
+    let mut builder = ChunkPlanBuilder::new(!keep_going);
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
@@ -321,7 +322,7 @@ pub(super) fn materialize_logical_chunk(
     if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
         builder.synthesize_mini_factors(&precomputed, &runtime_ast.module.body, target_dir)?;
     }
-    if let Some(report) = builder.selector_diagnostics_report(chunk_id)
+    if let Some(report) = builder.selector_outcome_report()
         && let Some(report_out_dir) = report_emission.rejection_dir()
     {
         write_chunk_report_json(
@@ -669,7 +670,7 @@ fn collect_member_analysis_hints(
         member.collect_hints_for_binding(hints, &binding);
         return Ok(());
     }
-    if builder.keep_going() {
+    if !builder.fail_fast() {
         return Ok(());
     }
     bail!(

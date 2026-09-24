@@ -216,7 +216,7 @@ class Console(Construct):
             Group.from_name(self, "group-haku", "oidc-ksbx-groups:haku"),
             Group.from_name(self, "group-profile-haku", "haku:access-profile:haku"),
             ServiceAccount.from_service_account_name(self, "sa-haku", "haku", namespace_name="haku-sandbox"),
-            Group.from_name(self, "group-profile-public-coder", "haku:access-profile:public-coder"),
+            Group.from_name(self, "group-profile-public-coder", console_config.PUBLIC_CODER_GROUP),
         )
         # Consumer-owned referent identity for source-approved external credentials.
         ServiceAccount(

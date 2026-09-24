@@ -71,7 +71,7 @@ VM_NAME = "public-coder-devbox"
 SSH_PORT = 22
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/devbox"
 _SERVICE_LABELS = {"app.kubernetes.io/name": VM_NAME}
-_POD_LABELS = {"kubevirt.io/domain": VM_NAME}
+POD_LABELS = {"kubevirt.io/domain": VM_NAME}
 _BAZEL_CACHE_CLAIM = "public-coder-devbox-bazel-cache"
 _BUILDBUDDY_API_KEY = "buildbuddy-api-key"
 # The tag comes from image-pins/kustomization.yaml.
@@ -133,7 +133,7 @@ def ssh_service(scope: Construct) -> Service:
                 )
             },
         ),
-        selector=Pods.select(scope, "devbox-pods", labels=_POD_LABELS),
+        selector=Pods.select(scope, "devbox-pods", labels=POD_LABELS),
         ports=[ServicePort(name="ssh", port=SSH_PORT, target_port=SSH_PORT, protocol=Protocol.TCP)],
         type=ServiceType.CLUSTER_IP,
     )
@@ -199,7 +199,7 @@ def virtual_machine(scope: Construct) -> VirtualMachine:
         spec=VirtualMachineSpec(
             run_strategy="Always",
             template=VirtualMachineSpecTemplate(
-                metadata=k8s.ObjectMeta(labels=_POD_LABELS | _SERVICE_LABELS),
+                metadata=k8s.ObjectMeta(labels=POD_LABELS | _SERVICE_LABELS),
                 spec=VirtualMachineSpecTemplateSpec(
                     node_selector={
                         # The local LVM cache PVC is available only on Proxmox nodes. Its

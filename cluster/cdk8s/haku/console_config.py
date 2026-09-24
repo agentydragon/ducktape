@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from typing import Any
 
+# The synthetic identity Console evaluates the public-coder access profile's Kubernetes
+# requests as; RBAC bindings grant this group.
+PUBLIC_CODER_GROUP = "haku:access-profile:public-coder"
+
 
 def _exact_tools(policy_id: str, server: str, tools: list[str]) -> dict[str, Any]:
     return {"id": policy_id, "type": "exact_tools", "tools": {server: tools}}
@@ -117,8 +121,8 @@ def config() -> dict[str, Any]:
                     "groups": ["haku:access-profile:haku", "system:authenticated"],
                 },
                 "public-coder": {
-                    "username": "haku:access-profile:public-coder",
-                    "groups": ["haku:access-profile:public-coder", "system:authenticated"],
+                    "username": PUBLIC_CODER_GROUP,
+                    "groups": [PUBLIC_CODER_GROUP, "system:authenticated"],
                 },
             }
         },

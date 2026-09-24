@@ -16,6 +16,7 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitR
 
 from cluster.cdk8s.flux import NAMESPACE
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.haku import console_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
@@ -85,7 +86,7 @@ def chart(app: App) -> Chart:
         "public-coder-agent-ducktape-flux-reader",
         description="Binds the public-coder access profile to public Ducktape Flux diagnostics.",
         subjects=[
-            k8s.Subject(kind="Group", name="haku:access-profile:public-coder", api_group="rbac.authorization.k8s.io")
+            k8s.Subject(kind="Group", name=console_config.PUBLIC_CODER_GROUP, api_group="rbac.authorization.k8s.io")
         ],
     )
     _reader_binding(

@@ -1,16 +1,14 @@
 //! Selector outcomes decided around the joint solve: a selector the shape
-//! matcher places too widely is `too_broad_selector` without a solve, and one
-//! that is unique only because other selectors claimed its alternatives
-//! resolves with a `resolved_by_elimination` warning.
-
-use std::fs;
-use std::path::Path;
+//! matcher places too widely is `too_broad` without a solve, and one that is
+//! unique only because other selectors claimed its alternatives is `resolved`
+//! by elimination, with a warning.
 
 use debundle_e2e_support::{
-    FixtureOpts, Member, logical_module, run_dry_run_fixture, run_dry_run_rejection_fixture,
-    run_spec_validate, write_validate_fixture_spec,
+    FixtureOpts, Member, assert_fail_fast_stops_at_first_outcome, find_outcome, logical_module,
+    read_selector_outcomes, run_dry_run_fixture, run_dry_run_rejection_fixture, run_spec_validate,
+    write_validate_fixture_spec,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// 101 identical `const a_i = f();` declarations, one past the candidate cap,
 /// beside one distinctive function.
@@ -54,26 +52,39 @@ fn too_broad_fixture(source: &str) -> FixtureOpts<'_> {
 fn selector_over_candidate_cap_is_too_broad_and_others_still_resolve() {
     let source = too_broad_fixture_source();
     let rejected = run_dry_run_rejection_fixture(too_broad_fixture(&source));
-    let diagnostics = read_diagnostics(&rejected.report_root);
-
-    let broad = find_entry(&diagnostics, "too_broad_selector", "TooBroad");
-    assert_eq!(broad["severity"], "error", "{broad:#}");
     assert!(
-        broad["message"]
-            .as_str()
-            .unwrap()
+        rejected
+            .stderr
             .contains("matches 101 places (limit 100); anchor it more specifically"),
-        "{broad:#}"
+        "{}",
+        rejected.stderr
     );
-    let duplicate = diagnostics
+    let outcomes = read_selector_outcomes(&rejected.report_root);
+
+    let broad = find_outcome(&outcomes, "too_broad", "TooBroad");
+    assert_eq!(broad["severity"], "error", "{broad:#}");
+    assert_eq!(
+        broad["outcome"],
+        json!({"kind": "too_broad", "count": 101, "limit": 100})
+    );
+    let duplicate = outcomes
         .iter()
-        .find(|entry| entry["category"] == "duplicate_claim")
-        .unwrap_or_else(|| panic!("missing duplicate-claim witness: {diagnostics:#?}"));
-    assert_eq!(duplicate["duplicate_claim"]["binding"], "keepMe");
-    assert_eq!(diagnostics.len(), 2, "{diagnostics:#?}");
+        .find(|record| record["outcome"]["kind"] == "duplicate_claim")
+        .unwrap_or_else(|| panic!("missing duplicate-claim witness: {outcomes:#?}"));
+    assert_eq!(duplicate["outcome"]["binding"], "keepMe");
+    assert_eq!(outcomes.len(), 2, "{outcomes:#?}");
 
     let validate = validate_json(too_broad_fixture(&source));
-    assert_eq!(validate["counts"]["too_broad_selector"], 1, "{validate:#}");
+    assert_eq!(validate["counts"]["too_broad"], 1, "{validate:#}");
+}
+
+/// A too-broad selector is rejected before the solve that finds the
+/// duplicate claim, so fail-fast stops at it.
+#[test]
+fn fail_fast_stops_at_too_broad_selector() {
+    let source = too_broad_fixture_source();
+    let line = assert_fail_fast_stops_at_first_outcome(|| too_broad_fixture(&source), "too_broad");
+    assert!(line.contains("as `TooBroad`"), "{line}");
 }
 
 /// `Either` matches both functions; `Other` matches only `second`. `Either`
@@ -120,31 +131,37 @@ console.log(first(), second(), third(" ok "));
 #[test]
 fn selector_unique_only_by_elimination_warns_and_run_succeeds() {
     let fixture = run_dry_run_fixture(elimination_fixture());
-    let diagnostics = read_diagnostics(&fixture.report_root);
+    let outcomes = read_selector_outcomes(&fixture.report_root);
 
-    let either = find_entry(&diagnostics, "resolved_by_elimination", "Either");
+    let either = find_outcome(&outcomes, "resolved", "Either");
     assert_eq!(either["severity"], "warning", "{either:#}");
-    let message = either["message"].as_str().unwrap();
-    assert!(
-        message.contains("matches 2 places, and the others are claimed by `Other` in"),
-        "{either:#}"
+    assert_eq!(
+        either["outcome"],
+        json!({
+            "kind": "resolved",
+            "owner": 0,
+            "binding": "first",
+            "resolved_by": {
+                "by": "elimination",
+                "claimers": [{"logical_module": "elimination/other", "entity": {"export": "Other"}}],
+            },
+        })
     );
     // `Other` and `Third` are unique on their own candidates: no warning.
-    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+    assert_eq!(outcomes.len(), 1, "{outcomes:#?}");
     assert!(
-        fixture.stderr.contains("resolved by elimination"),
+        fixture.stderr.contains(
+            "[warning: resolved] static/app::elimination/either as `Either` \
+             (source_matches[].bindings[`f`]): resolved by elimination to `first` (body[0]): \
+             its other matches are claimed by `Other` in elimination/other"
+        ),
         "{}",
         fixture.stderr
     );
 
     let validate = validate_json(elimination_fixture());
-    assert_eq!(
-        validate["counts"]["resolved_by_elimination"], 1,
-        "{validate:#}"
-    );
-    let entry = &validate["chunks"][0]["diagnostics"][0];
-    assert_eq!(entry["export_name"], "Either", "{validate:#}");
-    assert_eq!(entry["severity"], "warning", "{validate:#}");
+    assert_eq!(validate["counts"]["resolved"], 1, "{validate:#}");
+    assert_eq!(validate["outcomes"][0], *either, "{validate:#}");
 }
 
 fn validate_json(opts: FixtureOpts<'_>) -> Value {
@@ -157,29 +174,4 @@ fn validate_json(opts: FixtureOpts<'_>) -> Value {
     );
     serde_json::from_str(&out.stdout)
         .unwrap_or_else(|err| panic!("parse validate json: {err}\nstdout:\n{}", out.stdout))
-}
-
-fn read_diagnostics(report_root: &Path) -> Vec<Value> {
-    let report_path = report_root
-        .join("static")
-        .join("app")
-        .join("selector_diagnostics.json");
-    let report: Value = serde_json::from_str(
-        &fs::read_to_string(&report_path)
-            .unwrap_or_else(|error| panic!("read {}: {error}", report_path.display())),
-    )
-    .unwrap();
-    report["diagnostics"]
-        .as_array()
-        .expect("diagnostics must be an array")
-        .clone()
-}
-
-fn find_entry<'a>(diagnostics: &'a [Value], category: &str, export_name: &str) -> &'a Value {
-    diagnostics
-        .iter()
-        .find(|entry| entry["category"] == category && entry["export_name"] == export_name)
-        .unwrap_or_else(|| {
-            panic!("missing {category} entry for export {export_name}: {diagnostics:#?}")
-        })
 }

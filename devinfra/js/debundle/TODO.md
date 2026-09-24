@@ -25,14 +25,11 @@ a second priority queue.
 
 ### P0 — one selector engine
 
-Selector resolution runs through two matching engines that can disagree, and
-the solver is handed more than an assignment problem.
-<plans/selector_engine.md> consolidates it: the shape matcher is the only thing
-that matches, CP-SAT solves a CSP over candidate ids, and every command calls
-the same resolve function. Its steps are the dispatch order. The measured
-rejection of encoding tree matching as solver constraints
-(<debug/perf/2026_09_17_matcher_vs_native_lowering.md>) stands; the plan
-deletes that path.
+The shape matcher is the only thing that matches, and CP-SAT assigns candidate
+ids with a truthful outcome per selector. What remains in
+<plans/selector_engine.md> is one resolve function every command calls, one
+program across chunks, and template references. Its steps are the dispatch
+order.
 
 Selector-language work (<plans/relational_selectors.md>) lands on top of the
 consolidated engine.
@@ -54,8 +51,9 @@ progress output and a resumable or cacheable plan.
    should be solver categoricity, not an independent selector-matcher path.
 2. **Selector diagnostics — solver-backed replacement.** The keep-going JSON
    report (`debundle spec validate --format text|json|ndjson`)
-   landed (#2302; shared contract in `selector_diagnostics.rs`) and classifies
-   unresolved / ambiguous / duplicate-claim failures with full provenance.
+   landed (#2302; the outcome record every selector command shares is in
+   `selector_outcome.rs`) and classifies no-match / ambiguous / conflict /
+   too-broad / duplicate-claim failures per entity.
    Treat that as the current user-facing contract, not as architecture to carry
    forward unchanged: the new backend should emit per-target solver
    explanations directly. Fold remaining anonymous-statement failures, blocker

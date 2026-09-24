@@ -1,6 +1,8 @@
 //! Every command that resolves a selector gives the same answer for the same
-//! selector and chunk: `debundle run`, `spec validate --source-file` and
-//! `spec match-selector`. Each case also pins a matching rule the commands must
+//! selector and chunk: `debundle run --dry-run`, `spec validate` (`--spec` and
+//! `--source-file`) and `spec match-selector` emit equal outcome records for
+//! it — `no_match`, `ambiguous` with the same candidates, `too_broad` — or all
+//! resolve it. Each resolving case also pins a matching rule the commands must
 //! share: same-spelled locals in sibling blocks, loop heads, `switch` bodies,
 //! named function/class expressions and shadowing arrow params are independent
 //! bindings; `var` hoists to the enclosing function out of blocks, `catch` and
@@ -11,10 +13,11 @@ use std::fs;
 use std::path::Path;
 
 use debundle_e2e_support::{
-    FixtureOpts, Member, assert_module_exports, logical_module, run_fixture, run_match_selector,
-    run_source_only_validate,
+    FixtureOpts, Member, assert_module_exports, logical_module, read_selector_outcomes,
+    run_dry_run_rejection_fixture, run_fixture, run_match_selector, run_source_only_validate,
+    run_spec_validate, write_validate_fixture_spec,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 
 struct Case {
     /// Chunk source; declares and exports the target.
@@ -132,7 +135,7 @@ fn write(path: &Path, body: &str) {
     fs::write(path, body).unwrap();
 }
 
-fn source_matches_yaml(case: &Case, export_name: &str) -> String {
+fn source_matches_yaml(case: &Case) -> String {
     let indented = case
         .selector
         .lines()
@@ -140,69 +143,154 @@ fn source_matches_yaml(case: &Case, export_name: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        "source_matches:\n  - match: |\n{indented}\n    bindings:\n      - local: {}\n        name: {export_name}\n",
+        "source_matches:\n  - match: |\n{indented}\n    bindings:\n      - local: {}\n        name: {EXPORT}\n",
         case.local
     )
 }
 
-/// `spec validate --source-file` diagnostics for the case's selector.
-fn validate(case: &Case) -> Value {
+/// The readable name every case claims its target as, in module [`MODULE`].
+const EXPORT: &str = "target";
+const MODULE: &str = "format";
+
+fn fixture(case: &Case) -> FixtureOpts<'_> {
+    FixtureOpts::new(
+        case.chunk,
+        vec![logical_module(
+            MODULE,
+            &[Member::source_alpha_target(
+                EXPORT,
+                case.local,
+                case.selector,
+            )],
+        )],
+    )
+}
+
+/// The case's outcome record in `outcomes`, if one is listed.
+fn target_record(outcomes: &[Value]) -> Option<Value> {
+    let mut records = outcomes
+        .iter()
+        .filter(|record| record["placement"]["entity"]["export"] == EXPORT);
+    let record = records.next().cloned();
+    assert!(records.next().is_none(), "{outcomes:#?}");
+    record
+}
+
+fn outcomes(report: &Value) -> &[Value] {
+    report["outcomes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("outcomes must be an array: {report:#}"))
+}
+
+/// `spec validate --modules --source-file`: the case's record, if listed.
+fn source_only_validate(case: &Case) -> Option<Value> {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("chunk.js");
     write(&source, case.chunk);
     let modules = dir.path().join("modules");
     write(
-        &modules.join("format.yaml"),
-        &source_matches_yaml(case, "target"),
+        &modules.join(format!("{MODULE}.yaml")),
+        &source_matches_yaml(case),
     );
     let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
     assert!(out.status.success(), "stderr={}", out.stderr);
-    serde_json::from_str(&out.stdout).unwrap()
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    target_record(outcomes(&report))
 }
 
-/// `spec match-selector` matches for the case's selector.
+/// `spec validate --spec`, the keep-going pass: the case's record, if listed.
+fn spec_validate(case: &Case) -> Option<Value> {
+    let fixture = write_validate_fixture_spec(fixture(case));
+    let out = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
+    assert!(out.status.success(), "stderr={}", out.stderr);
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    target_record(outcomes(&report))
+}
+
+/// `spec match-selector`: the probe's one record.
 fn match_selector(case: &Case) -> Value {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("chunk.js");
     write(&source, case.chunk);
-    run_match_selector(
+    let report = run_match_selector(
         &source,
         case.selector,
         &["--target-binding", case.local, "--no-slack"],
-    )
+    );
+    let [record] = outcomes(&report) else {
+        panic!("match-selector reports one outcome: {report:#}");
+    };
+    record.clone()
+}
+
+/// `record` without the fields a command legitimately lacks or spells its
+/// own way.
+fn without(record: &Value, fields: &[&str]) -> Value {
+    let mut record = record.clone();
+    let object = record.as_object_mut().unwrap();
+    for field in fields {
+        object.remove(*field);
+    }
+    record
 }
 
 fn assert_all_commands_resolve(case: &Case) {
-    let validated = validate(case);
     assert_eq!(
-        validated["total"], 0,
-        "spec validate --source-file: {validated:#}"
+        source_only_validate(case),
+        None,
+        "spec validate --source-file"
     );
+    assert_eq!(spec_validate(case), None, "spec validate --spec");
 
     let matched = match_selector(case);
-    assert_eq!(matched["unique"], true, "spec match-selector: {matched:#}");
-    assert_eq!(
-        matched["matches"][0]["binding_name"], case.subject,
-        "{matched:#}"
-    );
+    assert_eq!(matched["outcome"]["kind"], "resolved", "{matched:#}");
+    assert_eq!(matched["outcome"]["binding"], case.subject, "{matched:#}");
 
-    let fixture = run_fixture(FixtureOpts::new(
-        case.chunk,
-        vec![logical_module(
-            "format",
-            &[Member::source_alpha_target(
-                "target",
-                case.local,
-                case.selector,
-            )],
-        )],
-    ));
+    let fixture = run_fixture(fixture(case));
     assert_module_exports(
         &fixture.out_root,
-        "static/app/modules/format.js",
-        &["target"],
+        &format!("static/app/modules/{MODULE}.js"),
+        &[EXPORT],
         &[],
     );
+}
+
+/// Every command reports the same outcome record for the case's target,
+/// modulo the fields it legitimately lacks: the chunk is a path for the
+/// source-only commands, and `match-selector`'s probe has no spec placement.
+/// Returns the agreed outcome.
+fn assert_all_commands_agree(case: &Case) -> Value {
+    let rejected = run_dry_run_rejection_fixture(fixture(case));
+    let run = target_record(&read_selector_outcomes(&rejected.report_root))
+        .unwrap_or_else(|| panic!("run lists no outcome for the target:\n{}", rejected.stderr));
+    assert_eq!(run["chunk"], "static/app", "{run:#}");
+    assert_eq!(
+        run["placement"],
+        json!({
+            "logical_module": MODULE,
+            "entity": {"export": EXPORT},
+            "selector_kind": "source_matches",
+        }),
+        "{run:#}"
+    );
+
+    assert_eq!(
+        spec_validate(case).as_ref(),
+        Some(&run),
+        "spec validate --spec"
+    );
+    let source_only = source_only_validate(case).expect("spec validate --source-file record");
+    assert_eq!(
+        without(&source_only, &["chunk"]),
+        without(&run, &["chunk"]),
+        "spec validate --source-file"
+    );
+    assert_eq!(
+        without(&match_selector(case), &["chunk"]),
+        without(&run, &["chunk", "placement"]),
+        "spec match-selector"
+    );
+    run["outcome"].clone()
 }
 
 #[test]
@@ -244,16 +332,9 @@ export { actual };
 "#,
         ..VAR_HOISTED_OUT_OF_BLOCK
     };
-    let validated = validate(&case);
     assert_eq!(
-        validated["counts"]["unresolved_selector"], 1,
-        "{validated:#}"
-    );
-    let matched = match_selector(&case);
-    assert_eq!(matched["unique"], false, "{matched:#}");
-    assert!(
-        matched["matches"].as_array().unwrap().is_empty(),
-        "{matched:#}"
+        assert_all_commands_agree(&case),
+        json!({"kind": "no_match"})
     );
 }
 
@@ -375,13 +456,56 @@ export { actual };
 "#,
         ..ARROW_PARAM_SHADOWS_OUTER
     };
-    let validated = validate(&case);
     assert_eq!(
-        validated["counts"]["unresolved_selector"], 1,
-        "{validated:#}"
+        assert_all_commands_agree(&case),
+        json!({"kind": "no_match"})
     );
-    let matched = match_selector(&case);
-    assert_eq!(matched["unique"], false, "{matched:#}");
+}
+
+/// A selector matching two declarations names both, in every command.
+#[test]
+fn ambiguous_selector_lists_the_same_candidates() {
+    let case = Case {
+        chunk: r#"function a() {
+  return "shared";
+}
+function b() {
+  return "shared";
+}
+console.log(a(), b());
+export { a, b };
+"#,
+        selector: "function f() {\n  return \"shared\";\n}",
+        local: "f",
+        subject: "a",
+    };
+    assert_eq!(
+        assert_all_commands_agree(&case),
+        json!({
+            "kind": "ambiguous",
+            "candidates": [{"owner": 0, "binding": "a"}, {"owner": 1, "binding": "b"}],
+            "truncated": false,
+        })
+    );
+}
+
+/// One place past the candidate cap is `too_broad` in every command, the
+/// source-only ones included, which never run the joint solve.
+#[test]
+fn selector_over_the_candidate_cap_is_too_broad() {
+    let chunk = (0..101)
+        .map(|index| format!("const a_{index} = f();\n"))
+        .collect::<String>();
+    let case = Case {
+        chunk: chunk.leak(),
+        selector: "const x = f();",
+        local: "x",
+        subject: "a_0",
+    };
+    assert_eq!(
+        assert_all_commands_agree(&case),
+        json!({"kind": "too_broad", "count": 101, "limit": 100})
+    );
 }
 
 /// `const ANYTHING = <init>` holes the declarator's name only: the initializer is

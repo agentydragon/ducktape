@@ -97,6 +97,11 @@ message SelectorCpSatResponse {
   // the targets outside every conflict set, solved with the conflicting
   // targets disabled.
   repeated ConflictSet conflicts = 6;
+  // Set only with SOLVER_STATUS_UNKNOWN: the projection variables proven to
+  // take one value in every solution before the solver stopped. Each takes
+  // the value it has in every row of `assignments`. Every other projection
+  // variable is undecided, whatever values the rows show for it.
+  repeated uint32 fixed_variable_ids = 7;
 }
 
 message ConflictSet {

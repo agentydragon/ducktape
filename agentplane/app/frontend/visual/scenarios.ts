@@ -250,6 +250,19 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ["[data-connection-id]"],
     openSettings: true,
   },
+  // Where the MCP-linkage OAuth callback lands: Settings, open on its MCP servers tab.
+  mcp_servers: {
+    element: "#app",
+    route: "/mcp-servers",
+    viewport: { width: 1200, height: 1100 },
+    readySelectors: ["[data-mcp-server]"],
+  },
+  mcp_servers_phone: {
+    element: "#app",
+    route: "/mcp-servers",
+    viewport: { width: 390, height: 1450 },
+    readySelectors: ["[data-mcp-server]"],
+  },
 
   consent: { element: "#app", route: CONSENT_ROUTE, viewport: { width: 1200, height: 1100 } },
   consent_phone: { element: "#app", route: CONSENT_ROUTE, viewport: { width: 390, height: 1100 } },
