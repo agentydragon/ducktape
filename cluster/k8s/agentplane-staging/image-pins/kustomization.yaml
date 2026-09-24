@@ -18,4 +18,4 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
     newTag: devel-20260924051032-a3903d2 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate
-    newTag: devel-20260924010740-5ce04fd # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
+    newTag: devel-20260924053541-93447f7 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
