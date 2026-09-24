@@ -120,6 +120,43 @@ pub struct Candidate {
     pub binding: Option<String>,
 }
 
+/// The top-level statement that declares a binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Declaration {
+    /// Index of the statement in the chunk body.
+    pub owner: usize,
+    pub kind: DeclarationKind,
+}
+
+/// The keyword a top-level binding is declared with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeclarationKind {
+    Function,
+    Class,
+    Var,
+    Let,
+    Const,
+    Using,
+    AwaitUsing,
+    Import,
+}
+
+impl DeclarationKind {
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Function => "function",
+            Self::Class => "class",
+            Self::Var => "var",
+            Self::Let => "let",
+            Self::Const => "const",
+            Self::Using => "using",
+            Self::AwaitUsing => "await using",
+            Self::Import => "import",
+        }
+    }
+}
+
 /// A top-level statement a selector does not match, with where it first
 /// diverges; higher `score` is closer.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -212,6 +249,7 @@ pub enum Outcome {
     /// Resolved to `binding`, which `claimed_by` already claims.
     DuplicateClaim {
         binding: String,
+        declaration: Declaration,
         claimed_by: EntityRef,
     },
     /// The selector could not be evaluated: it does not parse, uses an
@@ -451,10 +489,13 @@ impl Outcome {
             }
             Self::DuplicateClaim {
                 binding,
+                declaration,
                 claimed_by,
             } => format!(
-                "binding {binding:?} is already claimed by {} as `{}`; each binding may belong to \
-                 exactly one logical module",
+                "binding {binding:?} (`{}` at body[{}]) is already claimed by {} as `{}`; each \
+                 binding may belong to exactly one logical module",
+                declaration.kind.keyword(),
+                declaration.owner,
                 claimed_by.logical_module,
                 match &claimed_by.entity {
                     Some(Entity::Export(name)) => name.as_str(),
