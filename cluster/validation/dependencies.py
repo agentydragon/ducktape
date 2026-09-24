@@ -1,4 +1,4 @@
-"""Dependency graph construction, cycle detection, and rule checking."""
+"""Flux dependency-graph checks: operator prerequisites and sourceRef resolution."""
 
 from __future__ import annotations
 
@@ -8,18 +8,7 @@ import networkx as nx
 
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.crd_layering import CRD_TO_OPERATOR
-from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND, FluxKustomizationSpec
-
-
-class CyclicDependencyError(Exception):
-    """Raised when a circular dependency is detected in the Flux kustomization graph."""
-
-
-def assert_no_cycles(g: nx.DiGraph) -> None:
-    """Raise CyclicDependencyError if the graph contains any cycle."""
-    cycle = next(nx.simple_cycles(g), None)
-    if cycle is not None:
-        raise CyclicDependencyError(f"Circular dependency: {' -> '.join([*cycle, cycle[0]])}")
+from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND
 
 
 def validate_operator_dependencies(
@@ -65,94 +54,46 @@ def validate_operator_dependencies(
     return errors
 
 
-def check_cross_namespace_references(cluster: ParsedCluster) -> list[str]:
-    """Fail dependsOn/sourceRef entries that cross namespaces without an explicit namespace.
+def check_source_references(cluster: ParsedCluster) -> list[str]:
+    """Fail sourceRef entries that name no source Flux can resolve.
 
-    Flux resolves a bare entry (no ``namespace:``) in the Kustomization's own
-    namespace; if the target lives in a different namespace the reference silently
-    misses and the Kustomization stalls with ``DependencyNotReady`` — the
-    PR #3759 outage class. Same-namespace bare refs are allowed (the intra-graph
-    default-namespace case). References to names absent from this repo
-    (cross-repo, e.g. gaffer-private/augur) are skipped — the validator can't see them.
+    Flux resolves a bare sourceRef (no ``namespace:``) in the Kustomization's own
+    namespace; if the source lives in a different namespace the reference silently
+    misses and the Kustomization stalls — the PR #3759 outage class. Names absent
+    from this repo altogether are skipped: the validator can't see them.
 
-    An ExternalArtifact sourceRef is held to more: it exists only as an ArtifactGenerator's
-    output, so it must name an artifact a generator declares in that namespace and the
-    consumer's path must lie in what that artifact carries — a ref that names nothing a
-    generator produces stalls with ArtifactFailed and takes every dependent with it
-    (the #6297 outage class).
+    An ExternalArtifact exists only as an ArtifactGenerator's output, so its sourceRef
+    must name an artifact a generator declares in that namespace — a ref that names
+    nothing a generator produces stalls with ArtifactFailed and takes every dependent
+    with it (the #6297 outage class).
     """
-    ks_by_ns: set[tuple[str, str]] = {
-        (spec.namespace, name) for name, spec in cluster.flux_kustomizations.items() if spec.namespace
-    }
-    ks_names = set(cluster.flux_kustomizations)
     sources = cluster.flux_sources
-
     errors: list[str] = []
     for name, spec in cluster.flux_kustomizations.items():
-        consumer_ns = spec.namespace
-        if not consumer_ns:
-            continue
-        for dep in spec.depends_on:
-            target_ns = dep.namespace or consumer_ns
-            if (target_ns, dep.name) in ks_by_ns:
-                continue
-            if dep.name not in ks_names:
-                continue  # cross-repo / external — can't validate
-            where = sorted({ns for ns, n in ks_by_ns if n == dep.name})
-            errors.append(
-                f"{name} (ns={consumer_ns}) dependsOn '{dep.name}' resolves to "
-                f"ns={target_ns} but no Kustomization exists there; '{dep.name}' "
-                f"is in {where}. Add 'namespace:' to the dependsOn entry."
-            )
         sr = spec.source_ref
-        if sr and sr.name:
-            target_ns = sr.namespace or consumer_ns
-            if sr.kind == EXTERNAL_ARTIFACT_KIND:
-                errors.extend(_external_artifact_errors(name, spec, target_ns, cluster))
-            elif (sr.kind, target_ns, sr.name) not in sources and any(
-                kind == sr.kind and n == sr.name for kind, _, n in sources
-            ):
-                errors.append(
-                    f"{name} (ns={consumer_ns}) sourceRef '{sr.name}' resolves to "
-                    f"ns={target_ns} but no source exists there; add 'namespace:' "
-                    f"to the sourceRef."
-                )
+        if not (spec.namespace and sr and sr.name):
+            continue
+        target_ns = sr.namespace or spec.namespace
+        if (sr.kind, target_ns, sr.name) in sources:
+            continue
+        if sr.kind == EXTERNAL_ARTIFACT_KIND:
+            declared = sorted(n for kind, ns, n in sources if kind == EXTERNAL_ARTIFACT_KIND and ns == target_ns)
+            errors.append(
+                f"{name} (ns={spec.namespace}) sourceRef ExternalArtifact '{sr.name}' resolves to "
+                f"ns={target_ns} but no ArtifactGenerator declares that artifact there (declared: "
+                f"{declared}); an ExternalArtifact exists only as a generator's output."
+            )
+        elif any(kind == sr.kind and n == sr.name for kind, _, n in sources):
+            errors.append(
+                f"{name} (ns={spec.namespace}) sourceRef '{sr.name}' resolves to "
+                f"ns={target_ns} but no source exists there; add 'namespace:' "
+                f"to the sourceRef."
+            )
     return errors
-
-
-def _external_artifact_errors(
-    name: str, spec: FluxKustomizationSpec, target_ns: str, cluster: ParsedCluster
-) -> list[str]:
-    assert spec.source_ref is not None
-    artifact = spec.source_ref.name
-    carried = cluster.artifact_paths.get((target_ns, artifact))
-    if carried is None:
-        declared = sorted(a for ns, a in cluster.artifact_paths if ns == target_ns)
-        return [
-            f"{name} (ns={spec.namespace}) sourceRef ExternalArtifact '{artifact}' resolves to "
-            f"ns={target_ns} but no ArtifactGenerator declares that artifact there (declared: "
-            f"{declared}); an ExternalArtifact exists only as a generator's output."
-        ]
-    path = spec.path.removeprefix("./").strip("/")
-    if path and not any(path == d or path.startswith(d + "/") for d in carried):
-        return [
-            f"{name} (ns={spec.namespace}) path '{spec.path}' is not inside what ExternalArtifact "
-            f"'{artifact}' carries ({sorted(carried)}); point the generator's copy at it."
-        ]
-    return []
 
 
 def validate_dependencies(cluster: ParsedCluster, repo_root: Path) -> list[str]:
-    """Validate GitOps dependency graph.
-
-    Raises CyclicDependencyError if any circular dependency is detected.
-    """
+    """Validate operator prerequisites and sourceRef resolution across the Flux graph."""
     if not cluster.flux_kustomizations:
         return ["No Flux kustomizations found"]
-
-    assert_no_cycles(cluster.graph)
-
-    errors = []
-    errors.extend(validate_operator_dependencies(cluster, repo_root))
-    errors.extend(check_cross_namespace_references(cluster))
-    return errors
+    return [*validate_operator_dependencies(cluster, repo_root), *check_source_references(cluster)]

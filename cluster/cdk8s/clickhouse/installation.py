@@ -67,11 +67,9 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-NAMESPACE = "clickhouse"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
-_NAME = "clickhouse"
 _KEEPER_NAME = "clickhouse-keeper"
-_LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/instance": _NAME}
+_LABELS = {"app.kubernetes.io/name": client.NAME, "app.kubernetes.io/instance": client.NAME}
 _KEEPER_LABELS = {"app.kubernetes.io/name": _KEEPER_NAME, "app.kubernetes.io/instance": _KEEPER_NAME}
 _ADMIN_CREDENTIALS = "clickhouse-admin-credentials"  # admin-credentials.sops.yaml
 _METRICS_PORT = 9363
@@ -238,7 +236,7 @@ def clickhouse_chart(app: App) -> Chart:
     ClickHouseInstallation(
         chart,
         "installation",
-        metadata=metadata(_NAME, NAMESPACE),
+        metadata=metadata(client.NAME, client.NAMESPACE),
         spec=ClickHouseInstallationSpec(
             configuration=ClickHouseInstallationSpecConfiguration(
                 zookeeper=ClickHouseInstallationSpecConfigurationZookeeper(
@@ -247,7 +245,7 @@ def clickhouse_chart(app: App) -> Chart:
                     # versioned CRD schema while Kubernetes removes unavailable endpoints.
                     nodes=[
                         ClickHouseInstallationSpecConfigurationZookeeperNodes(
-                            host=f"keeper-{_KEEPER_NAME}.{NAMESPACE}.svc.cluster.local", port=2181
+                            host=f"keeper-{_KEEPER_NAME}.{client.NAMESPACE}.svc.cluster.local", port=2181
                         )
                     ],
                     session_timeout_ms=30000,
@@ -361,7 +359,7 @@ def clickhouse_chart(app: App) -> Chart:
     PodMonitor(
         chart,
         "podmonitor",
-        metadata=metadata(_NAME, NAMESPACE),
+        metadata=metadata(client.NAME, client.NAMESPACE),
         spec=PodMonitorSpec(
             selector=PodMonitorSpecSelector(match_labels=_LABELS),
             pod_metrics_endpoints=[
@@ -380,7 +378,7 @@ def keeper_chart(app: App) -> Chart:
     ClickHouseKeeperInstallation(
         chart,
         "installation",
-        metadata=metadata(_KEEPER_NAME, NAMESPACE),
+        metadata=metadata(_KEEPER_NAME, client.NAMESPACE),
         spec=ClickHouseKeeperInstallationSpec(
             configuration=ClickHouseKeeperInstallationSpecConfiguration(
                 clusters=[
@@ -472,16 +470,16 @@ def service_chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(
-            name=_NAME,
-            namespace=NAMESPACE,
+            name=client.NAME,
+            namespace=client.NAMESPACE,
             annotations={"description": "Stable client endpoint for the shared ClickHouse installation."},
         ),
         spec=k8s.ServiceSpec(
             # The operator's labels on a ready replica of this installation.
             selector={
                 "clickhouse.altinity.com/app": "chop",
-                "clickhouse.altinity.com/chi": _NAME,
-                "clickhouse.altinity.com/namespace": NAMESPACE,
+                "clickhouse.altinity.com/chi": client.NAME,
+                "clickhouse.altinity.com/namespace": client.NAMESPACE,
                 "clickhouse.altinity.com/ready": "yes",
             },
             ports=[
@@ -522,7 +520,7 @@ def networkpolicy_chart(app: App) -> Chart:
     k8s.KubeNetworkPolicy(
         chart,
         "clickhouse",
-        metadata=k8s.ObjectMeta(name="clickhouse-ingress", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="clickhouse-ingress", namespace=client.NAMESPACE),
         spec=k8s.NetworkPolicySpec(
             pod_selector=k8s.LabelSelector(match_labels=_LABELS),
             policy_types=["Ingress"],
@@ -564,7 +562,7 @@ def networkpolicy_chart(app: App) -> Chart:
     k8s.KubeNetworkPolicy(
         chart,
         "keeper",
-        metadata=k8s.ObjectMeta(name="clickhouse-keeper-ingress", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="clickhouse-keeper-ingress", namespace=client.NAMESPACE),
         spec=k8s.NetworkPolicySpec(
             pod_selector=k8s.LabelSelector(match_labels=_KEEPER_LABELS),
             policy_types=["Ingress"],
@@ -588,7 +586,7 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
         "role",
         metadata=k8s.ObjectMeta(
             name=name,
-            namespace=NAMESPACE,
+            namespace=client.NAMESPACE,
             annotations={"description": "Read-only ClickHouse operator and observability resource status."},
         ),
         rules=[
@@ -615,7 +613,7 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
         "binding",
         metadata=k8s.ObjectMeta(
             name=name,
-            namespace=NAMESPACE,
+            namespace=client.NAMESPACE,
             annotations={"description": "Binds Haku and public-coder to secret-free ClickHouse status."},
         ),
         role_ref=k8s.RoleRef(api_group=rbac_group, kind=role.kind, name=role.name),

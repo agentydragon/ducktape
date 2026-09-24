@@ -1,0 +1,359 @@
+diff --git a/internal/api/middleware/response_writer.go b/internal/api/middleware/response_writer.go
+index 315e4ee..2e1d730 100644
+--- a/internal/api/middleware/response_writer.go
++++ b/internal/api/middleware/response_writer.go
+@@ -48,6 +48,7 @@ type ResponseWriterWrapper struct {
+ 	headers             map[string][]string        // headers stores the response headers.
+ 	logOnErrorOnly      bool                       // logOnErrorOnly enables logging only when an error response is detected.
+ 	firstChunkTimestamp time.Time                  // firstChunkTimestamp captures TTFB for streaming responses.
++	firstByteAt         time.Time                  // firstByteAt is when body bytes first reached the client, logged or not.
+ }
+ 
+ // NewResponseWriterWrapper creates and initializes a new ResponseWriterWrapper.
+@@ -82,6 +83,9 @@ func (w *ResponseWriterWrapper) Write(data []byte) (int, error) {
+ 
+ 	// CRITICAL: Write to client first (zero latency)
+ 	n, err := w.ResponseWriter.Write(data)
++	if w.firstByteAt.IsZero() && n > 0 {
++		w.firstByteAt = time.Now()
++	}
+ 
+ 	// THEN: Handle logging based on response type
+ 	if w.isStreaming && w.chunkChannel != nil {
+@@ -130,6 +134,9 @@ func (w *ResponseWriterWrapper) WriteString(data string) (int, error) {
+ 
+ 	// CRITICAL: Write to client first (zero latency)
+ 	n, err := w.ResponseWriter.WriteString(data)
++	if w.firstByteAt.IsZero() && n > 0 {
++		w.firstByteAt = time.Now()
++	}
+ 
+ 	// THEN: Capture for logging
+ 	if w.isStreaming && w.chunkChannel != nil {
+@@ -759,3 +766,8 @@ func hasActionableError(c *gin.Context, statusCode int, apiErrors []*interfaces.
+ 	}
+ 	return statusCode >= http.StatusBadRequest
+ }
++
++// FirstByteAt reports when body bytes first reached the client, for the access log.
++func (w *ResponseWriterWrapper) FirstByteAt() time.Time {
++	return w.firstByteAt
++}
+diff --git a/internal/api/middleware/response_writer_test.go b/internal/api/middleware/response_writer_test.go
+index b004175..7ad2daa 100644
+--- a/internal/api/middleware/response_writer_test.go
++++ b/internal/api/middleware/response_writer_test.go
+@@ -378,3 +378,28 @@ func TestFinalizeIncludes500InForceLog(t *testing.T) {
+ 		t.Fatalf("expected 1 logged call for 500 status, got: %v", logger.loggedCalls)
+ 	}
+ }
++
++func TestResponseWriterWrapperRecordsFirstByteWithLoggingDisabled(t *testing.T) {
++	gin.SetMode(gin.TestMode)
++	c, _ := gin.CreateTestContext(httptest.NewRecorder())
++	wrapper := NewResponseWriterWrapper(c.Writer, nil, &RequestInfo{})
++	wrapper.logOnErrorOnly = true
++
++	if !wrapper.FirstByteAt().IsZero() {
++		t.Fatalf("first byte recorded before anything was written")
++	}
++	before := time.Now()
++	if _, err := wrapper.WriteString("data: {}\n\n"); err != nil {
++		t.Fatalf("WriteString: %v", err)
++	}
++	first := wrapper.FirstByteAt()
++	if first.Before(before) {
++		t.Fatalf("first byte %v precedes the write at %v", first, before)
++	}
++	if _, err := wrapper.Write([]byte("data: {}\n\n")); err != nil {
++		t.Fatalf("Write: %v", err)
++	}
++	if !wrapper.FirstByteAt().Equal(first) {
++		t.Fatalf("a later write moved the first byte from %v to %v", first, wrapper.FirstByteAt())
++	}
++}
+diff --git a/internal/logging/gin_logger.go b/internal/logging/gin_logger.go
+index b09e55d..214bf19 100644
+--- a/internal/logging/gin_logger.go
++++ b/internal/logging/gin_logger.go
+@@ -9,6 +9,7 @@ import (
+ 	"net/http"
+ 	"runtime/debug"
+ 	"strings"
++	"sync"
+ 	"time"
+ 
+ 	"github.com/gin-gonic/gin"
+@@ -25,8 +26,9 @@ var aiAPIPrefixes = []string{
+ }
+ 
+ const (
+-	skipGinLogKey  = "__gin_skip_request_logging__"
+-	creditsUsedKey = "__antigravity_credits_used__"
++	skipGinLogKey     = "__gin_skip_request_logging__"
++	creditsUsedKey    = "__antigravity_credits_used__"
++	upstreamTimingKey = "__upstream_timing__"
+ )
+ 
+ // GinLogrusLogger returns a Gin middleware handler that logs HTTP requests and responses
+@@ -88,6 +90,7 @@ func GinLogrusLogger() gin.HandlerFunc {
+ 		if creditsUsed(c) {
+ 			logLine += " [credits]"
+ 		}
++		logLine += upstreamTimingSuffix(c, start)
+ 		if errorMessage != "" {
+ 			logLine = logLine + " | " + errorMessage
+ 		}
+@@ -170,3 +173,97 @@ func creditsUsed(c *gin.Context) bool {
+ 	flag, ok := val.(bool)
+ 	return ok && flag
+ }
++
++// upstreamTiming holds the access log's marks for a request's upstream calls. A retry restarts
++// the marks, so they describe the attempt that answered.
++type upstreamTiming struct {
++	mu         sync.Mutex
++	attempts   int
++	sent       time.Time
++	headers    time.Time
++	firstChunk time.Time
++}
++
++func upstreamTimingOf(c *gin.Context) *upstreamTiming {
++	if value, exists := c.Get(upstreamTimingKey); exists {
++		if timing, ok := value.(*upstreamTiming); ok {
++			return timing
++		}
++	}
++	timing := &upstreamTiming{}
++	c.Set(upstreamTimingKey, timing)
++	return timing
++}
++
++// MarkUpstreamSent records that an upstream attempt is about to be sent.
++func MarkUpstreamSent(c *gin.Context) {
++	if c == nil {
++		return
++	}
++	timing := upstreamTimingOf(c)
++	timing.mu.Lock()
++	defer timing.mu.Unlock()
++	timing.attempts++
++	timing.sent = time.Now()
++	timing.headers = time.Time{}
++	timing.firstChunk = time.Time{}
++}
++
++// MarkUpstreamHeaders records that the current upstream attempt's response headers arrived.
++func MarkUpstreamHeaders(c *gin.Context) {
++	if c == nil {
++		return
++	}
++	timing := upstreamTimingOf(c)
++	timing.mu.Lock()
++	defer timing.mu.Unlock()
++	if timing.headers.IsZero() {
++		timing.headers = time.Now()
++	}
++}
++
++// MarkUpstreamChunk records that a response body chunk arrived from the current upstream attempt.
++func MarkUpstreamChunk(c *gin.Context) {
++	if c == nil {
++		return
++	}
++	timing := upstreamTimingOf(c)
++	timing.mu.Lock()
++	defer timing.mu.Unlock()
++	if timing.firstChunk.IsZero() {
++		timing.firstChunk = time.Now()
++	}
++}
++
++// FirstByteReporter is a response writer that knows when it first wrote body bytes to the client.
++type FirstByteReporter interface {
++	FirstByteAt() time.Time
++}
++
++// upstreamTimingSuffix renders the marks as offsets from the request's arrival, or nothing for a
++// request that made no upstream call: " | upstream attempts=1 sent=41ms headers=962ms ...".
++func upstreamTimingSuffix(c *gin.Context, start time.Time) string {
++	value, exists := c.Get(upstreamTimingKey)
++	if !exists {
++		return ""
++	}
++	timing, ok := value.(*upstreamTiming)
++	if !ok {
++		return ""
++	}
++	timing.mu.Lock()
++	defer timing.mu.Unlock()
++	parts := []string{fmt.Sprintf("attempts=%d", timing.attempts)}
++	offset := func(name string, at time.Time) {
++		if !at.IsZero() {
++			parts = append(parts, fmt.Sprintf("%s=%v", name, at.Sub(start).Truncate(time.Millisecond)))
++		}
++	}
++	offset("sent", timing.sent)
++	offset("headers", timing.headers)
++	offset("first_chunk", timing.firstChunk)
++	if reporter, ok := c.Writer.(FirstByteReporter); ok {
++		offset("first_byte", reporter.FirstByteAt())
++	}
++	return " | upstream " + strings.Join(parts, " ")
++}
+diff --git a/internal/logging/upstream_timing_test.go b/internal/logging/upstream_timing_test.go
+new file mode 100644
+index 0000000..232ac7f
+--- /dev/null
++++ b/internal/logging/upstream_timing_test.go
+@@ -0,0 +1,82 @@
++package logging
++
++import (
++	"net/http"
++	"net/http/httptest"
++	"regexp"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/gin-gonic/gin"
++	log "github.com/sirupsen/logrus"
++	logtest "github.com/sirupsen/logrus/hooks/test"
++)
++
++// firstByteWriter stands in for the request-logging wrapper, which reports when it first wrote.
++type firstByteWriter struct {
++	gin.ResponseWriter
++	at time.Time
++}
++
++func (w *firstByteWriter) FirstByteAt() time.Time { return w.at }
++
++func accessLogLine(t *testing.T, handler gin.HandlerFunc) string {
++	t.Helper()
++	gin.SetMode(gin.TestMode)
++	logger := log.StandardLogger()
++	previousHooks := logger.ReplaceHooks(make(log.LevelHooks))
++	previousLevel := logger.GetLevel()
++	hook := logtest.NewLocal(logger)
++	logger.SetLevel(log.InfoLevel)
++	t.Cleanup(func() { logger.ReplaceHooks(previousHooks); logger.SetLevel(previousLevel) })
++
++	engine := gin.New()
++	engine.Use(GinLogrusLogger())
++	engine.POST("/v1/responses", handler)
++	engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/responses", nil))
++	entries := hook.AllEntries()
++	if len(entries) != 1 {
++		t.Fatalf("got %d access log entries, want 1", len(entries))
++	}
++	return entries[0].Message
++}
++
++var offsetPattern = `[0-9.]+(ms|s)`
++
++func TestGinLogrusLoggerAppendsUpstreamTiming(t *testing.T) {
++	line := accessLogLine(t, func(c *gin.Context) {
++		MarkUpstreamSent(c)
++		MarkUpstreamHeaders(c)
++		MarkUpstreamChunk(c)
++		MarkUpstreamChunk(c)
++		c.Writer = &firstByteWriter{ResponseWriter: c.Writer, at: time.Now()}
++		c.Status(http.StatusOK)
++	})
++	pattern := regexp.MustCompile(` \| upstream attempts=1 sent=` + offsetPattern + ` headers=` + offsetPattern +
++		` first_chunk=` + offsetPattern + ` first_byte=` + offsetPattern + `$`)
++	if !pattern.MatchString(line) {
++		t.Fatalf("access log %q does not end with the upstream timing", line)
++	}
++}
++
++func TestGinLogrusLoggerRetryRestartsUpstreamTiming(t *testing.T) {
++	line := accessLogLine(t, func(c *gin.Context) {
++		MarkUpstreamSent(c)
++		MarkUpstreamHeaders(c)
++		MarkUpstreamChunk(c)
++		MarkUpstreamSent(c)
++		c.Status(http.StatusOK)
++	})
++	pattern := regexp.MustCompile(` \| upstream attempts=2 sent=` + offsetPattern + `$`)
++	if !pattern.MatchString(line) {
++		t.Fatalf("access log %q should carry only the second attempt's send", line)
++	}
++}
++
++func TestGinLogrusLoggerOmitsUpstreamTimingWithoutUpstreamCall(t *testing.T) {
++	line := accessLogLine(t, func(c *gin.Context) { c.Status(http.StatusOK) })
++	if strings.Contains(line, "upstream") {
++		t.Fatalf("access log %q carries upstream timing for a request that made no upstream call", line)
++	}
++}
+diff --git a/internal/runtime/executor/helps/logging_helpers.go b/internal/runtime/executor/helps/logging_helpers.go
+index 7f9b678..bb0ceba 100644
+--- a/internal/runtime/executor/helps/logging_helpers.go
++++ b/internal/runtime/executor/helps/logging_helpers.go
+@@ -63,6 +63,7 @@ func requestLogCaptureEnabled(cfg *config.Config) bool {
+ 
+ // RecordAPIRequest stores the upstream request metadata in Gin context for request logging.
+ func RecordAPIRequest(ctx context.Context, cfg *config.Config, info UpstreamRequestLog) {
++	markUpstream(ctx, logging.MarkUpstreamSent)
+ 	if cfg == nil || cfg.CommercialMode {
+ 		return
+ 	}
+@@ -189,6 +190,7 @@ func newAPIRequestLogBuilder(index int, info UpstreamRequestLog, timestamp time.
+ 
+ // RecordAPIResponseMetadata captures upstream response status/header information for the latest attempt.
+ func RecordAPIResponseMetadata(ctx context.Context, cfg *config.Config, status int, headers http.Header) {
++	markUpstream(ctx, logging.MarkUpstreamHeaders)
+ 	logging.SetResponseHeaders(ctx, headers)
+ 	if !requestLogCaptureEnabled(cfg) {
+ 		return
+@@ -243,6 +245,7 @@ func RecordAPIResponseError(ctx context.Context, cfg *config.Config, err error)
+ 
+ // AppendAPIResponseChunk appends an upstream response chunk to Gin context for request logging.
+ func AppendAPIResponseChunk(ctx context.Context, cfg *config.Config, chunk []byte) {
++	markUpstream(ctx, logging.MarkUpstreamChunk)
+ 	if !requestLogCaptureEnabled(cfg) {
+ 		return
+ 	}
+@@ -287,6 +290,7 @@ func AppendAPIResponseChunk(ctx context.Context, cfg *config.Config, chunk []byt
+ 
+ // RecordAPIWebsocketRequest stores an upstream websocket request event in Gin context.
+ func RecordAPIWebsocketRequest(ctx context.Context, cfg *config.Config, info UpstreamRequestLog) {
++	markUpstream(ctx, logging.MarkUpstreamSent)
+ 	if !requestLogCaptureEnabled(cfg) {
+ 		return
+ 	}
+@@ -319,6 +323,7 @@ func RecordAPIWebsocketRequest(ctx context.Context, cfg *config.Config, info Ups
+ 
+ // RecordAPIWebsocketHandshake stores the upstream websocket handshake response metadata.
+ func RecordAPIWebsocketHandshake(ctx context.Context, cfg *config.Config, status int, headers http.Header) {
++	markUpstream(ctx, logging.MarkUpstreamHeaders)
+ 	logging.SetResponseHeaders(ctx, headers)
+ 	if !requestLogCaptureEnabled(cfg) {
+ 		return
+@@ -378,6 +383,7 @@ func WebsocketUpgradeRequestURL(rawURL string) string {
+ 
+ // AppendAPIWebsocketResponse stores an upstream websocket response frame in Gin context.
+ func AppendAPIWebsocketResponse(ctx context.Context, cfg *config.Config, payload []byte) {
++	markUpstream(ctx, logging.MarkUpstreamChunk)
+ 	if !requestLogCaptureEnabled(cfg) {
+ 		return
+ 	}
+@@ -429,6 +435,14 @@ func RecordAPIWebsocketError(ctx context.Context, cfg *config.Config, stage stri
+ 	appendAPIWebsocketTimeline(ginCtx, []byte(builder.String()))
+ }
+ 
++// markUpstream records an access-log timing mark whether or not request logging is enabled.
++func markUpstream(ctx context.Context, mark func(*gin.Context)) {
++	if ctx == nil {
++		return
++	}
++	mark(ginContextFrom(ctx))
++}
++
+ func ginContextFrom(ctx context.Context) *gin.Context {
+ 	ginCtx, _ := ctx.Value("gin").(*gin.Context)
+ 	return ginCtx

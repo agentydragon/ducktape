@@ -9,7 +9,6 @@ use std::error::Error;
 use std::fmt;
 
 use analysis::{ChunkId, OwnerId, StatementOrdinal};
-use chunk_facts::{ChunkFacts, NodeId, NodeKind};
 use serde::{Deserialize, Serialize};
 
 /// Dense id of a solver variable in a [`SelectorProgram`].
@@ -27,9 +26,7 @@ pub struct SelectorTargetId(pub usize);
 #[serde(rename_all = "snake_case")]
 pub enum VariableDomain {
     Owner,
-    AstNode,
     String,
-    StatementOrdinal,
 }
 
 /// One variable in the global selector constraint program.
@@ -51,23 +48,9 @@ pub enum OwnerTerm {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum NodeTerm {
-    Var { id: SelectorVariableId },
-    Const { node: NodeId },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StringTerm {
     Var { id: SelectorVariableId },
     Const { value: String },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum OrdinalTerm {
-    Var { id: SelectorVariableId },
-    Const { ordinal: StatementOrdinal },
 }
 
 /// Materializer-facing shape of a target once the solver has selected an owner.
@@ -133,14 +116,6 @@ pub enum SelectorAtom {
         owner: OwnerTerm,
         statement_kind: StringTerm,
     },
-    OwnerStatementOrdinal {
-        owner: OwnerTerm,
-        ordinal: OrdinalTerm,
-    },
-    OwnerTopLevelRoot {
-        owner: OwnerTerm,
-        root: NodeTerm,
-    },
     OwnerDeclaresBinding {
         owner: OwnerTerm,
         binding: StringTerm,
@@ -167,82 +142,6 @@ pub enum SelectorAtom {
     OwnerAliasesOwner {
         owner: OwnerTerm,
         aliased: OwnerTerm,
-    },
-    AstKind {
-        node: NodeTerm,
-        node_kind: NodeKind,
-    },
-    AstChild {
-        parent: NodeTerm,
-        index: u32,
-        child: NodeTerm,
-    },
-    AstChildListPattern {
-        parent: NodeTerm,
-        start_index: u32,
-        segments: Vec<Vec<NodeTerm>>,
-        anchored_left: bool,
-        anchored_right: bool,
-    },
-    AstSuperClass {
-        class_node: NodeTerm,
-        super_class: NodeTerm,
-    },
-    AstChildCount {
-        node: NodeTerm,
-        count: u32,
-    },
-    AstStringLiteral {
-        node: NodeTerm,
-        value: StringTerm,
-    },
-    AstStringLiteralMatchingRegex {
-        node: NodeTerm,
-        pattern: StringTerm,
-    },
-    AstNumberLiteral {
-        node: NodeTerm,
-        value: StringTerm,
-    },
-    AstBoolLiteral {
-        node: NodeTerm,
-        value: bool,
-    },
-    AstIdentifierName {
-        node: NodeTerm,
-        value: StringTerm,
-    },
-    AstPropertyName {
-        node: NodeTerm,
-        value: StringTerm,
-    },
-    AstBareProperty {
-        node: NodeTerm,
-        key: StringTerm,
-        identifier: StringTerm,
-        is_binding: bool,
-    },
-    AstOperator {
-        node: NodeTerm,
-        value: StringTerm,
-    },
-    AstRegexLiteral {
-        node: NodeTerm,
-        pattern: StringTerm,
-        flags: StringTerm,
-    },
-    AstTopLevel {
-        node: NodeTerm,
-        ordinal: OrdinalTerm,
-    },
-    OrdinalOffset {
-        base: OrdinalTerm,
-        ordinal: OrdinalTerm,
-        offset: i32,
-    },
-    OrdinalBefore {
-        before: OrdinalTerm,
-        after: OrdinalTerm,
     },
     ReadsMember {
         owner: OwnerTerm,
@@ -292,14 +191,6 @@ pub enum SelectorAtom {
         property: StringTerm,
         referenced_by: OwnerTerm,
     },
-    Equal {
-        left: SelectorVariableId,
-        right: SelectorVariableId,
-    },
-    NotEqual {
-        left: SelectorVariableId,
-        right: SelectorVariableId,
-    },
 }
 
 impl SelectorAtom {
@@ -312,14 +203,6 @@ impl SelectorAtom {
             } => {
                 collect_owner_term_variables(owner, &mut variables);
                 collect_string_term_variables(statement_kind, &mut variables);
-            }
-            Self::OwnerStatementOrdinal { owner, ordinal } => {
-                collect_owner_term_variables(owner, &mut variables);
-                collect_ordinal_term_variables(ordinal, &mut variables);
-            }
-            Self::OwnerTopLevelRoot { owner, root } => {
-                collect_owner_term_variables(owner, &mut variables);
-                collect_node_term_variables(root, &mut variables);
             }
             Self::OwnerDeclaresBinding { owner, binding }
             | Self::OwnerExportName {
@@ -353,76 +236,6 @@ impl SelectorAtom {
             } => {
                 collect_owner_term_variables(owner, &mut variables);
                 collect_owner_term_variables(referenced, &mut variables);
-            }
-            Self::AstKind { node, .. } | Self::AstChildCount { node, .. } => {
-                collect_node_term_variables(node, &mut variables);
-            }
-            Self::AstChild { parent, child, .. } => {
-                collect_node_term_variables(parent, &mut variables);
-                collect_node_term_variables(child, &mut variables);
-            }
-            Self::AstChildListPattern {
-                parent, segments, ..
-            } => {
-                collect_node_term_variables(parent, &mut variables);
-                for segment in segments {
-                    for node in segment {
-                        collect_node_term_variables(node, &mut variables);
-                    }
-                }
-            }
-            Self::AstSuperClass {
-                class_node,
-                super_class,
-            } => {
-                collect_node_term_variables(class_node, &mut variables);
-                collect_node_term_variables(super_class, &mut variables);
-            }
-            Self::AstStringLiteral { node, value }
-            | Self::AstStringLiteralMatchingRegex {
-                node,
-                pattern: value,
-            }
-            | Self::AstNumberLiteral { node, value }
-            | Self::AstIdentifierName { node, value }
-            | Self::AstPropertyName { node, value }
-            | Self::AstOperator { node, value } => {
-                collect_node_term_variables(node, &mut variables);
-                collect_string_term_variables(value, &mut variables);
-            }
-            Self::AstBoolLiteral { node, .. } => {
-                collect_node_term_variables(node, &mut variables);
-            }
-            Self::AstBareProperty {
-                node,
-                key,
-                identifier,
-                ..
-            } => {
-                collect_node_term_variables(node, &mut variables);
-                collect_string_term_variables(key, &mut variables);
-                collect_string_term_variables(identifier, &mut variables);
-            }
-            Self::AstRegexLiteral {
-                node,
-                pattern,
-                flags,
-            } => {
-                collect_node_term_variables(node, &mut variables);
-                collect_string_term_variables(pattern, &mut variables);
-                collect_string_term_variables(flags, &mut variables);
-            }
-            Self::AstTopLevel { node, ordinal } => {
-                collect_node_term_variables(node, &mut variables);
-                collect_ordinal_term_variables(ordinal, &mut variables);
-            }
-            Self::OrdinalOffset { base, ordinal, .. } => {
-                collect_ordinal_term_variables(base, &mut variables);
-                collect_ordinal_term_variables(ordinal, &mut variables);
-            }
-            Self::OrdinalBefore { before, after } => {
-                collect_ordinal_term_variables(before, &mut variables);
-                collect_ordinal_term_variables(after, &mut variables);
             }
             Self::ReadsMember {
                 owner,
@@ -506,10 +319,6 @@ impl SelectorAtom {
                 collect_string_term_variables(property, &mut variables);
                 collect_owner_term_variables(referenced_by, &mut variables);
             }
-            Self::Equal { left, right } | Self::NotEqual { left, right } => {
-                variables.insert(*left);
-                variables.insert(*right);
-            }
         }
         variables
     }
@@ -525,14 +334,6 @@ impl SelectorAtom {
             } => Self::OwnerKind {
                 owner: remap_owner_term(owner, variable_map),
                 statement_kind: remap_string_term(statement_kind, variable_map),
-            },
-            Self::OwnerStatementOrdinal { owner, ordinal } => Self::OwnerStatementOrdinal {
-                owner: remap_owner_term(owner, variable_map),
-                ordinal: remap_ordinal_term(ordinal, variable_map),
-            },
-            Self::OwnerTopLevelRoot { owner, root } => Self::OwnerTopLevelRoot {
-                owner: remap_owner_term(owner, variable_map),
-                root: remap_node_term(root, variable_map),
             },
             Self::OwnerDeclaresBinding { owner, binding } => Self::OwnerDeclaresBinding {
                 owner: remap_owner_term(owner, variable_map),
@@ -572,118 +373,6 @@ impl SelectorAtom {
             Self::OwnerAliasesOwner { owner, aliased } => Self::OwnerAliasesOwner {
                 owner: remap_owner_term(owner, variable_map),
                 aliased: remap_owner_term(aliased, variable_map),
-            },
-            Self::AstKind { node, node_kind } => Self::AstKind {
-                node: remap_node_term(node, variable_map),
-                node_kind: *node_kind,
-            },
-            Self::AstChild {
-                parent,
-                index,
-                child,
-            } => Self::AstChild {
-                parent: remap_node_term(parent, variable_map),
-                index: *index,
-                child: remap_node_term(child, variable_map),
-            },
-            Self::AstChildListPattern {
-                parent,
-                start_index,
-                segments,
-                anchored_left,
-                anchored_right,
-            } => Self::AstChildListPattern {
-                parent: remap_node_term(parent, variable_map),
-                start_index: *start_index,
-                segments: segments
-                    .iter()
-                    .map(|segment| {
-                        segment
-                            .iter()
-                            .map(|node| remap_node_term(node, variable_map))
-                            .collect()
-                    })
-                    .collect(),
-                anchored_left: *anchored_left,
-                anchored_right: *anchored_right,
-            },
-            Self::AstSuperClass {
-                class_node,
-                super_class,
-            } => Self::AstSuperClass {
-                class_node: remap_node_term(class_node, variable_map),
-                super_class: remap_node_term(super_class, variable_map),
-            },
-            Self::AstChildCount { node, count } => Self::AstChildCount {
-                node: remap_node_term(node, variable_map),
-                count: *count,
-            },
-            Self::AstStringLiteral { node, value } => Self::AstStringLiteral {
-                node: remap_node_term(node, variable_map),
-                value: remap_string_term(value, variable_map),
-            },
-            Self::AstStringLiteralMatchingRegex { node, pattern } => {
-                Self::AstStringLiteralMatchingRegex {
-                    node: remap_node_term(node, variable_map),
-                    pattern: remap_string_term(pattern, variable_map),
-                }
-            }
-            Self::AstNumberLiteral { node, value } => Self::AstNumberLiteral {
-                node: remap_node_term(node, variable_map),
-                value: remap_string_term(value, variable_map),
-            },
-            Self::AstBoolLiteral { node, value } => Self::AstBoolLiteral {
-                node: remap_node_term(node, variable_map),
-                value: *value,
-            },
-            Self::AstIdentifierName { node, value } => Self::AstIdentifierName {
-                node: remap_node_term(node, variable_map),
-                value: remap_string_term(value, variable_map),
-            },
-            Self::AstPropertyName { node, value } => Self::AstPropertyName {
-                node: remap_node_term(node, variable_map),
-                value: remap_string_term(value, variable_map),
-            },
-            Self::AstBareProperty {
-                node,
-                key,
-                identifier,
-                is_binding,
-            } => Self::AstBareProperty {
-                node: remap_node_term(node, variable_map),
-                key: remap_string_term(key, variable_map),
-                identifier: remap_string_term(identifier, variable_map),
-                is_binding: *is_binding,
-            },
-            Self::AstOperator { node, value } => Self::AstOperator {
-                node: remap_node_term(node, variable_map),
-                value: remap_string_term(value, variable_map),
-            },
-            Self::AstRegexLiteral {
-                node,
-                pattern,
-                flags,
-            } => Self::AstRegexLiteral {
-                node: remap_node_term(node, variable_map),
-                pattern: remap_string_term(pattern, variable_map),
-                flags: remap_string_term(flags, variable_map),
-            },
-            Self::AstTopLevel { node, ordinal } => Self::AstTopLevel {
-                node: remap_node_term(node, variable_map),
-                ordinal: remap_ordinal_term(ordinal, variable_map),
-            },
-            Self::OrdinalOffset {
-                base,
-                ordinal,
-                offset,
-            } => Self::OrdinalOffset {
-                base: remap_ordinal_term(base, variable_map),
-                ordinal: remap_ordinal_term(ordinal, variable_map),
-                offset: *offset,
-            },
-            Self::OrdinalBefore { before, after } => Self::OrdinalBefore {
-                before: remap_ordinal_term(before, variable_map),
-                after: remap_ordinal_term(after, variable_map),
             },
             Self::ReadsMember {
                 owner,
@@ -769,14 +458,6 @@ impl SelectorAtom {
                 property: remap_string_term(property, variable_map),
                 referenced_by: remap_owner_term(referenced_by, variable_map),
             },
-            Self::Equal { left, right } => Self::Equal {
-                left: remap_variable_id(*left, variable_map),
-                right: remap_variable_id(*right, variable_map),
-            },
-            Self::NotEqual { left, right } => Self::NotEqual {
-                left: remap_variable_id(*left, variable_map),
-                right: remap_variable_id(*right, variable_map),
-            },
         }
     }
 }
@@ -787,23 +468,8 @@ fn collect_owner_term_variables(term: &OwnerTerm, variables: &mut BTreeSet<Selec
     }
 }
 
-fn collect_node_term_variables(term: &NodeTerm, variables: &mut BTreeSet<SelectorVariableId>) {
-    if let NodeTerm::Var { id } = term {
-        variables.insert(*id);
-    }
-}
-
 fn collect_string_term_variables(term: &StringTerm, variables: &mut BTreeSet<SelectorVariableId>) {
     if let StringTerm::Var { id } = term {
-        variables.insert(*id);
-    }
-}
-
-fn collect_ordinal_term_variables(
-    term: &OrdinalTerm,
-    variables: &mut BTreeSet<SelectorVariableId>,
-) {
-    if let OrdinalTerm::Var { id } = term {
         variables.insert(*id);
     }
 }
@@ -829,18 +495,6 @@ fn remap_owner_term(
     }
 }
 
-fn remap_node_term(
-    term: &NodeTerm,
-    variable_map: &BTreeMap<SelectorVariableId, SelectorVariableId>,
-) -> NodeTerm {
-    match term {
-        NodeTerm::Var { id } => NodeTerm::Var {
-            id: remap_variable_id(*id, variable_map),
-        },
-        NodeTerm::Const { node } => NodeTerm::Const { node: *node },
-    }
-}
-
 fn remap_string_term(
     term: &StringTerm,
     variable_map: &BTreeMap<SelectorVariableId, SelectorVariableId>,
@@ -855,34 +509,18 @@ fn remap_string_term(
     }
 }
 
-fn remap_ordinal_term(
-    term: &OrdinalTerm,
-    variable_map: &BTreeMap<SelectorVariableId, SelectorVariableId>,
-) -> OrdinalTerm {
-    match term {
-        OrdinalTerm::Var { id } => OrdinalTerm::Var {
-            id: remap_variable_id(*id, variable_map),
-        },
-        OrdinalTerm::Const { ordinal } => OrdinalTerm::Const { ordinal: *ordinal },
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum SelectorProjectedValue {
     Owner(OwnerId),
-    AstNode(NodeId),
     String(String),
-    StatementOrdinal(StatementOrdinal),
 }
 
 impl SelectorProjectedValue {
     pub fn domain(&self) -> VariableDomain {
         match self {
             Self::Owner(_) => VariableDomain::Owner,
-            Self::AstNode(_) => VariableDomain::AstNode,
             Self::String(_) => VariableDomain::String,
-            Self::StatementOrdinal(_) => VariableDomain::StatementOrdinal,
         }
     }
 }
@@ -1192,14 +830,6 @@ impl SelectorProgram {
                 self.validate_owner_term(owner, "owner_kind.owner")?;
                 self.validate_string_term(statement_kind, "owner_kind.statement_kind")
             }
-            SelectorAtom::OwnerStatementOrdinal { owner, ordinal } => {
-                self.validate_owner_term(owner, "owner_statement_ordinal.owner")?;
-                self.validate_ordinal_term(ordinal, "owner_statement_ordinal.ordinal")
-            }
-            SelectorAtom::OwnerTopLevelRoot { owner, root } => {
-                self.validate_owner_term(owner, "owner_top_level_root.owner")?;
-                self.validate_node_term(root, "owner_top_level_root.root")
-            }
             SelectorAtom::OwnerDeclaresBinding { owner, binding } => {
                 self.validate_owner_term(owner, "owner_declares_binding.owner")?;
                 self.validate_string_term(binding, "owner_declares_binding.binding")
@@ -1263,84 +893,6 @@ impl SelectorProgram {
             SelectorAtom::OwnerAliasesOwner { owner, aliased } => {
                 self.validate_owner_term(owner, "owner_aliases_owner.owner")?;
                 self.validate_owner_term(aliased, "owner_aliases_owner.aliased")
-            }
-            SelectorAtom::AstKind { node, .. } => self.validate_node_term(node, "ast_kind.node"),
-            SelectorAtom::AstChild { parent, child, .. } => {
-                self.validate_node_term(parent, "ast_child.parent")?;
-                self.validate_node_term(child, "ast_child.child")
-            }
-            SelectorAtom::AstChildListPattern {
-                parent, segments, ..
-            } => {
-                self.validate_node_term(parent, "ast_child_list_pattern.parent")?;
-                if segments.is_empty() {
-                    return Err(SelectorProgramError::EmptyChildListPattern);
-                }
-                for segment in segments {
-                    if segment.is_empty() {
-                        return Err(SelectorProgramError::EmptyChildListPatternSegment);
-                    }
-                    for child in segment {
-                        self.validate_node_term(child, "ast_child_list_pattern.child")?;
-                    }
-                }
-                Ok(())
-            }
-            SelectorAtom::AstSuperClass {
-                class_node,
-                super_class,
-            } => {
-                self.validate_node_term(class_node, "ast_super_class.class_node")?;
-                self.validate_node_term(super_class, "ast_super_class.super_class")
-            }
-            SelectorAtom::AstChildCount { node, .. } => {
-                self.validate_node_term(node, "ast_child_count.node")
-            }
-            SelectorAtom::AstStringLiteral { node, value }
-            | SelectorAtom::AstStringLiteralMatchingRegex {
-                node,
-                pattern: value,
-            }
-            | SelectorAtom::AstNumberLiteral { node, value }
-            | SelectorAtom::AstIdentifierName { node, value }
-            | SelectorAtom::AstPropertyName { node, value }
-            | SelectorAtom::AstOperator { node, value } => {
-                self.validate_node_term(node, "ast_label.node")?;
-                self.validate_string_term(value, "ast_label.value")
-            }
-            SelectorAtom::AstBareProperty {
-                node,
-                key,
-                identifier,
-                ..
-            } => {
-                self.validate_node_term(node, "ast_bare_property.node")?;
-                self.validate_string_term(key, "ast_bare_property.key")?;
-                self.validate_string_term(identifier, "ast_bare_property.identifier")
-            }
-            SelectorAtom::AstBoolLiteral { node, .. } => {
-                self.validate_node_term(node, "ast_bool_literal.node")
-            }
-            SelectorAtom::AstRegexLiteral {
-                node,
-                pattern,
-                flags,
-            } => {
-                self.validate_node_term(node, "ast_regex_literal.node")?;
-                self.validate_string_term(pattern, "ast_regex_literal.pattern")?;
-                self.validate_string_term(flags, "ast_regex_literal.flags")
-            }
-            SelectorAtom::AstTopLevel { node, ordinal } => {
-                self.validate_node_term(node, "ast_top_level.node")?;
-                self.validate_ordinal_term(ordinal, "ast_top_level.ordinal")
-            }
-            SelectorAtom::OrdinalOffset { base, ordinal, .. } => {
-                self.validate_ordinal_term(base, "ordinal_offset.base")?;
-                self.validate_ordinal_term(ordinal, "ordinal_offset.ordinal")
-            }
-            SelectorAtom::OrdinalBefore { before, after } => {
-                self.validate_ordinal_term(before, "ordinal_before.before")?;
-                self.validate_ordinal_term(after, "ordinal_before.after")
             }
             SelectorAtom::ReadsMember {
                 owner,
@@ -1429,18 +981,6 @@ impl SelectorProgram {
                 self.validate_string_term(property, "intrinsic_alias.property")?;
                 self.validate_owner_term(referenced_by, "intrinsic_alias.referenced_by")
             }
-            SelectorAtom::Equal { left, right } | SelectorAtom::NotEqual { left, right } => {
-                let left_domain = self.require_variable(*left, "equality.left")?;
-                let right_domain = self.require_variable(*right, "equality.right")?;
-                if left_domain != right_domain {
-                    return Err(SelectorProgramError::DomainMismatch {
-                        context: "equality",
-                        expected: left_domain,
-                        actual: right_domain,
-                    });
-                }
-                Ok(())
-            }
         }
     }
 
@@ -1455,17 +995,6 @@ impl SelectorProgram {
         Ok(())
     }
 
-    fn validate_node_term(
-        &self,
-        term: &NodeTerm,
-        context: &'static str,
-    ) -> Result<(), SelectorProgramError> {
-        if let NodeTerm::Var { id } = term {
-            self.require_domain(*id, VariableDomain::AstNode, context)?;
-        }
-        Ok(())
-    }
-
     fn validate_string_term(
         &self,
         term: &StringTerm,
@@ -1473,17 +1002,6 @@ impl SelectorProgram {
     ) -> Result<(), SelectorProgramError> {
         if let StringTerm::Var { id } = term {
             self.require_domain(*id, VariableDomain::String, context)?;
-        }
-        Ok(())
-    }
-
-    fn validate_ordinal_term(
-        &self,
-        term: &OrdinalTerm,
-        context: &'static str,
-    ) -> Result<(), SelectorProgramError> {
-        if let OrdinalTerm::Var { id } = term {
-            self.require_domain(*id, VariableDomain::StatementOrdinal, context)?;
         }
         Ok(())
     }
@@ -1547,8 +1065,6 @@ pub enum SelectorProgramError {
         actual: VariableDomain,
     },
     DegenerateAllDifferent,
-    EmptyChildListPattern,
-    EmptyChildListPatternSegment,
     EmptyProjectedAllowedTuples,
     ProjectedAllowedTupleArity {
         row_index: usize,
@@ -1596,15 +1112,6 @@ impl fmt::Display for SelectorProgramError {
             }
             Self::DegenerateAllDifferent => {
                 write!(f, "all_different requires at least two entries")
-            }
-            Self::EmptyChildListPattern => {
-                write!(
-                    f,
-                    "ast_child_list_pattern requires at least one fixed segment"
-                )
-            }
-            Self::EmptyChildListPatternSegment => {
-                write!(f, "ast_child_list_pattern segments must be non-empty")
             }
             Self::EmptyProjectedAllowedTuples => {
                 write!(f, "projected_allowed_tuples requires at least one variable")
@@ -1656,70 +1163,6 @@ pub enum SelectorFact {
         binding: String,
         edge_kind: String,
     },
-    AstKind {
-        chunk_id: ChunkId,
-        node: NodeId,
-        node_kind: NodeKind,
-    },
-    AstChild {
-        chunk_id: ChunkId,
-        parent: NodeId,
-        index: u32,
-        child: NodeId,
-    },
-    AstStringLiteral {
-        chunk_id: ChunkId,
-        node: NodeId,
-        value: String,
-    },
-    AstNumberLiteral {
-        chunk_id: ChunkId,
-        node: NodeId,
-        value: String,
-    },
-    AstBoolLiteral {
-        chunk_id: ChunkId,
-        node: NodeId,
-        value: bool,
-    },
-    AstIdentifierName {
-        chunk_id: ChunkId,
-        node: NodeId,
-        value: String,
-    },
-    AstPropertyName {
-        chunk_id: ChunkId,
-        node: NodeId,
-        value: String,
-    },
-    AstBareProperty {
-        chunk_id: ChunkId,
-        node: NodeId,
-        key: String,
-        identifier: String,
-        is_binding: bool,
-    },
-    AstOperator {
-        chunk_id: ChunkId,
-        node: NodeId,
-        value: String,
-    },
-    AstRegexLiteral {
-        chunk_id: ChunkId,
-        node: NodeId,
-        pattern: String,
-        flags: String,
-    },
-    AstSuperClass {
-        chunk_id: ChunkId,
-        class_node: NodeId,
-        super_class: NodeId,
-    },
-    AstTopLevel {
-        chunk_id: ChunkId,
-        node: NodeId,
-        statement_ordinal: StatementOrdinal,
-    },
     MemberRead {
         chunk_id: ChunkId,
         statement_ordinal: StatementOrdinal,
@@ -1761,18 +1204,6 @@ impl SelectorFact {
             Self::Owner { .. } => "owner",
             Self::DeclaredBinding { .. } => "declared_binding",
             Self::OwnerReferencesBinding { .. } => "owner_references_binding",
-            Self::AstKind { .. } => "ast_kind",
-            Self::AstChild { .. } => "ast_child",
-            Self::AstStringLiteral { .. } => "ast_string_literal",
-            Self::AstNumberLiteral { .. } => "ast_number_literal",
-            Self::AstBoolLiteral { .. } => "ast_bool_literal",
-            Self::AstIdentifierName { .. } => "ast_identifier_name",
-            Self::AstPropertyName { .. } => "ast_property_name",
-            Self::AstBareProperty { .. } => "ast_bare_property",
-            Self::AstOperator { .. } => "ast_operator",
-            Self::AstRegexLiteral { .. } => "ast_regex_literal",
-            Self::AstSuperClass { .. } => "ast_super_class",
-            Self::AstTopLevel { .. } => "ast_top_level",
             Self::MemberRead { .. } => "member_read",
             Self::ModuleMemberUse { .. } => "module_member_use",
             Self::CallArgumentUse { .. } => "call_argument_use",
@@ -1840,223 +1271,6 @@ impl SelectorFactStore {
                     binding: binding.0.as_str().to_string(),
                     edge_kind: edge.reason.kind().to_string(),
                 });
-            }
-        }
-    }
-
-    /// Import AST facts already extracted by `chunk_facts`. Bridge/use-site facts
-    /// and owner-graph facts are pushed separately because they need joins with
-    /// imports, owner ids, or materializer-specific binding metadata.
-    pub fn extend_chunk_facts(&mut self, chunk_id: ChunkId, facts: &ChunkFacts) {
-        self.facts.extend(
-            facts
-                .node_kind
-                .iter()
-                .map(|(node, node_kind)| SelectorFact::AstKind {
-                    chunk_id,
-                    node: *node,
-                    node_kind: *node_kind,
-                }),
-        );
-        self.facts
-            .extend(
-                facts
-                    .child
-                    .iter()
-                    .map(|(parent, index, child)| SelectorFact::AstChild {
-                        chunk_id,
-                        parent: *parent,
-                        index: *index,
-                        child: *child,
-                    }),
-            );
-        self.facts.extend(facts.str_lit.iter().map(|(node, value)| {
-            SelectorFact::AstStringLiteral {
-                chunk_id,
-                node: *node,
-                value: value.clone(),
-            }
-        }));
-        self.facts.extend(facts.num_lit.iter().map(|(node, value)| {
-            SelectorFact::AstNumberLiteral {
-                chunk_id,
-                node: *node,
-                value: value.clone(),
-            }
-        }));
-        self.facts
-            .extend(
-                facts
-                    .bool_lit
-                    .iter()
-                    .map(|(node, value)| SelectorFact::AstBoolLiteral {
-                        chunk_id,
-                        node: *node,
-                        value: *value,
-                    }),
-            );
-        self.facts
-            .extend(
-                facts
-                    .ident_name
-                    .iter()
-                    .map(|(node, value)| SelectorFact::AstIdentifierName {
-                        chunk_id,
-                        node: *node,
-                        value: value.clone(),
-                    }),
-            );
-        self.facts
-            .extend(
-                facts
-                    .prop_name
-                    .iter()
-                    .map(|(node, value)| SelectorFact::AstPropertyName {
-                        chunk_id,
-                        node: *node,
-                        value: value.clone(),
-                    }),
-            );
-        self.extend_ast_bare_property_facts(chunk_id, facts);
-        self.facts.extend(
-            facts
-                .operator
-                .iter()
-                .map(|(node, value)| SelectorFact::AstOperator {
-                    chunk_id,
-                    node: *node,
-                    value: value.clone(),
-                }),
-        );
-        self.facts
-            .extend(facts.regex.iter().map(|(node, pattern, flags)| {
-                SelectorFact::AstRegexLiteral {
-                    chunk_id,
-                    node: *node,
-                    pattern: pattern.clone(),
-                    flags: flags.clone(),
-                }
-            }));
-        self.facts
-            .extend(facts.super_class.iter().map(|(class_node, super_class)| {
-                SelectorFact::AstSuperClass {
-                    chunk_id,
-                    class_node: *class_node,
-                    super_class: *super_class,
-                }
-            }));
-        self.facts
-            .extend(facts.top_level.iter().map(|(node, statement_ordinal)| {
-                SelectorFact::AstTopLevel {
-                    chunk_id,
-                    node: *node,
-                    statement_ordinal: StatementOrdinal(*statement_ordinal),
-                }
-            }));
-    }
-
-    fn extend_ast_bare_property_facts(&mut self, chunk_id: ChunkId, facts: &ChunkFacts) {
-        let node_kind: BTreeMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
-        let ident_name: BTreeMap<NodeId, &str> = facts
-            .ident_name
-            .iter()
-            .map(|(node, name)| (*node, name.as_str()))
-            .collect();
-        let prop_name: BTreeMap<NodeId, &str> = facts
-            .prop_name
-            .iter()
-            .map(|(node, name)| (*node, name.as_str()))
-            .collect();
-        let mut children_by_parent = BTreeMap::<NodeId, Vec<(u32, NodeId)>>::new();
-        for (parent, index, child) in &facts.child {
-            children_by_parent
-                .entry(*parent)
-                .or_default()
-                .push((*index, *child));
-        }
-        for children in children_by_parent.values_mut() {
-            children.sort_by_key(|(index, _child)| *index);
-        }
-
-        for (node, kind) in &node_kind {
-            match kind {
-                NodeKind::Shorthand => {
-                    if let Some(name) = ident_name.get(node).copied() {
-                        self.facts.push(SelectorFact::AstBareProperty {
-                            chunk_id,
-                            node: *node,
-                            key: name.to_string(),
-                            identifier: name.to_string(),
-                            is_binding: false,
-                        });
-                    }
-                }
-                NodeKind::KeyValue => {
-                    let Some(children) = children_by_parent.get(node) else {
-                        continue;
-                    };
-                    let [(_, key), (_, value)] = children.as_slice() else {
-                        continue;
-                    };
-                    if node_kind.get(value) != Some(&NodeKind::Ident) {
-                        continue;
-                    }
-                    if let Some((key, identifier)) = prop_name
-                        .get(key)
-                        .zip(ident_name.get(value))
-                        .map(|(k, i)| (*k, *i))
-                    {
-                        self.facts.push(SelectorFact::AstBareProperty {
-                            chunk_id,
-                            node: *node,
-                            key: key.to_string(),
-                            identifier: identifier.to_string(),
-                            is_binding: false,
-                        });
-                    }
-                }
-                NodeKind::PatAssign => {
-                    if children_by_parent
-                        .get(node)
-                        .is_some_and(|children| !children.is_empty())
-                    {
-                        continue;
-                    }
-                    if let Some(name) = ident_name.get(node).copied() {
-                        self.facts.push(SelectorFact::AstBareProperty {
-                            chunk_id,
-                            node: *node,
-                            key: name.to_string(),
-                            identifier: name.to_string(),
-                            is_binding: true,
-                        });
-                    }
-                }
-                NodeKind::PatKeyValue => {
-                    let Some(children) = children_by_parent.get(node) else {
-                        continue;
-                    };
-                    let [(_, key), (_, value)] = children.as_slice() else {
-                        continue;
-                    };
-                    if node_kind.get(value) != Some(&NodeKind::BindingIdent) {
-                        continue;
-                    }
-                    if let Some((key, identifier)) = prop_name
-                        .get(key)
-                        .zip(ident_name.get(value))
-                        .map(|(k, i)| (*k, *i))
-                    {
-                        self.facts.push(SelectorFact::AstBareProperty {
-                            chunk_id,
-                            node: *node,
-                            key: key.to_string(),
-                            identifier: identifier.to_string(),
-                            is_binding: true,
-                        });
-                    }
-                }
-                _ => {}
             }
         }
     }
@@ -2144,7 +1358,6 @@ mod tests {
     fn validates_owner_target_and_atom_domains() {
         let mut program = SelectorProgram::default();
         let owner = program.add_variable(VariableDomain::Owner, Some("@Widget".to_string()));
-        let node = program.add_variable(VariableDomain::AstNode, Some("needle.root".to_string()));
         let member = program.add_target(
             ChunkId(0),
             owner,
@@ -2158,10 +1371,6 @@ mod tests {
             owner: OwnerTerm::Var { id: owner },
             binding: const_str("a"),
         });
-        program.add_atom(SelectorAtom::AstKind {
-            node: NodeTerm::Var { id: node },
-            node_kind: NodeKind::FnDecl,
-        });
         program.require_all_different(vec![member, member]);
 
         assert_eq!(program.validate(), Ok(()));
@@ -2170,10 +1379,10 @@ mod tests {
     #[test]
     fn rejects_non_owner_target_variable() {
         let mut program = SelectorProgram::default();
-        let node = program.add_variable(VariableDomain::AstNode, None);
+        let binding = program.add_variable(VariableDomain::String, None);
         program.add_target(
             ChunkId(0),
-            node,
+            binding,
             "runtime/widgets",
             ClaimKind::AnonymousStatement,
             ClaimOrigin::AnonymousStatement { index: 0 },
@@ -2184,7 +1393,7 @@ mod tests {
             Err(SelectorProgramError::DomainMismatch {
                 context: "selector target owner",
                 expected: VariableDomain::Owner,
-                actual: VariableDomain::AstNode,
+                actual: VariableDomain::String,
             })
         );
     }
@@ -2214,56 +1423,6 @@ mod tests {
                 actual: VariableDomain::Owner,
             })
         );
-    }
-
-    #[test]
-    fn imports_chunk_facts_into_contract_rows() {
-        let mut chunk = ChunkFacts::default();
-        chunk.node_kind.push((1, NodeKind::FnDecl));
-        chunk.child.push((1, 0, 2));
-        chunk.ident_name.push((2, "helper".to_string()));
-        chunk.str_lit.push((3, "stable".to_string()));
-        chunk.top_level.push((1, 4));
-
-        let mut store = SelectorFactStore::default();
-        store.extend_chunk_facts(ChunkId(7), &chunk);
-
-        let counts = store.counts_by_relation();
-        assert_eq!(counts["ast_kind"], 1);
-        assert_eq!(counts["ast_child"], 1);
-        assert_eq!(counts["ast_identifier_name"], 1);
-        assert_eq!(counts["ast_string_literal"], 1);
-        assert_eq!(counts["ast_top_level"], 1);
-        assert!(store.facts.contains(&SelectorFact::AstTopLevel {
-            chunk_id: ChunkId(7),
-            node: 1,
-            statement_ordinal: StatementOrdinal(4),
-        }));
-    }
-
-    #[test]
-    fn imports_bare_property_chunk_facts() {
-        let mut chunk = ChunkFacts::default();
-        chunk.node_kind.push((1, NodeKind::Object));
-        chunk.node_kind.push((2, NodeKind::KeyValue));
-        chunk.node_kind.push((3, NodeKind::PropName));
-        chunk.node_kind.push((4, NodeKind::Ident));
-        chunk.child.push((1, 0, 2));
-        chunk.child.push((2, 0, 3));
-        chunk.child.push((2, 1, 4));
-        chunk.prop_name.push((3, "stable".to_string()));
-        chunk.ident_name.push((4, "runtimeValue".to_string()));
-
-        let mut store = SelectorFactStore::default();
-        store.extend_chunk_facts(ChunkId(7), &chunk);
-
-        assert!(store.facts.contains(&SelectorFact::AstBareProperty {
-            chunk_id: ChunkId(7),
-            node: 2,
-            key: "stable".to_string(),
-            identifier: "runtimeValue".to_string(),
-            is_binding: false,
-        }));
     }
 
     #[test]

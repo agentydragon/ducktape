@@ -10,7 +10,23 @@ py_library(
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
+        "@pypi//constructs",
+        "@pypi//jsii",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_flux",
+    srcs = ["test_flux.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":flux",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1242,6 +1258,7 @@ py_library(
         ":egress_fences",
         ":etcd",
         ":external_creds",
+        ":flux",
         ":flux_monitoring",
         ":flux_sources",
         ":forgejo_image_automation",

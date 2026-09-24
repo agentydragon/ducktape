@@ -19,7 +19,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import cast
 
-from cdk8s import ApiObject, ApiObjectMetadata, Chart
+import jsii
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart
+from constructs import IValidation
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
     KustomizationSpec,
@@ -57,6 +59,37 @@ CERT_MANAGER_ISSUER_SUBSTITUTION = KustomizationSpecPostBuild(
         )
     ]
 )
+
+
+@jsii.implements(IValidation)
+class _WaitExcludesHealthChecks:
+    """kustomize-controller ignores `spec.healthChecks` when `spec.wait` is true: it
+    health-checks every applied object instead, so such a list is dead config. Checked on
+    the rendered objects, so a Kustomization built without `flux_kustomization` is covered."""
+
+    def __init__(self, chart: Chart) -> None:
+        self._chart = chart
+
+    def validate(self) -> list[str]:
+        rendered = (
+            cast(ApiObject, node).to_json() for node in self._chart.node.find_all() if ApiObject.is_api_object(node)
+        )
+        return [
+            f"Kustomization/{obj['metadata']['name']}: wait: true ignores healthChecks; drop the list or set wait off"
+            for obj in rendered
+            if obj["kind"] == "Kustomization"
+            and obj["apiVersion"].startswith("kustomize.toolkit.fluxcd.io/")
+            and obj["spec"].get("wait")
+            and obj["spec"].get("healthChecks")
+        ]
+
+
+def kustomizations_chart(app: App) -> Chart:
+    """The shared chart every Flux Kustomization node is built in; synth fails on a
+    Kustomization setting both `wait` and `healthChecks`."""
+    chart = Chart(app, "kustomizations", disable_resource_name_hashes=True)
+    chart.node.add_validation(_WaitExcludesHealthChecks(chart))
+    return chart
 
 
 def health_checks(chart: Chart, kinds: Sequence[str]) -> list[KustomizationSpecHealthChecks]:

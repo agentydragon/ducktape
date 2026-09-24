@@ -16,14 +16,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use prost::Message;
 use selector_constraint_backend::{
-    AllDifferentReason, BinaryConstraintKind, ConstraintVariableId, TargetBindingProjection,
+    AllDifferentReason, ConstraintVariableId, TargetBindingProjection,
 };
 use selector_constraint_backend::{
     BackendAssignment, BackendAssignmentCoverage, BackendSolveResult, BackendSolveStatus,
     BackendValueId, BackendVariableAssignment, CompiledAllDifferentConstraint,
-    CompiledAllowedTupleConstraint, CompiledBinaryConstraint, CompiledLinearConstraint,
-    CompiledSelectorProblem, CompiledVariable, CompiledVariableDomain, SelectorProblemBackend,
-    TargetProjection,
+    CompiledAllowedTupleConstraint, CompiledSelectorProblem, CompiledVariable,
+    CompiledVariableDomain, SelectorProblemBackend, TargetProjection,
 };
 use selector_cp_sat_proto::ducktape::debundle::solver_backends::ortools_cpsat as wire;
 use selector_ir::VariableDomain;
@@ -401,34 +400,10 @@ fn problem_summary(
         .map(|constraint| constraint.variables.len())
         .max()
         .unwrap_or(0);
-    let binary_equal_count = problem
-        .binary_constraints
-        .iter()
-        .filter(|constraint| matches!(constraint.kind, BinaryConstraintKind::Equal))
-        .count();
-    let binary_not_equal_count = problem
-        .binary_constraints
-        .iter()
-        .filter(|constraint| matches!(constraint.kind, BinaryConstraintKind::NotEqual))
-        .count();
-    let binary_ordinal_before_count = problem
-        .binary_constraints
-        .iter()
-        .filter(|constraint| matches!(constraint.kind, BinaryConstraintKind::OrdinalBefore))
-        .count();
-    let mut constraint_count_by_kind = BTreeMap::from([
+    let constraint_count_by_kind = BTreeMap::from([
         ("allowed_table", problem.allowed_tuples.len()),
-        ("linear", problem.linear_constraints.len()),
         ("all_different", problem.all_different.len()),
     ]);
-    for constraint in &problem.binary_constraints {
-        let key = match constraint.kind {
-            BinaryConstraintKind::Equal => "binary_equal",
-            BinaryConstraintKind::NotEqual => "binary_not_equal",
-            BinaryConstraintKind::OrdinalBefore => "binary_ordinal_before",
-        };
-        *constraint_count_by_kind.entry(key).or_insert(0) += 1;
-    }
     let variable_count_by_domain = keyed_count(
         problem
             .variables
@@ -491,12 +466,6 @@ fn problem_summary(
             .entry(domain_signature)
             .or_insert(0) += cell_count;
     }
-    let binary_constraint_count_by_kind = keyed_count(
-        problem
-            .binary_constraints
-            .iter()
-            .map(|constraint| binary_constraint_kind_name(constraint.kind)),
-    );
     let all_different_arity_histogram = usize_histogram(
         problem
             .all_different
@@ -508,12 +477,6 @@ fn problem_summary(
             .all_different
             .iter()
             .map(|constraint| all_different_reason_name(&constraint.reason)),
-    );
-    let linear_constraint_arity_histogram = usize_histogram(
-        problem
-            .linear_constraints
-            .iter()
-            .map(|constraint| constraint.variables.len()),
     );
     let variable_domain_representation_count_by_kind = keyed_count(
         problem
@@ -592,14 +555,6 @@ fn problem_summary(
     );
     field!("allowed_row_count", allowed_row_count);
     field!("allowed_table_count", problem.allowed_tuples.len());
-    field!("binary_constraint_count", problem.binary_constraints.len());
-    field!(
-        "binary_constraint_count_by_kind",
-        binary_constraint_count_by_kind
-    );
-    field!("binary_equal_count", binary_equal_count);
-    field!("binary_not_equal_count", binary_not_equal_count);
-    field!("binary_ordinal_before_count", binary_ordinal_before_count);
     field!("constraint_count_by_kind", constraint_count_by_kind);
     field!("domain_size_histogram", domain_size_histogram);
     field!(
@@ -607,11 +562,6 @@ fn problem_summary(
         domain_size_histogram_by_domain
     );
     field!("dump_sequence", dump_sequence);
-    field!("linear_constraint_count", problem.linear_constraints.len());
-    field!(
-        "linear_constraint_arity_histogram",
-        linear_constraint_arity_histogram
-    );
     field!("max_allowed_arity", max_allowed_arity);
     field!("max_allowed_rows", max_allowed_rows);
     field!("max_domain_values", max_domain_values);
@@ -638,14 +588,6 @@ fn problem_summary(
     field!("wire_allowed_row_set_count", request.allowed_row_sets.len());
     field!("wire_allowed_table_count", request.allowed_tables.len());
     field!(
-        "wire_binary_constraint_count",
-        request.binary_constraints.len()
-    );
-    field!(
-        "wire_linear_constraint_count",
-        request.linear_constraints.len()
-    );
-    field!(
         "wire_target_projection_count",
         request.target_projections.len()
     );
@@ -663,63 +605,34 @@ fn allowed_table_shape(
     constraint: &CompiledAllowedTupleConstraint,
 ) -> &'static str {
     let mut source_matchish = false;
-    let mut child_list_segment = false;
-    let mut has_ast_node = false;
-    let mut all_ast_node = true;
     let mut has_owner = false;
     let mut has_string = false;
-    let mut has_statement_ordinal = false;
 
     for variable_id in &constraint.variables {
         let Some(variable) = problem.variables.get(variable_id.0) else {
             return "invalid_variable_reference";
         };
         let debug_name = variable.debug_name.as_deref().unwrap_or_default();
-        source_matchish |= debug_name.contains("source_match")
-            || debug_name.contains("anonymous_statement")
-            || debug_name.starts_with("ast_child_list.segment");
-        child_list_segment |= debug_name.starts_with("ast_child_list.segment");
+        source_matchish |=
+            debug_name.contains("source_match") || debug_name.contains("anonymous_statement");
         match variable.domain {
-            VariableDomain::AstNode => has_ast_node = true,
-            VariableDomain::Owner => {
-                has_owner = true;
-                all_ast_node = false;
-            }
-            VariableDomain::String => {
-                has_string = true;
-                all_ast_node = false;
-            }
-            VariableDomain::StatementOrdinal => {
-                has_statement_ordinal = true;
-                all_ast_node = false;
-            }
+            VariableDomain::Owner => has_owner = true,
+            VariableDomain::String => has_string = true,
         }
     }
 
     if source_matchish {
-        if child_list_segment {
-            "source_match_child_list_segment"
-        } else if has_owner {
+        if has_owner {
             "source_match_owner_projection"
-        } else if has_statement_ordinal {
-            "source_match_statement_ordinal"
         } else if has_string {
             "source_match_string_relation"
-        } else if all_ast_node && has_ast_node {
-            "source_match_ast_node_relation"
         } else {
             "source_match_other"
         }
-    } else if has_owner && has_ast_node {
-        "owner_ast_node_relation"
     } else if has_owner && has_string {
         "owner_string_relation"
     } else if has_owner {
         "owner_relation"
-    } else if has_ast_node && has_string {
-        "ast_node_string_relation"
-    } else if all_ast_node && has_ast_node {
-        "ast_node_relation"
     } else {
         "non_source_match_other"
     }
@@ -913,9 +826,7 @@ fn keyed_count(keys: impl IntoIterator<Item = &'static str>) -> BTreeMap<&'stati
 fn variable_domain_name(domain: VariableDomain) -> &'static str {
     match domain {
         VariableDomain::Owner => "owner",
-        VariableDomain::AstNode => "ast_node",
         VariableDomain::String => "string",
-        VariableDomain::StatementOrdinal => "statement_ordinal",
     }
 }
 
@@ -932,14 +843,6 @@ fn variable_domain_encoding_name(values: &CompiledVariableDomain) -> &'static st
         CompiledVariableDomain::Full(_) => "dense",
         CompiledVariableDomain::Sparse(_) => "sparse",
         CompiledVariableDomain::SharedSparse(_) => "shared_sparse",
-    }
-}
-
-fn binary_constraint_kind_name(kind: BinaryConstraintKind) -> &'static str {
-    match kind {
-        BinaryConstraintKind::Equal => "equal",
-        BinaryConstraintKind::NotEqual => "not_equal",
-        BinaryConstraintKind::OrdinalBefore => "ordinal_before",
     }
 }
 
@@ -974,16 +877,8 @@ fn request_from_problem(
             .iter()
             .map(table_from_backend)
             .collect::<Result<Vec<_>, _>>()?,
-        binary_constraints: problem
-            .binary_constraints
-            .iter()
-            .map(binary_constraint_from_backend)
-            .collect::<Result<Vec<_>, _>>()?,
-        linear_constraints: problem
-            .linear_constraints
-            .iter()
-            .map(linear_constraint_from_backend)
-            .collect::<Result<Vec<_>, _>>()?,
+        binary_constraints: Vec::new(),
+        linear_constraints: Vec::new(),
         all_different: problem
             .all_different
             .iter()
@@ -1067,36 +962,6 @@ fn row_set_from_backend(
         id: u32_id("allowed_row_sets.id", row_set.id.0)?,
         arity: u32_id("allowed_row_sets.arity", row_set.rows.arity())?,
         values: row_set.rows.values().iter().map(|value| value.0).collect(),
-    })
-}
-
-fn binary_constraint_from_backend(
-    constraint: &CompiledBinaryConstraint,
-) -> Result<wire::BinaryConstraint, OrToolsCpSatBackendError> {
-    Ok(wire::BinaryConstraint {
-        left_variable_id: constraint_variable_id(constraint.left)?,
-        right_variable_id: constraint_variable_id(constraint.right)?,
-        kind: match constraint.kind {
-            BinaryConstraintKind::Equal => wire::BinaryConstraintKind::Equal,
-            BinaryConstraintKind::NotEqual => wire::BinaryConstraintKind::NotEqual,
-            BinaryConstraintKind::OrdinalBefore => wire::BinaryConstraintKind::OrdinalBefore,
-        } as i32,
-    })
-}
-
-fn linear_constraint_from_backend(
-    constraint: &CompiledLinearConstraint,
-) -> Result<wire::LinearConstraint, OrToolsCpSatBackendError> {
-    Ok(wire::LinearConstraint {
-        variable_ids: constraint
-            .variables
-            .iter()
-            .copied()
-            .map(constraint_variable_id)
-            .collect::<Result<Vec<_>, _>>()?,
-        coefficients: constraint.coefficients.clone(),
-        offset: constraint.offset,
-        domain: constraint.domain.clone(),
     })
 }
 
@@ -1330,14 +1195,10 @@ mod tests {
             value_dictionary: DomainValueDictionary {
                 owners: vec![OwnerId(10), OwnerId(20), OwnerId(30)],
                 strings: vec!["alpha".to_string(), "beta".to_string()],
-                statement_ordinals: vec![StatementOrdinal(0), StatementOrdinal(1)],
-                ..Default::default()
             },
             full_domains: FullDomainValues {
                 owners: vec![BackendValueId(0), BackendValueId(1), BackendValueId(2)],
                 strings: vec![BackendValueId(0), BackendValueId(1)],
-                statement_ordinals: vec![BackendValueId(0), BackendValueId(1)],
-                ..Default::default()
             },
             shared_variable_domains: Vec::new(),
             variables: vec![
@@ -1375,28 +1236,10 @@ mod tests {
                         BackendValueId(1),
                     ]),
                 },
-                CompiledVariable {
-                    id: ConstraintVariableId(4),
-                    source: None,
-                    domain: VariableDomain::StatementOrdinal,
-                    debug_name: Some("ordinal_dense".to_string()),
-                    values: CompiledVariableDomain::Full(VariableDomain::StatementOrdinal),
-                },
             ],
             target_projections: Vec::new(),
             allowed_tuple_row_sets: Vec::new(),
             allowed_tuples: Vec::new(),
-            binary_constraints: vec![CompiledBinaryConstraint {
-                left: ConstraintVariableId(0),
-                right: ConstraintVariableId(1),
-                kind: BinaryConstraintKind::NotEqual,
-            }],
-            linear_constraints: vec![CompiledLinearConstraint {
-                variables: vec![ConstraintVariableId(0), ConstraintVariableId(2)],
-                coefficients: vec![1, -1],
-                offset: 0,
-                domain: vec![0, 0],
-            }],
             all_different: vec![CompiledAllDifferentConstraint {
                 id: AllDifferentConstraintId(0),
                 variables: vec![
@@ -1420,19 +1263,7 @@ mod tests {
             serde_json::json!(request_encoded_bytes)
         );
         assert_eq!(
-            summary["constraint_count_by_kind"]["binary_not_equal"],
-            serde_json::json!(1)
-        );
-        assert_eq!(
-            summary["constraint_count_by_kind"]["linear"],
-            serde_json::json!(1)
-        );
-        assert_eq!(
             summary["constraint_count_by_kind"]["all_different"],
-            serde_json::json!(1)
-        );
-        assert_eq!(
-            summary["linear_constraint_arity_histogram"]["2"],
             serde_json::json!(1)
         );
         assert_eq!(
@@ -1449,7 +1280,7 @@ mod tests {
         );
         assert_eq!(
             summary["variable_domain_sharing"]["unique_domain_count"],
-            serde_json::json!(4)
+            serde_json::json!(3)
         );
         assert_eq!(
             summary["variable_domain_sharing"]["shared_domain_group_count"],

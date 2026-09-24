@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import App
 
 from cluster.cdk8s import (
     agent_machine_access,
@@ -21,6 +21,7 @@ from cluster.cdk8s import (
     egress_fences,
     etcd,
     external_creds,
+    flux,
     flux_monitoring,
     flux_sources,
     forgejo_image_automation,
@@ -423,7 +424,7 @@ def generate_manifests(root: Path) -> None:
     flux_output = root / f"{HAND_WRITTEN_ROOT}/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
     flux_app = App(outdir=str(flux_output))
-    flux_chart = Chart(flux_app, "kustomizations", disable_resource_name_hashes=True)
+    flux_chart = flux.kustomizations_chart(flux_app)
     agentplane_crds_artifact = artifact("agentplane-crds", f"{HAND_WRITTEN_ROOT}/agentplane-crds")
     agentplane_crds_kustomization = agentplane_crds_flux_kustomizations.agentplane_crds(
         flux_chart, agentplane_crds_artifact
