@@ -8,8 +8,10 @@ const zMcpServerList = mcpToolResultSchema("haku-console", "list_mcp_servers");
 const zMcpServerStatus = mcpToolResultSchema("haku-console", "get_mcp_server_status");
 
 export type McpServerConnection = McpServerList["servers"][number];
-export type McpOperatorAuthStatus = Extract<NonNullable<McpServerConnection["connection"]>, { state: unknown }>;
-export type McpOperatorAuthDegraded = Extract<McpOperatorAuthStatus["state"], { status: "degraded" }>;
+export type ProviderConnectionDegraded = Extract<
+  NonNullable<McpServerConnection["connection"]>,
+  { status: "degraded" }
+>;
 export type McpServerProbe = McpServerStatus;
 
 export async function listMcpServers(): Promise<McpServerConnection[]> {

@@ -4,9 +4,8 @@ This module contains the FastAPI/wire adapter, the current Postgres repository, 
 `McpServerDispatcher` — the one path from the console to its configured MCP servers, for
 both executing tool calls and reflecting catalogs. `ToolCallApplicationService` owns the
 actor-scoped lifecycle: calls run immediately only when reviewed policy matches; all
-others wait for an operator decision in trusted console chrome. The connected-server
-catalog lives in `config`; operator OAuth account linkage lives in
-`operator_oauth`.
+others wait for an operator decision in trusted console chrome. The server catalog lives in
+`mcp_config`.
 """
 
 from __future__ import annotations
@@ -42,10 +41,8 @@ from haku.console.identity.authorization import lock_active_agent_binding
 from haku.console.identity.operator_auth import OperatorActorDep
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.mcp.execution import McpExecutionContext, mcp_execution_request_meta
-from haku.console.mcp.operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp.reflection_cache import ReflectedCatalog, ReflectionCache, ReflectionCacheKey
 from haku.console.mcp.tool_call_service import (
-    AuthentikOperatorTokenStore,
     BackendAccountNotConnectedError,
     ProviderConnectionTokenStore,
     ToolCallApplicationService,
@@ -53,19 +50,15 @@ from haku.console.mcp.tool_call_service import (
     ToolCallNotFoundError,
     ToolCallPageCursor,
     ToolCallStateConflictError,
-    backend_auth_for_operator,
 )
 from haku.console.mcp_config import (
-    InProcessBackend,
     InProcessServers,
     McpServerEntry,
     McpServerNotFoundError,
     NoCredential,
     OperatorConnectionCredential,
     OperatorLoginIdentityCredential,
-    RemoteServerOAuthAuth,
-    _server_catalog_refresh_interval,
-    _transport,
+    _in_process_server,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
@@ -763,11 +756,11 @@ class PostgresToolCallLedger:
 class McpServerDispatcher:
     """Dispatches the console's calls to whichever configured MCP server they name.
 
-    Not itself a client — it owns the in-process registry, resolves each entry to a transport and
-    credential, and drives a `fastmcp.client.Client` per call. Executing and reflecting are the same
-    dispatch differing only in call and error policy: `execute` raises on tool error, while
-    `metadata` degrades on transport error so one unreachable server can't break the whole
-    capabilities listing. Reflected catalogs are reused for `catalog_cache_ttl_seconds`.
+    Not itself a client — it owns the in-process registry, builds each entry's server, and drives a
+    `fastmcp.client.Client` per call. Executing and reflecting are the same dispatch differing only
+    in call and error policy: `execute` raises on tool error, while `metadata` degrades on any
+    failure so one broken server can't break the whole capabilities listing. Reflected catalogs are
+    reused for `catalog_cache_ttl_seconds`.
     """
 
     def __init__(
@@ -779,7 +772,6 @@ class McpServerDispatcher:
         catalog_cache_ttl_seconds: float,
     ) -> None:
         self._in_process = in_process_servers
-        self._default_catalog_cache_ttl_seconds = catalog_cache_ttl_seconds
         self._catalogs = ReflectionCache(catalog_cache_ttl_seconds)
 
     async def execute(
@@ -790,58 +782,41 @@ class McpServerDispatcher:
         auth_token: str | None,
         execution_context: McpExecutionContext,
     ) -> dict[str, Any]:
-        transport, transport_auth = _transport(server, self._in_process, auth_token)
         # mode="legacy": see the matching comment on the _reflect() connection below.
-        async with Client(transport, auth=transport_auth, mode="legacy") as client:
+        async with Client(_in_process_server(server, self._in_process, auth_token), mode="legacy") as client:
             result = await client.call_tool_mcp(
-                tool_name,
-                arguments,
-                meta=mcp_execution_request_meta(execution_context)
-                if isinstance(server.backend, InProcessBackend)
-                else None,
+                tool_name, arguments, meta=mcp_execution_request_meta(execution_context)
             )
         if result.is_error:
             raise RuntimeError(_mcp_error_message(result))
         return _mcp_result_to_json(result)
 
-    async def metadata(self, server: McpServerEntry, auth_token: str | None) -> ServerReflection:
+    async def metadata(self, server: McpServerEntry) -> ServerReflection:
         try:
             # A raise propagates out of the cache, so only successful catalogs are ever stored and
             # a recovered server is retried on the next listing rather than staying degraded.
-            return await self._catalogs.reflect(
-                _reflection_cache_key(server, auth_token),
-                lambda: self._reflect(server, auth_token),
-                ttl_seconds=_server_catalog_refresh_interval(server, self._default_catalog_cache_ttl_seconds),
-            )
+            return await self._catalogs.reflect(_reflection_cache_key(server), lambda: self._reflect(server))
         except Exception as e:
             logger.warning("MCP tool discovery failed for %s", server.id, exc_info=True)
             return DegradedReflection(failure_stage=ReflectionFailureStage.TOOL_DISCOVERY, degraded_reason=str(e))
 
-    async def _reflect(self, server: McpServerEntry, auth_token: str | None) -> ReflectedCatalog:
-        transport, transport_auth = _transport(server, self._in_process, auth_token)
+    async def _reflect(self, server: McpServerEntry) -> ReflectedCatalog:
+        # Reflection builds the server without a credential: `tools/list` never invokes a tool.
         # mode="legacy": fastmcp v4 defaults to mode="auto", which against another v4 server
         # adopts the modern server/discover era and leaves initialize_result (read below) None.
         # Pin the handshake era this connection needs rather than reworking `instructions`
         # onto the discover-era client properties.
-        async with Client(transport, auth=transport_auth, mode="legacy") as client:
+        async with Client(_in_process_server(server, self._in_process, None), mode="legacy") as client:
             tools: list[mcp_types.Tool] = await client.list_tools()
             # The handshake already happened on enter, so its result costs nothing extra here — the
             # instructions were previously fetched and dropped on every single reflection.
             return ReflectedCatalog(tools=tools, instructions=client.initialize_result.instructions)
 
 
-def _reflection_cache_key(server: McpServerEntry, auth_token: str | None) -> ReflectionCacheKey:
+def _reflection_cache_key(server: McpServerEntry) -> ReflectionCacheKey:
     return ReflectionCacheKey(
-        server_id=server.id,
-        config_fingerprint=_fingerprint(server.model_dump_json()),
-        # Digest, not the credential: a cached catalog must belong to exactly the credential that
-        # fetched it, but the key itself is ordinary in-memory state and must not hold a bearer.
-        credential_fingerprint="unauthenticated" if auth_token is None else _fingerprint(auth_token),
+        server_id=server.id, config_fingerprint=hashlib.sha256(server.model_dump_json().encode()).hexdigest()
     )
-
-
-def _fingerprint(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
 
 
 def _mcp_result_to_json(result: mcp_types.CallToolResult) -> dict[str, Any]:
@@ -851,25 +826,6 @@ def _mcp_result_to_json(result: mcp_types.CallToolResult) -> dict[str, Any]:
 def _mcp_error_message(result: mcp_types.CallToolResult) -> str:
     text_blocks = [block.text for block in result.content if isinstance(block, mcp_types.TextContent)]
     return "\n".join(text_blocks) or "MCP tool returned isError=true"
-
-
-async def _execution_auth(
-    server: McpServerEntry,
-    operator_id: UUID,
-    oauth_store: PostgresMcpOperatorOAuthStore,
-    provider_store: ProviderConnectionTokenStore,
-    authentik_store: AuthentikOperatorTokenStore,
-) -> str | None:
-    try:
-        return await backend_auth_for_operator(
-            server=server,
-            operator_id=operator_id,
-            oauth_store=oauth_store,
-            provider_store=provider_store,
-            authentik_store=authentik_store,
-        )
-    except BackendAccountNotConnectedError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 def _tool_call_service(request: Request) -> ToolCallApplicationService:
@@ -886,63 +842,28 @@ def _raise_tool_call_http_error(
     raise HTTPException(status_code=status_code, detail=str(error)) from error
 
 
-@dataclass(frozen=True, slots=True)
-class _ResolvedAuth:
-    """A reflection auth token (None for a credential-free server) resolved for the acting operator."""
-
-    token: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class _DegradedAuth:
-    """Reflection cannot proceed for the acting operator; the server renders degraded with this reason."""
-
-    reason: str
-
-
-async def _resolve_operator_metadata_auth(
-    *,
-    operator_id: UUID,
-    server: McpServerEntry,
-    oauth_store: PostgresMcpOperatorOAuthStore,
-    provider_store: ProviderConnectionTokenStore,
-) -> _ResolvedAuth | _DegradedAuth:
-    """Resolve reflection readiness per the server's backend credential, or a degraded
-    reason.
+async def _metadata_degradation(
+    *, operator_id: UUID, server: McpServerEntry, provider_store: ProviderConnectionTokenStore
+) -> str | None:
+    """Why reflection cannot proceed for the acting operator, or None when it can.
 
     Deviation from `backend_auth_for_operator` (which dispatches on the same variants): a
-    missing operator-linked token degrades reflection here rather than raising.
+    missing operator-linked account degrades reflection here rather than raising, and no token is
+    resolved — the implementation owns its schemas and `tools/list` invokes no backend operation.
     """
-    credential = server.backend.credential if isinstance(server.backend, InProcessBackend) else server.backend.auth
-    match credential:
+    match server.backend.credential:
         case OperatorConnectionCredential(connection=connection):
             if not await provider_store.is_provisioned(connection=connection):
-                return _DegradedAuth(
+                return (
                     f"OAuth client for {connection} is not provisioned on this console; "
                     "see the console deployment README."
                 )
             if not await provider_store.is_connected(connection=connection, operator_id=operator_id):
-                return _DegradedAuth(f"Connect your {connection} account in the console to use this server.")
-            # The implementation owns its schemas and tools/list invokes no backend operation.
-            return _ResolvedAuth(None)
-        case RemoteServerOAuthAuth():
-            try:
-                auth_token = await oauth_store.access_token_for(server=server, operator_id=operator_id)
-            except Exception as error:
-                logger.warning("MCP credential resolution failed for %s", server.id, exc_info=True)
-                return _DegradedAuth(str(error))
-            if not auth_token:
-                return _DegradedAuth(
-                    f"Connect your {server.id} MCP account in the console to reflect this server's tools."
-                )
-            return _ResolvedAuth(auth_token)
-        case OperatorLoginIdentityCredential():
-            # Reflection (tools/list) doesn't need the per-host token — the in-process hostexec
-            # server lists its tools regardless — so reflect with no token and never degrade here.
+                return f"Connect your {connection} account in the console to use this server."
+            return None
+        case OperatorLoginIdentityCredential() | NoCredential():
             # The operator's identity token is required only at execution (backend_auth_for_operator).
-            return _ResolvedAuth(None)
-        case NoCredential():
-            return _ResolvedAuth(None)
+            return None
 
 
 async def metadata_for_operator(
@@ -950,17 +871,13 @@ async def metadata_for_operator(
     operator_id: UUID,
     server: McpServerEntry,
     dispatcher: McpServerDispatcher,
-    oauth_store: PostgresMcpOperatorOAuthStore,
     provider_store: ProviderConnectionTokenStore,
 ) -> ServerReflection:
-    resolution = await _resolve_operator_metadata_auth(
-        operator_id=operator_id, server=server, oauth_store=oauth_store, provider_store=provider_store
-    )
-    if isinstance(resolution, _DegradedAuth):
-        return DegradedReflection(
-            failure_stage=ReflectionFailureStage.CREDENTIAL_RESOLUTION, degraded_reason=resolution.reason
-        )
-    return await dispatcher.metadata(server, resolution.token)
+    if (
+        reason := await _metadata_degradation(operator_id=operator_id, server=server, provider_store=provider_store)
+    ) is not None:
+        return DegradedReflection(failure_stage=ReflectionFailureStage.CREDENTIAL_RESOLUTION, degraded_reason=reason)
+    return await dispatcher.metadata(server)
 
 
 @router.get("/api/tool-calls")

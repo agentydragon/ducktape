@@ -3,7 +3,7 @@ use std::fs;
 use debundle_e2e_support::{
     BindingGroup, FixtureOpts, Member, logical_module, logical_module_with_anon,
     logical_module_with_anon_alpha_many, logical_module_with_binding_groups,
-    run_keep_going_dry_run_rejection_fixture,
+    run_dry_run_rejection_fixture,
 };
 use serde_json::Value;
 
@@ -46,7 +46,7 @@ export { renderCard, decoratePrimary, decorateSecondary };
         ],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     assert!(
         rejected
             .stderr
@@ -359,7 +359,7 @@ const right = makeRight();"#,
         )],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     assert!(
         rejected
             .stderr
@@ -384,7 +384,7 @@ const right = makeRight();"#,
 }
 
 fn keep_going_diagnostics(opts: FixtureOpts<'_>) -> Vec<Value> {
-    read_diagnostics(&run_keep_going_dry_run_rejection_fixture(opts).report_root)
+    read_diagnostics(&run_dry_run_rejection_fixture(opts).report_root)
 }
 
 fn read_diagnostics(report_root: &std::path::Path) -> Vec<Value> {
