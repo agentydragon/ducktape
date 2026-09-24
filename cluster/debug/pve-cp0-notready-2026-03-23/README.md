@@ -2,7 +2,7 @@
 
 ## Status: Root cause identified — AMD Idle HLT Intercept bug in host kvm_amd
 
-**Full investigation**: <../kernel-6.18-amd-kvm-stall.md>
+**Full investigation**: <../../../debug/kernel_6_18_amd_kvm_stall.md>
 
 **Root cause**: AMD Idle HLT Intercept feature (merged kernel 6.15, `X86_FEATURE_IDLE_HLT`
 = CPUID bit 510). The host's kvm_amd on Zen 5 uses `INTERCEPT_IDLE_HLT` instead of

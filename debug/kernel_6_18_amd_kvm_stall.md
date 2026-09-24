@@ -381,5 +381,5 @@ All items verified:
 
 ## Related
 
-- <pve-cp0-notready-2026-03-23/README.md> — original NMI incident investigation
-- <../../nix/debug/wyrm2/wyrm2_freezes.md> — wyrm2 QXL TTM bug (different issue, resolved)
+- <../cluster/debug/pve-cp0-notready-2026-03-23/README.md> — original NMI incident investigation
+- <../nix/debug/wyrm2/wyrm2_freezes.md> — wyrm2 QXL TTM bug (different issue, resolved)

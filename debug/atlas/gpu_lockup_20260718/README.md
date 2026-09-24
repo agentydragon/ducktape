@@ -4,7 +4,7 @@ Forensics preserved before recovery/reboot. Raw data: <capture.txt>. Root event 
 **Xid 79 "GPU has fallen off the bus"** on the compute GPU — same intermittent RTX 5090
 fall-off class as <../wyrm_gpu_lockup.md> and <../gpu_lockup_20260417/README.md>, hit while
 trying the E9 `--n-cpu-moe` sweep
-(<../../../../cluster/docs/inference/runs/2026-07-18_e9_deepseek_v4_flash_llamacpp/README.md>).
+(<../../../cluster/docs/inference/runs/2026-07-18_e9_deepseek_v4_flash_llamacpp/README.md>).
 
 ## Environment (changed since the April investigation)
 
