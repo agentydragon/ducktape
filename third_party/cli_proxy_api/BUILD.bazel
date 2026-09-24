@@ -32,7 +32,7 @@ test_suite(
         ":frontend_tests",
         "@com_github_router_for_me_cliproxyapi_v7//internal/api/handlers/management:oidc_test",
         "@com_github_router_for_me_cliproxyapi_v7//internal/api/middleware:middleware_test",
-        "@com_github_router_for_me_cliproxyapi_v7//internal/logging:logging_test",
+        "@com_github_router_for_me_cliproxyapi_v7//internal/logging:upstream_timing_test",
         "@com_github_router_for_me_cliproxyapi_v7//internal/managementasset:managementasset_test",
     ],
     visibility = ["//visibility:public"],

@@ -202,25 +202,26 @@ index b09e55d..214bf19 100644
 +	}
 +	return " | upstream " + strings.Join(parts, " ")
 +}
-diff --git a/internal/logging/gin_logger_test.go b/internal/logging/gin_logger_test.go
-index a31a761..90fe2ed 100644
---- a/internal/logging/gin_logger_test.go
-+++ b/internal/logging/gin_logger_test.go
-@@ -4,7 +4,10 @@ import (
- 	"errors"
- 	"net/http"
- 	"net/http/httptest"
+diff --git a/internal/logging/upstream_timing_test.go b/internal/logging/upstream_timing_test.go
+new file mode 100644
+index 0000000..232ac7f
+--- /dev/null
++++ b/internal/logging/upstream_timing_test.go
+@@ -0,0 +1,82 @@
++package logging
++
++import (
++	"net/http"
++	"net/http/httptest"
 +	"regexp"
 +	"strings"
- 	"testing"
++	"testing"
 +	"time"
- 
- 	"github.com/gin-gonic/gin"
- 	log "github.com/sirupsen/logrus"
-@@ -191,3 +194,71 @@ func TestGinLogrusLoggerHealthProbeStatus(t *testing.T) {
- 		})
- 	}
- }
++
++	"github.com/gin-gonic/gin"
++	log "github.com/sirupsen/logrus"
++	logtest "github.com/sirupsen/logrus/hooks/test"
++)
 +
 +// firstByteWriter stands in for the request-logging wrapper, which reports when it first wrote.
 +type firstByteWriter struct {
