@@ -11,8 +11,7 @@ use std::fmt;
 use analysis::{ChunkId, StatementKind};
 use selector_ir::{
     ClaimKind, ClaimOrigin, OwnerTerm, RelationalPrimitive, SelectorAtom, SelectorProgram,
-    SelectorProjectedValue, SelectorSourceMatchProjectionEvent, SelectorTargetId,
-    SelectorVariableId, StringTerm, VariableDomain,
+    SelectorProjectedValue, SelectorTargetId, SelectorVariableId, StringTerm, VariableDomain,
 };
 use spec::{
     AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefRelation,
@@ -298,13 +297,6 @@ impl MemberSelectorProgramBuilder {
                 .collect(),
             reason: format!("{logical_module}::source_match.projected.{export_name}"),
         });
-    }
-
-    pub fn record_source_match_projection_event(
-        &mut self,
-        event: SelectorSourceMatchProjectionEvent,
-    ) {
-        self.program.add_source_match_projection_event(event);
     }
 
     pub fn lower_projected_source_match_group_candidates(

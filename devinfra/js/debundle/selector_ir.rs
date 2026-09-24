@@ -431,37 +431,6 @@ impl SelectorProjectedValue {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SelectorSourceMatchProjectionOutcome {
-    Projected,
-    /// The matcher placed the selector nowhere (or failed); it is reported
-    /// unmatched without entering the solve.
-    NotProjected,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SelectorSourceMatchProjectionEvent {
-    pub selector_kind: String,
-    pub logical_module: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub export_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_binding: Option<String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub exports_by_target: BTreeMap<String, String>,
-    pub outcome: SelectorSourceMatchProjectionOutcome,
-    pub reason_category: String,
-    pub reason: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub candidate_count: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub projected_row_count: Option<usize>,
-    pub selector_preview: String,
-    pub selector_hash: String,
-    pub selector_body_hash: String,
-}
-
 /// Whole lowered selector program for one chunk/component solve.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SelectorProgram {
@@ -474,8 +443,6 @@ pub struct SelectorProgram {
     /// Sets of variables that must land on distinct values.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub all_different_variables: Vec<SelectorVariableAllDifferent>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub source_match_projection: Vec<SelectorSourceMatchProjectionEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -533,10 +500,6 @@ impl SelectorProgram {
 
     pub fn add_atom(&mut self, atom: SelectorAtom) {
         self.atoms.push(atom);
-    }
-
-    pub fn add_source_match_projection_event(&mut self, event: SelectorSourceMatchProjectionEvent) {
-        self.source_match_projection.push(event);
     }
 
     pub fn require_all_different(&mut self, targets: Vec<SelectorTargetId>) {

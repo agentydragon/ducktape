@@ -18,9 +18,7 @@ use js_ast::body_index_for_statement_ordinal;
 use rayon::prelude::*;
 use selector_ir::{
     ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
-    SelectorProgramSliceOptions, SelectorSourceMatchProjectionEvent,
-    SelectorSourceMatchProjectionOutcome, SelectorTargetId, SelectorVariableId, SolverClaim,
-    SolverResult,
+    SelectorProgramSliceOptions, SelectorTargetId, SelectorVariableId, SolverClaim, SolverResult,
 };
 use selector_ir_lowering::{
     MemberSelectorLoweringContext, MemberSelectorProgramBuilder, MemberSelectorSpecRef,
@@ -751,24 +749,20 @@ impl<'c, 'm> Resolve<'c, 'm> {
     }
 
     fn project_anonymous_statement(&mut self, module_index: usize, position: usize) {
-        let modules = self.modules;
-        let statement = &modules[module_index].anonymous_statements[position];
-        let parsed = &statement.selector;
+        let statement = &self.modules[module_index].anonymous_statements[position];
         let logical_module = self.ids[module_index].clone();
-        let logical_module = logical_module.as_str();
-        let chunk = self.chunk;
-        let places = chunk.places();
-        let projection = chunk
+        let places = self.chunk.places();
+        let rows = self
+            .chunk
             .matcher()
-            .anonymous_group_candidates_parsed(logical_module, parsed)
-            .map_err(|error| rejection(RejectReason::MatcherError, &error, None))
+            .anonymous_group_candidates_parsed(&logical_module, &statement.selector)
+            .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))
             .and_then(|candidates| {
-                let candidate_count = candidates.len();
                 candidates
                     .into_iter()
                     .map(|group| {
                         let [body_idx] = group.as_slice() else {
-                            anyhow::bail!(
+                            bail!(
                                 "anonymous source_match candidate group has {} statements; \
                                  projected lowering currently supports one statement per \
                                  anonymous claim",
@@ -783,43 +777,15 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         })
                     })
                     .collect::<Result<Vec<_>>>()
-                    .map_err(|error| {
-                        rejection(RejectReason::OwnerMapping, &error, Some(candidate_count))
-                    })
-                    .map(|rows| (candidate_count, rows))
-            });
-        let event =
-            |outcome, category: &str, reason: String, counts: (Option<usize>, Option<usize>)| {
-                projection_event(
-                    logical_module,
-                    "anonymous_statements.source_match",
-                    None,
-                    BTreeMap::new(),
-                    parsed.selector(),
-                    outcome,
-                    category,
-                    reason,
-                    counts,
-                )
-            };
-        let rejected = match projection {
-            Ok((candidate_count, rows)) if rows.len() > MAX_CANDIDATES_PER_SELECTOR => Rejection {
-                reason: RejectReason::TooBroad,
-                message: too_broad_reason(rows.len()),
-                candidate_count: Some(candidate_count),
-                row_count: Some(rows.len()),
-            },
-            Ok((candidate_count, rows)) if !rows.is_empty() => {
-                self.builder.record_source_match_projection_event(event(
-                    SelectorSourceMatchProjectionOutcome::Projected,
-                    "projected_candidates",
-                    "projected anonymous statement candidates into owner rows".to_string(),
-                    (Some(candidate_count), Some(rows.len())),
-                ));
+                    .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))
+            })
+            .and_then(Rejection::check_count);
+        match rows {
+            Ok(rows) => {
                 let target = self
                     .builder
                     .declare_projected_anonymous_statement_target_in_module(
-                        logical_module,
+                        &logical_module,
                         statement.index,
                         rows.clone(),
                     );
@@ -839,40 +805,24 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     }
                     .deduped(),
                 );
-                return;
             }
-            Ok((candidate_count, _)) => Rejection {
-                reason: RejectReason::NoCandidates,
-                message: "shape matcher returned no anonymous candidates".to_string(),
-                candidate_count: Some(candidate_count),
-                row_count: Some(0),
-            },
-            Err(rejection) => rejection,
-        };
-        self.builder.record_source_match_projection_event(event(
-            SelectorSourceMatchProjectionOutcome::NotProjected,
-            rejected.reason.category(),
-            rejected.message.clone(),
-            (rejected.candidate_count, rejected.row_count),
-        ));
-        self.push_anonymous(module_index, position, rejected.outcome());
+            Err(rejected) => self.push_anonymous(module_index, position, rejected.outcome()),
+        }
     }
 
     fn project_group(&mut self, module_index: usize, group: Group) -> Result<()> {
-        let modules = self.modules;
         let logical_module = self.ids[module_index].clone();
-        let chunk = self.chunk;
-        let places = chunk.places();
-        let projection = chunk
+        let places = self.chunk.places();
+        let rows = self
+            .chunk
             .matcher()
             .member_group_candidates_parsed(
                 &logical_module,
                 &group.parsed,
                 &group.exports_by_target,
             )
-            .map_err(|error| rejection(RejectReason::MatcherError, &error, None))
+            .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))
             .and_then(|candidates| {
-                let candidate_count = candidates.len();
                 candidates
                     .into_iter()
                     .map(|candidate| {
@@ -886,204 +836,111 @@ impl<'c, 'm> Resolve<'c, 'm> {
                             .collect::<Result<BTreeMap<_, _>>>()
                     })
                     .collect::<Result<Vec<_>>>()
-                    .map_err(|error| {
-                        rejection(RejectReason::OwnerMapping, &error, Some(candidate_count))
-                    })
-                    .map(|rows| (candidate_count, rows))
-            });
-        let event =
-            |outcome, category: &str, reason: String, counts: (Option<usize>, Option<usize>)| {
-                projection_event(
-                    &logical_module,
-                    "source_matches",
-                    None,
-                    group.exports_by_target.clone(),
-                    group.parsed.selector(),
-                    outcome,
-                    category,
-                    reason,
-                    counts,
-                )
-            };
-        let rejected = match projection {
-            Ok((candidate_count, rows)) if rows.len() > MAX_CANDIDATES_PER_SELECTOR => Rejection {
-                reason: RejectReason::TooBroad,
-                message: too_broad_reason(rows.len()),
-                candidate_count: Some(candidate_count),
-                row_count: Some(rows.len()),
-            },
-            Ok((candidate_count, rows)) if !rows.is_empty() => {
-                let mut targets = Vec::new();
-                for (target_binding, member_index) in &group.members_by_target {
-                    let member = &modules[module_index].members[*member_index];
-                    let target = self
-                        .builder
-                        .declare_binding_group_member_target_in_module_ref(
-                            &logical_module,
-                            &member.export_name,
-                            target_binding,
-                            member.selector.spec_ref(),
-                        )?;
-                    self.members.insert(target, (module_index, *member_index));
-                    targets.push(target);
+                    .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))
+            })
+            .and_then(Rejection::check_count);
+        let rows = match rows {
+            Ok(rows) => rows,
+            Err(rejected) => {
+                let outcome = rejected.outcome();
+                for member_index in group.members_by_target.values() {
+                    self.push_member(module_index, *member_index, outcome.clone());
                 }
-                self.builder.record_source_match_projection_event(event(
-                    SelectorSourceMatchProjectionOutcome::Projected,
-                    "projected_candidates",
-                    format!(
-                        "projected {candidate_count} shape-matcher candidate group(s) to {} \
-                         owner/binding row(s)",
-                        rows.len()
-                    ),
-                    (Some(candidate_count), Some(rows.len())),
-                ));
-                self.projected.push(
-                    Projected {
-                        targets,
-                        rows: rows
-                            .iter()
-                            .map(|row| {
-                                row.values()
-                                    .map(|(owner, binding)| Place {
-                                        owner: *owner,
-                                        binding: Some(binding.clone()),
-                                    })
-                                    .collect()
-                            })
-                            .collect(),
-                    }
-                    .deduped(),
-                );
-                self.builder.lower_projected_source_match_group_candidates(
-                    &logical_module,
-                    &group.exports_by_target,
-                    rows,
-                );
                 return Ok(());
             }
-            Ok((candidate_count, _)) => Rejection {
-                reason: RejectReason::NoCandidates,
-                message: "shape matcher returned no candidate groups".to_string(),
-                candidate_count: Some(candidate_count),
-                row_count: Some(0),
-            },
-            Err(rejection) => rejection,
         };
-        self.builder.record_source_match_projection_event(event(
-            SelectorSourceMatchProjectionOutcome::NotProjected,
-            rejected.reason.category(),
-            rejected.message.clone(),
-            (rejected.candidate_count, rejected.row_count),
-        ));
-        let outcome = rejected.outcome();
-        for member_index in group.members_by_target.values() {
-            self.push_member(module_index, *member_index, outcome.clone());
+        let mut targets = Vec::new();
+        for (target_binding, member_index) in &group.members_by_target {
+            let member = &self.modules[module_index].members[*member_index];
+            let target = self
+                .builder
+                .declare_binding_group_member_target_in_module_ref(
+                    &logical_module,
+                    &member.export_name,
+                    target_binding,
+                    member.selector.spec_ref(),
+                )?;
+            self.members.insert(target, (module_index, *member_index));
+            targets.push(target);
         }
+        self.projected.push(
+            Projected {
+                targets,
+                rows: rows
+                    .iter()
+                    .map(|row| {
+                        row.values()
+                            .map(|(owner, binding)| Place {
+                                owner: *owner,
+                                binding: Some(binding.clone()),
+                            })
+                            .collect()
+                    })
+                    .collect(),
+            }
+            .deduped(),
+        );
+        self.builder.lower_projected_source_match_group_candidates(
+            &logical_module,
+            &group.exports_by_target,
+            rows,
+        );
         Ok(())
     }
 
     fn project_member(&mut self, module_index: usize, member_index: usize) -> Result<()> {
-        let modules = self.modules;
         let logical_module = self.ids[module_index].clone();
-        let member = &modules[module_index].members[member_index];
+        let member = &self.modules[module_index].members[member_index];
         let MemberSelector::SourceMatch(parsed) = &member.selector else {
             unreachable!("only source_match members are projected");
         };
-        let chunk = self.chunk;
-        let places = chunk.places();
-        let projection = chunk
+        let places = self.chunk.places();
+        let rows = self
+            .chunk
             .matcher()
             .member_candidates_parsed(&logical_module, parsed)
-            .map_err(|error| rejection(RejectReason::MatcherError, &error, None))
+            .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))
             .and_then(|candidates| {
-                let candidate_count = candidates.len();
                 candidates
                     .iter()
                     .map(|matched| member_place(places, matched))
                     .collect::<Result<Vec<_>>>()
-                    .map_err(|error| {
-                        rejection(RejectReason::OwnerMapping, &error, Some(candidate_count))
-                    })
-                    .map(|rows| (candidate_count, rows))
-            });
-        let event =
-            |outcome, category: &str, reason: String, counts: (Option<usize>, Option<usize>)| {
-                projection_event(
-                    &logical_module,
-                    "source_matches",
-                    Some(&member.export_name),
-                    BTreeMap::new(),
-                    parsed.selector(),
-                    outcome,
-                    category,
-                    reason,
-                    counts,
-                )
-            };
-        let rejected = match projection {
-            Ok((candidate_count, rows)) if rows.len() > MAX_CANDIDATES_PER_SELECTOR => Rejection {
-                reason: RejectReason::TooBroad,
-                message: too_broad_reason(rows.len()),
-                candidate_count: Some(candidate_count),
-                row_count: Some(rows.len()),
-            },
-            Ok((candidate_count, rows)) if !rows.is_empty() => {
-                self.builder.record_source_match_projection_event(event(
-                    SelectorSourceMatchProjectionOutcome::Projected,
-                    "projected_candidates",
-                    format!(
-                        "projected {candidate_count} shape-matcher candidate(s) to {} \
-                         owner/binding row(s)",
-                        rows.len()
-                    ),
-                    (Some(candidate_count), Some(rows.len())),
-                ));
-                let target = self.builder.declare_member_target_in_module_ref(
-                    &logical_module,
-                    &member.export_name,
-                    member.selector.spec_ref(),
-                )?;
-                self.projected.push(
-                    Projected {
-                        targets: vec![target],
-                        rows: rows
-                            .iter()
-                            .map(|(owner, binding)| {
-                                vec![Place {
-                                    owner: *owner,
-                                    binding: Some(binding.clone()),
-                                }]
-                            })
-                            .collect(),
-                    }
-                    .deduped(),
-                );
-                self.builder.lower_projected_source_match_candidates(
-                    &logical_module,
-                    &member.export_name,
-                    rows,
-                );
-                self.members.insert(target, (module_index, member_index));
+                    .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))
+            })
+            .and_then(Rejection::check_count);
+        let rows = match rows {
+            Ok(rows) => rows,
+            Err(rejected) => {
+                self.push_member(module_index, member_index, rejected.outcome());
                 return Ok(());
             }
-            Ok((candidate_count, _)) => Rejection {
-                reason: RejectReason::NoCandidates,
-                message: "shape matcher returned no candidates".to_string(),
-                candidate_count: Some(candidate_count),
-                row_count: Some(0),
-            },
-            Err(rejection) => rejection,
         };
-        self.builder.record_source_match_projection_event(event(
-            SelectorSourceMatchProjectionOutcome::NotProjected,
-            rejected.reason.category(),
-            rejected.message.clone(),
-            (
-                rejected.candidate_count,
-                Some(rejected.row_count.unwrap_or(0)),
-            ),
-        ));
-        self.push_member(module_index, member_index, rejected.outcome());
+        let target = self.builder.declare_member_target_in_module_ref(
+            &logical_module,
+            &member.export_name,
+            member.selector.spec_ref(),
+        )?;
+        self.projected.push(
+            Projected {
+                targets: vec![target],
+                rows: rows
+                    .iter()
+                    .map(|(owner, binding)| {
+                        vec![Place {
+                            owner: *owner,
+                            binding: Some(binding.clone()),
+                        }]
+                    })
+                    .collect(),
+            }
+            .deduped(),
+        );
+        self.builder.lower_projected_source_match_candidates(
+            &logical_module,
+            &member.export_name,
+            rows,
+        );
+        self.members.insert(target, (module_index, member_index));
         Ok(())
     }
 
@@ -1312,95 +1169,46 @@ impl Projection {
     }
 }
 
+/// The prefix of an `invalid` outcome whose matcher failed.
+const MATCHER_ERROR: &str = "shape_matcher_error";
+/// The prefix of an `invalid` outcome whose match maps to no place.
+const OWNER_MAPPING_ERROR: &str = "projection_owner_mapping_error";
+
 /// Why a `source_match` was rejected before the solve.
-#[derive(Debug, Clone, Copy)]
-enum RejectReason {
+#[derive(Debug)]
+enum Rejection {
     NoCandidates,
-    TooBroad,
-    MatcherError,
-    OwnerMapping,
-}
-
-impl RejectReason {
-    /// The projection event's `reason_category`.
-    fn category(self) -> &'static str {
-        match self {
-            Self::NoCandidates => "shape_matcher_no_candidates",
-            Self::TooBroad => "too_broad",
-            Self::MatcherError => "shape_matcher_error",
-            Self::OwnerMapping => "projection_owner_mapping_error",
-        }
-    }
-}
-
-struct Rejection {
-    reason: RejectReason,
-    message: String,
-    candidate_count: Option<usize>,
-    row_count: Option<usize>,
+    TooBroad(usize),
+    Invalid(String),
 }
 
 impl Rejection {
-    fn outcome(&self) -> Outcome {
-        match (self.reason, self.row_count) {
-            (RejectReason::NoCandidates, _) => Outcome::NoMatch,
-            (RejectReason::TooBroad, Some(count)) => Outcome::too_broad(count),
-            _ => Outcome::Invalid {
-                error: self.message.clone(),
-            },
+    /// `error`'s first line, after `category`.
+    fn invalid(category: &str, error: &anyhow::Error) -> Self {
+        let message = error.to_string();
+        let first_line = message
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .unwrap_or(&message);
+        Self::Invalid(format!("{category}: {first_line}"))
+    }
+
+    /// `rows`, unless there are none or more than the cap.
+    fn check_count<T>(rows: Vec<T>) -> Result<Vec<T>, Self> {
+        match rows.len() {
+            0 => Err(Self::NoCandidates),
+            count if count > MAX_CANDIDATES_PER_SELECTOR => Err(Self::TooBroad(count)),
+            _ => Ok(rows),
         }
     }
-}
 
-fn rejection(
-    reason: RejectReason,
-    error: &anyhow::Error,
-    candidate_count: Option<usize>,
-) -> Rejection {
-    let message = error.to_string();
-    let first_line = message
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or(&message);
-    Rejection {
-        reason,
-        message: format!("{}: {first_line}", reason.category()),
-        candidate_count,
-        row_count: None,
-    }
-}
-
-fn too_broad_reason(row_count: usize) -> String {
-    format!("{row_count} candidate rows exceed the cap of {MAX_CANDIDATES_PER_SELECTOR}")
-}
-
-#[allow(clippy::too_many_arguments)]
-fn projection_event(
-    logical_module: &str,
-    selector_kind: &str,
-    export_name: Option<&str>,
-    exports_by_target: BTreeMap<String, String>,
-    selector: &AnonymousStatementSelector,
-    outcome: SelectorSourceMatchProjectionOutcome,
-    reason_category: &str,
-    reason: String,
-    (candidate_count, projected_row_count): (Option<usize>, Option<usize>),
-) -> SelectorSourceMatchProjectionEvent {
-    SelectorSourceMatchProjectionEvent {
-        selector_kind: selector_kind.to_string(),
-        logical_module: logical_module.to_string(),
-        export_name: export_name.map(ToString::to_string),
-        target_binding: selector.target_binding.clone(),
-        exports_by_target,
-        outcome,
-        reason_category: reason_category.to_string(),
-        reason,
-        candidate_count,
-        projected_row_count,
-        selector_preview: source_match::source_match_preview(&selector.match_source),
-        selector_hash: source_match::selector_key(selector),
-        selector_body_hash: source_match::selector_body_key(selector),
+    fn outcome(self) -> Outcome {
+        match self {
+            Self::NoCandidates => Outcome::NoMatch,
+            Self::TooBroad(count) => Outcome::too_broad(count),
+            Self::Invalid(error) => Outcome::Invalid { error },
+        }
     }
 }
 
