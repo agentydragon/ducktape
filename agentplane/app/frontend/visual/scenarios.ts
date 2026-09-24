@@ -41,6 +41,9 @@ export interface Scenario extends ScenarioOptions {
   openDebug?: "latest" | "stderr";
   /** Open the tool-call run once it mounts, then the reasoning step folded inside it. */
   openReasoning?: boolean;
+  /** Click the Evidence icon of the row at this thread anchor once it mounts: which rows show
+   * their evidence is not in the URL. */
+  openEvidence?: string;
   pendingCommands?: "mixed" | "controls" | "outcomes";
   failedTurn?: "before-content" | "after-content";
 }
@@ -363,6 +366,24 @@ export const SCENARIOS: Record<string, Scenario> = {
     outputName: "session-reasoning-phone",
     openReasoning: true,
     readySelectors: ["details[open] details[open] .agentplane-markdown"],
+  },
+  // A row's evidence opened from its corner icon: on the user bubble, the one card with no header
+  // row to hold the icon, and at phone width in the last reply's header row.
+  session_evidence: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 1100 },
+    openEvidence: "4",
+    readySelectors: ['[data-thread-anchor="4"] [data-evidence-observation]', '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_evidence_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    openEvidence: "34",
+    readySelectors: ['[data-thread-anchor="34"] [data-evidence-observation]'],
+    captureViewport: true,
   },
   // Native observations are inspected through the chronological drawer. The projected view has
   // no raw-event URL mode: its semantic entities stay identical while the drawer shows archive rows.

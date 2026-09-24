@@ -102,6 +102,8 @@ it("folds a run of tool calls and reasoning behind its summary until it is opene
   expect(run.textContent).toContain("test-read");
   expect(run.textContent).toContain("test-shell");
   expect(summaries(run)).toContain("Reasoning");
+  // Each step keeps its own evidence; the run is not an entity and has none.
+  expect(run.querySelectorAll('button[aria-label="Evidence"]')).toHaveLength(3);
 });
 
 it("marks an unfinished run as streaming in the live turn, and as incomplete once that is over", async () => {
@@ -120,7 +122,7 @@ it("shows a lone reasoning step as its own reasoning block, and assistant text w
     ],
     false
   );
-  expect(summaries(reasoning)).toEqual(["Reasoning", "Evidence"]);
+  expect(summaries(reasoning)).toEqual(["Reasoning"]);
   expect(answer.textContent).toContain("Test body of test-entity-2");
   for (const row of [reasoning, answer]) expect(row.textContent).not.toMatch(/assistant/i);
 });
