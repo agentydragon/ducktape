@@ -79,8 +79,8 @@ Entries are removed once landed — this is a burn-down, not a changelog.
     Testing checked `litellm-key-cheap-experiments` from `litellm-credentials/`.
   - aiquota: `aiquota-api-bearer` from SOPS, `cli-proxy-api-management` from
     `cli-proxy-api`, `aiquota-oidc` from `agent-machine-access-tf`, and
-    `clickhouse-aiquota-credentials` from `reflector`; ConfigMaps generated from
-    `config.toml` and `schema.sql`.
+    `clickhouse-aiquota-credentials` from `reflector`; the `aiquota-api-config` and
+    `schema.sql` ConfigMaps.
   - ClickHouse schema: `clickhouse-admin-credentials` from `clickhouse` and the
     `schema.sql` ConfigMap.
   - Haku console: Secrets `forgejo-images-creds`, `haku-console-oidc`,
