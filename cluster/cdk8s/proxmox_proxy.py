@@ -18,12 +18,12 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.scripts import nebula_mesh
 
 NAME = "proxmox-proxy"
 NAMESPACE = "proxmox-proxy"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/proxmox-proxy"
+OUTPUT_DIR = f"{GENERATED_ROOT}/proxmox-proxy"
 _PORT = 8080
 _LABELS = {"app.kubernetes.io/name": NAME}
 _CONFIG_MAP_NAME = "proxmox-proxy-config"
