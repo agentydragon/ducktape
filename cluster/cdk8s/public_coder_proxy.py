@@ -300,6 +300,8 @@ def _substitutions() -> list[dict]:
 
 
 def _config_map(scope: Construct) -> k8s.KubeConfigMap:
+    # No content-hash name suffix: the Deployment's `reloader.stakater.com/auto` is what rolls
+    # the proxy when this changes.
     return k8s.KubeConfigMap(
         scope,
         "config",
