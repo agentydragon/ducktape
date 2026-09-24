@@ -430,8 +430,8 @@ one. Which lists the service enforces is its contract
 - **Connection direction:** the app dials the runner Pod's address directly, re-resolving on
   reconnect; Pod replacement changes the address and the session log makes the cursor valid across
   it. A Service per sandbox is not needed until something outside the cluster must reach a runner.
-- **Model credentials:** staging uses a dedicated OpenAI/Claude subscription key; testing uses
-  the `cheap-experiments` LiteLLM key. The Pod holds no
+- **Model credentials:** staging uses a dedicated key for OpenAI/Claude subscription and local
+  Ollama chat routes; testing uses the `cheap-experiments` LiteLLM key. The Pod holds no
   key or workload token: a harness sends the inert placeholder the `agentplane-workload`
   EgressCredential derives from its name, central substitutes the sidecar-only Pod-bound token,
   and the authenticated LLM ingress replaces it with its one server-held key after resolving the
