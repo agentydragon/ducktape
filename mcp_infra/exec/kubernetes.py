@@ -152,15 +152,9 @@ class KubernetesWebSocketExecRunner:
         stderr = _Capture(max_output_bytes)
         error_data = bytearray()
         shell_script = f"cd -- {shlex.quote(cwd)}\n{script}"
-        command = [
-            "/usr/bin/timeout",
-            "--signal=TERM",
-            "--kill-after=5s",
-            f"{timeout_seconds}s",
-            "bash",
-            "-lc",
-            shell_script,
-        ]
+        # `timeout` and `bash` resolve on the container's PATH: the Nix-built sandbox and runner
+        # images keep coreutils in /bin and have no /usr/bin/timeout.
+        command = ["timeout", "--signal=TERM", "--kill-after=5s", f"{timeout_seconds}s", "bash", "-lc", shell_script]
         loop = asyncio.get_running_loop()
         started = loop.time()
 
