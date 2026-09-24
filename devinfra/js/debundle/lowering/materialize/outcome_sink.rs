@@ -40,10 +40,6 @@ impl OutcomeSink {
         Ok(())
     }
 
-    pub(super) fn outcomes(&self) -> &[SelectorOutcome] {
-        &self.outcomes
-    }
-
     /// Every recorded outcome, sorted; `None` when there are none.
     pub(super) fn report(&self) -> Option<SelectorOutcomeReport> {
         if self.outcomes.is_empty() {

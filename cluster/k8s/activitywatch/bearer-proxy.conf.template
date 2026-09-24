@@ -6,9 +6,7 @@
 #     because the importer reads the dest to dedup (see CLEANUP below).
 #   - 5603 read route (activitywatch-read.allegedly.works): a distinct read token,
 #     read methods only (GET plus POST for /api/0/query), so even a leaked read
-#     token cannot write. The Haku agent reaches it through the iron egress proxy,
-#     which substitutes the real token for the sandbox's placeholder
-#     (cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml).
+#     token cannot write. The Haku agent calls it with the read token.
 # Distinct ports keep the routes' hostnames, Services, and tokens separate; only the
 # nginx process is shared. The unauthenticated readonly path (5601, readonly-proxy.conf)
 # stays its own sidecar -- Authentik is its auth boundary.

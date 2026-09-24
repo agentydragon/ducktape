@@ -151,13 +151,12 @@ proxy environment handling.
   `embedded-outpost.yaml` owns outpost membership; a Terraform provider would
   split one object graph across two owners. Moves with the rest under issue #987.
 - **Temporary commit-built iron-proxy image.** <../../../images/iron-proxy/>
-  and `.github/workflows/iron-proxy-image.yml` build upstream commit `c90f4fe`
-  into the private Forgejo registry because it adds the HTTP/2/gRPC MITM support
-  BuildBuddy needs but is not in the upstream latest stable release (`v0.49.0`)
-  as of this audit. Flux rolls the proxy to that image after it is published.
-  Return to the official image and delete this build path once a stable release
-  includes the required support. The image is shared with
-  `haku-claude-oauth-proxy` and `haku-openclaw-spike-proxy`, so it is not owned
+  and `.github/workflows/iron-proxy-image.yml` build upstream `v0.50.0`
+  (`5bd11ab`), the first stable release with the HTTP/2/gRPC MITM support
+  BuildBuddy needs, into the private Forgejo registry. Flux rolls the proxy to
+  that image after it is published. Whether to return to the official image is
+  the pinning decision in <../../../../plans/personal_agents/TODO.md>. The image
+  is shared with `haku-openclaw-spike-proxy`, so it is not owned
   here — it was first named for public-coder because this was its first consumer.
 - **`gateway.bind: lan`**, unlike the loopback-bound lab rig, because the outpost
   reaches this pod over the cluster network. What makes that safe is

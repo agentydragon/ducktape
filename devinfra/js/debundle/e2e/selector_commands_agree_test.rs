@@ -13,9 +13,10 @@ use std::fs;
 use std::path::Path;
 
 use debundle_e2e_support::{
-    FixtureOpts, Member, assert_module_exports, logical_module, read_selector_outcomes,
-    run_dry_run_rejection_fixture, run_fixture, run_match_selector, run_source_only_validate,
-    run_spec_validate, write_validate_fixture_spec,
+    BindingGroup, FixtureOpts, Member, assert_module_exports, logical_module,
+    logical_module_with_source_matches, read_selector_outcomes, run_dry_run_rejection_fixture,
+    run_fixture, run_match_selector, run_source_only_validate, run_spec_validate,
+    write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -563,4 +564,47 @@ fn anything_declarator_keeps_its_initializer() {
 #[test]
 fn anything_declarator_floats_among_others() {
     assert_all_commands_resolve(&ANYTHING_DECLARATOR_AMONG_OTHERS);
+}
+
+/// Each binding of a multi-binding `source_matches` entry is its own entity:
+/// both matches of the template share `key`'s declaration, so `anchorKey`
+/// resolves while `reader` is ambiguous between the two functions.
+#[test]
+fn multi_binding_template_decides_each_binding() {
+    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
+        MULTI_BINDING_CHUNK,
+        vec![logical_module_with_source_matches(
+            MODULE,
+            &[],
+            &[BindingGroup::source_alpha(
+                MULTI_BINDING_TEMPLATE,
+                &[("key", "anchorKey"), ("f", "reader")],
+            )],
+        )],
+    ));
+    let run = read_selector_outcomes(&rejected.report_root);
+    let [reader] = run.as_slice() else {
+        panic!("only reader is listed: {run:#?}");
+    };
+    assert_eq!(reader["placement"]["entity"]["export"], "reader");
+    assert_eq!(reader["outcome"], multi_binding_reader_ambiguous());
+}
+
+const MULTI_BINDING_CHUNK: &str = r#"const k = "anchor-key";
+function a() { return k + 1; }
+function b() { return k + 1; }
+console.log(a(), b());
+export { a, b };
+"#;
+
+const MULTI_BINDING_TEMPLATE: &str = r#"const key = "anchor-key";
+STMT_LIST;
+function f() { return key + 1; }"#;
+
+fn multi_binding_reader_ambiguous() -> Value {
+    json!({
+        "kind": "ambiguous",
+        "candidates": [{"owner": 1, "binding": "a"}, {"owner": 2, "binding": "b"}],
+        "truncated": false,
+    })
 }

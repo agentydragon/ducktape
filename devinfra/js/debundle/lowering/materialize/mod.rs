@@ -239,30 +239,30 @@ pub(super) fn materialize_logical_chunk(
         None => DynamicImportTarget::External,
     };
     // Global selector resolution: `add_explicit_request` left deferred selector
-    // members unclaimed. Compile binding anchors, source_match constraints, and
-    // relational selectors into one IR program and solve over hint-free
-    // structural facts plus chunk AST relation facts.
-    let import_sources: HashMap<String, String> = runtime_import_facts
-        .iter_local_sources()
-        .map(|(local, src)| (local.to_string(), src.to_string()))
-        .collect();
+    // members unclaimed; one resolve assigns them and the anonymous statements
+    // over the hint-free structural facts.
+    let resolve_chunk = selector_resolve::Chunk::new(
+        chunk_id,
+        chunk_id_interned,
+        &runtime_ast.module,
+        structural_analysis,
+    );
     emit_debundle_progress(chunk_id, "resolve_global_selector_members", "start");
     let result = builder.resolve_and_claim_global_selectors(
         &explicit_requests,
-        &structural_analysis,
+        &resolve_chunk,
         &runtime_ast.module,
-        &import_sources,
         &runtime_import_facts,
         &mut imported_binding_resolver,
         &mut imported_from_by_src,
         chunk_top_level_mark,
         chunk_id,
         &target_file,
-        chunk_id_interned,
         &declaration_by_name,
     );
     emit_debundle_progress(chunk_id, "resolve_global_selector_members", "end");
     result?;
+    let structural_analysis = resolve_chunk.into_structural();
     builder.pull_destructure_siblings(&destructure_siblings, chunk_top_level_mark)?;
     builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
     drop(imported_binding_resolver);

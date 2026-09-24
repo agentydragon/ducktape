@@ -440,6 +440,21 @@ pub fn statement_ordinal_for_body_index(body: &[ModuleItem], body_idx: usize) ->
         .sum()
 }
 
+/// Inverse of [`statement_ordinal_for_body_index`]: the pre-split body index
+/// of the body item that produced post-split statement ordinal `stmt_ordinal`,
+/// or `None` past the end of the body.
+pub fn body_index_for_statement_ordinal(body: &[ModuleItem], stmt_ordinal: usize) -> Option<usize> {
+    let mut running = 0usize;
+    for (idx, item) in body.iter().enumerate() {
+        let count = post_split_top_level_count(item);
+        if stmt_ordinal < running + count {
+            return Some(idx);
+        }
+        running += count;
+    }
+    None
+}
+
 /// Emit a JS module with optional leading line comments.
 ///
 /// `binding_comments` maps a top-level binding name to a human-readable
