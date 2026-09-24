@@ -153,6 +153,46 @@ Use real profilers (`perf`, Callgrind, heaptrack, Massif, the component's Bazel 
 targets). Do not commit ad hoc timing macros or one-off elapsed-time counters; keep any
 temporary instrumentation local to the investigation and remove it before review.
 
+## Delegation and model selection
+
+**Model/effort choices apply only where the harness exposes those controls**
+(currently our Codex setup). Claude sessions without them use the available model,
+not invented overrides or GPT-to-Claude tier mappings. Other principles still apply.
+
+**Optimize total cost of correctly completed work**, including parent review,
+retries, integration, latency, and operator attention—not just worker token price.
+
+- **Default to GPT-6 Luna `xhigh` for bounded, verifiable work**, especially concrete
+  implementation, not just transcription: migrate a stateless workload to an established
+  cdk8s pattern with semantic comparison; implement a feature across model/API/tests
+  with a clear contract and integration check. These are starting points, not guarantees.
+  Use lower effort for simple extraction; consider Luna `max` for harder reasoning.
+- **Spend more where uncertainty warrants it.** Consider Sol `medium`/`high` for
+  diagnosis with competing explanations, Astra/strong-parent judgment for subtle
+  invariants or architectural decisions costly to verify. Explain why; file count,
+  "debugging", importance, or older cheap-model limitations alone are not reasons.
+- **Define acceptance before dispatch:** deliverable, constraints, relevant context,
+  checks, stopping condition. Select supported model/effort explicitly; check whether
+  history-forking forces inheritance. Request the artifact, exact check results, and
+  unresolved concerns. Do trivial tool work directly; batch same-shape edits.
+- **Review the artifact and correctness argument, not the whole exploration.** Read
+  the authored diff, affected invariants, and actual checks for the exact revision;
+  compare generated output semantically. Worker tests can share its misconception.
+  Diff length measures neither generation cost nor verification difficulty. Deepen
+  checks where errors could escape; do not routinely redo the task or add a reviewer.
+- **Recover economically.** A bounded retry is useful for a localized, actionable
+  failure; escalate conceptual misunderstanding or repeated nonprogress. Carry forward
+  the patch, verified facts, failed approaches, and remaining question—not a restart.
+  Preserve required checks and acceptable false-acceptance risk at every tier.
+- **Use evidence as priors, not invented success probabilities.** Prefer observed
+  outcomes on similar tasks; revise defaults using worker plus review/repair costs.
+  Keep routing decisions quick.
+
+Cost scale: AA's **2026-09-24, index v4.3.2** snapshot puts Luna `max`, Sol `medium`,
+and Astra `high` at approximately **1.6x / 6x / 41x** Luna `xhigh` per weighted index
+task—not per successful repo task or subscription charge. Research, task-level
+examples, benchmark caveats, and reusable-skill candidates: <docs/agent_delegation/README.md>.
+
 ## Splitting Work Into PRs
 
 **The scarce resource is operator review, not machine time.** Split aggressively into
