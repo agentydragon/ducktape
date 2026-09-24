@@ -94,8 +94,6 @@ from cluster.cdk8s.authentik import (
 )
 from cluster.cdk8s.cert_manager import (
     app as cert_manager_app,
-    cluster_ca as cert_manager_cluster_ca,
-    config as cert_manager_config,
     environment as cert_manager_environment,
     issuer_config as cert_manager_issuer_config,
     trust as cert_manager_trust,
@@ -391,8 +389,6 @@ def generate_manifests(root: Path) -> None:
     cert_manager_trust.write_manifests(root)
     cert_manager_issuer_config.write_manifests(root)
     cert_manager_environment.write_manifests(root)
-    cert_manager_config.write_manifests(root)
-    cert_manager_cluster_ca.write_manifests(root)
     external_secrets_config.write_manifests(root)
     external_secrets_operator.write_manifests(root)
     ducktape_flux.write_manifests(root)
@@ -643,12 +639,7 @@ def generate_manifests(root: Path) -> None:
     clickhouse_schema_kustomization = clickhouse_schema.clickhouse_schema(
         flux_chart, clickhouse_schema_artifact, root, clickhouse_kustomization
     )
-    cert_manager_environment_artifact = artifact(
-        "cert-manager-environment",
-        cert_manager_environment.OUTPUT_DIR,
-        f"{HAND_WRITTEN_ROOT}/cert-manager/config",
-        f"{HAND_WRITTEN_ROOT}/cert-manager/cluster-ca",
-    )
+    cert_manager_environment_artifact = artifact("cert-manager-environment", cert_manager_environment.OUTPUT_DIR)
     cert_manager_environment_kustomization = cert_manager_environment.cert_manager_environment(
         flux_chart,
         cert_manager_environment_artifact,
