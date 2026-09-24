@@ -535,7 +535,7 @@ Options, from cheapest to cleanest:
   (`tana-mcp` nginx whitelisting `/mcp` + `/health`, `activitywatch-readonly`
   whitelisting `GET/POST /api/0/query`). Natural allowlist: the
   `namespace-diagnostics-reader` and `logs-configmaps-reader` binding sets in
-  <../k8s/agents/agent-rbac-base/permissions.md>.
+  <agent_rbac.md>.
 - **C. Loki multi-tenancy.** Set `auth_enabled: true`, route per-namespace logs to
   per-namespace tenants via Alloy/Promtail, grant tenant IDs. Touches every log
   producer; almost certainly overkill.

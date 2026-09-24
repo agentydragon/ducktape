@@ -277,7 +277,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # the operator at OAuth consent, and the identity its sandboxes run as. The label is what
     # makes it an Action caller, and removing the label or the object is how it is disabled.
     # What it may do without an operator is an ActionPolicyBinding naming it; its Kubernetes
-    # access is listed in cluster/k8s/agents/agent-rbac-base/README.md § 6.
+    # access is listed in cluster/docs/agent_rbac.md § 6.
     claude_ai = ServiceAccount(
         scope,
         "serviceaccount-claude-ai",
