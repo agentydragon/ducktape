@@ -8,7 +8,8 @@ a **relation** to something else in the program.
 
 The engine that resolves relations already exists and is described in
 <../docs/selector_resolution.md>: every selector kind compiles into one IR
-program per chunk and one joint CP-SAT solve, with `all_different` across
+program over every chunk, solved jointly (one CP-SAT request per group of
+interacting entities), with `all_different` across
 claimed targets. This plan is the remaining **language** work: which relations
 the selector surface can express.
 
@@ -49,7 +50,7 @@ selector pinned treats it as an alpha wildcard: `const x = new Widget(ANYTHING);
 matches any `new C(…)`, so it is ambiguous or, when only another class is
 constructed, silently wrong (<../SELECTOR_BUGS.md>). This is the
 template-references step of <selector_engine.md>: an entity name in a template
-becomes a table constraint in the one CP-SAT solve.
+becomes a table constraint in the joint solve.
 
 ## Landing a new relation
 

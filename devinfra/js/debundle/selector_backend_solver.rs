@@ -8,10 +8,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
-use std::fs;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use analysis::{OwnerId, StatementOrdinal};
 use selector_constraint_backend::{
@@ -21,18 +17,12 @@ use selector_constraint_backend::{
     TargetBindingProjection,
 };
 use selector_constraint_model_builder::{
-    CompiledSelectorProblemBuildError, SelectorModelBuildSummary, compile_selector_problem,
-    compile_selector_problem_with_summary,
+    CompiledSelectorProblemBuildError, compile_selector_problem,
 };
 use selector_ir::{
-    ClaimKind, ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore,
-    SelectorProgram, SelectorSourceMatchProjectionEvent, SelectorSourceMatchProjectionOutcome,
+    ClaimKind, ClaimOutcome, ResolvedClaim, SelectorFact, SelectorFactStore, SelectorProgram,
     SelectorTargetId, SolverClaim, SolverGlobalDiagnostic, SolverResult,
 };
-
-const SUMMARY_JSON_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON";
-const SUMMARY_JSON_DIR_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON_DIR";
-static SUMMARY_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
 pub fn compile_backend_problem(
     program: &SelectorProgram,
@@ -49,9 +39,8 @@ pub fn solve_with_backend<B>(
 where
     B: SelectorProblemBackend,
 {
-    write_selector_build_summary(program, facts, None, None)
-        .map_err(SelectorBackendSolveError::Summary)?;
-    let problem = compile_and_summarize(program, facts, PresolveScope::AcrossTargets)?;
+    let problem = compile_selector_problem(program, facts, PresolveScope::AcrossTargets)
+        .map_err(SelectorBackendSolveError::Build)?;
     if problem.known_unsat.is_some() {
         return solve_localizing_conflicts(program, facts, backend);
     }
@@ -70,23 +59,6 @@ where
     decode_backend_result(program, facts, &problem, result)
 }
 
-fn compile_and_summarize<E>(
-    program: &SelectorProgram,
-    facts: &SelectorFactStore,
-    presolve_scope: PresolveScope,
-) -> Result<CompiledSelectorProblem, SelectorBackendSolveError<E>> {
-    let compiled = compile_selector_problem_with_summary(program, facts, presolve_scope)
-        .map_err(SelectorBackendSolveError::Build)?;
-    write_selector_build_summary(
-        program,
-        facts,
-        Some(&compiled.summary),
-        Some(&compiled.problem),
-    )
-    .map_err(SelectorBackendSolveError::Summary)?;
-    Ok(compiled.problem)
-}
-
 /// The program is unsatisfiable as presolved across targets. Recompile it
 /// presolved within targets, so every constraint stays attributable, and let
 /// the backend report the conflicting targets while it solves the rest.
@@ -98,7 +70,8 @@ fn solve_localizing_conflicts<B>(
 where
     B: SelectorProblemBackend,
 {
-    let problem = compile_and_summarize(program, facts, PresolveScope::WithinTargets)?;
+    let problem = compile_selector_problem(program, facts, PresolveScope::WithinTargets)
+        .map_err(SelectorBackendSolveError::Build)?;
     if let Some(reason) = &problem.known_unsat {
         // Within targets, presolve only empties what no target owns.
         return Ok(no_match_result(program, Some(reason.clone())));
@@ -175,7 +148,6 @@ fn singleton_no_constraint_backend_result(
 pub enum SelectorBackendSolveError<E> {
     Build(CompiledSelectorProblemBuildError),
     Backend(E),
-    Summary(SelectorBuildSummaryError),
     Assignment(BackendAssignmentError),
     MissingTargetProjection {
         target: SelectorTargetId,
@@ -210,7 +182,6 @@ impl<E: fmt::Display> fmt::Display for SelectorBackendSolveError<E> {
         match self {
             Self::Build(err) => write!(f, "{err}"),
             Self::Backend(err) => write!(f, "selector backend failed: {err}"),
-            Self::Summary(err) => write!(f, "{err}"),
             Self::Assignment(err) => {
                 write!(f, "selector backend returned invalid assignment: {err}")
             }
@@ -277,7 +248,6 @@ where
         match self {
             Self::Build(err) => Some(err),
             Self::Backend(err) => Some(err),
-            Self::Summary(err) => Some(err),
             Self::Assignment(err) => Some(err),
             Self::MissingTargetProjection { .. }
             | Self::MissingAssignmentVariable { .. }
@@ -287,351 +257,6 @@ where
             | Self::UnsatReturnedAssignments
             | Self::SampleCoverage { .. }
             | Self::UnknownConflictTarget { .. } => None,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum SelectorBuildSummaryError {
-    Io {
-        path: PathBuf,
-        source: io::Error,
-    },
-    Json {
-        path: PathBuf,
-        source: serde_json::Error,
-    },
-}
-
-impl fmt::Display for SelectorBuildSummaryError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Io { path, source } => {
-                write!(
-                    f,
-                    "failed to write selector build summary at {}: {source}",
-                    path.display()
-                )
-            }
-            Self::Json { path, source } => {
-                write!(
-                    f,
-                    "failed to serialize selector build summary at {}: {source}",
-                    path.display()
-                )
-            }
-        }
-    }
-}
-
-impl Error for SelectorBuildSummaryError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Io { source, .. } => Some(source),
-            Self::Json { source, .. } => Some(source),
-        }
-    }
-}
-
-fn write_selector_build_summary(
-    program: &SelectorProgram,
-    facts: &SelectorFactStore,
-    model_summary: Option<&SelectorModelBuildSummary>,
-    problem: Option<&CompiledSelectorProblem>,
-) -> Result<(), SelectorBuildSummaryError> {
-    let paths = selector_build_summary_paths();
-    if paths.is_empty() {
-        return Ok(());
-    }
-
-    let summary = selector_build_summary_json(program, facts, model_summary, problem);
-    for path in paths {
-        write_summary_json(&path, &summary)?;
-    }
-    Ok(())
-}
-
-fn selector_build_summary_paths() -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    if let Some(path) = env_path(SUMMARY_JSON_ENV) {
-        paths.push(path);
-    }
-    if let Some(dir) = env_path(SUMMARY_JSON_DIR_ENV) {
-        let sequence = SUMMARY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        paths.push(dir.join(format!("selector-pre-solver-{sequence:06}.json")));
-    }
-    paths
-}
-
-fn env_path(env: &str) -> Option<PathBuf> {
-    std::env::var_os(env)
-        .map(PathBuf::from)
-        .filter(|path| !path.as_os_str().is_empty())
-}
-
-fn write_summary_json(
-    path: &Path,
-    summary: &serde_json::Value,
-) -> Result<(), SelectorBuildSummaryError> {
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent).map_err(|source| SelectorBuildSummaryError::Io {
-            path: parent.to_path_buf(),
-            source,
-        })?;
-    }
-    let temp_path = path.with_extension("json.tmp");
-    let mut file =
-        fs::File::create(&temp_path).map_err(|source| SelectorBuildSummaryError::Io {
-            path: temp_path.clone(),
-            source,
-        })?;
-    serde_json::to_writer_pretty(&mut file, summary).map_err(|source| {
-        SelectorBuildSummaryError::Json {
-            path: temp_path.clone(),
-            source,
-        }
-    })?;
-    file.write_all(b"\n")
-        .map_err(|source| SelectorBuildSummaryError::Io {
-            path: temp_path.clone(),
-            source,
-        })?;
-    file.flush()
-        .map_err(|source| SelectorBuildSummaryError::Io {
-            path: temp_path.clone(),
-            source,
-        })?;
-    drop(file);
-    fs::rename(&temp_path, path).map_err(|source| SelectorBuildSummaryError::Io {
-        path: path.to_path_buf(),
-        source,
-    })
-}
-
-fn selector_build_summary_json(
-    program: &SelectorProgram,
-    facts: &SelectorFactStore,
-    model_summary: Option<&SelectorModelBuildSummary>,
-    problem: Option<&CompiledSelectorProblem>,
-) -> serde_json::Value {
-    let compiled_problem = problem.map(compiled_problem_summary_json);
-    serde_json::json!({
-        "summary_kind": "selector_pre_solver",
-        "stage": if problem.is_some() { "compiled_problem" } else { "input" },
-        "selector_program": selector_program_summary_json(program),
-        "facts": {
-            "total": facts.len(),
-            "count_by_relation": facts.counts_by_relation(),
-        },
-        "model_build": model_summary.map(model_build_summary_json),
-        "compiled_problem": compiled_problem,
-    })
-}
-
-fn selector_program_summary_json(program: &SelectorProgram) -> serde_json::Value {
-    serde_json::json!({
-        "variable_count": program.variables.len(),
-        "variable_count_by_domain": keyed_count(program.variables.iter().map(|variable| variable_domain_name(variable.domain))),
-        "target_count": program.targets.len(),
-        "target_count_by_claim_kind": keyed_count(program.targets.iter().map(|target| claim_kind_name(&target.claim))),
-        "atom_count": program.atoms.len(),
-        "atom_count_by_kind": keyed_count(program.atoms.iter().map(selector_atom_kind_name)),
-        "source_match_projection": source_match_projection_summary_json(&program.source_match_projection),
-        "all_different_count": program.all_different.len(),
-        "all_different_variables_count": program.all_different_variables.len(),
-        "all_different_arity_histogram": usize_histogram(program.all_different.iter().map(Vec::len)),
-        "all_different_variable_arity_histogram": usize_histogram(
-            program
-                .all_different_variables
-                .iter()
-                .map(|group| group.variables.len())
-        ),
-    })
-}
-
-fn source_match_projection_summary_json(
-    events: &[SelectorSourceMatchProjectionEvent],
-) -> serde_json::Value {
-    let mut count_by_outcome = BTreeMap::<&'static str, usize>::new();
-    let mut count_by_selector_kind = BTreeMap::<String, usize>::new();
-    let mut count_by_reason_category = BTreeMap::<String, usize>::new();
-    let mut candidate_count_by_outcome = BTreeMap::<&'static str, usize>::new();
-    let mut projected_row_count_by_outcome = BTreeMap::<&'static str, usize>::new();
-    for event in events {
-        let outcome = source_match_projection_outcome_name(&event.outcome);
-        *count_by_outcome.entry(outcome).or_insert(0) += 1;
-        *count_by_selector_kind
-            .entry(event.selector_kind.clone())
-            .or_insert(0) += 1;
-        *count_by_reason_category
-            .entry(event.reason_category.clone())
-            .or_insert(0) += 1;
-        *candidate_count_by_outcome.entry(outcome).or_insert(0) +=
-            event.candidate_count.unwrap_or(0);
-        *projected_row_count_by_outcome.entry(outcome).or_insert(0) +=
-            event.projected_row_count.unwrap_or(0);
-    }
-    serde_json::json!({
-        "event_count": events.len(),
-        "count_by_outcome": count_by_outcome,
-        "count_by_selector_kind": count_by_selector_kind,
-        "count_by_reason_category": count_by_reason_category,
-        "candidate_count_by_outcome": candidate_count_by_outcome,
-        "projected_row_count_by_outcome": projected_row_count_by_outcome,
-        "events": events,
-    })
-}
-
-fn source_match_projection_outcome_name(
-    outcome: &SelectorSourceMatchProjectionOutcome,
-) -> &'static str {
-    match outcome {
-        SelectorSourceMatchProjectionOutcome::Projected => "projected",
-        SelectorSourceMatchProjectionOutcome::NotProjected => "not_projected",
-    }
-}
-
-fn model_build_summary_json(summary: &SelectorModelBuildSummary) -> serde_json::Value {
-    serde_json::json!({
-        "domain_value_counts": summary.domain_value_counts,
-        "stored_relation_counts": summary.stored_relation_counts,
-        "derived_relation_counts": summary.derived_relation_counts,
-        "timings_ms": summary.timings_ms,
-    })
-}
-
-fn compiled_problem_summary_json(problem: &CompiledSelectorProblem) -> serde_json::Value {
-    let constraint_count_by_kind = BTreeMap::from([
-        ("allowed_table", problem.allowed_tuples.len()),
-        ("all_different", problem.all_different.len()),
-    ]);
-    let domain_sizes = problem
-        .variables
-        .iter()
-        .map(|variable| problem.variable_domain_value_count(variable))
-        .collect::<Vec<_>>();
-    let allowed_table_rows = problem
-        .allowed_tuples
-        .iter()
-        .map(|constraint| problem.allowed_tuple_rows(constraint).len())
-        .collect::<Vec<_>>();
-    let allowed_table_cells = problem
-        .allowed_tuples
-        .iter()
-        .map(|constraint| problem.allowed_tuple_rows(constraint).cell_count())
-        .collect::<Vec<_>>();
-    let shared_allowed_row_count = problem
-        .allowed_tuple_row_sets
-        .iter()
-        .map(|row_set| row_set.rows.len())
-        .sum::<usize>();
-    let shared_allowed_cell_count = problem
-        .allowed_tuple_row_sets
-        .iter()
-        .map(|row_set| row_set.rows.cell_count())
-        .sum::<usize>();
-    let shared_sparse_domain_value_count = problem
-        .shared_variable_domains
-        .iter()
-        .map(|domain| domain.values.len())
-        .sum::<usize>();
-
-    serde_json::json!({
-        "known_unsat": problem.known_unsat.is_some(),
-        "known_unsat_reason": problem.known_unsat.as_deref(),
-        "variable_count": problem.variables.len(),
-        "variable_count_by_domain": keyed_count(problem.variables.iter().map(|variable| variable_domain_name(variable.domain))),
-        "variable_domain_representation_count_by_kind": keyed_count(problem.variables.iter().map(|variable| match &variable.values {
-            selector_constraint_backend::CompiledVariableDomain::Full(_) => "full",
-            selector_constraint_backend::CompiledVariableDomain::Sparse(_) => "sparse",
-            selector_constraint_backend::CompiledVariableDomain::SharedSparse(_) => "shared_sparse",
-        })),
-        "domain_size_histogram": usize_histogram(domain_sizes.iter().copied()),
-        "max_domain_values": domain_sizes.into_iter().max().unwrap_or(0),
-        "full_domain_value_counts": {
-            "owner": problem.full_domains.owners.len(),
-            "string": problem.full_domains.strings.len(),
-        },
-        "value_dictionary_count": problem.value_dictionary.total_len(),
-        "shared_sparse_domain_count": problem.shared_variable_domains.len(),
-        "shared_sparse_domain_value_count": shared_sparse_domain_value_count,
-        "constraint_count_by_kind": constraint_count_by_kind,
-        "allowed_table_count": problem.allowed_tuples.len(),
-        "allowed_row_set_count": problem.allowed_tuple_row_sets.len(),
-        "allowed_table_arity_histogram": usize_histogram(problem.allowed_tuples.iter().map(|constraint| constraint.variables.len())),
-        "allowed_table_row_count_histogram": usize_histogram(allowed_table_rows.iter().copied()),
-        "allowed_table_cell_count_histogram": usize_histogram(allowed_table_cells.iter().copied()),
-        "allowed_row_count": allowed_table_rows.into_iter().sum::<usize>(),
-        "allowed_cell_count": allowed_table_cells.into_iter().sum::<usize>(),
-        "shared_allowed_row_count": shared_allowed_row_count,
-        "shared_allowed_cell_count": shared_allowed_cell_count,
-        "all_different_count": problem.all_different.len(),
-        "all_different_count_by_reason": keyed_count(problem.all_different.iter().map(|constraint| all_different_reason_name(&constraint.reason))),
-        "all_different_arity_histogram": usize_histogram(problem.all_different.iter().map(|constraint| constraint.variables.len())),
-        "target_projection_count": problem.target_projections.len(),
-    })
-}
-
-fn usize_histogram(values: impl IntoIterator<Item = usize>) -> BTreeMap<String, usize> {
-    let mut histogram = BTreeMap::new();
-    for value in values {
-        *histogram.entry(value.to_string()).or_insert(0) += 1;
-    }
-    histogram
-}
-
-fn keyed_count(keys: impl IntoIterator<Item = &'static str>) -> BTreeMap<&'static str, usize> {
-    let mut counts = BTreeMap::new();
-    for key in keys {
-        *counts.entry(key).or_insert(0) += 1;
-    }
-    counts
-}
-
-fn variable_domain_name(domain: selector_ir::VariableDomain) -> &'static str {
-    match domain {
-        selector_ir::VariableDomain::Owner => "owner",
-        selector_ir::VariableDomain::String => "string",
-    }
-}
-
-fn claim_kind_name(claim: &ClaimKind) -> &'static str {
-    match claim {
-        ClaimKind::Binding { .. } => "binding",
-        ClaimKind::AnonymousStatement => "anonymous_statement",
-        ClaimKind::BindingGroupMember { .. } => "binding_group_member",
-    }
-}
-
-fn selector_atom_kind_name(atom: &SelectorAtom) -> &'static str {
-    match atom {
-        SelectorAtom::OwnerKind { .. } => "owner_kind",
-        SelectorAtom::OwnerDeclaresBinding { .. } => "owner_declares_binding",
-        SelectorAtom::ProjectedAllowedTuples { .. } => "projected_allowed_tuples",
-        SelectorAtom::OwnerReferencesOwner { .. } => "owner_references_owner",
-        SelectorAtom::OwnerAliasesOwner { .. } => "owner_aliases_owner",
-        SelectorAtom::ReadsMember { .. } => "reads_member",
-        SelectorAtom::ReadsMemberOfOwner { .. } => "reads_member_of_owner",
-        SelectorAtom::ConsumesModuleMember { .. } => "consumes_module_member",
-        SelectorAtom::PassedToCall { .. } => "passed_to_call",
-        SelectorAtom::PassedToCallOfOwner { .. } => "passed_to_call_of_owner",
-        SelectorAtom::MakesDecorateCallForOwner { .. } => "makes_decorate_call_for_owner",
-        SelectorAtom::IntrinsicAlias { .. } => "intrinsic_alias",
-    }
-}
-
-fn all_different_reason_name(
-    reason: &selector_constraint_backend::AllDifferentReason,
-) -> &'static str {
-    match reason {
-        selector_constraint_backend::AllDifferentReason::TargetInjectivity { .. } => {
-            "target_injectivity"
-        }
-        selector_constraint_backend::AllDifferentReason::SelectorSemantics { .. } => {
-            "selector_semantics"
         }
     }
 }
@@ -948,9 +573,7 @@ mod tests {
         BackendAssignment, BackendAssignmentCoverage, BackendSolveResult, BackendSolveStatus,
         BackendValueId, BackendVariableAssignment,
     };
-    use selector_constraint_model_builder::compile_selector_problem_with_summary;
     use selector_ir::{ClaimOrigin, OwnerTerm, SelectorAtom, StringTerm, VariableDomain};
-    use serde_json::json;
 
     use super::*;
 
@@ -1190,79 +813,6 @@ mod tests {
                 .value_dictionary
                 .encode(&ConstraintValue::String("minA".to_string()))
                 .is_some()
-        );
-    }
-
-    #[test]
-    fn selector_build_summary_json_reports_input_shape_before_model_build() {
-        let (program, _) = binding_program();
-        let summary = selector_build_summary_json(&program, &facts(), None, None);
-
-        assert_eq!(summary["summary_kind"], json!("selector_pre_solver"));
-        assert_eq!(summary["stage"], json!("input"));
-        assert_eq!(summary["selector_program"]["variable_count"], json!(2));
-        assert_eq!(
-            summary["selector_program"]["variable_count_by_domain"]["owner"],
-            json!(1)
-        );
-        assert_eq!(
-            summary["selector_program"]["atom_count_by_kind"]["owner_declares_binding"],
-            json!(1)
-        );
-        assert_eq!(summary["facts"]["total"], json!(4));
-        assert_eq!(summary["facts"]["count_by_relation"]["owner"], json!(2));
-        assert_eq!(
-            summary["facts"]["count_by_relation"]["declared_binding"],
-            json!(2)
-        );
-        assert!(summary["model_build"].is_null());
-        assert!(summary["compiled_problem"].is_null());
-    }
-
-    #[test]
-    fn selector_build_summary_json_reports_compiled_problem_shape() {
-        let (program, _) = binding_program();
-        let facts = facts();
-        let compiled =
-            compile_selector_problem_with_summary(&program, &facts, PresolveScope::AcrossTargets)
-                .unwrap();
-        let summary = selector_build_summary_json(
-            &program,
-            &facts,
-            Some(&compiled.summary),
-            Some(&compiled.problem),
-        );
-
-        assert_eq!(summary["stage"], json!("compiled_problem"));
-        assert_eq!(
-            summary["model_build"]["domain_value_counts"]["owner"],
-            json!(2)
-        );
-        assert_eq!(
-            summary["model_build"]["domain_value_counts"]["string"],
-            json!(3)
-        );
-        assert_eq!(
-            summary["model_build"]["stored_relation_counts"]["owner_kind"],
-            json!(2)
-        );
-        assert_eq!(
-            summary["model_build"]["stored_relation_counts"]["declared_binding"],
-            json!(2)
-        );
-        assert_eq!(summary["compiled_problem"]["variable_count"], json!(2));
-        assert_eq!(
-            summary["compiled_problem"]["variable_count_by_domain"]["owner"],
-            json!(1)
-        );
-        assert_eq!(
-            summary["compiled_problem"]["variable_count_by_domain"]["string"],
-            json!(1)
-        );
-        assert_eq!(summary["compiled_problem"]["allowed_table_count"], json!(1));
-        assert_eq!(
-            summary["compiled_problem"]["constraint_count_by_kind"]["allowed_table"],
-            json!(1)
         );
     }
 

@@ -5,49 +5,78 @@ guarantee is <../SPEC.md>; this is how they are computed.
 
 ## One resolve
 
-`selector_resolve::Chunk::resolve` (<../selector_resolve.rs>) takes a parsed
-chunk and the spec entities aimed at it and returns one `SelectorOutcome` per
-entity. Every command that resolves selectors calls it:
+`selector_resolve::resolve` (<../selector_resolve.rs>) takes parsed chunks,
+each with the spec entities scoped to it, and returns one `SelectorOutcome`
+per entity. Every command that resolves selectors calls it, directly or as
+`Chunk::resolve` of one chunk:
 
-| Caller                                                    | Entities                                                                                                                       | Uses the outcomes                                                                                       |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `run` (`lowering/materialize/plan_builder.rs`)            | every module of the chunk, less what `run` claims itself: import-specifier pins, duplicate claims, pins on undeclared bindings | claims each resolved entity, records the rest (and elimination warnings) in `selector_diagnostics.json` |
-| `spec validate --spec`                                    | as `run` (it is a keep-going dry run)                                                                                          | reports every non-`ok` outcome                                                                          |
-| `spec validate --source-file` (`cli/validate.rs`)         | every module file, against one chunk file                                                                                      | reports every non-`ok` outcome                                                                          |
-| `spec match-selector` (`match_selector.rs`)               | the probe alone                                                                                                                | reports its outcome                                                                                     |
-| `synthesize-selectors` proof (`selector_codemod.rs`)      | the candidate selector alone                                                                                                   | proven only when `resolved_by: own_selector` at the intended declaration                                |
-| edit gate, `describe`, `peel` (`anonymous_resolution.rs`) | every module's `source_matches[]` and anonymous statements, per chunk source the owner graph names                             | an entity must resolve in one source and match in no other                                              |
+| Caller                                                    | Chunks and entities                                                                                                                                                    | Uses the outcomes                                                                                       |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `run` (`lowering/materialize/`)                           | every chunk, with every module of it (of every tree scoped to it), less what `run` claims itself: import-specifier pins, duplicate claims, pins on undeclared bindings | claims each resolved entity, records the rest (and elimination warnings) in `selector_diagnostics.json` |
+| `spec validate --spec`                                    | as `run` (it is a keep-going dry run)                                                                                                                                  | reports every non-`ok` outcome                                                                          |
+| `spec validate --source-file` (`cli/validate.rs`)         | one chunk file, with every module file                                                                                                                                 | reports every non-`ok` outcome                                                                          |
+| `spec match-selector` (`match_selector.rs`)               | the probe alone                                                                                                                                                        | reports its outcome                                                                                     |
+| `synthesize-selectors` proof (`selector_codemod.rs`)      | the candidate selector alone                                                                                                                                           | proven only when `resolved_by: own_selector` at the intended declaration                                |
+| edit gate, `describe`, `peel` (`anonymous_resolution.rs`) | every chunk source the owner graph names, each with every module's `source_matches[]` and anonymous statements                                                         | an entity must resolve in one source and match in no other                                              |
 
 A command that needs a selector unique on its own resolves it as a spec of one
 entity: its outcome is then its own candidates' verdict.
 
 ## Inside the resolve
 
+The resolve is two halves, so `run` can do the first per chunk in parallel:
+`Chunk::project` (steps 1–3, one chunk) and `solve` (step 4, every chunk).
+
 1. **Entities.** A member carries a name pin, a `source_match` template or a
    relational selector. `source_matches[].bindings[]` entries sharing one
    template form one group entity; an anonymous statement is an entity of its
-   own.
+   own. Each entity is scoped to its chunk, and a module is scoped to the
+   chunk its tree names; several trees may name one chunk.
 2. **Candidates.** The shape matcher (`ChunkResolver`) lists every place a
    template matches, and each place maps to its owner (a post-split top-level
    statement) and binding through the chunk's structural analysis. A template
    with no place is `no_match`, one with over `MAX_CANDIDATES_PER_SELECTOR`
    (100, `selector_outcome.rs`) is `too_broad`, and a matcher error or a place
    with no owner (an import specifier declares none) is `invalid` — all before
-   any solve.
+   any solve. A name pin's places are the top-level declarations of its name
+   (of its kind); a pin with none is `no_match`.
 3. **Program.** Name pins and relational selectors lower to relation atoms over
    chunk facts (`selector_ir_lowering`); candidates enter as one table of rows
-   per entity. `all_different` spans every non-pin target, with one
-   representative per group. `FactDomains`
-   (`selector_constraint_model_builder`) derives exactly the relation tables
-   the program's atoms read.
-4. **Decision.** When every entity is a `source_match` or an anonymous
-   statement and no place is a candidate of two of the `source_match` entities,
-   nothing can interact and each entity is decided from its own candidates.
-   Otherwise the program goes to the OR-Tools CP-SAT sidecar
-   (`solver_backends/ortools_cpsat`), a required tool of the `debundle_pipeline`
-   rule and a runfile of the `debundle` binary.
+   per entity. `all_different` spans every non-pin target of the chunk, with
+   one representative per group, whichever module or tree it comes from.
+   Anchors of relational selectors resolve by export name within the chunk.
+   `FactDomains` (`selector_constraint_model_builder`) derives exactly the
+   relation tables the program's atoms read.
+4. **Decision.** The program splits into groups of targets that interact: an
+   atom relates their variables, or `all_different` keeps them distinct and
+   they share a candidate owner or binding. A relational selector's places
+   are unknown before the solve, so it interacts with every target
+   `all_different` keeps it distinct from. A group that is exactly one
+   `source_match` or anonymous-statement entity is decided from its own
+   candidates, and a lone name pin with one place is a constant. Every other
+   group is one request to the OR-Tools CP-SAT sidecar
+   (`solver_backends/ortools_cpsat`), a required tool of the
+   `debundle_pipeline` rule and a runfile of the `debundle` binary, over the
+   program sliced to the group; requests run in parallel.
 
-The solve is per chunk.
+No constraint relates two chunks' entities, so every group lies in one chunk,
+and a place is always one chunk's: two chunks never compete for it.
+
+## Order
+
+A chunk's `Resolution` lists its outcomes in a fixed order: entities rejected
+before the solve (anonymous statements, then `source_matches[]` groups, then
+single `source_match` members, each in module order), name pins with no
+place, then the other anonymous statements, then the other members (name pins
+and relational selectors, then `source_matches[]` groups, then single
+`source_match` members, each in module order).
+
+`run` records outcomes in two passes over the chunks, each in chunk-id order:
+first the claims it makes itself (duplicate claims, in request order), then,
+once every chunk has resolved, each chunk's resolution outcomes followed by
+its elimination warnings. Under `--fail-fast` the first error in that order
+stops the run; in keep-going mode every chunk finishes and the first failing
+chunk in chunk-id order fails the run.
 
 ## Outcomes
 
@@ -58,8 +87,8 @@ bound the solver enumerates to), `conflict`, `too_broad`, `invalid` or
 kind: elimination is a `warning`, every non-resolved kind an `error`.
 
 `undecided` means the sidecar stopped (its
-`DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS` limit) before deciding the
-entity. The sidecar reports which projected variables it had proven fixed by
+`DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS` limit, per request) before
+deciding the entity. The sidecar reports which projected variables it had proven fixed by
 then; an entity all of whose variables are among them still resolves, and a
 conflict set found before the stop still stands.
 
@@ -75,8 +104,9 @@ when a claimer is edited, so it should be anchored on its own.
 
 ## Unsatisfiable programs
 
-One contradiction must not hide every other result in the chunk, so an
-unsatisfiable program is localized to the targets that cause it
+A contradiction stays inside its group, since each group is its own request.
+Within the group it must not hide every other result either, so an
+unsatisfiable request is localized to the targets that cause it
 (`selector_backend_solver::solve_localizing_conflicts`).
 
 The first compile presolves across targets
@@ -113,7 +143,7 @@ others; a set of one is that target's own constraints failing and comes out
 `no_match`. Every other target resolves as usual. A target that depends on a
 conflicting one, such as a relation anchored on it, loses that relation with it
 and may come out ambiguous. Only when the hard constraints alone are
-unsatisfiable does every target come out `no_match`, with a global diagnostic.
+unsatisfiable does every target of the group come out `no_match`.
 
 ## The shape matcher
 

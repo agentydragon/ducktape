@@ -11,6 +11,11 @@ An **entity** is one thing a spec places in a chunk: a module member, a
 entity's selector names the places it may occupy: a top-level declaration (by the
 minified binding it declares) or a group of top-level statements.
 
+An entity is scoped to its module's chunk, and only that chunk's places are its
+candidates. In a tree spec, each module tree names the chunk its modules are
+scoped to; several trees may name the same chunk, and their modules then share
+it as if authored in one tree.
+
 ## Matching
 
 Only the shape matcher decides where a `source_match` template matches. A
@@ -30,10 +35,11 @@ part.
 
 ## Assignment
 
-Each entity takes exactly one of its matched places, jointly with every other
-entity in the chunk:
+Every chunk's entities form one program. Each entity takes exactly one of its
+matched places, jointly with every other entity:
 
-- no two entities claim the same place;
+- no two entities claim the same place, whichever modules or trees they come
+  from;
 - a relational selector holds between the places its entities take.
 
 The answer is the **unique** assignment satisfying these. An assignment that
@@ -68,7 +74,10 @@ elimination in a spec is `ambiguous` there.
 
 - **Keep-going** (the default): every outcome is reported, entities with an
   error outcome stay unclaimed, and a chunk with any error outcome fails once
-  all of its outcomes are reported.
-- **Fail-fast** (`--fail-fast`): the first error outcome stops the run.
+  all of its outcomes are reported. Every chunk is reported; the run fails
+  with the first failing chunk in chunk-id order.
+- **Fail-fast** (`--fail-fast`): the first error outcome stops the run. Outcomes
+  come in a fixed order: every chunk's duplicate claims, then every chunk's
+  resolved outcomes, chunks in chunk-id order.
 
 Warnings never stop a run.

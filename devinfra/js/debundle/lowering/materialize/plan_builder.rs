@@ -11,7 +11,16 @@ use js_ast::body_index_for_statement_ordinal;
 use selector_outcome::{
     Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
 };
-use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector};
+use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector, Resolution};
+
+/// The explicit requests' entities the selector resolve decides, one module
+/// per request.
+pub(super) struct SelectorModules {
+    pub(super) modules: Vec<selector_resolve::SpecModule>,
+    /// Per request, the index in `request.members` of each member in
+    /// `modules`.
+    resolved_members: Vec<Vec<usize>>,
+}
 
 /// The module path of a `<chunk>::<path>` logical module id.
 fn logical_module_path(request_id: &str) -> String {
@@ -357,20 +366,17 @@ impl ChunkPlanBuilder {
         self.outcomes.record(outcome)
     }
 
-    /// Resolve every solver-resolved member and anonymous statement of the
-    /// explicit requests in one [`selector_resolve::Chunk::resolve`] and claim
-    /// what resolved. A name pin whose binding no top-level declaration carries
-    /// was already recorded as an unmatched claim, and a duplicate claim as its
-    /// outcome, so neither is resolved.
-    pub(super) fn resolve_and_claim_global_selectors(
-        &mut self,
+    /// The entities of the explicit requests the selector resolve decides:
+    /// every solver-resolved member and anonymous statement. A name pin whose
+    /// binding no top-level declaration carries was already recorded as an
+    /// unmatched claim, and a duplicate claim as its outcome, so neither is
+    /// resolved.
+    pub(super) fn selector_modules(
+        &self,
         explicit_requests: &[LogicalRequest],
-        chunk: &selector_resolve::Chunk<'_>,
         chunk_top_level_mark: swc_common::Mark,
-        chunk_id: &str,
         declaration_by_name: &HashMap<Id, usize>,
-    ) -> Result<()> {
-        // Per request, the index in `request.members` of each resolved member.
+    ) -> SelectorModules {
         let mut resolved_members = Vec::with_capacity(explicit_requests.len());
         let modules = explicit_requests
             .iter()
@@ -415,14 +421,24 @@ impl ChunkPlanBuilder {
                         .collect(),
                 }
             })
-            .collect::<Vec<_>>();
-        if modules
-            .iter()
-            .all(|module| module.members.is_empty() && module.anonymous_statements.is_empty())
-        {
-            return Ok(());
+            .collect();
+        SelectorModules {
+            modules,
+            resolved_members,
         }
-        let resolution = chunk.resolve(&modules)?;
+    }
+
+    /// Claims what `resolution` resolved of `selectors`, and records every
+    /// other outcome.
+    pub(super) fn claim_resolution(
+        &mut self,
+        explicit_requests: &[LogicalRequest],
+        selectors: &SelectorModules,
+        resolution: Resolution,
+        chunk_top_level_mark: swc_common::Mark,
+        chunk_id: &str,
+        declaration_by_name: &HashMap<Id, usize>,
+    ) -> Result<()> {
         // Recorded last, once every claim is in.
         let mut eliminated = Vec::new();
         for EntityOutcome {
@@ -455,7 +471,7 @@ impl ChunkPlanBuilder {
                     )?;
                 }
                 EntityIndex::Member(member_index) => {
-                    let member = &request.members[resolved_members[index][member_index]];
+                    let member = &request.members[selectors.resolved_members[index][member_index]];
                     let binding = binding.with_context(|| {
                         format!(
                             "logical_module {}: global selector solver resolved member `{}` to \

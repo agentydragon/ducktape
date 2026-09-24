@@ -149,11 +149,23 @@ fn resolve_claim_sets(
             source_root,
             no_sources,
             |parsed_by_source| {
+                // Every source is a chunk every module is scoped to.
+                let chunks = parsed_by_source
+                    .iter()
+                    .map(|(source_path, parsed)| {
+                        selector_resolve::Chunk::analyze(source_path, &parsed.module)
+                    })
+                    .collect::<Vec<_>>();
+                let resolutions = selector_resolve::resolve(
+                    &chunks
+                        .iter()
+                        .map(|chunk| (chunk, modules.as_slice()))
+                        .collect::<Vec<_>>(),
+                )?;
                 // Per entity, its outcome in every source.
                 let mut per_source = BTreeMap::<(usize, EntityIndex), Vec<SourceOutcome>>::new();
-                for (source_path, parsed) in parsed_by_source {
-                    let resolution = selector_resolve::Chunk::analyze(source_path, &parsed.module)
-                        .resolve(&modules)?;
+                for ((source_path, parsed), resolution) in parsed_by_source.iter().zip(resolutions)
+                {
                     for entity in resolution.outcomes {
                         per_source
                             .entry((entity.module, entity.entity))

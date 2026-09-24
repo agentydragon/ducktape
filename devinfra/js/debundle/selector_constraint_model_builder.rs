@@ -3,7 +3,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
-use std::time::Instant;
 
 use analysis::{OwnerId, StatementOrdinal};
 use selector_constraint_backend::{
@@ -21,45 +20,12 @@ pub fn compile_selector_problem(
     facts: &SelectorFactStore,
     presolve_scope: PresolveScope,
 ) -> Result<CompiledSelectorProblem, CompiledSelectorProblemBuildError> {
-    Ok(compile_selector_problem_with_summary(program, facts, presolve_scope)?.problem)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CompiledSelectorProblemWithSummary {
-    pub problem: CompiledSelectorProblem,
-    pub summary: SelectorModelBuildSummary,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SelectorModelBuildSummary {
-    pub domain_value_counts: BTreeMap<&'static str, usize>,
-    pub stored_relation_counts: BTreeMap<&'static str, usize>,
-    pub derived_relation_counts: BTreeMap<&'static str, usize>,
-    pub timings_ms: BTreeMap<&'static str, u128>,
-}
-
-pub fn compile_selector_problem_with_summary(
-    program: &SelectorProgram,
-    facts: &SelectorFactStore,
-    presolve_scope: PresolveScope,
-) -> Result<CompiledSelectorProblemWithSummary, CompiledSelectorProblemBuildError> {
-    let total_start = Instant::now();
-
-    let validate_start = Instant::now();
     program
         .validate()
         .map_err(CompiledSelectorProblemBuildError::InvalidProgram)?;
-    let validate_ms = validate_start.elapsed().as_millis();
 
-    let fact_domains_start = Instant::now();
     let mut domains = FactDomains::from_program_and_facts(program, facts);
-    let fact_domains_ms = fact_domains_start.elapsed().as_millis();
 
-    let domain_summary_start = Instant::now();
-    let mut summary = domains.summary();
-    let domain_summary_ms = domain_summary_start.elapsed().as_millis();
-
-    let setup_start = Instant::now();
     domains.discard_unneeded_raw_relations();
     let target_binding_projections = TargetBindingProjections::from_program(program)?;
 
@@ -90,9 +56,7 @@ pub fn compile_selector_problem_with_summary(
         };
         model.add_target_projection(target.id, owner_variable, binding_projection)?;
     }
-    let variables_and_targets_ms = setup_start.elapsed().as_millis();
 
-    let atom_lowering_start = Instant::now();
     let mut support_cache = EncodedSupportCache::default();
     for atom in &program.atoms {
         lower_atom_constraint(atom, &domains, &variables, &mut model, &mut support_cache)?;
@@ -100,15 +64,11 @@ pub fn compile_selector_problem_with_summary(
             break;
         }
     }
-    let atom_lowering_ms = atom_lowering_start.elapsed().as_millis();
 
-    let allowed_tuple_simplification_start = Instant::now();
     if model.known_unsat_reason().is_none() {
         model.simplify_allowed_tuples_against_current_domains()?;
     }
-    let allowed_tuple_simplification_ms = allowed_tuple_simplification_start.elapsed().as_millis();
 
-    let all_different_start = Instant::now();
     if model.known_unsat_reason().is_none() {
         for targets in &program.all_different {
             model.require_target_all_different(targets.clone())?;
@@ -126,28 +86,10 @@ pub fn compile_selector_problem_with_summary(
             )?;
         }
     }
-    let all_different_ms = all_different_start.elapsed().as_millis();
 
-    let finish_start = Instant::now();
-    let problem = model
+    model
         .finish()
-        .map_err(CompiledSelectorProblemBuildError::from)?;
-    let finish_ms = finish_start.elapsed().as_millis();
-    summary.timings_ms = BTreeMap::from([
-        ("validate", validate_ms),
-        ("fact_domains", fact_domains_ms),
-        ("domain_summary", domain_summary_ms),
-        ("variables_and_targets", variables_and_targets_ms),
-        ("atom_lowering", atom_lowering_ms),
-        (
-            "allowed_tuple_simplification",
-            allowed_tuple_simplification_ms,
-        ),
-        ("all_different", all_different_ms),
-        ("finish", finish_ms),
-        ("total", total_start.elapsed().as_millis()),
-    ]);
-    Ok(CompiledSelectorProblemWithSummary { problem, summary })
+        .map_err(CompiledSelectorProblemBuildError::from)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1284,71 +1226,6 @@ impl FactDomains {
         domains.add_program_constants(program);
         domains.build_lookup_indexes();
         domains
-    }
-
-    fn summary(&self) -> SelectorModelBuildSummary {
-        SelectorModelBuildSummary {
-            domain_value_counts: BTreeMap::from([
-                ("owner", self.owners.len()),
-                ("string", self.strings.len()),
-            ]),
-            stored_relation_counts: BTreeMap::from([
-                ("owner_kind", self.owner_kinds.len()),
-                (
-                    "owner_statement_ordinal",
-                    self.owner_statement_ordinals.len(),
-                ),
-                ("declared_binding", self.declared_bindings.len()),
-                (
-                    "raw_owner_references_binding",
-                    self.raw_owner_references_binding.len(),
-                ),
-                ("references_owner", self.references_owner.len()),
-                ("aliases_owner", self.aliases_owner.len()),
-                ("raw_member_read", self.raw_member_reads.len()),
-                ("member_read", self.member_reads.len()),
-                ("reads_member_of_owner", self.reads_member_of_owner.len()),
-                ("raw_module_member_use", self.raw_module_member_uses.len()),
-                ("module_member_use", self.module_member_uses.len()),
-                ("raw_call_argument", self.raw_call_arguments.len()),
-                ("call_argument", self.call_arguments.len()),
-                (
-                    "call_argument_from_owner",
-                    self.call_arguments_from_owner.len(),
-                ),
-                ("decorate_call", self.decorate_calls.len()),
-                (
-                    "makes_decorate_call_for_owner",
-                    self.makes_decorate_call_for_owner.len(),
-                ),
-                ("intrinsic_alias", self.intrinsic_aliases.len()),
-                (
-                    "intrinsic_alias_referenced_by",
-                    self.intrinsic_alias_referenced_by.len(),
-                ),
-            ]),
-            derived_relation_counts: BTreeMap::from([
-                ("references_owner", self.references_owner.len()),
-                ("aliases_owner", self.aliases_owner.len()),
-                ("member_read", self.member_reads.len()),
-                ("reads_member_of_owner", self.reads_member_of_owner.len()),
-                ("module_member_use", self.module_member_uses.len()),
-                ("call_argument", self.call_arguments.len()),
-                (
-                    "call_argument_from_owner",
-                    self.call_arguments_from_owner.len(),
-                ),
-                (
-                    "makes_decorate_call_for_owner",
-                    self.makes_decorate_call_for_owner.len(),
-                ),
-                (
-                    "intrinsic_alias_referenced_by",
-                    self.intrinsic_alias_referenced_by.len(),
-                ),
-            ]),
-            timings_ms: BTreeMap::new(),
-        }
     }
 
     fn values_for(&self, domain: VariableDomain) -> Vec<ConstraintValue> {
