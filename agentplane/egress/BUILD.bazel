@@ -322,6 +322,8 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
+        "@pypi//aiohttp",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],

@@ -13,6 +13,9 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpec,
     SandboxTemplateSpecPodTemplateSpecContainers,
     SandboxTemplateSpecPodTemplateSpecContainersEnv,
+    SandboxTemplateSpecPodTemplateSpecContainersReadinessProbe,
+    SandboxTemplateSpecPodTemplateSpecContainersReadinessProbeHttpGet,
+    SandboxTemplateSpecPodTemplateSpecContainersReadinessProbeHttpGetPort,
     SandboxTemplateSpecPodTemplateSpecContainersResources,
     SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits,
     SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests,
@@ -112,6 +115,12 @@ def _egress_sidecar(env: Environment) -> SandboxTemplateSpecPodTemplateSpecConta
                 name=env_name(sidecar.Settings, "listen_port"), value=str(_SIDECAR_LISTEN_PORT)
             ),
             SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                name=env_name(sidecar.Settings, "readiness_host"), value=sidecar.READINESS_HOST
+            ),
+            SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                name=env_name(sidecar.Settings, "readiness_port"), value=str(sidecar.READINESS_PORT)
+            ),
+            SandboxTemplateSpecPodTemplateSpecContainersEnv(
                 name=env_name(sidecar.Settings, "token_file"), value=f"{_EGRESS_TOKEN_DIR}/token"
             ),
             SandboxTemplateSpecPodTemplateSpecContainersEnv(
@@ -125,6 +134,17 @@ def _egress_sidecar(env: Environment) -> SandboxTemplateSpecPodTemplateSpecConta
             ),
         ],
         security_context=workload_security_context(),
+        readiness_probe=SandboxTemplateSpecPodTemplateSpecContainersReadinessProbe(
+            http_get=SandboxTemplateSpecPodTemplateSpecContainersReadinessProbeHttpGet(
+                path=sidecar.READINESS_PATH,
+                port=SandboxTemplateSpecPodTemplateSpecContainersReadinessProbeHttpGetPort.from_number(
+                    sidecar.READINESS_PORT
+                ),
+            ),
+            failure_threshold=1,
+            period_seconds=2,
+            timeout_seconds=1,
+        ),
         resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
             requests={
                 "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("10m"),
