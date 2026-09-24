@@ -1090,7 +1090,7 @@ async def test_browser_sends_a_command_and_renders_only_the_confirmed_input(thre
     await expect(composer).to_have_value("")
 
 
-async def test_reload_retries_an_unsaved_command_with_its_original_identity(thread_browser: ThreadBrowser) -> None:
+async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(thread_browser: ThreadBrowser) -> None:
     page, source = thread_browser.page, thread_browser.source
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -1114,19 +1114,17 @@ async def test_reload_retries_an_unsaved_command_with_its_original_identity(thre
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries[:4]
 
-    await page.reload()
-    await expect(page.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
-    await expect(page.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
-    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
-    async with page.expect_request(original.url) as retried:
-        await page.get_by_role("button", name="Retry", exact=True).click()
-    retry = await retried.value
-    assert retry.post_data is not None
-    assert json_format.Parse(retry.post_data, command_pb2.Command()) == command
+    async with page.expect_request(original.url) as redelivered:
+        await page.reload()
+    redelivery = await redelivered.value
+    assert redelivery.post_data is not None
+    assert json_format.Parse(redelivery.post_data, command_pb2.Command()) == command
     async with asyncio.timeout(15):
         assert await source.commands.get() == command
+    await expect(page.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
     await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Saved locally · awaiting admission", exact=True)).to_have_count(0)
+    await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
     await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
     admissions = [
         entry.event.command_admitted.command
@@ -1229,14 +1227,18 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
         await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
 
-        # Reload abandons the held Electric response. The new document retains the same
-        # local Command while both metadata and bounded reconciliation remain held.
-        await page.reload()
+        # Reload abandons the held Electric response. The new document delivers the same local
+        # Command again, and the app answers from its archive while replay is still held.
+        async with page.expect_response(response.url) as redelivered:
+            await page.reload()
+        redelivery = await redelivered.value
+        assert redelivery.status == 200
+        assert json_format.Parse(await redelivery.text(), event_log_pb2.EventEntry()) == admission
         async with asyncio.timeout(15):
             assert (await app.replay_held()).cursor >= 5
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
         await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
-        await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
+        await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
         await expect(page.get_by_text("Catching up thread…", exact=True)).to_be_visible()
         assert source.commands.empty(), "reload must not manufacture a second command"
 
@@ -1258,7 +1260,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
             command.submit_input.text
         )
         await expect(pending).to_have_count(0)
-        assert source.commands.empty(), "reload/replay must not automatically send the Command again"
+        assert source.commands.empty(), "the runner must receive the Command once"
         archived = await thread_browser.event_logs.events(thread.id, limit=100)
         assert archived == source.entries
         assert [entry for entry in archived if entry.event.HasField("command_admitted")] == [admission]

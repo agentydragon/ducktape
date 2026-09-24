@@ -24,6 +24,7 @@ import {
   type CSSProperties,
   type JSX,
   type KeyboardEvent,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -473,25 +474,42 @@ function useProjectedCommands(threadId: string, entities: ThreadEntity[]) {
   );
   useEffect(() => store.observeCommandIds(effectedCommandIds), [effectedCommandIds, store]);
 
-  async function deliver(value: LocalCommand): Promise<void> {
-    const id = value.command.commandId;
-    if (active.current.has(id)) return;
-    active.current.add(id);
-    try {
-      store.acknowledge(value.command, await command(threadId, value.command));
-      setErrors((previous) => {
-        if (!previous.has(id)) return previous;
-        const next = new Map(previous);
-        next.delete(id);
-        return next;
-      });
-    } catch (reason) {
-      if (store.getSnapshot().commands.some((command) => command.command.commandId === id))
-        setErrors((previous) => new Map(previous).set(id, displayableError(reason)));
-    } finally {
-      active.current.delete(id);
-    }
-  }
+  const deliver = useCallback(
+    async (value: LocalCommand): Promise<void> => {
+      const id = value.command.commandId;
+      if (active.current.has(id)) return;
+      active.current.add(id);
+      try {
+        store.acknowledge(value.command, await command(threadId, value.command));
+        setErrors((previous) => {
+          if (!previous.has(id)) return previous;
+          const next = new Map(previous);
+          next.delete(id);
+          return next;
+        });
+      } catch (reason) {
+        if (store.getSnapshot().commands.some((command) => command.command.commandId === id))
+          setErrors((previous) => new Map(previous).set(id, displayableError(reason)));
+      } finally {
+        active.current.delete(id);
+      }
+    },
+    [store, threadId]
+  );
+  // Deliver each retained command not yet seen admitted once on mount, and again when the browser
+  // comes back online after a failed attempt. An exact retry is safe: the server answers it from its
+  // archive once admitted, and the runner deduplicates by command id.
+  useEffect(() => {
+    for (const value of store.getSnapshot().commands) if (value.admission === null) void deliver(value);
+  }, [deliver, store]);
+  useEffect(() => {
+    const redeliverFailed = () => {
+      for (const value of store.getSnapshot().commands)
+        if (value.admission === null && errors.has(value.command.commandId)) void deliver(value);
+    };
+    window.addEventListener("online", redeliverFailed);
+    return () => window.removeEventListener("online", redeliverFailed);
+  }, [deliver, errors, store]);
   function submit(value: Command): boolean {
     try {
       void deliver(store.remember(value));
