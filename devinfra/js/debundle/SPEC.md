@@ -64,8 +64,11 @@ Every entity gets exactly one outcome, in one record format shared by `run`,
 
 A contradiction affects only the entities in it: the others still resolve.
 
-Every command that resolves a spec — `run`, `spec validate` in both modes, the
-edit gate and `describe` — gives each entity the same outcome. Only the pipeline
+`run` and `spec validate` in both modes give each entity the same outcome. The
+edit gate and `describe` resolve only `source_matches[]` entries and anonymous
+statements, without the spec's other members, and give those entities the same
+outcome except that one unique only because a relational member claimed its
+other places is `ambiguous` to them. Only the pipeline
 (`run`, `spec validate --spec`) reports `duplicate_claim`. `spec match-selector`
 resolves its selector as a spec of one entity, so a selector resolved by
 elimination in a spec is `ambiguous` there.

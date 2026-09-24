@@ -5,7 +5,10 @@
 //! commands (`describe` and the edit gate). They emit equal outcome records
 //! for it — `no_match`, `ambiguous` with the same candidates, `too_broad`,
 //! resolved by elimination — or all resolve it. `match-selector` resolves its
-//! probe alone, so a selector unique only by elimination is ambiguous there.
+//! probe alone, so a selector unique only by elimination is ambiguous there;
+//! the graph-backed commands resolve only `source_matches[]` and anonymous
+//! statements, so one unique only by a relational member's claim is ambiguous
+//! to them.
 //!
 //! Each resolving case also pins a matching rule the commands must share:
 //! same-spelled locals in sibling blocks, loop heads, `switch` bodies, named
@@ -622,37 +625,86 @@ fn write_elimination_tree(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
         &modules.join("elimination/third.yaml"),
         "members:\n  - name: Third\n    selector: { binding: { name: third } }\n",
     );
-    let node = |ordinal: usize, lines: (usize, usize), binding: Option<&str>, destination: &str| {
-        json!({
-            "id": format!("owner:{ordinal}"),
-            "statement_ordinal": ordinal,
-            "source_location": {"source_path": "chunk.js", "start_line": lines.0, "end_line": lines.1},
-            "declared_bindings": binding
-                .map(|binding| vec![json!({"binding": binding, "export_name": binding})])
-                .unwrap_or_default(),
-            "statement_kind": if binding.is_some() { "fn_decl" } else { "side_effect" },
-            "purity": {"kind": "pure"},
-            "destination": destination,
+    let graph = write_owner_graph(
+        root,
+        &[
+            GraphStatement::declaring((1, 3), "first", "fn_decl", "elimination/either"),
+            GraphStatement::declaring((4, 6), "second", "fn_decl", "elimination/other"),
+            GraphStatement::declaring((7, 9), "third", "fn_decl", "elimination/third"),
+            GraphStatement::residual((10, 10)),
+        ],
+    );
+    (source, modules, graph)
+}
+
+/// One top-level statement of `chunk.js` in a hand-written owner graph.
+struct GraphStatement {
+    lines: (usize, usize),
+    /// The binding it declares and its statement kind, if it declares one.
+    declared: Option<(&'static str, &'static str)>,
+    destination: &'static str,
+}
+
+impl GraphStatement {
+    fn declaring(
+        lines: (usize, usize),
+        binding: &'static str,
+        kind: &'static str,
+        destination: &'static str,
+    ) -> Self {
+        Self {
+            lines,
+            declared: Some((binding, kind)),
+            destination,
+        }
+    }
+
+    fn residual(lines: (usize, usize)) -> Self {
+        Self {
+            lines,
+            declared: None,
+            destination: "residual",
+        }
+    }
+}
+
+/// An owner graph of `root/chunk.js` at `root/owner_graph.json`, one node per
+/// statement, in order.
+fn write_owner_graph(root: &Path, statements: &[GraphStatement]) -> PathBuf {
+    let nodes = statements
+        .iter()
+        .enumerate()
+        .map(|(ordinal, statement)| {
+            json!({
+                "id": format!("owner:{ordinal}"),
+                "statement_ordinal": ordinal,
+                "source_location": {
+                    "source_path": "chunk.js",
+                    "start_line": statement.lines.0,
+                    "end_line": statement.lines.1,
+                },
+                "declared_bindings": statement.declared
+                    .map(|(binding, _)| vec![json!({"binding": binding, "export_name": binding})])
+                    .unwrap_or_default(),
+                "statement_kind": statement.declared.map_or("side_effect", |(_, kind)| kind),
+                "purity": {"kind": "pure"},
+                "destination": statement.destination,
+            })
         })
-    };
+        .collect::<Vec<_>>();
     let graph = root.join("owner_graph.json");
     write(
         &graph,
         &json!({
             "chunk_id": "static/app",
-            "nodes": [
-                node(0, (1, 3), Some("first"), "elimination/either"),
-                node(1, (4, 6), Some("second"), "elimination/other"),
-                node(2, (7, 9), Some("third"), "elimination/third"),
-                node(3, (10, 10), None, "residual"),
-            ],
+            "nodes": nodes,
             "edges": [],
             "module_graph": {"nodes": [], "edges": [], "sccs": []},
             "atomic_graph": {"nodes": [], "edges": []},
         })
         .to_string(),
     );
-    (source, modules, graph)
+    graph
 }
 
 /// Every command that resolves a spec resolves `Either` jointly, by
@@ -740,6 +792,118 @@ fn resolution_by_elimination_is_shared_by_every_spec_command() {
         stderr.contains("resolved by elimination"),
         "edit gate: {stderr}"
     );
+}
+
+/// `Either` matches `first` and `second`; the relational `Other` pins
+/// `second` as the function reading `.other`, so `Either` is unique only
+/// because a relational claim took its alternative.
+const RELATIONAL_ELIMINATION_CHUNK: &str = r#"const marker = { other: "o" };
+function first() {
+  return "shared";
+}
+function second() {
+  return marker.other;
+}
+console.log(first(), second());
+"#;
+
+/// `run` and `spec validate --source-file` resolve `Either` by elimination
+/// against the relational `Other`. The graph-backed commands resolve only
+/// `source_matches[]` and anonymous statements, so to them `Either` is
+/// ambiguous.
+#[test]
+fn relational_claims_eliminate_only_in_spec_wide_commands() {
+    let fixture = run_dry_run_fixture(FixtureOpts::new(
+        RELATIONAL_ELIMINATION_CHUNK,
+        vec![
+            logical_module(
+                "elimination/either",
+                &[Member::source_alpha_target("Either", "f", EITHER)],
+            ),
+            logical_module(
+                "elimination/other",
+                &[Member::reads_member(
+                    "Other",
+                    "other",
+                    None,
+                    Some("function_declaration"),
+                )],
+            ),
+            logical_module("elimination/marker", &[Member::renamed("Marker", "marker")]),
+        ],
+    ));
+    let run = export_record(&read_selector_outcomes(&fixture.report_root), "Either")
+        .unwrap_or_else(|| panic!("run lists no outcome for Either:\n{}", fixture.stderr));
+    assert_eq!(
+        run["outcome"],
+        json!({
+            "kind": "resolved",
+            "owner": 1,
+            "binding": "first",
+            "resolved_by": {
+                "by": "elimination",
+                "claimers": [{"logical_module": "elimination/other", "entity": {"export": "Other"}}],
+            },
+        }),
+        "{run:#}"
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("chunk.js");
+    write(&source, RELATIONAL_ELIMINATION_CHUNK);
+    let modules = dir.path().join("modules");
+    let indented = EITHER
+        .lines()
+        .map(|line| format!("      {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    write(
+        &modules.join("elimination/either.yaml"),
+        &format!(
+            "source_matches:\n  - match: |\n{indented}\n    bindings:\n      - local: f\n        name: Either\n"
+        ),
+    );
+    write(
+        &modules.join("elimination/other.yaml"),
+        "members:\n  - name: Other\n    selector: { reads_member: { member: other, kind: function_declaration } }\n",
+    );
+    write(
+        &modules.join("elimination/marker.yaml"),
+        "members:\n  - name: Marker\n    selector: { binding: { name: marker } }\n",
+    );
+    let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
+    assert!(out.status.success(), "stderr={}", out.stderr);
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let [source_only] = outcomes(&report) else {
+        panic!("spec validate --source-file lists one outcome: {report:#}");
+    };
+    assert_eq!(
+        without(source_only, &["chunk"]),
+        without(&run, &["chunk"]),
+        "spec validate --source-file"
+    );
+
+    let graph = write_owner_graph(
+        dir.path(),
+        &[
+            GraphStatement::declaring((1, 1), "marker", "var_decl", "elimination/marker"),
+            GraphStatement::declaring((2, 4), "first", "fn_decl", "elimination/either"),
+            GraphStatement::declaring((5, 7), "second", "fn_decl", "elimination/other"),
+            GraphStatement::residual((8, 8)),
+        ],
+    );
+    for args in [
+        &["describe", "elimination/either"][..],
+        &["bindings", "unassign", "marker"][..],
+    ] {
+        let out = graph_command(&graph, &modules, dir.path(), args);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{args:?}: {stderr}");
+        assert!(
+            stderr.contains("source_matches[] is ambiguous"),
+            "{args:?}: {stderr}"
+        );
+    }
 }
 
 /// A `debundle` graph-backed command over `graph` and `modules`, with chunk
