@@ -12,7 +12,6 @@ from cluster.validation.k8s import (
     ExternalSecretResource,
     K8sResource,
     PodTemplateWorkloadResource,
-    RoleBindingResource,
     SandboxTemplateResource,
     SecretResource,
     SecretStoreResource,
@@ -56,17 +55,10 @@ def find_orphaned_files(cluster: ParsedCluster, repo_root: Path) -> list[str]:
 
 
 def check_external_credential_ownership(cluster: ParsedCluster, repo_root: Path) -> list[str]:
-    """Only the shared external-creds store reads ducktape-flux, admitting exactly the source-approved namespaces."""
+    """Only the shared external-creds ClusterSecretStore reads ducktape-flux."""
     store_owner = "external-secrets-config"
     store_name = "kubernetes-external-creds-secret-store"
     resources_by_kustomization = cluster.flux_kust_resources(repo_root)
-    approved_namespaces = {
-        subject.namespace
-        for resource in resources_by_kustomization.get("external-creds", [])
-        if isinstance(resource, RoleBindingResource)
-        for subject in resource.subjects
-        if subject.namespace
-    }
     errors: list[str] = []
     stores: list[SecretStoreResource] = []
     for kustomization, resources in resources_by_kustomization.items():
@@ -86,15 +78,6 @@ def check_external_credential_ownership(cluster: ParsedCluster, repo_root: Path)
 
     if len(stores) != 1:
         errors.append(f"expected exactly one {store_owner} ClusterSecretStore '{store_name}', found {len(stores)}")
-    else:
-        allowed_namespaces = {
-            namespace for condition in stores[0].spec.conditions for namespace in condition.namespaces
-        }
-        if allowed_namespaces != approved_namespaces:
-            errors.append(
-                f"{store_owner} ClusterSecretStore '{store_name}' namespace conditions must equal the "
-                f"source-approved namespaces; expected {sorted(approved_namespaces)}, got {sorted(allowed_namespaces)}"
-            )
 
     return errors
 

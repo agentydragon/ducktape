@@ -31,6 +31,7 @@ from external_secret_store_crds.io.external_secrets import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import external_creds
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -109,26 +110,11 @@ def chart(app: App) -> Chart:
     _store(
         chart,
         "kubernetes-external-creds-secret-store",
-        # Source-side RoleBindings remain authoritative. Keep this defense-in-depth
-        # list equal to the namespaces approved by external-creds grants.
-        namespaces=[
-            "agentplane-staging-egress-credentials",
-            "agentplane-staging",
-            "agentplane-testing-egress-credentials",
-            "agents-infra",
-            "cert-manager",
-            "claude-sandbox",
-            "flux-system",
-            "haku-console",
-            "haku-egress-proxy",
-            "haku-sandbox",
-            "litellm",
-            "monitoring",
-            "nix-cache",
-            "public-coder-agent",
-            "tana-mcp",
-        ],
-        remote_namespace="ducktape-flux",
+        # Defense in depth: the source-side RoleBindings remain authoritative.
+        namespaces=sorted(
+            {consumer.namespace for credential in external_creds.CREDENTIALS for consumer in credential.consumers}
+        ),
+        remote_namespace=external_creds.NAMESPACE,
         # Referent authentication resolves this identity in each consuming
         # ExternalSecret's namespace. Access still requires a source-side grant.
         service_account=ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(name="external-creds-reader"),

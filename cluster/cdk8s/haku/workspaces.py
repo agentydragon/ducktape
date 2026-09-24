@@ -71,6 +71,7 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
@@ -251,8 +252,7 @@ def _sandbox_template(chart: Chart) -> SandboxTemplate:
                                 # bearer in a mode-0600 tokenFile. https, never http: client-go
                                 # attaches kubeconfig credentials only to a TLS server.
                                 SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                                    name="HAKU_KUBERNETES_PROXY_URL",
-                                    value="https://haku-kube-api-proxy.haku-console.svc.cluster.local:8443",
+                                    name="HAKU_KUBERNETES_PROXY_URL", value=kube_api_proxy.URL
                                 ),
                             ],
                             resources=SandboxTemplateSpecPodTemplateSpecContainersResources(

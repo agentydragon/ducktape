@@ -8,16 +8,12 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecPostBuild,
-    KustomizationSpecPostBuildSubstituteFrom,
-    KustomizationSpecPostBuildSubstituteFromKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cnpg
 from cluster.cdk8s.flux import (
+    CERT_MANAGER_ISSUER_SUBSTITUTION,
     Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on_many,
@@ -167,12 +163,6 @@ def atuin(
         artifact,
         timeout="5m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        post_build=KustomizationSpecPostBuild(
-            substitute_from=[
-                KustomizationSpecPostBuildSubstituteFrom(
-                    kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name="cert-manager-issuer-config"
-                )
-            ]
-        ),
+        post_build=CERT_MANAGER_ISSUER_SUBSTITUTION,
         depends_on=flux_kustomization_depends_on_many(cert_manager_issuer_config, cnpg),
     )

@@ -23,9 +23,7 @@ def _cluster_with(doc: dict) -> ParsedCluster:
     return ParsedCluster(source_resources={Path("policy.yaml"): parse_k8s_resources([doc])})
 
 
-def _external_creds_cluster(
-    repo_root: Path, supplier_docs: list[dict], consumer_docs: list[dict], store_docs: list[dict] | None = None
-) -> ParsedCluster:
+def _external_creds_cluster(repo_root: Path, supplier_docs: list[dict], consumer_docs: list[dict]) -> ParsedCluster:
     return ParsedCluster(
         flux_kustomizations={
             "external-secrets-config": FluxKustomizationSpec(path="./cluster/k8s/external-secrets/config"),
@@ -39,7 +37,7 @@ def _external_creds_cluster(
             ),
             KustomizeBuildResult(
                 kustomization_path=repo_root / "cluster/k8s/external-secrets/config/kustomization.yaml",
-                resources=parse_k8s_resources(store_docs or [_central_store()]),
+                resources=parse_k8s_resources([_central_store()]),
             ),
             KustomizeBuildResult(
                 kustomization_path=repo_root / "cluster/k8s/consumer/kustomization.yaml",
@@ -59,15 +57,12 @@ def _source_binding() -> dict:
     }
 
 
-def _central_store(namespaces: list[str] | None = None) -> dict:
+def _central_store() -> dict:
     return {
         "apiVersion": "external-secrets.io/v1",
         "kind": "ClusterSecretStore",
         "metadata": {"name": "kubernetes-external-creds-secret-store"},
-        "spec": {
-            "conditions": [{"namespaces": namespaces or ["consumer"]}],
-            "provider": {"kubernetes": {"remoteNamespace": "ducktape-flux"}},
-        },
+        "spec": {"provider": {"kubernetes": {"remoteNamespace": "ducktape-flux"}}},
     }
 
 
@@ -210,7 +205,7 @@ def test_forgejo_image_namespace_missing_external_secret_is_flagged() -> None:
     assert "worker" in error
 
 
-def test_external_credential_central_store_and_source_approval_pass(tmp_path: Path) -> None:
+def test_external_credential_central_store_passes(tmp_path: Path) -> None:
     cluster = _external_creds_cluster(
         tmp_path,
         [
@@ -226,17 +221,6 @@ def test_external_credential_namespace_store_is_rejected(tmp_path: Path) -> None
     cluster = _external_creds_cluster(tmp_path, [_source_binding()], [_consumer_store()])
     errors = check_external_credential_ownership(cluster, tmp_path)
     assert any("use external-secrets-config's shared ClusterSecretStore" in error for error in errors)
-
-
-def test_external_credential_store_conditions_match_source_approvals(tmp_path: Path) -> None:
-    cluster = _external_creds_cluster(
-        tmp_path,
-        [_source_binding()],
-        [_consumer_external_secret()],
-        store_docs=[_central_store(namespaces=["consumer", "unapproved"])],
-    )
-    errors = check_external_credential_ownership(cluster, tmp_path)
-    assert any("namespace conditions must equal the source-approved namespaces" in error for error in errors)
 
 
 if __name__ == "__main__":

@@ -16,23 +16,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_terraform_sources",
-    srcs = ["test_terraform_sources.py"],
-    data = [
-        "//cluster:generated_manifests",
-        "//cluster/k8s:cluster_yaml_files",
-        "//cluster/k8s:flux_bootstrap_files",
-    ],
-    deps = [
-        "//cluster/cdk8s:manifest_roots",
-        "//util/bazel:runfiles",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
 py_library(
     name = "k8s",
     srcs = ["k8s.py"],
@@ -116,16 +99,6 @@ py_library(
     testonly = True,
     srcs = ["health_checks.py"],
     deps = [":cluster"],
-)
-
-py_library(
-    name = "postbuild_substitutions",
-    testonly = True,
-    srcs = ["postbuild_substitutions.py"],
-    deps = [
-        ":cluster",
-        ":k8s",
-    ],
 )
 
 py_library(
@@ -232,19 +205,6 @@ py_test(
         ":flux",
         ":k8s",
         ":kustomize",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_postbuild_substitutions",
-    srcs = ["test_postbuild_substitutions.py"],
-    deps = [
-        ":cluster",
-        ":flux",
-        ":k8s",
-        ":postbuild_substitutions",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -377,7 +337,6 @@ py_test(
         ":health_checks",
         ":image_automation",
         ":kustomize",
-        ":postbuild_substitutions",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",

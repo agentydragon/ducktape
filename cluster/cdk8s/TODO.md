@@ -158,4 +158,4 @@ and pure unit/schema tests with no
 second independently-authored source to drift against (`test_checks.py`,
 `test_cluster.py`, `test_crd_layering.py`, `test_dependencies.py`, `test_flux.py`,
 `test_generator_namespace.py`, `test_health_checks.py`, `test_image_automation.py`,
-`test_k8s.py`, `test_postbuild_substitutions.py`, `test_sops_decryption.py`).
+`test_k8s.py`, `test_sops_decryption.py`).

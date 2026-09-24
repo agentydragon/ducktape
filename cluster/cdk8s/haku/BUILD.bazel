@@ -238,6 +238,7 @@ py_library(
     name = "workspaces",
     srcs = ["workspaces.py"],
     deps = [
+        ":kube_api_proxy",
         ":namespace",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:flux",

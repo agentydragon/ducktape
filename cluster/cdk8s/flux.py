@@ -35,6 +35,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecImages,
     KustomizationSpecPatches,
     KustomizationSpecPostBuild,
+    KustomizationSpecPostBuildSubstituteFrom,
+    KustomizationSpecPostBuildSubstituteFromKind,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -46,6 +48,16 @@ NAMESPACE = "ducktape-flux"  # shared Flux namespace every generated Kustomizati
 SOPS_DECRYPTION = KustomizationSpecDecryption(
     provider=KustomizationSpecDecryptionProvider.SOPS,
     secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
+)
+# `${LETSENCRYPT_ISSUER}` from cert_manager/issuer_config.py's ConfigMap, which is reflected
+# into NAMESPACE: Flux reads substitution sources from the Kustomization's own namespace.
+CERT_MANAGER_ISSUER_CONFIG = "cert-manager-issuer-config"
+CERT_MANAGER_ISSUER_SUBSTITUTION = KustomizationSpecPostBuild(
+    substitute_from=[
+        KustomizationSpecPostBuildSubstituteFrom(
+            kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name=CERT_MANAGER_ISSUER_CONFIG
+        )
+    ]
 )
 
 
