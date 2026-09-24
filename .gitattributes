@@ -45,7 +45,6 @@ cluster/k8s/**/*.k8s.yaml linguist-generated=true
 cluster/generated/** linguist-generated=true
 cluster/k8s/litellm/app/kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/kustomization.yaml linguist-generated=true
-cluster/k8s/litellm/db/kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/keys-tf/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/ha-mcp/app/kustomization.yaml linguist-generated=true
@@ -53,10 +52,8 @@ cluster/k8s/aiquota/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/public-coder-agent/devbox/kustomization.yaml linguist-generated=true
 cluster/k8s/cpap-sync/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/app/kustomization.yaml linguist-generated=true
-cluster/k8s/authentik/db/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/cluster/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/operator/kustomization.yaml linguist-generated=true
-cluster/k8s/authentik/proxy-routes/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/schema/kustomization.yaml linguist-generated=true
 cluster/k8s/agentplane-staging/kustomization.yaml linguist-generated=true
 # Agentplane testing's root Kustomization is hand-maintained because Flux image
@@ -81,14 +78,12 @@ cluster/k8s/forgejo-images/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/stack/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/plaid-mcp/app/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/plaid-mcp/db/kustomization.yaml linguist-generated=true
-cluster/k8s/agents/plaid-mcp/servicemonitor/kustomization.yaml linguist-generated=true
 cluster/k8s/grocy/app-base/kustomization.yaml linguist-generated=true
 cluster/k8s/grocy/mcp-base/kustomization.yaml linguist-generated=true
 cluster/k8s/grocy/mcp-servicemonitor-base/kustomization.yaml linguist-generated=true
 cluster/k8s/cli-proxy-api/kustomization.yaml linguist-generated=true
 cluster/k8s/matrix/kustomization.yaml linguist-generated=true
 cluster/k8s/matrix/user-provisioner/kustomization.yaml linguist-generated=true
-cluster/k8s/github-api-proxy/identity/kustomization.yaml linguist-generated=true
 cluster/k8s/user-agentydragon/kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
 # output, pinned by //agentplane/crds:test_generate.

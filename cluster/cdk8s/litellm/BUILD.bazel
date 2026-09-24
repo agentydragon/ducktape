@@ -78,6 +78,7 @@ py_library(
     name = "namespace",
     srcs = ["namespace.py"],
     deps = [
+        ":database",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
@@ -89,7 +90,6 @@ py_library(
     srcs = ["database.py"],
     deps = [
         "//cluster/cdk8s:cnpg",
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/crd_bindings/cnpg:cluster",
