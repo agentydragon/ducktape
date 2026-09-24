@@ -56,9 +56,6 @@ operators, member property names, object keys and tree structure are
 significant. Relational selectors (`cross_ref`, `reads_member`, …) match through
 facts derived from the chunk, not through templates.
 
-A selector matching more than 100 places is `too_broad` and takes no further
-part.
-
 ## Assignment
 
 Every chunk's entities form one program. Each entity takes exactly one of its
@@ -86,7 +83,7 @@ Every entity gets exactly one outcome, in one record format shared by `run`,
 | `no_match`                                | no place satisfies its selector and constraints; a one-statement template may list up to 3 `nearest_unclaimed` statements (no entity claims them), closest first, with where each diverges | error    |
 | `ambiguous`                               | several assignments exist; at most 5 of its places are listed, with `truncated` when more exist                                                                                            | error    |
 | `conflict`                                | no assignment exists; `with` names the entities of an unsatisfiable set (not necessarily minimal)                                                                                          | error    |
-| `too_broad`                               | its selector matches more than 100 places                                                                                                                                                  | error    |
+| `too_broad`                               | its selector matches more than 100 places, and it takes no further part                                                                                                                    | error    |
 | `duplicate_claim`                         | resolved to a binding another entity already claims; `declaration` gives the statement declaring it (`owner`, its body index) and its keyword `kind` (`function`, `const`, `import`, ...)  | error    |
 | `invalid`                                 | its selector does not parse, uses an unsupported construct, or its matches do not map to places                                                                                            | error    |
 | `undecided`                               | the solver stopped before deciding it                                                                                                                                                      | error    |

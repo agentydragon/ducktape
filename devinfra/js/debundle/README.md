@@ -70,8 +70,8 @@ The roots must be normalized relative paths and may not overlap. Several trees
 may scope to one chunk: their modules share the chunk, so no two may define the
 same module path, and their selectors resolve jointly (no two entities claim one
 place). Module paths in the compiled flat spec are relative to their tree's root,
-while `logical_modules` is keyed by chunk ID. The existing `binding_patches.yaml`
-stream applies to `main_chunk_id`.
+while `logical_modules` is keyed by chunk ID. The `binding_patches.yaml` stream
+applies to `main_chunk_id` only.
 
 (For other invocation shapes — flat spec, vendor package roots, etc. —
 see `docs/cli.md`.)
@@ -118,7 +118,7 @@ edit. Anything that must persist belongs in a schema field — `comment:`
 
 ## Conditionally-correct optimizations
 
-Two opt-in per-chunk analyses are sound only when the input avoids shapes that
+These opt-in per-chunk analyses are sound only when the input avoids shapes that
 defeat static reasoning; each checks its precondition per statement and falls
 back to the conservative path (<docs/design.md> → "Conditionally-correct
 optimizations"):
