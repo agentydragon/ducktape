@@ -1909,11 +1909,11 @@ spec:
             - --listen
             - 0.0.0.0:7000
             - --claude-binary
-            - /usr/local/bin/claude
+            - /bin/claude
             - --anthropic-base-url
             - $(LITELLM_URL)
             - --codex-binary
-            - /opt/codex/bin/codex
+            - /bin/codex
             - --openai-base-url
             - $(LITELLM_URL)/v1
             - --harness-env

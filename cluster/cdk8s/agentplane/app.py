@@ -406,12 +406,13 @@ class App(Construct):
             _STATE_DIR,
             "--listen",
             f"0.0.0.0:{_RUNNER_PORT}",
+            # Where the runner image (agentplane/runner/image.nix) links nixpkgs' harnesses.
             "--claude-binary",
-            "/usr/local/bin/claude",
+            "/bin/claude",
             "--anthropic-base-url",
             "$(LITELLM_URL)",
             "--codex-binary",
-            "/opt/codex/bin/codex",
+            "/bin/codex",
             "--openai-base-url",
             "$(LITELLM_URL)/v1",
         ]

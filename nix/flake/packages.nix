@@ -2,6 +2,7 @@
   self,
   system,
   pkgs,
+  artifacts,
   ducktapePkgs,
   gafferPkgs,
   home-manager,
@@ -95,6 +96,14 @@ ducktapePkgs
   # Build: nix build .#agentplane-sandbox-image
   # Load:  docker load < result
   agentplane-sandbox-image = import ../../agentplane/sandbox_image { inherit pkgs; };
+  # agentplane's runner image: the sandbox image plus the released runner wheel and nixpkgs'
+  # Claude Code and Codex (agentplane/runner/image.nix).
+  # Build: nix build .#agentplane-runner-image
+  # Load:  docker load < result
+  agentplane-runner-image = import ../../agentplane/runner/image.nix {
+    inherit pkgs pkgsUnstable;
+    wheel = artifacts.agentplane-runner;
+  };
   # Parked Codex pod image experiment (plain Docker, no NixOS/systemd). Flake
   # output retained; see x/codex_pod_image/deploy/README.md for status.
   # Build: nix build .#codex-pod-image (currently fails at evaluation; see deployment README)

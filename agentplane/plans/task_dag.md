@@ -87,7 +87,6 @@ flowchart TB
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
     CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
-    SANDBOX_EXEC_IMAGE["Planned image<br/>the runner image from the sandbox image's definition<br/>today it is Bazel-built, with no python3 or jq"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>some first need an ActionGroup, a kind, or DENY_LISTS"]:::future
 
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
@@ -385,33 +384,6 @@ settle).
 **Acceptance:** a stated, reviewed authority for the account, rendered by the generator rather than
 accumulated; a real API request from inside a sandbox succeeds for the intended operations and is
 refused outside them; and removing the account or its label still disables the whole path.
-
-### `SANDBOX_EXEC_IMAGE` — the runner image from the sandbox image's definition
-
-**Planned image:** the sandbox Actions' default environment runs the Nix sandbox image
-(`agentplane/sandbox_image/default.nix`), but the runner image is still Bazel-built, with `curl`,
-`git` and `ripgrep` as its only tools.
-
-**Shape:**
-
-- The runner image is the same definition plus the runner, Claude Code and Codex, also built by
-  Nix; Bazel pulls no image from Forgejo. The runner comes in as a wheel Bazel builds and tests,
-  carrying its harness supervisor; `release.yml` publishes it and `sync-pins.yml` pins it in
-  `nix/artifact-pins.json`, as for the repository's other released tools. Claude Code and Codex
-  come from nixpkgs, so the image's harnesses are nixpkgs' versions rather than the ones
-  `//agentplane/runner/...` pins, and the image's container tests are what run the runner against
-  them.
-- `test_image` and `test_image_packaging` move to the runner image's workflow and run against the
-  image it built, before it publishes. A runner change then reaches the image through a release, a
-  pin and an image build; its container tests run on devel once the pin moves, not on the change's
-  PR.
-
-**Steps:**
-
-1. The Nix runner image from the shared definition, the runner wheel's pin and nixpkgs'
-   `claude-code` and `codex`, with the container tests in its workflow.
-   `devinfra/ci/image_targets.json` stops publishing the Bazel runner image, and its apt tool set
-   (`trixie_agentplane_runner`) goes.
 
 ### `CALLER_GRANT_VIEW` — one grant view for Sandboxes and unmanaged agents
 

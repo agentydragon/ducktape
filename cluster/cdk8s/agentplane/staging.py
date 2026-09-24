@@ -208,8 +208,8 @@ _ACTIONS_SETTINGS = {
                         "container": "runner",
                         "default_cwd": "/state",
                         "description": (
-                            "The shared runner image, built to host an agent harness. A command gets git, "
-                            "curl and ripgrep; no Python, pip, kubectl or jq is on its PATH."
+                            "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, "
+                            "ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
                         ),
                     },
                 },

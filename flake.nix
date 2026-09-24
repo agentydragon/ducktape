@@ -415,6 +415,7 @@
             self
             system
             pkgs
+            artifacts
             ducktapePkgs
             gafferPkgs
             home-manager
