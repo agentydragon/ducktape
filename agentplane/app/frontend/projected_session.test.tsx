@@ -126,7 +126,15 @@ function threadState({
   error?: string | null;
 } = {}): ThreadState {
   return {
-    window: { rows, caughtUp, olderAvailable: false, loadOlder: () => {}, error: windowError, refresh: () => {} },
+    window: {
+      rows,
+      caughtUp,
+      olderAvailable: false,
+      loadingOlder: false,
+      loadOlder: () => {},
+      error: windowError,
+      refresh: () => {},
+    },
     error,
   };
 }
