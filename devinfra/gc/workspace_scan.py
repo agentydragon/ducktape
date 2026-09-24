@@ -20,7 +20,6 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
-import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -29,23 +28,15 @@ from pathlib import Path
 import pygit2
 
 from devinfra.gc import branch_gc, git_repo, output_base_gc, worktree_gc
-from devinfra.gc.branch_gc import BranchClassification, Holder, MainCheckout
+from devinfra.gc.branch_gc import BranchClassification, Holder, MainCheckout, PrunableBranch, RetainedBranch
 from devinfra.gc.output_base_gc import Inspection, RetainedBase
 from devinfra.gc.pull_request import PrInfo
-from devinfra.gc.worktree_gc import Classification, PrunableWorktree
+from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressCategory, ProgressSink
+from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWorktree
 
 logger = logging.getLogger(__name__)
 
 _BRANCH_WORKERS = 8  # content_in_main runs pygit2 merges (GIL released), so threads help
-
-# (phase, done, total) after each item finishes classifying — lets the CLI render live
-# progress over a scan that can take minutes on a large workspace, without this module (kept
-# network-free and unit-testable offline) knowing anything about consoles or TTYs.
-ProgressFn = Callable[[str, int, int], None]
-
-
-def _no_progress(phase: str, done: int, total: int) -> None:
-    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +78,22 @@ def _annotate_base(base: Inspection, prunable_workspaces: set[Path]) -> Inspecti
     return dataclasses.replace(base, reason=f"{base.reason} — workspace is a prunable worktree (prune it first)")
 
 
+def _worktree_category(classification: Classification) -> ProgressCategory:
+    if isinstance(classification, PrunableWorktree):
+        return "PRUNE"
+    if isinstance(classification, RetainedWorktree):
+        return "KEEP"
+    return "REVIEW"
+
+
+def _branch_category(classification: BranchClassification) -> ProgressCategory:
+    if isinstance(classification, PrunableBranch):
+        return "PRUNE"
+    if isinstance(classification, RetainedBranch):
+        return "KEEP"
+    return "REVIEW"
+
+
 def _classify_branches(
     main_path: Path,
     names: list[str],
@@ -95,7 +102,7 @@ def _classify_branches(
     default_branch: str,
     pr_states: dict[str, PrInfo],
     holder_for: Callable[[str], Holder],
-    progress: ProgressFn,
+    progress: ProgressSink,
 ) -> list[BranchClassification]:
     """Classify every local branch, parallelizing the pygit2 content-in-main merges.
 
@@ -106,11 +113,10 @@ def _classify_branches(
     """
 
     total = len(names)
-    lock = threading.Lock()
-    done = 0
+    if total:
+        progress.start_phase("branches", total)
 
     def classify_slice(args: tuple[int, list[str]]) -> list[BranchClassification]:
-        nonlocal done
         offset, slice_names = args
         pg = pygit2.Repository(os.fspath(main_path))
         results: list[BranchClassification] = []
@@ -121,9 +127,7 @@ def _classify_branches(
             )
             results.append(result)
             logger.info("Finished branch %d/%d %s", index, total, name)
-            with lock:
-                done += 1
-                progress("branches", done, total)
+            progress.record("branches", _branch_category(result))
         return results
 
     workers = min(_BRANCH_WORKERS, len(names))
@@ -167,7 +171,7 @@ def annotate_bases(
     pr_states: dict[str, PrInfo],
     active_path: Path | None = None,
     proc_root: Path = Path("/proc"),
-    progress: ProgressFn = _no_progress,
+    progress: ProgressSink = NULL_PROGRESS,
 ) -> list[Inspection]:
     """Flag each retained base whose workspace is a prunable worktree.
 
@@ -178,6 +182,7 @@ def annotate_bases(
     if not candidates:
         return bases
 
+    progress.start_phase("workspaces", len(candidates))
     main_path = git_repo.main_worktree(repo)
     live = worktree_gc.processes_by_worktree((wt.path for wt in candidates), proc_root=proc_root)
     prunable_paths: set[Path] = set()
@@ -192,7 +197,7 @@ def annotate_bases(
             live_pids=live.get(wt.path, []),
         )
         logger.info("Finished base workspace %d/%d %s", index, len(candidates), wt.path)
-        progress("workspaces", index, len(candidates))
+        progress.record("workspaces", _worktree_category(classification))
         if isinstance(classification, PrunableWorktree):
             prunable_paths.add(wt.path)
     prunable = _resolved(prunable_paths)
@@ -209,13 +214,15 @@ def scan_workspace(
     output_user_root: Path | None = None,
     proc_root: Path = Path("/proc"),
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
-    progress: ProgressFn = _no_progress,
+    progress: ProgressSink = NULL_PROGRESS,
 ) -> WorkspaceScan:
     main_path = git_repo.main_worktree(repo)
     pg = pygit2.Repository(os.fspath(main_path))
 
     linked = [wt for wt in git_repo.list_worktrees(repo) if wt.path != main_path]
     logger.info("Scanning %d linked worktrees", len(linked))
+    if linked:
+        progress.start_phase("worktrees", len(linked))
     live = worktree_gc.processes_by_worktree((wt.path for wt in linked), proc_root=proc_root)
     worktrees: list[Classification] = []
     for index, wt in enumerate(linked, start=1):
@@ -230,7 +237,7 @@ def scan_workspace(
         )
         worktrees.append(classification)
         logger.info("Finished worktree %d/%d %s", index, len(linked), wt.path)
-        progress("worktrees", index, len(linked))
+        progress.record("worktrees", _worktree_category(classification))
     logger.info("Worktree scan complete: %d linked worktrees", len(linked))
 
     holders = branch_gc.branch_holders(repo)
@@ -263,10 +270,11 @@ def scan_workspace(
             {item.worktree.path for item in worktrees if isinstance(item, PrunableWorktree)}
         )
         logger.info("Scanning Bazel output bases in %s", output_user_root)
+
         bases = [
             _annotate_base(base, prunable_workspaces)
             for base in output_base_gc.scan_output_user_root(
-                output_user_root, proc_root=proc_root, mountinfo_path=mountinfo_path
+                output_user_root, proc_root=proc_root, mountinfo_path=mountinfo_path, progress=progress
             )
         ]
         logger.info("Bazel output-base scan complete: %d bases", len(bases))
