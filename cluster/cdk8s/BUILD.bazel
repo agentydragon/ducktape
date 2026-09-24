@@ -875,7 +875,6 @@ py_library(
         ":artifact_generators",
         ":fleet_rules",
         ":flux",
-        ":generation",
         ":manifest_roots",
         ":metadata",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
