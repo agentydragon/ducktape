@@ -79,7 +79,7 @@ async def test_empty_catalog_has_no_echo_fallback(engine: AsyncEngine) -> None:
     catalog = ActionCatalog(groups=settings.action_groups)
     async with running_executor(catalog) as executors:
         assert executors == {}
-        assert catalog.group_views() == []
+        assert catalog.group_views(with_detail=False) == []
         service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, executors)
         for identity in (ActionIdentity(group="agentplane", name="echo"),):
             with pytest.raises(UnsupportedActionError):

@@ -594,7 +594,6 @@ py_test(
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":haku_egress_proxy",
         "//:conftest",
         "//cluster/cdk8s/haku:workspaces",
         "//util/bazel:runfiles",
