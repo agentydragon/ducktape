@@ -33,6 +33,8 @@ import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { ChronologicalDebugLink, ChronologicalDebugProvider } from "./chronological_debug";
+
+import "./projected_session.css";
 import { ThreadTitle } from "./thread_title";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
@@ -302,7 +304,7 @@ function EntityCard({
         {/* The bubble has no header row: beside its top corner, in the width it leaves free, the
             icon neither grows the bubble nor covers its text. */}
         <EvidenceToggle entity={entity} />
-        <Paper className="agentplane-user-bubble" p="sm" withBorder maw="80%">
+        <Paper className="agentplane-user-bubble" p="sm">
           <Body reference={entity.inputRef} />
           <EvidencePanel threadId={threadId} entity={entity} />
         </Paper>
