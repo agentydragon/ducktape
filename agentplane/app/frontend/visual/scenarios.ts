@@ -41,6 +41,8 @@ export interface Scenario extends ScenarioOptions {
   openDebug?: "latest" | "stderr";
   /** Open a projected reasoning payload after the semantic row has mounted. */
   openReasoning?: boolean;
+  /** Open a projected tool call's Arguments and Output after the semantic row has mounted. */
+  openToolPayloads?: boolean;
   /** Click the Evidence icon of the row at this thread anchor once it mounts: which rows show
    * their evidence is not in the URL. */
   openEvidence?: string;
@@ -352,6 +354,21 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ['[data-thread-anchor="34"]'],
     captureViewport: true,
   },
+  // An unnamed thread: the title field shows the thread id as its placeholder and nothing beside it.
+  session_unnamed: {
+    element: "#app",
+    route: "/threads/5f1c4a2e-0000-4000-8000-000000000000",
+    viewport: { width: 1200, height: 900 },
+    readySelectors: ['[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_unnamed_phone: {
+    element: "#app",
+    route: "/threads/5f1c4a2e-0000-4000-8000-000000000000",
+    viewport: PHONE,
+    readySelectors: ['[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
   session_reasoning: {
     element: "#app",
     route: SESSION_ROUTE,
@@ -367,6 +384,25 @@ export const SCENARIOS: Record<string, Scenario> = {
     outputName: "session-reasoning-phone",
     openReasoning: true,
     readySelectors: ["details[open]"],
+  },
+  // JSON arguments highlighted, and a non-JSON output in the same code block, uninterpreted. The
+  // history follows its bottom, so the viewports are tall enough to keep the tool call, and the
+  // user's input above it, on screen.
+  session_tool_payloads: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 1300 },
+    outputName: "session-tool-payloads",
+    openToolPayloads: true,
+    readySelectors: [".agentplane-hljs .hljs-attr", "details[open] + details[open] .agentplane-hljs"],
+  },
+  session_tool_payloads_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { ...PHONE, height: 1500 },
+    outputName: "session-tool-payloads-phone",
+    openToolPayloads: true,
+    readySelectors: [".agentplane-hljs .hljs-attr", "details[open] + details[open] .agentplane-hljs"],
   },
   // A row's evidence opened from its corner icon: on the user bubble, the one card with no header
   // row to hold the icon, and at phone width in the last reply's header row.
