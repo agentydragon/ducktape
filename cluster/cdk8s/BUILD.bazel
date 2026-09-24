@@ -740,6 +740,8 @@ py_library(
     srcs = ["terraform.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":ducktape_flux",
+        ":flux",
         ":metadata",
         "//cluster/cdk8s/crd_bindings/tofu_controller:terraform",
         "@pypi//constructs",

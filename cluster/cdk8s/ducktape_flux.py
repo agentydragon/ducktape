@@ -20,6 +20,8 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux/ducktape-flux"
+SOURCE_NAME = "ducktape"
+TF_GITOPS_ROOT = "tf/gitops"  # tofu-controller Terraform modules (terraform.py)
 _READER = "ducktape-flux-reader"
 
 
@@ -42,7 +44,7 @@ def chart(app: App) -> Chart:
     GitRepository(
         chart,
         "source",
-        metadata=metadata("ducktape", NAMESPACE),
+        metadata=metadata(SOURCE_NAME, NAMESPACE),
         spec=GitRepositorySpec(
             interval="1m",
             ref=GitRepositorySpecRef(branch="devel"),
@@ -54,7 +56,7 @@ def chart(app: App) -> Chart:
                 "haku/runtime/managed_agent/self_hosted/deploy/",
                 "loom/wayback/deploy/",
                 "props/deploy/",
-                "tf/gitops/",
+                f"{TF_GITOPS_ROOT}/",
             ],
             url="https://github.com/agentydragon/ducktape.git",
         ),

@@ -25,6 +25,7 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecVars,
 )
 
+from cluster.cdk8s import ducktape_flux, flux
 from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "flux-system"
@@ -70,9 +71,11 @@ def gitops_terraform(
         spec=TerraformV1Alpha2Spec(
             interval="15m",
             refresh_before_apply=True,
-            path=f"./tf/gitops/{name}",
+            path=f"./{ducktape_flux.TF_GITOPS_ROOT}/{name}",
             source_ref=TerraformV1Alpha2SpecSourceRef(
-                kind=TerraformV1Alpha2SpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
+                kind=TerraformV1Alpha2SpecSourceRefKind.GIT_REPOSITORY,
+                name=ducktape_flux.SOURCE_NAME,
+                namespace=flux.NAMESPACE,
             ),
             service_account_name="tf-runner",
             approve_plan="auto",

@@ -19,6 +19,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import flux, terraform
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
@@ -51,8 +52,8 @@ def chart(app: App) -> Chart:
         ),
         upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE),
         values={
-            # Terraform CRs in flux-system consume ducktape-flux/ducktape.
-            "allowCrossNamespaceRefs": True,
+            # Gitops Terraform CRs read the ducktape GitRepository in the Flux namespace.
+            "allowCrossNamespaceRefs": terraform.NAMESPACE != flux.NAMESPACE,
             "runner": {
                 "grpc": {"maxMessageSize": 50},  # MB, default 4 — defense against repo growth
                 "serviceAccount": {"annotations": {"eks.amazonaws.com/role-arn": ""}},  # Not needed for on-prem
