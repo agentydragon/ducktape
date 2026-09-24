@@ -476,7 +476,7 @@ def _operator_connection_server(mcp: FastMCP) -> InProcessServerRegistration:
 
 def _config_file(tmp_path: Path, mcp_server_url: str) -> Path:
     servers = [
-        _remote_server("grocy-sf", mcp_server_url, {"kind": "static_bearer", "token": "test-token"}),
+        _remote_server("grocy-sf", mcp_server_url, {"kind": "none"}),
         _remote_server("smoke", mcp_server_url, {"kind": "none"}),
     ]
     return write_config(tmp_path / "haku_console.yaml", _config(servers))
@@ -484,7 +484,7 @@ def _config_file(tmp_path: Path, mcp_server_url: str) -> Path:
 
 @pytest.fixture
 def console_config(tmp_path: Path, mcp_server_url: str) -> Path:
-    """The standard two-server console config (`grocy-sf` static-bearer + `smoke`) most tests use."""
+    """The standard two-server console config (credential-free `grocy-sf` + `smoke`) most tests use."""
     return _config_file(tmp_path, mcp_server_url)
 
 
@@ -1085,7 +1085,7 @@ def test_approval_executes_tool_and_records_terminal_result(operator_client: Tes
     assert finished["result"]["content"][0]["text"] == "stock_add:123:1"
 
 
-async def test_configured_credential_approval_passes_canonical_operator_id(
+async def test_credential_free_approval_passes_canonical_operator_id(
     *,
     make_operator_client,
     console_config: Path,
@@ -1095,9 +1095,7 @@ async def test_configured_credential_approval_passes_canonical_operator_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     execution_operator_ids = _record_execution_operator_ids(monkeypatch)
-    with make_operator_client(
-        config_file=console_config, operator_external_user_key="configured-credential-sub"
-    ) as client:
+    with make_operator_client(config_file=console_config, operator_external_user_key="credential-free-sub") as client:
         submitted = _submit(client)
         approved = client.post(f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "approve"})
         # Drain before the client (and its lifespan aclose) tears down, so execution runs to completion.
@@ -1105,8 +1103,8 @@ async def test_configured_credential_approval_passes_canonical_operator_id(
 
     assert approved.status_code == 200, approved.text
     assert approved.json()["tool_call"]["status"] == "running"
-    assert execution_operator_ids == [await operator_id(migrated_sessions, "configured-credential-sub")]
-    assert upstream_bearers == ["test-token"]
+    assert execution_operator_ids == [await operator_id(migrated_sessions, "credential-free-sub")]
+    assert upstream_bearers == [None]
 
 
 async def test_operator_oauth_association_drives_approved_tool_execution(
@@ -1273,7 +1271,7 @@ async def test_two_operator_two_agent_http_authorization_matrix(
         ("ops", "ops-token", "op-ops"),
         ("ops-sibling", "ops-sibling-token", "op-ops"),
     )
-    config = _config([_remote_server("grocy-sf", mcp_server_url, {"kind": "static_bearer", "token": "test-token"})])
+    config = _config([_remote_server("grocy-sf", mcp_server_url, {"kind": "none"})])
     config["static_agents"] = {
         name.replace("-", "_"): {
             "agent_id": f"30000000-0000-4000-8000-{index:012d}",

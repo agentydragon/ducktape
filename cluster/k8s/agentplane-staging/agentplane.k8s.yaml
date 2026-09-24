@@ -1341,6 +1341,7 @@ spec:
     - hosts:
         - api.github.com
         - github.com
+        - codeload.github.com
         - "*.githubusercontent.com"
       methods:
         - GET
