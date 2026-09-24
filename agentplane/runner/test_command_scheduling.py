@@ -129,7 +129,7 @@ async def test_interrupt_is_admitted_and_dispatched_while_a_prior_input_blocks(t
             assert interrupt_entry is not None
             assert interrupt_entry.dispatch_planned
 
-            await session.turn_completed("turn-1", event_pb2.TURN_STATUS_INTERRUPTED)
+            await session.turn_completed("turn-1", event_pb2.TURN_STATUS_INTERRUPTED, sources=[])
             interrupt_entry = await session.journal.get("interrupt-1")
             assert interrupt_entry is not None
             assert interrupt_entry.terminal_cursor is not None

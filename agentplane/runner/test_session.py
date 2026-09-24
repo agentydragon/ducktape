@@ -73,7 +73,9 @@ class DerivingAdapter(HarnessAdapter):
         raise AssertionError(f"unexpected model command {(command_id, model)!r}")
 
     async def on_frame(self, frame: dict[str, Any], source_sequence: int) -> None:
-        await self.session.emit(event_pb2.TextDelta(item_id="test-item", text=str(frame["n"])))
+        await self.session.emit(
+            event_pb2.TextDelta(item_id="test-item", text=str(frame["n"])), sources=[source_sequence]
+        )
         if frame.get("ask"):
             await self.session.send(Answer(answer=frame["n"]))
 
@@ -202,32 +204,15 @@ async def test_an_answer_mid_batch_commits_the_batch_so_far_before_it_is_written
     assert published_at_write[answer] == entries[5].cursor
 
 
-async def test_a_request_receives_its_reply_only_once_the_reply_is_committed(session: Session) -> None:
+async def test_a_request_receives_its_reply_once_the_reply_and_its_translation_are_committed(session: Session) -> None:
     receipt = await session.request(
         Write(write=_lines({"n": 0}, {"n": 1}, {"n": 2})), matches=lambda frame: frame.get("n") == 1
     )
+    published = session.journal.last_cursor
     assert receipt.frame == {"n": 1}
-    assert receipt.sequence <= session.journal.last_cursor
-
-
-async def test_an_ordered_reply_is_handled_before_the_frames_after_it_are_translated(session: Session) -> None:
-    before = session.journal.last_cursor
-    request = Write(write=_lines({"n": 0}, {"n": 1}, {"n": 2}))
-    async with session.ordered_reply():
-        receipt = await session.request(request, matches=lambda frame: frame.get("n") == 1)
-        await session.emit(event_pb2.TextDelta(item_id="test-item", text="handled"), sources=[receipt.sequence])
-    await _published_through(session, before + 8)
-
-    assert [_summary(entry) for entry in await session.journal.since(before, limit=128)] == [
-        ("native DIRECTION_TO_HARNESS", request.model_dump_json()),
-        ("native DIRECTION_FROM_HARNESS", json.dumps({"n": 0})),
-        ("text_delta", "0"),
-        ("native DIRECTION_FROM_HARNESS", json.dumps({"n": 1})),
-        ("text_delta", "1"),
-        ("text_delta", "handled"),
-        ("native DIRECTION_FROM_HARNESS", json.dumps({"n": 2})),
-        ("text_delta", "2"),
-    ]
+    [translation] = await session.journal.since(receipt.sequence, limit=1)
+    assert _summary(translation) == ("text_delta", "1")
+    assert translation.cursor <= published
 
 
 if __name__ == "__main__":
