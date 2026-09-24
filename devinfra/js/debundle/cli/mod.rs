@@ -183,14 +183,16 @@ enum SpecNsCommand {
     /// rewritten holes, and skip reasons.
     #[command(name = "synthesize-selectors")]
     SynthesizeSelectors(SelectorCodemodArgs),
-    /// Resolve a candidate `source_match` against a chunk and report what it
-    /// binds: the matching items, whether it pins a unique target, and (unless
-    /// `--no-slack`) which kept values could be holed further without losing
-    /// uniqueness. The interactive prove-gate probe for selector authoring.
+    /// Resolve a candidate `source_match` alone against a chunk and report
+    /// its outcome and (unless `--no-slack`) which kept values could be
+    /// holed further without losing uniqueness. The interactive prove-gate
+    /// probe for selector authoring.
     ///
-    /// Reports `unique` and `matches[]` (`{body_index, binding_name}`
-    /// for every top-level statement hit). Candidate selectors use the
-    /// public alpha-equivalent identifier policy.
+    /// Reports one selector outcome record in the `{counts, outcomes}`
+    /// format `spec validate` uses — `resolved` when it pins a unique
+    /// target, else `no_match`, `ambiguous` with its candidates,
+    /// `too_broad` or `invalid` — plus `slack` when resolved. Candidate
+    /// selectors use the public alpha-equivalent identifier policy.
     #[command(name = "match-selector")]
     MatchSelector(MatchSelectorArgs),
     /// Keep-going selector validation: report every selector problem
@@ -203,9 +205,10 @@ enum SpecNsCommand {
     /// run it via the Bazel `:debundle` target, not the standalone
     /// binary. `--fail-fast` stops at the first problem. The source-only
     /// preflight mode (`--modules` plus `--source-file` or
-    /// `--source-root --chunk`) instead resolves module source selectors
-    /// against one chunk in-process — a fast preflight for sharding
-    /// selector repairs, without the global selector-assignment backend.
+    /// `--source-root --chunk`) instead resolves the module files jointly
+    /// against one chunk, with the same resolve as `run` (and its CP-SAT
+    /// sidecar), but without the pipeline build — a fast preflight for
+    /// sharding selector repairs.
     Validate(ValidateArgs),
 }
 
@@ -373,8 +376,8 @@ pub struct MatchSelectorArgs {
     #[arg(long = "target-binding")]
     pub target_binding: Option<String>,
 
-    /// Skip holing-slack analysis (report matches only). Slack is computed by
-    /// default when the selector pins a unique target.
+    /// Skip holing-slack analysis (report the outcome only). Slack is
+    /// computed by default when the selector pins a unique target.
     #[arg(long = "no-slack")]
     pub no_slack: bool,
 

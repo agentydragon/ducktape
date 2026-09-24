@@ -1060,7 +1060,7 @@ impl Projection {
                 Some(ClaimOutcome::Unique { claim }) => Outcome::Resolved {
                     owner: claim_candidate(module, claim)?.owner,
                     binding: None,
-                    resolved_by: ResolvedBy::OwnSelector,
+                    resolved_by: resolved_by(&eliminated, target),
                 },
                 Some(ClaimOutcome::Duplicate {
                     owner,
@@ -1097,12 +1097,7 @@ impl Projection {
                     Outcome::Resolved {
                         owner,
                         binding,
-                        resolved_by: match eliminated.get(&target) {
-                            Some(claimers) => ResolvedBy::Elimination {
-                                claimers: claimers.clone(),
-                            },
-                            None => ResolvedBy::OwnSelector,
-                        },
+                        resolved_by: resolved_by(&eliminated, target),
                     }
                 }
                 Some(ClaimOutcome::Duplicate {
@@ -1166,6 +1161,20 @@ impl Projection {
             }
         }
         eliminated
+    }
+}
+
+/// How `target`, resolved, was made unique, given the claimers of every
+/// target [`Projection::eliminations`] found.
+fn resolved_by(
+    eliminated: &BTreeMap<SelectorTargetId, Vec<EntityRef>>,
+    target: SelectorTargetId,
+) -> ResolvedBy {
+    match eliminated.get(&target) {
+        Some(claimers) => ResolvedBy::Elimination {
+            claimers: claimers.clone(),
+        },
+        None => ResolvedBy::OwnSelector,
     }
 }
 

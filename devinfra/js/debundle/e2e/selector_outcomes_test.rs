@@ -5,8 +5,8 @@
 
 use debundle_e2e_support::{
     FixtureOpts, Member, assert_fail_fast_stops_at_first_outcome, find_outcome, logical_module,
-    read_selector_outcomes, run_dry_run_fixture, run_dry_run_rejection_fixture, run_spec_validate,
-    write_validate_fixture_spec,
+    logical_module_with_anon_alpha, read_selector_outcomes, run_dry_run_fixture,
+    run_dry_run_rejection_fixture, run_spec_validate, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -162,6 +162,54 @@ fn selector_unique_only_by_elimination_warns_and_run_succeeds() {
     let validate = validate_json(elimination_fixture());
     assert_eq!(validate["counts"]["resolved"], 1, "{validate:#}");
     assert_eq!(validate["outcomes"][0], *either, "{validate:#}");
+}
+
+/// Anonymous statements are kept distinct like members: `either` matches both
+/// statements, `other` only the second, so `either` is unique only because
+/// `other` claimed its alternative.
+fn anonymous_elimination_fixture() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        r#"console.log("first");
+console.log("other");
+"#,
+        vec![
+            logical_module_with_anon_alpha("anonymous/either", &[], "console.log(EXPR);"),
+            logical_module_with_anon_alpha("anonymous/other", &[], r#"console.log("other");"#),
+        ],
+    )
+}
+
+#[test]
+fn anonymous_statement_unique_only_by_elimination_warns() {
+    let fixture = run_dry_run_fixture(anonymous_elimination_fixture());
+    let outcomes = read_selector_outcomes(&fixture.report_root);
+    let [either] = outcomes.as_slice() else {
+        panic!("one elimination warning: {outcomes:#?}");
+    };
+    assert_eq!(
+        either["placement"],
+        json!({
+            "logical_module": "anonymous/either",
+            "entity": {"anonymous_statement": 0},
+            "selector_kind": "anonymous_statements.source_match",
+        }),
+        "{either:#}"
+    );
+    assert_eq!(either["severity"], "warning", "{either:#}");
+    assert_eq!(
+        either["outcome"],
+        json!({
+            "kind": "resolved",
+            "owner": 0,
+            "resolved_by": {
+                "by": "elimination",
+                "claimers": [{"logical_module": "anonymous/other", "entity": {"anonymous_statement": 0}}],
+            },
+        })
+    );
+
+    let validate = validate_json(anonymous_elimination_fixture());
+    assert_eq!(validate["outcomes"], json!([either]), "{validate:#}");
 }
 
 fn validate_json(opts: FixtureOpts<'_>) -> Value {

@@ -233,6 +233,7 @@ impl MemberSelectorProgramBuilder {
                 "{logical_module}::anonymous_statement.source_match.projected.{statement_index}"
             ),
         });
+        self.injective_targeted_owners.insert(owner);
         self.program.add_target(
             self.context.chunk_id,
             owner,
