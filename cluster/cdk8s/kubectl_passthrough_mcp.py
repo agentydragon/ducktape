@@ -160,10 +160,10 @@ def chart(app: App) -> Chart:
     # kubectl-passthrough-mcp (username prefix oidc-ksbx:, distinct from Headlamp's
     # oidc: prefix — see cluster/terraform/main/infrastructure.tf's AuthenticationConfiguration).
     # Mirrors headlamp.py's oidc-agentydragon-admin,
-    # scoped to this issuer instead. Consumed by haku-console's operator_oauth flow for the
-    # kubectl-passthrough-mcp MCP server entry: Haku proposes a call, agentydragon approves in
-    # haku-console's trusted UI, and the call executes with agentydragon's own passthrough
-    # identity — the approval click is the only gate, by design.
+    # scoped to this issuer instead. Consumed by agentplane-staging's `kubernetes_admin`
+    # ActionGroup, which links the operator's passthrough identity (cluster/cdk8s/agentplane/
+    # staging.py): an agent requests an Action, agentydragon approves it, and the call executes
+    # with agentydragon's own passthrough identity — the approval click is the only gate, by design.
     k8s.KubeClusterRoleBinding(
         chart,
         "agentydragon-admin",

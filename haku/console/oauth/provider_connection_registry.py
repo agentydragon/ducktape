@@ -1,12 +1,10 @@
 """Well-known external OAuth providers the console connects on an Operator's behalf.
 
 Each Operator links deploy-named accounts backed by configured instances of one of these provider
-kinds (Google today); the
-console stores each refresh token and self-refreshes access in-process, replacing Airlock's
-brokered token. Unlike ``mcp/operator_oauth`` — which discovers a remote MCP
-server's authorization server and registers a per-Operator DCR client at connect time —
-these are fixed, pre-registered OAuth clients. Deploy config owns the named client instances and
-their secret environment references; this module holds only protocol-level provider metadata.
+kinds (Google today); the console stores each refresh token and self-refreshes access in-process,
+replacing Airlock's brokered token. These are fixed, pre-registered OAuth clients. Deploy config
+owns the named client instances and their secret environment references; this module holds only
+protocol-level provider metadata.
 """
 
 from __future__ import annotations
