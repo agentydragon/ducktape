@@ -28,6 +28,21 @@ fn needle_item_facts(
     chunk_facts::extract_facts_items(std::slice::from_ref(item)).ok()
 }
 
+/// The free identifiers of `parsed`'s template: the names every candidate's
+/// `free_bindings` may report.
+pub fn template_free_identifiers(parsed: &ParsedSourceMatchSelector) -> BTreeSet<String> {
+    let facts = parsed
+        .body()
+        .iter()
+        .filter_map(|item| needle_item_facts(item, parsed.selector()))
+        .collect::<Vec<_>>();
+    let indices = facts
+        .iter()
+        .map(selector_match::Index::build)
+        .collect::<Vec<_>>();
+    free_identifiers(&indices)
+}
+
 /// One chunk's relational model, built once: the AST plus its top-level body
 /// projected to per-statement facts (the EDB). Every selector resolves against
 /// this **shared** model — the single pass that, for today's cross-reference-free

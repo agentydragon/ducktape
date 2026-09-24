@@ -39,6 +39,7 @@ from cdk8s_plus_34 import (
     ServicePort,
     Volume,
     VolumeMount,
+    k8s,
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -58,6 +59,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from aiquota.api import Settings
 from aiquota.config import Config
+from cluster.cdk8s import public_coder_proxy
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app  # aiquota()'s parameter is its Kustomization
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
@@ -135,15 +137,22 @@ class BearerMirror:
     def secret_name(self) -> str:
         return f"{BEARER_SECRET_NAME}-{self.consumer}"
 
+    @property
+    def secret_key_selector(self) -> k8s.SecretKeySelector:
+        """What a consumer's env reference names."""
+        return k8s.SecretKeySelector(name=self.secret_name, key=_BEARER_KEY)
+
+
+# In the destination namespace only the trusted egress proxy consumes this Secret; the OpenClaw
+# workload receives a non-secret placeholder instead.
+PUBLIC_CODER_BEARER = BearerMirror(
+    consumer="public-coder",
+    namespace=public_coder_proxy.NAMESPACE,
+    description="Shared AIQuota API bearer mirrored only to public-coder-agent's trusted egress proxy.",
+)
 
 BEARER_MIRRORS = (
-    # In the destination namespace only the trusted egress proxy consumes this Secret; the
-    # OpenClaw workload receives a non-secret placeholder instead.
-    BearerMirror(
-        consumer="public-coder",
-        namespace="public-coder-agent",
-        description="Shared AIQuota API bearer mirrored only to public-coder-agent's trusted egress proxy.",
-    ),
+    PUBLIC_CODER_BEARER,
     BearerMirror(
         consumer="haku-console",
         namespace="haku-console",

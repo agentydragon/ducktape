@@ -112,9 +112,18 @@ than it did: `ReconcilerError` with an exceeded-quota message, `DependenciesNotR
 `Pod exists with phase: Pending`, and `Suspended` are three different answers to "why is this box
 not ready", and only the controller's own `reason` distinguishes them.
 
-**`create` does not wait for readiness.** A box can stay unready indefinitely -- queued behind a
-quota, or stopped on a `ReconcilerError` -- so a waiting `create` would spend its whole timeout to
-report a deadline, where `info` reports the controller's own reason for it.
+**`create` does not wait for readiness.** A box can stay unready indefinitely -- refused by the
+namespace quota, or stopped on another `ReconcilerError` -- so a waiting `create` would spend its
+whole timeout to report a deadline, where `info` reports the controller's own reason for it.
+
+**Gotcha: a box the quota refused does not start when the quota frees.** agent-sandbox (v0.5.5)
+returns the Pod-create error from its reconcile, so controller-runtime retries that Sandbox on its
+per-object error backoff, doubling to a 1000 s cap; nothing watches the `ResourceQuota`. A box that
+has been failing for a while therefore waits up to about 17 minutes after the quota frees. On
+staging, a refused box kept the same condition for as long as it was polled after the quota freed,
+while `dispose` + `create` of it reached `Ready` in about 45 s. So an exceeded-quota
+`ReconcilerError` is the caller's cue to `list` its sandboxes, `dispose` the ones it has finished
+with, then `dispose` + `create` the refused one.
 
 Shapes follow <../../haku/console/tools/sandbox.py>, the surface already in daily use: one
 bounded Bash script per call, a per-environment ceiling on timeout and retained output patched into

@@ -274,8 +274,15 @@ def generate_manifests(root: Path) -> None:
     agent_workspaces.write_manifests(root)
     alloy_otlp_bearer.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
-    public_coder_proxy.write_manifests(root)
-    public_coder_sshpiper.write_manifests(root)
+    public_coder_proxy.write_manifests(
+        root,
+        app_namespace=public_coder_agent_config.NAMESPACE,
+        app_labels=public_coder_agent_config.LABELS,
+        aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key_selector,
+    )
+    public_coder_sshpiper.write_manifests(
+        root, app_namespace=public_coder_agent_config.NAMESPACE, app_labels=public_coder_agent_config.LABELS
+    )
     public_coder_backup.write_manifests(root)
     descheduler.write_manifests(root)
     kyverno_app.write_manifests(root)

@@ -164,6 +164,11 @@ pub enum Outcome {
 #[serde(tag = "by", rename_all = "snake_case")]
 pub enum ResolvedBy {
     OwnSelector,
+    /// Several places match its selector, and exactly one of them agrees
+    /// with where the entities its template names (`references`) resolved.
+    OwnReferences {
+        references: Vec<EntityRef>,
+    },
     /// Unique only because `claimers` took its other candidates; it moves
     /// silently when one of them is edited.
     Elimination {
@@ -272,7 +277,7 @@ impl Outcome {
     pub fn severity(&self) -> Severity {
         match self {
             Self::Resolved {
-                resolved_by: ResolvedBy::OwnSelector,
+                resolved_by: ResolvedBy::OwnSelector | ResolvedBy::OwnReferences { .. },
                 ..
             } => Severity::Ok,
             Self::Resolved {
@@ -303,6 +308,11 @@ impl Outcome {
                 });
                 match resolved_by {
                     ResolvedBy::OwnSelector => format!("resolved to {target}"),
+                    ResolvedBy::OwnReferences { references } => format!(
+                        "resolved through its references to {target}: only that match agrees \
+                         with {}",
+                        render_refs(references)
+                    ),
                     ResolvedBy::Elimination { claimers } => format!(
                         "resolved by elimination to {target}: its other matches are claimed by {}",
                         render_refs(claimers)

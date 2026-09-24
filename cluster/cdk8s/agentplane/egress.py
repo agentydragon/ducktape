@@ -251,7 +251,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 # The package and toolchain mirrors a box needs to install anything: without them
                 # `pip install`, `npm install`, a cargo fetch and every Bazel download fail in a
                 # sandbox whose whole purpose is running commands. Taken from the set haku's own
-                # agent reaches (cluster/k8s/agents/haku-egress-proxy/openclaw-spike-iron.yaml).
+                # agent reaches (egress_fences.OPENCLAW_SPIKE_ALLOWLIST).
                 #
                 # No credentialRef: these are public, unauthenticated reads, so there is nothing to
                 # substitute and a compromised box gains no identity here. That is also why the

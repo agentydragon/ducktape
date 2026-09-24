@@ -548,7 +548,7 @@ corpus.
   to hold is that the other readers (`logs-configmaps-reader`, `secrets-reader`) are separate
   bindings and must not follow it down. "Nonsensitive k8s stuff" is not a property of Kubernetes;
   it is a property of that one ClusterRole, and the split already exists
-  (<../../cluster/k8s/agents/agent-rbac-base/README.md>).
+  (<../../cluster/docs/agent_rbac.md>).
 - **ducktape code.** Public, and trusted-by-**review** rather than by author — so a lower-tier
   agent proposing a PR is safe by construction, since the operator's review is the boundary. The
   prerequisite is plumbing, not trust: 2026_08_multi_agent.md's Forgejo mirror automation plus PR rights.

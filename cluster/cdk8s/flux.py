@@ -203,7 +203,10 @@ def flux_kustomization_depends_on_many(*dependencies: Kustomization) -> list[Kus
 class GeneratorOptions(BaseModel):
     """A generator entry's `options`, per kustomize.config.k8s.io/v1beta1."""
 
-    annotations: dict[str, str]
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    annotations: dict[str, str] | None = None
+    disable_name_suffix_hash: bool | None = None
 
 
 class ConfigMapArgs(BaseModel):

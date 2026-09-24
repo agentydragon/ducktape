@@ -161,6 +161,13 @@ class FakeSync {
   chunks: Json[] = [];
   /** Settles before a page before the tail answers: with a response to answer instead, or with none. */
   olderPage: (() => Promise<Response | undefined>) | null = null;
+  /** Whether the shapes are out of reach, as over a dropped network: every read of one fails unanswered. */
+  unreachable = false;
+  /** Whether a live read goes unanswered, as one does until its connection opens: only its reader's
+   * abort ends it. */
+  liveUnanswered = false;
+  /** How many live reads are waiting for an answer. */
+  waiting = 0;
   readonly requests: { method: string; path: string; query: URLSearchParams; subset: Subset | null }[] = [];
   readonly #live = new Map<string, Connection>();
   // The held scope read, answered by `respond`.
@@ -177,6 +184,7 @@ class FakeSync {
     const path = url.pathname.split("/sync/")[1];
     this.requests.push({ method, path, query: url.searchParams, subset });
     if (path === "scope") return this.folded ? this.scope() : this.#hold(init?.signal);
+    if (this.unreachable) throw new TypeError("Failed to fetch");
     if (url.searchParams.get("projection_epoch") !== this.epoch) return Response.json({}, { status: 410 });
     const relation = relationOf(path);
     // Electric resolves a shape's handle from its definition.
@@ -204,6 +212,15 @@ class FakeSync {
       });
     if (url.searchParams.get("live_sse") !== "true")
       return Response.json({ message: "the store follows shapes over SSE" }, { status: 400 });
+    if (this.liveUnanswered) {
+      this.waiting++;
+      return new Promise((_, reject) =>
+        init?.signal?.addEventListener("abort", () => {
+          this.waiting--;
+          reject(new DOMException("aborted", "AbortError"));
+        })
+      );
+    }
     const body = new ReadableStream<Uint8Array>({
       start: (events) => {
         this.#live.set(path, { query: url.searchParams, events });
@@ -352,6 +369,7 @@ function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadWindow }
         older
       </button>
       {history.error && <p role="alert">{history.error}</p>}
+      {history.reconnecting && <p role="status">reconnecting</p>}
     </>
   );
 }
@@ -368,6 +386,10 @@ function Commands({ ids }: { ids: readonly string[] }): JSX.Element {
 
 function itemsShown(container: HTMLElement): string[] {
   return (container.querySelector('[data-testid="items"]')?.textContent ?? "").split(" ").filter(Boolean);
+}
+
+function reconnecting(container: HTMLElement): boolean {
+  return container.querySelector('[role="status"]') !== null;
 }
 
 function thread(sync: FakeSync, count: number, epoch = "epoch-1"): void {
@@ -511,6 +533,46 @@ it("keeps reading the live log from where it was when a subset answers from furt
     change(relation, "update", item(70, "epoch-1", { revision_cursor: "71" })),
   ]);
   await vi.waitFor(() => expect(itemsShown(container)).toContain("item-70@71"));
+});
+
+it("says it is reconnecting while Electric's client retries a failed read, until one succeeds", async () => {
+  const sync = stubSync();
+  thread(sync, 3);
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
+  expect(reconnecting(container)).toBe(false);
+
+  sync.unreachable = true;
+  // The live read ends, as a dropped connection ends it, and its reconnect finds no network.
+  await sync.close("entities");
+  await vi.waitFor(() => expect(reconnecting(container)).toBe(true));
+  expect(itemsShown(container)).toHaveLength(3);
+
+  sync.unreachable = false;
+  // The client's first retry follows the failure within a second.
+  await vi.waitFor(() => expect(reconnecting(container)).toBe(false), { timeout: 2_000 });
+  await sync.send("entities", (relation) => [change(relation, "insert", item(4))]);
+  await vi.waitFor(() => expect(itemsShown(container)).toContain("item-4@4"));
+});
+
+it("does not take a live read it abandoned for a subset as a failed one", async () => {
+  const sync = stubSync();
+  thread(sync, 70);
+  sync.liveUnanswered = true;
+  let land: () => void = () => undefined;
+  sync.olderPage = () => new Promise((resolve) => (land = () => resolve(undefined)));
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  await vi.waitFor(() => expect(sync.waiting).toBe(1));
+
+  // The page's subset aborts the live read still awaiting its answer, and holds the stream until it lands.
+  await act(async () => container.querySelector("button")!.click());
+  await vi.waitFor(() => expect(olderPages(sync)).toHaveLength(1));
+  expect(sync.waiting).toBe(0);
+  expect(reconnecting(container)).toBe(false);
+  await act(async () => land());
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(60));
+  expect(reconnecting(container)).toBe(false);
 });
 
 it("re-reads a retired epoch's scope and swaps windows under the same children", async () => {

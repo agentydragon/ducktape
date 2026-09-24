@@ -189,11 +189,19 @@ async function keepingOffset(input: RequestInfo | URL, init?: RequestInit): Prom
 class Shape {
   readonly #abort = new AbortController();
   readonly #stream: ShapeStream<Row>;
+  readonly #onRetrying: (retrying: boolean) => void;
   // Settles with the shape's first subset. Electric answers that one from the shape's definition
   // with the handle and offset the stream then follows; later subsets name that handle.
   #opened: Promise<unknown> | null = null;
+  #retrying = false;
 
-  constructor(url: string, onMessages: (messages: Message<Row>[]) => void, onError: (error: unknown) => void) {
+  constructor(
+    url: string,
+    onMessages: (messages: Message<Row>[]) => void,
+    onError: (error: unknown) => void,
+    onRetrying: (retrying: boolean) => void
+  ) {
+    this.#onRetrying = onRetrying;
     this.#stream = new ShapeStream({
       url,
       offset: "now",
@@ -201,13 +209,40 @@ class Shape {
       liveSse: true,
       subsetMethod: "POST",
       columnMapper: columns,
-      fetchClient: keepingOffset,
+      fetchClient: (input, init) => this.#attempt(input, init),
       signal: this.#abort.signal,
       onError: (error) => {
         if (!this.#abort.signal.aborted) onError(error);
       },
     });
     this.#stream.subscribe(onMessages);
+  }
+
+  /**
+   * One attempt at one of the stream's requests. Electric's client retries a request that failed on
+   * the network or with a 5xx or 429 after a backoff, forever, and calls no `onError` meanwhile
+   * (`createFetchWithBackoff`), so the stream is retrying from such a failure until an attempt gets
+   * any other answer. Its `onFailedAttempt` hook cannot say so: it takes no argument, and fires as
+   * well for a 4xx the client hands back and for a request it aborted itself, as a subset aborts the
+   * live read.
+   */
+  async #attempt(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    let response: Response;
+    try {
+      response = await keepingOffset(input, init);
+    } catch (error) {
+      if (!init?.signal?.aborted) this.#retried(true);
+      throw error;
+    }
+    this.#retried(response.status >= 500 || response.status === 429);
+    return response;
+  }
+
+  #retried(retrying: boolean): void {
+    // A subset's request carries no signal, so it goes on retrying once the shape is closed.
+    if (this.closed || retrying === this.#retrying) return;
+    this.#retrying = retrying;
+    this.#onRetrying(retrying);
   }
 
   /** Rows of the shape, delivered to its subscriber like any change and returned. */
@@ -226,6 +261,7 @@ class Shape {
   }
 
   close(): void {
+    this.#retried(false);
     this.#abort.abort();
   }
 }
@@ -234,6 +270,7 @@ class Shape {
 class PayloadShape extends Listeners {
   readonly #url: string;
   readonly #onGone: () => void;
+  readonly #onRetrying: (retrying: boolean) => void;
   #shape: Shape | null = null;
   // Chunk text by index, per body: an owner at one generation.
   readonly #chunks = new Map<string, Map<number, string>>();
@@ -243,10 +280,11 @@ class PayloadShape extends Listeners {
   #error: string | null = null;
   #closed = false;
 
-  constructor(url: string, onGone: () => void) {
+  constructor(url: string, onGone: () => void, onRetrying: (retrying: boolean) => void) {
     super();
     this.#url = url;
     this.#onGone = onGone;
+    this.#onRetrying = onRetrying;
   }
 
   getVersion = (): number => this.#version;
@@ -302,7 +340,8 @@ class PayloadShape extends Listeners {
     const shape = (this.#shape ??= new Shape(
       this.#url,
       (messages) => this.#apply(messages),
-      (error) => this.#fail(error)
+      (error) => this.#fail(error),
+      this.#onRetrying
     ));
     for (const batch of batches(this.#queued.splice(0), SUBSET_BODIES))
       shape.subset(bodySubset(batch)).catch((error: unknown) => {
@@ -348,8 +387,18 @@ interface WindowState {
   caughtUp: boolean;
   olderAvailable: boolean;
   loadingOlder: boolean;
+  reconnecting: boolean;
   error: string | null;
 }
+
+const NO_WINDOW: WindowState = {
+  rows: [],
+  caughtUp: false,
+  olderAvailable: false,
+  loadingOlder: false,
+  reconnecting: false,
+  error: null,
+};
 
 /** A thread's rows at one projection epoch: the pages a reader has loaded, and what it waits on. */
 class EpochWindow extends Listeners {
@@ -371,8 +420,10 @@ class EpochWindow extends Listeners {
   #ready = false;
   // Rows seen since a refetch began; what it did not see was deleted while the log was rebuilt.
   #refreshed: Set<string> | null = null;
+  // The shapes, by path, whose client is retrying a failed request.
+  readonly #retrying = new Set<string>();
   #closed = false;
-  #state: WindowState = { rows: [], caughtUp: false, olderAvailable: false, loadingOlder: false, error: null };
+  #state: WindowState = NO_WINDOW;
 
   constructor(threadId: string, scope: ThreadScope, onGone: () => void) {
     super();
@@ -382,7 +433,8 @@ class EpochWindow extends Listeners {
     this.#shape = new Shape(
       this.#url("entities"),
       (messages) => this.#apply(messages),
-      (error) => this.#fail(error)
+      (error) => this.#fail(error),
+      (retrying) => this.#retried("entities", retrying)
     );
     void this.#guard(async () => {
       await Promise.all([
@@ -419,7 +471,12 @@ class EpochWindow extends Listeners {
   bodies(field: PayloadField): PayloadShape {
     let shape = this.#bodies.get(field);
     if (shape === undefined)
-      this.#bodies.set(field, (shape = new PayloadShape(this.#url(`chunks/${field}`), this.#onGone)));
+      this.#bodies.set(
+        field,
+        (shape = new PayloadShape(this.#url(`chunks/${field}`), this.#onGone, (retrying) =>
+          this.#retried(field, retrying)
+        ))
+      );
     return shape;
   }
 
@@ -528,6 +585,12 @@ class EpochWindow extends Listeners {
     this.#onGone();
   }
 
+  #retried(shape: string, retrying: boolean): void {
+    if (retrying) this.#retrying.add(shape);
+    else this.#retrying.delete(shape);
+    this.#publish();
+  }
+
   #publish(error: string | null = this.#state.error): void {
     const rows = [...this.#rows.values()];
     const view = rows.find((row) => row.entityKind === "view_state");
@@ -537,6 +600,7 @@ class EpochWindow extends Listeners {
         this.#ready && view !== undefined && decimalBigInt(view.revisionCursor) >= BigInt(this.scope.through_cursor),
       olderAvailable: this.#lowest !== null && !this.#exhausted,
       loadingOlder: this.#loadingOlder,
+      reconnecting: this.#retrying.size > 0,
       error,
     };
     this.notify();
@@ -617,7 +681,6 @@ class ThreadEpochs extends Listeners {
 }
 
 const NO_SYNC: SyncState = { window: null, error: null };
-const NO_WINDOW: WindowState = { rows: [], caughtUp: false, olderAvailable: false, loadingOlder: false, error: null };
 const noSubscription = (): (() => void) => () => undefined;
 
 const ThreadContext = createContext<ThreadEpochs | null>(null);
@@ -662,6 +725,7 @@ function useThread(): ThreadState {
             olderAvailable: state.olderAvailable,
             loadingOlder: state.loadingOlder,
             loadOlder: shown.loadOlder,
+            reconnecting: state.reconnecting,
             error: state.error,
             refresh: thread.refresh,
           },
