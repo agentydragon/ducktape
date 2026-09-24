@@ -93,6 +93,97 @@ spec:
           values:
             - public-coder-agent
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: public-coder-agent-proxy-config
+  namespace: public-coder-agent
+data:
+  iron.yaml: |
+    dns:
+      enabled: false
+    proxy:
+      tunnel_listen: :8080
+    tls:
+      mode: mitm
+      ca_cert: /ca/tls.crt
+      ca_key: /ca/tls.key
+    transforms:
+      - name: secrets
+        config:
+          secrets:
+            - source:
+                type: env
+                var: GITHUB_TOKEN
+              replace:
+                proxy_value: proxy-github-placeholder
+                match_headers:
+                  - Authorization
+              rules:
+                - host: api.github.com
+                - host: github.com
+                - host: codeload.github.com
+            - source:
+                type: env
+                var: HAKU_CONSOLE_TOKEN
+              replace:
+                proxy_value: proxy-haku-console-placeholder
+                match_headers:
+                  - Authorization
+              rules:
+                - host: haku.allegedly.works
+                - host: haku-kubeapi.allegedly.works
+            - source:
+                type: env
+                var: CLICKHOUSE_PUBLIC_CODER_PASSWORD
+              replace:
+                proxy_value: proxy-clickhouse-public-coder-password
+                match_headers:
+                  - Authorization
+              rules:
+                - host: clickhouse.clickhouse.svc.cluster.local
+            - source:
+                type: env
+                var: AIQUOTA_API_BEARER_TOKEN
+              replace:
+                proxy_value: proxy-aiquota-api-bearer-placeholder
+                match_headers:
+                  - Authorization
+              rules:
+                - host: aiquota.allegedly.works
+                  methods:
+                    - CONNECT
+                - host: aiquota.allegedly.works
+                  methods:
+                    - GET
+                  paths:
+                    - /v1/quotas
+                    - /v1/providers/*/raw
+            - source:
+                type: env
+                var: BRAVE_API_KEY
+              replace:
+                proxy_value: proxy-brave-search-api-key-placeholder
+                match_headers:
+                  - X-Subscription-Token
+              rules:
+                - host: api.search.brave.com
+            - source:
+                type: env
+                var: MATRIX_BOT_PASSWORD
+              replace:
+                proxy_value: proxy-matrix-password-placeholder
+                match_headers: []
+                match_body: true
+              rules:
+                - host: matrix.allegedly.works
+                  methods:
+                    - POST
+                  paths:
+                    - /_matrix/client/v3/login
+    log:
+      level: info
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:

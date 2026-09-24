@@ -108,20 +108,15 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   `test_openclaw_spike_resolves_exactly_its_iron_allowlist`). The spike's Cilium DNS
   rule is generated from `egress_fences.OPENCLAW_SPIKE_ALLOWLIST`, but the iron config
   it mirrors is still a hand-written `configMapGenerator` input. Render the iron
-  ConfigMap from the same tuple (the `<name>-config.k8s.yaml` shape
-  `agents/public-coder-agent/app` uses) and the pin collapses.
+  ConfigMap from the same tuple (as `public_coder_proxy.py` renders its iron config) and
+  the pin collapses.
 
 ## Reachable since the one-to-one conversion — the manifests are generated, the tests remain
 
 Each side the test compares is now a construct, except the hand-written inputs named;
 retiring a test means deriving both sides from one value.
 
-- **`agents/public-coder-agent/{app,proxy}` and `clickhouse/cluster`** — what the tests
-  still compare:
-  - `proxy/iron.yaml`, a hand-written `configMapGenerator` input:
-    `test_haku_public_coder_contract.py` and `test_public_coder_clickhouse_reader_contract.py`
-    check the app's placeholders, the kubeconfig's bearer and host, and the ClickHouse host
-    against it.
+- **`agents/public-coder-agent/{app,proxy}`** — what the tests still compare:
   - The proxy's and the piper's ingress rules spell the app's labels, because
     `public_coder_agent_config` imports both modules for their addresses
     (`test_public_coder_agent_config.py`'s `test_proxy_admits_the_app`).

@@ -129,9 +129,6 @@ them (<TODO.md> § Reachable since the one-to-one conversion).
 
 - **The haku sandbox template's contract with its setup script** waits on a design
   (<TODO.md>).
-- **The public-coder-agent constellation**: `proxy/iron.yaml` rendered from Python
-  retires `test_haku_public_coder_contract.py` and the iron half of
-  `test_public_coder_clickhouse_reader_contract.py`.
 - Then the rest of <TODO.md>, in whatever order the neighbourhoods complete.
 
 **Pause during Wave 4, after the first two derivations.** Check what crosses the
@@ -156,7 +153,9 @@ invisible to them, and a Renovate PR touching a generated file fails
 
 What stays hand-written after the conversion; <../docs/cdk8s.md> § What stays
 hand-written has the per-file detail. Settled: SOPS files; vendored CRDs and
-`flux-system`; `configMapGenerator` inputs and the kustomizations carrying them;
+`flux-system`; `configMapGenerator` inputs not yet rendered from Python, and the
+kustomizations carrying them (a rendered config must parse identically; its text, and so
+the ConfigMap's hash, may change once);
 `image-pins/` Components (Wave 3's pause may move them); the remote-release patch
 kustomizations; ConfigMaps carrying `$imagepolicy` markers.
 

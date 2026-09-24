@@ -74,9 +74,6 @@ _EGRESS_PROXY = (
 _KUBECONFIG_CONFIG_MAP_NAME = "public-coder-agent-kubeconfig"
 # Rendered by the kustomization.yaml's configMapGenerator.
 _SSH_CONFIG_MAP_NAME = "public-coder-agent-ssh"
-# Presented as HAKU_CONSOLE_TOKEN and as the kubeconfig's bearer; iron-proxy swaps it for the
-# Agent's real Haku credential (../proxy/iron.yaml).
-_HAKU_CONSOLE_TOKEN_PLACEHOLDER = "proxy-haku-console-placeholder"
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 # Every read public-coder gets, Haku gets too: bound to the same roles.
 _HAKU_SUPERSET_SUBJECTS = [
@@ -301,7 +298,7 @@ def kubeconfig_chart(app: App) -> Chart:
         "current-context": "in-cluster",
         # iron-proxy substitutes the original Haku Agent bearer only for the dedicated Haku
         # Kubernetes proxy hostname. No Kubernetes credential enters this container.
-        "users": [{"name": "haku-agent", "user": {"token": _HAKU_CONSOLE_TOKEN_PLACEHOLDER}}],
+        "users": [{"name": "haku-agent", "user": {"token": public_coder_proxy.HAKU_CONSOLE_TOKEN_PLACEHOLDER}}],
     }
     k8s.KubeConfigMap(
         chart,
@@ -334,7 +331,6 @@ _SEED_CONFIG_SCRIPT = textwrap.dedent(
 
 
 def _openclaw_container() -> k8s.Container:
-    github_placeholder = "proxy-github-placeholder"
     return k8s.Container(
         name="openclaw",
         image=_IMAGE,
@@ -399,26 +395,25 @@ def _openclaw_container() -> k8s.Container:
             # current local-Gateway path can restore ambient values for native GitHub tooling.
             # The proxy still sees only the placeholder and replaces it in scoped outbound
             # Authorization headers. See F7, F10, F16.
-            _env("GITHUB_TOKEN", github_placeholder),
-            _env("GH_PAT", github_placeholder),
+            _env("GITHUB_TOKEN", public_coder_proxy.GITHUB_TOKEN_PLACEHOLDER),
+            _env("GH_PAT", public_coder_proxy.GITHUB_TOKEN_PLACEHOLDER),
             # Non-secret Haku Console bearer placeholder. The real static-Agent credential exists
             # only in Haku Console and this agent's iron-proxy, which replaces this value only in
             # Authorization headers sent to the exact haku.allegedly.works host.
-            _env("HAKU_CONSOLE_TOKEN", _HAKU_CONSOLE_TOKEN_PLACEHOLDER),
+            _env("HAKU_CONSOLE_TOKEN", public_coder_proxy.HAKU_CONSOLE_TOKEN_PLACEHOLDER),
             # Native ClickHouse reader credentials for normalized and raw AIQuota history. This
             # is deliberately a non-secret placeholder: the sibling Iron proxy swaps it only
-            # inside Authorization for the private ClickHouse ClusterIP host. See
-            # ../proxy/iron.yaml.
+            # inside Authorization for the private ClickHouse ClusterIP host.
             _env("CLICKHOUSE_PUBLIC_CODER_USER", client.PUBLIC_CODER_USER),
-            _env("CLICKHOUSE_PUBLIC_CODER_PASSWORD", "proxy-clickhouse-public-coder-password"),
+            _env("CLICKHOUSE_PUBLIC_CODER_PASSWORD", public_coder_proxy.CLICKHOUSE_PASSWORD_PLACEHOLDER),
             # This placeholder grants access only when iron-proxy substitutes it for
             # aiquota.allegedly.works' two read-only API paths. The actual shared bearer is
             # mounted only into the proxy container.
-            _env("AIQUOTA_API_BEARER_TOKEN", "proxy-aiquota-api-bearer-placeholder"),
+            _env("AIQUOTA_API_BEARER_TOKEN", public_coder_proxy.AIQUOTA_BEARER_PLACEHOLDER),
             # This is likewise an inert placeholder. The real Brave Search API key is mounted only
             # in the egress proxy and substituted solely in X-Subscription-Token requests to
             # api.search.brave.com.
-            _env("BRAVE_API_KEY", "proxy-brave-search-api-key-placeholder"),
+            _env("BRAVE_API_KEY", public_coder_proxy.BRAVE_API_KEY_PLACEHOLDER),
             _secret_env("OPENCLAW_LITELLM_API_KEY", "litellm-key-public-coder-agent", "api-key"),
             # Authentik authenticates proxied browser traffic. OpenClaw's subagent completion
             # path calls the local gateway directly and therefore uses the documented
@@ -427,7 +422,7 @@ def _openclaw_container() -> k8s.Container:
             # OpenClaw's password login puts this value in the Matrix JSON body. It is a proxy
             # placeholder: iron-proxy replaces it with the real controller-owned password only
             # on the Matrix login endpoint.
-            _env("MATRIX_PASSWORD", "proxy-matrix-password-placeholder"),
+            _env("MATRIX_PASSWORD", public_coder_proxy.MATRIX_PASSWORD_PLACEHOLDER),
             # Node does not honour proxy environment variables by default.
             _env("NODE_USE_ENV_PROXY", "1"),
             _env("HTTP_PROXY", _EGRESS_PROXY),
