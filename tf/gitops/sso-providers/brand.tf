@@ -14,4 +14,10 @@ resource "authentik_brand" "allegedly_works" {
   domain         = "allegedly.works"
   default        = false
   branding_title = "allegedly.works"
+
+  # Authentik stores its bundled asset paths here when unset, and the provider
+  # diffs them against the omitted attributes, so every plan would PUT the brand.
+  lifecycle {
+    ignore_changes = [branding_logo, branding_favicon]
+  }
 }

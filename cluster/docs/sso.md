@@ -31,6 +31,11 @@ app-specific. Compare:
   `random_password`-generated `session-secret`, and an `authentik_policy_binding`
   gating login to `data.authentik_group.admins`.
 
+**Gotcha — give every `allowed_redirect_uris` entry a `redirect_uri_type`.** Authentik
+defaults an omitted type to `authorization`; provider 2026.8.0 stores that on read and
+diffs it against the omitted key, so the plan never converges and every 15-minute
+reconcile PUTs the provider.
+
 ### Blueprint-managed providers (migration backlog)
 
 Active proxy providers remain under `k8s/authentik/app/blueprints/` while issue #987
