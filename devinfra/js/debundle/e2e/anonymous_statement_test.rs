@@ -259,7 +259,7 @@ export { marker };
     for required in [
         "3 selector outcome(s): no_match=1, ambiguous=1, duplicate_claim=1",
         "diagnostics/missing",
-        "did not match any top-level statement group",
+        "did not match any top-level statement",
         r#"console.log("missing")"#,
         "diagnostics/ambiguous",
         "ambiguous",

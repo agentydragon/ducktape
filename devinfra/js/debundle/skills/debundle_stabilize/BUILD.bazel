@@ -7,6 +7,8 @@ skill_package(
             srcs = ["SKILL.md"],
             preserve_paths = True,
         ),
+        # references/*.md link `../SPEC.md`.
+        skill_mapping(srcs = ["//devinfra/js/debundle:SPEC.md"]),
         skill_mapping(
             srcs = [
                 "//devinfra/js/debundle/docs:cli.md",

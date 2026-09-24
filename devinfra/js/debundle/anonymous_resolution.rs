@@ -367,7 +367,7 @@ fn one_place<'o, 's>(
         ),
         (multiple, EntityIndex::AnonymousStatement(_)) => bail!(
             "module {module_path} anonymous statement selector matched {at_least}{} source \
-             statement groups; refine the selector:\n{match_source}",
+             statements; refine the selector:\n{match_source}",
             multiple.len(),
         ),
     }

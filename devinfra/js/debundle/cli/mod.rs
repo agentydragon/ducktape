@@ -195,9 +195,9 @@ enum SpecNsCommand {
     /// selectors use the public alpha-equivalent identifier policy.
     #[command(name = "match-selector")]
     MatchSelector(MatchSelectorArgs),
-    /// Keep-going selector validation: report every selector problem
-    /// (no-match, ambiguous, duplicate-claim, resolution error) in one
-    /// machine-readable pass.
+    /// Keep-going selector validation: report every selector outcome that is
+    /// not ok (kinds: SPEC.md § Outcomes) and what each matched template's
+    /// free identifiers mean, in one machine-readable pass.
     ///
     /// The full mode is `debundle run` in dry-run keep-going mode: it
     /// takes the same inputs (`--spec` / `--tree-config` + package
