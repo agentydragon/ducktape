@@ -190,7 +190,7 @@ async def _workload_or_operator(
     operator_credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
     operator_authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
 ) -> CallerPrincipal | OperatorPrincipal:
-    """Either bearer scheme, for the one route whose response is identical either way."""
+    """Either bearer scheme, for the one route both callers read."""
     workload = await _try_workload(request, workload_authenticator, callers)
     if workload is not None:
         return workload
@@ -369,15 +369,14 @@ def create_app(
 
     # Catalog discovery: the reviewed, config-driven ActionGroup/Action universe. Read-only, and the
     # same for every caller, so it carries no owner-scoping unlike the ActionRequest surface above.
-    # Operators read this too (for the MCP group health settings page) rather than duplicating it
-    # under /v1/operator/...: the response is identical and non-sensitive either way.
+    # Operators read this too, for the MCP servers settings page; theirs alone keeps each group's
+    # health detail, which can carry backend exception text.
     @app.get("/v1/action-groups", response_model=list[ActionGroupView])
     async def list_action_groups(
         principal: Annotated[CallerPrincipal | OperatorPrincipal, Depends(_workload_or_operator)],
         action_catalog: Annotated[ActionCatalog, Depends(_catalog)],
     ) -> list[ActionGroupView]:
-        del principal
-        return action_catalog.group_views()
+        return action_catalog.group_views(with_detail=isinstance(principal, OperatorPrincipal))
 
     @app.get("/v1/action-groups/{group_key}/actions/{action_key}", response_model=ActionView)
     async def get_action(
