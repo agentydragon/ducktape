@@ -618,7 +618,13 @@ class Egress(Construct):
             metadata=metadata(NAME, namespace),
             selector=_LABELS,
             ingress=[
-                cilium.ingress_from(cilium.endpoint_labels(namespace, "agentplane-runner"), ports=[PROXY_PORT]),
+                # Runner Pods, and the sandbox Actions' command boxes (command_sandbox.py, which
+                # imports this module).
+                cilium.ingress_from(
+                    cilium.endpoint_labels(namespace, "agentplane-runner"),
+                    cilium.endpoint_labels(namespace, "agentplane-sandbox"),
+                    ports=[PROXY_PORT],
+                ),
                 cilium.ingress_from(cilium.endpoint_labels(namespace, "agentplane-app"), ports=[ADMIN_PORT]),
                 cilium.ingress_from(cilium.endpoint_labels(namespace, NAME), ports=[_AGENT_API_PORT]),
             ],
