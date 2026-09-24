@@ -28,6 +28,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use selector_outcome::{Candidate, Outcome, SelectorOutcome, SelectorOutcomeReport};
 use serde::Serialize;
 use source_match::chunk_resolver::ChunkResolver;
 use source_match_holes::{
@@ -57,14 +58,6 @@ pub struct MatchSelectorConfig {
     pub check_slack: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct MatchSelectorMatch {
-    /// Top-level statement index the selector matched in the chunk.
-    pub body_index: usize,
-    /// Runtime (minified) name of the binding the selector would claim.
-    pub binding_name: String,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct SlackRelaxation {
     /// A strictly looser selector — the input with one kept thing holed — that
@@ -74,10 +67,9 @@ pub struct SlackRelaxation {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MatchSelectorReport {
-    /// The headline verdict: exactly one item matched, so the selector is a
-    /// valid (unique) pin. Zero or several matches both make it unusable.
-    pub unique: bool,
-    pub matches: Vec<MatchSelectorMatch>,
+    /// The probe's one outcome; `resolved` means the selector is a valid pin.
+    #[serde(flatten)]
+    pub outcomes: SelectorOutcomeReport,
     /// Looser variants that still pin the same unique target — a non-empty list
     /// flags a likely over-pin. `None` when the selector is not unique (slack is
     /// undefined) or `--no-slack` skipped it.
@@ -117,30 +109,29 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
     let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
         .with_context(|| format!("parsing source file {}", source_file.display()))?;
     let resolver = ChunkResolver::new(&parsed.module);
-    let resolve = |match_source: String| -> Result<Vec<MatchSelectorMatch>> {
+    let resolve = |match_source: String| -> Result<Outcome> {
         let selector = AnonymousStatementSelector {
             match_source,
             identifiers: SourceMatchIdentifierMode::AlphaAll,
             target_binding: config.target_binding.clone(),
         };
-        let mut matches: Vec<MatchSelectorMatch> = resolver
-            .member_candidates("<match-selector>", &selector)?
-            .into_iter()
-            .map(|matched| MatchSelectorMatch {
-                body_index: matched.body_idx,
-                binding_name: matched.binding.binding_name,
-            })
-            .collect();
-        matches
-            .sort_by(|a, b| (a.body_index, &a.binding_name).cmp(&(b.body_index, &b.binding_name)));
-        Ok(matches)
+        Ok(Outcome::from_matches(
+            resolver
+                .member_candidates("<match-selector>", &selector)?
+                .into_iter()
+                .map(|matched| Candidate {
+                    owner: matched.body_idx,
+                    binding: Some(matched.binding.binding_name),
+                })
+                .collect(),
+        ))
     };
 
-    let matches = resolve(config.match_source.clone())?;
-    let slack = match (matches.as_slice(), config.check_slack) {
-        ([only], true) => Some(compute_slack(
+    let outcome = resolve(config.match_source.clone())?;
+    let slack = match (&outcome, config.check_slack) {
+        (Outcome::Resolved { .. }, true) => Some(compute_slack(
             &config.match_source,
-            only,
+            &outcome,
             config.target_binding.as_deref(),
             &resolve,
         )?),
@@ -148,19 +139,31 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
     };
 
     Ok(MatchSelectorReport {
-        unique: matches.len() == 1,
-        matches,
+        outcomes: SelectorOutcomeReport {
+            outcomes: vec![SelectorOutcome {
+                chunk: config
+                    .chunk
+                    .as_deref()
+                    .unwrap_or(&source_file)
+                    .display()
+                    .to_string(),
+                placement: None,
+                target_binding: config.target_binding.clone(),
+                selector_preview: Some(source_match::source_match_preview(&config.match_source)),
+                outcome,
+            }],
+        },
         slack,
     })
 }
 
 /// Try every single-edit relaxation of the selector; keep the ones that still
-/// resolve to the same unique `(body_idx, binding_name)` target.
+/// resolve to the same `resolved` outcome.
 fn compute_slack(
     match_source: &str,
-    target: &MatchSelectorMatch,
+    resolved: &Outcome,
     selector_target_binding: Option<&str>,
-    resolve: &impl Fn(String) -> Result<Vec<MatchSelectorMatch>>,
+    resolve: &impl Fn(String) -> Result<Outcome>,
 ) -> Result<Vec<SlackRelaxation>> {
     let mut selector_module =
         js_ast::parse_js_module_consuming("<match-selector slack>", match_source.to_string())
@@ -176,10 +179,7 @@ fn compute_slack(
         if relaxed_match == baseline_emit || !seen.insert(relaxed_match.clone()) {
             continue;
         }
-        if let [only] = resolve(relaxed_match.clone())?.as_slice()
-            && only.body_index == target.body_index
-            && only.binding_name == target.binding_name
-        {
+        if resolve(relaxed_match.clone())? == *resolved {
             slack.push(SlackRelaxation { relaxed_match });
         }
     }
@@ -587,18 +587,8 @@ fn class_member_hole() -> ClassMember {
 
 pub fn render_match_selector_text(report: &MatchSelectorReport, out: &mut String) {
     use std::fmt::Write;
-    let verdict = match report.matches.len() {
-        1 => "unique",
-        0 => "no-match",
-        _ => "ambiguous",
-    };
-    let _ = writeln!(out, "{verdict} ({} match(es))", report.matches.len());
-    for matched in &report.matches {
-        let _ = writeln!(
-            out,
-            "  body[{}] -> {}",
-            matched.body_index, matched.binding_name
-        );
+    for outcome in &report.outcomes.outcomes {
+        let _ = writeln!(out, "{}", outcome.render_line());
     }
     match &report.slack {
         None => {}

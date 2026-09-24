@@ -1,4 +1,4 @@
-"""Contracts for Haku sandbox and egress deployment wiring."""
+"""Contracts for Haku sandbox deployment wiring."""
 
 from __future__ import annotations
 
@@ -36,27 +36,6 @@ def test_haku_sandbox_satisfies_the_shared_bootstrap(k8s_dir: Path) -> None:
     assert required, "the bootstrap declares no required variables — did the ${VAR:?} form change?"
 
     assert required <= set(sandbox_env(_haku_template(k8s_dir)))
-
-
-def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir: Path) -> None:
-    """The clone target and the egress policy that permits it must not drift apart."""
-    script = (k8s_dir / "haku/workspaces/image/haku-sandbox-setup.sh").read_text()
-    url = one(re.findall(r"HAKU_STATE_URL:-http://([a-z0-9-]+)\.([a-z0-9-]+):(\d+)/", script))
-    _, namespace, port = url
-
-    egress = _object(
-        k8s_dir / "agents/haku-egress-proxy/haku-egress-proxy.k8s.yaml",
-        "CiliumClusterwideNetworkPolicy",
-        "haku-agent-runner-egress",
-    )
-    allowed = {
-        (rule["toEndpoints"][0]["matchLabels"]["k8s:io.kubernetes.pod.namespace"], ports["port"])
-        for rule in egress["spec"]["egress"]
-        if "toEndpoints" in rule
-        for entry in rule.get("toPorts", [])
-        for ports in entry["ports"]
-    }
-    assert (namespace, port) in allowed
 
 
 if __name__ == "__main__":

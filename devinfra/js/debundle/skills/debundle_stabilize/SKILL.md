@@ -64,14 +64,15 @@ resort:
   in the readable one when it kept an accidental but-unique token — is judgment you
   supply on top of its output (next section); it cannot be read off the AST.
 - **`spec match-selector`** — the prove/probe. Resolves your candidate and reports
-  unique-or-not, the colliding matches, and over-pin slack.
-- **`spec validate`** — the whole-spec keep-going sweep. It reports every
-  selector that finds no match, is ambiguous, conflicts with another selector,
-  or matches more than 100 places (`too_broad`), every duplicate claim, and warns
-  on selectors that resolve only by elimination (below). The full mode runs the
-  pipeline (Bazel `:debundle`, package roots); the source-only preflight
-  (`--modules` plus `--source-file`) needs only the binary and checks each
-  selector on its own — see Setup.
+  its outcome (`resolved`, or `no_match` / `ambiguous` with the colliding
+  candidates / `too_broad`) and over-pin slack.
+- **`spec validate`** — the whole-spec keep-going sweep: one outcome per selector
+  that did not resolve (`no_match` / `ambiguous` / `conflict` / `too_broad` over
+  100 places / `duplicate_claim` / `invalid`), plus warnings for selectors
+  resolved only by elimination (below). The full mode runs the pipeline (Bazel
+  `:debundle`, package roots); the source-only preflight (`--modules` plus
+  `--source-file`) needs only the binary and checks each selector on its own —
+  see Setup.
 
 Division of labor: the minimizer makes a selector **compact and unique today** by
 mechanical read-off; judging whether its anchor is _meaningful_ (vs an accidental
@@ -185,8 +186,8 @@ wrong anchor, so slack only prioritizes; it never decides.
    without losing uniqueness (i.e. whether you over-pinned). It uses the public
    alpha-equivalent source-match identifier policy. For a whole-spec sweep,
    `debundle spec validate` (keep-going) resolves every selector jointly and
-   reports each failing one (no match, ambiguous, conflicting, too broad,
-   duplicate claim) plus the resolved-by-elimination warnings.
+   reports each one that did not resolve, plus the resolved-by-elimination
+   warnings, in the same outcome format.
 
 5. **Group** adjacent or cohesive bindings that share a declaration context into
    one `source_matches[]` entry rather than emitting N overlapping selectors.
@@ -238,7 +239,7 @@ Disprefer (implementation / incidental — churned by refactors and rebuilds):
 - positional / structural shape with no kept value (arity, declaration order);
 - uniqueness borrowed from an unrelated **neighbor** declaration;
 - uniqueness that holds only because **other selectors claimed the
-  alternatives** — `spec validate` warns `resolved_by_elimination` and names
+  alternatives** — `spec validate` warns (`resolved` with `resolved_by: elimination`) and names
   the claimers. Unique only in the joint solve, it breaks as soon as a claimer
   moves; `match-selector` checks the selector alone, so a candidate it proves
   unique does not have this problem;

@@ -3,16 +3,18 @@ ClickHouse schema), Service, HTTPRoute and ServiceMonitor, the pull-credentials
 ExternalSecret, and the narrow per-consumer mirrors of its API bearer.
 
 Hand-written beside the generated output (cluster/docs/cdk8s.md): the bearer itself
-(aiquota-api-bearer.sops.yaml), the configMapGenerator inputs config.toml and
-schema.sql, and image-pins/kustomization.yaml, which overrides the API container's
-`unset` placeholder tag.
+(aiquota-api-bearer.sops.yaml), the configMapGenerator input schema.sql, and
+image-pins/kustomization.yaml, which overrides the API container's `unset` placeholder
+tag.
 """
 
 from __future__ import annotations
 
+import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
+import tomli_w
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
@@ -55,6 +57,8 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from aiquota.api import Settings
+from aiquota.config import Config
+from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app  # aiquota()'s parameter is its Kustomization
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.fleet_rules import add_fleet_rules
@@ -72,13 +76,41 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
-from util.settings_contract import checked_value, env_name
+from util.settings_contract import checked_value, env_name, settings_file
 
 NAME = "aiquota"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/aiquota"
-NAMESPACE = "cli-proxy-api"  # shared with CLIProxyAPI, whose Kustomization creates it
+NAMESPACE = cli_proxy_api_app.NAMESPACE  # created by CLIProxyAPI's Kustomization
 BEARER_SECRET_NAME = "aiquota-api-bearer"  # the SOPS-managed Secret; every mirror below copies its one key
-CONFIG_CONFIG_MAP = ConfigMapArgs(name="aiquota-api-config", namespace=NAMESPACE, files=["config.toml"])
+# The API reads its config at the Settings default; nothing sets AIQUOTA_CONFIG.
+_CONFIG_PATH: Path = Settings.model_fields["config_path"].default
+_CONFIG_HEADER = textwrap.dedent(
+    """\
+    # The CLIProxyAPI integration keeps the Claude and Codex OAuth credentials and
+    # performs the authenticated usage requests. The legacy Claude setup token
+    # remains owned by Haku's existing egress proxy, not by this Deployment.
+
+    """
+)
+_CONFIG = settings_file(
+    Config,
+    {
+        "cli_proxy_api": {
+            "url": (
+                f"http://{cli_proxy_api_app.NAME}.{cli_proxy_api_app.NAMESPACE}.svc.cluster.local:"
+                f"{cli_proxy_api_app.PORT}/v0/management"
+            )
+        },
+        "claude": {"enabled": True},
+        "codex": {"enabled": True},
+        "zai": {"enabled": False},
+    },
+)
+CONFIG_CONFIG_MAP = ConfigMapArgs(
+    name="aiquota-api-config",
+    namespace=NAMESPACE,
+    literals=[f"{_CONFIG_PATH.name}={_CONFIG_HEADER}{tomli_w.dumps(_CONFIG)}"],
+)
 SCHEMA_CONFIG_MAP = ConfigMapArgs(name="aiquota-schema", namespace=NAMESPACE, files=[client.SCHEMA_FILE])
 
 _API_NAME = "aiquota-api"
@@ -87,7 +119,6 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _HOSTNAME = "aiquota.allegedly.works"
 _PORT = 8080
 _LABELS = {"app.kubernetes.io/name": NAME}
-_CONFIG_DIR = "/etc/aiquota"
 _BEARER_KEY = "bearer-token"
 
 
@@ -269,7 +300,7 @@ class Aiquota(Construct):
             ),
             volume_mounts=[
                 VolumeMount(
-                    path=_CONFIG_DIR,
+                    path=str(_CONFIG_PATH.parent),
                     volume=Volume.from_config_map(
                         self,
                         "config-volume",
@@ -365,9 +396,9 @@ def aiquota(
     )
     write_yaml(
         out_dir / "kustomization.yaml",
-        # aiquota-api-bearer.sops.yaml, config.toml and schema.sql stay hand-written; the
-        # generator entries render the latter two into the ConfigMaps the Deployment mounts.
-        # See cluster/docs/cdk8s.md.
+        # aiquota-api-bearer.sops.yaml and schema.sql stay hand-written (cluster/docs/cdk8s.md);
+        # the generator entries render schema.sql and the config into the ConfigMaps the
+        # Deployment mounts.
         kustomize_kustomization(
             resources=[f"{name}.k8s.yaml", f"{BEARER_SECRET_NAME}.sops.yaml"],
             components=["./image-pins"],

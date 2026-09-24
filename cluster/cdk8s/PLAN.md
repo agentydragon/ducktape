@@ -128,7 +128,7 @@ deriving both sides of an agreement from one value and retiring the test that co
 them (<TODO.md> § Reachable since the one-to-one conversion).
 
 - **The haku sandbox template's contract** from `haku/runtime/agent/config.py`'s
-  Settings; retires `test_haku_sandbox_contract.py` and `test_haku_ci_keda_contract.py`.
+  Settings; retires `test_haku_sandbox_contract.py`.
 - Then the rest of <TODO.md>, in whatever order the neighbourhoods complete.
 
 **Pause during Wave 4, after the first two derivations.** Check what crosses the
