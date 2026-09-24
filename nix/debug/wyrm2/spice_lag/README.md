@@ -495,7 +495,7 @@ gi/PIL + installs openai)
 4. **Sunshine/Moonlight** — deployed 2026-07-02, works but **software x264
    only** (NVENC needs capture+CUDA on one device; display is on virtio,
    CUDA on the 5090s). Kept as casual/desktop transport; gaming pivoted to
-   a direct 5090 → monitor DP output. See `../gpu-strategy.md`. Looking
+   a direct 5090 → monitor DP output. See `../../../../debug/atlas/gpu_strategy.md`. Looking
    Glass is not viable (no Linux guest support).
 
 ## Session Notes

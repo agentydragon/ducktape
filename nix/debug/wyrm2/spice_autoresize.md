@@ -27,7 +27,7 @@ rm -f ~/.config/monitors.xml ~/.config/monitors.xml~   # then log out/in or rebo
 ## Flip side
 
 If a **fixed** guest resolution is ever wanted (e.g. pinning 4K for a
-Sunshine/Moonlight stream, see <gpu-strategy.md>), setting it in
+Sunshine/Moonlight stream, see <../../../debug/atlas/gpu_strategy.md>), setting it in
 Settings → Displays is exactly the right tool — just know it's mutually
 exclusive with window-following SPICE until `monitors.xml` is deleted again.
 

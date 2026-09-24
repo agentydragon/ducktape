@@ -92,12 +92,12 @@ in
   # Open nvidia module allowlists GPUs by subsystem-ID; Gigabyte RTX 5090 (1458:416f) isn't listed.
   # nvidia-drm modeset HISTORY: modeset=0 was a workaround for the Blackwell
   # VFIO FLR bug (host soft lockups on VM shutdown, see
-  # cluster/debug/atlas/black_screen_lockup.md). It was accidentally overridden to =1
+  # debug/atlas/black_screen_lockup.md). It was accidentally overridden to =1
   # for the entire 28-day host-stable streak (modesetting.enable appended
   # modeset=1 after it, last-wins), so =1 + the other mitigations is the
   # empirically host-stable config. modeset=1 is REQUIRED for the
   # direct-display gaming plan (5090 → monitor DP needs NVIDIA KMS) — see
-  # cluster/debug/atlas/gpu-strategy.md "Plan: direct display output". A brief
+  # debug/atlas/gpu_strategy.md "Plan: direct display output". A brief
   # deliberate modeset=0 experiment ran 2026-07-02 (guest-lockup hypothesis),
   # abandoned in favor of the display.
   boot.kernelParams = [
@@ -124,7 +124,7 @@ in
   };
 
   # GPU health monitoring — periodic telemetry + dmesg error watcher.
-  # See cluster/debug/atlas/gpu_lockup_20260417/README.md for context.
+  # See debug/atlas/gpu_lockup_20260417/README.md for context.
   ducktape.gpuMonitor.enable = true;
 
   # Attribution for the GitHub GraphQL quota drain; see the module header.
@@ -346,7 +346,7 @@ in
 
   # Game streaming host: Moonlight client on atlas connects here; games render
   # + NVENC-encode on a 5090. capSysAdmin for KMS capture under Wayland.
-  # See <cluster/debug/atlas/gpu-strategy.md>.
+  # See <debug/atlas/gpu_strategy.md>.
   services.sunshine = {
     enable = true;
     # Default package has no CUDA → only software x264. NVENC on the 5090s

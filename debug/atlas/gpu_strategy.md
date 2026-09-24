@@ -62,7 +62,7 @@ Post-move recheck (2026-07-02, new apartment) + gaming plan:
 - [x] Sunshine up, Moonlight paired from atlas (x264 software encode only —
       see above)
 - [x] SPICE auto-resize follows window again (`monitors.xml` deleted
-      2026-07-02 — see <spice_autoresize.md>)
+      2026-07-02 — see <../../nix/debug/wyrm2/spice_autoresize.md>)
 - [ ] Watch for guest GPU lockups under sustained load (`modeset=0` was the
       suspected contributor — note the direct-display plan below reverts to
       `modeset=1`, ending this experiment)
@@ -109,7 +109,7 @@ Goal is playing games on this machine; streaming was a workaround. Instead:
 - **SPICE must keep working** (hard requirement): virtio stays the primary
   desktop display, unaffected. **Known tension**: arranging the new second
   monitor in GNOME Settings writes `monitors.xml`, which re-pins Virtual-1
-  and kills SPICE auto-resize (see <spice_autoresize.md>). Options: accept
+  and kills SPICE auto-resize (see <../../nix/debug/wyrm2/spice_autoresize.md>). Options: accept
   the pin, or configure the NVIDIA output without persisting (TBD at bench
   time).
 - **Optional refinement**: run games in gamescope directly on the NVIDIA
@@ -120,7 +120,7 @@ Goal is playing games on this machine; streaming was a workaround. Instead:
 Remaining work: plug 2 cables, OSD dual-KVM binding, `modeset` revert +
 rebuild + VM restart, `qm set` USB port passthrough, bench test.
 
-**Bring-up in progress** — running notes: <direct_display_bringup/README.md>.
+**Bring-up in progress** — running notes: <../../nix/debug/wyrm2/direct_display_bringup/README.md>.
 
 ## Prior State (Apr 2026)
 

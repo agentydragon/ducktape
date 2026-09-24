@@ -2,7 +2,7 @@
 
 The local-interception behavior below describes the investigation rollout, not
 the current source contract. Hosts now configure only the transport relay;
-see [client transport and migration](../../devinfra/github_api_capture/README.md#client-transport).
+see [client transport and migration](../../../../devinfra/github_api_capture/README.md#client-transport).
 The recorded runtime bridges still require explicit, ownership-checked retirement.
 
 Investigation: [#5213](https://github.com/agentydragon/ducktape/issues/5213).

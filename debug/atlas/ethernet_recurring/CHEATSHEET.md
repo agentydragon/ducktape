@@ -131,5 +131,5 @@ ping -c1 google.com    # needs DNS
 ## Collect Full Diagnostics
 
 ```bash
-sudo bash cluster/debug/atlas/ethernet_recurring/collect.sh
+sudo bash debug/atlas/ethernet_recurring/collect.sh
 ```

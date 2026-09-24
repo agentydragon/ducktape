@@ -114,7 +114,7 @@ if BGW320-CLI proves too immature.
   `ens18` is its only default-route/DNS path (DNS 1.1.1.1/1.0.0.1); explains why
   losing that route surfaces as `ping`'s `System error` rather than a DNS-name
   failure.
-- `cluster/debug/atlas/ethernet_recurring/README.md` — prior, similarly-shaped incident: a
+- `debug/atlas/ethernet_recurring/README.md` — prior, similarly-shaped incident: a
   bad self-crimped cable on `atlas`'s own uplink caused a month of flapping before
   total failure. Flagged there as possibly stale since the cable was touched again
   for a GPU install.
