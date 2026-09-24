@@ -82,9 +82,9 @@ left is moving each remaining directory once nothing hand-written is left in it:
   even then, unless bootstrap changes: they are read through the bootstrap `flux-system`
   GitRepository, whose `sparseCheckout` (`gotk-sync.yaml`) covers only `cluster/k8s/`.
 - **Fully generated but pinned in place:**
-  - `clickhouse-schema`, `proxmox-proxy`, `vector-talos-logs`: a `configMapGenerator`
-    reads a hand-written input (`schema.sql`, `nginx.conf`, `vector.toml`) from the
-    directory. They move with the input, or once it is rendered from Python.
+  - `clickhouse-schema`, `vector-talos-logs`: a `configMapGenerator` reads a
+    hand-written input (`schema.sql`, `vector.toml`) from the directory. They move with
+    the input, or once it is rendered from Python.
 - **Per move:** `render_diff.py` must show no added or removed object. A moved directory
   that another Kustomization's path or artifact copy still covered shows up there as
   removed objects, which Flux would prune.

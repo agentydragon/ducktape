@@ -767,8 +767,8 @@ spec:
       name: openebs-lvm
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/proxmox-proxy/**"
-          to: "@artifact/cluster/k8s/proxmox-proxy/"
+        - from: "@repo/cluster/generated/proxmox-proxy/**"
+          to: "@artifact/cluster/generated/proxmox-proxy/"
       name: proxmox-proxy
       originRevision: "@repo"
     - copy:
