@@ -680,6 +680,19 @@ rust_test(
 )
 
 rust_test(
+    name = "use_site_pinning_test",
+    size = "small",
+    srcs = ["use_site_pinning_test.rs"],
+    crate_root = "use_site_pinning_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
     name = "template_references_test",
     size = "small",
     srcs = ["template_references_test.rs"],

@@ -309,6 +309,25 @@ References work in every template: `source_match` members, `source_matches[]`
 and anonymous statements, and name any entity, whether pinned by name, shape
 or relation.
 
+### Pinning by use site
+
+An entity with no distinctive body, such as one of several byte-identical
+decorate-helper copies, is pinned through a statement that uses it: list the
+free identifier in `bindings[]`, and the entity is the top-level declaration it
+binds to there (<../SPEC.md> § Matching).
+
+```yaml
+source_matches:
+  - match: 'decorate([mark("A")], Alpha.prototype, "alphaLabel", 1);'
+    bindings:
+      - local: decorate
+        name: alphaDecorator
+```
+
+A claim of free identifiers only leaves the matched statement unclaimed; one
+template may also claim its own declarations beside them
+(`const value = increment(1);` claiming `value` and `increment`).
+
 ## Binding claims and context windows
 
 Use `bindings[]` when the readable selector includes more than one binding but

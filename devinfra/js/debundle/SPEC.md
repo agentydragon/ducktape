@@ -42,6 +42,14 @@ match, the one chunk identifier the referenced entity takes, whichever selector
 pins that entity. A reference to an entity whose own selector fails before the
 joint solve (`no_match`, `too_broad`, `invalid`) alpha-renames.
 
+A `source_matches[]` binding may claim a free identifier of its template
+instead of a declaration (**pinning by use site**). Its entity is the top-level
+declaration that identifier binds to, throughout the match; a match where it
+binds no top-level declaration, or different identifiers in different scopes,
+is not a place of that entity. A claimed free identifier is the entity's own
+binding, never a reference or a global. A claim of free identifiers only does
+not claim the matched statement.
+
 An anonymous statement written with a bare `match:` rather than `source_match:`
 skips alpha-renaming: its identifiers must equal the chunk's. Literals,
 operators, member property names, object keys and tree structure are

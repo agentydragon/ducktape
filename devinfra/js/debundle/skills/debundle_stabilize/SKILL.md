@@ -238,6 +238,9 @@ Prefer (identity / contract — behavior-causal, human-meaningful):
 - another spec entity, named by its readable export name in the template
   (`new Widget(ANYTHING)`): the match must use that entity's own binding
   (<../../docs/selectors.md> § Naming other entities);
+- for an entity with no distinctive body (one of several identical helper
+  copies), a statement that uses it: claim the free identifier in `bindings[]`
+  (<../../docs/selectors.md> § Pinning by use site);
 - a **stable prefix** of an otherwise volatile string, via a regex anchor.
 
 Disprefer (implementation / incidental — churned by refactors and rebuilds):
