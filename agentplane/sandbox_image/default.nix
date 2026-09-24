@@ -50,6 +50,12 @@ let
       pkgs.cacert
       pkgs.kubectl # the sandbox's own Kubernetes identity, through the egress proxy
 
+      # What a local Bazel build compiles and probes with: rules_cc's auto-detected toolchain is
+      # this gcc, whose wrapper carries binutils (protoc and protobuf's editions defaults build
+      # from source), and aspect_rules_py reads the host libc from `ldd --version`.
+      pkgs.gcc
+      pkgs.glibc.bin
+
       # FULL python3, never `python3Minimal`, whose missing `json`/`shutil` broke the Haku image's
       # scripts. nixpkgs marks it EXTERNALLY-MANAGED, so a run installs packages into a
       # `python3 -m venv`, whose ensurepip brings its own pip.

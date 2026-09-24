@@ -1,9 +1,8 @@
 # The runner image: the sandbox image's definition (<../sandbox_image/default.nix>) plus the runner,
-# installed from its released wheel (the `agentplane-runner` pin in nix/artifact-pins.json),
-# nixpkgs' Claude Code and Codex, and what a local Bazel build needs. Published as
-# agentplane-runner by .github/workflows/agentplane-runner-image.yml and run by the
-# agentplane-runner SandboxTemplate (cluster/cdk8s/agentplane/app.py), which names the harnesses by
-# their /bin paths here.
+# installed from its released wheel (the `agentplane-runner` pin in nix/artifact-pins.json), and
+# nixpkgs' Claude Code and Codex. Published as agentplane-runner by
+# .github/workflows/agentplane-runner-image.yml and run by the agentplane-runner SandboxTemplate
+# (cluster/cdk8s/agentplane/app.py), which names the harnesses by their /bin paths here.
 #
 # The runner's Python and both harnesses come from nixos-unstable: the wheel's generated protobuf
 # modules need protobuf >= 7.36, which nixos-26.05 does not ship.
@@ -46,11 +45,6 @@ import ../sandbox_image {
     runner
     pkgsUnstable.claude-code
     pkgsUnstable.codex
-    # A local Bazel build compiles and probes with these: rules_cc's auto-detected toolchain is
-    # this gcc (protoc and protobuf's editions defaults build from source), and aspect_rules_py
-    # reads the host libc from `ldd --version`.
-    pkgs.gcc
-    pkgs.glibc.bin
   ];
   extraConfig.Entrypoint = [ "/bin/agentplane-runner" ];
 }
