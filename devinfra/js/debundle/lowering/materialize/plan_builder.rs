@@ -694,7 +694,7 @@ fn render_selector_resolution_diagnostics(diagnostics: &[SelectorResolutionDiagn
     report
 }
 
-fn native_source_match_no_match_message(
+fn source_match_no_match_message(
     request: &LogicalRequest,
     member: &MemberRequest,
 ) -> Option<String> {
@@ -709,7 +709,7 @@ fn native_source_match_no_match_message(
     ))
 }
 
-fn native_source_match_ambiguous_message(
+fn source_match_ambiguous_message(
     request: &LogicalRequest,
     member: &MemberRequest,
     candidates: &[ResolvedClaim],
@@ -717,7 +717,7 @@ fn native_source_match_ambiguous_message(
     let selector = member.source_match.as_ref()?;
     Some(format!(
         "logical_module {}: {} for export `{}` is ambiguous in the \
-         native selector solver -- matched {} owners at statement ordinals {:?} (bindings: {}). \
+         global selector solver -- matched {} owners at statement ordinals {:?} (bindings: {}). \
          Refine the selector. Source:\n{}",
         request.id,
         member.claim_origin,
@@ -1086,9 +1086,6 @@ fn anonymous_owner_by_body_index(
 ) -> BTreeMap<usize, OwnerId> {
     let mut owners = BTreeMap::new();
     for statement in &structural.per_statement {
-        if !statement.declared.is_empty() {
-            continue;
-        }
         let Some(body_idx) = body_index_for_statement_ordinal(&module.body, statement.ordinal.0)
         else {
             continue;
@@ -1143,7 +1140,7 @@ fn projected_anonymous_statement_candidate_rows(
             owner_by_body_index.get(body_idx).copied().with_context(|| {
                 format!(
                     "anonymous source_match candidate at body index {body_idx} does not map \
-                         to an anonymous owner-graph node",
+                         to an owner-graph node",
                 )
             })
         })
@@ -1676,6 +1673,7 @@ impl ChunkPlanBuilder {
         let mut deferred_targets = BTreeMap::<SelectorTargetId, (usize, usize)>::new();
         let mut anonymous_statement_targets = Vec::<AnonymousStatementTargetInfo>::new();
         let mut pending_constraints = Vec::<(usize, usize)>::new();
+        let mut pending_source_match_members = Vec::<(usize, usize)>::new();
         let mut pending_source_match_groups = Vec::<(usize, SourceMatchGroupAssignment)>::new();
         let mut pending_source_match_group_keys =
             BTreeSet::<(String, SourceMatchGroupCacheKey)>::new();
@@ -1711,6 +1709,10 @@ impl ChunkPlanBuilder {
                         }
                         continue;
                     }
+                    if member.source_match_parsed.is_some() {
+                        pending_source_match_members.push((index, member_index));
+                        continue;
+                    }
                     let Some(selector) = member_selector_ref_for_global_solver(member) else {
                         continue;
                     };
@@ -1726,22 +1728,16 @@ impl ChunkPlanBuilder {
                 }
             }
         }
-        let has_pending_source_match = !pending_source_match_groups.is_empty()
-            || pending_constraints
-                .iter()
-                .any(|(request_index, member_index)| {
-                    explicit_requests[*request_index].members[*member_index]
-                        .source_match
-                        .is_some()
-                });
+        let has_pending_source_match =
+            !pending_source_match_groups.is_empty() || !pending_source_match_members.is_empty();
         // Shape (`source_match`) selectors resolve in two stages: `ChunkResolver`
         // enumerates the top-level statements each JS-template-with-holes matches,
         // and those candidates are projected into the selector IR as a small
         // `ProjectedAllowedTuples` domain per target. The global solve then picks
-        // one target per selector under `all_different`. Native AST lowering is
-        // the fallback for selectors the matcher cannot enumerate; it constrains
-        // over the chunk's full node domain and is correspondingly expensive, so
-        // the matcher is asked first. See <docs/selector_resolution.md>.
+        // one target per selector under `all_different`. A selector the matcher
+        // places nowhere never reaches the solver: an empty candidate table would
+        // make the whole chunk's program unsatisfiable. It is reported unmatched
+        // here instead.
         let source_match_projection =
             (has_pending_source_match || has_anonymous_statements).then(|| {
                 (
@@ -1823,58 +1819,28 @@ impl ChunkPlanBuilder {
                 if projected {
                     continue;
                 }
-                match builder.declare_native_anonymous_statement_target_in_module_parsed(
+                builder.record_source_match_projection_event(source_match_projection_event(
                     &request.id,
-                    statement_index,
-                    &statement.parsed_selector,
-                ) {
-                    Ok(target) => {
-                        builder.record_source_match_projection_event(
-                            source_match_projection_event(
-                                &request.id,
-                                "anonymous_statements.source_match",
-                                None,
-                                BTreeMap::new(),
-                                &statement.selector,
-                                SelectorSourceMatchProjectionOutcome::NativeFallback,
-                                reason_category,
-                                reason.clone(),
-                                candidate_count,
-                                projected_row_count,
-                            ),
-                        );
-                        anonymous_statement_targets.push(AnonymousStatementTargetInfo {
-                            target,
-                            request_index,
-                            statement: statement.clone(),
-                        });
-                    }
-                    Err(error) => {
-                        builder.record_source_match_projection_event(source_match_projection_event(
-                            &request.id,
-                            "anonymous_statements.source_match",
-                            None,
-                            BTreeMap::new(),
-                            &statement.selector,
-                            SelectorSourceMatchProjectionOutcome::NativeUnsupported,
-                            "native_ir_unsupported_after_projection_failure",
-                            format!(
-                                "{reason}; native anonymous source_match lowering is unsupported \
-                                 after projection failed: {error}"
-                            ),
-                            candidate_count,
-                            projected_row_count,
-                        ));
-                        let message = format!(
-                            "logical_module {}: anonymous_statements[].match cannot be lowered \
-                             into native selector IR: {error}",
-                            request.id,
-                        );
-                        self.record_anonymous_statement_failure_or_bail(
-                            request, statement, message, None,
-                        )?;
-                    }
-                }
+                    "anonymous_statements.source_match",
+                    None,
+                    BTreeMap::new(),
+                    &statement.selector,
+                    SelectorSourceMatchProjectionOutcome::NotProjected,
+                    reason_category,
+                    reason.clone(),
+                    candidate_count,
+                    projected_row_count,
+                ));
+                let message = if reason_category == "shape_matcher_no_candidates" {
+                    anonymous_statement_no_match_message(request, statement)
+                } else {
+                    format!(
+                        "logical_module {}: anonymous_statements[].match could not be matched \
+                         ({reason_category}: {reason}). Selector:\n{}",
+                        request.id, statement.selector.match_source,
+                    )
+                };
+                self.record_anonymous_statement_failure_or_bail(request, statement, message, None)?;
             }
         }
         for (request_index, group) in pending_source_match_groups {
@@ -1947,32 +1913,6 @@ impl ChunkPlanBuilder {
                     reason = source_match_projection_error_reason(reason_category, &error);
                 }
             }
-            if builder.try_lower_native_source_match_group_parsed(
-                logical_module,
-                &group.parsed_selector,
-                &group.exports_by_target,
-            )? {
-                declare_source_match_group_targets(
-                    &mut builder,
-                    request_index,
-                    request,
-                    &group,
-                    &mut deferred_targets,
-                )?;
-                builder.record_source_match_projection_event(source_match_projection_event(
-                    logical_module,
-                    group.selector_kind,
-                    None,
-                    group.exports_by_target.clone(),
-                    &group.selector,
-                    SelectorSourceMatchProjectionOutcome::NativeFallback,
-                    reason_category,
-                    reason,
-                    candidate_count,
-                    projected_row_count,
-                ));
-                continue;
-            }
             let target_bindings = group
                 .exports_by_target
                 .keys()
@@ -1985,162 +1925,154 @@ impl ChunkPlanBuilder {
                 None,
                 group.exports_by_target.clone(),
                 &group.selector,
-                SelectorSourceMatchProjectionOutcome::NativeUnsupported,
-                "native_ir_unsupported_after_projection_failure",
-                format!(
-                    "native source_match group lowering is unsupported after projection failed: \
-                     {reason}"
-                ),
+                SelectorSourceMatchProjectionOutcome::NotProjected,
+                reason_category,
+                reason.clone(),
                 candidate_count,
                 projected_row_count,
             ));
-            let message = format!(
-                "logical_module {}: {} for target bindings [{}] cannot \
-                 be lowered into native selector IR after projection failed ({reason_category}: \
-                 {reason}; candidates: {}; projected rows: {}). Selector:\n{}",
-                request.id,
-                group.selector_kind,
-                target_bindings,
-                candidate_count
-                    .map(|count| count.to_string())
-                    .unwrap_or_else(|| "unknown".to_string()),
-                projected_row_count
-                    .map(|count| count.to_string())
-                    .unwrap_or_else(|| "unknown".to_string()),
-                group.selector.match_source,
-            );
+            let message = if reason_category == "shape_matcher_no_candidates" {
+                format!(
+                    "logical_module {}: {} for target bindings [{}] did not match any top-level \
+                     declaration group. Selector:\n{}",
+                    request.id, group.selector_kind, target_bindings, group.selector.match_source,
+                )
+            } else {
+                format!(
+                    "logical_module {}: {} for target bindings [{}] could not be matched \
+                     ({reason_category}: {reason}). Selector:\n{}",
+                    request.id, group.selector_kind, target_bindings, group.selector.match_source,
+                )
+            };
             if self.keep_going {
                 self.source_match_diagnostics
                     .extend(binding_group_member_diagnostics(request, &group, message));
                 continue;
             }
-            return Err(
-                selector_ir_lowering::SelectorIrLoweringError::UnsupportedSourceMatch {
-                    selector_kind: group.selector_kind,
-                    reason: format!(
-                        "selector shape is not yet supported by native selector IR in \
-                     logical_module {logical_module} for target bindings [{target_bindings}] after \
-                     projection failed ({reason_category}: {reason}; candidates: {}; \
-                     projected rows: {})",
-                        candidate_count
-                            .map(|count| count.to_string())
-                            .unwrap_or_else(|| "unknown".to_string()),
-                        projected_row_count
-                            .map(|count| count.to_string())
-                            .unwrap_or_else(|| "unknown".to_string())
+            bail!("{message}");
+        }
+        for (request_index, member_index) in pending_source_match_members {
+            let request = &explicit_requests[request_index];
+            let member = &request.members[member_index];
+            let (Some(parsed_selector), Some((resolver, owner_by_binding, _))) =
+                (&member.source_match_parsed, &source_match_projection)
+            else {
+                unreachable!("pending source_match members have a parsed selector and a resolver");
+            };
+            let (reason_category, reason, candidate_count) =
+                match resolver.member_candidates_parsed(&request.id, parsed_selector) {
+                    Ok(candidates) => {
+                        let candidate_len = candidates.len();
+                        match projected_source_match_candidate_rows(owner_by_binding, candidates) {
+                            Ok(rows) if !rows.is_empty() => {
+                                builder.record_source_match_projection_event(
+                                    source_match_projection_event(
+                                        &request.id,
+                                        source_match_projection_kind(&member.claim_origin),
+                                        Some(&member.export_name),
+                                        BTreeMap::new(),
+                                        parsed_selector.selector(),
+                                        SelectorSourceMatchProjectionOutcome::Projected,
+                                        "projected_candidates",
+                                        format!(
+                                            "projected {} shape-matcher candidate(s) to {} \
+                                             owner/binding row(s)",
+                                            candidate_len,
+                                            rows.len()
+                                        ),
+                                        Some(candidate_len),
+                                        Some(rows.len()),
+                                    ),
+                                );
+                                let target = builder.declare_member_target_in_module_ref(
+                                    &request.id,
+                                    &member.export_name,
+                                    member_selector_ref_for_global_solver(member)
+                                        .expect("a source_match member has a solver selector"),
+                                )?;
+                                builder.lower_projected_source_match_candidates(
+                                    &request.id,
+                                    &member.export_name,
+                                    rows,
+                                );
+                                deferred_targets.insert(target, (request_index, member_index));
+                                continue;
+                            }
+                            Ok(_) => (
+                                "shape_matcher_no_candidates",
+                                "shape matcher returned no candidates".to_string(),
+                                Some(candidate_len),
+                            ),
+                            Err(error) => (
+                                "projection_owner_mapping_error",
+                                source_match_projection_error_reason(
+                                    "projection_owner_mapping_error",
+                                    &error,
+                                ),
+                                Some(candidate_len),
+                            ),
+                        }
+                    }
+                    Err(error) => (
+                        "shape_matcher_error",
+                        source_match_projection_error_reason("shape_matcher_error", &error),
+                        None,
                     ),
-                }
-                .into(),
-            );
+                };
+            builder.record_source_match_projection_event(source_match_projection_event(
+                &request.id,
+                source_match_projection_kind(&member.claim_origin),
+                Some(&member.export_name),
+                BTreeMap::new(),
+                parsed_selector.selector(),
+                SelectorSourceMatchProjectionOutcome::NotProjected,
+                reason_category,
+                reason.clone(),
+                candidate_count,
+                Some(0),
+            ));
+            let message = if reason_category == "shape_matcher_no_candidates" {
+                format!(
+                    "logical_module {}: {} for export `{}` did not match any top-level \
+                     declaration. Selector:\n{}",
+                    request.id,
+                    member.claim_origin,
+                    member.export_name,
+                    parsed_selector.selector().match_source,
+                )
+            } else {
+                format!(
+                    "logical_module {}: {} for export `{}` could not be matched \
+                     ({reason_category}: {reason}). Selector:\n{}",
+                    request.id,
+                    member.claim_origin,
+                    member.export_name,
+                    parsed_selector.selector().match_source,
+                )
+            };
+            if self.keep_going {
+                self.source_match_diagnostics
+                    .push(SourceMatchDiagnostic::new(
+                        &request.id,
+                        &request.target_path,
+                        member,
+                        Vec::new(),
+                        message,
+                    ));
+                continue;
+            }
+            bail!("{message}");
         }
         for (request_index, member_index) in pending_constraints {
             let request = &explicit_requests[request_index];
             let member = &request.members[member_index];
-            let mut projection_event = None;
-            if let Some(parsed_selector) = &member.source_match_parsed {
-                let Some((resolver, owner_by_binding, _)) = &source_match_projection else {
-                    continue;
-                };
-                match resolver.member_candidates_parsed(&request.id, parsed_selector) {
-                    Ok(candidates) => {
-                        let candidate_len = candidates.len();
-                        let candidate_count = Some(candidate_len);
-                        match projected_source_match_candidate_rows(owner_by_binding, candidates) {
-                            Ok(rows) => {
-                                let projected_row_count = Some(rows.len());
-                                if !rows.is_empty() {
-                                    builder.record_source_match_projection_event(
-                                        source_match_projection_event(
-                                            &request.id,
-                                            source_match_projection_kind(&member.claim_origin),
-                                            Some(&member.export_name),
-                                            BTreeMap::new(),
-                                            parsed_selector.selector(),
-                                            SelectorSourceMatchProjectionOutcome::Projected,
-                                            "projected_candidates",
-                                            format!(
-                                                "projected {} shape-matcher candidate(s) to {} \
-                                                 owner/binding row(s)",
-                                                candidate_len,
-                                                rows.len()
-                                            ),
-                                            candidate_count,
-                                            projected_row_count,
-                                        ),
-                                    );
-                                    builder.lower_projected_source_match_candidates(
-                                        &request.id,
-                                        &member.export_name,
-                                        rows,
-                                    );
-                                    continue;
-                                }
-                                projection_event = Some((
-                                    "shape_matcher_no_candidates",
-                                    "shape matcher returned no candidates".to_string(),
-                                    candidate_count,
-                                    projected_row_count,
-                                ));
-                            }
-                            Err(error) => {
-                                projection_event = Some((
-                                    "projection_owner_mapping_error",
-                                    source_match_projection_error_reason(
-                                        "projection_owner_mapping_error",
-                                        &error,
-                                    ),
-                                    candidate_count,
-                                    None,
-                                ));
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        projection_event = Some((
-                            "shape_matcher_error",
-                            source_match_projection_error_reason("shape_matcher_error", &error),
-                            None,
-                            None,
-                        ));
-                    }
-                }
-            }
-            if let Some(parsed_selector) = &member.source_match_parsed {
-                builder.lower_source_match_constraints_in_module_parsed(
-                    &request.id,
-                    &member.export_name,
-                    parsed_selector,
-                )?;
-            } else {
-                let selector = member_selector_ref_for_global_solver(member)
-                    .expect("pending selector constraint should still be lowerable");
-                builder.lower_member_constraints_in_module_ref(
-                    &request.id,
-                    &member.export_name,
-                    selector,
-                )?;
-            }
-            if let Some(selector) = &member.source_match {
-                let (reason_category, reason, candidate_count, projected_row_count) =
-                    projection_event.unwrap_or((
-                        "projection_not_attempted",
-                        "source_match projection was not attempted".to_string(),
-                        None,
-                        None,
-                    ));
-                builder.record_source_match_projection_event(source_match_projection_event(
-                    &request.id,
-                    source_match_projection_kind(&member.claim_origin),
-                    Some(&member.export_name),
-                    BTreeMap::new(),
-                    selector,
-                    SelectorSourceMatchProjectionOutcome::NativeFallback,
-                    reason_category,
-                    reason,
-                    candidate_count,
-                    projected_row_count,
-                ));
-            }
+            let selector = member_selector_ref_for_global_solver(member)
+                .expect("pending selector constraint should still be lowerable");
+            builder.lower_member_constraints_in_module_ref(
+                &request.id,
+                &member.export_name,
+                selector,
+            )?;
         }
         let program = builder.into_program()?;
         if program.targets.is_empty() {
@@ -2267,9 +2199,9 @@ impl ChunkPlanBuilder {
                             request.id, member.export_name, claim.owner,
                         )
                     })?;
-                    let native_selects_import = member.source_match.is_some()
+                    let selects_import = member.source_match.is_some()
                         && solver_claim_is_import_specifier(&facts, claim);
-                    if native_selects_import {
+                    if selects_import {
                         self.claim_imported_binding_after_chunk_analysis(
                             request,
                             member,
@@ -2295,7 +2227,7 @@ impl ChunkPlanBuilder {
                     )?;
                 }
                 Some(ClaimOutcome::NoMatch) => {
-                    if let Some(message) = native_source_match_no_match_message(request, member) {
+                    if let Some(message) = source_match_no_match_message(request, member) {
                         if self.keep_going {
                             self.source_match_diagnostics.push(
                                 SourceMatchDiagnostic::new(
@@ -2337,8 +2269,7 @@ impl ChunkPlanBuilder {
                     bail!("{message}");
                 }
                 Some(ClaimOutcome::Ambiguous { candidates }) => {
-                    let message =
-                        native_source_match_ambiguous_message(request, member, candidates);
+                    let message = source_match_ambiguous_message(request, member, candidates);
                     if let Some(message) = message {
                         if self.keep_going {
                             let body_indices = candidates

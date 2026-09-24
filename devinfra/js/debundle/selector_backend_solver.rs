@@ -436,8 +436,7 @@ fn source_match_projection_outcome_name(
 ) -> &'static str {
     match outcome {
         SelectorSourceMatchProjectionOutcome::Projected => "projected",
-        SelectorSourceMatchProjectionOutcome::NativeFallback => "native_fallback",
-        SelectorSourceMatchProjectionOutcome::NativeUnsupported => "native_unsupported",
+        SelectorSourceMatchProjectionOutcome::NotProjected => "not_projected",
     }
 }
 

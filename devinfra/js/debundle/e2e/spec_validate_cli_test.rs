@@ -69,10 +69,8 @@ fn validate_json_reports_every_failure_class_in_one_pass() {
         .unwrap_or_else(|err| panic!("parse validate json: {err}\nstdout:\n{}", out.stdout));
 
     assert_eq!(report["total"], 3, "{report:#}");
-    assert_eq!(
-        report["counts"]["selector_resolution_error"], 2,
-        "{report:#}"
-    );
+    assert_eq!(report["counts"]["unresolved_selector"], 1, "{report:#}");
+    assert_eq!(report["counts"]["ambiguous_selector"], 1, "{report:#}");
     assert_eq!(report["counts"]["duplicate_claim"], 1, "{report:#}");
 
     let chunks = report["chunks"].as_array().expect("chunks array");
@@ -83,19 +81,19 @@ fn validate_json_reports_every_failure_class_in_one_pass() {
     let diagnostics = chunk["diagnostics"].as_array().expect("diagnostics array");
     assert_eq!(diagnostics.len(), 3, "{chunk:#}");
 
-    let missing = find_entry(diagnostics, "selector_resolution_error", "MissingFormatter");
+    let missing = find_entry(diagnostics, "unresolved_selector", "MissingFormatter");
     assert_eq!(missing["module_path"], "diagnostics/missing");
     assert_eq!(missing["selector_kind"], "source_matches");
     assert!(
         missing["recommended_next_action"]
             .as_str()
             .unwrap()
-            .contains("Inspect the selector error"),
+            .contains("Update the selector source"),
         "{missing:#}"
     );
 
-    let ambiguous = find_entry(diagnostics, "selector_resolution_error", "AmbiguousHelper");
-    assert_eq!(ambiguous["body_indices"], serde_json::json!([]));
+    let ambiguous = find_entry(diagnostics, "ambiguous_selector", "AmbiguousHelper");
+    assert_eq!(ambiguous["body_indices"], serde_json::json!([1, 2]));
 
     let duplicate = diagnostics
         .iter()
@@ -145,7 +143,9 @@ fn validate_text_summarizes_counts_and_per_chunk_findings() {
         "missing chunk header:\n{stdout}"
     );
     assert!(
-        stdout.contains("[selector_resolution_error]") && stdout.contains("[duplicate_claim]"),
+        stdout.contains("[unresolved_selector]")
+            && stdout.contains("[ambiguous_selector]")
+            && stdout.contains("[duplicate_claim]"),
         "missing classified findings:\n{stdout}"
     );
 }

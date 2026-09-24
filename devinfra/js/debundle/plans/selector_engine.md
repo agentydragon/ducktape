@@ -57,8 +57,7 @@ tests.
    Injectivity forcing and chained relational selectors are already covered end
    to end (`e2e/global_selector_assignment_test.rs`,
    `e2e/intrinsic_alias_lowering_test.rs`).
-5. **One engine.** Delete native `source_match` lowering, the three `run`
-   fallbacks in `lowering/materialize/plan_builder.rs`, and `FactDomains`.
+5. **One engine.** Delete native `source_match` lowering and `FactDomains`.
    `anonymous_resolution.rs` (edit gate, `peel`) and `validate --source-file`
    call the shared resolve.
 6. **Truthful outcomes.**
@@ -99,8 +98,6 @@ a later sweep.
   - the AST-atom lowering in `selector_ir_lowering.rs` and its encoding in
     `selector_constraint_model_builder.rs`, keeping only what candidate,
     reference and relation tables need;
-  - `SelectorSourceMatchProjectionOutcome::{NativeFallback, NativeUnsupported}`
-    and their projection events;
   - `solver_backends/ortools_spike`;
   - the internal tests of deleted code, once their rules have command-level
     equivalents;

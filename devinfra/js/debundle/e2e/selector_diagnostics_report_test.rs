@@ -80,8 +80,8 @@ export { renderCard, decoratePrimary, decorateSecondary };
     )
     .unwrap();
     assert_eq!(report["chunk_id"], "static/app");
-    assert_eq!(report["counts"]["unresolved_selector"], 1);
-    assert_eq!(report["counts"]["selector_resolution_error"], 2);
+    assert_eq!(report["counts"]["unresolved_selector"], 2);
+    assert_eq!(report["counts"]["ambiguous_selector"], 1);
     assert_eq!(report["counts"]["duplicate_claim"], 1);
 
     let diagnostics = report["diagnostics"]
@@ -89,7 +89,7 @@ export { renderCard, decoratePrimary, decorateSecondary };
         .expect("diagnostics must be an array");
     assert_eq!(diagnostics.len(), 4, "{report:#}");
 
-    let missing = find_entry(diagnostics, "selector_resolution_error", "MissingFormatter");
+    let missing = find_entry(diagnostics, "unresolved_selector", "MissingFormatter");
     assert_eq!(missing["module_path"], "diagnostics/missing");
     assert_eq!(missing["selector_kind"], "source_matches");
     assert_eq!(missing["target_binding"], "selectedFormatter");
@@ -114,25 +114,25 @@ export { renderCard, decoratePrimary, decorateSecondary };
         missing["recommended_next_action"]
             .as_str()
             .unwrap()
-            .contains("Inspect the selector error"),
+            .contains("Update the selector source"),
         "{missing:#}"
     );
 
-    let ambiguous = find_entry(diagnostics, "selector_resolution_error", "AmbiguousHelper");
+    let ambiguous = find_entry(diagnostics, "ambiguous_selector", "AmbiguousHelper");
     assert_eq!(ambiguous["module_path"], "diagnostics/ambiguous");
-    assert_eq!(ambiguous["body_indices"], serde_json::json!([]));
+    assert_eq!(ambiguous["body_indices"], serde_json::json!([1, 2]));
     assert!(
         ambiguous["message"]
             .as_str()
             .unwrap()
-            .contains("valid global selector assignment"),
+            .contains("is ambiguous"),
         "{ambiguous:#}"
     );
     assert!(
         ambiguous["recommended_next_action"]
             .as_str()
             .unwrap()
-            .contains("Inspect the selector error"),
+            .contains("Refine the selector"),
         "{ambiguous:#}"
     );
 
@@ -168,8 +168,10 @@ export { renderCard, decoratePrimary, decorateSecondary };
     );
 }
 
+/// A selector the matcher places nowhere is reported on its own and never
+/// enters the solve, so it cannot take the chunk's other selectors down with it.
 #[test]
-fn keep_going_marks_known_unsat_roots_and_cascades() {
+fn keep_going_unmatched_selector_does_not_cascade() {
     let missing_selector = r#"function missingFormatter(value) {
   return value.toLowerCase();
 }"#;
@@ -195,68 +197,14 @@ export { keepMe };
         ],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
-    assert!(
-        rejected.stderr.contains("root_unsat_candidate"),
-        "human diagnostics must mark root candidates:\n{}",
-        rejected.stderr
-    );
-    assert!(
-        rejected.stderr.contains("cascaded_from_known_unsat"),
-        "human diagnostics must mark cascaded targets:\n{}",
-        rejected.stderr
-    );
-
-    let report_path = rejected
-        .report_root
-        .join("static")
-        .join("app")
-        .join("selector_diagnostics.json");
-    let report: Value = serde_json::from_str(
-        &fs::read_to_string(&report_path)
-            .unwrap_or_else(|error| panic!("read {}: {error}", report_path.display())),
-    )
-    .unwrap();
-    let diagnostics = report["diagnostics"]
-        .as_array()
-        .expect("diagnostics must be an array");
-
-    let root = find_entry(diagnostics, "selector_resolution_error", "MissingFormatter");
-    assert_eq!(
-        root["root_isolation"]["classification"], "root_unsat_candidate",
-        "{root:#}"
-    );
-    assert!(
-        root["root_isolation"]["known_unsat_reason"]
-            .as_str()
-            .unwrap()
-            .contains("variable restriction has empty domain"),
-        "{root:#}"
-    );
-    assert!(
-        root["root_isolation"]["implicated_debug_name"]
-            .as_str()
-            .unwrap()
-            .contains("diagnostics/root::source_match.MissingFormatter."),
-        "{root:#}"
-    );
-
-    let cascade = find_entry(diagnostics, "selector_resolution_error", "KeepMe");
-    assert_eq!(
-        cascade["root_isolation"]["classification"], "cascaded_from_known_unsat",
-        "{cascade:#}"
-    );
-    assert!(
-        cascade["root_isolation"]["known_unsat_reason"]
-            .as_str()
-            .unwrap()
-            .contains("variable restriction has empty domain"),
-        "{cascade:#}"
-    );
+    let diagnostics = keep_going_diagnostics(opts);
+    let missing = find_entry(&diagnostics, "unresolved_selector", "MissingFormatter");
+    assert!(missing["root_isolation"].is_null(), "{missing:#}");
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
 }
 
 #[test]
-fn keep_going_matches_known_unsat_anonymous_roots_by_index() {
+fn keep_going_unmatched_anonymous_statement_does_not_cascade() {
     let opts = FixtureOpts::new(
         r#"console.log("present");
 "#,
@@ -267,43 +215,14 @@ fn keep_going_matches_known_unsat_anonymous_roots_by_index() {
         )],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
-    let report_path = rejected
-        .report_root
-        .join("static")
-        .join("app")
-        .join("selector_diagnostics.json");
-    let report: Value = serde_json::from_str(
-        &fs::read_to_string(&report_path)
-            .unwrap_or_else(|error| panic!("read {}: {error}", report_path.display())),
-    )
-    .unwrap();
-    let diagnostics = report["diagnostics"]
-        .as_array()
-        .expect("diagnostics must be an array");
-
-    let root = find_anon_entry(diagnostics, "console.warn");
-    assert_eq!(
-        root["root_isolation"]["classification"], "root_unsat_candidate",
-        "{root:#}"
-    );
-    assert!(
-        root["root_isolation"]["implicated_debug_name"]
-            .as_str()
-            .unwrap()
-            .contains("diagnostics/anon::anonymous_statement.0.source_match."),
-        "{root:#}"
-    );
-
-    let cascade = find_anon_entry(diagnostics, "console.log");
-    assert_eq!(
-        cascade["root_isolation"]["classification"], "cascaded_from_known_unsat",
-        "{cascade:#}"
-    );
+    let diagnostics = keep_going_diagnostics(opts);
+    let missing = find_anon_entry(&diagnostics, "console.warn");
+    assert_eq!(missing["category"], "unresolved_selector", "{missing:#}");
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
 }
 
 #[test]
-fn keep_going_matches_known_unsat_source_match_roots_by_target_binding() {
+fn keep_going_reports_unmatched_source_match_group_per_target_binding() {
     let opts = FixtureOpts::new(
         r#"const presentLeft = 1, presentRight = 2;
 console.log(presentLeft, presentRight);
@@ -322,41 +241,15 @@ export { presentLeft, presentRight };
         )],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
-    let report_path = rejected
-        .report_root
-        .join("static")
-        .join("app")
-        .join("selector_diagnostics.json");
-    let report: Value = serde_json::from_str(
-        &fs::read_to_string(&report_path)
-            .unwrap_or_else(|error| panic!("read {}: {error}", report_path.display())),
-    )
-    .unwrap();
-    let diagnostics = report["diagnostics"]
-        .as_array()
-        .expect("diagnostics must be an array");
-
-    let left = find_entry(diagnostics, "selector_resolution_error", "ExportedLeft");
-    assert_eq!(left["selector_kind"], "source_matches");
-    assert_eq!(
-        left["root_isolation"]["classification"], "root_unsat_candidate",
-        "{left:#}"
-    );
-    assert!(
-        left["root_isolation"]["implicated_debug_name"]
-            .as_str()
-            .unwrap()
-            .contains("diagnostics/group::source_matches.missingLeft,missingRight."),
-        "{left:#}"
-    );
-
-    let right = find_entry(diagnostics, "selector_resolution_error", "ExportedRight");
-    assert_eq!(right["selector_kind"], "source_matches");
-    assert_eq!(
-        right["root_isolation"]["classification"], "root_unsat_candidate",
-        "{right:#}"
-    );
+    let diagnostics = keep_going_diagnostics(opts);
+    for (export_name, target_binding) in [
+        ("ExportedLeft", "missingLeft"),
+        ("ExportedRight", "missingRight"),
+    ] {
+        let entry = find_entry(&diagnostics, "unresolved_selector", export_name);
+        assert_eq!(entry["selector_kind"], "source_matches");
+        assert_eq!(entry["target_binding"], target_binding);
+    }
 }
 
 #[test]
@@ -386,8 +279,28 @@ const right = makeRight();"#,
         "human diagnostics should report the canonical source match:\n{}",
         rejected.stderr
     );
-    let report_path = rejected
-        .report_root
+    let diagnostics = read_diagnostics(&rejected.report_root);
+    let left = find_entry(&diagnostics, "unresolved_selector", "ExportedLeft");
+    assert_eq!(left["selector_kind"], "source_matches");
+    assert_eq!(left["target_binding"], "left");
+    assert!(
+        left["message"]
+            .as_str()
+            .unwrap()
+            .contains("did not match any top-level declaration group"),
+        "{left:#}"
+    );
+    let right = find_entry(&diagnostics, "unresolved_selector", "ExportedRight");
+    assert_eq!(right["selector_kind"], "source_matches");
+    assert_eq!(right["target_binding"], "right");
+}
+
+fn keep_going_diagnostics(opts: FixtureOpts<'_>) -> Vec<Value> {
+    read_diagnostics(&run_keep_going_dry_run_rejection_fixture(opts).report_root)
+}
+
+fn read_diagnostics(report_root: &std::path::Path) -> Vec<Value> {
+    let report_path = report_root
         .join("static")
         .join("app")
         .join("selector_diagnostics.json");
@@ -396,23 +309,10 @@ const right = makeRight();"#,
             .unwrap_or_else(|error| panic!("read {}: {error}", report_path.display())),
     )
     .unwrap();
-    let diagnostics = report["diagnostics"]
+    report["diagnostics"]
         .as_array()
-        .expect("diagnostics must be an array");
-
-    let left = find_entry(diagnostics, "selector_resolution_error", "ExportedLeft");
-    assert_eq!(left["selector_kind"], "source_matches");
-    assert_eq!(left["target_binding"], "left");
-    assert!(
-        left["message"]
-            .as_str()
-            .unwrap()
-            .contains("did not produce a valid global selector assignment"),
-        "{left:#}"
-    );
-    let right = find_entry(diagnostics, "selector_resolution_error", "ExportedRight");
-    assert_eq!(right["selector_kind"], "source_matches");
-    assert_eq!(right["target_binding"], "right");
+        .expect("diagnostics must be an array")
+        .clone()
 }
 
 fn find_entry<'a>(diagnostics: &'a [Value], category: &str, export_name: &str) -> &'a Value {

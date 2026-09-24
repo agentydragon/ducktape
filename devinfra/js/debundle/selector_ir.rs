@@ -891,8 +891,9 @@ impl SelectorProjectedValue {
 #[serde(rename_all = "snake_case")]
 pub enum SelectorSourceMatchProjectionOutcome {
     Projected,
-    NativeFallback,
-    NativeUnsupported,
+    /// The matcher placed the selector nowhere (or failed); it is reported
+    /// unmatched without entering the solve.
+    NotProjected,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
