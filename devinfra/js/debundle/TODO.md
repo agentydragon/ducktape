@@ -307,10 +307,6 @@ paths and owner ids belong in the consuming repo.
 
 ### Planner CLI follow-ups
 
-- **Selector synthesis filters apply too late.** Item/file/module filters of
-  `synthesize-selectors` should prune YAML traversal and candidate generation
-  before a full scan: <perf/source_match_selector_profile.md> § Open: selector
-  synthesis filter latency.
 - **Selector synthesis apply emits non-reviewable YAML churn.** The same
   downstream dogfood run applied a top-100 item batch with 75 changed
   candidates. Selector correctness looked promising, but the YAML application
