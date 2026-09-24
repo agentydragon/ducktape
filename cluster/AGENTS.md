@@ -159,7 +159,7 @@ manifest is consumed by a tool that requires a single YAML document.
 When adding agent read access to a new service namespace, create a new `agent-rbac/`
 directory — never add RoleBindings to `agent-rbac-base` or `shared-rbac`. The full
 three-layer split, permission scopes, and the sandbox quota:
-<k8s/agents/agent-rbac-base/README.md>.
+<docs/agent_rbac.md>.
 
 ## Storage Selection
 

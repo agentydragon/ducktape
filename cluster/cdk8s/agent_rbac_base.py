@@ -1,6 +1,6 @@
 """agent-rbac-base: the claude-sandbox namespace (its quota, limits, admin Role, bindings and
 janitor) and the shared agent-facing ClusterRoles other directories bind. Permissions and
-bindings: cluster/k8s/agents/agent-rbac-base/permissions.md.
+bindings: cluster/docs/agent_rbac.md.
 
 Every Role is a tier-2 `k8s.KubeRole`/`k8s.KubeClusterRole`: rules keep the exact grouping they
 are reviewed in.
