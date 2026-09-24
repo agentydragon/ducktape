@@ -77,7 +77,7 @@ bbr test //agentplane/app/...
   assembled).
 - `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
-  per-listener thread copies.
+  per-listener thread copies. The scope read is a long poll held until the thread's first fold.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.

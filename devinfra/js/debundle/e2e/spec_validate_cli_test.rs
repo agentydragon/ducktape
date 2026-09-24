@@ -434,7 +434,7 @@ sideEffect("shared");
 }
 
 #[test]
-fn validate_source_only_reports_native_lowerability_failures_without_ortools() {
+fn validate_source_only_reports_multi_statement_anonymous_selector_as_resolution_error() {
     let dir = tempfile::tempdir().unwrap();
     let source_file = dir.path().join("chunk.js");
     write(
@@ -462,33 +462,11 @@ start();
         out.stderr,
     );
     let report: Value = serde_json::from_str(&out.stdout).unwrap();
-    assert_eq!(report["total"], 2, "{report:#}");
-    assert_eq!(
-        report["counts"]["selector_resolution_error"], 1,
-        "{report:#}"
-    );
-    assert_eq!(
-        report["counts"]["native_source_match_lowering_unsupported"], 1,
-        "{report:#}"
-    );
-
-    let diagnostics = report["chunks"][0]["diagnostics"]
-        .as_array()
-        .expect("diagnostics array");
-    let entry = diagnostics
-        .iter()
-        .find(|entry| entry["category"] == "native_source_match_lowering_unsupported")
-        .expect("native lowering diagnostic");
+    assert_eq!(report["total"], 1, "{report:#}");
+    let entry = &report["chunks"][0]["diagnostics"][0];
+    assert_eq!(entry["category"], "selector_resolution_error", "{entry:#}");
     assert_eq!(entry["module_path"], "effects/startup");
     assert_eq!(entry["selector_kind"], "anonymous_statements.source_match");
-    assert_eq!(entry["export_name"], serde_json::Value::Null);
-    assert!(
-        entry["message"]
-            .as_str()
-            .unwrap()
-            .contains("native selector IR"),
-        "{entry:#}",
-    );
     assert!(
         entry["claim_origin"]
             .as_str()

@@ -5,6 +5,11 @@ One Electric shape per thread, windowed by subset snapshots, is deployed:
 below, is <../../docs/thread_sync_requirements.md>. This plan holds the work still open on the
 Electric design, and the path to trying a second implementation beside it.
 
+The Electric work goes as far as Electric goes without working against it. Where it cannot do what
+following an agent wants, the work stops and the mismatch goes in
+<../../docs/thread_sync_electric_limits.md>; those mismatches are what a second implementation
+would be for.
+
 ## Open on the Electric design
 
 1. **Eviction (P10).** The store keeps every row and body it has loaded until the thread closes.
@@ -14,36 +19,27 @@ Electric design, and the path to trying a second implementation beside it.
    scrolling back re-reads it as a subset. Done when retained heap and row counts stabilize over
    repeated scroll, load and evict cycles while the thread grows (<../../docs/thread_view_sync.md>
    § Acceptance evidence).
-2. **A thread with no fold yet re-reads its scope on a one-second timer (E6).** The scope read
-   should wait on `ThreadUpdates.changes` until the fold exists, and the client re-issue it on
-   return.
-3. **Pending commands past the newest 200.** The pending subset returns the newest 200 with no
+2. **Pending commands past the newest 200.** The pending subset returns the newest 200 with no
    older page and no count, and the pending panel has no height cap, so on a phone it can squeeze
    the history view to nothing. Porting means a subset form such as
    `… pending = true AND entity_index < $1`, a load-older for it, and the cap. The design doc's
    "keyset page by admission cursor" describes the page that does not exist yet.
-4. **Electric's server memory** under history growth, a restart and a stalled reader is still an
+3. **Electric's server memory** under history growth, a restart and a stalled reader is still an
    adoption gate (<../../docs/thread_view_sync.md> § Server memory ownership). Probes exist on the
    parked spike PR #7490 (`shape_history_memory_test`, `shape_stalled_reader_test`,
    `shape_capacity_test`); they need rewriting against `testing/electric_service.py` and the thread
    tables.
-5. **Compacting completed bodies (D5).** Compaction keeps the body's identity — owner, generation
-   and every reference to it — so the entity row does not change. What reaches a reader holding the
-   body is the storage change itself:
-   - a delete for each chunk it replaces, which must not withdraw text the reader shows;
-   - the compacted row, which the field's live shape pushes to every reader following the field,
-     including readers that do not hold the body: one re-send of the text. Keeping compacted rows
-     out of the live shape avoids it, at the cost of a second read path (**D2**); compacting late
-     makes the re-send rare either way.
-
-   **S1:** the compacted row must answer a reference as far as it spans, as the chunks did. If it
-   keeps the length of each chunk it replaces, it answers every revision's reference; without those
-   lengths only the final reference resolves, and one naming an intermediate revision gets `410`.
-   Nothing needs an old revision's body outside debugging, and the event log keeps it. First, pin
-   Electric's behaviour: whether a delete carries the row's text, and whether a compaction
-   transaction's changes arrive together.
-
-6. **Measure it on `agentplane-testing`.**
+4. **Compacting completed bodies (D5).** A body completed with the text that streamed keeps the
+   generation it streamed in: one chunk per appending batch and one manifest per revision.
+   Electric's behaviour is pinned (`test_electric_chunk_compaction.py`). Rewriting chunk 0 to the
+   whole text and deleting the rest in one transaction needs no client change, since the store
+   applies only inserts. Every follower of the field still receives the compacted text once, twice
+   under `replica=full`; that cost is Electric's (<../../docs/thread_sync_electric_limits.md>).
+   Dropping `replica=full` from the chunk shapes halves it, since nothing reads a chunk update's or
+   delete's values. **S1** for intermediate references needs the replaced chunks' lengths, which
+   `thread_payload_chunk` has no column for; without them a compacted body answers only its final
+   reference.
+5. **Measure it on `agentplane-testing`.**
    - Open to first text for a 30-row tail, cold and warm, timed per stage.
    - A PING turn under 3 s.
    - The live log's traffic for a reader scrolled away from an active tail (**E5**).
@@ -79,7 +75,6 @@ files, not measurements. Rows where every column is `+` are left out.
 | P10 bounded tab state | −                   | +           | +             | +        |
 | E4 scroll loads new   | +                   | −           | +             | +        |
 | E5 no re-transfer     | ~                   | −           | +             | +        |
-| E6 no timer polling   | ~                   | +           | +             | +        |
 | O1 bounded/shared     | +                   | +           | +             | −        |
 | O2 horizontal scale   | ~                   | +           | +             | ~        |
 | O4 few moving parts   | ~                   | +           | +             | ~        |
@@ -87,4 +82,5 @@ files, not measurements. Rows where every column is `+` are left out.
 | D3 incremental        | +                   | +           | +             | ~        |
 
 The window poll's `−` cells are one omission — the client never says what it holds — and adding it
-is the moving window. Electric's `−` on P10 and `~` on E6 are items 1 and 2 above.
+is the moving window. Electric's `−` on P10 is item 1 above; its `~` on E5 is
+<../../docs/thread_sync_electric_limits.md> § What does not.

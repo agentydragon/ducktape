@@ -84,7 +84,9 @@ IMAGES = (
     "haku-openclaw-spike",
     # The trailing `-image` is in the repository path too, unlike every other entry.
     "haku-sandbox-image",
-    "homeassistant-provisioner",
+    "homeassistant-component-installer",
+    "homeassistant-onboarding",
+    "homeassistant-token-provisioner",
     "iron-proxy",
     "loki-read-proxy",
     "matrix-user-provisioner",

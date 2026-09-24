@@ -462,6 +462,7 @@ py_library(
         "//agentplane/crds:egresspolicy",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/external_secrets:single_secret_store",
+        "//cluster/cdk8s/home_assistant:app",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

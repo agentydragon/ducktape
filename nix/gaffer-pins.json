@@ -1,14 +1,14 @@
 {
   "pins": {
     "drivefs": {
-      "store_path": "/nix/store/lfiyvkzlchsglzrlkisp4qz1ndsnja39-google-drive-file-stream-cl856809456",
+      "store_path": "/nix/store/fclk1bzla6l5bkifdlvv57283v48fjj0-google-drive-file-stream-cl856809456",
       "version": "cl856809456",
-      "rev": "f2cebac7f7816c4bf81d4f36f131c2ad199238ea"
+      "rev": "de05b5896abab3bd40268588f9406390b4cf7a12"
     },
     "drivectl": {
-      "store_path": "/nix/store/105b4gnfg5f1x8cajnnwd920icp4q0mp-drivectl-unstable-09c0ae7-dirty",
-      "version": "unstable-09c0ae7-dirty",
-      "rev": "09c0ae7137ce3c1ae5b3c3afdac74ba0d88337de"
+      "store_path": "/nix/store/5rcciz02wvj1asj6lb9ja41wrgjp1q82-drivectl-unstable-768f353-dirty",
+      "version": "unstable-768f353-dirty",
+      "rev": "768f35391a7098a26acfa43b07ef37c1dcc0095f"
     }
   }
 }

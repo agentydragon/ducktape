@@ -108,6 +108,10 @@ KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 # 3000, so the proxy reads the request without bumping TLS.
 FORGEJO_HOST = "forgejo-http.forgejo.svc.cluster.local"
 FORGEJO_PORT = 3000
+# Home Assistant's in-cluster Service, plain HTTP. Its pod runs on its node's host network, so
+# Cilium sees a node there, not an endpoint: the proxy's rule for it is an entity rule on its port.
+HOME_ASSISTANT_HOST = "home-assistant.home-assistant.svc.cluster.local"
+HOME_ASSISTANT_PORT = 8123
 _SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"
 # The trust bundle's ConfigMap key -- the runner SandboxTemplate's volumeMount subPath
 # (app.py) must name the same key.
@@ -635,6 +639,7 @@ class Egress(Construct):
                     {"k8s:io.kubernetes.pod.namespace": "forgejo", "k8s:app.kubernetes.io/name": "forgejo"},
                     FORGEJO_PORT,
                 ),
+                cilium.egress_to_entities("remote-node", "host", ports=[HOME_ASSISTANT_PORT]),
                 cilium.egress_to_entities("world", "remote-node", "host", ports=[443, 80]),
             ],
         )

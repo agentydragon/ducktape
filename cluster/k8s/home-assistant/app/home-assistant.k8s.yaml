@@ -59,6 +59,31 @@ spec:
     creationPolicy: Owner
     name: home-assistant-metrics-token
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: home-assistant-component-installer
+  namespace: home-assistant
+data:
+  settings.yaml: |
+    config_dir: /config
+    components:
+      - version: 2.2.1
+        url: https://github.com/dreo-team/hass-dreoverse/archive/refs/tags/v2.2.1.zip
+        sha256: 555e4e3470b64574bfe5a050ca5557ce3f509844e2e8827ecd7e10c8a3d77d24
+        archive_path: "*/custom_components/dreo"
+        install_dir: dreo
+        manifest_domain: dreo
+      - version: 1.1.1
+        url: https://github.com/christiaangoossens/hass-oidc-auth/releases/download/v1.1.1/hass-oidc-auth.zip
+        sha256: 9ce9e6153f80c781e360b93e097ff7d87d09235430fc48e7a67d97dda5fc3322
+        archive_path: "."
+        install_dir: auth_oidc
+        config_files:
+          - automations.yaml
+          - scripts.yaml
+          - scenes.yaml
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -148,25 +173,20 @@ spec:
       imagePullSecrets:
         - name: forgejo-images-creds
       initContainers:
-        - args:
-            - setup
-          command:
-            - /homeassistant/provisioner/provision_bin
+        - command:
+            - /homeassistant/provisioner/components/install_bin
           env:
-            - name: HOME_ASSISTANT_PROVISIONER_CONFIG_FILE
-              value: /etc/homeassistant/provisioner.yaml
-            - name: HOME_ASSISTANT_PROVISIONER_ONBOARDING_ENABLED
-              value: "false"
-          image: git.allegedly.works/ducktape-ci/homeassistant-provisioner:unset
+            - name: HOME_ASSISTANT_COMPONENT_INSTALLER_CONFIG_FILE
+              value: /etc/provisioner/settings.yaml
+          image: git.allegedly.works/ducktape-ci/homeassistant-component-installer:unset
           imagePullPolicy: Always
           name: provision-components
           volumeMounts:
             - mountPath: /config
               name: config
-            - mountPath: /etc/homeassistant/provisioner.yaml
-              name: provisioner-config
+            - mountPath: /etc/provisioner
+              name: installer-settings
               readOnly: true
-              subPath: provisioner.yaml
       nodeSelector:
         kubernetes.io/hostname: optiplex
       volumes:
@@ -177,8 +197,8 @@ spec:
             name: home-assistant-configuration
           name: configuration
         - configMap:
-            name: home-assistant-provisioner-config
-          name: provisioner-config
+            name: home-assistant-component-installer
+          name: installer-settings
         - configMap:
             name: home-assistant-caddy
           name: caddy-config
@@ -198,6 +218,33 @@ spec:
   selector:
     app.kubernetes.io/name: home-assistant
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: home-assistant-onboarding
+  namespace: home-assistant
+data:
+  settings.yaml: |
+    endpoint:
+      url: http://home-assistant.home-assistant.svc.cluster.local:8123
+      client_id: https://home.allegedly.works/
+      redirect_uri: https://home.allegedly.works/
+    owner_username: ha-local-admin
+    owner_display_name: Home Assistant Local Administrator
+    http_config:
+      server_host:
+        - 127.0.0.1
+      server_port: 8124
+      cors_allowed_origins:
+        - https://cast.home-assistant.io
+      use_x_forwarded_for: true
+      trusted_proxies:
+        - 127.0.0.1/32
+      login_attempts_threshold: -1
+      ip_ban_enabled: true
+      ssl_profile: modern
+      use_x_frame_options: true
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -215,19 +262,17 @@ spec:
         app.kubernetes.io/name: home-assistant-onboarding
     spec:
       containers:
-        - args:
-            - setup
-          command:
-            - /homeassistant/provisioner/provision_bin
+        - command:
+            - /homeassistant/provisioner/onboarding/onboard_bin
           env:
-            - name: HOME_ASSISTANT_PROVISIONER_CONFIG_FILE
-              value: /etc/homeassistant/provisioner.yaml
-            - name: HOME_ASSISTANT_PROVISIONER_LOCAL_ADMIN_PASSWORD
+            - name: HOME_ASSISTANT_ONBOARDING_CONFIG_FILE
+              value: /etc/provisioner/settings.yaml
+            - name: HOME_ASSISTANT_ONBOARDING_OWNER_PASSWORD
               valueFrom:
                 secretKeyRef:
                   key: password
                   name: home-assistant-break-glass
-          image: git.allegedly.works/ducktape-ci/homeassistant-provisioner:unset
+          image: git.allegedly.works/ducktape-ci/homeassistant-onboarding:unset
           imagePullPolicy: Always
           name: onboarding
           resources:
@@ -237,24 +282,16 @@ spec:
               cpu: 20m
               memory: 64Mi
           volumeMounts:
-            - mountPath: /config
-              name: config
-            - mountPath: /etc/homeassistant/provisioner.yaml
-              name: provisioner-config
+            - mountPath: /etc/provisioner
+              name: settings
               readOnly: true
-              subPath: provisioner.yaml
       imagePullSecrets:
         - name: forgejo-images-creds
-      nodeSelector:
-        kubernetes.io/hostname: optiplex
       restartPolicy: OnFailure
       volumes:
-        - name: config
-          persistentVolumeClaim:
-            claimName: home-assistant-config
         - configMap:
-            name: home-assistant-provisioner-config
-          name: provisioner-config
+            name: home-assistant-onboarding
+          name: settings
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -272,6 +309,7 @@ rules:
       - ""
     resourceNames:
       - ha-mcp-home-assistant-token
+      - agentplane-home-assistant-token
     resources:
       - secrets
     verbs:
@@ -284,6 +322,29 @@ rules:
       - secrets
     verbs:
       - create
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: home-assistant-token-provisioner
+  namespace: home-assistant
+data:
+  settings.yaml: |
+    endpoint:
+      url: http://home-assistant.home-assistant.svc.cluster.local:8123
+      client_id: https://home.allegedly.works/
+      redirect_uri: https://home.allegedly.works/
+    owner_username: ha-local-admin
+    tokens:
+      - client_name: ha-mcp-cluster
+        secret_name: ha-mcp-home-assistant-token
+        secret_namespace: home-assistant
+        description: Long-lived token of Home Assistant's local owner, which ha-mcp copies
+      - client_name: agentplane-egress
+        read_only_user: agentplane-reader
+        secret_name: agentplane-home-assistant-token
+        secret_namespace: home-assistant
+        description: Long-lived token of Home Assistant's read-only agentplane-reader user, which agentplane-staging's egress proxy presents
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -310,6 +371,7 @@ spec:
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:
+      activeDeadlineSeconds: 600
       backoffLimit: 3
       template:
         metadata:
@@ -318,21 +380,17 @@ spec:
         spec:
           automountServiceAccountToken: true
           containers:
-            - args:
-                - tokens
-              command:
-                - /homeassistant/provisioner/provision_bin
+            - command:
+                - /homeassistant/provisioner/tokens/provision_bin
               env:
-                - name: HOME_ASSISTANT_PROVISIONER_CONFIG_FILE
-                  value: /etc/homeassistant/provisioner.yaml
-                - name: HOME_ASSISTANT_PROVISIONER_LOCAL_ADMIN_PASSWORD
+                - name: HOME_ASSISTANT_TOKEN_PROVISIONER_CONFIG_FILE
+                  value: /etc/provisioner/settings.yaml
+                - name: HOME_ASSISTANT_TOKEN_PROVISIONER_OWNER_PASSWORD
                   valueFrom:
                     secretKeyRef:
                       key: password
                       name: home-assistant-break-glass
-                - name: HOME_ASSISTANT_PROVISIONER_TOKENS
-                  value: "[{\"client_name\": \"ha-mcp-cluster\", \"secret_name\": \"ha-mcp-home-assistant-token\", \"secret_namespace\": \"home-assistant\", \"description\": \"Long-lived token of Home Assistant's local owner, which ha-mcp copies\"}]"
-              image: git.allegedly.works/ducktape-ci/homeassistant-provisioner:unset
+              image: git.allegedly.works/ducktape-ci/homeassistant-token-provisioner:unset
               imagePullPolicy: Always
               name: provision-tokens
               resources:
@@ -347,10 +405,9 @@ spec:
                   drop:
                     - ALL
               volumeMounts:
-                - mountPath: /etc/homeassistant/provisioner.yaml
-                  name: provisioner-config
+                - mountPath: /etc/provisioner
+                  name: settings
                   readOnly: true
-                  subPath: provisioner.yaml
           imagePullSecrets:
             - name: forgejo-images-creds
           restartPolicy: OnFailure
@@ -361,8 +418,8 @@ spec:
           serviceAccountName: home-assistant-token-provisioner
           volumes:
             - configMap:
-                name: home-assistant-provisioner-config
-              name: provisioner-config
+                name: home-assistant-token-provisioner
+              name: settings
   schedule: "*/15 * * * *"
 ---
 apiVersion: gateway.networking.k8s.io/v1

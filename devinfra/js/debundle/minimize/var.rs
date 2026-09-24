@@ -34,7 +34,7 @@ use crate::{
 /// the read-off has no anchor set, every anchor lies outside the target slot, or
 /// the rendered selector fails the matcher gate.
 pub(crate) fn try_var_read_off(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     var: &VarDecl,
     decl: &IndexedDeclaration,
     target: &SynthesizedTargetBinding,
@@ -53,7 +53,7 @@ pub(crate) fn try_var_read_off(
 /// uniquely and deduped by source. `limit == 1` reproduces [`try_var_read_off`]
 /// exactly; `limit > 1` powers the `synthesize-selectors --candidates N` menu.
 pub(crate) fn try_var_read_off_candidates(
-    index: &ChunkSelectorIndex,
+    index: &ChunkSelectorIndex<'_>,
     var: &VarDecl,
     decl: &IndexedDeclaration,
     target: &SynthesizedTargetBinding,
@@ -92,7 +92,6 @@ pub(crate) fn try_var_read_off_candidates(
     };
 
     let item = index
-        .parsed
         .module
         .body
         .get(decl.body_idx)
