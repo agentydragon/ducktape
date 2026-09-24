@@ -1,20 +1,17 @@
-//! `debundle spec validate` — keep-going selector validation that
-//! emits a machine-readable report of every selector problem instead of stopping
-//! at the first failing selector.
+//! `debundle spec validate` — keep-going selector validation that reports every
+//! selector that did not resolve, as a [`SelectorOutcomeReport`].
 //!
-//! The transform-backed keep-going classification lives in the materialize pass
-//! (`lowering::materialize::plan_builder`), which already writes a per-chunk
-//! `selector_diagnostics.json` under [`ReportEmission::OnRejection`]. This
-//! verb is a thin frontend: it runs the dry-run keep-going pipeline with
-//! reports forced into a capture directory, reads the per-chunk reports back
-//! through the shared [`SelectorDiagnosticsReport`] contract, and re-emits a
-//! combined report on stdout in the standard `--format text|json|ndjson`
+//! The spec mode is a thin frontend over the materialize pass: it runs the
+//! dry-run keep-going pipeline with reports forced into a capture directory,
+//! reads the per-chunk `selector_diagnostics.json` reports back and re-emits
+//! them combined on stdout in the standard `--format text|json|ndjson`
 //! convention.
 //!
 //! The source-only mode (`--modules <modules-dir> --source-file <chunk.js>`)
-//! uses the in-process fact matcher directly. It intentionally does not enter
-//! the global CP-SAT / OR-Tools selector assignment backend; it is a fast
-//! preflight for sharding source selector repairs across agents.
+//! runs the shape matcher per selector, with the same candidate cap, and never
+//! enters the joint CP-SAT solve: a fast preflight for sharding source selector
+//! repairs across agents. Without the solve it cannot report conflicts,
+//! resolution by elimination, duplicate claims or relational selectors.
 
 use std::path::Path;
 
@@ -23,11 +20,15 @@ use clap::Args as ClapArgs;
 use output_layout::SELECTOR_DIAGNOSTICS_REPORT;
 use peel::{OutputFormat, print_report};
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli_with_options};
-use selector_diagnostics::{SelectorDiagnosticEntry, SelectorDiagnosticsReport, Severity};
+use selector_outcome::{
+    Candidate, Entity, MAX_CANDIDATES_PER_SELECTOR, Outcome, Placement, SelectorKind,
+    SelectorOutcome, SelectorOutcomeReport,
+};
 use serde::Serialize;
-use source_match::{SelectorResolver, chunk_resolver::ChunkResolver};
-use source_match::{selector_body_key, selector_key, source_match_claim_member_selectors};
-use spec::{MemberSelectorSpec, SourceMatchClaim};
+use source_match::SelectorResolver;
+use source_match::chunk_resolver::ChunkResolver;
+use source_match::source_match_claim_member_selectors;
+use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchClaim};
 
 /// Args for `debundle spec validate`. The spec source and package-root flags
 /// mirror `debundle run` (`--spec` / `--tree-config` + roots) so the same
@@ -41,7 +42,7 @@ pub struct ValidateArgs {
     pub transform: TransformArgs,
 
     /// Output format. Default `text` on tty, `json` on pipe. `ndjson` emits one
-    /// JSON object per diagnostic plus a final `summary` line.
+    /// JSON object per outcome plus a final `summary` line.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
 
@@ -62,24 +63,21 @@ pub struct ValidateArgs {
     pub chunk: Option<std::path::PathBuf>,
 }
 
-/// Combined keep-going report across every chunk the spec materializes.
-#[derive(Debug, Serialize)]
-pub struct ValidateReport {
-    /// Per-failure-class totals summed across all chunks.
-    pub counts: std::collections::BTreeMap<String, usize>,
-    /// Total selector problems found.
-    pub total: usize,
-    /// Per-chunk reports, sorted by chunk id. A chunk with no selector
-    /// problems contributes no entry.
-    pub chunks: Vec<SelectorDiagnosticsReport>,
-}
-
 pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
     let format = OutputFormat::resolve(args.format);
-    if args.source_only_requested() {
-        return js_ast::with_swc_globals(|| run_source_only_validate_cmd(args, format));
+    let report = if args.source_only_requested() {
+        js_ast::with_swc_globals(|| run_source_only_validate(&args))?
+    } else {
+        run_spec_validate(args)?
+    };
+    if format == OutputFormat::Ndjson {
+        return emit_validate_ndjson(&report);
     }
+    print_report(&report, format, |report, buf| report.render_text(buf, None))
+        .context("writing validate output")
+}
 
+fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
     let keep_going = !args.transform.fail_fast;
     let cli = args.transform.resolve()?;
 
@@ -87,7 +85,7 @@ pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
     // the materialize pass emit `selector_diagnostics.json` per chunk on
     // rejection, independent of how the spec configures `report_out_dir`.
     let capture = tempfile::tempdir().context("creating selector-diagnostics capture dir")?;
-    // The keep-going pass writes the per-chunk diagnostics *and then* fails the
+    // The keep-going pass writes the per-chunk reports *and then* fails the
     // pipeline at the end with the collected findings — that rejection is the
     // contract for `debundle run`. `validate` treats the findings as data, not a
     // tool failure: when the run produced reports, we emit them and exit zero;
@@ -102,32 +100,19 @@ pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
         },
     );
 
-    let mut chunks = collect_chunk_reports(capture.path())?;
+    let mut chunks = Vec::new();
+    collect_chunk_reports(capture.path(), &mut chunks)?;
     if let Err(error) = pass
         && chunks.is_empty()
     {
         return Err(error).context("running keep-going validation pass");
     }
-    chunks.sort_by(|a, b| a.chunk_id.cmp(&b.chunk_id));
-
-    let mut counts = std::collections::BTreeMap::new();
-    for chunk in &chunks {
-        for (category, count) in &chunk.counts {
-            *counts.entry(category.clone()).or_insert(0) += count;
-        }
-    }
-    let total = counts.values().sum();
-    let report = ValidateReport {
-        counts,
-        total,
-        chunks,
-    };
-
-    if format == OutputFormat::Ndjson {
-        emit_validate_ndjson(&report)?;
-        return Ok(());
-    }
-    print_report(&report, format, render_validate_text).context("writing validate output")
+    let mut outcomes = chunks
+        .into_iter()
+        .flat_map(|chunk| chunk.outcomes)
+        .collect::<Vec<_>>();
+    outcomes.sort();
+    Ok(SelectorOutcomeReport { outcomes })
 }
 
 impl ValidateArgs {
@@ -139,7 +124,7 @@ impl ValidateArgs {
     }
 }
 
-fn run_source_only_validate_cmd(args: ValidateArgs, format: OutputFormat) -> Result<()> {
+fn run_source_only_validate(args: &ValidateArgs) -> Result<SelectorOutcomeReport> {
     if args.transform.spec.is_some()
         || args.transform.tree_config.is_some()
         || args.transform.tree_modules.is_some()
@@ -161,14 +146,13 @@ fn run_source_only_validate_cmd(args: ValidateArgs, format: OutputFormat) -> Res
         args.source_root.as_deref(),
         args.chunk.as_deref(),
     )?;
-    let chunk_id = source_only_chunk_id(&args, &source_file);
-    let report = validate_modules_against_source(modules_root, &source_file, chunk_id)?;
-    if format == OutputFormat::Ndjson {
-        emit_validate_ndjson(&report)?;
-        return Ok(());
-    }
-    print_report(&report, format, render_validate_text)
-        .context("writing source-only validate output")
+    let chunk = args
+        .chunk
+        .as_deref()
+        .unwrap_or(&source_file)
+        .to_string_lossy()
+        .replace('\\', "/");
+    validate_modules_against_source(modules_root, &source_file, &chunk)
 }
 
 fn resolve_source_only_chunk_file(
@@ -186,26 +170,58 @@ fn resolve_source_only_chunk_file(
     }
 }
 
-fn source_only_chunk_id(args: &ValidateArgs, source_file: &Path) -> String {
-    args.chunk
-        .as_deref()
-        .unwrap_or(source_file)
-        .to_string_lossy()
-        .replace('\\', "/")
+/// Records the outcome of every selector in one module file that did not
+/// resolve on its own.
+struct ModuleOutcomes<'a> {
+    chunk: &'a str,
+    logical_module: String,
+    outcomes: &'a mut Vec<SelectorOutcome>,
+}
+
+impl ModuleOutcomes<'_> {
+    fn record(
+        &mut self,
+        entity: Option<Entity>,
+        selector_kind: SelectorKind,
+        selector: Option<&AnonymousStatementSelector>,
+        outcome: Outcome,
+    ) {
+        if matches!(outcome, Outcome::Resolved { .. }) {
+            return;
+        }
+        self.outcomes.push(SelectorOutcome {
+            chunk: self.chunk.to_string(),
+            placement: Some(Placement {
+                logical_module: self.logical_module.clone(),
+                entity,
+                selector_kind,
+            }),
+            target_binding: selector.and_then(|selector| selector.target_binding.clone()),
+            selector_preview: selector
+                .map(|selector| source_match::source_match_preview(&selector.match_source)),
+            outcome,
+        });
+    }
+}
+
+fn invalid(error: &impl std::fmt::Display) -> Outcome {
+    Outcome::Invalid {
+        error: format!("{error:#}"),
+    }
 }
 
 fn validate_modules_against_source(
     modules_root: &Path,
     source_file: &Path,
-    chunk_id: String,
-) -> Result<ValidateReport> {
+    chunk: &str,
+) -> Result<SelectorOutcomeReport> {
     let source = std::fs::read_to_string(source_file)
         .with_context(|| format!("reading source file {}", source_file.display()))?;
     let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
         .with_context(|| format!("parsing source file {}", source_file.display()))?;
     let resolver = ChunkResolver::new(&parsed.module);
 
-    let mut diagnostics = Vec::new();
+    let mut outcomes = Vec::new();
     for path in spec_modules::collect_module_files(modules_root)? {
         let module_path = spec_modules::module_path_from_file(&path, modules_root);
         let module = spec_modules::read_module_file(&path)?;
@@ -215,189 +231,131 @@ fn validate_modules_against_source(
             &module.source_matches,
             &module.annotations,
         ) {
-            diagnostics.push(selector_error_diagnostic(
-                &chunk_id,
-                &module_path,
-                None,
-                "annotations",
-                None,
-                format!("{}#annotations", path.display()),
-                error.to_string(),
-            ));
+            outcomes.push(SelectorOutcome {
+                chunk: chunk.to_string(),
+                placement: Some(Placement {
+                    logical_module: module_path.clone(),
+                    entity: None,
+                    selector_kind: SelectorKind::Annotations,
+                }),
+                target_binding: None,
+                selector_preview: None,
+                outcome: invalid(&error),
+            });
         }
-        for (member_index, member) in module.members.into_iter().enumerate() {
-            let export_name = member.name.clone();
+        let mut module_outcomes = ModuleOutcomes {
+            chunk,
+            logical_module: module_path.clone(),
+            outcomes: &mut outcomes,
+        };
+        for member in module.members {
+            let entity = member.name.clone().map(Entity::Export);
             match member.selector.selected() {
-                Ok(MemberSelectorSpec::SourceMatch(selector)) => {
-                    diagnostics.extend(validate_member_source_match(
-                        &resolver,
-                        &chunk_id,
-                        &module_path,
-                        export_name.as_deref(),
-                        "members.source_match",
-                        format!("{}#members[{member_index}]", path.display()),
-                        &selector,
-                    )?);
-                }
+                Ok(MemberSelectorSpec::SourceMatch(selector)) => module_outcomes.record(
+                    entity,
+                    SelectorKind::MemberSourceMatch,
+                    Some(&selector),
+                    member_outcome(&resolver, &module_path, &selector),
+                ),
                 Ok(_) => {}
-                Err(error) => diagnostics.push(selector_error_diagnostic(
-                    &chunk_id,
-                    &module_path,
-                    export_name.as_deref(),
-                    "members.selector",
+                Err(error) => module_outcomes.record(
+                    entity,
+                    SelectorKind::UnparsedMember,
                     None,
-                    format!("{}#members[{member_index}]", path.display()),
-                    error.to_string(),
-                )),
+                    invalid(&error),
+                ),
             }
         }
-        for (claim_index, claim) in module.source_matches.into_iter().enumerate() {
-            let origin = format!("{}#source_matches[{claim_index}]", path.display());
-            diagnostics.extend(validate_source_match_claim(
-                &resolver,
-                &chunk_id,
-                &module_path,
-                origin,
-                &claim,
-            )?);
+        for claim in &module.source_matches {
+            validate_source_match_claim(&resolver, &mut module_outcomes, &module_path, claim)?;
         }
-        for (statement_index, statement) in module.anonymous_statements.into_iter().enumerate() {
-            let origin = format!("{}#anonymous_statements[{statement_index}]", path.display());
+        for (index, statement) in module.anonymous_statements.into_iter().enumerate() {
+            let entity = Some(Entity::AnonymousStatement(index));
             match statement.selector() {
                 Ok(selector) => {
-                    diagnostics.extend(validate_anonymous_source_match(
-                        &resolver,
-                        &chunk_id,
-                        &module_path,
-                        origin,
-                        &selector,
-                    )?);
+                    let outcome = match resolver.anonymous_group_candidates(&module_path, &selector)
+                    {
+                        Ok(groups) => Outcome::from_matches(
+                            groups
+                                .into_iter()
+                                .flatten()
+                                .map(|owner| Candidate {
+                                    owner,
+                                    binding: None,
+                                })
+                                .collect(),
+                        ),
+                        Err(error) => invalid(&error),
+                    };
+                    module_outcomes.record(
+                        entity,
+                        SelectorKind::AnonymousStatement,
+                        Some(&selector),
+                        outcome,
+                    );
                 }
-                Err(error) => diagnostics.push(selector_error_diagnostic(
-                    &chunk_id,
-                    &module_path,
+                Err(error) => module_outcomes.record(
+                    entity,
+                    SelectorKind::AnonymousStatement,
                     None,
-                    "anonymous_statements.source_match",
-                    None,
-                    origin,
-                    error.to_string(),
-                )),
+                    invalid(&error),
+                ),
             }
         }
     }
-
-    diagnostics.sort_by(|a, b| {
-        (
-            a.module_path.as_deref().unwrap_or(""),
-            a.export_name.as_deref().unwrap_or(""),
-            &a.selector_kind,
-            &a.category,
-        )
-            .cmp(&(
-                b.module_path.as_deref().unwrap_or(""),
-                b.export_name.as_deref().unwrap_or(""),
-                &b.selector_kind,
-                &b.category,
-            ))
-    });
-    let mut counts = std::collections::BTreeMap::new();
-    for diagnostic in &diagnostics {
-        *counts.entry(diagnostic.category.clone()).or_insert(0) += 1;
-    }
-    let total = diagnostics.len();
-    let chunks = if diagnostics.is_empty() {
-        Vec::new()
-    } else {
-        vec![SelectorDiagnosticsReport {
-            chunk_id,
-            counts: counts.clone(),
-            diagnostics,
-            coverage_notes: vec![
-                "source-only validation covers member, binding_group, and anonymous_statement \
-                 source_match selectors; \
-                 run transform-backed validate for duplicate claims, relational selectors, \
-                 and materialization constraints"
-                    .to_string(),
-            ],
-        }]
-    };
-    Ok(ValidateReport {
-        counts,
-        total,
-        chunks,
-    })
+    outcomes.sort();
+    Ok(SelectorOutcomeReport { outcomes })
 }
 
-fn validate_member_source_match(
+fn member_outcome(
     resolver: &ChunkResolver<'_>,
-    chunk_id: &str,
     module_path: &str,
-    export_name: Option<&str>,
-    selector_kind: &'static str,
-    claim_origin: String,
-    selector: &spec::AnonymousStatementSelector,
-) -> Result<Vec<SelectorDiagnosticEntry>> {
-    let matches = resolver.member_candidates(module_path, selector);
-    let matches = match matches {
-        Ok(matches) => matches,
-        Err(error) => {
-            return Ok(vec![selector_error_diagnostic(
-                chunk_id,
-                module_path,
-                export_name,
-                selector_kind,
-                Some(selector.clone()),
-                claim_origin,
-                format!("{error:#}"),
-            )]);
-        }
-    };
-    match matches.len() {
-        1 => Ok(Vec::new()),
-        0 => Ok(vec![selector_resolution_diagnostic(
-            chunk_id,
-            module_path,
-            export_name,
-            selector_kind,
-            selector,
-            claim_origin,
-            "unresolved_selector",
-            Vec::new(),
-        )]),
-        _ => Ok(vec![selector_resolution_diagnostic(
-            chunk_id,
-            module_path,
-            export_name,
-            selector_kind,
-            selector,
-            claim_origin,
-            "ambiguous_selector",
-            matches.iter().map(|matched| matched.body_idx).collect(),
-        )]),
+    selector: &AnonymousStatementSelector,
+) -> Outcome {
+    match resolver.member_candidates(module_path, selector) {
+        Ok(matches) => Outcome::from_matches(
+            matches
+                .into_iter()
+                .map(|matched| Candidate {
+                    owner: matched.body_idx,
+                    binding: Some(matched.binding.binding_name),
+                })
+                .collect(),
+        ),
+        Err(error) => invalid(&error),
     }
 }
 
+/// A one-binding claim resolves like a member selector; a multi-binding claim
+/// matches as a group, and each binding gets the group's outcome with its own
+/// candidates.
 fn validate_source_match_claim(
     resolver: &ChunkResolver<'_>,
-    chunk_id: &str,
+    outcomes: &mut ModuleOutcomes<'_>,
     module_path: &str,
-    claim_origin: String,
     claim: &SourceMatchClaim,
-) -> Result<Vec<SelectorDiagnosticEntry>> {
+) -> Result<()> {
     let selectors = match source_match_claim_member_selectors(module_path, claim) {
         Ok(selectors) => selectors,
         Err(error) => {
-            return Ok(vec![selector_error_diagnostic(
-                chunk_id,
-                module_path,
+            outcomes.record(
                 None,
-                "source_matches",
-                Some(claim.source_match().selector()),
-                claim_origin,
-                error.to_string(),
-            )]);
+                SelectorKind::SourceMatches,
+                Some(&claim.source_match().selector()),
+                invalid(&error),
+            );
+            return Ok(());
         }
     };
+    if let [only] = selectors.as_slice() {
+        outcomes.record(
+            Some(Entity::Export(only.export_name.clone())),
+            SelectorKind::SourceMatches,
+            Some(&only.selector),
+            member_outcome(resolver, module_path, &only.selector),
+        );
+        return Ok(());
+    }
 
     let mut exports_by_target = std::collections::BTreeMap::new();
     for selector in &selectors {
@@ -406,228 +364,52 @@ fn validate_source_match_claim(
         };
         exports_by_target.insert(target_binding.to_string(), selector.export_name.clone());
     }
-
-    let group_selector = claim.source_match().selector();
-    let matches =
-        match resolver.member_group_candidates(module_path, &group_selector, &exports_by_target) {
-            Ok(matches) => matches,
-            Err(error) => {
-                return Ok(selectors
-                    .into_iter()
-                    .map(|selector| {
-                        selector_error_diagnostic(
-                            chunk_id,
-                            module_path,
-                            Some(&selector.export_name),
-                            "source_matches",
-                            Some(selector.selector),
-                            claim_origin.clone(),
-                            format!("{error:#}"),
-                        )
-                    })
-                    .collect());
+    let matches = resolver.member_group_candidates(
+        module_path,
+        &claim.source_match().selector(),
+        &exports_by_target,
+    );
+    for selector in selectors {
+        let outcome = match &matches {
+            Err(error) => invalid(error),
+            Ok(matches) if matches.len() == 1 => continue,
+            Ok(matches) if matches.is_empty() => Outcome::NoMatch,
+            Ok(matches) if matches.len() > MAX_CANDIDATES_PER_SELECTOR => {
+                Outcome::too_broad(matches.len())
             }
-        };
-
-    match matches.len() {
-        1 => Ok(Vec::new()),
-        0 => Ok(selectors
-            .into_iter()
-            .map(|selector| {
-                selector_resolution_diagnostic(
-                    chunk_id,
-                    module_path,
-                    Some(&selector.export_name),
-                    "source_matches",
-                    &selector.selector,
-                    claim_origin.clone(),
-                    "unresolved_selector",
-                    Vec::new(),
-                )
-            })
-            .collect()),
-        _ => Ok(selectors
-            .into_iter()
-            .map(|selector| {
+            Ok(matches) => {
                 let target_binding = selector
                     .selector
                     .target_binding
                     .as_deref()
                     .expect("source_match claim expansion sets target_binding");
-                let mut body_indices = matches
-                    .iter()
-                    .filter_map(|matched| {
-                        matched
-                            .bindings
-                            .get(target_binding)
-                            .map(|binding| binding.body_idx)
-                    })
-                    .collect::<Vec<_>>();
-                body_indices.sort_unstable();
-                body_indices.dedup();
-                selector_resolution_diagnostic(
-                    chunk_id,
-                    module_path,
-                    Some(&selector.export_name),
-                    "source_matches",
-                    &selector.selector,
-                    claim_origin.clone(),
-                    "ambiguous_selector",
-                    body_indices,
+                Outcome::ambiguous(
+                    matches
+                        .iter()
+                        .filter_map(|matched| matched.bindings.get(target_binding))
+                        .map(|binding| Candidate {
+                            owner: binding.body_idx,
+                            binding: Some(binding.binding.binding_name.clone()),
+                        })
+                        .collect(),
+                    false,
                 )
-            })
-            .collect()),
+            }
+        };
+        outcomes.record(
+            Some(Entity::Export(selector.export_name)),
+            SelectorKind::SourceMatches,
+            Some(&selector.selector),
+            outcome,
+        );
     }
-}
-
-fn validate_anonymous_source_match(
-    resolver: &ChunkResolver<'_>,
-    chunk_id: &str,
-    module_path: &str,
-    claim_origin: String,
-    selector: &spec::AnonymousStatementSelector,
-) -> Result<Vec<SelectorDiagnosticEntry>> {
-    let matches = match resolver.anonymous_group_candidates(module_path, selector) {
-        Ok(matches) => matches,
-        Err(error) => {
-            return Ok(vec![selector_error_diagnostic(
-                chunk_id,
-                module_path,
-                None,
-                "anonymous_statements.source_match",
-                Some(selector.clone()),
-                claim_origin,
-                format!("{error:#}"),
-            )]);
-        }
-    };
-    match matches.len() {
-        1 => Ok(Vec::new()),
-        0 => Ok(vec![selector_resolution_diagnostic(
-            chunk_id,
-            module_path,
-            None,
-            "anonymous_statements.source_match",
-            selector,
-            claim_origin,
-            "unresolved_selector",
-            Vec::new(),
-        )]),
-        _ => Ok(vec![selector_resolution_diagnostic(
-            chunk_id,
-            module_path,
-            None,
-            "anonymous_statements.source_match",
-            selector,
-            claim_origin,
-            "ambiguous_selector",
-            matches.into_iter().flatten().collect(),
-        )]),
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn selector_resolution_diagnostic(
-    chunk_id: &str,
-    module_path: &str,
-    export_name: Option<&str>,
-    selector_kind: &'static str,
-    selector: &spec::AnonymousStatementSelector,
-    claim_origin: String,
-    category: &'static str,
-    body_indices: Vec<usize>,
-) -> SelectorDiagnosticEntry {
-    let message = match category {
-        "unresolved_selector" => "source_match did not match any top-level declaration".to_string(),
-        "ambiguous_selector" => format!(
-            "source_match matched {} top-level declarations",
-            body_indices.len()
-        ),
-        _ => category.to_string(),
-    };
-    selector_error_diagnostic(
-        chunk_id,
-        module_path,
-        export_name,
-        selector_kind,
-        Some(selector.clone()),
-        claim_origin,
-        message,
-    )
-    .with_category(category)
-    .with_body_indices(body_indices)
-}
-
-trait DiagnosticPatch {
-    fn with_category(self, category: &str) -> Self;
-    fn with_body_indices(self, body_indices: Vec<usize>) -> Self;
-}
-
-impl DiagnosticPatch for SelectorDiagnosticEntry {
-    fn with_category(mut self, category: &str) -> Self {
-        self.category = category.to_string();
-        self
-    }
-
-    fn with_body_indices(mut self, body_indices: Vec<usize>) -> Self {
-        self.body_indices = body_indices;
-        self
-    }
-}
-
-fn selector_error_diagnostic(
-    chunk_id: &str,
-    module_path: &str,
-    export_name: Option<&str>,
-    selector_kind: &'static str,
-    selector: Option<spec::AnonymousStatementSelector>,
-    claim_origin: String,
-    message: String,
-) -> SelectorDiagnosticEntry {
-    let target_binding = selector
-        .as_ref()
-        .and_then(|selector| selector.target_binding.clone());
-    let source_match_preview = selector
-        .as_ref()
-        .map(|selector| source_match::source_match_preview(&selector.match_source));
-    let source_match_hash = selector.as_ref().map(selector_key);
-    let source_match_body_hash = selector.as_ref().map(selector_body_key);
-    SelectorDiagnosticEntry {
-        category: "selector_resolution_error".to_string(),
-        severity: Severity::Error,
-        module_id: module_path.to_string(),
-        module_path: Some(module_path.to_string()),
-        export_name: export_name.map(ToOwned::to_owned),
-        selector_kind: selector_kind.to_string(),
-        target_binding,
-        claim_origin: Some(claim_origin),
-        body_indices: Vec::new(),
-        first_mismatch: None,
-        source_match_preview,
-        source_match_hash,
-        source_match_body_hash,
-        duplicate_claim: None,
-        message,
-        recommended_next_action: format!(
-            "Repair this selector in {module_path}; re-run `debundle spec validate --modules \
-             <modules-dir> --source-file {chunk_id} --format json`."
-        ),
-    }
+    Ok(())
 }
 
 /// Recursively gather every `selector_diagnostics.json` under the capture
 /// directory. The materialize pass nests each report at
 /// `<capture>/<chunk_id parts>/selector_diagnostics.json`.
-fn collect_chunk_reports(capture: &Path) -> Result<Vec<SelectorDiagnosticsReport>> {
-    let mut reports = Vec::new();
-    collect_chunk_reports_into(capture, &mut reports)?;
-    Ok(reports)
-}
-
-fn collect_chunk_reports_into(
-    dir: &Path,
-    reports: &mut Vec<SelectorDiagnosticsReport>,
-) -> Result<()> {
+fn collect_chunk_reports(dir: &Path, reports: &mut Vec<SelectorOutcomeReport>) -> Result<()> {
     if !dir.is_dir() {
         return Ok(());
     }
@@ -639,7 +421,7 @@ fn collect_chunk_reports_into(
     for entry in entries {
         let path = entry.path();
         if path.is_dir() {
-            collect_chunk_reports_into(&path, reports)?;
+            collect_chunk_reports(&path, reports)?;
         } else if path.file_name().and_then(|name| name.to_str())
             == Some(SELECTOR_DIAGNOSTICS_REPORT)
         {
@@ -647,88 +429,41 @@ fn collect_chunk_reports_into(
                 .with_context(|| format!("reading {}", path.display()))?;
             reports.push(
                 serde_json::from_str(&text)
-                    .with_context(|| format!("parsing selector diagnostics {}", path.display()))?,
+                    .with_context(|| format!("parsing selector outcomes {}", path.display()))?,
             );
         }
     }
     Ok(())
 }
 
-fn render_validate_text(report: &ValidateReport, buf: &mut String) {
-    use std::fmt::Write;
-
-    if report.total == 0 {
-        buf.push_str("No selector problems found.");
-        return;
-    }
-    let summary = report
-        .counts
-        .iter()
-        .map(|(category, count)| format!("{category}={count}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let _ = writeln!(
-        buf,
-        "{} selector problem(s) across {} chunk(s): {summary}",
-        report.total,
-        report.chunks.len(),
-    );
-    for chunk in &report.chunks {
-        let _ = writeln!(buf, "\nchunk {}:", chunk.chunk_id);
-        for diagnostic in &chunk.diagnostics {
-            let export = diagnostic.export_name.as_deref().unwrap_or("-");
-            let module = diagnostic
-                .module_path
-                .as_deref()
-                .unwrap_or(&diagnostic.module_id);
-            let severity = match diagnostic.severity {
-                Severity::Error => "",
-                Severity::Warning => "warning: ",
-            };
-            let _ = writeln!(
-                buf,
-                "  [{severity}{}] {module} as `{export}` ({}): {}",
-                diagnostic.category, diagnostic.selector_kind, diagnostic.message,
-            );
-            let _ = writeln!(buf, "    -> {}", diagnostic.recommended_next_action);
-        }
-    }
-}
-
-/// One JSON object per diagnostic tagged with its chunk, then a final
-/// `summary` line — the streaming shape `jq -c` consumers dispatch on.
-fn emit_validate_ndjson(report: &ValidateReport) -> Result<()> {
+/// One JSON object per outcome, then a final `summary` line with the counts —
+/// the streaming shape `jq -c` consumers dispatch on.
+fn emit_validate_ndjson(report: &SelectorOutcomeReport) -> Result<()> {
     #[derive(Serialize)]
-    struct DiagnosticLine<'a> {
-        section: &'a str,
-        chunk_id: &'a str,
+    struct OutcomeLine<'a> {
+        section: &'static str,
         #[serde(flatten)]
-        diagnostic: &'a selector_diagnostics::SelectorDiagnosticEntry,
+        outcome: &'a SelectorOutcome,
     }
     #[derive(Serialize)]
-    struct SummaryLine<'a> {
-        section: &'a str,
-        total: usize,
-        counts: &'a std::collections::BTreeMap<String, usize>,
+    struct SummaryLine<T: Serialize> {
+        section: &'static str,
+        counts: T,
     }
-    for chunk in &report.chunks {
-        for diagnostic in &chunk.diagnostics {
-            println!(
-                "{}",
-                serde_json::to_string(&DiagnosticLine {
-                    section: "diagnostic",
-                    chunk_id: &chunk.chunk_id,
-                    diagnostic,
-                })?
-            );
-        }
+    for outcome in &report.outcomes {
+        println!(
+            "{}",
+            serde_json::to_string(&OutcomeLine {
+                section: "outcome",
+                outcome,
+            })?
+        );
     }
     println!(
         "{}",
         serde_json::to_string(&SummaryLine {
             section: "summary",
-            total: report.total,
-            counts: &report.counts,
+            counts: report.counts(),
         })?
     );
     Ok(())

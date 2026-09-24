@@ -500,7 +500,7 @@ fn keep_going_reports_multiple_intrinsic_alias_no_matches() {
         ],
     ));
     for required in [
-        "Selector resolution diagnostic report:",
+        "Selector outcome report",
         "decorate_runtime/c",
         "absentC",
         "decorate_runtime/d",

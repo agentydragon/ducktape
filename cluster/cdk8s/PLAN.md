@@ -127,8 +127,8 @@ The conversion is done; what is left is the contract work it made reachable, eac
 deriving both sides of an agreement from one value and retiring the test that compared
 them (<TODO.md> § Reachable since the one-to-one conversion).
 
-- **The haku sandbox template's neighbourhood**; retires `test_haku_ci_keda_contract.py`. The
-  template's contract with its setup script waits on a design (<TODO.md>).
+- **The haku sandbox template's contract with its setup script** waits on a design
+  (<TODO.md>).
 - **The public-coder-agent constellation** with `agent-rbac-base`; retires
   `test_haku_public_coder_contract.py` and
   `test_public_coder_clickhouse_reader_contract.py`.

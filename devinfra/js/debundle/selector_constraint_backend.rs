@@ -2045,8 +2045,9 @@ pub enum BackendAssignmentCoverage {
 }
 
 /// Distinct values a backend lists per ambiguous projected variable before it reports
-/// `BackendAssignmentCoverage::TargetSupportCapped`.
-pub const MAX_ALTERNATIVES_PER_VARIABLE: u32 = 5;
+/// `BackendAssignmentCoverage::TargetSupportCapped`: the listing bound of an
+/// ambiguous selector outcome.
+pub const MAX_ALTERNATIVES_PER_VARIABLE: u32 = selector_outcome::MAX_LISTED_CANDIDATES as u32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackendSolveResult {
