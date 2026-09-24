@@ -840,7 +840,9 @@ function VirtualizedHistory({
     };
     const correction = correctFromDom();
     if (correction === null) virtualizer.scrollToIndex(index, { align: "start" });
-    if (awaitMeasurement && (correction === null || Math.abs(correction) <= 2)) {
+    // Waiting for measurement assumes the row is mounted and in place. One scrolled to by its
+    // estimate needs the frames, whose pending state keeps a clamped scroll from reading as the bottom.
+    if (awaitMeasurement && correction !== null && Math.abs(correction) <= 2) {
       restorationSize.current = virtualizer.getTotalSize();
       return;
     }
