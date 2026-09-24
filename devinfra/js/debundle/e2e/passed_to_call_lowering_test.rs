@@ -9,8 +9,7 @@
 //! declares nothing, so its `declares` conjunct excludes it). This primitive closes
 //! that gap.
 //!
-//! Unlike `selector_solve_test` (which exercises the kernel on a synthetic owner
-//! graph), these tests drive the real `debundle` binary: the spec carries
+//! These tests drive the real `debundle` binary: the spec carries
 //! `passed_to_call` selectors, the call-argument facts are derived from the chunk
 //! AST and joined to each argument's declaring owner, and we assert the resolved
 //! binding lands in the right module and the emitted tree runs under Node.

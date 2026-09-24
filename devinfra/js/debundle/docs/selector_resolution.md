@@ -159,17 +159,6 @@ as a relation anchored on it, loses that relation with it and may come out
 ambiguous. Only when the hard constraints alone are unsatisfiable does every
 target come out `NoMatch`, with a global diagnostic.
 
-## `selector-solve`
-
-`selector_solve.rs` is an Ascent (Datalog) prototype over the owner graph,
-exposed as `debundle selector-solve`. It is **not** on the `run` path. It is the
-working vehicle for relational selector semantics: its `references` /
-`aliases` rules are proven against real pipeline output in
-<../e2e/selector_solve_cross_reference_test.rs>, and
-<../e2e/selector_solve_shadow_test.rs> gates its EDB against the production
-binding-name resolver. Relational selector work lands here first, then in
-`selector_ir_lowering` once the rule shape is settled.
-
 ## Interactive budget
 
 Root `AGENTS.md` § Profiling applies. Interactive commands target under 10s on

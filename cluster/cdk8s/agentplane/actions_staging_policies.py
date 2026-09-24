@@ -424,9 +424,9 @@ def add_staging_action_policies(scope: Construct) -> None:
     # a sandbox of the same caller cannot reach github.com at all -- so `git clone` fails in a box
     # whose caller can read the same repository through an Action. Two things to settle first: the
     # policy substitutes the `agentydragon-agent` PAT, which is write-capable, on GET and POST with
-    # no path limit, so binding it lets a sandbox push as that bot; and the policy omits
-    # `codeload.github.com`, where a `github.com/.../archive/...` fetch actually lands, so Bazel and
-    # tarball downloads would still fail until that host joins it.
+    # no path limit, so binding it lets a sandbox push as that bot. The policy includes
+    # `codeload.github.com`, where a `github.com/.../archive/...` fetch actually lands, so the
+    # remaining question is the write-capable credential rather than download reachability.
     EgressBinding(
         scope,
         "egressbinding-claude-ai",

@@ -248,7 +248,7 @@ export const SAMPLE_MCP_SERVERS: McpServerConnection[] = [
     backend: {
       kind: "remote_mcp",
       url: "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp",
-      auth: { kind: "static_bearer" },
+      auth: { kind: "none" },
     },
     connection: null,
   },

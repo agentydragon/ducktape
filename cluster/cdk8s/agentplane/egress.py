@@ -301,7 +301,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
         spec=EgressPolicySpec(
             rules=[
                 EgressPolicySpecRules(
-                    hosts=["api.github.com", "github.com", "*.githubusercontent.com"],
+                    hosts=["api.github.com", "github.com", "codeload.github.com", "*.githubusercontent.com"],
                     methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="github-pat"),
                 )
