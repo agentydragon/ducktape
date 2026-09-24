@@ -29,11 +29,11 @@ def hosts(*names: str) -> frozenset[str]:
 
 
 # GitHub's source and release-artifact hosts. Split out of the build bucket because "reads
-# source, builds nothing" is a real posture -- the Claude runner pool holds these and no
-# package registry -- and that is a decision rather than the drift the all-or-none rule
-# exists to catch. Still one trust level internally, so it is all-or-none in its own right.
-# Anonymous these are read-only; a fence that also substitutes a credential for them (see
-# haku-claude) turns them into a push surface.
+# source, builds nothing" is a real posture, and a fence holding these without the package
+# registries is a decision rather than the drift the all-or-none rule exists to catch. Still
+# one trust level internally, so it is all-or-none in its own right. Anonymous these are
+# read-only; a fence that also substitutes a credential for them (the OpenClaw spike's)
+# turns them into a push surface.
 GITHUB_GIT = hosts(
     "github.com",
     "codeload.github.com",
@@ -92,13 +92,11 @@ OPERATOR_GOOGLE = hosts("www.googleapis.com", "gmail.googleapis.com", "tasks.goo
 
 # Keyed by the policy name, so a failure names the thing to open.
 OPERATOR_DATA_FENCE = "allow-haku-cloud-api-egress"
-HAKU_CLAUDE_FENCE = "allow-haku-claude-oauth-proxy-egress"
 HAKU_OPENCLAW_FENCE = "allow-haku-openclaw-spike-proxy-egress"
 
 # What each fence may connect to on the public internet.
 ALLOWLISTS = {
     OPERATOR_DATA_FENCE: frozenset(host for group in egress_fences._HAKU_CLOUD_API_GROUPS for host in group),
-    HAKU_CLAUDE_FENCE: frozenset(egress_fences._HAKU_CLAUDE_HOSTS),
     HAKU_OPENCLAW_FENCE: frozenset(egress_fences.OPENCLAW_SPIKE_ALLOWLIST),
     "allow-cloud-api-egress": frozenset(host for group in egress_fences._MITMPROXY_GROUPS for host in group),
 }
@@ -137,7 +135,7 @@ def test_no_fence_reaches_the_operators_google_account() -> None:
 def test_github_api_reaches_only_declared_holders() -> None:
     """`api.github.com` is a write surface, so every grant is named explicitly."""
     holders = {fence for fence, allowed in ALLOWLISTS.items() if allowed & GITHUB_API}
-    assert holders == {HAKU_OPENCLAW_FENCE, HAKU_CLAUDE_FENCE}
+    assert holders == {HAKU_OPENCLAW_FENCE}
 
 
 if __name__ == "__main__":

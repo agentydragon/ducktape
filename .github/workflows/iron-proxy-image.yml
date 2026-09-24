@@ -34,7 +34,7 @@ jobs:
     timeout-minutes: 30
     env:
       IMAGE: git.allegedly.works/ducktape-ci/iron-proxy
-      IRON_PROXY_REVISION: c90f4fe31607552ed05675fc7ad239d94b431af2
+      IRON_PROXY_REVISION: 5bd11abeb95ca734c767cfc992ea9be862700614
     steps:
       - name: Checkout Ducktape
         uses: actions/checkout@v7

@@ -321,9 +321,8 @@ def _container() -> k8s.Container:
         name="iron-proxy",
         # Bootstrap on upstream 0.49.0. Once CI publishes the commit-pinned Forgejo image, Flux
         # replaces this reference through the image-pins policy.
-        # TODO(public-coder-agent): Return to the first official release containing
-        # https://github.com/ironsh/iron-proxy/commit/c90f4fe31607552ed05675fc7ad239d94b431af2
-        # and remove the temporary image build after verifying ALPN still negotiates h2.
+        # v0.50.0 is the first official release with HTTP/2 MITM; returning to the official
+        # image is the pinning decision in plans/personal_agents/TODO.md.
         image=_IMAGE,
         args=["-config", f"{_CONFIG_DIR}/{_CONFIG_FILE}"],
         env=[
@@ -385,7 +384,7 @@ def _deployment(scope: Construct, config_map: k8s.KubeConfigMap) -> None:
                     # Private package in the in-cluster Forgejo registry. The credential is
                     # reflected into this namespace by cluster/k8s/forgejo-images/.
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-                    # Matches haku-{claude-oauth,openclaw-spike}-proxy, which run the same image.
+                    # Matches haku-openclaw-spike-proxy, which runs the same image.
                     # This namespace sets no pod-security.kubernetes.io labels, so only the
                     # cluster-default baseline applies and none of this is enforced for us -- it
                     # has to be stated here. The deliberate waiver for this agent is about egress

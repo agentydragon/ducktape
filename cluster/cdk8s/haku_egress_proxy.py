@@ -1,11 +1,11 @@
 """haku-egress-proxy (cluster/k8s/agents/haku-egress-proxy): the mitmproxy egress chokepoint
-for haku-sandbox and haku-ci, its interception CA and trust bundle, and the two iron-proxy
-credential substituters (the Console-owned Claude sandbox's and the OpenClaw spike's).
+for haku-sandbox and haku-ci, its interception CA and trust bundle, and the OpenClaw spike's
+iron-proxy credential substituter.
 
 Written beside other generated files in the same directory (the Namespace from
 agents/namespaces.py, the CiliumNetworkPolicies from egress_fences.py). Hand-written there:
-`kustomization.yaml` (its configMapGenerator renames the iron configs into `iron.yaml`, and
-a patch renames a SOPS Secret), the iron configs themselves, the SOPS Secrets, and
+`kustomization.yaml` (its configMapGenerator renames the iron config into `iron.yaml`, and
+a patch renames a SOPS Secret), the iron config itself, the SOPS Secrets, and
 `image-pins/kustomization.yaml`, which overrides the iron-proxy placeholder tag via Flux's
 image-automation marker.
 """
@@ -65,7 +65,6 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _CA_SECRET = "haku-egress-proxy-ca"
 _IRON_PROXY_IMAGE = "git.allegedly.works/ducktape-ci/iron-proxy:unset"
-_CLAUDE_PROXY = "haku-claude-oauth-proxy"
 _OPENCLAW_SPIKE_PROXY = "haku-openclaw-spike-proxy"
 _PUBLISHED_SECRETS_READER = "authentik-jwt-rotation-published-secrets-reader"
 
@@ -421,65 +420,6 @@ def _github_token(chart: Chart, name: str) -> None:
     )
 
 
-def _claude_proxy(chart: Chart) -> None:
-    # For the Console-owned Claude sandbox. Same remote PAT the OpenClaw spike reads — one
-    # account, separately delivered, so retiring the spike does not take this with it.
-    github_token = "haku-claude-github-token"
-    _github_token(chart, github_token)
-    _iron_proxy(
-        chart,
-        _CLAUDE_PROXY,
-        description=(
-            "Holds the real Claude subscription OAuth token and substitutes it for the sandbox"
-            " placeholder only on api.anthropic.com Authorization headers."
-        ),
-        config_map="haku-claude-oauth-proxy-config",
-        port=8180,
-        env=[
-            _secret_env("CLAUDE_CODE_OAUTH_TOKEN", "haku-claude-oauth-token", "CLAUDE_CODE_OAUTH_TOKEN"),
-            _secret_env("GITHUB_TOKEN", github_token, "GITHUB_TOKEN"),
-            # The same bearer aiquota-api authenticates with, reflected here from
-            # cli-proxy-api solely for iron-proxy to substitute into the sandbox's
-            # placeholder on the two read endpoints; the runtime never receives it.
-            # Optional: this proxy is the ONLY egress path for haku-runtime-sandbox, so a
-            # late-reflecting secret must not take Anthropic and GitHub down with it. Unset
-            # simply means no substitution — aiquota 401s, everything else is untouched.
-            _secret_env("AIQUOTA_API_BEARER_TOKEN", "aiquota-api-bearer-haku-claude", "bearer-token", optional=True),
-            # The central ActivityWatch read-only bearer, reflected here from the
-            # activitywatch namespace solely for iron-proxy to substitute into the sandbox's
-            # placeholder on the read route. Optional for the same reason as above.
-            _secret_env("AW_READ_TOKEN", "activitywatch-read-token", "token", optional=True),
-        ],
-    )
-    k8s.KubeNetworkPolicy(
-        chart,
-        "claude-networkpolicy",
-        metadata=k8s.ObjectMeta(name="allow-haku-claude-oauth-proxy-ingress", namespace=NAME),
-        spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": _CLAUDE_PROXY}),
-            ingress=[
-                k8s.NetworkPolicyIngressRule(
-                    from_=[
-                        k8s.NetworkPolicyPeer(
-                            namespace_selector=k8s.LabelSelector(
-                                match_labels={"kubernetes.io/metadata.name": "haku-runtime-sandbox"}
-                            ),
-                            pod_selector=k8s.LabelSelector(
-                                match_labels={
-                                    "app.kubernetes.io/name": "haku-harness-runner",
-                                    "haku.allegedly.works/access-profile-id": "haku",
-                                }
-                            ),
-                        )
-                    ],
-                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(8180), protocol="TCP")],
-                )
-            ],
-            policy_types=["Ingress"],
-        ),
-    )
-
-
 def _openclaw_spike_proxy(chart: Chart) -> None:
     # Shared with public-coder-agent's copy of the same PAT.
     github_token = "haku-openclaw-spike-github-token"
@@ -662,7 +602,6 @@ def chart(app: App) -> Chart:
     )
     _ca(chart)
     _mitmproxy(chart)
-    _claude_proxy(chart)
     _openclaw_spike_proxy(chart)
     _sandbox_fence(chart)
     return chart
