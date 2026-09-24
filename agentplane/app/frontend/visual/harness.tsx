@@ -34,7 +34,7 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
-import { electricLive, electricShape, electricSubset, routes } from "./network";
+import { electricLive, electricShape, electricSubset, routes, UNANSWERED } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
 
@@ -1288,12 +1288,14 @@ routes.push(
       next_after_sequence: null,
     }),
   ],
-  // No runner here admits a command: one the page delivers on load stays unadmitted, answered as
-  // the app answers when a runner misses its admission deadline.
+  // No runner here admits a command, so one the page delivers on load stays unadmitted.
   [
     "POST",
     /^\/threads\/([0-9a-f-]+)\/commands$/,
-    () => Response.json({ detail: "runner did not admit the command within 15 seconds" }, { status: 504 }),
+    () =>
+      scenario.commandAdmissionTimedOut
+        ? Response.json({ detail: "runner did not admit the command within 15 seconds" }, { status: 504 })
+        : UNANSWERED,
   ],
   ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],
   [
