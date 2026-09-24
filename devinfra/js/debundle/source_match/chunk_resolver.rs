@@ -670,9 +670,8 @@ fn member_matches_multi(
         return Ok(Vec::new());
     }
     // A declarator-**hole** target inside a multi-statement window takes the same
-    // general path (no single-declarator special-case): the whole-statement match
-    // absorbs the DECLARATORS hole, and `declared_bindings[target_binding_idx]`
-    // lines up because the hole declares nothing.
+    // general path (no single-declarator special-case); `candidate_target_binding`
+    // aligns its declarators.
     let needle_facts = needles
         .iter()
         .map(|item| needle_item_facts(item, selector))
@@ -691,12 +690,17 @@ fn member_matches_multi(
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     for start in starts {
         let body_idx = start + target_item_idx;
-        let Some(binding) = declared_bindings(&chunk.module.body[body_idx])
-            .into_iter()
-            .nth(target_binding_idx)
-        else {
-            bail!("source_match resolver: target binding index out of range");
-        };
+        let binding = candidate_target_binding(
+            chunk,
+            &needles[target_item_idx],
+            &needle_indices[target_item_idx],
+            body_idx,
+            selector_mode(selector),
+            request_id,
+            selector,
+            target_binding,
+            target_binding_idx,
+        )?;
         matches.push(MemberBindingMatch { body_idx, binding });
     }
     Ok(matches)
@@ -852,6 +856,65 @@ fn group_matches_single_declarator(
     Ok(matches)
 }
 
+/// The binding `target` names in the candidate statement at `body_idx` that
+/// matched `needle`. A var-decl needle aligns declarator by declarator: its
+/// `DECLARATORS` runs and floating `ANYTHING = <init>` declarators declare
+/// nothing in the needle, but the candidate declarators they absorb do, so a
+/// flat binding index would name the wrong declarator.
+#[allow(clippy::too_many_arguments)]
+fn candidate_target_binding(
+    chunk: &ChunkResolver,
+    needle: &ModuleItem,
+    needle_index: &selector_match::Index,
+    body_idx: usize,
+    mode: selector_match::Mode,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    target: &str,
+    target_binding_idx: usize,
+) -> Result<ResolvedMemberBinding> {
+    let item = &chunk.module.body[body_idx];
+    let (Some(needle_var), Some(candidate_var)) = (item_var_decl(needle), item_var_decl(item))
+    else {
+        return declared_bindings(item)
+            .into_iter()
+            .nth(target_binding_idx)
+            .with_context(|| {
+                format!(
+                    "logical_module {request_id}: source_matches[].bindings[`{target}`] matched \
+                     top-level statement at body index {body_idx}, but that statement declares \
+                     too few bindings"
+                )
+            });
+    };
+    let (target_decl_idx, declarator_binding_idx) =
+        selector_var_declarator_binding_location(needle_var, request_id, selector, target)?;
+    let alignment = selector_match::var_declarator_alignment_prepared(
+        needle_index,
+        &chunk.body_indices[body_idx],
+        mode,
+        None,
+    )
+    .with_context(|| {
+        format!(
+            "logical_module {request_id}: source_matches[].bindings[`{target}`] matched body \
+             index {body_idx}, but its declarators do not align with the selector's"
+        )
+    })?;
+    let Some(Some(candidate_decl_idx)) = alignment.get(target_decl_idx) else {
+        bail!(
+            "logical_module {request_id}: source_matches[].bindings[`{target}`] was matched by a \
+             DECLARATORS hole, not a pinned declarator"
+        );
+    };
+    declared_bindings_for_var_declarator(&candidate_var.decls[*candidate_decl_idx])
+        .into_iter()
+        .nth(declarator_binding_idx)
+        .with_context(|| {
+            format!("source_match resolver: target `{target}` binding index out of range")
+        })
+}
+
 /// Binding-group branch 3 — a general (multi-statement or non-var) needle: a
 /// single top-level sequence alignment supplies every target's owner statement,
 /// read by declared-binding index.
@@ -894,12 +957,17 @@ fn group_matches_general(
                      matched by a STMT_LIST hole, not a pinned statement"
                 );
             };
-            let Some(binding) = declared_bindings(&chunk.module.body[*body_idx])
-                .into_iter()
-                .nth(*target_binding_idx)
-            else {
-                bail!("source_match resolver: target `{target}` binding index out of range");
-            };
+            let binding = candidate_target_binding(
+                chunk,
+                &needles[*target_item_idx],
+                &needle_indices[*target_item_idx],
+                *body_idx,
+                selector_mode(selector),
+                request_id,
+                selector,
+                target,
+                *target_binding_idx,
+            )?;
             resolved.insert(
                 target.clone(),
                 MemberBindingMatch {
@@ -970,15 +1038,19 @@ fn member_matches_single_statement(
                 target_binding,
             )?;
             debug_assert_eq!(target_item_idx, 0, "single-statement needle");
+            let needle_index = selector_match::Index::build(&needle_facts);
             for body_idx in indices {
-                let declared = declared_bindings(&chunk.module.body[body_idx]);
-                let Some(binding) = declared.into_iter().nth(target_binding_idx) else {
-                    bail!(
-                        "logical_module {request_id}: source_matches[].bindings[`{target_binding}`] \
-                         matched top-level statement at body index {body_idx}, but that statement \
-                         declares too few bindings"
-                    );
-                };
+                let binding = candidate_target_binding(
+                    chunk,
+                    needle,
+                    &needle_index,
+                    body_idx,
+                    selector_mode(selector),
+                    request_id,
+                    selector,
+                    target_binding,
+                    target_binding_idx,
+                )?;
                 matches.push(MemberBindingMatch { body_idx, binding });
             }
         }
