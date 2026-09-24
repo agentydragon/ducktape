@@ -222,7 +222,7 @@ struct Projected {
     rows: Vec<Vec<Place>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Place {
     owner: OwnerId,
     binding: Option<String>,
@@ -863,13 +863,21 @@ impl<'c, 'm> Resolve<'c, 'm> {
         let mut claims = Vec::new();
         for entity in &self.projected {
             for (position, target) in entity.targets.iter().enumerate() {
-                let places = entity.rows.iter().map(|row| &row[position]);
-                let outcome = match entity.rows.as_slice() {
-                    [row] => ClaimOutcome::Unique {
-                        claim: claim(&row[position]),
+                // Rows of a multi-binding entity can agree on one binding's
+                // place and differ on another's; each target is decided by
+                // its own distinct places, as the solver's per-target support
+                // search does.
+                let places = entity
+                    .rows
+                    .iter()
+                    .map(|row| &row[position])
+                    .collect::<BTreeSet<_>>();
+                let outcome = match places.len() {
+                    1 => ClaimOutcome::Unique {
+                        claim: claim(places.first().expect("one place")),
                     },
                     _ => ClaimOutcome::Ambiguous {
-                        candidates: places.map(claim).collect(),
+                        candidates: places.into_iter().map(claim).collect(),
                         candidates_truncated: false,
                     },
                 };
