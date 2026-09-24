@@ -2,8 +2,7 @@
 
 **Not a Bazel test, and never will be.** A probe needs a real Claude credential and makes real
 model calls; what it produces is an observation to write into <../protocol.md>, not a pass/fail.
-Run one wherever a credential exists — a `haku-claude` sandbox pod, or any box with a logged-in
-CLI:
+Run one on any box with a logged-in CLI:
 
     python3 -m haku.cli_protocol.probes.hooks
     CLAUDE_BIN=/path/to/claude python3 -m haku.cli_protocol.probes.hooks

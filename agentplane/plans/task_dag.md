@@ -916,8 +916,8 @@ _Shared, so not this milestone's to delete:_
 - The `iron-proxy` image build — `cluster/images/iron-proxy/`,
   `.github/workflows/iron-proxy-image.yml`, `cluster/generated/flux-image-automation-forgejo/iron-proxy-image.yaml`.
   It carries a pinned upstream commit for HTTP/2 MITM support and is consumed by
-  `haku-claude-oauth-proxy` and `haku-openclaw-spike-proxy` as well. It was named for public-coder
-  only because this was its first consumer.
+  `haku-openclaw-spike-proxy` as well. It was named for public-coder only because this was its
+  first consumer.
 
 _A second consumer set, on its own retirement clock:_
 
@@ -933,10 +933,8 @@ consumers are listed here rather than discovered later:
 - **`haku-ci`**, which wires it explicitly instead: `HTTP(S)_PROXY` env in
   `cluster/k8s/haku-ci/{config,scaledjob}.yaml`, including for dockerd's image pulls.
 - **The sandbox image**, `cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh`.
-- **Two more iron-proxy listeners it hosts**: `haku-claude-oauth-proxy`, which alone holds the real
-  Claude subscription token for `haku` access-profile runners in `haku-runtime-sandbox`, and
-  `haku-openclaw-spike-proxy` for `haku-openclaw-spike` -- the second OpenClaw deployment, after
-  public-coder.
+- **One more iron-proxy listener it hosts**: `haku-openclaw-spike-proxy` for
+  `haku-openclaw-spike` -- the second OpenClaw deployment, after public-coder.
 
 `cluster/validation/test_egress_allowlists.py` and `cluster/validation/kyverno/test_proxy_injection.py`
 assert that wiring. Deleting this namespace because this entry says "retire the old proxy" would

@@ -305,7 +305,7 @@ def chart(app: App) -> Chart:
         target_port=_READ_PORT,
         description=(
             "Bearer-gated read-only ActivityWatch endpoint (bearer-proxy sidecar, 5603), fronted by the public "
-            "read HTTPRoute for the Haku agent via the iron egress proxy."
+            "read HTTPRoute for the Haku agent."
         ),
     )
     # Public write route for desktop importers. The read route is Authentik-gated, but
@@ -313,10 +313,8 @@ def chart(app: App) -> Chart:
     # exchange, so auth here is the write-proxy's bearer check and the route goes straight
     # to the bearer-gated write Service. See cluster/docs/activitywatch/revival-plan.md.
     _route(chart, "write-route", name="activitywatch-write", hostname="activitywatch-write.allegedly.works")
-    # Public read route for the Haku agent. Reaches the bearer-gated read Service; the
-    # Haku sandbox sends a placeholder bearer that the iron egress proxy substitutes for
-    # the real read token (cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml). The
-    # bearer-proxy allows read methods only, so even a leaked read token can't write.
+    # Public read route for the Haku agent. Reaches the bearer-gated read Service, which
+    # allows read methods only, so even a leaked read token can't write.
     _route(chart, "read-route", name="activitywatch-read", hostname="activitywatch-read.allegedly.works")
     _network_policy(chart)
     return chart
