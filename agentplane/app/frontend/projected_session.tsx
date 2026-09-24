@@ -1086,7 +1086,7 @@ function threadStatus({
 }): ThreadStatus {
   if (sync.window?.error) return { color: "red", label: `Thread sync stopped: ${sync.window.error}` };
   if (!sync.window) return { color: "yellow", breathing: true, label: "Connecting…" };
-  if (sync.error) return { color: "yellow", breathing: true, label: "Reconnecting…" };
+  if (sync.error || sync.window.reconnecting) return { color: "yellow", breathing: true, label: "Reconnecting…" };
   if (!sync.window.caughtUp) return { color: "yellow", breathing: true, label: "Catching up…" };
   if (archived) return { color: "gray", label: "Thread archived" };
   if (!available) return { color: "gray", label: "Sandbox unavailable" };
@@ -1370,6 +1370,11 @@ function SyncedThread({
       {shown.error && (
         <p role="alert">
           Thread synchronization stopped: {shown.error} <button onClick={shown.refresh}>Refresh thread</button>
+        </p>
+      )}
+      {!shown.error && shown.reconnecting && (
+        <p role="status" data-thread-reconnecting="true">
+          Reconnecting to the thread. What is on screen may be out of date.
         </p>
       )}
       {!shown.error && !shown.caughtUp && (
