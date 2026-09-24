@@ -17,7 +17,7 @@ plans and evidence live here:
 - <SELECTOR_BUGS.md> — matcher/diagnostic bugs with anonymized examples.
 - <ARCHITECTURE_BACKLOG.md> — deeper refactors, urgent only when they block this
   queue.
-- `perf/` and `debug/perf/` — measured performance notes. Update from real
+- `perf/` — measured performance notes. Update from real
   profiles before major matcher/index rewrites.
 
 Planning hygiene: keep active dispatch order here. When a plan's core work is
