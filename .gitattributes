@@ -61,7 +61,6 @@ cluster/k8s/agentplane-staging/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/console/kustomization.yaml linguist-generated=true
 cluster/k8s/ntfy/kustomization.yaml linguist-generated=true
 cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
-cluster/k8s/cert-manager/environment/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/public-coder-agent/sshpiper/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/db/kustomization.yaml linguist-generated=true
 cluster/k8s/langfuse/kustomization.yaml linguist-generated=true
