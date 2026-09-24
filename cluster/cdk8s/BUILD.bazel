@@ -238,6 +238,7 @@ py_library(
         ":openclaw_gateway",
         ":public_coder_proxy",
         ":public_coder_sshpiper",
+        "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
         "//cluster/cdk8s/crd_bindings/external_secrets:passwordgenerator",
         "//cluster/cdk8s/external_secrets:external_secret",
@@ -250,7 +251,10 @@ py_library(
 py_library(
     name = "public_coder_proxy",
     srcs = ["public_coder_proxy.py"],
-    visibility = ["//cluster/validation:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s/clickhouse:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
     deps = [
         ":cilium",
         ":external_creds",
@@ -258,6 +262,7 @@ py_library(
         ":generation",
         ":manifest_roots",
         ":metadata",
+        "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/crd_bindings/cert_manager:bundle",
         "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
@@ -737,6 +742,7 @@ py_test(
         ":public_coder_devbox",
         ":public_coder_proxy",
         "//:conftest",
+        "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/clickhouse:installation",
         "//cluster/cdk8s/haku:charts",
         "@pypi//cdk8s",
@@ -744,23 +750,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_public_coder_proxy",
-    srcs = ["test_public_coder_proxy.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":public_coder_agent_config",
-        ":public_coder_proxy",
-        "//:conftest",
-        "//cluster/cdk8s/clickhouse:installation",
-        "@pypi//cdk8s",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
