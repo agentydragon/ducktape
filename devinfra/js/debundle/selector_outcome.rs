@@ -475,10 +475,75 @@ impl Serialize for SelectorOutcome {
     }
 }
 
-/// A list of outcomes, serialized with a count per [`OutcomeKind`].
+/// What one free identifier of a template means (<../SPEC.md> § Matching).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum IdentifierMeaning {
+    /// Matches only where it is `entity`'s own binding.
+    Reference { entity: EntityRef },
+    /// Several other modules export the name: the template is `invalid`.
+    Ambiguous { modules: Vec<String> },
+    /// An unshadowed runtime global: matches only itself.
+    Global,
+    /// Alpha-renamed: matches any identifier.
+    Wildcard,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct FreeIdentifier {
+    pub name: String,
+    #[serde(flatten)]
+    pub meaning: IdentifierMeaning,
+}
+
+/// The free identifiers of one `source_match` template that matched in
+/// `chunk`, with what each means there.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct TemplateIdentifiers {
+    pub chunk: String,
+    pub logical_module: String,
+    /// The entities the template places: its member, or every binding of its
+    /// `source_matches[]` entry.
+    pub exports: Vec<String>,
+    pub identifiers: Vec<FreeIdentifier>,
+}
+
+impl TemplateIdentifiers {
+    /// One line per reference and ambiguous name.
+    fn render_lines(&self, out: &mut String) {
+        let exports = self
+            .exports
+            .iter()
+            .map(|export| format!("`{export}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        for identifier in &self.identifiers {
+            let meaning = match &identifier.meaning {
+                IdentifierMeaning::Wildcard | IdentifierMeaning::Global => continue,
+                IdentifierMeaning::Reference { entity } => {
+                    format!("references {}", render_refs(std::slice::from_ref(entity)))
+                }
+                IdentifierMeaning::Ambiguous { modules } => {
+                    format!("is ambiguous: exported by {}", modules.join(", "))
+                }
+            };
+            let _ = writeln!(
+                out,
+                "  - {}::{} {exports}: `{}` {meaning}",
+                self.chunk, self.logical_module, identifier.name
+            );
+        }
+    }
+}
+
+/// A list of outcomes, serialized with a count per [`OutcomeKind`], and
+/// optionally what each matched template's free identifiers mean.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct SelectorOutcomeReport {
     pub outcomes: Vec<SelectorOutcome>,
+    /// Filled only by `spec validate`.
+    #[serde(default)]
+    pub templates: Vec<TemplateIdentifiers>,
 }
 
 impl SelectorOutcomeReport {
@@ -493,6 +558,36 @@ impl SelectorOutcomeReport {
     /// A count line, then one [`SelectorOutcome::render_line`] per outcome,
     /// at most `limit` of them.
     pub fn render_text(&self, out: &mut String, limit: Option<usize>) {
+        if !self.templates.is_empty() {
+            let mut kinds = BTreeMap::<&str, usize>::new();
+            for identifier in self
+                .templates
+                .iter()
+                .flat_map(|template| &template.identifiers)
+            {
+                *kinds
+                    .entry(match identifier.meaning {
+                        IdentifierMeaning::Reference { .. } => "reference",
+                        IdentifierMeaning::Ambiguous { .. } => "ambiguous",
+                        IdentifierMeaning::Global => "global",
+                        IdentifierMeaning::Wildcard => "wildcard",
+                    })
+                    .or_insert(0) += 1;
+            }
+            let kinds = kinds
+                .into_iter()
+                .map(|(kind, count)| format!("{kind}={count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let _ = writeln!(
+                out,
+                "{} matched template(s) with free identifiers: {kinds}",
+                self.templates.len()
+            );
+            for template in &self.templates {
+                template.render_lines(out);
+            }
+        }
         if self.outcomes.is_empty() {
             out.push_str("No selector problems found.\n");
             return;
@@ -521,9 +616,14 @@ impl SelectorOutcomeReport {
 
 impl Serialize for SelectorOutcomeReport {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut report = serializer.serialize_struct("SelectorOutcomeReport", 2)?;
+        let mut report = serializer.serialize_struct("SelectorOutcomeReport", 3)?;
         report.serialize_field("counts", &self.counts())?;
         report.serialize_field("outcomes", &self.outcomes)?;
+        if self.templates.is_empty() {
+            report.skip_field("templates")?;
+        } else {
+            report.serialize_field("templates", &self.templates)?;
+        }
         report.end()
     }
 }

@@ -24,8 +24,8 @@ use selector_ir_lowering::{
     MemberSelectorLoweringContext, MemberSelectorProgramBuilder, MemberSelectorSpecRef,
 };
 use selector_outcome::{
-    Candidate, Entity, EntityRef, MAX_CANDIDATES_PER_SELECTOR, Outcome, Placement, ResolvedBy,
-    SelectorKind, SelectorOutcome,
+    Candidate, Entity, EntityRef, FreeIdentifier, IdentifierMeaning, MAX_CANDIDATES_PER_SELECTOR,
+    Outcome, Placement, ResolvedBy, SelectorKind, SelectorOutcome, TemplateIdentifiers,
 };
 use selector_runtime::solve_global_selector_program;
 use source_match::ParsedSourceMatchSelector;
@@ -167,6 +167,9 @@ impl MemberSelector {
 #[derive(Debug, Clone, Default)]
 pub struct Resolution {
     pub outcomes: Vec<EntityOutcome>,
+    /// What each matched `source_match` template's free identifiers mean,
+    /// for templates that have any.
+    pub templates: Vec<TemplateIdentifiers>,
 }
 
 #[derive(Debug, Clone)]
@@ -638,6 +641,7 @@ pub struct Projection {
     projected: Vec<Projected>,
     /// Each name pin's places: the declarations of its name, of its kind.
     pin_places: BTreeMap<SelectorTargetId, BTreeSet<Place>>,
+    templates: Vec<TemplateIdentifiers>,
 }
 
 impl Projection {
@@ -813,6 +817,7 @@ struct Resolve<'c, 'm> {
     members: BTreeMap<SelectorTargetId, (usize, usize)>,
     anonymous: Vec<(SelectorTargetId, usize, usize)>,
     projected: Vec<Projected>,
+    templates: Vec<TemplateIdentifiers>,
 }
 
 impl<'c, 'm> Resolve<'c, 'm> {
@@ -829,6 +834,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             members: BTreeMap::new(),
             anonymous: Vec::new(),
             projected: Vec::new(),
+            templates: Vec::new(),
         }
     }
 
@@ -918,6 +924,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             anonymous: self.anonymous,
             projected: self.projected,
             pin_places,
+            templates: self.templates,
         })
     }
 
@@ -1107,6 +1114,41 @@ impl<'c, 'm> Resolve<'c, 'm> {
             .flat_map(|statement| statement.declared.iter().map(|id| id.0.to_string()))
             .chain(import_sources(self.chunk.module).into_keys())
             .collect::<BTreeSet<_>>();
+
+        for (index, entity) in collected.iter().enumerate() {
+            let identifiers = entity
+                .free
+                .iter()
+                .map(|name| FreeIdentifier {
+                    name: name.clone(),
+                    meaning: match classify(name, entity.module_index, &exports, &shadowing) {
+                        Meaning::Reference(_, Referent::Projected(referenced))
+                            if referenced == index =>
+                        {
+                            IdentifierMeaning::Wildcard
+                        }
+                        Meaning::Reference(_, Referent::Unprojected) | Meaning::Wildcard => {
+                            IdentifierMeaning::Wildcard
+                        }
+                        Meaning::Reference(module_index, _) => IdentifierMeaning::Reference {
+                            entity: reference_entity(modules, name, module_index),
+                        },
+                        Meaning::Ambiguous(exporters) => IdentifierMeaning::Ambiguous {
+                            modules: module_paths(modules, &exporters),
+                        },
+                        Meaning::Global => IdentifierMeaning::Global,
+                    },
+                })
+                .collect::<Vec<_>>();
+            if !identifiers.is_empty() {
+                self.templates.push(TemplateIdentifiers {
+                    chunk: self.chunk.name.clone(),
+                    logical_module: modules[entity.module_index].path.clone(),
+                    exports: entity.export_names(modules),
+                    identifiers,
+                });
+            }
+        }
 
         // Each entity's rows narrowed by its references, or why it has none.
         let mut narrowed = Vec::with_capacity(collected.len());
@@ -1415,6 +1457,7 @@ impl Projection {
             members,
             anonymous,
             pin_places,
+            templates,
             ..
         } = self;
         let module = chunk.module;
@@ -1488,7 +1531,10 @@ impl Projection {
                 outcome,
             ));
         }
-        Ok(Resolution { outcomes })
+        Ok(Resolution {
+            outcomes,
+            templates,
+        })
     }
 
     /// How each resolved projected target was made unique, where not by its
@@ -1651,34 +1697,20 @@ fn narrow_by_references(
     let mut globals = Vec::new();
     let mut references = Vec::new();
     for name in &entity.free {
-        match exports.get(name.as_str()) {
-            Some(named) => {
-                let own_module = named
-                    .iter()
-                    .find(|(module_index, _)| *module_index == entity.module_index);
-                let (module_index, referent) = match (own_module, named.as_slice()) {
-                    (Some(found), _) => found.clone(),
-                    (None, [only]) => only.clone(),
-                    (None, several) => {
-                        return Err(Rejection::Invalid(format!(
-                            "ambiguous_reference: template identifier `{name}` is exported by \
-                             modules {}; rename it in the template or rename one export",
-                            several
-                                .iter()
-                                .map(|(module_index, _)| modules[*module_index].path.as_str())
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        )));
-                    }
-                };
-                if !matches!(referent, Referent::Projected(referenced) if referenced == index) {
-                    references.push((name.clone(), module_index, referent));
-                }
+        match classify(name, entity.module_index, exports, shadowing) {
+            Meaning::Reference(_, Referent::Projected(referenced)) if referenced == index => {}
+            Meaning::Reference(module_index, referent) => {
+                references.push((name.clone(), module_index, referent));
             }
-            None if JS_GLOBALS.contains(&name.as_str()) && !shadowing.contains(name) => {
-                globals.push(name);
+            Meaning::Ambiguous(exporters) => {
+                return Err(Rejection::Invalid(format!(
+                    "ambiguous_reference: template identifier `{name}` is exported by modules \
+                     {}; rename it in the template or rename one export",
+                    module_paths(modules, &exporters).join(", ")
+                )));
             }
-            None => {}
+            Meaning::Global => globals.push(name),
+            Meaning::Wildcard => {}
         }
     }
     let candidates = entity
@@ -1727,6 +1759,47 @@ fn narrow_by_references(
         unreferenced_rows,
         references,
     })
+}
+
+/// What a free template identifier of a template in module `module_index`
+/// means (<../SPEC.md> § Matching).
+enum Meaning {
+    /// The spec entity exported under that name, and the module exporting it.
+    Reference(usize, Referent),
+    /// Exported by these modules, none of them the template's own.
+    Ambiguous(Vec<usize>),
+    Global,
+    Wildcard,
+}
+
+fn classify(
+    name: &str,
+    module_index: usize,
+    exports: &BTreeMap<&str, Vec<(usize, Referent)>>,
+    shadowing: &BTreeSet<String>,
+) -> Meaning {
+    match exports.get(name).map(Vec::as_slice) {
+        Some(named) => match (
+            named.iter().find(|(exporter, _)| *exporter == module_index),
+            named,
+        ) {
+            (Some((exporter, referent)), _) | (None, [(exporter, referent)]) => {
+                Meaning::Reference(*exporter, referent.clone())
+            }
+            (None, several) => {
+                Meaning::Ambiguous(several.iter().map(|(exporter, _)| *exporter).collect())
+            }
+        },
+        None if JS_GLOBALS.contains(&name) && !shadowing.contains(name) => Meaning::Global,
+        None => Meaning::Wildcard,
+    }
+}
+
+fn module_paths(modules: &[SpecModule], indices: &[usize]) -> Vec<String> {
+    indices
+        .iter()
+        .map(|index| modules[*index].path.clone())
+        .collect()
 }
 
 /// Narrows every entity's rows by the references whose referent every one of

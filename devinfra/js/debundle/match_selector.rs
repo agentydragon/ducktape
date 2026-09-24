@@ -161,6 +161,7 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
                 selector_preview: Some(source_match::source_match_preview(&config.match_source)),
                 outcome,
             }],
+            templates: Vec::new(),
         },
         slack,
     })

@@ -134,7 +134,7 @@ pub(super) struct ChunkPlanBuilder {
 }
 
 impl ChunkPlanBuilder {
-    pub(super) fn new(fail_fast: bool) -> Self {
+    pub(super) fn new(fail_fast: bool, list_template_identifiers: bool) -> Self {
         Self {
             binding_assignment: HashMap::new(),
             anonymous_ordinal_assignment: BTreeMap::new(),
@@ -145,7 +145,7 @@ impl ChunkPlanBuilder {
             catalogue_index_by_name: HashMap::new(),
             deferred_binding_claims_by_name: HashMap::new(),
             duplicate_deferred_binding_names: BTreeSet::new(),
-            outcomes: OutcomeSink::new(fail_fast),
+            outcomes: OutcomeSink::new(fail_fast, list_template_identifiers),
         }
     }
 
@@ -439,6 +439,7 @@ impl ChunkPlanBuilder {
         chunk_id: &str,
         declaration_by_name: &HashMap<Id, usize>,
     ) -> Result<()> {
+        self.outcomes.list_templates(resolution.templates);
         // Recorded last, once every claim is in.
         let mut eliminated = Vec::new();
         for EntityOutcome {

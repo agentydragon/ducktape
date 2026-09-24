@@ -754,6 +754,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
                     dry_run,
                     keep_going,
                     report_dir_override: None,
+                    list_template_identifiers: false,
                 },
             )?;
             if dry_run {
