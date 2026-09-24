@@ -254,7 +254,7 @@ export { marker };
         ],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
         "Anonymous statement selector diagnostic report: 2 unresolved selector(s) found",

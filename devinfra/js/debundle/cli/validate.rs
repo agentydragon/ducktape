@@ -1,4 +1,4 @@
-//! `debundle spec validate --keep-going` — keep-going selector validation that
+//! `debundle spec validate` — keep-going selector validation that
 //! emits a machine-readable report of every selector problem instead of stopping
 //! at the first failing selector.
 //!
@@ -23,7 +23,7 @@ use clap::Args as ClapArgs;
 use output_layout::SELECTOR_DIAGNOSTICS_REPORT;
 use peel::{OutputFormat, print_report};
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli_with_options};
-use selector_diagnostics::{SelectorDiagnosticEntry, SelectorDiagnosticsReport};
+use selector_diagnostics::{SelectorDiagnosticEntry, SelectorDiagnosticsReport, Severity};
 use serde::Serialize;
 use source_match::{SelectorResolver, chunk_resolver::ChunkResolver};
 use source_match::{selector_body_key, selector_key, source_match_claim_member_selectors};
@@ -34,9 +34,9 @@ use spec::{MemberSelectorSpec, SourceMatchClaim};
 /// inputs validate and run.
 #[derive(Debug, ClapArgs)]
 pub struct ValidateArgs {
-    // The flattened `--spec` / `--tree-config` / `--package-root` / `--keep-going`
-    // / `--fail-fast` flags. Keep-going is the default; pass `--fail-fast` to
-    // stop at the first supported failure instead of collecting every problem.
+    // The flattened `--spec` / `--tree-config` / `--package-root` / `--fail-fast`
+    // flags. Keep-going is the default; pass `--fail-fast` to stop at the first
+    // supported failure instead of collecting every problem.
     #[command(flatten)]
     pub transform: TransformArgs,
 
@@ -594,6 +594,7 @@ fn selector_error_diagnostic(
     let source_match_body_hash = selector.as_ref().map(selector_body_key);
     SelectorDiagnosticEntry {
         category: "selector_resolution_error".to_string(),
+        severity: Severity::Error,
         module_id: module_path.to_string(),
         module_path: Some(module_path.to_string()),
         export_name: export_name.map(ToOwned::to_owned),
@@ -680,9 +681,13 @@ fn render_validate_text(report: &ValidateReport, buf: &mut String) {
                 .module_path
                 .as_deref()
                 .unwrap_or(&diagnostic.module_id);
+            let severity = match diagnostic.severity {
+                Severity::Error => "",
+                Severity::Warning => "warning: ",
+            };
             let _ = writeln!(
                 buf,
-                "  [{}] {module} as `{export}` ({}): {}",
+                "  [{severity}{}] {module} as `{export}` ({}): {}",
                 diagnostic.category, diagnostic.selector_kind, diagnostic.message,
             );
             let _ = writeln!(buf, "    -> {}", diagnostic.recommended_next_action);

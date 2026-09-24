@@ -1,0 +1,20 @@
+/* The prose styling `markdown.tsx`'s class promises. Code takes Mantine's monospace stack, the font
+   of every `Code` block, so code in the agent's prose reads like the tool payloads beside it. */
+
+.agentplane-markdown :where(h1, h2, h3, h4, h5, h6) {
+  font-weight: 700;
+  line-height: 1.25;
+  margin-block: 1em 0.5em;
+}
+
+.agentplane-markdown :where(p, ul, ol, pre, blockquote, table) {
+  margin-block: 0.75em;
+}
+
+.agentplane-markdown :where(ul, ol) {
+  padding-inline-start: 1.5em;
+}
+
+.agentplane-markdown :where(code) {
+  font-family: var(--mantine-font-family-monospace);
+}
