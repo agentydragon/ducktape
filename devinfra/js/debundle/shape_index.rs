@@ -8,8 +8,8 @@
 //!      O(1) id comparison (Downey-Sethi-Tarjan minimal-DAG construction).
 //!   2. Multi-granularity, position-aware *shape features* per top-level item,
 //!      extended from the existing [`SelectorCandidateIndex`] feature taxonomy
-//!      with **bounded-depth shape skeletons** (this is the cons-spine /
-//!      bounded-depth list-hole encoding, locked decision #1).
+//!      with **bounded-depth shape skeletons** (the cons-spine /
+//!      bounded-depth list-hole encoding below).
 //!   3. Inverted posting lists feature -> item set, with per-feature
 //!      **selectivity** (posting-list size) and **stability** (semantic vs
 //!      volatile) scores.
@@ -29,7 +29,7 @@
 //! `source_match` stays the correctness gate; this index only narrows and
 //! ranks candidates.
 //!
-//! ## List-hole encoding interface boundary (locked decision #1)
+//! ## List-hole encoding interface boundary
 //!
 //! No arity assumption is baked into the index or the greedy read-off core.
 //! Variable-length child runs (call args, statement lists, object props, class
@@ -155,7 +155,7 @@ impl ShapeInterner {
     }
 }
 
-/// The list-hole / shape-feature extraction boundary (locked decision #1).
+/// The list-hole / shape-feature extraction boundary.
 ///
 /// All variadic-arity handling lives here. The index core, posting lists, and
 /// greedy read-off treat the returned [`ShapeId`] set as opaque, so swapping

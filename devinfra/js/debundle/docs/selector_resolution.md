@@ -184,6 +184,19 @@ conflicting one, such as a relation anchored on it, loses that relation with it
 and may come out ambiguous. Only when the hard constraints alone are
 unsatisfiable does every target of the group come out `no_match`.
 
+## Landing a new relation
+
+1. Add the fact to `chunk_facts` if it is not derivable from what is there.
+   Extraction stays fail-closed.
+2. Lower it to a table over candidate ids in the resolve, with a compiled
+   encoding in `selector_constraint_model_builder`.
+3. Prove it through `debundle run` on a fixture whose chunk also exports and
+   uses the anchor, as <../e2e/cross_ref_lowering_test.rs> does: real graphs
+   model `export { … }` and side-effect statements as owners that reference
+   every binding they touch, which is the discriminating case bare fixtures miss.
+4. Document it in <selectors.md>: a selector kind that is not documented there
+   does not exist for authors.
+
 ## The shape matcher
 
 `source_match/chunk_resolver.rs` builds one per-chunk model and resolves many

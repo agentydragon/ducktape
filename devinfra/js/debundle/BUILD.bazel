@@ -1260,7 +1260,7 @@ rust_binary(
     ],
 )
 
-# P1 of the Datalog selector resolver: a faithful, fail-closed projection of a
+# A faithful, fail-closed projection of a
 # parsed chunk into AST facts (kind/child/str_lit/prop_name/ident_name + the
 # owner-ordinal join). The extractor errors loudly on any construct it has not
 # modeled rather than emitting a silently-incomplete fact set. Seed slice; grows
@@ -1283,7 +1283,7 @@ rust_test(
     deps = ["@crates//:serde_json"],
 )
 
-# P2 matching core: a structural homomorphism from a selector needle's
+# The shape matcher's kernel: a structural homomorphism from a selector needle's
 # chunk_facts onto a candidate's, fail-closed outside the faithful subset.
 # Operates over the AST-facts EDB, not by re-walking ASTs.
 rust_library(
@@ -1316,7 +1316,7 @@ rust_test(
 
 # Coverage instrument: run over a real chunk to see how many top-level
 # statements fully extract vs. hit a fail-closed Unsupported, with the
-# first-blocker histogram — drives P1 growth by real-corpus frequency.
+# first-blocker histogram, to grow extraction by real-corpus frequency.
 rust_binary(
     name = "chunk_facts_coverage",
     srcs = ["chunk_facts_coverage.rs"],
