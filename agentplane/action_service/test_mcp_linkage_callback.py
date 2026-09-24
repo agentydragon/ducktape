@@ -104,7 +104,7 @@ async def test_rejected_code_is_reported_and_leaves_the_server_unlinked(
     state = parse_qs(urlsplit(started.authorization_url).query)["state"][0]
     response = await callback_client.get("/v1/mcp-linkage/callback", params={"state": state, "code": "test-bad-code"})
     assert response.status_code == 502, response.text
-    assert response.json()["detail"] == "MCP OAuth provider rejected the token"
+    assert response.json()["detail"] == "the OAuth provider refused the token request: bad_verification_code"
     assert (await linkage.status("test-kubernetes")).status is McpLinkageStatus.UNLINKED
 
 
