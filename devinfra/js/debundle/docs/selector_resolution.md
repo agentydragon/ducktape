@@ -178,6 +178,19 @@ negation and counting (not expressible yet, <selectors.md> § Relational
 selectors) would be too. Measured `-c opt` on a 4-core host, 2026-09-17; the
 ratio is the result.
 
+### Rejected: binding free template names in the root frame
+
+Binding a template's free names (referenced, never declared) in the matcher's
+root frame would make one free name mean one chunk identifier across the whole
+template. The root frame's bijection then rejects real templates that rename a
+declaration yet reference it by its chunk spelling: in
+`const wrap = () => use(q), readable = () => 1;` against the chunk's
+`const w = () => use(q), q = () => 1;`, the free `q` and the declared `readable`
+both need chunk `q`. On the Tana web spec that turned 16 resolved group bindings
+into `no_match` (2026-09-24). Free names bind in their frame like any other
+reference; the matcher only records what each bound to, and reports a name that
+bound two different identifiers as unbound.
+
 ## Interactive budget
 
 Root `AGENTS.md` § Profiling applies. Interactive commands target under 10s on

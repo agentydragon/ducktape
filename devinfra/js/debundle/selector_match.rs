@@ -127,9 +127,8 @@ impl AlphaScope {
 /// consult only their own frame, so a binding may shadow an outer one. A `var`
 /// binding lands in the innermost [`FrameKind::Function`] frame, as JS hoists it.
 /// A template's **free** identifiers (referenced, never declared in the
-/// template) name something outside it, so they bind in the root frame: one free
-/// name maps to one subject name across the whole template, and the root frame's
-/// entries for them are the match's [`Bindings::free_bindings`].
+/// template) bind like any other reference; what each bound to is recorded
+/// alongside the frames, for [`Bindings::free_bindings`].
 /// Cloneable so run-hole placement can snapshot/restore across backtracking.
 #[derive(Clone)]
 struct Bindings<'f> {
@@ -138,6 +137,11 @@ struct Bindings<'f> {
     in_var_decl: bool,
     /// The template's free identifiers (`source_match::free_identifiers`).
     free: &'f BTreeSet<String>,
+    /// Each free name bound so far → its subject name, or `None` once it bound
+    /// two different ones (in two frames, e.g. sibling function bodies). Not a
+    /// root-frame binding: <docs/selector_resolution.md> § "Rejected: binding
+    /// free template names in the root frame".
+    free_seen: BTreeMap<String, Option<String>>,
 }
 
 impl<'f> Bindings<'f> {
@@ -146,6 +150,7 @@ impl<'f> Bindings<'f> {
             scopes: vec![AlphaScope::new(FrameKind::Function)],
             in_var_decl: false,
             free,
+            free_seen: BTreeMap::new(),
         }
     }
 
@@ -169,9 +174,8 @@ impl<'f> Bindings<'f> {
     /// mapping is honored in **either** mode — that is how a `target_binding`
     /// prebind forces one needle name onto one subject name even under `Exact`
     /// (where the unbound fallback is exact spelling, not a fresh alpha pair).
-    /// An unbound free name binds in the root frame, in either mode, so the match
-    /// records it; any other unbound reference binds in the innermost
-    /// non-lexical frame.
+    /// An unbound reference names something outside the template; it binds in
+    /// the innermost non-lexical frame.
     fn match_ref(&mut self, needle: &str, subject: &str, mode: Mode) -> bool {
         for scope in self.scopes.iter().rev() {
             if let Some(mapped) = scope.forward.get(needle) {
@@ -181,15 +185,29 @@ impl<'f> Bindings<'f> {
                 return false;
             }
         }
-        if self.free.contains(needle) {
-            if mode == Mode::Exact && needle != subject {
-                return false;
-            }
-            self.bind(0, needle, subject);
-            return true;
-        }
         let frame = self.innermost(|kind| kind != FrameKind::Lexical);
-        self.resolve_unbound(frame, needle, subject, mode)
+        let bound = self.resolve_unbound(frame, needle, subject, mode);
+        if bound {
+            self.record_free(needle, subject);
+        }
+        bound
+    }
+
+    fn record_free(&mut self, needle: &str, subject: &str) {
+        if !self.free.contains(needle) {
+            return;
+        }
+        match self.free_seen.get_mut(needle) {
+            Some(seen) => {
+                if seen.as_deref() != Some(subject) {
+                    *seen = None;
+                }
+            }
+            None => {
+                self.free_seen
+                    .insert(needle.to_string(), Some(subject.to_string()));
+            }
+        }
     }
 
     /// Match an identifier **binding** (declaration): consult only the frame it
@@ -247,19 +265,19 @@ impl<'f> Bindings<'f> {
                 (None, Some(_)) => false,
                 (None, None) => {
                     self.bind(0, needle, subject);
+                    self.record_free(needle, subject);
                     true
                 }
             }
         })
     }
 
-    /// The root frame's template→subject map restricted to the free names: what
-    /// each free identifier bound to in this match.
+    /// What each free identifier bound to in this match, for the free names that
+    /// bound one subject name throughout.
     fn free_bindings(&self) -> BTreeMap<String, String> {
-        let root = &self.scopes[0].forward;
-        self.free
+        self.free_seen
             .iter()
-            .filter_map(|name| Some((name.clone(), root.get(name)?.clone())))
+            .filter_map(|(name, subject)| Some((name.clone(), subject.clone()?)))
             .collect()
     }
 }

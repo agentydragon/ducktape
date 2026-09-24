@@ -1448,6 +1448,38 @@ mod tests {
     }
 
     #[test]
+    fn chunk_resolver_resolves_group_that_references_a_renamed_target_by_chunk_name() {
+        js_ast::with_swc_globals(|| {
+            // `wrap` references the chunk's `q` by its chunk spelling while the
+            // group renames that same declarator to `readable`.
+            let chunk = module("const z = 0, w = () => use(q), q = () => 1;\n");
+            let selector =
+                group("const DECLARATORS_BEFORE = null, wrap = () => use(q), readable = () => 1;");
+            let exports = exports(&[("wrap", "Wrap"), ("readable", "Readable")]);
+            let resolver = ChunkResolver::new(&chunk);
+            let resolved = resolver
+                .resolve_member_group("test", &selector, &exports)
+                .expect("resolver resolves the group");
+            assert_eq!(resolved.bindings["wrap"].binding_name, "w");
+            assert_eq!(resolved.bindings["readable"].binding_name, "q");
+            let candidates = resolver
+                .member_group_candidates("test", &selector, &exports)
+                .expect("group candidates");
+            let free_bindings: Vec<_> = candidates
+                .iter()
+                .map(|candidate| &candidate.free_bindings)
+                .collect();
+            assert_eq!(
+                free_bindings,
+                vec![&BTreeMap::from([
+                    ("q".to_string(), "q".to_string()),
+                    ("use".to_string(), "use".to_string()),
+                ])]
+            );
+        });
+    }
+
+    #[test]
     fn chunk_resolver_resolves_general_group() {
         js_ast::with_swc_globals(|| {
             // A multi-statement (general-path) group: a leading anonymous statement

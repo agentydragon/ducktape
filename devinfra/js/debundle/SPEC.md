@@ -24,8 +24,7 @@ template matches a place when their syntax trees are equal up to:
 - **holes** — `ANYTHING`, `EXPR`, `STMT`, `STMT_LIST`, `DECLARATORS` and the other
   hole keywords of <docs/selectors.md> match any subtree of their kind;
 - **alpha-renaming** — binding and value identifiers match any identifier,
-  consistently within their lexical scope; a name the template never declares,
-  consistently across the whole template.
+  consistently within their lexical scope.
 
 An anonymous statement written with a bare `match:` rather than `source_match:`
 skips alpha-renaming: its identifiers must equal the chunk's. Literals,

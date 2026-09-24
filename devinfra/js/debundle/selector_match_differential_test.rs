@@ -558,14 +558,17 @@ fn a_match_reports_what_each_free_identifier_bound_to() {
 }
 
 #[test]
-fn a_free_name_binds_one_chunk_name_across_sibling_functions() {
+fn a_free_name_is_reported_only_when_it_bound_one_chunk_name() {
     js_ast::with_swc_globals(|| {
-        // `helper` is free, so it names one thing outside the template: the two
-        // sibling functions must call the same chunk function.
+        // `helper` is free and binds per frame, so the sibling functions may call
+        // different chunk functions; the match then reports no binding for it.
         let needle = "function a(){ helper(); }\nfunction b(){ helper(); }";
         assert_eq!(
             alpha_sequence(needle, "function x(){ f(); }\nfunction y(){ g(); }"),
-            vec![],
+            vec![selector_match::Matched {
+                site: vec![Some(0), Some(1)],
+                free_bindings: pairs(&[]),
+            }],
         );
         assert_eq!(
             alpha_sequence(needle, "function x(){ f(); }\nfunction y(){ f(); }"),
@@ -574,49 +577,30 @@ fn a_free_name_binds_one_chunk_name_across_sibling_functions() {
                 free_bindings: pairs(&[("helper", "f")]),
             }],
         );
-        // The same holds inside one statement (sibling object methods).
-        let needle = "const o = { a() { helper(); }, b() { helper(); } };";
-        for (subject, expected) in [
-            ("const q = { a() { f(); }, b() { g(); } };", false),
-            ("const q = { a() { f(); }, b() { f(); } };", true),
-        ] {
-            assert_eq!(
-                selector_match::matches(
-                    &facts(needle),
-                    &facts(subject),
-                    Mode::AlphaAll,
-                    &free(needle)
-                )
-                .expect("supported"),
-                expected,
-                "{subject:?}",
-            );
-        }
-        // And the root-frame bijection keeps two distinct free names distinct.
-        assert_eq!(
-            alpha_sequence(
-                "function a(){ foo(); }\nfunction b(){ bar(); }",
-                "function x(){ f(); }\nfunction y(){ f(); }",
-            ),
-            vec![],
-        );
     });
 }
 
 #[test]
-fn declared_names_stay_per_scope_alongside_a_free_name() {
+fn a_free_name_may_bind_the_chunk_name_of_a_renamed_declaration() {
     js_ast::with_swc_globals(|| {
-        // The free `helper` binds once at the root while each function's param
-        // stays an independent binding of its own scope.
+        // The template renames the chunk's `q` to `readable` yet references it by
+        // its chunk spelling: the free `q` (inside the arrow) and the declared
+        // `readable` both bind chunk `q`, and the statement still matches.
+        let needle = "const DECLARATORS_BEFORE = null, wrap = () => use(q), readable = () => 1;";
+        let subject = facts("const z = 0, w = () => use(q), q = () => 1;");
+        let alignment = selector_match::var_declarator_alignment(
+            &facts(needle),
+            &subject,
+            Mode::AlphaAll,
+            &[],
+            &free(needle),
+        )
+        .expect("supported")
+        .expect("the renamed declaration matches");
+        assert_eq!(alignment.site, vec![None, Some(1), Some(2)]);
         assert_eq!(
-            alpha_sequence(
-                "function a(p){ helper(p); }\nfunction b(p){ helper(p); }",
-                "function x(e){ f(e); }\nfunction y(t){ f(t); }",
-            ),
-            vec![selector_match::Matched {
-                site: vec![Some(0), Some(1)],
-                free_bindings: pairs(&[("helper", "f")]),
-            }],
+            alignment.free_bindings,
+            pairs(&[("q", "q"), ("use", "use")])
         );
     });
 }
