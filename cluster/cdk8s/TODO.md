@@ -120,11 +120,6 @@ retiring a test means deriving both sides from one value.
   configures another, undeployed binary. Closing it needs the script's requirements in a
   form the generator reads (a Python bootstrap with its own `Settings`, or a declaration in
   the script), a design for the operator.
-- **`authentik/app`** — `test_authentik_blueprint_contracts.py`'s
-  `configMapGenerator.files` list vs. a glob of `blueprints/*.yaml`: the
-  `kustomization.yaml` is still hand-written, so a generated one listing the glob would
-  close it. The outpost/provider referential-integrity half walks Authentik's blueprint
-  DSL (`!Find`/`!KeyOf`) and stays an external-format check.
 
 ## Parked — lower priority
 
