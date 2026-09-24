@@ -3706,6 +3706,32 @@ spec:
         - GET
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: agentplane-testing
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - agentplane-testing.allegedly.works
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: github-downloads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - github.com
+        - codeload.github.com
+        - objects.githubusercontent.com
+        - release-assets.githubusercontent.com
+      methods:
+        - GET
+        - HEAD
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressBinding
 metadata:
   annotations:
@@ -3725,6 +3751,8 @@ spec:
     - grocy-sf-readonly
     - home-assistant-readonly
     - coinbase
+    - agentplane-testing
+    - github-downloads
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet

@@ -143,6 +143,7 @@ def chart(app: App) -> Chart:
     # Only this environment's chart gets the agent-operator Role/RoleBinding -- see
     # `rbac.AgentRbac`'s own docstring for why it must not be in staging's.
     rbac.AgentRbac(chart, "rbac", ENV)
+    rbac.AcceptanceToken(chart, "acceptance-token", ENV)
     add_testing_fixtures(chart)
     dex.Dex(chart, "dex")
     EgressCredentials(
