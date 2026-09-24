@@ -361,8 +361,6 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/agents/public-coder-agent/app/**"
           to: "@artifact/cluster/k8s/agents/public-coder-agent/app/"
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/namespace/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/namespace/"
         - from: "@repo/cluster/k8s/agents/public-coder-agent/proxy/**"
           to: "@artifact/cluster/k8s/agents/public-coder-agent/proxy/"
         - from: "@repo/cluster/k8s/agents/public-coder-agent/sshpiper/**"
