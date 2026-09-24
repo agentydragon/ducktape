@@ -866,12 +866,27 @@ type Operational = Extract<ThreadEntity["state"], { operational: unknown }>["ope
 
 /** The browser's sync of the thread, the runner feed into the server (`operational`) and the
  * harness process are independent state machines; this collapses them into one dot by severity,
- * worst axis first. While the sync is not current, the other two are not either. */
-function threadStatus(sync: ThreadState, operational: Operational | null, harness: string | null): ThreadStatus {
+ * worst axis first. While the sync is not current, the rest is not either; and an archived thread
+ * or an unavailable sandbox makes the retained feed and harness state history, not a live claim. */
+function threadStatus({
+  sync,
+  archived,
+  available,
+  operational,
+  harness,
+}: {
+  sync: ThreadState;
+  archived: boolean;
+  available: boolean;
+  operational: Operational | null;
+  harness: string | null;
+}): ThreadStatus {
   if (sync.window?.error) return { color: "red", label: `Thread sync stopped: ${sync.window.error}` };
   if (!sync.window) return { color: "yellow", breathing: true, label: "Connecting…" };
   if (sync.error) return { color: "yellow", breathing: true, label: "Reconnecting…" };
   if (!sync.window.caughtUp) return { color: "yellow", breathing: true, label: "Catching up…" };
+  if (archived) return { color: "gray", label: "Thread archived" };
+  if (!available) return { color: "gray", label: "Sandbox unavailable" };
   if (operational?.status === "failed") return { color: "red", label: "Runner feed failed" };
   if (harness === "lost") return { color: "red", label: "Harness lost" };
   if (operational?.status === "ended") {
@@ -1046,7 +1061,15 @@ function ProjectedSessionBody({
         />
         <Group justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap">
-            <StatusDot {...threadStatus(sync, operational, controls?.harness_state ?? null)} />
+            <StatusDot
+              {...threadStatus({
+                sync,
+                archived: thread.archived,
+                available,
+                operational,
+                harness: controls?.harness_state ?? null,
+              })}
+            />
             <Select
               aria-label="Model"
               data={modelOptions}

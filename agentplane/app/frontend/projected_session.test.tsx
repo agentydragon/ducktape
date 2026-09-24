@@ -33,12 +33,16 @@ const THREAD: ThreadView = {
   harness_state: "HARNESS_STATE_RUNNING",
 };
 
+// What the sandbox inventory stream reports. By default the thread's sandbox is running, so its
+// controls are live.
+let sandboxes: Array<{ name: string; state: string }> = [];
+
 beforeEach(() => {
   localStorage.clear();
+  sandboxes = [{ name: THREAD.sandbox, state: "running" }];
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({ HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] });
   vi.mocked(command).mockReturnValue(new Promise(() => {}));
-  // The sandbox inventory stream: the thread's sandbox is running, so its controls are live.
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
@@ -48,7 +52,7 @@ beforeEach(() => {
           this.dispatchEvent(
             new MessageEvent("snapshot", {
               data: JSON.stringify({
-                sandboxes: [{ name: THREAD.sandbox, state: "running" }],
+                sandboxes,
                 watch: { fresh: true, stale_after_seconds: 90, refreshed_seconds_ago: { sandboxes: 0 } },
               }),
             })
@@ -269,6 +273,21 @@ it.each([
   expect(dot?.getAttribute("aria-label")).toBe(label);
   expect(dot?.getAttribute("style")).toContain(`--mantine-color-${color}-6`);
   expect(dot?.classList.contains("agentplane-breathing-dot")).toBe(breathing);
+});
+
+// Retained history still says the harness runs and the feed failed; neither is live any more.
+it.each([
+  [{ archived: true }, [{ name: THREAD.sandbox, state: "running" }], "Thread archived"],
+  [{ archived: false }, [], "Sandbox unavailable"],
+  [{ archived: false }, [{ name: THREAD.sandbox, state: "suspended" }], "Sandbox unavailable"],
+])("shows a gray dot for thread %o with sandboxes %o: %s", async (overrides, inventory, label) => {
+  vi.mocked(getThread).mockResolvedValue({ ...THREAD, ...overrides });
+  sandboxes = inventory;
+  const dot = (await render(threadState({ rows: [viewState({ status: "failed" })] }))).querySelector(
+    ".agentplane-status-dot"
+  );
+  expect(dot?.getAttribute("aria-label")).toBe(label);
+  expect(dot?.getAttribute("style")).toContain("--mantine-color-gray-6");
 });
 
 it.each([
