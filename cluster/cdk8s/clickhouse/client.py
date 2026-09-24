@@ -34,9 +34,15 @@ from constructs import Construct
 NAME = "clickhouse"  # the ClickHouseInstallation and the Service clients connect through
 NAMESPACE = "clickhouse"
 HOST = f"{NAME}.{NAMESPACE}.svc.cluster.local"
+LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/instance": NAME}  # the installation's Pods
 NATIVE_PORT = 9000
 HTTP_PORT = 8123
 SCHEMA_FILE = "schema.sql"  # the key of every schema ConfigMap, and the hand-written file it is generated from
+PASSWORD_KEY = "password"  # the key of every user's credentials Secret
+# public-coder's read-only account. Its credentials Secret (public-coder-credentials.sops.yaml) is
+# reflected, under the same name, into the namespace of the proxy that presents it.
+PUBLIC_CODER_USER = "public_coder_analytics"
+PUBLIC_CODER_CREDENTIALS = "clickhouse-public-coder-credentials"
 
 IMAGE = (
     "clickhouse/clickhouse-server:26.8.3.105@sha256:d73903d1b61dfe825fc3810542f252966f33d3fd8efb3b3edcbbafb46b524b04"

@@ -1,6 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-package(default_visibility = ["//:__subpackages__"])
+package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
     name = "repository",
@@ -21,6 +21,7 @@ py_test(
         ":repository",
         ":visibility",
         "//:conftest",
+        "//agentplane/action_service:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -33,6 +34,7 @@ py_test(
     deps = [
         ":visibility",
         "//:conftest",
+        "//agentplane/action_service:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

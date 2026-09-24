@@ -128,12 +128,10 @@ deriving both sides of an agreement from one value and retiring the test that co
 them (<TODO.md> § Reachable since the one-to-one conversion).
 
 - **The haku sandbox template's contract** from `haku/runtime/agent/config.py`'s
-  Settings; retires `test_haku_sandbox_contract.py`, `test_mailbox_plan.py` and
-  `test_haku_ci_keda_contract.py`.
+  Settings; retires `test_haku_sandbox_contract.py` and `test_haku_ci_keda_contract.py`.
 - **The public-coder-agent constellation** with `agent-rbac-base`; retires
   `test_haku_public_coder_contract.py` and
   `test_public_coder_clickhouse_reader_contract.py`.
-- **`agentplane-index`** rendered from its Settings.
 - Then the rest of <TODO.md>, in whatever order the neighbourhoods complete.
 
 **Pause during Wave 4, after the first two derivations.** Check what crosses the

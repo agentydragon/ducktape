@@ -6,7 +6,10 @@ import httpx
 import pytest
 import pytest_bazel
 
-from github_policy.visibility import RepositoryVisibilityService, RepositoryVisibilityUnavailableError
+from agentplane.action_service.github_policy.visibility import (
+    RepositoryVisibilityService,
+    RepositoryVisibilityUnavailableError,
+)
 
 NEVER_EXPIRES = 3600.0
 
