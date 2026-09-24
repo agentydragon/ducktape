@@ -2059,6 +2059,10 @@ pub struct BackendSolveResult {
     /// Unsatisfiable cores found after the plain solve was infeasible. The
     /// status and assignments then cover only the targets outside them.
     pub conflicts: Vec<Vec<SelectorTargetId>>,
+    /// Only with [`BackendSolveStatus::Unknown`]: the projected variables
+    /// proven to take one value before the backend stopped; each takes the
+    /// value it has in every assignment. Every other variable is undecided.
+    pub fixed_variables: BTreeSet<ConstraintVariableId>,
 }
 
 pub trait SelectorProblemBackend {

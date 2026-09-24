@@ -167,6 +167,7 @@ fn singleton_no_constraint_backend_result(
         diagnostic: None,
         solver_response_stats: None,
         conflicts: Vec::new(),
+        fixed_variables: BTreeSet::new(),
     })
 }
 
@@ -194,6 +195,11 @@ pub enum SelectorBackendSolveError<E> {
         status: BackendSolveStatus,
     },
     UnsatReturnedAssignments,
+    /// A satisfiable or ambiguous status whose assignments are only a
+    /// sample, so they prove neither uniqueness nor the alternatives.
+    SampleCoverage {
+        status: BackendSolveStatus,
+    },
     UnknownConflictTarget {
         target: SelectorTargetId,
     },
@@ -246,6 +252,13 @@ impl<E: fmt::Display> fmt::Display for SelectorBackendSolveError<E> {
                     "selector backend returned unsatisfiable with assignments"
                 )
             }
+            Self::SampleCoverage { status } => {
+                write!(
+                    f,
+                    "selector backend returned {status:?} with sample assignments, not complete \
+                     target support"
+                )
+            }
             Self::UnknownConflictTarget { target } => {
                 write!(
                     f,
@@ -272,6 +285,7 @@ where
             | Self::MissingOwnerFact { .. }
             | Self::EmptySatisfyingAssignments { .. }
             | Self::UnsatReturnedAssignments
+            | Self::SampleCoverage { .. }
             | Self::UnknownConflictTarget { .. } => None,
         }
     }
@@ -640,25 +654,15 @@ fn decode_backend_result<E>(
             // alone admit no assignment.
             Ok(no_match_result(program, result.diagnostic))
         }
-        BackendSolveStatus::Unknown => Ok(unsupported_result(
-            program,
-            result
-                .diagnostic
-                .unwrap_or_else(|| "selector backend returned unknown".to_string()),
-        )),
+        BackendSolveStatus::Unknown => decode_unknown_result(program, facts, problem, result),
         BackendSolveStatus::Satisfiable | BackendSolveStatus::Ambiguous => {
             let capped = match result.assignment_coverage {
                 BackendAssignmentCoverage::TargetSupportComplete => false,
                 BackendAssignmentCoverage::TargetSupportCapped => true,
                 BackendAssignmentCoverage::Sample => {
-                    return Ok(unsupported_result(
-                        program,
-                        result.diagnostic.unwrap_or_else(|| {
-                            "selector backend returned sample assignments, not complete target \
-                             support"
-                                .to_string()
-                        }),
-                    ));
+                    return Err(SelectorBackendSolveError::SampleCoverage {
+                        status: result.status,
+                    });
                 }
             };
             if result.assignments.is_empty() {
@@ -677,6 +681,50 @@ fn decode_backend_result<E>(
             )
         }
     }
+}
+
+/// The backend stopped before finishing. A target is resolved only when every
+/// variable it projects was proven fixed before the stop; conflict sets found
+/// before it still stand; every other target is undecided.
+fn decode_unknown_result<E>(
+    program: &SelectorProgram,
+    facts: &SelectorFactStore,
+    problem: &CompiledSelectorProblem,
+    result: BackendSolveResult,
+) -> Result<SolverResult, SelectorBackendSolveError<E>> {
+    if result.assignments.is_empty() && !result.fixed_variables.is_empty() {
+        return Err(SelectorBackendSolveError::EmptySatisfyingAssignments {
+            status: result.status,
+        });
+    }
+    let reason = result
+        .diagnostic
+        .unwrap_or_else(|| "the selector backend stopped before deciding".to_string());
+    let mut decided_elsewhere = conflict_outcomes(program, &result.conflicts)?;
+    for projection in &problem.target_projections {
+        let fixed = result.fixed_variables.contains(&projection.owner_variable)
+            && match &projection.binding_projection {
+                Some(TargetBindingProjection::Variable(binding)) => {
+                    result.fixed_variables.contains(binding)
+                }
+                Some(TargetBindingProjection::Const(_)) | None => true,
+            };
+        if !fixed {
+            decided_elsewhere
+                .entry(projection.target)
+                .or_insert_with(|| ClaimOutcome::Undecided {
+                    reason: reason.clone(),
+                });
+        }
+    }
+    decode_satisfying_assignments(
+        program,
+        facts,
+        problem,
+        &result.assignments,
+        false,
+        &decided_elsewhere,
+    )
 }
 
 /// A core of one target means its own constraints admit no assignment, which
@@ -707,15 +755,15 @@ fn conflict_outcomes<E>(
     Ok(outcomes)
 }
 
-/// Targets in `conflicts` take their outcome from it; the assignments do not
-/// cover them.
+/// Targets in `decided_elsewhere` take their outcome from it; the assignments
+/// do not decide them.
 fn decode_satisfying_assignments<E>(
     program: &SelectorProgram,
     facts: &SelectorFactStore,
     problem: &CompiledSelectorProblem,
     assignments: &[BackendAssignment],
     capped: bool,
-    conflicts: &BTreeMap<SelectorTargetId, ClaimOutcome>,
+    decided_elsewhere: &BTreeMap<SelectorTargetId, ClaimOutcome>,
 ) -> Result<SolverResult, SelectorBackendSolveError<E>> {
     let facts = MaterializationFacts::from_store(facts);
     let projections = problem
@@ -730,7 +778,7 @@ fn decode_satisfying_assignments<E>(
             .decode_assignment(assignment)
             .map_err(SelectorBackendSolveError::Assignment)?;
         for target in &program.targets {
-            if conflicts.contains_key(&target.id) {
+            if decided_elsewhere.contains_key(&target.id) {
                 continue;
             }
             let projection = projections
@@ -778,7 +826,7 @@ fn decode_satisfying_assignments<E>(
             .iter()
             .map(|target| SolverClaim {
                 target: target.id,
-                outcome: match conflicts.get(&target.id) {
+                outcome: match decided_elsewhere.get(&target.id) {
                     Some(outcome) => outcome.clone(),
                     None => claims_to_outcome(
                         claims_by_target.remove(&target.id).unwrap_or_default(),
@@ -850,22 +898,6 @@ fn no_match_result(program: &SelectorProgram, diagnostic: Option<String>) -> Sol
             category: "unsatisfiable".to_string(),
             reason,
         }),
-    }
-}
-
-fn unsupported_result(program: &SelectorProgram, message: String) -> SolverResult {
-    SolverResult {
-        claims: program
-            .targets
-            .iter()
-            .map(|target| SolverClaim {
-                target: target.id,
-                outcome: ClaimOutcome::Unsupported {
-                    message: message.clone(),
-                },
-            })
-            .collect(),
-        global_diagnostic: None,
     }
 }
 
@@ -958,6 +990,7 @@ mod tests {
                 diagnostic: None,
                 solver_response_stats: None,
                 conflicts: Vec::new(),
+                fixed_variables: BTreeSet::new(),
             })
         }
     }
@@ -989,6 +1022,7 @@ mod tests {
                         .map(|projection| projection.target)
                         .collect(),
                 ],
+                fixed_variables: BTreeSet::new(),
             })
         }
     }
@@ -1359,8 +1393,8 @@ mod tests {
     }
 
     #[test]
-    fn sample_backend_assignment_maps_to_unsupported_not_unique() {
-        let (program, target) = binding_program();
+    fn sample_coverage_on_a_satisfiable_status_is_a_backend_error() {
+        let (program, _target) = binding_program();
         let backend = SelectingBackend {
             status: BackendSolveStatus::Satisfiable,
             coverage: BackendAssignmentCoverage::Sample,
@@ -1370,14 +1404,10 @@ mod tests {
             ]],
         };
 
-        let result = solve_with_backend(&program, &facts(), &backend).unwrap();
-
-        match result.outcome_for(target) {
-            Some(ClaimOutcome::Unsupported { message }) => {
-                assert!(message.contains("sample assignments"));
-            }
-            other => panic!("expected unsupported sample backend result, got {other:?}"),
-        }
+        assert!(matches!(
+            solve_with_backend(&program, &facts(), &backend),
+            Err(SelectorBackendSolveError::SampleCoverage { .. })
+        ));
     }
 
     #[test]
@@ -1518,6 +1548,7 @@ mod tests {
                 diagnostic: None,
                 solver_response_stats: None,
                 conflicts: vec![vec![left, right], vec![lone]],
+                fixed_variables: BTreeSet::new(),
             },
         )
         .unwrap();
@@ -1544,6 +1575,101 @@ mod tests {
                 }
             })
         );
+    }
+
+    /// Four targets over distinct bindings, decoded from an UNKNOWN response:
+    /// only a target whose variables the backend proved fixed resolves,
+    /// however many rows agree on the others.
+    #[test]
+    fn unknown_resolves_only_proven_fixed_targets() {
+        let mut program = SelectorProgram::default();
+        let targets = fixed_binding_targets(&mut program, &["minA", "minB", "minC", "minD"]);
+        let [fixed, unproven, left, right] = targets[..] else {
+            unreachable!()
+        };
+        let mut facts = SelectorFactStore::default();
+        for (owner, binding) in [(1, "minA"), (2, "minB"), (3, "minC"), (4, "minD")] {
+            facts.push(owner_fact(OwnerId(owner), owner * 10, "function"));
+            facts.push(binding_fact(OwnerId(owner), binding, binding));
+        }
+        let problem =
+            compile_selector_problem(&program, &facts, PresolveScope::WithinTargets).unwrap();
+        let owner_variable = |target| {
+            problem
+                .target_projections
+                .iter()
+                .find(|projection| projection.target == target)
+                .unwrap()
+                .owner_variable
+        };
+        let row = BackendAssignment {
+            values: [(fixed, 1), (unproven, 2)]
+                .into_iter()
+                .map(|(target, value)| BackendVariableAssignment {
+                    variable: owner_variable(target),
+                    value: backend_value_for(&problem, &owner(value)),
+                })
+                .collect(),
+        };
+        let reason = "CP-SAT stopped before proving complete target support";
+
+        let result = decode_backend_result::<Infallible>(
+            &program,
+            &facts,
+            &problem,
+            BackendSolveResult {
+                status: BackendSolveStatus::Unknown,
+                assignment_coverage: BackendAssignmentCoverage::Sample,
+                // Both rows agree on `unproven`, but nothing proved it fixed.
+                assignments: vec![row.clone(), row],
+                diagnostic: Some(reason.to_string()),
+                solver_response_stats: None,
+                conflicts: vec![vec![left, right]],
+                fixed_variables: BTreeSet::from([owner_variable(fixed)]),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.outcome_for(fixed),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(1),
+                    statement_ordinal: StatementOrdinal(10),
+                    binding: Some("minA".to_string()),
+                    provenance: Vec::new(),
+                }
+            })
+        );
+        assert_eq!(
+            result.outcome_for(unproven),
+            Some(&ClaimOutcome::Undecided {
+                reason: reason.to_string()
+            })
+        );
+        // A conflict set found before the stop is still proven.
+        assert_eq!(
+            result.outcome_for(left),
+            Some(&ClaimOutcome::Conflict { with: vec![right] })
+        );
+    }
+
+    #[test]
+    fn unknown_without_rows_leaves_every_target_undecided() {
+        let (program, target) = binding_program();
+        let backend = SelectingBackend {
+            status: BackendSolveStatus::Unknown,
+            coverage: BackendAssignmentCoverage::Sample,
+            assignments: Vec::new(),
+        };
+
+        let result = solve_with_backend(&program, &facts(), &backend).unwrap();
+
+        assert!(matches!(
+            result.outcome_for(target),
+            Some(ClaimOutcome::Undecided { .. })
+        ));
     }
 
     /// Within targets, a target's own candidate restriction that leaves no

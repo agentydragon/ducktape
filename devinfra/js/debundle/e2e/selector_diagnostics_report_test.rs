@@ -1,11 +1,12 @@
 //! `debundle run --dry-run` keep-going: every selector that does not resolve
 //! gets an outcome record in `selector_diagnostics.json` and a line in the
 //! stderr report, and none of them takes the chunk's other selectors down.
+//! With `--fail-fast` the first of them stops the run.
 
 use debundle_e2e_support::{
-    BindingGroup, FixtureOpts, Member, find_outcome, logical_module, logical_module_with_anon,
-    logical_module_with_anon_alpha_many, logical_module_with_binding_groups,
-    read_selector_outcomes, run_dry_run_rejection_fixture,
+    BindingGroup, FixtureOpts, Member, assert_fail_fast_stops_at_first_outcome, find_outcome,
+    logical_module, logical_module_with_anon, logical_module_with_anon_alpha_many,
+    logical_module_with_binding_groups, read_selector_outcomes, run_dry_run_rejection_fixture,
 };
 use serde_json::{Value, json};
 
@@ -160,12 +161,10 @@ export { keepMe };
 }
 
 /// Two pairs of selectors each compete for the one declaration both members
-/// of the pair match, under the injectivity `all_different`. Each pair is its
-/// own contradiction: its selectors name each other, and neither pair takes
-/// down the other or the independent selector.
-#[test]
-fn keep_going_localizes_each_selector_conflict() {
-    let opts = FixtureOpts::new(
+/// of the pair match, under the injectivity `all_different`, beside an
+/// independent selector whose binding a name pin also claims.
+fn conflicts_fixture() -> FixtureOpts<'static> {
+    FixtureOpts::new(
         r#"function alphaOne() {
   return "alpha";
 }
@@ -218,9 +217,14 @@ export { alphaOne, betaOne, gammaOne };
             // witness that the independent selector resolved.
             logical_module("witness/gamma", &[Member::renamed("GammaPin", "gammaOne")]),
         ],
-    );
+    )
+}
 
-    let outcomes = keep_going_outcomes(opts);
+/// Each pair is its own contradiction: its selectors name each other, and
+/// neither pair takes down the other or the independent selector.
+#[test]
+fn keep_going_localizes_each_selector_conflict() {
+    let outcomes = keep_going_outcomes(conflicts_fixture());
     for (export_name, partner, partner_module) in [
         ("AlphaLeft", "AlphaRight", "conflicts/alpha_right"),
         ("AlphaRight", "AlphaLeft", "conflicts/alpha_left"),
@@ -240,6 +244,54 @@ export { alphaOne, betaOne, gammaOne };
         .unwrap_or_else(|| panic!("missing duplicate-claim witness: {outcomes:#?}"));
     assert_eq!(duplicate["outcome"]["binding"], "gammaOne");
     assert_eq!(outcomes.len(), 5, "{outcomes:#?}");
+}
+
+#[test]
+fn fail_fast_stops_at_the_first_conflict() {
+    assert_fail_fast_stops_at_first_outcome(conflicts_fixture, "conflict");
+}
+
+/// Two selectors, each matching two identical functions of its own.
+#[test]
+fn fail_fast_stops_at_the_first_ambiguous_selector() {
+    assert_fail_fast_stops_at_first_outcome(
+        || {
+            FixtureOpts::new(
+                r#"function sharedOne() {
+  return "shared";
+}
+function sharedTwo() {
+  return "shared";
+}
+function twiceOne() {
+  return "twice";
+}
+function twiceTwo() {
+  return "twice";
+}
+console.log(sharedOne(), sharedTwo(), twiceOne(), twiceTwo());
+export { sharedOne, sharedTwo, twiceOne, twiceTwo };
+"#,
+                vec![
+                    logical_module(
+                        "ambiguous/shared",
+                        &[Member::source_alpha(
+                            "Shared",
+                            "function s() {\n  return \"shared\";\n}",
+                        )],
+                    ),
+                    logical_module(
+                        "ambiguous/twice",
+                        &[Member::source_alpha(
+                            "Twice",
+                            "function t() {\n  return \"twice\";\n}",
+                        )],
+                    ),
+                ],
+            )
+        },
+        "ambiguous",
+    );
 }
 
 #[test]

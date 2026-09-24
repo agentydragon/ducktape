@@ -609,33 +609,31 @@ fn dry_run_defaults_to_collecting_source_match_failures_and_duplicate_claims_tog
     }
 }
 
+/// The name pins' duplicate claim is found while requests are built, before
+/// any selector is matched, so fail-fast stops there.
 #[test]
-fn fail_fast_dry_run_stops_before_later_duplicate_claim_diagnostics() {
-    let rejected =
-        run_fail_fast_dry_run_rejection_fixture(source_match_and_duplicate_claims_fixture());
-    let stderr = rejected.stderr;
-    for required in [
-        "diagnostics/missing",
-        "as `MissingFormatter`",
-        "source_matches[].bindings[`selectedFormatter`]",
-        "did not match any top-level declaration",
-    ] {
-        assert!(
-            stderr.contains(required),
-            "stderr missing {required:?}\nstderr:\n{stderr}",
-        );
-    }
-    for absent in [
-        "Selector outcome report",
-        "[duplicate_claim]",
-        "duplicates/card",
-        "as `renderCardAgain`",
-    ] {
-        assert!(
-            !stderr.contains(absent),
-            "fail-fast stderr unexpectedly contained {absent:?}\nstderr:\n{stderr}",
-        );
-    }
+fn fail_fast_dry_run_stops_at_the_duplicate_claim_found_while_building_requests() {
+    let line = assert_fail_fast_stops_at_first_outcome(
+        source_match_and_duplicate_claims_fixture,
+        "duplicate_claim",
+    );
+    assert!(line.contains("\"renderCard\""), "{line}");
+}
+
+/// Without the duplicate pins, the unmatched selector is rejected before the
+/// solve that finds the ambiguous one.
+#[test]
+fn fail_fast_dry_run_stops_at_the_first_no_match() {
+    let line = assert_fail_fast_stops_at_first_outcome(
+        || {
+            let mut opts = source_match_and_duplicate_claims_fixture();
+            opts.logical_modules
+                .retain(|(path, _)| !path.ends_with("/card"));
+            opts
+        },
+        "no_match",
+    );
+    assert!(line.contains("as `MissingFormatter`"), "{line}");
 }
 
 #[test]

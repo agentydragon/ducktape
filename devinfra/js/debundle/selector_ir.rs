@@ -1328,8 +1328,10 @@ pub enum ClaimOutcome {
     Conflict {
         with: Vec<SelectorTargetId>,
     },
-    Unsupported {
-        message: String,
+    /// The backend stopped (a time limit, or UNKNOWN) before proving the
+    /// target's value unique or listing its alternatives.
+    Undecided {
+        reason: String,
     },
 }
 

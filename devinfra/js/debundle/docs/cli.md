@@ -164,8 +164,10 @@ rejection still writes `owner_graph.json` plus the rejection evidence, so
 the `gate` queries work on the rejection that was just reported.
 
 Broad spec migrations continue through selector failures by default and
-report every one from that pass. Use `--fail-fast` only when the first
-failing selector or claim is the useful debugging target.
+report every one from that pass, leaving each failed entity unclaimed. Use
+`--fail-fast` only when the first failing selector or claim is the useful
+debugging target: the first error-severity selector outcome stops the run, with
+that outcome's line as the error. Warnings never stop it.
 
 `debundle spec validate` is `debundle run` in dry-run keep-going mode
 reporting every selector problem: it takes the **same inputs** (`--spec` /
