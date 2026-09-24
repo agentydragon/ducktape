@@ -306,17 +306,18 @@ fn intersect_candidate_postings(
 }
 
 /// Top-level body indices whose statement the needle matches under the fact
-/// matcher, over the chunk's shared EDB. Fails closed if the needle itself is
-/// `Unsupported`.
+/// matcher, over the chunk's shared EDB, each with its free-identifier bindings.
+/// Fails closed if the needle itself is `Unsupported`.
 fn matching_body_indices(
     chunk: &ChunkResolver,
     needle_facts: &chunk_facts::ChunkFacts,
     mode: selector_match::Mode,
-) -> Result<Vec<usize>> {
+) -> Result<Vec<selector_match::Matched<usize>>> {
     // Build the needle index once; probe it (an unsupported construct errors
     // uniformly), then match it against each cached body index.
     let needle_index = selector_match::Index::build(needle_facts);
-    selector_match::matches_indexed(&needle_index, &needle_index, mode)
+    let free = free_identifiers([&needle_index]);
+    selector_match::matches_indexed(&needle_index, &needle_index, mode, &free)
         .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     // Sound root-kind prefilter: when the needle root is a concrete kind, a
     // subject whose root kind differs is a guaranteed non-match (the `nkind !=
@@ -337,8 +338,16 @@ fn matching_body_indices(
         }
         // The needle was probed-supported above, so this per-candidate match skips
         // the redundant needle-only faithful-subset re-check (the dominant self-cost).
-        if selector_match::matches_prepared(&needle_index, &chunk.body_indices[body_idx], mode) {
-            indices.push(body_idx);
+        if let Some(free_bindings) = selector_match::matches_prepared(
+            &needle_index,
+            &chunk.body_indices[body_idx],
+            mode,
+            &free,
+        ) {
+            indices.push(selector_match::Matched {
+                site: body_idx,
+                free_bindings,
+            });
         }
     }
     Ok(indices)
@@ -381,8 +390,10 @@ fn member_matches_var_declarator(
     let needle_facts = needle_item_facts(needle, selector)
         .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
     let mode = selector_mode(selector);
+    let needle_index = selector_match::Index::build(&needle_facts);
+    let free = free_identifiers([&needle_index]);
     // Probe the needle once: an unsupported construct errors uniformly.
-    selector_match::matches(&needle_facts, &needle_facts, mode)
+    selector_match::matches_indexed(&needle_index, &needle_index, mode, &free)
         .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     // Which of the needle declarator's declared bindings is the target.
     let target_binding_idx = match &selector.target_binding {
@@ -418,7 +429,6 @@ fn member_matches_var_declarator(
     // shrinks the scan from every declarator to the few sharing those names. A
     // sound init-kind prefilter then skips declarators whose initializer kind
     // cannot match, before the full match.
-    let needle_index = selector_match::Index::build(&needle_facts);
     let init_prefilter = selector_match::needle_var_declarator_init_kind_prefilter(&needle_facts);
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     for subject_idx in chunk.candidate_declarators(&needle_index, mode, true) {
@@ -429,9 +439,11 @@ fn member_matches_var_declarator(
             continue;
         }
         // Needle probed-supported above; skip the per-candidate needle re-check.
-        if !selector_match::matches_prepared(&needle_index, &subject.index, mode) {
+        let Some(free_bindings) =
+            selector_match::matches_prepared(&needle_index, &subject.index, mode, &free)
+        else {
             continue;
-        }
+        };
         let item = &chunk.module.body[subject.body_idx];
         let declarator = &item_var_decl(item)
             .expect("cached var-declarator subject owner is a var-decl")
@@ -453,6 +465,7 @@ fn member_matches_var_declarator(
         matches.push(MemberBindingMatch {
             body_idx: subject.body_idx,
             binding,
+            free_bindings,
         });
     }
     Ok(matches)
@@ -487,12 +500,19 @@ fn member_matches_declarator_hole(
     let needle_facts = needle_item_facts(needle, selector)
         .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
     let needle_index = selector_match::Index::build(&needle_facts);
+    let free = free_identifiers([&needle_index]);
     let mode = selector_mode(selector);
     // Probe the needle once: an unsupported construct errors uniformly (and makes
     // the per-subject `.expect` below sound — the only `Unsupported` source is the
     // needle construct, invariant across subjects and prebindings).
-    selector_match::var_declarator_alignment_indexed(&needle_index, &needle_index, mode, None)
-        .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
+    selector_match::var_declarator_alignment_indexed(
+        &needle_index,
+        &needle_index,
+        mode,
+        &[],
+        &free,
+    )
+    .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     // The fixed (non-hole) declarators pin invariant tokens any matching owner
     // must carry, so the token index narrows the owner scan (the giant
@@ -515,13 +535,14 @@ fn member_matches_declarator_hole(
                     &needle_index,
                     subject_index,
                     mode,
-                    Some((target_binding, &candidate_binding)),
+                    &[(target_binding, &candidate_binding)],
+                    &free,
                 )
             });
         let Some(alignment) = alignment else {
             continue;
         };
-        let Some(Some(candidate_decl_idx)) = alignment.get(target_decl_idx) else {
+        let Some(Some(candidate_decl_idx)) = alignment.site.get(target_decl_idx) else {
             bail!(
                 "logical_module {request_id}: source_matches[].bindings[`{target_binding}`] for \
                  export `{export_name}` was matched by a DECLARATORS hole, not a pinned \
@@ -541,7 +562,11 @@ fn member_matches_declarator_hole(
                 "source_match resolver: target binding index out of range for matched declarator"
             );
         };
-        matches.push(MemberBindingMatch { body_idx, binding });
+        matches.push(MemberBindingMatch {
+            body_idx,
+            binding,
+            free_bindings: alignment.free_bindings,
+        });
     }
     Ok(matches)
 }
@@ -600,10 +625,12 @@ fn member_matches_single_declarator_target_window(
         &chunk.body_indices,
         target_item_idx,
         selector_mode(selector),
+        &free_identifiers(&needle_indices),
     )
     .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
-    for (target_body_idx, subject_decl_idx) in windows {
+    for window in windows {
+        let (target_body_idx, subject_decl_idx) = window.site;
         let Some(candidate_var) = item_var_decl(&chunk.module.body[target_body_idx]) else {
             bail!("source_match resolver: matched window target is not a variable declaration");
         };
@@ -621,6 +648,7 @@ fn member_matches_single_declarator_target_window(
         matches.push(MemberBindingMatch {
             body_idx: target_body_idx,
             binding,
+            free_bindings: window.free_bindings,
         });
     }
     Ok(matches)
@@ -681,19 +709,22 @@ fn member_matches_multi(
         .iter()
         .map(selector_match::Index::build)
         .collect();
+    let free = free_identifiers(&needle_indices);
     let starts = selector_match::match_fixed_window_sequence_indexed(
         &needle_indices,
         &chunk.body_indices,
         selector_mode(selector),
+        &free,
     )
     .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     for start in starts {
-        let body_idx = start + target_item_idx;
+        let body_idx = start.site + target_item_idx;
         let binding = candidate_target_binding(
             chunk,
             &needles[target_item_idx],
             &needle_indices[target_item_idx],
+            &free,
             body_idx,
             selector_mode(selector),
             request_id,
@@ -701,7 +732,11 @@ fn member_matches_multi(
             target_binding,
             target_binding_idx,
         )?;
-        matches.push(MemberBindingMatch { body_idx, binding });
+        matches.push(MemberBindingMatch {
+            body_idx,
+            binding,
+            free_bindings: start.free_bindings,
+        });
     }
     Ok(matches)
 }
@@ -733,9 +768,16 @@ fn group_matches_declarator_holes(
     let needle_facts = needle_item_facts(needle, selector)
         .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
     let needle_index = selector_match::Index::build(&needle_facts);
+    let free = free_identifiers([&needle_index]);
     let mode = selector_mode(selector);
-    selector_match::var_declarator_alignment_indexed(&needle_index, &needle_index, mode, None)
-        .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
+    selector_match::var_declarator_alignment_indexed(
+        &needle_index,
+        &needle_index,
+        mode,
+        &[],
+        &free,
+    )
+    .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     let mut matches: Vec<MemberBindingGroupMatch> = Vec::new();
     // No prebind here (the alignment runs un-prebound), so an exact-mode needle may
     // require its pinned-declarator identifier spellings; `DECLARATORS`-hole
@@ -749,13 +791,14 @@ fn group_matches_declarator_holes(
             &needle_index,
             &chunk.body_indices[body_idx],
             mode,
-            None,
+            &[],
+            &free,
         ) else {
             continue;
         };
         let mut resolved = BTreeMap::new();
         for (target, (target_decl_idx, target_binding_idx)) in &target_locations {
-            let Some(Some(candidate_decl_idx)) = alignment.get(*target_decl_idx) else {
+            let Some(Some(candidate_decl_idx)) = alignment.site.get(*target_decl_idx) else {
                 bail!(
                     "logical_module {request_id}: source_matches[].bindings[`{target}`] was \
                      matched by a DECLARATORS hole, not a pinned declarator"
@@ -772,9 +815,19 @@ fn group_matches_declarator_holes(
             else {
                 bail!("source_match resolver: target `{target}` binding index out of range");
             };
-            resolved.insert(target.clone(), MemberBindingMatch { body_idx, binding });
+            resolved.insert(
+                target.clone(),
+                MemberBindingMatch {
+                    body_idx,
+                    binding,
+                    free_bindings: alignment.free_bindings.clone(),
+                },
+            );
         }
-        matches.push(MemberBindingGroupMatch { bindings: resolved });
+        matches.push(MemberBindingGroupMatch {
+            bindings: resolved,
+            free_bindings: alignment.free_bindings,
+        });
     }
     Ok(matches)
 }
@@ -815,9 +868,10 @@ fn group_matches_single_declarator(
     let needle_facts = needle_item_facts(needle, selector)
         .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
     let needle_index = selector_match::Index::build(&needle_facts);
+    let free = free_identifiers([&needle_index]);
     let init_prefilter = selector_match::needle_var_declarator_init_kind_prefilter(&needle_facts);
     let mode = selector_mode(selector);
-    selector_match::matches_indexed(&needle_index, &needle_index, mode)
+    selector_match::matches_indexed(&needle_index, &needle_index, mode, &free)
         .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     let mut matches: Vec<MemberBindingGroupMatch> = Vec::new();
     // No prebind (the declarator match is un-prebound); an exact-mode needle may
@@ -830,9 +884,11 @@ fn group_matches_single_declarator(
             continue;
         }
         // Needle probed-supported above; skip the per-candidate needle re-check.
-        if !selector_match::matches_prepared(&needle_index, &subject.index, mode) {
+        let Some(free_bindings) =
+            selector_match::matches_prepared(&needle_index, &subject.index, mode, &free)
+        else {
             continue;
-        }
+        };
         let item = &chunk.module.body[subject.body_idx];
         let declarator = &item_var_decl(item)
             .expect("cached var-declarator subject owner is a var-decl")
@@ -848,10 +904,14 @@ fn group_matches_single_declarator(
                 MemberBindingMatch {
                     body_idx: subject.body_idx,
                     binding: binding.clone(),
+                    free_bindings: free_bindings.clone(),
                 },
             );
         }
-        matches.push(MemberBindingGroupMatch { bindings: resolved });
+        matches.push(MemberBindingGroupMatch {
+            bindings: resolved,
+            free_bindings,
+        });
     }
     Ok(matches)
 }
@@ -866,6 +926,7 @@ fn candidate_target_binding(
     chunk: &ChunkResolver,
     needle: &ModuleItem,
     needle_index: &selector_match::Index,
+    free: &BTreeSet<String>,
     body_idx: usize,
     mode: selector_match::Mode,
     request_id: &str,
@@ -893,7 +954,8 @@ fn candidate_target_binding(
         needle_index,
         &chunk.body_indices[body_idx],
         mode,
-        None,
+        &[],
+        free,
     )
     .with_context(|| {
         format!(
@@ -901,7 +963,7 @@ fn candidate_target_binding(
              index {body_idx}, but its declarators do not align with the selector's"
         )
     })?;
-    let Some(Some(candidate_decl_idx)) = alignment.get(target_decl_idx) else {
+    let Some(Some(candidate_decl_idx)) = alignment.site.get(target_decl_idx) else {
         bail!(
             "logical_module {request_id}: source_matches[].bindings[`{target}`] was matched by a \
              DECLARATORS hole, not a pinned declarator"
@@ -941,17 +1003,19 @@ fn group_matches_general(
         .iter()
         .map(selector_match::Index::build)
         .collect();
+    let free = free_identifiers(&needle_indices);
     let alignments = selector_match::match_top_level_sequence_indexed(
         &needle_indices,
         &chunk.body_indices,
         selector_mode(selector),
+        &free,
     )
     .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     let mut matches = Vec::new();
     for alignment in alignments {
         let mut resolved = BTreeMap::new();
         for (target, (target_item_idx, target_binding_idx)) in &target_locations {
-            let Some(Some(body_idx)) = alignment.get(*target_item_idx) else {
+            let Some(Some(body_idx)) = alignment.site.get(*target_item_idx) else {
                 bail!(
                     "logical_module {request_id}: source_matches[].bindings[`{target}`] was \
                      matched by a STMT_LIST hole, not a pinned statement"
@@ -961,6 +1025,7 @@ fn group_matches_general(
                 chunk,
                 &needles[*target_item_idx],
                 &needle_indices[*target_item_idx],
+                &free,
                 *body_idx,
                 selector_mode(selector),
                 request_id,
@@ -973,10 +1038,14 @@ fn group_matches_general(
                 MemberBindingMatch {
                     body_idx: *body_idx,
                     binding,
+                    free_bindings: alignment.free_bindings.clone(),
                 },
             );
         }
-        matches.push(MemberBindingGroupMatch { bindings: resolved });
+        matches.push(MemberBindingGroupMatch {
+            bindings: resolved,
+            free_bindings: alignment.free_bindings,
+        });
     }
     Ok(matches)
 }
@@ -1039,28 +1108,36 @@ fn member_matches_single_statement(
             )?;
             debug_assert_eq!(target_item_idx, 0, "single-statement needle");
             let needle_index = selector_match::Index::build(&needle_facts);
-            for body_idx in indices {
+            let free = free_identifiers([&needle_index]);
+            for matched in indices {
                 let binding = candidate_target_binding(
                     chunk,
                     needle,
                     &needle_index,
-                    body_idx,
+                    &free,
+                    matched.site,
                     selector_mode(selector),
                     request_id,
                     selector,
                     target_binding,
                     target_binding_idx,
                 )?;
-                matches.push(MemberBindingMatch { body_idx, binding });
+                matches.push(MemberBindingMatch {
+                    body_idx: matched.site,
+                    binding,
+                    free_bindings: matched.free_bindings,
+                });
             }
         }
         None => {
-            for body_idx in indices {
+            for matched in indices {
+                let body_idx = matched.site;
                 let declared = declared_bindings(&chunk.module.body[body_idx]);
                 match declared.as_slice() {
                     [single] => matches.push(MemberBindingMatch {
                         body_idx,
                         binding: single.clone(),
+                        free_bindings: matched.free_bindings,
                     }),
                     [] => {}
                     multiple => bail!(
@@ -1131,7 +1208,7 @@ impl ChunkResolver<'_> {
         &self,
         request_id: &str,
         selector: &AnonymousStatementSelector,
-    ) -> Result<Vec<Vec<usize>>> {
+    ) -> Result<Vec<AnonymousGroupMatch>> {
         let parsed = parse_source_match_selector(request_id, selector)?;
         self.anonymous_group_candidates_parsed(request_id, &parsed)
     }
@@ -1140,7 +1217,7 @@ impl ChunkResolver<'_> {
         &self,
         request_id: &str,
         parsed: &ParsedSourceMatchSelector,
-    ) -> Result<Vec<Vec<usize>>> {
+    ) -> Result<Vec<AnonymousGroupMatch>> {
         self.resolve_anonymous_groups_parsed(request_id, parsed)
     }
 
@@ -1286,7 +1363,7 @@ impl SelectorResolver for ChunkResolver<'_> {
         &self,
         request_id: &str,
         selector: &AnonymousStatementSelector,
-    ) -> Result<Vec<Vec<usize>>> {
+    ) -> Result<Vec<AnonymousGroupMatch>> {
         let parsed = parse_source_match_selector(request_id, selector)?;
         self.resolve_anonymous_groups_parsed(request_id, &parsed)
     }
@@ -1297,7 +1374,7 @@ impl ChunkResolver<'_> {
         &self,
         request_id: &str,
         parsed: &ParsedSourceMatchSelector,
-    ) -> Result<Vec<Vec<usize>>> {
+    ) -> Result<Vec<AnonymousGroupMatch>> {
         let selector = parsed.selector();
         let needles = parsed.body();
         anonymous_selector_statement_indices(request_id, selector, needles)?;
@@ -1310,7 +1387,10 @@ impl ChunkResolver<'_> {
         Ok(
             matching_body_indices(self, &needle_facts, selector_mode(selector))?
                 .into_iter()
-                .map(|body_idx| vec![body_idx])
+                .map(|matched| AnonymousGroupMatch {
+                    body_indices: vec![matched.site],
+                    free_bindings: matched.free_bindings,
+                })
                 .collect(),
         )
     }
@@ -1639,7 +1719,16 @@ mod tests {
                 .resolve_anonymous_groups("test", &selector)
                 .expect("resolver resolves the anonymous statement");
             // matches exactly the `register(widget);` statement at body index 1.
-            assert_eq!(groups, vec![vec![1]]);
+            assert_eq!(
+                groups,
+                vec![AnonymousGroupMatch {
+                    body_indices: vec![1],
+                    free_bindings: BTreeMap::from([(
+                        "register".to_string(),
+                        "register".to_string()
+                    )]),
+                }]
+            );
         });
     }
 
@@ -1708,7 +1797,9 @@ mod tests {
             let groups = ChunkResolver::new(&chunk)
                 .resolve_anonymous_groups("test", &selector)
                 .expect("exact-mode anonymous needle resolves");
-            assert_eq!(groups, vec![vec![2]]);
+            let body_indices: Vec<Vec<usize>> =
+                groups.into_iter().map(|group| group.body_indices).collect();
+            assert_eq!(body_indices, vec![vec![2]]);
         });
     }
 

@@ -28,7 +28,7 @@
 //! cross-gap alpha-binding coupling fail-closed — is the P3/P4 native-lowering
 //! shape recorded in the plan.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use chunk_facts::{ChunkFacts, NodeId, NodeKind};
 use regex::Regex;
@@ -44,6 +44,14 @@ use source_match_holes::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unsupported {
     pub reason: &'static str,
+}
+
+/// One successful match: where it landed (`site`: an alignment, a window start,
+/// a declarator) and what each of the needle's free identifiers bound to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Matched<T> {
+    pub site: T,
+    pub free_bindings: BTreeMap<String, String>,
 }
 
 /// Identifier-matching mode (mirrors `SourceMatchIdentifierMode`). `Exact`
@@ -118,24 +126,29 @@ impl AlphaScope {
 /// resolve against the visible stack innermost-out; bindings (`match_binding`)
 /// consult only their own frame, so a binding may shadow an outer one. A `var`
 /// binding lands in the innermost [`FrameKind::Function`] frame, as JS hoists it.
+/// A template's **free** identifiers (referenced, never declared in the
+/// template) name something outside it, so they bind in the root frame: one free
+/// name maps to one subject name across the whole template, and the root frame's
+/// entries for them are the match's [`Bindings::free_bindings`].
 /// Cloneable so run-hole placement can snapshot/restore across backtracking.
 #[derive(Clone)]
-struct Bindings {
+struct Bindings<'f> {
     scopes: Vec<AlphaScope>,
     /// Matching the declarators of a `var` declaration: its bindings hoist.
     in_var_decl: bool,
+    /// The template's free identifiers (`source_match::free_identifiers`).
+    free: &'f BTreeSet<String>,
 }
 
-impl Default for Bindings {
-    fn default() -> Self {
+impl<'f> Bindings<'f> {
+    fn new(free: &'f BTreeSet<String>) -> Self {
         Self {
             scopes: vec![AlphaScope::new(FrameKind::Function)],
             in_var_decl: false,
+            free,
         }
     }
-}
 
-impl Bindings {
     fn push_scope(&mut self, kind: FrameKind) {
         self.scopes.push(AlphaScope::new(kind));
     }
@@ -156,8 +169,9 @@ impl Bindings {
     /// mapping is honored in **either** mode — that is how a `target_binding`
     /// prebind forces one needle name onto one subject name even under `Exact`
     /// (where the unbound fallback is exact spelling, not a fresh alpha pair).
-    /// An unbound reference names something outside the template; it binds in
-    /// the innermost non-lexical frame.
+    /// An unbound free name binds in the root frame, in either mode, so the match
+    /// records it; any other unbound reference binds in the innermost
+    /// non-lexical frame.
     fn match_ref(&mut self, needle: &str, subject: &str, mode: Mode) -> bool {
         for scope in self.scopes.iter().rev() {
             if let Some(mapped) = scope.forward.get(needle) {
@@ -166,6 +180,13 @@ impl Bindings {
             if scope.backward.contains_key(subject) {
                 return false;
             }
+        }
+        if self.free.contains(needle) {
+            if mode == Mode::Exact && needle != subject {
+                return false;
+            }
+            self.bind(0, needle, subject);
+            return true;
         }
         let frame = self.innermost(|kind| kind != FrameKind::Lexical);
         self.resolve_unbound(frame, needle, subject, mode)
@@ -198,36 +219,48 @@ impl Bindings {
         match mode {
             Mode::Exact => needle == subject,
             Mode::AlphaAll => {
-                let scope = &mut self.scopes[frame];
-                scope
-                    .forward
-                    .insert(needle.to_string(), subject.to_string());
-                scope
-                    .backward
-                    .insert(subject.to_string(), needle.to_string());
+                self.bind(frame, needle, subject);
                 true
             }
         }
     }
 
-    /// Force a needle↔subject mapping in the current frame before matching (the
+    fn bind(&mut self, frame: usize, needle: &str, subject: &str) {
+        let scope = &mut self.scopes[frame];
+        scope
+            .forward
+            .insert(needle.to_string(), subject.to_string());
+        scope
+            .backward
+            .insert(subject.to_string(), needle.to_string());
+    }
+
+    /// Force needle↔subject mappings in the root frame before matching (the
     /// `target_binding` alpha coupling). Honors an existing mapping; fails if
     /// either side is already mapped incompatibly. Used in both identifier modes.
-    fn prebind(&mut self, needle: &str, subject: &str) -> bool {
-        let scope = self.scopes.last_mut().expect("always a root scope");
-        match (scope.forward.get(needle), scope.backward.get(subject)) {
-            (Some(mapped), _) => mapped == subject,
-            (None, Some(_)) => false,
-            (None, None) => {
-                scope
-                    .forward
-                    .insert(needle.to_string(), subject.to_string());
-                scope
-                    .backward
-                    .insert(subject.to_string(), needle.to_string());
-                true
+    fn prebind(&mut self, pairs: &[(&str, &str)]) -> bool {
+        debug_assert_eq!(self.scopes.len(), 1, "prebinding precedes any push");
+        pairs.iter().all(|&(needle, subject)| {
+            let root = &self.scopes[0];
+            match (root.forward.get(needle), root.backward.get(subject)) {
+                (Some(mapped), _) => mapped == subject,
+                (None, Some(_)) => false,
+                (None, None) => {
+                    self.bind(0, needle, subject);
+                    true
+                }
             }
-        }
+        })
+    }
+
+    /// The root frame's template→subject map restricted to the free names: what
+    /// each free identifier bound to in this match.
+    fn free_bindings(&self) -> BTreeMap<String, String> {
+        let root = &self.scopes[0].forward;
+        self.free
+            .iter()
+            .filter_map(|name| Some((name.clone(), root.get(name)?.clone())))
+            .collect()
     }
 }
 
@@ -444,6 +477,15 @@ impl Index {
         self.kind_of(id).as_tag()
     }
 
+    pub fn node_kind(&self, id: NodeId) -> NodeKind {
+        self.kind_of(id)
+    }
+
+    /// Node ids are dense: every node is one of `0..node_count()`.
+    pub fn node_count(&self) -> usize {
+        self.kind.len()
+    }
+
     pub fn children(&self, id: NodeId) -> &[NodeId] {
         self.children_of(id)
     }
@@ -476,8 +518,9 @@ pub fn nodes_match(
     subject: &Index,
     sid: NodeId,
     mode: Mode,
+    free: &BTreeSet<String>,
 ) -> Result<bool, Unsupported> {
-    let mut bindings = Bindings::default();
+    let mut bindings = Bindings::new(free);
     homo(needle, nid, subject, sid, mode, &mut bindings)
 }
 
@@ -502,8 +545,9 @@ pub fn pinned_declarator_matches_in_order(
     subject: &Index,
     sdecls: &[NodeId],
     mode: Mode,
+    free: &BTreeSet<String>,
 ) -> Result<Vec<(usize, usize)>, Unsupported> {
-    let mut bindings = Bindings::default();
+    let mut bindings = Bindings::new(free);
     let mut subject_start = 0;
     let mut matches = Vec::new();
     for (needle_idx, &ndecl) in ndecls.iter().enumerate() {
@@ -593,7 +637,7 @@ fn is_run_hole_keyword(name: &str) -> bool {
 /// hole, for instance, projects to a `prop_name` fact, but it matches *absence*
 /// of members, not a real `ANYTHING`-named property — indexing it would require
 /// a token no real subject carries.
-fn is_hole_keyword(name: &str) -> bool {
+pub fn is_hole_keyword(name: &str) -> bool {
     [
         ANYTHING_HOLE_KEYWORD,
         EXPR_HOLE_KEYWORD,
@@ -1353,9 +1397,9 @@ fn place_declarator_segments(
 /// Match two var-decl statements and, on success, return the greedy-leftmost
 /// declarator alignment (needle declarator index → subject declarator index,
 /// `None` for a `DECLARATORS`-hole-absorbed needle position); `None` if they do
-/// not match. `prebind` pins one needle identifier to one subject identifier
-/// before matching (alpha-mode coupling), so the caller can force the target
-/// binding's identity — a no-op under `Exact`. This composes the whole-statement
+/// not match. `prebind` pins needle identifiers to subject identifiers in the
+/// root frame before matching, so the caller can force the target binding's
+/// identity (in either mode). This composes the whole-statement
 /// var-decl match (wrapper symmetry, `var`/`let`/`const` kind, declarator
 /// alignment): a `Some` result *is* a faithful match. Fail-closed on an
 /// unsupported needle construct.
@@ -1363,9 +1407,16 @@ pub fn var_declarator_alignment(
     needle: &ChunkFacts,
     subject: &ChunkFacts,
     mode: Mode,
-    prebind: Option<(&str, &str)>,
-) -> Result<Option<Vec<Option<usize>>>, Unsupported> {
-    var_declarator_alignment_indexed(&Index::build(needle), &Index::build(subject), mode, prebind)
+    prebind: &[(&str, &str)],
+    free: &BTreeSet<String>,
+) -> Result<Option<Matched<Vec<Option<usize>>>>, Unsupported> {
+    var_declarator_alignment_indexed(
+        &Index::build(needle),
+        &Index::build(subject),
+        mode,
+        prebind,
+        free,
+    )
 }
 
 /// Like [`var_declarator_alignment`], but over **prebuilt** indices, so the
@@ -1376,13 +1427,14 @@ pub fn var_declarator_alignment_indexed(
     needle: &Index,
     subject: &Index,
     mode: Mode,
-    prebind: Option<(&str, &str)>,
-) -> Result<Option<Vec<Option<usize>>>, Unsupported> {
+    prebind: &[(&str, &str)],
+    free: &BTreeSet<String>,
+) -> Result<Option<Matched<Vec<Option<usize>>>>, Unsupported> {
     if let Some(reason) = unsupported_needle_construct(needle) {
         return Err(Unsupported { reason });
     }
     Ok(var_declarator_alignment_prepared(
-        needle, subject, mode, prebind,
+        needle, subject, mode, prebind, free,
     ))
 }
 
@@ -1398,8 +1450,9 @@ pub fn var_declarator_alignment_prepared(
     needle: &Index,
     subject: &Index,
     mode: Mode,
-    prebind: Option<(&str, &str)>,
-) -> Option<Vec<Option<usize>>> {
+    prebind: &[(&str, &str)],
+    free: &BTreeSet<String>,
+) -> Option<Matched<Vec<Option<usize>>>> {
     let (Some((nwrap, nvd)), Some((swrap, svd))) = (var_decl_node(needle), var_decl_node(subject))
     else {
         return None;
@@ -1409,15 +1462,13 @@ pub fn var_declarator_alignment_prepared(
     if nwrap != swrap || needle.operator_of(nvd) != subject.operator_of(svd) {
         return None;
     }
-    let mut bindings = Bindings::default();
-    if let Some((n, s)) = prebind
-        && !bindings.prebind(n, s)
-    {
+    let mut bindings = Bindings::new(free);
+    if !bindings.prebind(prebind) {
         return None;
     }
     // The needle is probed-supported, so no sub-node descent can error (see
     // [`nodes_match`]); unwrap the infallible alignment.
-    align_var_declarators(
+    let alignment = align_var_declarators(
         needle,
         needle.children_of(nvd),
         subject,
@@ -1425,7 +1476,11 @@ pub fn var_declarator_alignment_prepared(
         mode,
         &mut bindings,
     )
-    .expect("needle construct already probed as supported")
+    .expect("needle construct already probed as supported")?;
+    Some(Matched {
+        site: alignment,
+        free_bindings: bindings.free_bindings(),
+    })
 }
 
 fn collect_subtree(index: &Index, node: NodeId, out: &mut HashSet<NodeId>) {
@@ -1442,9 +1497,10 @@ fn collect_subtree(index: &Index, node: NodeId, out: &mut HashSet<NodeId>) {
 /// `STR_LITERAL_MATCHING_RE(...)` predicate's callee + argument (the matcher
 /// handles the whole `Call`, never the bare callee identifier). Shared by the
 /// faithful-subset guard ([`unsupported_needle_construct`]) and the exact-mode
-/// identifier discriminator ([`needle_required_tokens`]) so the two agree exactly
+/// identifier discriminator ([`needle_required_tokens`]), and the free-identifier
+/// classifier (`source_match::free_identifiers`), so they agree exactly
 /// on which identifiers are real comparisons versus absorbed placeholders.
-fn consumed_nodes(index: &Index) -> HashSet<NodeId> {
+pub fn consumed_nodes(index: &Index) -> HashSet<NodeId> {
     let mut consumed: HashSet<NodeId> = HashSet::new();
     for (parent, kids) in index.children.iter().enumerate() {
         let parent_kind = index.kind_of(parent as NodeId);
@@ -1489,19 +1545,31 @@ fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
 /// subject statement under `mode`, with single-node and run holes as described
 /// in the module docs. Errors (fail-closed) on un-lowered constructs (the regex
 /// predicate, a misplaced run hole) rather than returning a weaker match. Both
-/// inputs are single-statement `ChunkFacts`.
-pub fn matches(needle: &ChunkFacts, subject: &ChunkFacts, mode: Mode) -> Result<bool, Unsupported> {
-    matches_indexed(&Index::build(needle), &Index::build(subject), mode)
+/// inputs are single-statement `ChunkFacts`; `free` is the needle's free
+/// identifiers (`source_match::free_identifiers`).
+pub fn matches(
+    needle: &ChunkFacts,
+    subject: &ChunkFacts,
+    mode: Mode,
+    free: &BTreeSet<String>,
+) -> Result<bool, Unsupported> {
+    Ok(matches_indexed(&Index::build(needle), &Index::build(subject), mode, free)?.is_some())
 }
 
 /// Like [`matches`], but over **prebuilt** indices, so a caller resolving many
 /// needles against one chunk body builds each subject `Index` once (cached in
-/// `ChunkResolver`) rather than per `(needle, subject)` pair.
-pub fn matches_indexed(needle: &Index, subject: &Index, mode: Mode) -> Result<bool, Unsupported> {
+/// `ChunkResolver`) rather than per `(needle, subject)` pair. A match returns its
+/// free identifiers' bindings.
+pub fn matches_indexed(
+    needle: &Index,
+    subject: &Index,
+    mode: Mode,
+    free: &BTreeSet<String>,
+) -> Result<Option<BTreeMap<String, String>>, Unsupported> {
     if let Some(reason) = unsupported_needle_construct(needle) {
         return Err(Unsupported { reason });
     }
-    Ok(matches_prepared(needle, subject, mode))
+    Ok(matches_prepared(needle, subject, mode, free))
 }
 
 /// Like [`matches_indexed`], but **without** re-running the needle-only
@@ -1513,15 +1581,19 @@ pub fn matches_indexed(needle: &Index, subject: &Index, mode: Mode) -> Result<bo
 /// it once the needle is known-supported is behavior-preserving — the check is a
 /// pure function of the needle, identical across subjects — and makes the result
 /// infallible.
-pub fn matches_prepared(needle: &Index, subject: &Index, mode: Mode) -> bool {
-    let (Some(&n_root), Some(&s_root)) = (needle.roots.first(), subject.roots.first()) else {
-        return false;
-    };
-    let mut bindings = Bindings::default();
+pub fn matches_prepared(
+    needle: &Index,
+    subject: &Index,
+    mode: Mode,
+    free: &BTreeSet<String>,
+) -> Option<BTreeMap<String, String>> {
+    let (&n_root, &s_root) = (needle.roots.first()?, subject.roots.first()?);
+    let mut bindings = Bindings::new(free);
     // Probed-supported needle: a sub-node descent of an already-probed needle never
     // newly errors (see [`nodes_match`]), so the match is infallible here.
     homo(needle, n_root, subject, s_root, mode, &mut bindings)
         .expect("needle construct already probed as supported")
+        .then(|| bindings.free_bindings())
 }
 
 /// A **sound** per-candidate prefilter for the single-statement `matches` scan:
@@ -1760,10 +1832,11 @@ pub fn match_top_level_sequence(
     needles: &[ChunkFacts],
     subject_items: &[ChunkFacts],
     mode: Mode,
-) -> Result<Vec<Vec<Option<usize>>>, Unsupported> {
+    free: &BTreeSet<String>,
+) -> Result<Vec<Matched<Vec<Option<usize>>>>, Unsupported> {
     let needle_idx: Vec<Index> = needles.iter().map(Index::build).collect();
     let subject_idx: Vec<Index> = subject_items.iter().map(Index::build).collect();
-    match_top_level_sequence_indexed(&needle_idx, &subject_idx, mode)
+    match_top_level_sequence_indexed(&needle_idx, &subject_idx, mode, free)
 }
 
 /// Like [`match_top_level_sequence`], but over **prebuilt** subject indices so a
@@ -1773,7 +1846,8 @@ pub fn match_top_level_sequence_indexed(
     needle_idx: &[Index],
     subject_idx: &[Index],
     mode: Mode,
-) -> Result<Vec<Vec<Option<usize>>>, Unsupported> {
+    free: &BTreeSet<String>,
+) -> Result<Vec<Matched<Vec<Option<usize>>>>, Unsupported> {
     let (segments, _, _) = segment_partition(
         needle_idx.len(),
         |i| is_module_stmt_list_hole(&needle_idx[i]),
@@ -1793,7 +1867,7 @@ pub fn match_top_level_sequence_indexed(
     }
     let mut alignment = vec![None; needle_idx.len()];
     let mut matches = Vec::new();
-    let mut bindings = Bindings::default();
+    let mut bindings = Bindings::new(free);
     place_top_level(
         needle_idx,
         subject_idx,
@@ -1823,7 +1897,8 @@ pub fn match_fixed_window_sequence_indexed(
     needle_idx: &[Index],
     subject_idx: &[Index],
     mode: Mode,
-) -> Result<Vec<usize>, Unsupported> {
+    free: &BTreeSet<String>,
+) -> Result<Vec<Matched<usize>>, Unsupported> {
     for needle in needle_idx {
         if let Some(reason) = unsupported_needle_construct(needle) {
             return Err(Unsupported { reason });
@@ -1835,7 +1910,7 @@ pub fn match_fixed_window_sequence_indexed(
         return Ok(starts);
     }
     for start in 0..=(subject_idx.len() - n) {
-        let mut bindings = Bindings::default();
+        let mut bindings = Bindings::new(free);
         let mut matched = true;
         for offset in 0..n {
             let needle = &needle_idx[offset];
@@ -1851,7 +1926,10 @@ pub fn match_fixed_window_sequence_indexed(
             }
         }
         if matched {
-            starts.push(start);
+            starts.push(Matched {
+                site: start,
+                free_bindings: bindings.free_bindings(),
+            });
         }
     }
     Ok(starts)
@@ -1874,7 +1952,8 @@ pub fn match_single_declarator_target_windows_indexed(
     subject_idx: &[Index],
     target_idx: usize,
     mode: Mode,
-) -> Result<Vec<(usize, usize)>, Unsupported> {
+    free: &BTreeSet<String>,
+) -> Result<Vec<Matched<(usize, usize)>>, Unsupported> {
     for needle in needle_idx {
         if let Some(reason) = unsupported_needle_construct(needle) {
             return Err(Unsupported { reason });
@@ -1886,8 +1965,8 @@ pub fn match_single_declarator_target_windows_indexed(
         return Ok(matches);
     }
     for window_start in 0..=(subject_idx.len() - n) {
-        let mut bindings = Bindings::default();
-        let mut found: Vec<usize> = Vec::new();
+        let mut bindings = Bindings::new(free);
+        let mut found = Vec::new();
         match_declarator_target_window(
             needle_idx,
             subject_idx,
@@ -1899,11 +1978,10 @@ pub fn match_single_declarator_target_windows_indexed(
             None,
             &mut found,
         )?;
-        matches.extend(
-            found
-                .into_iter()
-                .map(|decl| (window_start + target_idx, decl)),
-        );
+        matches.extend(found.into_iter().map(|found| Matched {
+            site: (window_start + target_idx, found.site),
+            free_bindings: found.free_bindings,
+        }));
     }
     Ok(matches)
 }
@@ -1923,11 +2001,14 @@ fn match_declarator_target_window(
     mode: Mode,
     bindings: &mut Bindings,
     chosen_decl: Option<usize>,
-    found: &mut Vec<usize>,
+    found: &mut Vec<Matched<usize>>,
 ) -> Result<(), Unsupported> {
     if item_idx == needles.len() {
         if let Some(decl) = chosen_decl {
-            found.push(decl);
+            found.push(Matched {
+                site: decl,
+                free_bindings: bindings.free_bindings(),
+            });
         }
         return Ok(());
     }
@@ -1998,10 +2079,13 @@ fn place_top_level(
     mode: Mode,
     bindings: &mut Bindings,
     alignment: &mut [Option<usize>],
-    matches: &mut Vec<Vec<Option<usize>>>,
+    matches: &mut Vec<Matched<Vec<Option<usize>>>>,
 ) -> Result<(), Unsupported> {
     let Some(&(needle_start, seg_len)) = segments.get(seg_idx) else {
-        matches.push(alignment.to_vec());
+        matches.push(Matched {
+            site: alignment.to_vec(),
+            free_bindings: bindings.free_bindings(),
+        });
         return Ok(());
     };
     let remaining: usize = segments[seg_idx..].iter().map(|(_, len)| len).sum();

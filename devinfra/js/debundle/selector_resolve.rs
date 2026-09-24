@@ -761,12 +761,12 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 candidates
                     .into_iter()
                     .map(|group| {
-                        let [body_idx] = group.as_slice() else {
+                        let [body_idx] = group.body_indices.as_slice() else {
                             bail!(
                                 "anonymous source_match candidate group has {} statements; \
                                  projected lowering currently supports one statement per \
                                  anonymous claim",
-                                group.len()
+                                group.body_indices.len()
                             );
                         };
                         places.owner_by_body.get(body_idx).copied().with_context(|| {

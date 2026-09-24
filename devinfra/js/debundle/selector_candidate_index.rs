@@ -977,7 +977,7 @@ mod tests {
                 .resolve_anonymous_groups("<test>", selector)
                 .unwrap()
                 .into_iter()
-                .flatten()
+                .flat_map(|group| group.body_indices)
                 .collect()
         })
     }
