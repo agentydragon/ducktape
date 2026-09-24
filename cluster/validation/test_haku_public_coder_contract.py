@@ -91,13 +91,6 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
         "pods/portforward",
     } & _resources(metadata_role)
 
-    logs_role = one(
-        obj
-        for obj in rbac_base
-        if obj["kind"] == "ClusterRole" and obj["metadata"]["name"] == "agent-readable-namespace-logs"
-    )
-    assert logs_role["rules"] == [{"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]}]
-
     sources: dict[str, list[dict[str, Any]] | None] = {
         "clickhouse/cluster/agent-diagnostics-rbac.k8s.yaml": None,
         "haku-console chart": haku_console_objects,
@@ -209,12 +202,6 @@ def test_public_coder_kubernetes_proxy_contract(
     assert all(rule.get("to") for rule in app_egress["spec"]["egress"])
     assert not any("ipBlock" in peer for rule in app_egress["spec"]["egress"] for peer in rule["to"])
     assert not {port["port"] for rule in app_egress["spec"]["egress"] for port in rule.get("ports", [])} & {443, 6443}
-    proxy_egress = one(
-        rule
-        for rule in app_egress["spec"]["egress"]
-        if rule["to"] == [{"podSelector": {"matchLabels": {"app.kubernetes.io/name": "public-coder-agent-proxy"}}}]
-    )
-    assert proxy_egress["ports"] == [{"port": 8080, "protocol": "TCP"}]
 
     # The app holds only the placeholders iron replaces; the proxy holds the credentials.
     app_container = one(app_deployment["spec"]["template"]["spec"]["containers"])

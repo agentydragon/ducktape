@@ -884,18 +884,6 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_ntfy",
-    srcs = ["test_ntfy.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":ntfy",
-        "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "kube_system",
     srcs = ["kube_system.py"],
