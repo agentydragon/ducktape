@@ -44,47 +44,46 @@ export function pruneCommandErrors(errors: Map<string, string>, commandIds: Read
   return new Map(Array.from(errors).filter(([id]) => commandIds.has(id)));
 }
 
-type AlertColor = "red" | "orange";
-
-/** A null color is a turn that ended normally. */
-const TURN_OUTCOMES: Record<TurnStatus, { label: string; color: AlertColor | null }> = {
-  [TurnStatus.UNSPECIFIED]: { label: "Turn ended without a status", color: "red" },
-  [TurnStatus.COMPLETED]: { label: "Turn completed", color: null },
-  [TurnStatus.INTERRUPTED]: { label: "Turn interrupted", color: "orange" },
-  [TurnStatus.FAILED]: { label: "Turn failed", color: "red" },
-  [TurnStatus.PROCESS_LOST]: { label: "Turn lost", color: "red" },
+// An interrupt is usually the operator's own doing, so an interrupted turn reads as ordinary.
+const TURN_OUTCOMES: Record<TurnStatus, { label: string; prominent: boolean }> = {
+  [TurnStatus.UNSPECIFIED]: { label: "Turn ended without a status", prominent: true },
+  [TurnStatus.COMPLETED]: { label: "Turn completed", prominent: false },
+  [TurnStatus.INTERRUPTED]: { label: "Turn interrupted", prominent: false },
+  [TurnStatus.FAILED]: { label: "Turn failed", prominent: true },
+  [TurnStatus.PROCESS_LOST]: { label: "Turn lost", prominent: true },
 };
 
 interface LifecyclePresentation {
   label: string;
-  /** Null for an ordinary observation, which reads as one dimmed line. */
-  alert: { color: AlertColor; diagnostic: string | null } | null;
+  /** A prominent row is an alert; any other reads as dimmed text. */
+  prominent: boolean;
+  diagnostic: string | null;
 }
 
 function lifecyclePresentation(observation: string, event: unknown): LifecyclePresentation {
   const parsed = fromJson(EventSchema, event as JsonValue).observation;
   switch (parsed.case) {
     case "turnStarted":
-      return { label: "Turn started", alert: null };
+      return { label: "Turn started", prominent: false, diagnostic: null };
     case "turnCompleted": {
       const { status, error } = parsed.value;
-      const { label, color } = TURN_OUTCOMES[status];
       const diagnostic = error || (status === TurnStatus.FAILED ? "The harness reported no error details." : null);
-      return { label, alert: color && { color, diagnostic } };
+      return { ...TURN_OUTCOMES[status], diagnostic };
     }
     case "modelChanged":
-      return { label: `Model changed to ${parsed.value.model}`, alert: null };
+      return { label: `Model changed to ${parsed.value.model}`, prominent: false, diagnostic: null };
     case "harnessStarted":
-      return { label: "Harness started", alert: null };
+      return { label: "Harness started", prominent: false, diagnostic: null };
     case "harnessExited":
       return {
         label: parsed.value.exitCode ? `Harness exited with code ${parsed.value.exitCode}` : "Harness exited",
-        alert: null,
+        prominent: false,
+        diagnostic: null,
       };
     case "harnessLost":
-      return { label: "Harness lost", alert: { color: "red", diagnostic: null } };
+      return { label: "Harness lost", prominent: true, diagnostic: null };
     default:
-      return { label: observation.replaceAll("_", " "), alert: null };
+      return { label: observation.replaceAll("_", " "), prominent: false, diagnostic: null };
   }
 }
 
@@ -313,22 +312,28 @@ export function EntityCard({
     );
   }
   if (entity.entityKind === "lifecycle" && "observation" in entity.state) {
-    const { label, alert } = lifecyclePresentation(entity.state.observation, entity.state.event);
-    if (alert === null) {
+    const { label, prominent, diagnostic } = lifecyclePresentation(entity.state.observation, entity.state.event);
+    const wrapped = { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
+    if (!prominent) {
       return (
         <Stack gap={0} data-thread-anchor={entity.cursor.toString()}>
           <Text size="xs" c="dimmed">
             {label}
           </Text>
+          {diagnostic && (
+            <Text size="xs" c="dimmed" style={wrapped}>
+              {diagnostic}
+            </Text>
+          )}
           <Evidence threadId={threadId} entity={entity} />
         </Stack>
       );
     }
     return (
-      <Alert color={alert.color} title={label} role="alert" data-thread-anchor={entity.cursor.toString()}>
-        {alert.diagnostic && (
-          <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {alert.diagnostic}
+      <Alert color="red" title={label} role="alert" data-thread-anchor={entity.cursor.toString()}>
+        {diagnostic && (
+          <Text size="sm" style={wrapped}>
+            {diagnostic}
           </Text>
         )}
         <Evidence threadId={threadId} entity={entity} />

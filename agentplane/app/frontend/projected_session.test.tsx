@@ -79,6 +79,11 @@ it.each<[string, Observation, string]>([
     { case: "turnCompleted", value: { turnId: "test-turn", status: TurnStatus.COMPLETED } },
     "Turn completed",
   ],
+  [
+    "turn_completed",
+    { case: "turnCompleted", value: { turnId: "test-turn", status: TurnStatus.INTERRUPTED } },
+    "Turn interrupted",
+  ],
   ["turn_started", { case: "turnStarted", value: { turnId: "test-turn", model: "test-model" } }, "Turn started"],
   [
     "model_changed",
@@ -108,12 +113,18 @@ it.each(['Test API failure: HTTP 429\n<img src="x" onerror="throw new Error()">'
   }
 );
 
+it("shows an interrupted turn's error dimmed beneath its line, not as an alert", async () => {
+  const container = await renderLifecycle("turn_completed", {
+    case: "turnCompleted",
+    value: { turnId: "test-turn", status: TurnStatus.INTERRUPTED, error: "test interrupt detail" },
+  });
+  expect(textBesideEvidence(container.querySelector('[data-thread-anchor="7"]')!)).toBe(
+    "Turn interruptedtest interrupt detail"
+  );
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
 it.each<[string, string, Observation]>([
-  [
-    "Turn interrupted",
-    "turn_completed",
-    { case: "turnCompleted", value: { turnId: "test-turn", status: TurnStatus.INTERRUPTED } },
-  ],
   [
     "Turn losttest harness exited during the turn",
     "turn_completed",
@@ -121,6 +132,11 @@ it.each<[string, string, Observation]>([
       case: "turnCompleted",
       value: { turnId: "test-turn", status: TurnStatus.PROCESS_LOST, error: "test harness exited during the turn" },
     },
+  ],
+  [
+    "Turn ended without a status",
+    "turn_completed",
+    { case: "turnCompleted", value: { turnId: "test-turn", status: TurnStatus.UNSPECIFIED } },
   ],
   ["Harness lost", "harness_lost", { case: "harnessLost", value: {} }],
 ])("keeps an abnormal ending prominent: %s", async (text, observation, event) => {
