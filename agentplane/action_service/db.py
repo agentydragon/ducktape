@@ -276,7 +276,13 @@ class McpOAuthTokenStateRow(Base):
     """Normalized shared token state and cross-replica refresh claim."""
 
     __tablename__ = "mcp_oauth_token_state"
-    __table_args__ = (UniqueConstraint("server_id"),)
+    __table_args__ = (
+        UniqueConstraint("server_id"),
+        CheckConstraint(
+            "(refresh_failure_action IS NULL) = (refresh_failure_error IS NULL)",
+            name="mcp_oauth_token_state_refresh_failure_whole",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     server_id: Mapped[str] = mapped_column(Text)
@@ -293,6 +299,7 @@ class McpOAuthTokenStateRow(Base):
     refresh_failure_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     refresh_failure_latest_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     refresh_failure_action: Mapped[str | None] = mapped_column(Text)
+    refresh_failure_error: Mapped[str | None] = mapped_column(Text)
     refresh_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

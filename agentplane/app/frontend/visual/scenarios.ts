@@ -253,13 +253,13 @@ export const SCENARIOS: Record<string, Scenario> = {
   mcp_servers: {
     element: "#app",
     route: "/mcp-servers",
-    viewport: { width: 1200, height: 1100 },
+    viewport: { width: 1200, height: 1400 },
     readySelectors: ["[data-mcp-server]"],
   },
   mcp_servers_phone: {
     element: "#app",
     route: "/mcp-servers",
-    viewport: { width: 390, height: 1450 },
+    viewport: { width: 390, height: 1950 },
     readySelectors: ["[data-mcp-server]"],
   },
 
