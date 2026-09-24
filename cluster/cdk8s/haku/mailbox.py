@@ -57,6 +57,7 @@ _IMAGE = "git.allegedly.works/ducktape-ci/stalwart:unset"
 _SMTP_PORT = 2525
 _HTTP_PORT = 8080
 _IMAP_PORT = 1143
+_CONFIG_DIR = "/etc/stalwart"  # the provisioning plan ConfigMap: config.json, initialize.sh
 
 
 def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
@@ -71,7 +72,7 @@ def _stalwart_resources() -> k8s.ResourceRequirements:
 
 def _stalwart_mounts() -> list[k8s.VolumeMount]:
     return [
-        k8s.VolumeMount(name="config", mount_path="/etc/stalwart", read_only=True),
+        k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True),
         k8s.VolumeMount(name="tls", mount_path="/tls", read_only=True),
         k8s.VolumeMount(name="tmp", mount_path="/tmp"),
     ]
@@ -147,7 +148,7 @@ def _add_deployment(chart: Chart) -> None:
                         k8s.Container(
                             name="initialize",
                             image=_IMAGE,
-                            command=["/bin/sh", "/etc/stalwart/initialize.sh"],
+                            command=["/bin/sh", f"{_CONFIG_DIR}/initialize.sh"],
                             termination_message_policy="FallbackToLogsOnError",
                             env=[
                                 _db_password_env(),
@@ -171,7 +172,7 @@ def _add_deployment(chart: Chart) -> None:
                         k8s.Container(
                             name="stalwart",
                             image=_IMAGE,
-                            command=["/usr/local/bin/stalwart", "--config", "/etc/stalwart/config.json"],
+                            command=["/usr/local/bin/stalwart", "--config", f"{_CONFIG_DIR}/config.json"],
                             # Surface crash output in pod status (.lastState.terminated.message):
                             # pods/log in this namespace is RBAC-fenced to the operator, but pod
                             # status is diagnostics-readable -- without this, an initialization

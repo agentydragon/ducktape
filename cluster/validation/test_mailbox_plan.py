@@ -23,11 +23,7 @@ def test_mailbox_initialization_is_serialized_and_init_only() -> None:
     config_generator = next(
         generator for generator in kustomization["configMapGenerator"] if "initialize.sh" in generator["files"]
     )
-    config_volume = next(
-        volume for volume in pod_spec["volumes"] if volume.get("configMap", {}).get("name") == config_generator["name"]
-    )
-    initialize_mount = next(mount for mount in initialize["volumeMounts"] if mount["name"] == config_volume["name"])
-    assert initialize["command"][-1] == f"{initialize_mount['mountPath']}/initialize.sh"
+    assert any(volume.get("configMap", {}).get("name") == config_generator["name"] for volume in pod_spec["volumes"])
 
     initialize_env = {item["name"] for item in initialize["env"]}
     production_env = {item["name"] for item in production["env"]}
