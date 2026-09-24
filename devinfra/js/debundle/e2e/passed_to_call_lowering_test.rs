@@ -17,10 +17,9 @@
 //! ## The registry-distinguished empty class (the headline case)
 //!
 //! The headline shape is a top-level **empty** class with no internal anchor of
-//! its own, distinguished *only* by an external `registry.register(C)` statement —
-//! exactly the registry abort bar the use-site primitives could not reach
-//! (debug/2026_06_19_p4_debt_worklist.md). The argument-pass in the registration
-//! call is what the `passed_to_call` EDB rides.
+//! its own, distinguished *only* by an external `registry.register(C)` statement,
+//! which the use-site primitives cannot reach. The argument-pass in the
+//! registration call is what the `passed_to_call` EDB rides.
 
 use debundle_e2e_support::*;
 

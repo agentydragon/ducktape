@@ -163,15 +163,12 @@ parse/facts/gate checks without writing emitted JS or reports; a gate
 rejection still writes `owner_graph.json` plus the rejection evidence, so
 the `gate` queries work on the rejection that was just reported.
 
-Broad spec migrations continue through selector failures by default and
-report every one from that pass, leaving each failed entity unclaimed; the
-run fails with the report of the first failing chunk in chunk-id order, and
-every chunk's report is in its `selector_diagnostics.json`. Use `--fail-fast`
-only when the first failing selector or claim is the useful debugging target:
-the first error-severity selector outcome stops the run, with that outcome's
-line as the error. "First" is fixed: every chunk's own claims (duplicate
-claims) in chunk-id order, then every chunk's resolve outcomes in chunk-id
-order (<selector_resolution.md> § Order). Warnings never stop it.
+Selector failures follow the keep-going (default) and `--fail-fast` modes of
+<../SPEC.md> § Modes, in the order of <selector_resolution.md> § Order. Broad
+spec migrations keep going, reporting every failure of a pass in each chunk's
+`selector_diagnostics.json`; use `--fail-fast` only when the first failing
+selector or claim is the useful debugging target (its outcome line is the
+error).
 
 Every chunk's selectors resolve as one program. In a tree spec, several
 module trees may scope to one chunk (`module_roots`, <../README.md>); their
@@ -197,8 +194,8 @@ selector at a time and never need it.
 
 `run --dry-run` (per chunk, `reports/tree/<chunk-id>/selector_diagnostics.json`),
 `spec validate` and `spec match-selector` all report selectors as
-`SelectorOutcome` records (`selector_outcome.rs`; kinds in
-<selector_resolution.md> § Outcomes). JSON is `{counts, outcomes}`; `run` and
+`SelectorOutcome` records (`selector_outcome.rs`; kinds and severities in
+<../SPEC.md> § Outcomes). JSON is `{counts, outcomes}`; `run` and
 `validate` list only selectors that did not resolve plus warnings,
 `match-selector` its one probe (with `slack`). Text is one line per record:
 
@@ -382,7 +379,8 @@ Typical debundle outputs:
   `rename_queue.json`, `vendor_swaps.json` when those outputs are
   configured
 - per-chunk reports under `reports/tree/<chunk-id>/`: `chunk.json`,
-  `modules.json`, `owner_graph.json`, plus `cycles.json` /
+  `modules.json`, `owner_graph.json`, `selector_diagnostics.json` when any
+  selector did not resolve or resolved with a warning, plus `cycles.json` /
   `atomic_unit_conflicts.json` only when validation rejects
 - mirrored per-directory and per-file dependency reports under
   `reports/tree/**/index.json` and `reports/tree/**/*.js.json`
@@ -426,7 +424,6 @@ authoring `comment:` fields". The CLI surface is `bindings comment` /
 
 ## See also
 
-- `AGENTS.md` — generic operator workflows that compose these commands.
 - `design.md` — the realizability theorem the gate enforces; § "Layered
   mental model" + § "Factor assembly inside `debundle run`" for the
   factorization algorithm `modules propose` draws from.

@@ -142,12 +142,12 @@ grouped `source_matches[]` suggestions. Treat this run as routine, not a footnot
 it is cheap (tens of seconds whole-spec) and surfaces a population about as large as
 the name-pin backlog that is otherwise invisible.
 
-**3. Re-check existing commented debt.** A name pin kept with a "blocked on X"
-comment (step 6) may have been unblocked since: tooling that has landed (new hole
+**3. Re-check existing noted debt.** A name pin kept with a "blocked on X"
+`note:` (step 6) may have been unblocked since: tooling that has landed (new hole
 forms, declarator support, …) can make a previously-impossible selector convert
 cleanly now. The census lists the name pin but not whether its recorded blocker is
-still real, so periodically re-run the minimizer over commented debt and retire the
-comment where it now converts.
+still real, so periodically re-run the minimizer over noted debt and retire the
+note where it now converts.
 
 A _third_ failure mode is **not** enumerable: a selector that is already
 `source_match` yet pinned on an _incidental_ anchor (the `{ name: ANYTHING }` shape).
@@ -195,8 +195,9 @@ wrong anchor, so slack only prioritizes; it never decides.
    one `source_matches[]` entry rather than emitting N overlapping selectors.
 
 6. **Leave honest debt.** If the entity has no purpose-bearing anchor stable enough
-   to trust, keep the name pin and add a YAML comment saying why. A truthful name
-   pin beats an incidental `source_match` that looks stable and isn't.
+   to trust, keep the name pin and add an `annotations.<export>.note:` saying
+   why. A truthful name pin beats an incidental `source_match` that looks stable
+   and isn't.
 
 ## What makes a good anchor
 
@@ -333,7 +334,7 @@ literal the body it pins, the more fragile, not less.
 **No good anchor at all → leave honest debt.** If the entity is just
 `class DocumentAccessorFactory extends NodeAccessor {}` — empty body, no self-name,
 no distinctive surviving member — then every unique selector is either
-neighbor-borrowed or shape-only. Keep the name pin with a comment (step 6). An
+neighbor-borrowed or shape-only. Keep the name pin with a `note:` (step 6). An
 honest pin beats a photograph that _looks_ structural and durable but isn't.
 
 ## Playbook (common cases)
@@ -367,7 +368,7 @@ honest pin beats a photograph that _looks_ structural and durable but isn't.
 If a selector needs roughly a whole function body, object literal, or class body to
 be unique, that is **minimizer backlog, not stabilization**. A `match` block that
 is `>40` lines with `≤2` holes is an over-pin: it is an exact snapshot of today's
-code. Revert it to the name pin with a comment, and report the gap to the debundler
+code. Revert it to the name pin with a `note:`, and report the gap to the debundler
 (a missing hole / anchor capability) rather than scaling a fragile pattern across
 many modules.
 
@@ -379,14 +380,3 @@ many modules.
 
 This skill only chooses selectors. The minimizer is a tool you call, not the
 authority.
-
-## Background
-
-The design rationale (why anchor choice is an agent judgment rather than a cost
-term) and the verifiability asymmetry are summarized in
-`devinfra/js/debundle/docs/selectors.md`. Both `match-selector` (probes "what does
-this candidate match?" and reports over-pin slack in one shot) and
-`synthesize-selectors --candidates N` (a menu of ranked candidates rather than the
-minimizer's single pick) have landed. The two-bundle-version dogfood pair is the
-eventual scorecard for whether these instructions actually produce durable
-selectors.
