@@ -125,8 +125,6 @@ retiring a test means deriving both sides from one value.
     name hash (the proxy's `reloader.stakater.com/auto` already rolls it on a content
     change) and its comments move into Python, so rendering it is a rendered change and
     waits for the operator.
-  - The ClickHouse reader's account, Secret and selectors across
-    `clickhouse/installation.py`, the proxy and the app (`test_public_coder_proxy.py`).
   - The proxy's and the piper's ingress rules spell the app's labels, because
     `public_coder_agent_config` imports both modules for their addresses
     (`test_public_coder_agent_config.py`'s `test_proxy_admits_the_app`).

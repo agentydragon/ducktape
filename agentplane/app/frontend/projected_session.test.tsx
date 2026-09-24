@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
 
-import { create, toJson } from "@bufbuild/protobuf";
+import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { EventSchema, ItemKind } from "../../protocol/event_pb";
+import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
 import { command, getThread, models, type ThreadView } from "./client";
 import { EntityCard, ProjectedSession, pruneCommandErrors } from "./projected_session";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
@@ -389,6 +389,13 @@ async function renderCard(card: ThreadEntity, bodies: Record<string, string>): P
   return container;
 }
 
+type Observation = MessageInitShape<typeof EventSchema>["observation"];
+
+function renderLifecycle(observation: string, event: Observation): Promise<HTMLDivElement> {
+  const state = { observation, event: toJson(EventSchema, create(EventSchema, { observation: event })) };
+  return renderCard(entity("lifecycle", state, {}), {});
+}
+
 async function disclose(container: HTMLElement, summary: string): Promise<HTMLDetailsElement> {
   const control = [...container.querySelectorAll("summary")].find((element) => element.textContent === summary);
   if (!control) throw new Error(`no ${summary} disclosure`);
@@ -449,17 +456,75 @@ describe("EntityCard", () => {
     expect(container.querySelector(".agentplane-markdown, strong, li")).toBeNull();
   });
 
-  it("renders a lifecycle event's details as highlighted JSON", async () => {
-    const event = create(EventSchema, {
-      observation: { case: "harnessStderr", value: { text: "warning: test stderr" } },
+  it.each<[string, Observation, string]>([
+    [
+      "turn_completed",
+      { case: "turnCompleted", value: { turnId: "test-turn", status: TurnStatus.COMPLETED } },
+      "Turn completed",
+    ],
+    [
+      "turn_completed",
+      { case: "turnCompleted", value: { turnId: "test-turn", status: TurnStatus.INTERRUPTED } },
+      "Turn interrupted",
+    ],
+    ["turn_started", { case: "turnStarted", value: { turnId: "test-turn", model: "test-model" } }, "Turn started"],
+    [
+      "model_changed",
+      { case: "modelChanged", value: { previousModel: "test-model", model: "test-model-next" } },
+      "Model changed to test-model-next",
+    ],
+    ["harness_exited", { case: "harnessExited", value: { exitCode: 3 } }, "Harness exited with code 3"],
+  ])("shows an ordinary %s as one line with no disclosure of its own", async (observation, event, line) => {
+    const container = await renderLifecycle(observation, event);
+    const row = container.querySelector('[data-thread-anchor="1"]')!;
+    // No disclosure of its own: the raw event is reached through the row's Evidence.
+    expect(row.querySelector("details, summary")).toBeNull();
+    expect(row.querySelector('button[aria-label="Evidence"]')).not.toBeNull();
+    expect(row.textContent).toBe(line);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it.each(['Test API failure: HTTP 429\n<img src="x" onerror="throw new Error()">', ""])(
+    "shows a failed turn's error as a plain-text alert: %j",
+    async (error) => {
+      const container = await renderLifecycle("turn_completed", {
+        case: "turnCompleted",
+        value: { turnId: "test-failed-turn", status: TurnStatus.FAILED, error },
+      });
+      const alert = container.querySelector('[role="alert"][data-thread-anchor="1"]')!;
+      expect(alert.textContent).toBe(`Turn failed${error || "The harness reported no error details."}`);
+      expect(alert.querySelector("img")).toBeNull();
+    }
+  );
+
+  it("shows an interrupted turn's error dimmed beneath its line, not as an alert", async () => {
+    const container = await renderLifecycle("turn_completed", {
+      case: "turnCompleted",
+      value: { turnId: "test-turn", status: TurnStatus.INTERRUPTED, error: "test interrupt detail" },
     });
-    const container = await renderCard(
-      entity("lifecycle", { observation: "harness_stderr", event: toJson(EventSchema, event) }, {}),
-      {}
+    expect(container.querySelector('[data-thread-anchor="1"]')?.textContent).toBe(
+      "Turn interruptedtest interrupt detail"
     );
-    const details = [...container.querySelectorAll("details")].find(
-      (element) => element.querySelector("summary")?.textContent === "Lifecycle details"
-    );
-    expect(details?.querySelector(".agentplane-hljs .hljs-string")?.textContent).toBe('"warning: test stderr"');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it.each<[string, string, Observation]>([
+    [
+      "Turn losttest harness exited during the turn",
+      "turn_completed",
+      {
+        case: "turnCompleted",
+        value: { turnId: "test-turn", status: TurnStatus.PROCESS_LOST, error: "test harness exited during the turn" },
+      },
+    ],
+    [
+      "Turn ended without a status",
+      "turn_completed",
+      { case: "turnCompleted", value: { turnId: "test-turn", status: TurnStatus.UNSPECIFIED } },
+    ],
+    ["Harness lost", "harness_lost", { case: "harnessLost", value: {} }],
+  ])("keeps an abnormal ending prominent: %s", async (text, observation, event) => {
+    const container = await renderLifecycle(observation, event);
+    expect(container.querySelector('[role="alert"][data-thread-anchor="1"]')?.textContent).toBe(text);
   });
 });

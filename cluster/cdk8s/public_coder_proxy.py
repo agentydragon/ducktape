@@ -54,6 +54,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 )
 
 from cluster.cdk8s import cilium, external_creds, public_coder_devbox
+from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
@@ -66,7 +67,7 @@ NAMESPACE = "public-coder-agent"
 # The ConfigMap the kustomization.yaml's configMapGenerator renders from iron.yaml.
 _CONFIG_MAP_NAME = "public-coder-agent-proxy-config"
 _CA_SECRET_NAME = "public-coder-agent-proxy-ca"
-_LABELS = {"app.kubernetes.io/name": NAME}
+LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/iron-proxy:unset"
 PROXY_PORT = 8080
 _METRICS_PORT = 9090
@@ -192,7 +193,7 @@ def _container() -> k8s.Container:
             # The agent sees only the corresponding placeholder. This password is valid solely for
             # the native read-only public_coder_analytics ClickHouse account and is substituted by
             # iron.yaml on the private ClusterIP host.
-            _secret_env("CLICKHOUSE_PUBLIC_CODER_PASSWORD", "clickhouse-public-coder-credentials", "password"),
+            _secret_env("CLICKHOUSE_PUBLIC_CODER_PASSWORD", client.PUBLIC_CODER_CREDENTIALS, client.PASSWORD_KEY),
             # The same bearer used by aiquota-api. It is reflected here solely for iron-proxy to
             # substitute into the agent's placeholder on the two read endpoints; the OpenClaw
             # workload never receives it.
@@ -230,13 +231,13 @@ def _deployment(scope: Construct) -> None:
         scope,
         "deployment",
         metadata=k8s.ObjectMeta(
-            name=NAME, namespace=NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
+            name=NAME, namespace=NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=LABELS),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=LABELS),
                 spec=k8s.PodSpec(
                     # Private package in the in-cluster Forgejo registry. The credential is
                     # reflected into this namespace by cluster/k8s/forgejo-images/.
@@ -274,7 +275,7 @@ def _service(scope: Construct) -> None:
         "service",
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
         spec=k8s.ServiceSpec(
-            selector=_LABELS,
+            selector=LABELS,
             ports=[
                 k8s.ServicePort(name="proxy", port=PROXY_PORT, target_port=k8s.IntOrString.from_number(PROXY_PORT)),
                 # iron-proxy's Prometheus metrics. mitmproxy's `mitmweb` UI on 8081 goes with it
@@ -298,7 +299,7 @@ def _ingress_policy(scope: Construct) -> None:
         scope,
         "ingress",
         metadata=metadata("allow-public-coder-agent-proxy-ingress", NAMESPACE),
-        selector=_LABELS,
+        selector=LABELS,
         ingress=[
             cilium.ingress_from(
                 # Spelled here: public_coder_agent_config imports this module for the proxy's address.
@@ -336,7 +337,7 @@ def _egress_policy(scope: Construct) -> None:
         scope,
         "egress",
         metadata=metadata("allow-public-coder-agent-proxy-egress", NAMESPACE),
-        selector=_LABELS,
+        selector=LABELS,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # `world` alone does not mean "everywhere". Cilium carves the cluster's own nodes out
@@ -353,14 +354,7 @@ def _egress_policy(scope: Construct) -> None:
             # The agent's normalized analytics reads leave the app through this Iron proxy, then
             # use the private ClickHouse HTTP ClusterIP service. Do not grant this egress to the
             # app Pod itself.
-            cilium.egress_to(
-                {
-                    "k8s:io.kubernetes.pod.namespace": "clickhouse",
-                    "k8s:app.kubernetes.io/name": "clickhouse",
-                    "k8s:app.kubernetes.io/instance": "clickhouse",
-                },
-                8123,
-            ),
+            cilium.egress_to(_endpoint(client.NAMESPACE, client.LABELS), client.HTTP_PORT),
             # The confined configuration, for restoration: TCP 443 by toFQDNs to the GitHub hosts
             # (clone, push to forks, and open pull requests via the REST API) github.com,
             # api.github.com, codeload.github.com, objects.githubusercontent.com,

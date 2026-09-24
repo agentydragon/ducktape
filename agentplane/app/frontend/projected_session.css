@@ -32,3 +32,12 @@
     transform: scale(1.15);
   }
 }
+
+/* The operator's own input: a filled bubble at the right, where every other row is a bordered
+   full-width card, so role reads from position and colour without a "user" label. The capped width
+   keeps a short message from stretching edge to edge. Mantine's light variant follows the colour
+   scheme. */
+.agentplane-user-bubble {
+  background-color: var(--mantine-color-blue-light);
+  max-width: min(34rem, 80%);
+}

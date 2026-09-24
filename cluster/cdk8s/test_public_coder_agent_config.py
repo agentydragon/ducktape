@@ -3,7 +3,8 @@
 The profile's RBAC is spread over the rbac-base, Haku console, ClickHouse diagnostics,
 ducktape-flux and public-coder app charts; its traffic over the app and its credential proxy.
 The seam with the hand-written iron config stays in
-`//cluster/validation:test_haku_public_coder_contract`.
+`//cluster/validation:test_haku_public_coder_contract`, and the ClickHouse reader's in
+`//cluster/validation:test_public_coder_clickhouse_reader_contract`.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from cluster.cdk8s import (
     public_coder_agent_config,
     public_coder_proxy,
 )
-from cluster.cdk8s.clickhouse import installation
+from cluster.cdk8s.clickhouse import client, installation
 from cluster.cdk8s.haku import console_config
 from cluster.cdk8s.haku.charts import console_chart
 
@@ -177,6 +178,13 @@ def test_app_egress_reaches_the_internet_only_through_the_proxy(app_objects: lis
     assert all(rule.get("to") for rule in egress)
     assert not any("ipBlock" in peer for rule in egress for peer in rule["to"])
     assert not {port["port"] for rule in egress for port in rule.get("ports", [])} & {443, 6443}
+
+
+def test_app_reaches_clickhouse_only_through_the_proxy(app_objects: list[dict[str, Any]]) -> None:
+    """ClickHouse stays out of NO_PROXY: only the proxy replaces the app's password placeholder."""
+    container = one(_one(app_objects, "Deployment")["spec"]["template"]["spec"]["containers"])
+    no_proxy = one(entry["value"] for entry in container["env"] if entry["name"] == "NO_PROXY").split(",")
+    assert not {client.HOST, client.HOST.removesuffix(".cluster.local")} & set(no_proxy)
 
 
 def test_proxy_aiquota_bearer_is_mirrored_into_its_namespace(proxy_objects: list[dict[str, Any]]) -> None:

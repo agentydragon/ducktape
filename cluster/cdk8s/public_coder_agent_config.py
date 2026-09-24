@@ -24,6 +24,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import external_creds, public_coder_proxy, public_coder_sshpiper
+from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator, remote_data
 from cluster.cdk8s.generation import config_map_chart, write_charts
@@ -412,7 +413,7 @@ def _openclaw_container() -> k8s.Container:
             # is deliberately a non-secret placeholder: the sibling Iron proxy swaps it only
             # inside Authorization for the private ClickHouse ClusterIP host. See
             # ../proxy/iron.yaml.
-            _env("CLICKHOUSE_PUBLIC_CODER_USER", "public_coder_analytics"),
+            _env("CLICKHOUSE_PUBLIC_CODER_USER", client.PUBLIC_CODER_USER),
             _env("CLICKHOUSE_PUBLIC_CODER_PASSWORD", "proxy-clickhouse-public-coder-password"),
             # This placeholder grants access only when iron-proxy substitutes it for
             # aiquota.allegedly.works' two read-only API paths. The actual shared bearer is

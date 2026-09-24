@@ -125,12 +125,23 @@ ts_library(
     ],
 )
 
+# actions_history.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "actions_history_css",
+    srcs = ["actions_history.css"],
+)
+
 ts_library(
     name = "actions_history",
-    srcs = ["actions_history.tsx"],
+    srcs = [
+        "actions_history.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":actions",
+        ":actions_history_css",
         ":client",
         ":json_view",
         "//:node_modules/@mantine/core",

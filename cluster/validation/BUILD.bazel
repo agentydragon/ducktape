@@ -158,9 +158,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:manifest_roots",
         "//util/bazel:runfiles",
-        "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -341,7 +339,6 @@ py_test(
     # Synthesizes the public-coder app chart in memory, which needs jsii's Node runtime.
     data = [
         "//cluster/k8s:agents/public-coder-agent/proxy/iron.yaml",
-        "//cluster/k8s:clickhouse/cluster/clickhouse.k8s.yaml",
         "//cluster/k8s:clickhouse/cluster/public-coder-credentials.sops.yaml",
         "//cluster/k8s:kustomization.yaml",
         "@nodejs_linux_amd64//:bin/node",
@@ -351,7 +348,8 @@ py_test(
         ":conftest",
         "//:conftest",
         "//cluster/cdk8s:public_coder_agent_config",
-        "//util/bazel:runfiles",
+        "//cluster/cdk8s:public_coder_proxy",
+        "//cluster/cdk8s/clickhouse:client",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
