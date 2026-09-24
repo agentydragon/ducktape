@@ -177,8 +177,8 @@ Reject as if stable (leave selector debt instead):
 - uniqueness borrowed from an unrelated neighbour, including neighbour-borrowed
   literals;
 - uniqueness that holds only because other selectors claimed the alternatives
-  (`resolved_by: elimination`, a warning naming the claimers): it breaks as
-  soon as a claimer moves. `match-selector` resolves a selector alone, so a
+  or named it (`resolved_by: elimination` or `referenced_by`, a warning naming
+  the claimers or referrers): it breaks as soon as one of them moves. `match-selector` resolves a selector alone, so a
   candidate it proves unique does not have this problem;
 - bare numbers (`0`, `1`), booleans, ubiquitous literals, and a generic object
   key with its value holed (`{ name: ANYTHING }`);
@@ -695,7 +695,8 @@ that defines `open` first. When more than one alignment is possible the
 leftmost is used; that interior choice never changes _which_ declaration
 matched. A selector that matches more than one top-level declaration is
 `ambiguous` unless other entities' claims eliminate the rest, which resolves it
-with `resolved_by: elimination` and a warning (<../SPEC.md> § Outcomes).
+with `resolved_by: elimination` and a warning, or a template naming it picks
+one, `resolved_by: referenced_by` and a warning (<../SPEC.md> § Outcomes).
 
 For class fingerprints, keep method bodies as loose as the selector permits.
 If a stable method name and order are the real anchors, put `STMT_LIST;` in the

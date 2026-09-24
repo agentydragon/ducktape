@@ -107,7 +107,7 @@ tracked in the debug notes above.
 ## Repro
 
 ```bash
-# on wyrm2 (model at /var/lib/colibri/dsv4-iq2/):
+# on wyrm2 (current model path /var/lib/llm-models-ssd/dsv4-iq2/):
 ./build.sh download   # ~91 GB GGUF (if not present)
 ./build.sh cpu        # or: ./build.sh vulkan
 ./run.sh vulkan       # or: ./run.sh cpu

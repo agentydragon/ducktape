@@ -10,6 +10,7 @@ skill_package(
         skill_mapping(
             srcs = [
                 "//devinfra/js/debundle:README.md",
+                "//devinfra/js/debundle/docs:bazel_integration.md",
                 "//devinfra/js/debundle/docs:cli.md",
                 "//devinfra/js/debundle/docs:selectors.md",
                 "//devinfra/js/debundle/docs:spec_editing.md",
