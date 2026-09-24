@@ -1,5 +1,5 @@
-import { Alert, Badge, Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
-import { type JSX, useCallback, useEffect, useState } from "react";
+import { Alert, Badge, Box, Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { type JSX, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import {
   type ActionGroupService,
@@ -59,8 +59,39 @@ function lifecycleColor(health: McpHealth): "green" | "orange" | "gray" {
   }
 }
 
-function LifecycleBadge({ health }: { health: McpHealth }): JSX.Element {
-  return <Badge color={lifecycleColor(health)}>{health == null ? "pending" : (health.reason ?? health.state)}</Badge>;
+// Label/badge pairs in two columns, so the badges line up however the row wraps.
+function States({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <Box style={{ display: "grid", gridTemplateColumns: "auto auto", gap: "4px 6px", alignItems: "center" }}>
+      {children}
+    </Box>
+  );
+}
+
+function StateLabel({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <Text size="xs" c="dimmed">
+      {children}
+    </Text>
+  );
+}
+
+function ConnectionState({ health }: { health: McpHealth }): JSX.Element {
+  return (
+    <>
+      <StateLabel>Connection</StateLabel>
+      <Badge color={lifecycleColor(health)}>{health == null ? "pending" : (health.reason ?? health.state)}</Badge>
+    </>
+  );
+}
+
+function HealthDetail({ health }: { health: McpHealth }): JSX.Element | null {
+  if (health?.detail == null) return null;
+  return (
+    <Text size="sm" c="orange.8" mt="xs" style={{ overflowWrap: "anywhere" }}>
+      {health.detail}
+    </Text>
+  );
 }
 
 export function McpServers({
@@ -152,7 +183,7 @@ export function McpServers({
       )}
       {loading && <Text role="status">Loading MCP servers…</Text>}
       {rows.map((row) => (
-        <Paper key={rowKey(row)} withBorder p="md">
+        <Paper key={rowKey(row)} data-mcp-server={rowKey(row)} withBorder p="md">
           {row.kind === "oauth" ? (
             <>
               <Group justify="space-between" align="flex-start">
@@ -165,7 +196,8 @@ export function McpServers({
                     Scopes: {row.linkage.scopes.length ? row.linkage.scopes.join(", ") : "provider default"}
                   </Text>
                 </div>
-                <Group gap="xs">
+                <States>
+                  <StateLabel>OAuth link</StateLabel>
                   <Badge
                     color={
                       row.linkage.status === "linked"
@@ -178,10 +210,11 @@ export function McpServers({
                     {row.linkage.status}
                   </Badge>
                   {row.group != null && row.linkage.status !== "unlinked" && (
-                    <LifecycleBadge health={row.group.health} />
+                    <ConnectionState health={row.group.health} />
                   )}
-                </Group>
+                </States>
               </Group>
+              {row.group != null && row.linkage.status !== "unlinked" && <HealthDetail health={row.group.health} />}
               <Group justify="flex-end" mt="sm">
                 <Button
                   loading={busy?.serverId === row.linkage.server_id && busy.operation === "link"}
@@ -204,15 +237,20 @@ export function McpServers({
               </Group>
             </>
           ) : (
-            <Group justify="space-between" align="flex-start">
-              <div>
-                <Text fw={600}>{row.group.key}</Text>
-                <Text size="sm" c="dimmed">
-                  {row.group.executor_description}
-                </Text>
-              </div>
-              <LifecycleBadge health={row.group.health} />
-            </Group>
+            <>
+              <Group justify="space-between" align="flex-start">
+                <div>
+                  <Text fw={600}>{row.group.key}</Text>
+                  <Text size="sm" c="dimmed">
+                    {row.group.executor_description}
+                  </Text>
+                </div>
+                <States>
+                  <ConnectionState health={row.group.health} />
+                </States>
+              </Group>
+              <HealthDetail health={row.group.health} />
+            </>
           )}
         </Paper>
       ))}
