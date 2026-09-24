@@ -120,7 +120,7 @@ def _external_secrets(scope: Construct) -> None:
 
 def _ca(scope: Construct) -> None:
     """A dedicated interception root, separate from the cluster internal CA, and the trust
-    bundle publishing it. Standard TLS-interception trust pattern; see agents/mitmproxy/README.md
+    bundle publishing it. Standard TLS-interception trust pattern; see `cluster/cdk8s/mitmproxy.md`
     for the rotation constraint (publish both roots in the Bundle before switching signing keys).
 
     ECDSA P-256 is deliberate and fine: iron-proxy accepts an ECDSA root and mints working leaves

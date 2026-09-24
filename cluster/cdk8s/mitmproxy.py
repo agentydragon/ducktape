@@ -1,6 +1,6 @@
 """agents-mitmproxy: the shared TLS-intercepting proxy that claude-sandbox's external egress is
 forced through, its root CA and the trust bundle its clients read (trust model and CA rotation:
-cluster/k8s/agents/mitmproxy/README.md), and the policies around it. Its own FQDN fence is
+`cluster/cdk8s/mitmproxy.md`), and the policies around it. Its own FQDN fence is
 `egress_fences.mitmproxy_cloud_api`.
 """
 
