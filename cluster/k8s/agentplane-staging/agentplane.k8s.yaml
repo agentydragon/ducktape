@@ -2083,12 +2083,23 @@ spec:
               value: "8888"
             - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
               value: "3128"
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
+              value: 0.0.0.0
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
+              value: "3129"
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
               value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
+          readinessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /readyz
+              port: 3129
+            periodSeconds: 2
+            timeoutSeconds: 1
           resources:
             limits:
               memory: 128Mi
@@ -2997,12 +3008,23 @@ spec:
               value: "8888"
             - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
               value: "3128"
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
+              value: 0.0.0.0
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
+              value: "3129"
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
               value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
+          readinessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /readyz
+              port: 3129
+            periodSeconds: 2
+            timeoutSeconds: 1
           resources:
             limits:
               memory: 128Mi
