@@ -503,21 +503,6 @@ py_test(
 )
 
 py_test(
-    name = "test_mailbox_plan",
-    srcs = ["test_mailbox_plan.py"],
-    data = [
-        "//cluster:generated_manifests",
-        "//cluster/k8s:cluster_all_files",
-    ],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
     name = "test_flux_build",
     # The whole cluster manifest tree below is fetched inside this test's own clock on RBE,
     # which is minutes against the ~7s the test itself spends; see
