@@ -21,9 +21,9 @@ def test_healthz(client) -> None:
 def test_metrics_served_without_operator_session(client) -> None:
     response = client.get("/metrics")
     assert response.status_code == 200
-    # Prometheus scrapes unauthenticated; the token-request histogram is what makes a wedged
-    # OAuth association diagnosable, so its absence would make scraping pointless.
-    assert "haku_mcp_oauth_token_request_duration_seconds" in response.text
+    # Prometheus scrapes unauthenticated; the refresh-failure gauge is what makes a wedged
+    # provider connection diagnosable, so its absence would make scraping pointless.
+    assert "haku_console_connection_refresh_failure_age_seconds" in response.text
 
 
 def test_metrics_not_swallowed_by_spa_fallback(make_client, tmp_path: Path) -> None:
@@ -32,7 +32,7 @@ def test_metrics_not_swallowed_by_spa_fallback(make_client, tmp_path: Path) -> N
     static_dir.mkdir()
     (static_dir / "index.html").write_bytes(b"<!doctype html><title>shell</title>")
     with make_client(static_dir=static_dir) as c:
-        assert "haku_mcp_oauth_token_request_duration_seconds" in c.get("/metrics").text
+        assert "haku_console_connection_refresh_failure_age_seconds" in c.get("/metrics").text
 
 
 def test_config_launch_routine_none_when_unconfigured(client) -> None:

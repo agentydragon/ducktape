@@ -26,8 +26,6 @@ export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
 export type ApprovalDecisionResponse = components["schemas"]["ApprovalDecisionResponse"];
 type ApprovalDecisionRequest = components["schemas"]["ApprovalDecisionRequest"];
 export type ToolCallRecord = components["schemas"]["ToolCallRecord"];
-export type McpOperatorAuthConnectResponse = components["schemas"]["McpOperatorAuthConnectResponse"];
-export type McpOperatorAuthStatus = components["schemas"]["McpOperatorAuthStatus"];
 export type ProviderConnectionConnectResponse = components["schemas"]["ProviderConnectionConnectResponse"];
 export type OperatorConnectionName = ProviderConnectionConnectResponse["connection"];
 export type OAuthConnectionResult =
@@ -201,22 +199,6 @@ export async function fetchToolCalls(
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load tool calls"));
   return { records: data.tool_calls ?? [], nextCursor: data.next_cursor ?? null };
-}
-
-export async function connectMcpOperatorAuth(serverId: string): Promise<McpOperatorAuthConnectResponse> {
-  const { data, error } = await api.POST("/api/mcp/operator-auth/{server_id}/connect", {
-    params: { path: { server_id: serverId } },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to start MCP account link"));
-  return data;
-}
-
-export async function disconnectMcpOperatorAuth(serverId: string): Promise<McpOperatorAuthStatus> {
-  const { data, error } = await api.DELETE("/api/mcp/operator-auth/{server_id}", {
-    params: { path: { server_id: serverId } },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to disconnect MCP account"));
-  return data;
 }
 
 // Per-Operator external account connections (Google today). Connect opens the provider's consent in

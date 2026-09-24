@@ -1,11 +1,29 @@
-import { ActionIcon, Badge, Button, Flex, Group, Paper, Select, Stack, Text, Textarea, Tooltip } from "@mantine/core";
+import {
+  ActionIcon,
+  Badge,
+  Box,
+  Button,
+  Flex,
+  Group,
+  Menu,
+  Paper,
+  Select,
+  Stack,
+  Text,
+  Textarea,
+  Tooltip,
+} from "@mantine/core";
 import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
+import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
+import IconSend from "@tabler/icons-react/dist/esm/icons/IconSend.mjs";
 import IconZoomCode from "@tabler/icons-react/dist/esm/icons/IconZoomCode.mjs";
 import {
   type CSSProperties,
   type JSX,
+  type KeyboardEvent,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -27,7 +45,14 @@ import {
   type NativeFramePage,
   type ThreadView,
 } from "./client";
-import { decimalBigInt, useThreadSync, type PayloadRef, type ThreadEntity, type ThreadWindow } from "./thread_sync";
+import {
+  decimalBigInt,
+  useThreadSync,
+  type PayloadRef,
+  type ThreadEntity,
+  type ThreadState,
+  type ThreadWindow,
+} from "./thread_sync";
 import { historyRows, rowKey, summarizeRun, type HistoryRow } from "./history_rows";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
@@ -36,6 +61,7 @@ import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { ChronologicalDebugLink, ChronologicalDebugProvider } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
+import "./projected_session.css";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
 
@@ -952,6 +978,66 @@ function VirtualizedHistory({
   );
 }
 
+interface ThreadStatus {
+  color: string;
+  label: string;
+  breathing?: boolean;
+}
+
+/** A state shown as a small colored dot rather than a labeled badge: the label is still there for a
+ * screen reader, and for anyone hovering or (on a touch/keyboard device) focusing it. `breathing`
+ * pulses the dot, for a state that is still settling rather than settled. */
+function StatusDot({ color, label, breathing }: ThreadStatus): JSX.Element {
+  return (
+    <Tooltip label={label} events={{ hover: true, focus: true, touch: true }}>
+      <Box
+        component="span"
+        role="img"
+        aria-label={label}
+        title={label}
+        tabIndex={0}
+        className={breathing ? "agentplane-status-dot agentplane-breathing-dot" : "agentplane-status-dot"}
+        style={{ backgroundColor: `var(--mantine-color-${color}-6)` }}
+      />
+    </Tooltip>
+  );
+}
+
+type Operational = Extract<ThreadEntity["state"], { operational: unknown }>["operational"];
+
+/** The browser's sync of the thread, the runner feed into the server (`operational`) and the
+ * harness process are independent state machines; this collapses them into one dot by severity,
+ * worst axis first. While the sync is not current, the rest is not either; and an archived thread
+ * or an unavailable sandbox makes the retained feed and harness state history, not a live claim. */
+function threadStatus({
+  sync,
+  archived,
+  available,
+  operational,
+  harness,
+}: {
+  sync: ThreadState;
+  archived: boolean;
+  available: boolean;
+  operational: Operational | null;
+  harness: string | null;
+}): ThreadStatus {
+  if (sync.window?.error) return { color: "red", label: `Thread sync stopped: ${sync.window.error}` };
+  if (!sync.window) return { color: "yellow", breathing: true, label: "Connecting…" };
+  if (sync.error) return { color: "yellow", breathing: true, label: "Reconnecting…" };
+  if (!sync.window.caughtUp) return { color: "yellow", breathing: true, label: "Catching up…" };
+  if (archived) return { color: "gray", label: "Thread archived" };
+  if (!available) return { color: "gray", label: "Sandbox unavailable" };
+  if (operational?.status === "failed") return { color: "red", label: "Runner feed failed" };
+  if (harness === "lost") return { color: "red", label: "Harness lost" };
+  if (operational?.status === "ended") {
+    return { color: "gray", label: `Runner feed ended · harness ${harness ?? "unknown"}` };
+  }
+  if (harness === null) return { color: "yellow", label: "No harness observed" };
+  if (harness === "stopped") return { color: "gray", label: "Runner feed active · harness stopped" };
+  return { color: "green", label: `Runner feed active · harness ${harness}` };
+}
+
 function ProjectedSessionBody({
   threadId,
   entities,
@@ -966,6 +1052,7 @@ function ProjectedSessionBody({
   available: boolean;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
+  const sync = useThreadSync().useThread();
   const commands = useProjectedCommands(threadId, entities);
   const view = entities.find((row) => row.entityKind === "view_state");
   const controls = view && "controls" in view.state ? view.state.controls : null;
@@ -1008,13 +1095,37 @@ function ProjectedSessionBody({
   const hasPendingCommands = projectedCommands.length > 0;
   const selectedCommandIds = commands.local.commands.slice(0, 128);
 
+  // Two Enters before the cleared draft renders would otherwise submit the same text twice, under
+  // two command ids. Guards one render, not the lifetime of any HTTP request or command.
+  const submitting = useRef(false);
+  useEffect(() => {
+    submitting.current = false;
+  }, [draft]);
+
   function submit(): void {
-    if (!draft.trim() || !running) return;
+    if (!draft.trim() || !running || submitting.current) return;
+    submitting.current = true;
     const value = create(CommandSchema, {
       commandId: crypto.randomUUID(),
       operation: { case: "submitInput", value: { text: draft } },
     });
     if (commands.submit(value)) setDraft("");
+    else submitting.current = false;
+  }
+
+  function composerKey(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (!(event.ctrlKey || event.metaKey)) {
+      submit();
+      return;
+    }
+    // Insert the newline by hand: a textarea ignores Ctrl+Enter, and setting a controlled value
+    // leaves the caret at the end, so put it back where the newline went.
+    const field = event.currentTarget;
+    const at = field.selectionStart;
+    setDraft(`${draft.slice(0, at)}\n${draft.slice(field.selectionEnd)}`);
+    requestAnimationFrame(() => field.setSelectionRange(at + 1, at + 1));
   }
 
   return (
@@ -1082,49 +1193,73 @@ function ProjectedSessionBody({
           value={draft}
           onChange={(event) => setDraft(event.currentTarget.value)}
           placeholder="Enter sends, Ctrl+Enter for a new line"
+          autosize
+          minRows={2}
+          maxRows={12}
           disabled={!running}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
-              event.preventDefault();
-              submit();
-            }
-          }}
+          onKeyDown={composerKey}
         />
-        <Button disabled={!running || !draft.trim()} onClick={submit}>
-          Send
-        </Button>
         <Group justify="space-between" wrap="nowrap">
-          <Select
-            aria-label="Model"
-            data={modelOptions}
-            value={controls?.applied_model ?? null}
-            disabled={!running}
-            onChange={(model) =>
-              model &&
-              commands.submit(
-                create(CommandSchema, {
-                  commandId: crypto.randomUUID(),
-                  operation: { case: "changeModel", value: { model } },
-                })
-              )
-            }
-          />
-          <Group gap="xs">
-            <Button
-              color="red"
-              variant="subtle"
+          <Group gap="xs" wrap="nowrap">
+            <StatusDot
+              {...threadStatus({
+                sync,
+                archived: thread.archived,
+                available,
+                operational,
+                harness: controls?.harness_state ?? null,
+              })}
+            />
+            <Select
+              aria-label="Model"
+              data={modelOptions}
+              value={controls?.applied_model ?? null}
+              placeholder={
+                sync.window?.error || operational?.status === "failed"
+                  ? "Model unavailable"
+                  : !sync.window?.caughtUp
+                    ? "Catching up…"
+                    : "Model"
+              }
               disabled={!running}
-              onClick={() =>
+              w={200}
+              onChange={(model) =>
+                model &&
                 commands.submit(
                   create(CommandSchema, {
                     commandId: crypto.randomUUID(),
-                    operation: { case: "stopRunnerSession", value: {} },
+                    operation: { case: "changeModel", value: { model } },
                   })
                 )
               }
-            >
-              Shut down harness
-            </Button>
+            />
+          </Group>
+          <Group gap="xs" wrap="nowrap">
+            {/* Opens upward: the composer sits at the bottom of the viewport. */}
+            <Menu position="top-end" withArrow shadow="md">
+              <Menu.Target>
+                <ActionIcon size="lg" variant="light" aria-label="More">
+                  <IconDotsVertical size={16} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  color="red"
+                  leftSection={<IconPower size={15} />}
+                  disabled={!running}
+                  onClick={() =>
+                    commands.submit(
+                      create(CommandSchema, {
+                        commandId: crypto.randomUUID(),
+                        operation: { case: "stopRunnerSession", value: {} },
+                      })
+                    )
+                  }
+                >
+                  Shut down harness
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
             <ActionIcon
               size="lg"
               variant="light"
@@ -1142,6 +1277,9 @@ function ProjectedSessionBody({
               }
             >
               <IconPlayerStop size={16} />
+            </ActionIcon>
+            <ActionIcon size="lg" aria-label="Send" disabled={!running || !draft.trim()} onClick={submit}>
+              <IconSend size={16} />
             </ActionIcon>
           </Group>
         </Group>

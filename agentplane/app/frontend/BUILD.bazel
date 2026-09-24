@@ -746,6 +746,12 @@ ts_library(
     ],
 )
 
+# projected_session.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "projected_session_css",
+    srcs = ["projected_session.css"],
+)
+
 ts_library(
     name = "history_rows",
     srcs = ["history_rows.ts"],
@@ -784,6 +790,8 @@ ts_library(
     name = "projected_session",
     srcs = [
         "projected_session.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
         "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
@@ -795,6 +803,7 @@ ts_library(
         ":live",
         ":local_commands",
         ":markdown",
+        ":projected_session_css",
         ":retained_disclosures",
         ":thread_sync",
         ":thread_title",
@@ -855,6 +864,7 @@ ts_library(
     srcs = ["projected_session.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":history_rows",
         ":projected_session",
         ":retained_disclosures",

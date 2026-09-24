@@ -56,10 +56,7 @@ _EXACT_TOOLS = {
     "grocy-sf": ["products_list"],
 }
 _SERVER_CONFIGS: dict[str, dict[str, Any]] = {
-    server_id.replace("-", "_"): {
-        "id": server_id,
-        "backend": {"kind": "remote_mcp", "url": f"https://{server_id}.test/mcp", "auth": {"kind": "none"}},
-    }
+    server_id.replace("-", "_"): {"id": server_id, "backend": {"kind": "in_process", "credential": {"kind": "none"}}}
     for server_id in _EXACT_TOOLS
 }
 _MANUAL_AUTHORITY_CONFIG = {
@@ -417,10 +414,10 @@ def test_access_profile_recall_index_ids_are_a_set() -> None:
     assert profile.recall_index_ids == {"ducktape-public"}
 
 
-async def _remote_decision(
+async def _schemaless_decision(
     server_id: str, tool_name: str, arguments: dict, *, actor: RuntimeActor = AGENT_ACTOR
 ) -> tuple[str | None, str | None]:
-    # Remote (operator_oauth) servers have no in-process schema, so `mcp` is None.
+    # No registered server builder, so no schema to validate against: `mcp` is None.
     return _approval(
         await auto_approve_tool_call(
             policies=_POLICIES,
@@ -435,14 +432,14 @@ async def _remote_decision(
 
 
 async def test_grocy_reads_auto_approve() -> None:
-    policy_id, evaluation = await _remote_decision("grocy-sf", "products_list", {"detail": "brief"})
+    policy_id, evaluation = await _schemaless_decision("grocy-sf", "products_list", {"detail": "brief"})
     assert policy_id == AGENT_AUTO_APPROVAL_ID
     assert evaluation is not None
     assert "exact tool" in evaluation
 
 
 async def test_grocy_writes_stay_manual() -> None:
-    assert await _remote_decision("grocy-sf", "products_create", {"name": "Milk"}) == (
+    assert await _schemaless_decision("grocy-sf", "products_create", {"name": "Milk"}) == (
         None,
         "manual: Agent policy 'haku_v1' did not auto-approve grocy-sf/products_create",
     )
