@@ -159,6 +159,8 @@ class FakeSync {
   folded = true;
   entities: Json[] = [];
   chunks: Json[] = [];
+  /** Settles before a page before the tail answers: with a response to answer instead, or with none. */
+  olderPage: (() => Promise<Response | undefined>) | null = null;
   readonly requests: { method: string; path: string; query: URLSearchParams; subset: Subset | null }[] = [];
   readonly #live = new Map<string, Connection>();
   // The held scope read, answered by `respond`.
@@ -181,6 +183,8 @@ class FakeSync {
     const handle = url.searchParams.get("handle") ?? `${path}-1`;
     const successor = this.#rotated.get(handle);
     if (successor !== undefined) return Response.json([], { status: 409, headers: headers(relation, successor) });
+    const instead = subset?.where === "entity_index < $1" ? await this.olderPage?.() : undefined;
+    if (instead !== undefined) return instead;
     if (subset !== null) {
       const rows = relation === "thread_entity" ? this.#entitySubset(subset) : this.#bodySubset(subset);
       return new Response(
@@ -344,9 +348,10 @@ function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadWindow }
   return (
     <>
       <p data-testid="items">{items.map((row) => `${row.entityId}@${row.revisionCursor.toString()}`).join(" ")}</p>
-      <button disabled={!history.olderAvailable} onClick={history.loadOlder}>
+      <button disabled={!history.olderAvailable} aria-busy={history.loadingOlder} onClick={history.loadOlder}>
         older
       </button>
+      {history.error && <p role="alert">{history.error}</p>}
     </>
   );
 }
@@ -395,6 +400,64 @@ it("opens one shape on the tail and pages older rows into it", async () => {
   expect(new Set(sync.requests.map((request) => request.query.get("handle")).filter(Boolean))).toEqual(
     new Set(["entities-1"])
   );
+});
+
+function olderPages(sync: FakeSync): Subset[] {
+  return sync.posted("entities").filter((subset) => subset.where === "entity_index < $1");
+}
+
+it("shows a page before the tail as loading until it lands, and asks for it once however often asked", async () => {
+  const sync = stubSync();
+  thread(sync, 70);
+  let land: () => void = () => undefined;
+  sync.olderPage = () => new Promise((resolve) => (land = () => resolve(undefined)));
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  const older = container.querySelector("button")!;
+
+  await act(async () => older.click());
+  await vi.waitFor(() => expect(olderPages(sync)).toHaveLength(1));
+  expect(older.getAttribute("aria-busy")).toBe("true");
+  await act(async () => older.click());
+
+  await act(async () => land());
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(60));
+  expect(older.getAttribute("aria-busy")).toBe("false");
+  expect(olderPages(sync)).toHaveLength(1);
+});
+
+it("asks for no page before the tail after one stopped the window", async () => {
+  const sync = stubSync();
+  thread(sync, 70);
+  sync.olderPage = async () => Response.json({ message: "test refusal" }, { status: 400 });
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  const older = container.querySelector("button")!;
+
+  await act(async () => older.click());
+  await vi.waitFor(() => expect(container.querySelector('[role="alert"]')).not.toBeNull());
+  await vi.waitFor(() => expect(older.getAttribute("aria-busy")).toBe("false"));
+  await act(async () => older.click());
+  expect(older.getAttribute("aria-busy")).toBe("false");
+  expect(olderPages(sync)).toHaveLength(1);
+});
+
+it("asks for no page before the tail after one found the window's epoch gone", async () => {
+  const sync = stubSync();
+  thread(sync, 70);
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(30));
+  // The scope read the 410 prompts is held, so the retired window stays on screen.
+  sync.folded = false;
+  sync.epoch = "epoch-2";
+  const older = container.querySelector("button")!;
+
+  await act(async () => older.click());
+  await vi.waitFor(() => expect(sync.requests.filter((request) => request.path === "scope").length).toBeGreaterThan(1));
+  await vi.waitFor(() => expect(older.getAttribute("aria-busy")).toBe("false"));
+  await act(async () => older.click());
+  expect(older.getAttribute("aria-busy")).toBe("false");
+  expect(olderPages(sync)).toHaveLength(1);
 });
 
 it("re-issues a scope read the server answered without a fold at once, and opens the thread once it has one", async () => {

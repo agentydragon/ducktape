@@ -529,18 +529,21 @@ function commandOutcomeLabel(operation: string, outcome: string): string {
   return `${subject} ${outcome === "failed" ? "failed" : outcome === "noop" ? "not applied" : "applied"}`;
 }
 
+// How close the top of the loaded rows comes to the viewport's before the page before them loads.
+const LOAD_OLDER_WITHIN = 80;
+
 function VirtualizedHistory({
   threadId,
   segments,
   running,
   activeTurn,
-  onLoadOlder,
+  history,
 }: {
   threadId: string;
   segments: ThreadEntity[];
   running: boolean;
   activeTurn: string | null;
-  onLoadOlder: () => void;
+  history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
 }): JSX.Element {
   const viewport = useRef<HTMLDivElement>(null);
   const contents = useRef<HTMLDivElement>(null);
@@ -625,6 +628,22 @@ function VirtualizedHistory({
     if (captureNextScroll.current) return;
     captureNextScroll.current = true;
     scrolledSinceInput.current = false;
+  };
+  // A gesture asks for the page before the oldest row as its scroll events reach the top. This asks
+  // where no scroll event will: rows too few to scroll, a gesture that ended at the top, a page that
+  // landed with the reader still there. A gesture or restoration in progress has not settled where
+  // the reader is, and until the tail shows there is no top to reach.
+  const loadOlderAtTop = () => {
+    const element = viewport.current;
+    if (
+      element &&
+      segments.length > 0 &&
+      history.olderAvailable &&
+      !captureNextScroll.current &&
+      restoringAnchor.current === null &&
+      element.scrollTop < LOAD_OLDER_WITHIN
+    )
+      history.loadOlder();
   };
   const captureReadingAnchor = (element: HTMLDivElement) => {
     const viewportTop = element.getBoundingClientRect().top;
@@ -725,10 +744,12 @@ function VirtualizedHistory({
       if (restoringAnchor.current !== null || !captureNextScroll.current) return;
       captureReadingAnchor(element);
       captureNextScroll.current = false;
+      loadOlderAtTop();
     };
     element.addEventListener("scrollend", onScrollEnd);
     return () => element.removeEventListener("scrollend", onScrollEnd);
   }, [segments]);
+  useEffect(loadOlderAtTop);
   return (
     <div
       ref={viewport}
@@ -801,9 +822,30 @@ function VirtualizedHistory({
         if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
         captureNextScroll.current = true;
         scrolledSinceInput.current = true;
-        if (element.scrollTop < 80) onLoadOlder();
+        if (element.scrollTop < LOAD_OLDER_WITHIN) history.loadOlder();
       }}
     >
+      {history.loadingOlder && (
+        // No height of its own: it floats over the rows without moving any of them.
+        <div
+          style={{
+            position: "sticky",
+            top: 0,
+            height: 0,
+            zIndex: 1,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "flex-start",
+            pointerEvents: "none",
+          }}
+        >
+          <Paper role="status" shadow="xs" radius="xl" px="sm" py={2} mt="xs" withBorder>
+            <Text size="xs" c="dimmed">
+              Loading earlier…
+            </Text>
+          </Paper>
+        </div>
+      )}
       <div ref={contents} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((item) => {
           const entity = segments[item.index];
@@ -840,7 +882,7 @@ function ProjectedSessionBody({
   threadId: string;
   entities: ThreadEntity[];
   thread: ThreadView;
-  history: Pick<ThreadWindow, "olderAvailable" | "loadOlder">;
+  history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
   available: boolean;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
@@ -899,15 +941,12 @@ function ProjectedSessionBody({
         style={{ flex: 1, minHeight: 0 }}
         data-projection-cursor={view ? decimalBigInt(view.revisionCursor).toString() : undefined}
       >
-        <Button variant="subtle" disabled={!history.olderAvailable} onClick={history.loadOlder}>
-          Load 30 earlier
-        </Button>
         <VirtualizedHistory
           threadId={threadId}
           segments={segments}
           running={running}
           activeTurn={activeTurn}
-          onLoadOlder={history.loadOlder}
+          history={history}
         />
         {hasPendingCommands && (
           <Stack role="region" aria-label="Pending commands" gap="xs">
