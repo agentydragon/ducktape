@@ -6,5 +6,27 @@ resources:
 configMapGenerator:
   - name: vector-talos-config
     namespace: vector-talos-logs
-    files:
-      - vector.toml
+    literals:
+      - |
+        vector.toml=[sources.talos]
+        type = "socket"
+        mode = "tcp"
+        address = "127.0.0.1:13333"
+
+        [sources.talos.decoding]
+        codec = "json"
+
+        [sinks.loki]
+        type = "loki"
+        inputs = [
+            "talos",
+        ]
+        endpoint = "http://loki-write.loki.svc.cluster.local:3100"
+        out_of_order_action = "accept"
+
+        [sinks.loki.labels]
+        job = "talos-node"
+        node = "${NODE_NAME}"
+
+        [sinks.loki.encoding]
+        codec = "json"

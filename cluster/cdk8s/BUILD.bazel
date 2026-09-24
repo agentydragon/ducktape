@@ -1312,8 +1312,10 @@ py_library(
         ":generation",
         ":manifest_roots",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/monitoring:loki",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//tomli_w",
     ],
 )
 
