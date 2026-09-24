@@ -726,6 +726,7 @@ function item(
     tool?: string;
     arguments?: string;
     output?: string;
+    failed?: boolean;
     complete?: boolean;
     turn?: string;
     threadId?: string;
@@ -738,8 +739,8 @@ function item(
     {
       kind,
       tool_name: extra.tool ?? "",
-      completion: extra.complete === false ? null : text,
-      tool_succeeded: extra.output === undefined ? null : true,
+      completion: extra.complete === false ? null : kind === ItemKind.TOOL_CALL ? "tool" : "text",
+      tool_succeeded: extra.output === undefined ? null : !extra.failed,
     },
     {
       thread_id: extra.threadId,
@@ -905,6 +906,7 @@ function statesRows(threadId: string): Record<string, unknown>[] {
       tool: "Bash",
       arguments: '{"command":"git branch -d stale"}',
       output: "fatal: branch 'stale' not found.",
+      failed: true,
     }),
     item(10, "m-0", ItemKind.ASSISTANT_TEXT, "That branch does not exist.", { threadId, turn: "t1" }),
     item(16, "r-0", ItemKind.REASONING, "Running the suite twice exposes flaky failures.", {
@@ -1404,13 +1406,23 @@ if (scenario.openDebug) {
 }
 
 if (scenario.openReasoning) {
+  // The reasoning step is folded inside its run: open the run, then the step once it mounts.
   const openReasoning = new MutationObserver(() => {
-    const summary = [...document.querySelectorAll("summary")].find(
-      (candidate) => candidate.textContent === "Reasoning"
-    );
-    if (!(summary instanceof HTMLElement)) return;
-    openReasoning.disconnect();
-    summary.click();
+    const summaries = [...document.querySelectorAll("summary")];
+    const step = summaries.find((candidate) => candidate.textContent === "Reasoning");
+    if (step) {
+      openReasoning.disconnect();
+      step.click();
+      return;
+    }
+    summaries
+      .find(
+        (candidate) =>
+          candidate.textContent?.includes("reasoning step") &&
+          candidate.parentElement instanceof HTMLDetailsElement &&
+          !candidate.parentElement.open
+      )
+      ?.click();
   });
   openReasoning.observe(document, { childList: true, subtree: true });
 }

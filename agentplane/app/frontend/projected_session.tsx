@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Button, Group, Paper, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
+import { ActionIcon, Badge, Button, Flex, Group, Paper, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
@@ -19,6 +19,7 @@ import {
   type ThreadView,
 } from "./client";
 import { decimalBigInt, useThreadSync, type PayloadRef, type ThreadEntity, type ThreadWindow } from "./thread_sync";
+import { historyRows, rowKey, summarizeRun, type HistoryRow } from "./history_rows";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { Markdown } from "./markdown";
@@ -266,7 +267,7 @@ function EntityCard({
 }): JSX.Element {
   if (entity.entityKind === "confirmed_input") {
     return (
-      <Group justify="flex-end" data-thread-anchor={entity.cursor.toString()}>
+      <Group justify="flex-end">
         <Paper className="agentplane-user-bubble" p="sm" withBorder maw="80%">
           <Body reference={entity.inputRef} />
           <Evidence threadId={threadId} entity={entity} />
@@ -279,7 +280,7 @@ function EntityCard({
     const event = "event" in entity.state ? entity.state.event : null;
     const presentation = lifecyclePresentation(observation, event);
     return (
-      <Stack gap="xs" data-thread-anchor={entity.cursor.toString()}>
+      <Stack gap="xs">
         <Text size="xs" c={presentation.diagnostic || observation === "harness_lost" ? "red" : "dimmed"}>
           {presentation.label}
         </Text>
@@ -302,32 +303,105 @@ function EntityCard({
   }
   if (entity.entityKind === "command" || entity.entityKind === "view_state") return <></>;
   if (!("kind" in entity.state)) return <></>;
-  const kind = entity.state.kind;
-  const tool = entity.state.tool_name;
-  const completion = entity.state.completion;
-  const reasoning = kind === ItemKind.REASONING;
-  const streaming = live && completion === null;
+  const tool = entity.state.kind === ItemKind.TOOL_CALL;
+  // Assistant text carries no role label: it reads as the reply by position, across from the
+  // user's right-aligned bubble. A tool call is labelled by its tool, reasoning by its disclosure.
   return (
-    <Paper p="sm" withBorder data-thread-anchor={entity.cursor.toString()}>
-      <Group justify="space-between" mb="xs">
-        <Badge variant="light">{kind === ItemKind.TOOL_CALL ? tool || "tool" : "assistant"}</Badge>
-        {streaming && (
-          <Badge role="img" aria-label="Streaming">
-            Streaming
-          </Badge>
-        )}
-        {completion === null && !streaming && (
-          <Badge role="img" aria-label="Incomplete">
-            Incomplete
-          </Badge>
-        )}
-      </Group>
-      {entity.textRef &&
-        (reasoning ? <LazyBody label="Reasoning" reference={entity.textRef} /> : <Body reference={entity.textRef} />)}
+    <Paper p="sm" withBorder>
+      {(tool || entity.state.completion === null) && (
+        <Group gap="xs" mb="xs">
+          {tool && <Badge variant="light">{entity.state.tool_name || "tool"}</Badge>}
+          <ItemStatus items={[entity]} live={live} />
+        </Group>
+      )}
+      {entity.state.kind === ItemKind.REASONING ? (
+        entity.textRef ? (
+          <LazyBody label="Reasoning" reference={entity.textRef} />
+        ) : (
+          <Text c="dimmed">Reasoning</Text>
+        )
+      ) : (
+        entity.textRef && <Body reference={entity.textRef} />
+      )}
       {entity.argumentsRef && <LazyBody label="Arguments" reference={entity.argumentsRef} plain />}
       {entity.outputRef && <LazyBody label="Output" reference={entity.outputRef} plain />}
       <Evidence threadId={threadId} entity={entity} />
     </Paper>
+  );
+}
+
+/** Whether any of `items` is unfinished -- streaming while `live`, otherwise never completed in
+ * the retained history -- and whether any tool call among them failed. */
+function ItemStatus({ items, live }: { items: ThreadEntity[]; live: boolean }): JSX.Element {
+  const states = items.flatMap((item) => ("kind" in item.state ? [item.state] : []));
+  const unfinished = states.some((state) => state.completion === null);
+  return (
+    <>
+      {unfinished && (
+        <Badge role="img" aria-label={live ? "Streaming" : "Incomplete"}>
+          {live ? "Streaming" : "Incomplete"}
+        </Badge>
+      )}
+      {states.some((state) => state.tool_succeeded === false) && (
+        <Badge color="red" role="img" aria-label="Failed">
+          Failed
+        </Badge>
+      )}
+    </>
+  );
+}
+
+/** A run of tool calls and reasoning steps, folded behind its summary until opened. */
+function RunView({
+  threadId,
+  entities,
+  live,
+}: {
+  threadId: string;
+  entities: ThreadEntity[];
+  live: (entity: ThreadEntity) => boolean;
+}): JSX.Element {
+  const first = entities[0];
+  return (
+    <Paper p="sm" withBorder>
+      <RetainedDisclosure
+        id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:run`}
+        summary={
+          <Flex component="span" display="inline-flex" gap="xs" align="center">
+            <Badge variant="light">{summarizeRun(entities)}</Badge>
+            <ItemStatus items={entities} live={entities.some(live)} />
+          </Flex>
+        }
+      >
+        <Stack gap="xs" mt="xs">
+          {entities.map((entity) => (
+            <EntityCard key={entity.entityId} threadId={threadId} entity={entity} live={live(entity)} />
+          ))}
+        </Stack>
+      </RetainedDisclosure>
+    </Paper>
+  );
+}
+
+export function HistoryRowView({
+  threadId,
+  row,
+  live,
+}: {
+  threadId: string;
+  row: HistoryRow;
+  live: (entity: ThreadEntity) => boolean;
+}): JSX.Element {
+  const [first] = row.entities;
+  // A lone reasoning step is already a folded block of its own; a lone tool call keeps its run's
+  // summary, so every tool call reads the same.
+  const lone =
+    row.kind === "entity" ||
+    (row.entities.length === 1 && "kind" in first.state && first.state.kind === ItemKind.REASONING);
+  return lone ? (
+    <EntityCard threadId={threadId} entity={first} live={live(first)} />
+  ) : (
+    <RunView threadId={threadId} entities={row.entities} live={live} />
   );
 }
 
@@ -473,13 +547,13 @@ function commandOutcomeLabel(operation: string, outcome: string): string {
 
 function VirtualizedHistory({
   threadId,
-  segments,
+  rows,
   running,
   activeTurn,
   onLoadOlder,
 }: {
   threadId: string;
-  segments: ThreadEntity[];
+  rows: HistoryRow[];
   running: boolean;
   activeTurn: string | null;
   onLoadOlder: () => void;
@@ -499,9 +573,20 @@ function VirtualizedHistory({
   const restorationFrame = useRef<number | null>(null);
   const restoringAnchor = useRef<string | null>(null);
   const restorationSize = useRef<number | null>(null);
-  const previousCount = useRef(segments.length);
+  const previousCount = useRef(rows.length);
   const previousFirstKey = useRef<string | null>(null);
-  const readingAnchor = useRef<{ key: string; cursor: string; offset: number } | null>(null);
+  const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
+  // The row holding the entity a reading anchor was taken at. A run keeps its key while steps
+  // stream into it, but gains a new first step when older history loads into it.
+  const anchorIndex = (key: string): number =>
+    rows.findIndex((row) => row.entities.some((entity) => `${entity.entityKind}:${entity.entityId}` === key));
+  const anchorElement = (key: string): HTMLElement | null => {
+    const index = anchorIndex(key);
+    if (index < 0) return null;
+    return (
+      viewport.current?.querySelector<HTMLElement>(`[data-thread-anchor="${rows[index].entities[0].cursor}"]`) ?? null
+    );
+  };
   const cancelRestoration = () => {
     if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
     restorationFrame.current = null;
@@ -526,17 +611,17 @@ function VirtualizedHistory({
     const anchor = readingAnchor.current;
     const element = viewport.current;
     if (!anchor || !element || restoringAnchor.current !== anchor.key) return null;
-    const row = element.querySelector<HTMLElement>(`[data-thread-anchor="${anchor.cursor}"]`);
+    const row = anchorElement(anchor.key);
     if (!row) return null;
     const correction = row.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
     element.scrollTop += correction;
     return correction;
   }
   const virtualizer = useVirtualizer({
-    count: segments.length,
+    count: rows.length,
     getScrollElement: () => viewport.current,
     estimateSize: () => 180,
-    getItemKey: (index) => `${segments[index]?.entityKind}:${segments[index]?.entityId}`,
+    getItemKey: (index) => rowKey(rows[index]),
     measureElement: (element) => element.getBoundingClientRect().height,
     overscan: 5,
     onChange: (instance, sync) => {
@@ -573,25 +658,21 @@ function VirtualizedHistory({
     const first = [...element.querySelectorAll<HTMLElement>("[data-thread-anchor]")].find(
       (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
     );
-    const firstEntity = first
-      ? segments.find((entity) => entity.cursor.toString() === first.dataset.threadAnchor)
+    const firstRow = first
+      ? rows.find((row) => row.entities[0].cursor.toString() === first.dataset.threadAnchor)
       : undefined;
-    if (first && firstEntity) {
-      readingAnchor.current = {
-        key: `${firstEntity.entityKind}:${firstEntity.entityId}`,
-        cursor: firstEntity.cursor.toString(),
-        offset: first.getBoundingClientRect().top - viewportTop,
-      };
+    if (first && firstRow) {
+      readingAnchor.current = { key: rowKey(firstRow), offset: first.getBoundingClientRect().top - viewportTop };
     }
   };
-  const restoreAnchor = (anchor: { key: string; cursor: string; offset: number }, awaitMeasurement = false) => {
-    const index = segments.findIndex((entity) => `${entity.entityKind}:${entity.entityId}` === anchor.key);
+  const restoreAnchor = (anchor: { key: string; offset: number }, awaitMeasurement = false) => {
+    const index = anchorIndex(anchor.key);
     if (index < 0) return;
     cancelRestoration();
     restoringAnchor.current = anchor.key;
     const correctFromDom = (): number | null => {
       const element = viewport.current;
-      const row = element?.querySelector<HTMLElement>(`[data-thread-anchor="${anchor.cursor}"]`);
+      const row = anchorElement(anchor.key);
       if (!element || !row) return null;
       const currentOffset = row.getBoundingClientRect().top - element.getBoundingClientRect().top;
       const correction = currentOffset - anchor.offset;
@@ -614,24 +695,20 @@ function VirtualizedHistory({
   };
   useLayoutEffect(() => {
     const element = viewport.current;
-    const firstKey = segments[0] ? `${segments[0].entityKind}:${segments[0].entityId}` : null;
-    if (element && atBottom.current && segments.length > previousCount.current)
-      element.scrollTop = element.scrollHeight;
+    const firstKey = rows[0] ? rowKey(rows[0]) : null;
+    if (element && atBottom.current && rows.length > previousCount.current) element.scrollTop = element.scrollHeight;
     if (
       element &&
       !atBottom.current &&
-      segments.length > 0 &&
+      rows.length > 0 &&
       readingAnchor.current &&
       (previousCount.current === 0 || previousFirstKey.current !== firstKey)
     ) {
-      const index = segments.findIndex(
-        (entity) => `${entity.entityKind}:${entity.entityId}` === readingAnchor.current?.key
-      );
-      if (index >= 0) restoreAnchor(readingAnchor.current);
+      restoreAnchor(readingAnchor.current);
     }
-    previousCount.current = segments.length;
+    previousCount.current = rows.length;
     previousFirstKey.current = firstKey;
-  }, [segments, virtualizer]);
+  }, [rows, virtualizer]);
   useLayoutEffect(() => {
     const element = viewport.current;
     const content = contents.current;
@@ -659,7 +736,7 @@ function VirtualizedHistory({
       mutations.disconnect();
       cancelRestoration();
     };
-  }, [segments, virtualizer]);
+  }, [rows, virtualizer]);
   useLayoutEffect(() => {
     const element = viewport.current;
     if (!element) return;
@@ -670,7 +747,7 @@ function VirtualizedHistory({
     };
     element.addEventListener("scrollend", onScrollEnd);
     return () => element.removeEventListener("scrollend", onScrollEnd);
-  }, [segments]);
+  }, [rows]);
   return (
     <div
       ref={viewport}
@@ -748,11 +825,12 @@ function VirtualizedHistory({
     >
       <div ref={contents} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((item) => {
-          const entity = segments[item.index];
-          return entity ? (
+          const row = rows[item.index];
+          return row ? (
             <div
               key={item.key}
               data-index={item.index}
+              data-thread-anchor={row.entities[0].cursor.toString()}
               ref={virtualizer.measureElement}
               style={{
                 position: "absolute",
@@ -763,7 +841,11 @@ function VirtualizedHistory({
                 paddingBottom: 8,
               }}
             >
-              <EntityCard threadId={threadId} entity={entity} live={running && entity.turnId === activeTurn} />
+              <HistoryRowView
+                threadId={threadId}
+                row={row}
+                live={(entity) => running && entity.turnId === activeTurn}
+              />
             </div>
           ) : null;
         })}
@@ -809,15 +891,17 @@ function ProjectedSessionBody({
       active = false;
     };
   }, [thread.harness]);
-  const segments = entities
-    .filter((row) => ["item", "confirmed_input", "lifecycle"].includes(row.entityKind))
-    .sort((left, right) =>
-      decimalBigInt(left.cursor) < decimalBigInt(right.cursor)
-        ? -1
-        : decimalBigInt(left.cursor) > decimalBigInt(right.cursor)
-          ? 1
-          : 0
-    );
+  const rows = historyRows(
+    entities
+      .filter((row) => ["item", "confirmed_input", "lifecycle"].includes(row.entityKind))
+      .sort((left, right) =>
+        decimalBigInt(left.cursor) < decimalBigInt(right.cursor)
+          ? -1
+          : decimalBigInt(left.cursor) > decimalBigInt(right.cursor)
+            ? 1
+            : 0
+      )
+  );
   const localCommandIds = new Set(commands.local.commands.map((value) => value.command.commandId));
   const projectedCommands = entities.filter(
     (row): row is ThreadEntity & { state: Extract<ThreadEntity["state"], { outcome: string }> } =>
@@ -846,7 +930,7 @@ function ProjectedSessionBody({
         </Button>
         <VirtualizedHistory
           threadId={threadId}
-          segments={segments}
+          rows={rows}
           running={running}
           activeTurn={activeTurn}
           onLoadOlder={history.loadOlder}

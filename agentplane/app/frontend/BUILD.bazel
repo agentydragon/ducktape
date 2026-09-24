@@ -737,6 +737,40 @@ ts_library(
 )
 
 ts_library(
+    name = "history_rows",
+    srcs = ["history_rows.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_sync",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "history_rows_test",
+    testonly = True,
+    srcs = ["history_rows.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":history_rows",
+        ":thread_entity_fixture",
+        "//:node_modules/vitest",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "thread_entity_fixture",
+    testonly = True,
+    srcs = ["thread_entity_fixture.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_sync",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
     name = "projected_session",
     srcs = [
         "projected_session.tsx",
@@ -746,6 +780,7 @@ ts_library(
     deps = [
         ":chronological_debug",
         ":client",
+        ":history_rows",
         ":live",
         ":local_commands",
         ":markdown",
@@ -768,8 +803,18 @@ ts_library(
     srcs = ["projected_session.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":history_rows",
         ":projected_session",
+        ":retained_disclosures",
+        ":thread_entity_fixture",
+        ":thread_sync",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/protocol:event_pb",
     ],
 )
 
@@ -876,6 +921,7 @@ vitest_bin.vitest_test(
         ":connections_test",
         ":consent_test",
         ":frame_test",
+        ":history_rows_test",
         ":json_view_test",
         ":launch_presets_test",
         ":local_commands_test",
