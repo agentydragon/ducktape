@@ -728,6 +728,7 @@ function item(
     tool?: string;
     arguments?: string;
     output?: string;
+    failed?: boolean;
     complete?: boolean;
     turn?: string;
     threadId?: string;
@@ -740,8 +741,8 @@ function item(
     {
       kind,
       tool_name: extra.tool ?? "",
-      completion: extra.complete === false ? null : text,
-      tool_succeeded: extra.output === undefined ? null : true,
+      completion: extra.complete === false ? null : kind === ItemKind.TOOL_CALL ? "tool" : "text",
+      tool_succeeded: extra.output === undefined ? null : !extra.failed,
     },
     {
       thread_id: extra.threadId,
@@ -907,6 +908,7 @@ function statesRows(threadId: string): Record<string, unknown>[] {
       tool: "Bash",
       arguments: '{"command":"git branch -d stale"}',
       output: "fatal: branch 'stale' not found.",
+      failed: true,
     }),
     item(10, "m-0", ItemKind.ASSISTANT_TEXT, "That branch does not exist.", { threadId, turn: "t1" }),
     item(16, "r-0", ItemKind.REASONING, "Running the suite twice exposes flaky failures.", {
@@ -1539,14 +1541,28 @@ if (scenario.openDebug) {
   openDebug.observe(document, { childList: true, subtree: true });
 }
 
+/** Opens the folded tool-call run, whose steps mount only once it is open. */
+function openRun(summaries: HTMLElement[]): void {
+  summaries
+    .find(
+      (candidate) =>
+        candidate.textContent?.includes("tool call") &&
+        candidate.parentElement instanceof HTMLDetailsElement &&
+        !candidate.parentElement.open
+    )
+    ?.click();
+}
+
 if (scenario.openReasoning) {
   const openReasoning = new MutationObserver(() => {
-    const summary = [...document.querySelectorAll("summary")].find(
-      (candidate) => candidate.textContent === "Reasoning"
-    );
-    if (!(summary instanceof HTMLElement)) return;
+    const summaries = [...document.querySelectorAll("summary")];
+    const step = summaries.find((candidate) => candidate.textContent === "Reasoning");
+    if (!step) {
+      openRun(summaries);
+      return;
+    }
     openReasoning.disconnect();
-    summary.click();
+    step.click();
   });
   openReasoning.observe(document, { childList: true, subtree: true });
 }
@@ -1554,7 +1570,9 @@ if (scenario.openReasoning) {
 if (scenario.openToolPayloads) {
   const unopened = new Set(["Arguments", "Output"]);
   const openToolPayloads = new MutationObserver(() => {
-    for (const summary of document.querySelectorAll("summary")) {
+    const summaries = [...document.querySelectorAll("summary")];
+    openRun(summaries);
+    for (const summary of summaries) {
       if (unopened.delete(summary.textContent ?? "")) summary.click();
     }
     if (unopened.size === 0) openToolPayloads.disconnect();
