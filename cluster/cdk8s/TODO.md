@@ -122,10 +122,13 @@ retiring a test means deriving both sides from one value.
     (`test_public_coder_agent_config.py`'s `test_proxy_admits_the_app`).
   - The `aiquota-api-bearer-public-coder` mirror `aiquota.py` writes for the proxy
     (`test_proxy_aiquota_bearer_is_mirrored_into_its_namespace`).
-- **`haku/workspaces` script contract** — `test_haku_sandbox_contract.py`
-  regex-extracts required env vars from `haku-sandbox-setup.sh` (an image build input)
-  and checks the generated SandboxTemplate (`haku/workspaces.py`) covers them. Closing
-  it fully needs the script to declare its requirements in a checkable form.
+- **`haku/workspaces` setup-script contract** — `test_haku_sandbox_setup.py`
+  regex-extracts the variables `haku-sandbox-setup.sh` (an image build input) requires and
+  checks the synthesized SandboxTemplate (`haku/workspaces.py`) sets them. No `Settings`
+  reads this env: `haku/runtime/agent/config.py` shares the `HAKU_GIT_*` names but
+  configures another, undeployed binary. Closing it needs the script's requirements in a
+  form the generator reads (a Python bootstrap with its own `Settings`, or a declaration in
+  the script), a design for the operator.
 - **`authentik/app`** — `test_authentik_blueprint_contracts.py`'s
   `configMapGenerator.files` list vs. a glob of `blueprints/*.yaml`: the
   `kustomization.yaml` is still hand-written, so a generated one listing the glob would

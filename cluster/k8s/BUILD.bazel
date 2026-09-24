@@ -76,6 +76,7 @@ exports_files(
         "clickhouse/cluster/clickhouse.k8s.yaml",
         "clickhouse/cluster/public-coder-credentials.sops.yaml",
         "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
+        "haku/workspaces/image/haku-sandbox-setup.sh",
         "kustomization.yaml",
     ],
     visibility = [
@@ -84,21 +85,6 @@ exports_files(
         "//cluster/cdk8s/haku_ci:__pkg__",
         "//cluster/validation:__pkg__",
     ],
-)
-
-# Small direct-file surface for focused schema/wiring contracts. Keeping this
-# separate from cluster_all_files lets Bazel avoid the full cluster parse and all
-# Kustomize builds when one of these manifests changes.
-filegroup(
-    name = "haku_manifest_contract_files",
-    srcs = [
-        "agentplane-staging/agentplane.k8s.yaml",
-        "haku/workspaces/app/haku-workspaces.k8s.yaml",
-        "haku/workspaces/app/kustomization.yaml",
-        "haku/workspaces/image/haku-sandbox-setup.sh",
-        "kustomization.yaml",
-    ],
-    visibility = ["//cluster/validation:__pkg__"],
 )
 
 # The rotation manifest the authentik-jwt-rotation CronJob runs, pinned by
