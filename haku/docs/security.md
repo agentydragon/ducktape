@@ -75,7 +75,7 @@ Source of truth: <../../cluster/cdk8s/haku/rbac.py>.
 
 Cluster-wide read-only object/status; logs+configmaps only in infra namespaces via
 per-namespace bindings (no secrets, no app-content namespaces).
-Source of truth: <../../cluster/k8s/agents/agent-rbac-base/README.md>.
+Source of truth: <../../cluster/docs/agent_rbac.md>.
 
 ### Kyverno `restrict-agent-gateway-routes`
 

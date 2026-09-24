@@ -6,8 +6,7 @@ review). What stays are the claims no single tuple can express -- the named host
 and the rules over which fences may hold them.
 
 The openclaw spike's fence is `OPENCLAW_SPIKE_ALLOWLIST`, which its iron `allowlist` transform
-enforces at L7; `//cluster/validation:test_egress_allowlists` keeps the hand-written iron file
-equal to it. The `public-coder` proxy is a deliberate waiver that holds no list and reaches the
+(rendered from the same tuple) enforces at L7. The `public-coder` proxy is a deliberate waiver that holds no list and reaches the
 whole internet, so no rule here can bind it.
 
 Every set here bounds a proxy's reach on the public internet and nothing else: in-cluster

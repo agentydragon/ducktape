@@ -1014,7 +1014,7 @@ spec:
       kind: Namespace
       name: claude-sandbox
   interval: 10m
-  path: ./cluster/k8s/agents/agent-rbac-base
+  path: ./cluster/generated/agents/agent-rbac-base
   prune: true
   sourceRef:
     kind: ExternalArtifact

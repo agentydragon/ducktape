@@ -26,6 +26,23 @@ template matches a place when their syntax trees are equal up to:
 - **alpha-renaming** — binding and value identifiers match any identifier,
   consistently within their lexical scope.
 
+A **free** identifier, one the template uses but never declares, is not always
+alpha-renamed. In order, it is:
+
+1. a hole keyword;
+2. a **reference** to the spec entity exported under that name: by the
+   template's own module if it exports one, else by the one other module that
+   does. A name several other modules export makes the template `invalid`;
+3. an unshadowed **global** (`Object`, `window`, `console`, …) if the chunk
+   neither declares nor imports that name at top level: it matches only itself;
+4. otherwise alpha-renamed.
+
+A place matches a reference only where the free name binds, throughout the
+match, the one chunk identifier the referenced entity takes. References and
+globals apply to `source_match` members and `source_matches[]` entries;
+anonymous-statement templates alpha-rename every free identifier. A reference
+to an entity pinned by a relational selector alpha-renames.
+
 An anonymous statement written with a bare `match:` rather than `source_match:`
 skips alpha-renaming: its identifiers must equal the chunk's. Literals,
 operators, member property names, object keys and tree structure are
@@ -42,7 +59,8 @@ matched places, jointly with every other entity:
 
 - no two entities claim the same place, whichever modules or trees they come
   from;
-- a relational selector holds between the places its entities take.
+- a relational selector holds between the places its entities take;
+- a template's references agree with the places their entities take.
 
 The answer is the **unique** assignment satisfying these. An assignment that
 holds only for some solutions of the joint problem is not an answer.
@@ -52,17 +70,18 @@ holds only for some solutions of the joint problem is not an answer.
 Every entity gets exactly one outcome, in one record format shared by `run`,
 `spec validate` and `spec match-selector`:
 
-| Outcome                                 | Meaning                                                                                           | Severity |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------- | -------- |
-| `resolved`, `resolved_by: own_selector` | its selector alone matches one place                                                              | ok       |
-| `resolved`, `resolved_by: elimination`  | unique only because the named `claimers` took its other places                                    | warning  |
-| `no_match`                              | no place satisfies its selector and constraints                                                   | error    |
-| `ambiguous`                             | several assignments exist; at most 5 of its places are listed, with `truncated` when more exist   | error    |
-| `conflict`                              | no assignment exists; `with` names the entities of an unsatisfiable set (not necessarily minimal) | error    |
-| `too_broad`                             | its selector matches more than 100 places                                                         | error    |
-| `duplicate_claim`                       | resolved to a binding another entity already claims                                               | error    |
-| `invalid`                               | its selector does not parse, uses an unsupported construct, or its matches do not map to places   | error    |
-| `undecided`                             | the solver stopped before deciding it                                                             | error    |
+| Outcome                                   | Meaning                                                                                           | Severity |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------- | -------- |
+| `resolved`, `resolved_by: own_selector`   | its selector alone matches one place                                                              | ok       |
+| `resolved`, `resolved_by: own_references` | several places match its selector; only one agrees with the places of the `references` it names   | ok       |
+| `resolved`, `resolved_by: elimination`    | unique only because the named `claimers` took its other places                                    | warning  |
+| `no_match`                                | no place satisfies its selector and constraints                                                   | error    |
+| `ambiguous`                               | several assignments exist; at most 5 of its places are listed, with `truncated` when more exist   | error    |
+| `conflict`                                | no assignment exists; `with` names the entities of an unsatisfiable set (not necessarily minimal) | error    |
+| `too_broad`                               | its selector matches more than 100 places                                                         | error    |
+| `duplicate_claim`                         | resolved to a binding another entity already claims                                               | error    |
+| `invalid`                                 | its selector does not parse, uses an unsupported construct, or its matches do not map to places   | error    |
+| `undecided`                               | the solver stopped before deciding it                                                             | error    |
 
 A contradiction affects only the entities in it: the others still resolve.
 
@@ -70,10 +89,11 @@ A contradiction affects only the entities in it: the others still resolve.
 edit gate and `describe` resolve only `source_matches[]` entries and anonymous
 statements, without the spec's other members, and give those entities the same
 outcome except that one unique only because a relational member claimed its
-other places is `ambiguous` to them. Only the pipeline
+other places is `ambiguous` to them, and a template reference to any other
+member alpha-renames there. Only the pipeline
 (`run`, `spec validate --spec`) reports `duplicate_claim`. `spec match-selector`
 resolves its selector as a spec of one entity, so a selector resolved by
-elimination in a spec is `ambiguous` there.
+elimination or by its references in a spec is `ambiguous` there.
 
 ## Modes
 

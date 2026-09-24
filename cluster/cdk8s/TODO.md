@@ -102,26 +102,11 @@ Entries are removed once landed — this is a burn-down, not a changelog.
     `token` mapped to absent provider `token-maker`, and unused `stale` Secret and
     `stale-map` ConfigMap entries.
 
-## Ready to convert — small, focused, and the pattern to copy already exists in this repo
-
-- **`openclaw-spike-iron.yaml`'s `allowlist` transform** (`test_egress_allowlists.py`,
-  `test_openclaw_spike_resolves_exactly_its_iron_allowlist`). The spike's Cilium DNS
-  rule is generated from `egress_fences.OPENCLAW_SPIKE_ALLOWLIST`, but the iron config
-  it mirrors is still a hand-written `configMapGenerator` input. Render the iron
-  ConfigMap from the same tuple (as `public_coder_proxy.py` renders its iron config) and
-  the pin collapses.
-
 ## Reachable since the one-to-one conversion — the manifests are generated, the tests remain
 
 Each side the test compares is now a construct, except the hand-written inputs named;
 retiring a test means deriving both sides from one value.
 
-- **`agents/public-coder-agent/{app,proxy}`** — what the tests still compare:
-  - The proxy's and the piper's ingress rules spell the app's labels, because
-    `public_coder_agent_config` imports both modules for their addresses
-    (`test_public_coder_agent_config.py`'s `test_proxy_admits_the_app`).
-  - The `aiquota-api-bearer-public-coder` mirror `aiquota.py` writes for the proxy
-    (`test_proxy_aiquota_bearer_is_mirrored_into_its_namespace`).
 - **`haku/workspaces` setup-script contract** — `test_haku_sandbox_setup.py`
   regex-extracts the variables `haku-sandbox-setup.sh` (an image build input) requires and
   checks the synthesized SandboxTemplate (`haku/workspaces.py`) sets them. No `Settings`
@@ -129,11 +114,6 @@ retiring a test means deriving both sides from one value.
   configures another, undeployed binary. Closing it needs the script's requirements in a
   form the generator reads (a Python bootstrap with its own `Settings`, or a declaration in
   the script), a design for the operator.
-- **`authentik/app`** — `test_authentik_blueprint_contracts.py`'s
-  `configMapGenerator.files` list vs. a glob of `blueprints/*.yaml`: the
-  `kustomization.yaml` is still hand-written, so a generated one listing the glob would
-  close it. The outpost/provider referential-integrity half walks Authentik's blueprint
-  DSL (`!Find`/`!KeyOf`) and stays an external-format check.
 
 ## Parked — lower priority
 

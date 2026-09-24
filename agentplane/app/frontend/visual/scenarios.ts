@@ -36,8 +36,10 @@ export interface Scenario extends ScenarioOptions {
    * up: the thread header's banner is the page saying so. */
   inventoryDropped?: boolean;
   /** Exercise the production scope and Electric shape synchronization boundary. `unavailable`
-   * is a persistent initial service failure, unlike a retired epoch, whose 410 triggers a refresh. */
-  sessionReplay?: "catching-up" | "unavailable";
+   * is a persistent initial service failure, unlike a retired epoch, whose 410 triggers a refresh;
+   * `reconnecting` fails every live read of the thread's rows once they have loaded, which
+   * Electric's client retries. */
+  sessionReplay?: "catching-up" | "unavailable" | "reconnecting";
   /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
   interleavedEvents?: boolean;
   /** Open the chronological archive drawer, the native-frame inspection surface. */
@@ -574,6 +576,24 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 900 },
     sessionReplay: "unavailable",
     readySelectors: ['[role="alert"]'],
+  },
+  // The rows stay on screen while the client retries; the banner and the composer's dot say they may
+  // be behind.
+  session_sync_reconnecting: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    sessionReplay: "reconnecting",
+    readySelectors: ['[data-thread-reconnecting="true"]', '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_sync_reconnecting_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    sessionReplay: "reconnecting",
+    readySelectors: ['[data-thread-reconnecting="true"]', '[data-thread-anchor="34"]'],
+    captureViewport: true,
   },
   // The existing nav/header chrome (its own decluttering is separately tracked) leaves little
   // vertical room at phone width, so the queued-input dot at the bottom falls off the page -- same

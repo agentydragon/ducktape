@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import cast
 
@@ -9,6 +10,7 @@ import pytest_bazel
 from pydantic import BaseModel
 
 from agentplane.native.claude import wire
+from agentplane.native.transport import FrameMatcher, NativeReceipt
 from agentplane.runner.claude import ClaudeAdapter
 from agentplane.runner.config import ClaudeLaunch
 from agentplane.runner.session import Session
@@ -28,29 +30,39 @@ class RecordedSession:
         self.active_turn_id = "turn-1"
         self.native: list[BaseModel] = []
         self.confirmed: list[tuple[str, str, list[str], str]] = []
-        self.confirmed_sources: list[list[int] | None] = []
+        self.confirmed_sources: list[list[int]] = []
         self.emitted: list[object] = []
         self.noops: list[tuple[str, str]] = []
+        self.model_changes: list[tuple[str, str, list[int]]] = []
+        self.failures: list[tuple[str, str, list[int]]] = []
+        self.requested = asyncio.Event()
+        self.reply: asyncio.Future[NativeReceipt] | None = None
 
     async def send(self, frame: BaseModel) -> None:
         self.native.append(frame)
 
+    async def request(self, frame: BaseModel, *, matches: FrameMatcher, timeout_s: float = 60) -> NativeReceipt:
+        self.native.append(frame)
+        self.reply = asyncio.get_running_loop().create_future()
+        self.requested.set()
+        return await self.reply
+
     async def confirm_user_message(
-        self,
-        *,
-        harness_message_id: str,
-        text: str,
-        origin_command_ids: list[str],
-        turn_id: str,
-        sources: list[int] | None = None,
+        self, *, harness_message_id: str, text: str, origin_command_ids: list[str], turn_id: str, sources: list[int]
     ) -> None:
         self.confirmed.append((harness_message_id, text, origin_command_ids, turn_id))
         self.confirmed_sources.append(sources)
 
-    async def _noop(self, command_id: str, reason: str) -> None:
+    async def _noop(self, command_id: str, reason: str, *, sources: list[int]) -> None:
         self.noops.append((command_id, reason))
 
-    async def emit(self, observation: object, *, sources: list[int] | None = None) -> None:
+    async def _fail(self, command_id: str, reason: str, *, sources: list[int]) -> None:
+        self.failures.append((command_id, reason, sources))
+
+    async def model_changed(self, command_id: str, model: str, *, sources: list[int]) -> None:
+        self.model_changes.append((command_id, model, sources))
+
+    async def emit(self, observation: object, *, sources: list[int]) -> None:
         self.emitted.append(observation)
 
 
@@ -67,6 +79,15 @@ def _lifecycle(command_uuid: str, state: wire.CommandState) -> dict[str, object]
 def _replay(uuid: str, text: str) -> dict[str, object]:
     return wire.UserFrame(
         type="user", message=wire.UserMessage(role="user", content=text), uuid=uuid, isReplay=True
+    ).model_dump(mode="json", by_alias=True)
+
+
+def _control_response(request_id: str, *, error: str | None = None) -> dict[str, object]:
+    return wire.ControlResponseFrame(
+        type="control_response",
+        response=wire.ControlResponseBody(
+            subtype="error" if error is not None else "success", request_id=request_id, error=error
+        ),
     ).model_dump(mode="json", by_alias=True)
 
 
@@ -170,6 +191,40 @@ async def test_cancelled_claude_queue_input_has_a_terminal_noop() -> None:
     uuid = cast(wire.UserInput, recorded.native[0]).uuid
     await adapter.on_frame(_lifecycle(uuid, wire.CommandState.CANCELLED), 1)
     assert recorded.noops == [("input-cancelled", "Claude cancelled the queued user input before taking it")]
+
+
+async def test_a_model_switch_is_recorded_when_its_answer_is_translated() -> None:
+    """The answer's effect is recorded in frame order, before `change_model` gets the answer back."""
+    recorded = RecordedSession()
+    adapter = ClaudeAdapter(
+        cast(Session, recorded), ClaudeLaunch(binary=Path("/bin/false"), base_url="http://unused", auth_token="unused")
+    )
+    switch = asyncio.create_task(adapter.change_model("switch-1", "test-switched-model"))
+    await recorded.requested.wait()
+    answer = _control_response(cast(wire.SetModelRequest, recorded.native[-1]).request_id)
+    await adapter.on_frame(answer, 7)
+    assert recorded.model_changes == [("switch-1", "test-switched-model", [7])]
+    assert recorded.reply is not None
+    recorded.reply.set_result(NativeReceipt(answer, 7))
+    await switch
+
+
+async def test_a_refused_model_switch_fails_its_command() -> None:
+    recorded = RecordedSession()
+    adapter = ClaudeAdapter(
+        cast(Session, recorded), ClaudeLaunch(binary=Path("/bin/false"), base_url="http://unused", auth_token="unused")
+    )
+    switch = asyncio.create_task(adapter.change_model("switch-1", "test-unknown-model"))
+    await recorded.requested.wait()
+    answer = _control_response(cast(wire.SetModelRequest, recorded.native[-1]).request_id, error="unknown model")
+    await adapter.on_frame(answer, 7)
+    assert recorded.reply is not None
+    recorded.reply.set_result(NativeReceipt(answer, 7))
+    await switch
+    assert (recorded.model_changes, recorded.failures) == (
+        [],
+        [("switch-1", "Claude Code refused model switch: unknown model", [7])],
+    )
 
 
 if __name__ == "__main__":

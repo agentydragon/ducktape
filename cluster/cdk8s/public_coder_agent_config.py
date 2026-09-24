@@ -56,8 +56,8 @@ _DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-6-luna"]
 _TPM_CODEX_MODEL = _CODEX_BY_ID["gpt-6-astra"]
 _CONFIG_MAP_NAME = "public-coder-agent-config"
 _NAME = "public-coder-agent"
-_NAMESPACE = "public-coder-agent"
-_LABELS = {"app.kubernetes.io/name": _NAME}
+NAMESPACE = "public-coder-agent"
+LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "ghcr.io/agentydragon/openclaw:unset"
 _GATEWAY_PORT = 18789
 _HOME = "/home/openclaw"
@@ -270,7 +270,7 @@ def chart(app: App) -> Chart:
         app,
         chart_name=_CONFIG_MAP_NAME,
         configmap_name=_CONFIG_MAP_NAME,
-        namespace=_NAMESPACE,
+        namespace=NAMESPACE,
         data={"openclaw.json5": json5_config(config())},
     )
 
@@ -293,7 +293,7 @@ def kubeconfig_chart(app: App) -> Chart:
             }
         ],
         "contexts": [
-            {"name": "in-cluster", "context": {"cluster": "in-cluster", "namespace": _NAMESPACE, "user": "haku-agent"}}
+            {"name": "in-cluster", "context": {"cluster": "in-cluster", "namespace": NAMESPACE, "user": "haku-agent"}}
         ],
         "current-context": "in-cluster",
         # iron-proxy substitutes the original Haku Agent bearer only for the dedicated Haku
@@ -303,7 +303,7 @@ def kubeconfig_chart(app: App) -> Chart:
     k8s.KubeConfigMap(
         chart,
         "config",
-        metadata=k8s.ObjectMeta(name=_KUBECONFIG_CONFIG_MAP_NAME, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_KUBECONFIG_CONFIG_MAP_NAME, namespace=NAMESPACE),
         data={"config": yaml_config(kubeconfig)},
     )
     return chart
@@ -535,16 +535,16 @@ def _deployment(scope: Construct) -> None:
         scope,
         "deployment",
         metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
+            name=_NAME, namespace=NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}
         ),
         spec=k8s.DeploymentSpec(
             # Keep the replica count GitOps-owned; the worker-local state claim is selected by the
             # affinity and PVC declarations below.
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=LABELS),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=LABELS),
                 spec=k8s.PodSpec(
                     security_context=k8s.PodSecurityContext(fs_group=1000),
                     # Keep Public Coder on the worker class that serves its local state PVC; do
@@ -630,7 +630,7 @@ def _claims(scope: Construct) -> None:
         "state-v2",
         metadata=k8s.ObjectMeta(
             name=_STATE_CLAIM_NAME,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "Worker-local replacement for the archived Public Coder OpenClaw state. "
@@ -670,7 +670,7 @@ def _claims(scope: Construct) -> None:
         "diagnostics",
         metadata=k8s.ObjectMeta(
             name=_DIAGNOSTICS_CLAIM_NAME,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             annotations={"description": "Heap snapshots and Node diagnostic reports for the OpenClaw gateway"},
         ),
         spec=k8s.PersistentVolumeClaimSpec(
@@ -688,9 +688,9 @@ def _service(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE),
         spec=k8s.ServiceSpec(
-            selector=_LABELS,
+            selector=LABELS,
             ports=[
                 k8s.ServicePort(
                     name="gateway", port=_GATEWAY_PORT, target_port=k8s.IntOrString.from_number(_GATEWAY_PORT)
@@ -718,9 +718,9 @@ def _network_policies(scope: Construct) -> None:
     k8s.KubeNetworkPolicy(
         scope,
         "egress",
-        metadata=k8s.ObjectMeta(name="public-coder-agent-egress", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="public-coder-agent-egress", namespace=NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=_LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=LABELS),
             policy_types=["Egress"],
             egress=[
                 # Scoped to kube-dns specifically: an unscoped port-53 rule lets the agent tunnel
@@ -731,13 +731,7 @@ def _network_policies(scope: Construct) -> None:
                     ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(53), protocol="UDP"), _tcp(53)],
                 ),
                 k8s.NetworkPolicyEgressRule(
-                    to=[
-                        k8s.NetworkPolicyPeer(
-                            pod_selector=k8s.LabelSelector(
-                                match_labels={"app.kubernetes.io/name": public_coder_proxy.NAME}
-                            )
-                        )
-                    ],
+                    to=[k8s.NetworkPolicyPeer(pod_selector=k8s.LabelSelector(match_labels=public_coder_proxy.LABELS))],
                     ports=[_tcp(public_coder_proxy.PROXY_PORT)],
                 ),
                 # `ssh devbox`. Deliberately the piper and not the devbox itself: without a route
@@ -746,11 +740,7 @@ def _network_policies(scope: Construct) -> None:
                 # argument as the proxy above.
                 k8s.NetworkPolicyEgressRule(
                     to=[
-                        k8s.NetworkPolicyPeer(
-                            pod_selector=k8s.LabelSelector(
-                                match_labels={"app.kubernetes.io/name": public_coder_sshpiper.NAME}
-                            )
-                        )
+                        k8s.NetworkPolicyPeer(pod_selector=k8s.LabelSelector(match_labels=public_coder_sshpiper.LABELS))
                     ],
                     ports=[_tcp(public_coder_sshpiper.PORT)],
                 ),
@@ -774,9 +764,9 @@ def _network_policies(scope: Construct) -> None:
     k8s.KubeNetworkPolicy(
         scope,
         "ingress",
-        metadata=k8s.ObjectMeta(name="public-coder-agent-ingress", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="public-coder-agent-ingress", namespace=NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=_LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=LABELS),
             policy_types=["Ingress"],
             ingress=[
                 k8s.NetworkPolicyIngressRule(
@@ -804,7 +794,7 @@ def _credentials(scope: Construct) -> None:
         scope,
         "github-token",
         name=_GITHUB_TOKEN_NAME,
-        namespace=_NAMESPACE,
+        namespace=NAMESPACE,
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],
@@ -822,14 +812,14 @@ def _credentials(scope: Construct) -> None:
     generator = Password(
         scope,
         "gateway-password-generator",
-        metadata=metadata("public-coder-agent-gateway-password-generator", _NAMESPACE),
+        metadata=metadata("public-coder-agent-gateway-password-generator", NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
     add_external_secret(
         scope,
         "gateway-password",
         name=_GATEWAY_PASSWORD_NAME,
-        namespace=_NAMESPACE,
+        namespace=NAMESPACE,
         # A generated password is stable for the generator's lifetime. Avoid an automatic
         # rotation that would unnecessarily interrupt active sessions.
         refresh="8760h",
@@ -859,7 +849,7 @@ def _rbac(scope: Construct) -> None:
         "reader",
         metadata=k8s.ObjectMeta(
             name=reader,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             annotations={"description": "Read-only diagnostic access for the public-coder access profile."},
         ),
         rules=[
@@ -913,7 +903,7 @@ def _rbac(scope: Construct) -> None:
         "reader-binding",
         metadata=k8s.ObjectMeta(
             name=reader,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             annotations={"description": "Binds public-coder and its Haku superset to the reader Role."},
         ),
         role_ref=_role_ref("Role", reader),
@@ -927,7 +917,7 @@ def _rbac(scope: Construct) -> None:
         "extended-diagnostics-reader",
         metadata=k8s.ObjectMeta(
             name=diagnostics,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             annotations={"description": "Read-only VolSync backup status for Haku and public-coder."},
         ),
         rules=[
@@ -941,7 +931,7 @@ def _rbac(scope: Construct) -> None:
         "extended-diagnostics-reader-binding",
         metadata=k8s.ObjectMeta(
             name=diagnostics,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             annotations={"description": "Binds Haku and public-coder to VolSync status."},
         ),
         role_ref=_role_ref("Role", diagnostics),
@@ -953,7 +943,7 @@ def _rbac(scope: Construct) -> None:
     k8s.KubeRole(
         scope,
         "agentplane-acceptance-operator-reader",
-        metadata=k8s.ObjectMeta(name=acceptance, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=acceptance, namespace=NAMESPACE),
         rules=[
             k8s.PolicyRule(
                 api_groups=[""],
@@ -966,7 +956,7 @@ def _rbac(scope: Construct) -> None:
     k8s.KubeRoleBinding(
         scope,
         "agentplane-acceptance-operator-reader-binding",
-        metadata=k8s.ObjectMeta(name=acceptance, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=acceptance, namespace=NAMESPACE),
         role_ref=_role_ref("Role", acceptance),
         subjects=[k8s.Subject(kind="Group", name=console_config.PUBLIC_CODER_GROUP, api_group=_RBAC_GROUP)],
     )

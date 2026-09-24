@@ -92,6 +92,30 @@ deciding the entity. The sidecar reports which projected variables it had proven
 then; an entity all of whose variables are among them still resolves, and a
 conflict set found before the stop still stands.
 
+## Template references
+
+Every `source_match` row carries `free_bindings`: the chunk identifier each free
+template name bound throughout that match (a name that bound two identifiers is
+absent). Before the solve, the resolve classifies each free name
+(<../SPEC.md> § Matching) and narrows the entity's rows: a global must have
+bound itself, a name-pin reference the pinned name, and a reference to a
+projected `source_match` entity must be present at all.
+
+`settle_references` then repeats to a fixpoint: a referenced entity whose rows
+all bind one name for that export filters its referencers' rows to that name
+directly. Only a reference to an entity still open reaches the solver, as a
+column of the referencer's candidate table over the referenced entity's binding
+variable (`projected_binding_variable`), so equality comes from the shared
+variable. Settling first keeps groups small: with a column for every reference,
+the Tana web spec chained 9,055 targets into one request and the sidecar was
+killed for memory (2026-09-24). An entity whose rows all disagree with a
+reference is `conflict` with the entities referenced.
+
+After the solve, an entity that had several rows before its references narrowed
+them resolves `resolved_by: own_references` when exactly one row agrees with
+the solved bindings of the entities it references; otherwise elimination below
+decides.
+
 ## Resolved by elimination
 
 `all_different` can make a selector unique that is ambiguous on its own: its

@@ -1342,9 +1342,11 @@ routes.push(
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
     (match, query, signal) =>
-      query.get("live") === "true"
-        ? electricLive(`visual-entities-${match[1]}`, undefined, signal)
-        : electricShape([], `visual-entities-${match[1]}`),
+      query.get("live") !== "true"
+        ? electricShape([], `visual-entities-${match[1]}`)
+        : scenario.sessionReplay === "reconnecting"
+          ? Response.json({ detail: "thread shape is temporarily unavailable" }, { status: 503 })
+          : electricLive(`visual-entities-${match[1]}`, undefined, signal),
   ],
   [
     "POST",
