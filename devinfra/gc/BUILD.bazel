@@ -2,10 +2,16 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_package")
 
 py_library(
+    name = "scan_progress",
+    srcs = ["scan_progress.py"],
+)
+
+py_library(
     name = "output_base_gc",
     srcs = ["output_base_gc.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":scan_progress",
         "@pypi//humanize",
         "@pypi//tabulate",
     ],
@@ -56,6 +62,7 @@ py_library(
         ":git_repo",
         ":output_base_gc",
         ":pull_request",
+        ":scan_progress",
         ":worktree_gc",
         "@pypi//pygit2",
     ],
@@ -70,6 +77,7 @@ py_library(
         ":git_repo",
         ":output_base_gc",
         ":pull_request",
+        ":scan_progress",
         ":workspace_scan",
         ":worktree_gc",
         "@pypi//httpx",
