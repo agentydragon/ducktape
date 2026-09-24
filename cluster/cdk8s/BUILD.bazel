@@ -163,6 +163,21 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_cilium",
+    srcs = ["test_cilium.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":cilium",
+        "//:conftest",
+        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "token_reviewer_rbac",
     srcs = ["token_reviewer_rbac.py"],
