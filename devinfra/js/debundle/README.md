@@ -137,29 +137,6 @@ action tool and passes its execroot path to the debundler. The materializer uses
 that OR-Tools CP-SAT sidecar for global selector assignment. Consumers can
 override the solver tool with the matching label flag when needed.
 
-Pipeline outputs include one exact protobuf payload per selector solve under
-`debug/selector_cpsat_requests/`, plus compact human-readable metadata under
-`debug/selector_cpsat_summaries/`. Per-solve files are required because the
-materializer solves multiple chunks concurrently. Summaries cover variables,
-finite domains, allowed tables, binary constraints, and global
-`all_different` constraints. The Rust debundler and C++ sidecar communicate
-through the binary protobuf request/response; JSON here is only metadata. A
-chunk whose entities cannot interact (only `source_match` selectors, no place a
-candidate of two) is decided from its candidates without a solve and writes
-neither file.
-
-For slow solver investigations, build the problem output group without running
-the CP-SAT search:
-
-```sh
-bazel build //path/to:debundle --output_groups=selector_problem
-```
-
-This emits `bazel-bin/path/to/debundle.selector_cpsat_request.pb` after the
-same selector lowering step the full pipeline uses. The protobuf is the replay
-artifact for the C++ sidecar; human-readable selector summaries remain in the
-full pipeline's `debug/selector_cpsat_summaries/` output when available.
-
 ## Profiling
 
 `debundle_pipeline` creates the normal pipeline target plus local profiling
@@ -204,8 +181,7 @@ PERF_RECORD_FREQ=49 \
 ```
 
 Save important runs under the consuming repo's `debug/perf/` directory with the
-captured command, stdout/stderr, profiler artifacts, and selector summaries
-from `debug/selector_cpsat_summaries/` when available.
+captured command, stdout/stderr and profiler artifacts.
 
 ## Comments
 
