@@ -1,7 +1,7 @@
 # Build of upstream iron-proxy pinned to a specific unreleased commit — the
 # first one with HTTP/2/gRPC support in MITM mode. Nothing here is specific to
-# any one consumer; three egress fences share this image (public-coder-agent,
-# haku-claude-oauth-proxy, haku-openclaw-spike-proxy).
+# any one consumer; two egress fences share this image (public-coder-agent,
+# haku-openclaw-spike-proxy).
 #
 # The workflow supplies the exact checked-out source tree as this build context;
 # do not fetch a branch or mutable tag here.

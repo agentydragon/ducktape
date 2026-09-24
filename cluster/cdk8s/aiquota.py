@@ -144,13 +144,6 @@ BEARER_MIRRORS = (
         namespace="public-coder-agent",
         description="Shared AIQuota API bearer mirrored only to public-coder-agent's trusted egress proxy.",
     ),
-    # Same shape as public-coder: only the trusted haku-claude-oauth-proxy consumes it, the
-    # haku-runtime sandbox receives a placeholder.
-    BearerMirror(
-        consumer="haku-claude",
-        namespace="haku-egress-proxy",
-        description="Shared AIQuota API bearer mirrored only to the haku-claude-oauth-proxy egress proxy.",
-    ),
     BearerMirror(
         consumer="haku-console",
         namespace="haku-console",

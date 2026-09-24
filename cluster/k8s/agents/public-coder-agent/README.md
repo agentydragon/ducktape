@@ -157,7 +157,7 @@ proxy environment handling.
   as of this audit. Flux rolls the proxy to that image after it is published.
   Return to the official image and delete this build path once a stable release
   includes the required support. The image is shared with
-  `haku-claude-oauth-proxy` and `haku-openclaw-spike-proxy`, so it is not owned
+  `haku-openclaw-spike-proxy`, so it is not owned
   here — it was first named for public-coder because this was its first consumer.
 - **`gateway.bind: lan`**, unlike the loopback-bound lab rig, because the outpost
   reaches this pod over the cluster network. What makes that safe is

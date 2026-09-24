@@ -385,7 +385,7 @@ def _deployment(scope: Construct, config_map: k8s.KubeConfigMap) -> None:
                     # Private package in the in-cluster Forgejo registry. The credential is
                     # reflected into this namespace by cluster/k8s/forgejo-images/.
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-                    # Matches haku-{claude-oauth,openclaw-spike}-proxy, which run the same image.
+                    # Matches haku-openclaw-spike-proxy, which runs the same image.
                     # This namespace sets no pod-security.kubernetes.io labels, so only the
                     # cluster-default baseline applies and none of this is enforced for us -- it
                     # has to be stated here. The deliberate waiver for this agent is about egress

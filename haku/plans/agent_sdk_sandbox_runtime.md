@@ -6,12 +6,11 @@ stays the MCP/approval shell in front of agents running elsewhere. This plan is 
 runtime was shaped as it was, not a queue of work. The 2026-07-31
 Kubernetes probe resolved the two architecture-blocking mechanical questions — subscription OAuth
 works headlessly through the Agent SDK, and the bundled Claude CLI works through Haku's
-TLS-intercepting forced proxy — and the runtime that answer unblocked is running: the
-`haku-claude` `SandboxTemplate` and its warm pool
-(<../../cluster/k8s/haku/workspaces/app/sandboxtemplate-haku-claude.yaml>), the in-sandbox bridge
-(<../runner/>), the console's session runtime and its chat surface
-(<../console/session/runtime.py>, `frontend/x/`), and a Matrix room in front of all of it
-(<../console/channels/matrix/SPEC.md>). One decision below was reversed by the build: no Python imports the
+TLS-intercepting forced proxy — and the runtime that answer unblocked was built and has since been
+removed: the `haku-claude` `SandboxTemplate` and its warm pool, the `haku-harness-runner` bridge in
+`haku-runtime-sandbox` with its `haku-claude-oauth-proxy` credential proxy, the console's session
+runtime and its chat surface, and a Matrix room in front of all of it. One decision below was
+reversed by the build: no Python imports the
 Agent SDK any more — the console drives Claude Code's wire itself
 (<cli_protocol_ownership.md>) — so the SDK survives only as the wheel the CLI binary is
 extracted from.
@@ -251,8 +250,8 @@ described above.
    Job. Headless OAuth, intercepted egress, streaming, multi-turn state, same-pod disk resume,
    transcript creation, and Python hooks passed. OTel configuration passthrough passed; backend
    arrival remains to be checked.
-2. **Image + `SandboxTemplate` — done.** `haku-harness-runner`, the `haku-claude` template and its
-   warm pool, in `cluster/k8s/haku/workspaces/app/`.
+2. **Image + `SandboxTemplate` — built, since removed.** `haku-harness-runner`, the `haku-claude`
+   template and its warm pool.
 3. **Proxy body capture**, which is a config change to already-deployed mitmproxy. **Not verified
    here** — nothing in this repo records it landing.
 4. **Thinnest console surface — done, and long since overtaken.** The console has a full session
