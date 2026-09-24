@@ -174,9 +174,16 @@ reporting every selector problem: it takes the **same inputs** (`--spec` /
 `--tree-config` + package roots) and needs the full pipeline, so run it via
 the Bazel `:debundle` target, not the standalone binary. Its source-only
 preflight mode (`--modules` plus `--source-file` or `--source-root
---chunk`) needs only the binary and the chunk; without the joint solve it
-cannot report conflicts, resolution by elimination, duplicate claims or
-relational selectors.
+--chunk`) needs no pipeline build and resolves the module files jointly with
+the same resolve as `run`. Only the pipeline sees duplicate claims across
+modules, and a name pin on a binding the chunk does not declare is `no_match`
+in this mode but an unmatched claim in `run`.
+
+When selectors interact, the resolve runs the CP-SAT sidecar, found in the
+`debundle` runfiles or through `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER` — in
+source-only `validate`, and in the edit gate, `describe` and `peel` when they
+resolve source claims. `match-selector` and `synthesize-selectors` resolve one
+selector at a time and never need it.
 
 ### Selector outcomes
 

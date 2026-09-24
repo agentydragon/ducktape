@@ -125,16 +125,6 @@ pub enum SelectorAtom {
         rows: Vec<Vec<SelectorProjectedValue>>,
         reason: String,
     },
-    OwnerExportName {
-        owner: OwnerTerm,
-        export_name: StringTerm,
-    },
-    OwnerReferencesBinding {
-        owner: OwnerTerm,
-        binding: StringTerm,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        edge_kind: Option<StringTerm>,
-    },
     OwnerReferencesOwner {
         owner: OwnerTerm,
         referenced: OwnerTerm,
@@ -145,8 +135,6 @@ pub enum SelectorAtom {
     },
     ReadsMember {
         owner: OwnerTerm,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        object: Option<StringTerm>,
         member: StringTerm,
     },
     ReadsMemberOfOwner {
@@ -161,8 +149,6 @@ pub enum SelectorAtom {
     },
     PassedToCall {
         owner: OwnerTerm,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        callee_object: Option<StringTerm>,
         callee_member: StringTerm,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         arg_index: Option<u32>,
@@ -173,12 +159,6 @@ pub enum SelectorAtom {
         callee_member: StringTerm,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         arg_index: Option<u32>,
-    },
-    MakesDecorateCall {
-        owner: OwnerTerm,
-        class_anchor: StringTerm,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        member: Option<StringTerm>,
     },
     MakesDecorateCallForOwner {
         owner: OwnerTerm,
@@ -204,11 +184,7 @@ impl SelectorAtom {
                 collect_owner_term_variables(owner, &mut variables);
                 collect_string_term_variables(statement_kind, &mut variables);
             }
-            Self::OwnerDeclaresBinding { owner, binding }
-            | Self::OwnerExportName {
-                owner,
-                export_name: binding,
-            } => {
+            Self::OwnerDeclaresBinding { owner, binding } => {
                 collect_owner_term_variables(owner, &mut variables);
                 collect_string_term_variables(binding, &mut variables);
             }
@@ -218,17 +194,6 @@ impl SelectorAtom {
             } => {
                 variables.extend(projected.iter().copied());
             }
-            Self::OwnerReferencesBinding {
-                owner,
-                binding,
-                edge_kind,
-            } => {
-                collect_owner_term_variables(owner, &mut variables);
-                collect_string_term_variables(binding, &mut variables);
-                if let Some(edge_kind) = edge_kind {
-                    collect_string_term_variables(edge_kind, &mut variables);
-                }
-            }
             Self::OwnerReferencesOwner { owner, referenced }
             | Self::OwnerAliasesOwner {
                 owner,
@@ -237,15 +202,8 @@ impl SelectorAtom {
                 collect_owner_term_variables(owner, &mut variables);
                 collect_owner_term_variables(referenced, &mut variables);
             }
-            Self::ReadsMember {
-                owner,
-                object,
-                member,
-            } => {
+            Self::ReadsMember { owner, member } => {
                 collect_owner_term_variables(owner, &mut variables);
-                if let Some(object) = object {
-                    collect_string_term_variables(object, &mut variables);
-                }
                 collect_string_term_variables(member, &mut variables);
             }
             Self::ReadsMemberOfOwner {
@@ -268,14 +226,10 @@ impl SelectorAtom {
             }
             Self::PassedToCall {
                 owner,
-                callee_object,
                 callee_member,
                 ..
             } => {
                 collect_owner_term_variables(owner, &mut variables);
-                if let Some(callee_object) = callee_object {
-                    collect_string_term_variables(callee_object, &mut variables);
-                }
                 collect_string_term_variables(callee_member, &mut variables);
             }
             Self::PassedToCallOfOwner {
@@ -287,17 +241,6 @@ impl SelectorAtom {
                 collect_owner_term_variables(owner, &mut variables);
                 collect_owner_term_variables(callee_object, &mut variables);
                 collect_string_term_variables(callee_member, &mut variables);
-            }
-            Self::MakesDecorateCall {
-                owner,
-                class_anchor,
-                member,
-            } => {
-                collect_owner_term_variables(owner, &mut variables);
-                collect_string_term_variables(class_anchor, &mut variables);
-                if let Some(member) = member {
-                    collect_string_term_variables(member, &mut variables);
-                }
             }
             Self::MakesDecorateCallForOwner {
                 owner,
@@ -351,21 +294,6 @@ impl SelectorAtom {
                 rows: rows.clone(),
                 reason: reason.clone(),
             },
-            Self::OwnerExportName { owner, export_name } => Self::OwnerExportName {
-                owner: remap_owner_term(owner, variable_map),
-                export_name: remap_string_term(export_name, variable_map),
-            },
-            Self::OwnerReferencesBinding {
-                owner,
-                binding,
-                edge_kind,
-            } => Self::OwnerReferencesBinding {
-                owner: remap_owner_term(owner, variable_map),
-                binding: remap_string_term(binding, variable_map),
-                edge_kind: edge_kind
-                    .as_ref()
-                    .map(|edge_kind| remap_string_term(edge_kind, variable_map)),
-            },
             Self::OwnerReferencesOwner { owner, referenced } => Self::OwnerReferencesOwner {
                 owner: remap_owner_term(owner, variable_map),
                 referenced: remap_owner_term(referenced, variable_map),
@@ -374,15 +302,8 @@ impl SelectorAtom {
                 owner: remap_owner_term(owner, variable_map),
                 aliased: remap_owner_term(aliased, variable_map),
             },
-            Self::ReadsMember {
-                owner,
-                object,
-                member,
-            } => Self::ReadsMember {
+            Self::ReadsMember { owner, member } => Self::ReadsMember {
                 owner: remap_owner_term(owner, variable_map),
-                object: object
-                    .as_ref()
-                    .map(|object| remap_string_term(object, variable_map)),
                 member: remap_string_term(member, variable_map),
             },
             Self::ReadsMemberOfOwner {
@@ -405,14 +326,10 @@ impl SelectorAtom {
             },
             Self::PassedToCall {
                 owner,
-                callee_object,
                 callee_member,
                 arg_index,
             } => Self::PassedToCall {
                 owner: remap_owner_term(owner, variable_map),
-                callee_object: callee_object
-                    .as_ref()
-                    .map(|callee_object| remap_string_term(callee_object, variable_map)),
                 callee_member: remap_string_term(callee_member, variable_map),
                 arg_index: *arg_index,
             },
@@ -426,17 +343,6 @@ impl SelectorAtom {
                 callee_object: remap_owner_term(callee_object, variable_map),
                 callee_member: remap_string_term(callee_member, variable_map),
                 arg_index: *arg_index,
-            },
-            Self::MakesDecorateCall {
-                owner,
-                class_anchor,
-                member,
-            } => Self::MakesDecorateCall {
-                owner: remap_owner_term(owner, variable_map),
-                class_anchor: remap_string_term(class_anchor, variable_map),
-                member: member
-                    .as_ref()
-                    .map(|member| remap_string_term(member, variable_map)),
             },
             Self::MakesDecorateCallForOwner {
                 owner,
@@ -870,22 +776,6 @@ impl SelectorProgram {
                 }
                 Ok(())
             }
-            SelectorAtom::OwnerExportName { owner, export_name } => {
-                self.validate_owner_term(owner, "owner_export_name.owner")?;
-                self.validate_string_term(export_name, "owner_export_name.export_name")
-            }
-            SelectorAtom::OwnerReferencesBinding {
-                owner,
-                binding,
-                edge_kind,
-            } => {
-                self.validate_owner_term(owner, "owner_references_binding.owner")?;
-                self.validate_string_term(binding, "owner_references_binding.binding")?;
-                if let Some(edge_kind) = edge_kind {
-                    self.validate_string_term(edge_kind, "owner_references_binding.edge_kind")?;
-                }
-                Ok(())
-            }
             SelectorAtom::OwnerReferencesOwner { owner, referenced } => {
                 self.validate_owner_term(owner, "owner_references_owner.owner")?;
                 self.validate_owner_term(referenced, "owner_references_owner.referenced")
@@ -894,15 +784,8 @@ impl SelectorProgram {
                 self.validate_owner_term(owner, "owner_aliases_owner.owner")?;
                 self.validate_owner_term(aliased, "owner_aliases_owner.aliased")
             }
-            SelectorAtom::ReadsMember {
-                owner,
-                object,
-                member,
-            } => {
+            SelectorAtom::ReadsMember { owner, member } => {
                 self.validate_owner_term(owner, "reads_member.owner")?;
-                if let Some(object) = object {
-                    self.validate_string_term(object, "reads_member.object")?;
-                }
                 self.validate_string_term(member, "reads_member.member")
             }
             SelectorAtom::ReadsMemberOfOwner {
@@ -925,14 +808,10 @@ impl SelectorProgram {
             }
             SelectorAtom::PassedToCall {
                 owner,
-                callee_object,
                 callee_member,
                 ..
             } => {
                 self.validate_owner_term(owner, "passed_to_call.owner")?;
-                if let Some(callee_object) = callee_object {
-                    self.validate_string_term(callee_object, "passed_to_call.callee_object")?;
-                }
                 self.validate_string_term(callee_member, "passed_to_call.callee_member")
             }
             SelectorAtom::PassedToCallOfOwner {
@@ -944,18 +823,6 @@ impl SelectorProgram {
                 self.validate_owner_term(owner, "passed_to_call_of_owner.owner")?;
                 self.validate_owner_term(callee_object, "passed_to_call_of_owner.callee_object")?;
                 self.validate_string_term(callee_member, "passed_to_call_of_owner.callee_member")
-            }
-            SelectorAtom::MakesDecorateCall {
-                owner,
-                class_anchor,
-                member,
-            } => {
-                self.validate_owner_term(owner, "makes_decorate_call.owner")?;
-                self.validate_string_term(class_anchor, "makes_decorate_call.class_anchor")?;
-                if let Some(member) = member {
-                    self.validate_string_term(member, "makes_decorate_call.member")?;
-                }
-                Ok(())
             }
             SelectorAtom::MakesDecorateCallForOwner {
                 owner,
@@ -1154,8 +1021,6 @@ pub enum SelectorFact {
         chunk_id: ChunkId,
         owner: OwnerId,
         binding: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        export_name: Option<String>,
     },
     OwnerReferencesBinding {
         chunk_id: ChunkId,
@@ -1238,41 +1103,6 @@ impl SelectorFactStore {
             *counts.entry(fact.relation()).or_insert(0) += 1;
         }
         counts
-    }
-
-    /// Import owner-graph facts that connect statement owners to their declared
-    /// bindings and binding-use edges.
-    pub fn extend_owner_graph_facts(
-        &mut self,
-        chunk_id: ChunkId,
-        owner_graph: &analysis::OwnerGraph,
-    ) {
-        for node in owner_graph.iter_nodes() {
-            self.push(SelectorFact::Owner {
-                chunk_id,
-                owner: node.id,
-                statement_ordinal: node.statement_ordinal,
-                statement_kind: node.kind.to_string(),
-            });
-            for binding in &node.declared {
-                self.push(SelectorFact::DeclaredBinding {
-                    chunk_id,
-                    owner: node.id,
-                    binding: binding.0.as_str().to_string(),
-                    export_name: None,
-                });
-            }
-        }
-        for edge in owner_graph.iter_edges() {
-            if let Some(binding) = edge.reason.binding() {
-                self.push(SelectorFact::OwnerReferencesBinding {
-                    chunk_id,
-                    owner: edge.from,
-                    binding: binding.0.as_str().to_string(),
-                    edge_kind: edge.reason.kind().to_string(),
-                });
-            }
-        }
     }
 }
 
@@ -1655,9 +1485,10 @@ mod tests {
                 relation: RelationalPrimitive::MakesDecorateCall,
             },
         );
-        program.add_atom(SelectorAtom::MakesDecorateCall {
+        let class = program.add_variable(VariableDomain::Owner, Some("@C".to_string()));
+        program.add_atom(SelectorAtom::MakesDecorateCallForOwner {
             owner: OwnerTerm::Var { id: owner },
-            class_anchor: const_str("C"),
+            class_anchor: OwnerTerm::Var { id: class },
             member: Some(const_str("ready")),
         });
         program.validate().unwrap();

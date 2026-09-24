@@ -141,7 +141,10 @@ Pipeline outputs include one exact protobuf payload per selector solve under
 materializer solves multiple chunks concurrently. Summaries cover variables,
 finite domains, allowed tables, binary constraints, and global
 `all_different` constraints. The Rust debundler and C++ sidecar communicate
-through the binary protobuf request/response; JSON here is only metadata.
+through the binary protobuf request/response; JSON here is only metadata. A
+chunk whose entities cannot interact (only `source_match` selectors, no place a
+candidate of two) is decided from its candidates without a solve and writes
+neither file.
 
 For slow solver investigations, build the problem output group without running
 the CP-SAT search:

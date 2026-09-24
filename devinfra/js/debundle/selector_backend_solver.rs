@@ -611,8 +611,6 @@ fn selector_atom_kind_name(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::OwnerKind { .. } => "owner_kind",
         SelectorAtom::OwnerDeclaresBinding { .. } => "owner_declares_binding",
         SelectorAtom::ProjectedAllowedTuples { .. } => "projected_allowed_tuples",
-        SelectorAtom::OwnerExportName { .. } => "owner_export_name",
-        SelectorAtom::OwnerReferencesBinding { .. } => "owner_references_binding",
         SelectorAtom::OwnerReferencesOwner { .. } => "owner_references_owner",
         SelectorAtom::OwnerAliasesOwner { .. } => "owner_aliases_owner",
         SelectorAtom::ReadsMember { .. } => "reads_member",
@@ -620,7 +618,6 @@ fn selector_atom_kind_name(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::ConsumesModuleMember { .. } => "consumes_module_member",
         SelectorAtom::PassedToCall { .. } => "passed_to_call",
         SelectorAtom::PassedToCallOfOwner { .. } => "passed_to_call_of_owner",
-        SelectorAtom::MakesDecorateCall { .. } => "makes_decorate_call",
         SelectorAtom::MakesDecorateCallForOwner { .. } => "makes_decorate_call_for_owner",
         SelectorAtom::IntrinsicAlias { .. } => "intrinsic_alias",
     }
@@ -1068,12 +1065,11 @@ mod tests {
         }
     }
 
-    fn binding_fact(owner: OwnerId, binding: &str, export_name: &str) -> SelectorFact {
+    fn binding_fact(owner: OwnerId, binding: &str) -> SelectorFact {
         SelectorFact::DeclaredBinding {
             chunk_id: ChunkId(0),
             owner,
             binding: binding.to_string(),
-            export_name: Some(export_name.to_string()),
         }
     }
 
@@ -1093,12 +1089,6 @@ mod tests {
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: owner },
             binding: StringTerm::Var { id: binding },
-        });
-        program.add_atom(SelectorAtom::OwnerExportName {
-            owner: OwnerTerm::Var { id: owner },
-            export_name: StringTerm::Const {
-                value: "Readable".to_string(),
-            },
         });
         (program, target)
     }
@@ -1161,16 +1151,16 @@ mod tests {
     fn facts() -> SelectorFactStore {
         let mut facts = SelectorFactStore::default();
         facts.push(owner_fact(OwnerId(1), 10, "function"));
-        facts.push(binding_fact(OwnerId(1), "minA", "Readable"));
+        facts.push(binding_fact(OwnerId(1), "minA"));
         facts.push(owner_fact(OwnerId(2), 20, "function"));
-        facts.push(binding_fact(OwnerId(2), "minB", "Readable"));
+        facts.push(binding_fact(OwnerId(2), "minB"));
         facts
     }
 
     fn single_binding_facts() -> SelectorFactStore {
         let mut facts = SelectorFactStore::default();
         facts.push(owner_fact(OwnerId(1), 10, "function"));
-        facts.push(binding_fact(OwnerId(1), "minA", "Readable"));
+        facts.push(binding_fact(OwnerId(1), "minA"));
         facts
     }
 
@@ -1219,10 +1209,6 @@ mod tests {
             summary["selector_program"]["atom_count_by_kind"]["owner_declares_binding"],
             json!(1)
         );
-        assert_eq!(
-            summary["selector_program"]["atom_count_by_kind"]["owner_export_name"],
-            json!(1)
-        );
         assert_eq!(summary["facts"]["total"], json!(4));
         assert_eq!(summary["facts"]["count_by_relation"]["owner"], json!(2));
         assert_eq!(
@@ -1254,7 +1240,7 @@ mod tests {
         );
         assert_eq!(
             summary["model_build"]["domain_value_counts"]["string"],
-            json!(4)
+            json!(3)
         );
         assert_eq!(
             summary["model_build"]["stored_relation_counts"]["owner_kind"],
@@ -1521,7 +1507,7 @@ mod tests {
         let mut facts = SelectorFactStore::default();
         for (owner, binding) in [(1, "minA"), (2, "minB"), (3, "minC"), (4, "minD")] {
             facts.push(owner_fact(OwnerId(owner), owner * 10, "function"));
-            facts.push(binding_fact(OwnerId(owner), binding, binding));
+            facts.push(binding_fact(OwnerId(owner), binding));
         }
         let problem =
             compile_selector_problem(&program, &facts, PresolveScope::WithinTargets).unwrap();
@@ -1590,7 +1576,7 @@ mod tests {
         let mut facts = SelectorFactStore::default();
         for (owner, binding) in [(1, "minA"), (2, "minB"), (3, "minC"), (4, "minD")] {
             facts.push(owner_fact(OwnerId(owner), owner * 10, "function"));
-            facts.push(binding_fact(OwnerId(owner), binding, binding));
+            facts.push(binding_fact(OwnerId(owner), binding));
         }
         let problem =
             compile_selector_problem(&program, &facts, PresolveScope::WithinTargets).unwrap();

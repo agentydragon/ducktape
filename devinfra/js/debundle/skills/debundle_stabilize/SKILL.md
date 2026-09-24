@@ -71,8 +71,10 @@ resort:
   100 places / `duplicate_claim` / `invalid` / `undecided`), plus warnings for selectors
   resolved only by elimination (below). The full mode runs the pipeline (Bazel
   `:debundle`, package roots); the source-only preflight (`--modules` plus
-  `--source-file`) needs only the binary and checks each selector on its own —
-  see Setup.
+  `--source-file`) needs no pipeline build and resolves the modules together
+  just as the full mode does, short of duplicate claims across modules; when
+  selectors interact it runs the CP-SAT sidecar (`debundle` runfiles, or
+  `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER`) — see Setup.
 
 Division of labor: the minimizer makes a selector **compact and unique today** by
 mechanical read-off; judging whether its anchor is _meaningful_ (vs an accidental

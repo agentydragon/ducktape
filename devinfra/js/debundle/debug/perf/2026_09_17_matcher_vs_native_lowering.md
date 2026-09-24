@@ -2,8 +2,8 @@
 
 Direct comparison of the two ways a `source_match` selector can reach the
 selector IR, measured on the same input in one session. This is the measurement
-behind <../../docs/selector_resolution.md> § "Rejected: let the solver consume
-AST facts natively instead of candidate rows".
+behind <../../docs/selector_resolution.md> § "Rejected: tree matching as solver
+constraints".
 
 ## Input
 

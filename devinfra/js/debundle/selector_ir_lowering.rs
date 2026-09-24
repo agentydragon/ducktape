@@ -485,7 +485,6 @@ impl MemberSelectorProgramBuilder {
                 } else {
                     self.program.add_atom(SelectorAtom::ReadsMember {
                         owner: owner_term(owner),
-                        object: None,
                         member: const_str(&target.member),
                     });
                 }
@@ -514,7 +513,6 @@ impl MemberSelectorProgramBuilder {
                 } else {
                     self.program.add_atom(SelectorAtom::PassedToCall {
                         owner: owner_term(owner),
-                        callee_object: None,
                         callee_member: const_str(&target.callee_member),
                         arg_index,
                     });
