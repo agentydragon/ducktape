@@ -878,8 +878,6 @@ fn request_from_problem(
             .iter()
             .map(table_from_backend)
             .collect::<Result<Vec<_>, _>>()?,
-        binary_constraints: Vec::new(),
-        linear_constraints: Vec::new(),
         all_different: problem
             .all_different
             .iter()
@@ -1092,7 +1090,8 @@ mod tests {
     };
     use selector_ir::{
         ClaimKind, ClaimOrigin, ClaimOutcome, OwnerTerm, ResolvedClaim, SelectorAtom, SelectorFact,
-        SelectorFactStore, SelectorProgram, SelectorTargetId, StringTerm, VariableDomain,
+        SelectorFactStore, SelectorProgram, SelectorTargetId, SelectorVariableId, StringTerm,
+        VariableDomain,
     };
 
     use super::*;
@@ -1210,21 +1209,21 @@ mod tests {
             variables: vec![
                 CompiledVariable {
                     id: ConstraintVariableId(0),
-                    source: None,
+                    source: SelectorVariableId(0),
                     domain: VariableDomain::Owner,
                     debug_name: Some("owner_dense_a".to_string()),
                     values: CompiledVariableDomain::Full(VariableDomain::Owner),
                 },
                 CompiledVariable {
                     id: ConstraintVariableId(1),
-                    source: None,
+                    source: SelectorVariableId(1),
                     domain: VariableDomain::Owner,
                     debug_name: Some("owner_dense_b".to_string()),
                     values: CompiledVariableDomain::Full(VariableDomain::Owner),
                 },
                 CompiledVariable {
                     id: ConstraintVariableId(2),
-                    source: None,
+                    source: SelectorVariableId(2),
                     domain: VariableDomain::Owner,
                     debug_name: Some("owner_sparse".to_string()),
                     values: CompiledVariableDomain::Sparse(vec![
@@ -1234,7 +1233,7 @@ mod tests {
                 },
                 CompiledVariable {
                     id: ConstraintVariableId(3),
-                    source: None,
+                    source: SelectorVariableId(3),
                     domain: VariableDomain::String,
                     debug_name: Some("string_sparse".to_string()),
                     values: CompiledVariableDomain::Sparse(vec![

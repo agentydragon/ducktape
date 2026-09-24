@@ -192,14 +192,45 @@ export { A };
         )
         .with_admission_overrides(&["a1_eval"]),
     );
-    // Every override use prints a one-line notice naming the check
-    // and the suppressed violation.
+    // Every overridden violation is named in a notice: the check and
+    // the suppressed statement.
     assert!(
         fixture
             .stderr
             .contains("admission check a1_eval overridden by spec"),
         "stderr missing override notice:\n{}",
         fixture.stderr,
+    );
+    assert_entry_output(&fixture, "ok\n");
+}
+
+#[test]
+fn admission_override_notice_lists_every_suppressed_statement_once() {
+    // Repeated identical violations share one notice line that lists
+    // each suppressed statement, so a chunk with dozens of overridden
+    // statements does not print dozens of lines.
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const A = "ok";
+eval("1 + 1");
+eval("2 + 2");
+console.log(A);
+export { A };
+"#,
+            vec![logical_module("mod_x", &[Member::new("A")])],
+        )
+        .with_admission_overrides(&["a1_eval"]),
+    );
+    let notices: Vec<&str> = fixture
+        .stderr
+        .lines()
+        .filter(|line| line.contains("admission check a1_eval overridden by spec"))
+        .collect();
+    assert_eq!(notices.len(), 1, "stderr:\n{}", fixture.stderr);
+    assert!(
+        notices[0].contains("statements #1, #2: "),
+        "notice does not list both statements: {}",
+        notices[0],
     );
     assert_entry_output(&fixture, "ok\n");
 }

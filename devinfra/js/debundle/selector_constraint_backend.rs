@@ -66,8 +66,7 @@ pub enum CompiledVariableDomain {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompiledVariable {
     pub id: ConstraintVariableId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<SelectorVariableId>,
+    pub source: SelectorVariableId,
     pub domain: VariableDomain,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub debug_name: Option<String>,
@@ -446,7 +445,7 @@ struct DomainValueIds {
 #[derive(Debug, Clone)]
 struct CompiledVariableBuilder {
     id: ConstraintVariableId,
-    source: Option<SelectorVariableId>,
+    source: SelectorVariableId,
     domain: VariableDomain,
     debug_name: Option<String>,
     values: CompiledVariableDomain,
@@ -548,7 +547,7 @@ impl CompiledSelectorProblemBuilder {
         let id = ConstraintVariableId(self.variables.len());
         self.variables.push(CompiledVariableBuilder {
             id,
-            source: Some(source),
+            source,
             domain,
             debug_name,
             values: CompiledVariableDomain::Full(domain),
@@ -1498,9 +1497,6 @@ impl CompiledSelectorProblemBuilder {
                 value,
             });
         };
-        if self.require_variable(variable)?.source.is_none() {
-            return Ok(());
-        }
         if index >= self.value_dictionary.domain_len(domain) {
             return Err(CompiledSelectorProblemError::EncodedTupleValueOutOfDomain {
                 id,

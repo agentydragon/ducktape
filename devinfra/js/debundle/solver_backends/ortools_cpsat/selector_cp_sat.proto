@@ -4,11 +4,10 @@ package ducktape.debundle.solver_backends.ortools_cpsat;
 
 message SelectorCpSatRequest {
   repeated Variable variables = 1;
+  reserved 3, 6;
   repeated TableConstraint allowed_tables = 2;
-  repeated BinaryConstraint binary_constraints = 3;
   repeated AllDifferent all_different = 4;
   repeated TargetProjection target_projections = 5;
-  repeated LinearConstraint linear_constraints = 6;
   repeated AllowedRowSet allowed_row_sets = 7;
   repeated SharedSparseDomain shared_sparse_domains = 8;
   // Per ambiguous projection variable, how many distinct values the solver
@@ -55,28 +54,6 @@ message AllowedRowSet {
 
 message Tuple {
   repeated int64 values = 1;
-}
-
-message BinaryConstraint {
-  uint32 left_variable_id = 1;
-  uint32 right_variable_id = 2;
-  BinaryConstraintKind kind = 3;
-}
-
-enum BinaryConstraintKind {
-  BINARY_CONSTRAINT_KIND_UNSPECIFIED = 0;
-  BINARY_CONSTRAINT_KIND_EQUAL = 1;
-  BINARY_CONSTRAINT_KIND_NOT_EQUAL = 2;
-  BINARY_CONSTRAINT_KIND_ORDINAL_BEFORE = 3;
-}
-
-message LinearConstraint {
-  // Mirrors OR-Tools' LinearConstraintProto shape: sum(vars[i] * coeffs[i]) +
-  // offset must fall in the flat interval-domain list [lb0, ub0, lb1, ub1, ...].
-  repeated uint32 variable_ids = 1;
-  repeated int64 coefficients = 2;
-  int64 offset = 3;
-  repeated int64 domain = 4;
 }
 
 message AllDifferent {

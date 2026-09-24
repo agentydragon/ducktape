@@ -347,84 +347,6 @@ absl::Status AddAllowedTables(const SelectorCpSatRequest& request,
   return absl::OkStatus();
 }
 
-absl::Status AddBinaryConstraints(const SelectorCpSatRequest& request,
-                                  const VariableMap& variables,
-                                  sat::CpModelBuilder* model) {
-  for (const BinaryConstraint& constraint : request.binary_constraints()) {
-    const auto left = variables.find(constraint.left_variable_id());
-    if (left == variables.end()) {
-      return MissingVariableStatus(constraint.left_variable_id());
-    }
-    const auto right = variables.find(constraint.right_variable_id());
-    if (right == variables.end()) {
-      return MissingVariableStatus(constraint.right_variable_id());
-    }
-
-    switch (constraint.kind()) {
-      case BINARY_CONSTRAINT_KIND_EQUAL:
-        model->AddEquality(left->second, right->second);
-        break;
-      case BINARY_CONSTRAINT_KIND_NOT_EQUAL:
-        model->AddNotEqual(left->second, right->second);
-        break;
-      case BINARY_CONSTRAINT_KIND_ORDINAL_BEFORE:
-        model->AddLessThan(left->second, right->second);
-        break;
-      case BINARY_CONSTRAINT_KIND_UNSPECIFIED:
-      default:
-        return absl::InvalidArgumentError(absl::StrCat(
-            "unsupported binary constraint kind ",
-            static_cast<int>(constraint.kind())));
-    }
-  }
-  return absl::OkStatus();
-}
-
-absl::Status AddLinearConstraints(const SelectorCpSatRequest& request,
-                                  const VariableMap& variables,
-                                  sat::CpModelBuilder* model) {
-  for (const LinearConstraint& constraint : request.linear_constraints()) {
-    if (constraint.variable_ids_size() == 0) {
-      return absl::InvalidArgumentError("linear constraint has no variables");
-    }
-    if (constraint.variable_ids_size() != constraint.coefficients_size()) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "linear constraint has ", constraint.variable_ids_size(),
-          " variables but ", constraint.coefficients_size(), " coefficients"));
-    }
-    if (constraint.domain_size() == 0 || constraint.domain_size() % 2 != 0) {
-      return absl::InvalidArgumentError(
-          "linear constraint has invalid flat interval domain");
-    }
-    for (int index = 0; index < constraint.domain_size(); index += 2) {
-      if (constraint.domain(index) > constraint.domain(index + 1)) {
-        return absl::InvalidArgumentError(
-            "linear constraint has inverted domain interval");
-      }
-    }
-    std::vector<sat::IntVar> linear_variables;
-    linear_variables.reserve(constraint.variable_ids_size());
-    for (uint32_t variable_id : constraint.variable_ids()) {
-      const auto variable = variables.find(variable_id);
-      if (variable == variables.end()) {
-        return MissingVariableStatus(variable_id);
-      }
-      linear_variables.push_back(variable->second);
-    }
-    const std::vector<int64_t> coefficients(constraint.coefficients().begin(),
-                                            constraint.coefficients().end());
-    const std::vector<int64_t> domain(constraint.domain().begin(),
-                                      constraint.domain().end());
-    const sat::LinearExpr expression =
-        sat::LinearExpr::WeightedSum(linear_variables, coefficients) +
-        constraint.offset();
-    model->AddLinearConstraint(expression,
-                               ::operations_research::Domain::FromFlatIntervals(
-                                   domain));
-  }
-  return absl::OkStatus();
-}
-
 absl::Status AddAllDifferentConstraints(const SelectorCpSatRequest& request,
                                         const VariableMap& variables,
                                         sat::CpModelBuilder* model) {
@@ -657,16 +579,6 @@ absl::Status BuildCpModel(const SelectorCpSatRequest& request,
     return status;
   }
   if (const absl::Status status = AddAllowedTables(request, *variables, model);
-      !status.ok()) {
-    return status;
-  }
-  if (const absl::Status status =
-          AddBinaryConstraints(request, *variables, model);
-      !status.ok()) {
-    return status;
-  }
-  if (const absl::Status status =
-          AddLinearConstraints(request, *variables, model);
       !status.ok()) {
     return status;
   }
