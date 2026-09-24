@@ -1,4 +1,4 @@
-//! End-to-end exercise of `debundle spec validate --keep-going` by shelling
+//! End-to-end exercise of `debundle spec validate` by shelling
 //! out to the built binary. The keep-going classification itself is pinned by
 //! `selector_diagnostics_report_test`; this test pins the CLI verb: that one
 //! pass surfaces the selector diagnostics on stdout in each `--format`.

@@ -125,12 +125,23 @@ ts_library(
     ],
 )
 
+# actions_history.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "actions_history_css",
+    srcs = ["actions_history.css"],
+)
+
 ts_library(
     name = "actions_history",
-    srcs = ["actions_history.tsx"],
+    srcs = [
+        "actions_history.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":actions",
+        ":actions_history_css",
         ":client",
         ":json_view",
         "//:node_modules/@mantine/core",
@@ -554,11 +565,22 @@ ts_library(
     ],
 )
 
+# markdown.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "markdown_css",
+    srcs = ["markdown.css"],
+)
+
 ts_library(
     name = "markdown",
-    srcs = ["markdown.tsx"],
+    srcs = [
+        "markdown.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
+        ":markdown_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/dompurify",
         "//:node_modules/@types/react",
@@ -575,8 +597,7 @@ js_library(
     srcs = ["json_view.css"],
 )
 
-# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site
-# (actions.tsx, actions_history.tsx, sandbox_page.tsx) and by frame.tsx's raw view.
+# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site.
 ts_library(
     name = "json_view",
     srcs = [
@@ -736,19 +757,29 @@ ts_library(
     ],
 )
 
+# projected_session.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "projected_session_css",
+    srcs = ["projected_session.css"],
+)
+
 ts_library(
     name = "projected_session",
     srcs = [
         "projected_session.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
         "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
         ":chronological_debug",
         ":client",
+        ":json_view",
         ":live",
         ":local_commands",
         ":markdown",
+        ":projected_session_css",
         ":retained_disclosures",
         ":thread_sync",
         ":thread_title",
@@ -809,8 +840,18 @@ ts_library(
     srcs = ["projected_session.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":projected_session",
+        ":retained_disclosures",
+        ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/protocol:event_pb",
     ],
 )
 

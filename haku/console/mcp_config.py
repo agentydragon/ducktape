@@ -1,10 +1,9 @@
-"""The connected-MCP-server catalog and how to reach each entry.
+"""The MCP-server catalog and how to reach each entry.
 
 The console's deploy-time YAML names the MCP servers Haku may drive through the approval
-queue; this module models that config, looks entries up by id, and resolves how to reach
-each one — the in-process `FastMCP` transport or remote URL. The tool-call application
-service, `McpServerDispatcher` (`approval`), and operator OAuth linkage (`operator_oauth`)
-build on this shared substrate.
+queue; this module models that config, looks entries up by id, and resolves each one to its
+registered in-process `FastMCP` builder. The tool-call application service and
+`McpServerDispatcher` (`approval`) build on this shared substrate.
 """
 
 from __future__ import annotations
@@ -18,7 +17,6 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastmcp import FastMCP
-from fastmcp.client.transports import StreamableHttpTransport
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.config import KubernetesAuthorizationConfig
@@ -84,59 +82,6 @@ class OperatorConnectionCredential(BaseModel):
     connection: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_]*$")
 
 
-class DynamicOAuthClientRegistration(BaseModel):
-    """Register a fresh public OAuth client through RFC 7591 DCR for each connect flow."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["dynamic"] = "dynamic"
-    client_name: str = "Haku Console"
-
-
-class PreregisteredOAuthClient(BaseModel):
-    """Use a deploy-provisioned OAuth client and skip Dynamic Client Registration.
-
-    Public PKCE clients use ``client_id``. Confidential clients additionally receive
-    ``client_secret`` through nested settings, keeping it out of the catalog ConfigMap and Git.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["preregistered"] = "preregistered"
-    # For an authorization server with no open Dynamic Client Registration (RFC 7591) — e.g.
-    # Authentik, which has no /register endpoint, so the server-metadata-declared
-    # registration_endpoint is absent and DCR would otherwise 401 against a guessed {server}/register
-    # fallback. A pre-registered public/PKCE client_id shared across every OAuth caller of that
-    # authorization server, skipping registration entirely. Safe to share: PKCE plus per-request
-    # redirect_uri validation secure each caller's auth code exchange independently even though the
-    # client_id is the same for all. A public client normally declares this directly; a
-    # confidential client can source it from an injected Secret instead.
-    client_id: str = Field(min_length=1)
-    client_secret: SecretStr | None = None
-    token_endpoint_auth_method: Literal["client_secret_basic", "client_secret_post"] | None = None
-
-    @model_validator(mode="after")
-    def _validate_credential_source(self) -> PreregisteredOAuthClient:
-        if (self.client_secret is None) != (self.token_endpoint_auth_method is None):
-            raise ValueError(
-                "client_secret and token_endpoint_auth_method must be configured together for a confidential client"
-            )
-        return self
-
-
-type OAuthClientRegistration = Annotated[
-    DynamicOAuthClientRegistration | PreregisteredOAuthClient, Field(discriminator="kind")
-]
-
-
-class RemoteServerOAuthAuth(BaseModel):
-    """Execute as the acting Operator's account at the remote MCP server's authorization server."""
-
-    kind: Literal["remote_server_oauth"] = "remote_server_oauth"
-    client_registration: OAuthClientRegistration
-    scopes: list[str] | None = None
-
-
 class OperatorLoginIdentityCredential(BaseModel):
     """Execute under the acting Operator's own console-login (Authentik) identity: the tool call
     resolves the Operator's stored Authentik login token (captured at login via offline_access),
@@ -155,17 +100,9 @@ class NoCredential(BaseModel):
 # How a server resolves its backend credential for the acting Operator — exactly one variant per
 # server. The discriminated union replaces flag+optional fields that could set several at once;
 # dispatch by `isinstance` (mypy narrows), never a `kind`-string compare.
-type RemoteMcpAuth = Annotated[RemoteServerOAuthAuth | NoCredential, Field(discriminator="kind")]
 type InProcessCredential = Annotated[
     OperatorConnectionCredential | OperatorLoginIdentityCredential | NoCredential, Field(discriminator="kind")
 ]
-
-
-class RemoteMcpBackend(BaseModel):
-    kind: Literal["remote_mcp"] = "remote_mcp"
-    url: str
-    headers: dict[str, str] = Field(default_factory=dict)
-    auth: RemoteMcpAuth
 
 
 class InProcessBackend(BaseModel):
@@ -173,35 +110,9 @@ class InProcessBackend(BaseModel):
     credential: InProcessCredential
 
 
-type McpBackend = Annotated[RemoteMcpBackend | InProcessBackend, Field(discriminator="kind")]
-
-
 class McpServerEntry(BaseModel):
     id: str
-    backend: McpBackend
-    # Upstream tools named here remain available to Operators but are not exposed to or
-    # executable by any Agent. This is enforced at both discovery and dispatch so a stale
-    # client-side schema cannot bypass the denylist.
-    agent_tool_denylist: set[str] = Field(default_factory=set)
-    # None uses Settings.mcp_catalog_refresh_interval_seconds. A server can override the shared
-    # default when its upstream tool catalog is expensive to reflect, as GitHub's hosted MCP is.
-    catalog_refresh_interval_seconds: float | None = Field(default=None, ge=5.0, le=900.0)
-
-    @field_validator("agent_tool_denylist")
-    @classmethod
-    def _require_named_agent_tools(cls, value: set[str]) -> set[str]:
-        if any(not tool.strip() for tool in value):
-            raise ValueError("Agent tool denylist must not contain blank tool names")
-        return value
-
-    def blocks_agent_tool(self, tool_name: str) -> bool:
-        """Return whether this upstream tool is unavailable to Agents."""
-        return tool_name in self.agent_tool_denylist
-
-
-def _server_catalog_refresh_interval(server: McpServerEntry, default_seconds: float) -> float:
-    """Return a server's override, or the process-wide catalog refresh default."""
-    return server.catalog_refresh_interval_seconds or default_seconds
+    backend: InProcessBackend
 
 
 class ConsoleMcpConfig(BaseModel):
@@ -455,15 +366,14 @@ class ConsoleConfigFile(BaseModel):
                 raise ValueError(f"duplicate MCP server tool prefix {prefix!r}")
             server_ids.add(server.id)
             server_prefixes.add(prefix)
-            if isinstance(server.backend, InProcessBackend):
-                credential = server.backend.credential
-                if (
-                    isinstance(credential, OperatorConnectionCredential)
-                    and credential.connection not in self.operator_connections
-                ):
-                    raise ValueError(
-                        f"MCP server {server.id!r} references unknown operator connection {credential.connection!r}"
-                    )
+            credential = server.backend.credential
+            if (
+                isinstance(credential, OperatorConnectionCredential)
+                and credential.connection not in self.operator_connections
+            ):
+                raise ValueError(
+                    f"MCP server {server.id!r} references unknown operator connection {credential.connection!r}"
+                )
 
         for name in self.operator_connection_providers:
             if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
@@ -551,9 +461,7 @@ class ConsoleConfigFile(BaseModel):
                 )
 
         configured_recall_indexes = {index.index_id for index in self.recall_indexes.values()}
-        configured_in_process_servers = {
-            server.id for server in self.mcp.servers.values() if isinstance(server.backend, InProcessBackend)
-        }
+        configured_in_process_servers = {server.id for server in self.mcp.servers.values()}
         if "kubernetes" in configured_in_process_servers and self.kubernetes_authorization is None:
             raise ValueError("the Kubernetes in-process server requires Kubernetes authorization configuration")
         for profile in profiles.values():
@@ -616,14 +524,8 @@ def _server_entry(config: ConsoleConfigFile, server_id: str) -> McpServerEntry:
     raise McpServerNotFoundError(f"unknown MCP server: {server_id}")
 
 
-def _operator_oauth_enabled(server: McpServerEntry) -> bool:
-    return isinstance(server.backend, RemoteMcpBackend) and isinstance(server.backend.auth, RemoteServerOAuthAuth)
-
-
-# A server reached over an in-process FastMCP instance instead of a remote URL (see
-# McpServerEntry.backend). `fastmcp.client.Client` accepts a `FastMCP` instance directly and opens
-# an in-memory `FastMCPTransport`, so a dispatcher runs the exact same `Client(...)` calls either
-# way; only this lookup differs.
+# `fastmcp.client.Client` accepts a `FastMCP` instance directly and opens an in-memory
+# `FastMCPTransport`, so a dispatcher drives a registered server through ordinary MCP calls.
 #
 # The registry holds *builders*, not prebuilt instances: a provider-backed server (gmail,
 # google_calendar) is built per execution from the acting Operator's access token, so the
@@ -658,8 +560,6 @@ def const_in_process_server(mcp: FastMCP) -> InProcessServerRegistration:
 def validate_in_process_server_bindings(config: ConsoleConfigFile, registrations: InProcessServers) -> None:
     """Reject missing implementations and incompatible in-process credential bindings."""
     for server in config.mcp.servers.values():
-        if not isinstance(server.backend, InProcessBackend):
-            continue
         registration = registrations.get(server.id)
         if registration is None:
             raise ValueError(f"MCP server {server.id!r} has no registered in-process implementation")
@@ -671,22 +571,9 @@ def validate_in_process_server_bindings(config: ConsoleConfigFile, registrations
             )
 
 
-def _transport(
-    server: McpServerEntry, in_process: InProcessServers, auth_token: str | None
-) -> tuple[FastMCP | StreamableHttpTransport | str, str | None]:
-    """Resolve the MCP transport and any transport-level authentication.
-
-    In-process builders consume the backend credential while constructing their server, so the
-    resulting in-memory transport must not receive it again as client authentication. Remote HTTP
-    transports instead carry the credential as their bearer authentication.
-    """
-    match server.backend:
-        case InProcessBackend():
-            registration = in_process.get(server.id)
-            if registration is None:
-                raise RuntimeError(f"MCP server {server.id!r} has no in-process registration")
-            return registration.builder(auth_token), None
-        case RemoteMcpBackend(url=url, headers=headers):
-            return (
-                (StreamableHttpTransport(url, headers=headers, auth=auth_token), None) if headers else (url, auth_token)
-            )
+def _in_process_server(server: McpServerEntry, in_process: InProcessServers, auth_token: str | None) -> FastMCP:
+    """Build the server's registered in-process instance, consuming its backend credential."""
+    registration = in_process.get(server.id)
+    if registration is None:
+        raise RuntimeError(f"MCP server {server.id!r} has no in-process registration")
+    return registration.builder(auth_token)
