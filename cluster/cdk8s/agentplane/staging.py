@@ -38,7 +38,12 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator, remote_data
+from cluster.cdk8s.external_secrets.external_secret import (
+    add_external_secret,
+    cluster_secret_store,
+    password_generator,
+    remote_data,
+)
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
@@ -392,6 +397,28 @@ def chart(app: App) -> Chart:
                 consumer_namespace=_NAMESPACE,
             ),
         )
+    # The GitHub App's pre-registered OAuth client, whose SOPS source stays in haku-console
+    # (cluster/k8s/haku/console/README.md): the id rides an env var, the secret a mounted file.
+    add_external_secret(
+        chart,
+        "github-mcp-client-external-secret",
+        name=_GITHUB_MCP_CLIENT_SECRET,
+        namespace=_NAMESPACE,
+        refresh="1h",
+        store=cluster_secret_store(
+            single_secret_store(
+                chart,
+                "agentplane-staging-github-mcp-client",
+                reader=reader,
+                source_namespace="haku-console",
+                source_secret=_GITHUB_MCP_CLIENT_SECRET,
+                consumer_namespace=_NAMESPACE,
+            )
+        ),
+        data=[remote_data(_GITHUB_MCP_CLIENT_SECRET, key) for key in ("client_id", "client_secret")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+    )
     _add_session_secret(chart)
     add_staging_action_policies(chart)
     EgressCredentials(
