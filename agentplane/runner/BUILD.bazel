@@ -747,6 +747,7 @@ py_test(
         ":session",
         ":store",
         "//:conftest",
+        "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "@pypi//aiosqlite",
