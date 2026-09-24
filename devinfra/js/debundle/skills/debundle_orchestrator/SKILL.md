@@ -20,6 +20,7 @@ Read other bundled references as needed:
 - `references/README.md` for the crate pitch + Comments
 - `references/bazel_integration.md` for the `debundle_pipeline` rule and profiling targets
 - `references/module_shape.md` for when to route to architect or lane workers
+- `references/selectors.md` for the bar selector-stabilization work must meet
 
 ## Adapter Contract
 
@@ -39,13 +40,9 @@ Before dispatching work, collect:
 - For selector-stabilization rounds, start with
   `debundle spec selector-debt --group-module-depth N --format json` and
   dispatch broad, coherent buckets to lane workers. Prefer buckets that can be
-  handled by `debundle spec synthesize-selectors` over hand-authored YAML, but
-  do not treat exact long generated selectors as done merely because they match
-  the current chunk. The selector program's target is current correctness plus
-  likely forward compatibility: selectors should avoid pinning incidental
-  bodies, argument lists, object values, and unrelated sibling declarations.
-  Over-narrow synthesis output should become Ducktape minimization work before
-  it is scaled across many modules.
+  handled by `debundle spec synthesize-selectors` over hand-authored YAML; the
+  bar their output must meet is `references/selectors.md` § The contract and
+  the ladder.
 - Send seed clusters or reorg tasks to `debundle_lane_worker`.
 - Wake `debundle_architect` periodically or when module shape seems to drift.
 - Use `debundle_integrator` for merge trains of worker commits.
@@ -65,14 +62,11 @@ dispatch the integrator.
 3. For structural-selector cleanup, run `selector-debt` with module grouping,
    choose high-yield buckets, and decide whether missing support should become
    Ducktape tooling work before asking humans or workers to hand-edit many
-   selectors. A bucket is high quality only when its selectors are concise
-   enough to avoid pinning incidental implementation detail; use holes and
-   stable anchors where uniqueness permits. Do not dispatch work whose expected
-   output is a pile of manually maintained exact generated bodies.
-4. Ask intake for dispatchable seeds. Only `landable_today: true`
-   proposals are directly dispatchable; `blocked_residual_dependency`
-   rows need their closure grown (or manual co-location) before they
-   become lane-worker work.
+   selectors. Do not dispatch work whose expected output is a pile of manually
+   maintained exact generated bodies.
+4. Ask intake for dispatchable seeds. Only `landable_today: true` proposals
+   are directly dispatchable; what the others need first:
+   `references/cli.md` § `--batch` JSON format.
 5. Dispatch independent lane workers and any reorg/naming/doc cleanup work.
 6. Integrate green worker branches in batches.
 7. Rerun gate, regen, and adapter smoke tests as required.

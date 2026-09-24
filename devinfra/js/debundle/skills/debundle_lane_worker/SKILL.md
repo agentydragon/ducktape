@@ -44,11 +44,9 @@ The orchestrator or project adapter provides:
    project conventions.
 5. Apply the assignment using the shared guide's CLI workflows. Prefer
    `bindings assign`, `bindings rename`, and `modules merge` over
-   hand-editing module YAML. Proposals with `landable_today: true` can
-   be batch-assigned directly via `bindings assign --batch`;
-   `blocked_residual_dependency` proposals cannot — grow the closure so
-   the referenced residual cells land in the same batch, or co-locate
-   the owners manually, before assigning.
+   hand-editing module YAML. Which proposals `bindings assign --batch` takes
+   directly, and what the others need: `references/cli.md` § `--batch` JSON
+   format.
 
    For selector-stabilization assignments, follow `references/selectors.md`
    (the ladder and § "Bulk conversion loop"): confirm the bucket with
@@ -56,10 +54,8 @@ The orchestrator or project adapter provides:
    assignment, minimize before `--apply`, then run `git diff --check`, the
    adapter's gate/regen command and `selector-debt` again to report the debt
    delta. Never modify the upstream/source bundle. A binding Ducktape cannot yet
-   stabilize keeps its name pin with an `annotations.<export_name>.note` naming
-   the concrete blocker, routed back to Ducktape tooling — but not for
-   one-declarator-in-comma-list or object-literal property gaps, which
-   `bindings[]` and `ANYTHING` already cover.
+   stabilize becomes selector debt (`references/selectors.md` § Selector
+   debt), routed back to Ducktape tooling.
 
 6. Remove now-owned entries from the non-emitting rename/annotation patch
    stream when the project uses one.
