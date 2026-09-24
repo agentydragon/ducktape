@@ -451,7 +451,7 @@ def _values() -> dict[str, object]:
         "kubeControllerManager": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
         # `serviceMonitor.authorization: null` is patched in below.
         "coreDns": {"enabled": True, "serviceMonitor": {}},
-        # Static Talos etcd endpoints are managed in cluster/k8s/monitoring/etcd.
+        # Static Talos etcd endpoints are managed in cluster/generated/monitoring/etcd.
         "kubeEtcd": {"enabled": False},
         "kubeScheduler": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
         # kube-proxy is intentionally absent: Cilium runs kube-proxy replacement,

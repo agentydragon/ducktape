@@ -95,4 +95,4 @@ The upgrade also resolved the `loki/promtail` HelmRelease stall (PR #1990, added
 - **VPA at 0/0 replicas with its MutatingWebhookConfiguration still registered** causes
   every admission request to attempt a call to the dead webhook service. Cilium returns
   EPERM immediately (no timeout), so it's log noise only, but worth cleaning up.
-  See `cluster/k8s/vpa/`.
+  See `cluster/generated/vpa/`.

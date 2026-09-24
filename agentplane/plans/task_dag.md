@@ -352,7 +352,7 @@ ServiceAccount with `automountServiceAccountToken: false`, an `EgressBinding` to
 Kubernetes, `forgejo-haku`, `packages`, `google-readonly`, `grocy-sf-readonly` and `coinbase`
 policies, and an `ActionPolicyBinding` auto-approving reviewed GitHub, Home Assistant, Gmail and
 Calendar reads plus the whole `sandbox-self` set. Its Kubernetes authority is the cluster-wide
-`cluster-diagnostics-reader` ClusterRoleBinding (`cluster/k8s/agents/shared-rbac/`), reads of
+`cluster-diagnostics-reader` ClusterRoleBinding (`cluster/generated/agents/shared-rbac/`), reads of
 non-sensitive cluster state, plus the metadata and pod-log readers Kyverno generates in namespaces
 labelled `agent-readable-*`, plus `get` on one Secret: the view-only Coinbase key its sandboxes
 sign with, since the proxy cannot. The verified Kubernetes evidence from a sandbox is still a
@@ -921,7 +921,7 @@ _Retire, once the production path is proven and rollback is available:_
 _Shared, so not this milestone's to delete:_
 
 - The `iron-proxy` image build — `cluster/images/iron-proxy/`,
-  `.github/workflows/iron-proxy-image.yml`, `cluster/k8s/flux-image-automation-forgejo/iron-proxy-image.yaml`.
+  `.github/workflows/iron-proxy-image.yml`, `cluster/generated/flux-image-automation-forgejo/iron-proxy-image.yaml`.
   It carries a pinned upstream commit for HTTP/2 MITM support and is consumed by
   `haku-claude-oauth-proxy` and `haku-openclaw-spike-proxy` as well. It was named for public-coder
   only because this was its first consumer.

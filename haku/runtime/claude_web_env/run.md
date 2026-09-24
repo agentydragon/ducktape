@@ -29,7 +29,7 @@ at `memory/procedures/run.md`.
   pod **in `haku-sandbox`** to query it, as the manual describes (pod command +
   `kubectl logs`, DSN from a secret via `secretKeyRef`). `kubectl exec`/`attach`/
   `port-forward` work too — the `kubeapi-proxy` nginx forwards the WebSocket
-  upgrade (`cluster/k8s/kube-api-proxy`); they were briefly broken until that was
+  upgrade (`cluster/generated/kube-api-proxy`); they were briefly broken until that was
   added. Clean up pods after (20-pod quota).
 - If none of the above holds — `kubectl`/`nix`/`bazel` missing from `PATH`, no
   `~/.kube/config`, `~/haku-state` absent — the background command never ran at

@@ -9,9 +9,10 @@ import yaml
 from more_itertools import one
 
 
-def test_haku_ci_keda_resources_are_wired_to_the_runner_job(k8s_dir: Path) -> None:
+def test_haku_ci_keda_resources_are_wired_to_the_runner_job(k8s_dir: Path, generated_dir: Path) -> None:
     keda = {
-        doc["kind"]: doc for doc in yaml.safe_load_all((k8s_dir / "keda/keda.k8s.yaml").read_text(encoding="utf-8"))
+        doc["kind"]: doc
+        for doc in yaml.safe_load_all((generated_dir / "keda/keda.k8s.yaml").read_text(encoding="utf-8"))
     }
     keda_repository, keda_release = keda["HelmRepository"], keda["HelmRelease"]
     haku_ci = list(yaml.safe_load_all((k8s_dir / "haku-ci/haku-ci.k8s.yaml").read_text(encoding="utf-8")))

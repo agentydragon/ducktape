@@ -9,9 +9,9 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_namespace
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/budget-namespace"
+OUTPUT_DIR = f"{GENERATED_ROOT}/forgejo/budget-namespace"
 
 
 def write_manifests(root: Path) -> None:

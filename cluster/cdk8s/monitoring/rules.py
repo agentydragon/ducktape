@@ -17,12 +17,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "monitoring-rules"
 NAMESPACE = "monitoring"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/rules"
+OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/rules"
 
 _CONTROL_PLANE_IO = [
     PrometheusRuleSpecGroupsRules(

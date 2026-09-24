@@ -1,4 +1,4 @@
-"""kubectl-passthrough-mcp (cluster/k8s/agents/kubectl-passthrough-mcp/app):
+"""kubectl-passthrough-mcp (cluster/generated/agents/kubectl-passthrough-mcp/app):
 containers/kubernetes-mcp-server in OAuth passthrough mode, its public route, and the
 ClusterRoleBinding that makes agentydragon's passthrough identity cluster-admin.
 """
@@ -14,11 +14,11 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "kubectl-passthrough-mcp"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/kubectl-passthrough-mcp/app"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/kubectl-passthrough-mcp/app"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _PORT = 8080
 _CONFIG_MAP = "kubectl-passthrough-mcp-public"

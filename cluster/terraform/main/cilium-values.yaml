@@ -72,7 +72,7 @@ envoy:
 
 # Observability (optional, not networking-critical)
 # Expose cilium-agent metrics through the chart-managed headless Service. The
-# ServiceMonitor is declared separately under cluster/k8s/monitoring/cilium so
+# ServiceMonitor is declared separately under cluster/generated/monitoring/cilium so
 # the bootstrap-time Helm install does not depend on monitoring CRDs.
 prometheus:
   enabled: true
@@ -126,7 +126,7 @@ hubble:
       - "drop:sourceContext=workload-name|reserved-identity;destinationContext=workload-name|ip"
       - "dns:query;ignoreAAAA"
     # As with `prometheus` above: the ServiceMonitor is declared under
-    # cluster/k8s/monitoring/cilium so this bootstrap-time install does not
+    # cluster/generated/monitoring/cilium so this bootstrap-time install does not
     # depend on monitoring CRDs.
     serviceMonitor:
       enabled: false

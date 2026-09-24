@@ -375,7 +375,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 # on the *pod template*, not the Deployment's own metadata, and Reloader only
                 # reads the workload-level annotation -- so it is INERT here. The actual roll
                 # comes from Reloader's cluster-wide `autoReloadAll: true` (see
-                # cluster/k8s/reloader/). Kept for intent/future-proofing if the operator ever
+                # cluster/generated/reloader/). Kept for intent/future-proofing if the operator ever
                 # sets Deployment annotations.
                 annotations={"reloader.stakater.com/auto": "true"},
                 metrics_port=9327,

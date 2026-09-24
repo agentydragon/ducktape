@@ -34,9 +34,9 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/kubevirt/cdi"
+OUTPUT_DIR = f"{GENERATED_ROOT}/kubevirt/cdi"
 _FILESYSTEM = StorageProfileSpecClaimPropertySetsVolumeMode.FILESYSTEM
 _BLOCK = StorageProfileSpecClaimPropertySetsVolumeMode.BLOCK
 # storage class -> (clone strategy, [(access mode, volume mode)])

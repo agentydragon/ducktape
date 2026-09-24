@@ -16,7 +16,7 @@ This Terraform module manages branch protection for
 - Pull requests are required so required checks can run, but the solo-repo
   review count is zero.
 
-The module runs from Flux at `cluster/k8s/github-branch-protection/` and
+The module runs from Flux at `cluster/generated/github-branch-protection/` and
 authenticates with `flux-system/github-secrets-sync-pat`. That PAT needs
 GitHub Administration read/write because GitHub exposes rulesets under the
 repository-administration API.

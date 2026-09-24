@@ -57,7 +57,7 @@ not to `api.allegedly.works`. Two independent breakages fall out of this:
 2. **Upstream cert validation fails.** The proxy's upstream TLS handshake
    goes to the apiserver via `api.allegedly.works`, which presents a
    cluster-CA-signed cert (passthrough via the TLSRoute in
-   `cluster/k8s/kube-api-proxy/tlsroute.yaml`). The proxy validates against
+   `cluster/generated/kube-api-proxy/tlsroute.yaml`). The proxy validates against
    public CAs, fails, returns 503 to the client. This is the error we saw.
    Even if we'd "fixed" issue 1, issue 2 would still 503 us.
 
@@ -197,7 +197,7 @@ s_client -connect <host>:443 | openssl x509 -noout -issuer`. If the
   `kubectl_machine_groups`
 - Apiserver `AuthenticationConfiguration`:
   `cluster/terraform/main/infrastructure.tf`
-- Gateway API routes: `cluster/k8s/kube-api-proxy/`
+- Gateway API routes: `cluster/generated/kube-api-proxy/`
 - JWT rotation CronJob: `cluster/k8s/agents/claude-jwt-rotation/`
 - Kubeconfig writer: `devinfra/k8s/kubeconfig.py`
 - Prior migration: commit `ff3ac18e0` (2026-04-18, token → cert,

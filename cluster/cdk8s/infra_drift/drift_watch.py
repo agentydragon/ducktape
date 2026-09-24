@@ -1,7 +1,7 @@
 """Drift detection for the metal root (cluster/terraform/main). That root is applied from a
 workstation by `bazel run //cluster:bootstrap`; this CR only ever plans it, so the operator
 learns about reality/state divergence without the controller being able to act on it. See
-cluster/k8s/infra-drift/README.md."""
+cluster/cdk8s/infra_drift/README.md."""
 
 from __future__ import annotations
 
@@ -25,11 +25,11 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "infra-drift"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/infra-drift"
+OUTPUT_DIR = f"{GENERATED_ROOT}/infra-drift"
 
 
 def chart(app: App) -> Chart:
@@ -69,10 +69,12 @@ def chart(app: App) -> Chart:
                 "# Every file()-family call in the root, wherever it sits: -target does not\n"
                 "# prune configuration evaluation. talos-cloud-controller-manager for\n"
                 "# talos-ccm.tf's locals, flux-system for null_resource.flux_bootstrap's\n"
-                "# triggers. The rest of cluster/k8s (10 MB) reads nothing.\n"
+                "# triggers. The rest of cluster/{k8s,generated} (10 MB) reads nothing.\n"
+                "!/cluster/generated\n"
+                "/cluster/generated/*\n"
+                "!/cluster/generated/talos-cloud-controller-manager\n"
                 "!/cluster/k8s\n"
                 "/cluster/k8s/*\n"
-                "!/cluster/k8s/talos-cloud-controller-manager\n"
                 "!/cluster/k8s/flux\n"
                 "/cluster/k8s/flux/*\n"
                 "!/cluster/k8s/flux/flux-system\n"

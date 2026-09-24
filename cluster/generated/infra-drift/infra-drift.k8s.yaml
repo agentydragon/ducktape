@@ -18,10 +18,12 @@ spec:
     # Every file()-family call in the root, wherever it sits: -target does not
     # prune configuration evaluation. talos-cloud-controller-manager for
     # talos-ccm.tf's locals, flux-system for null_resource.flux_bootstrap's
-    # triggers. The rest of cluster/k8s (10 MB) reads nothing.
+    # triggers. The rest of cluster/{k8s,generated} (10 MB) reads nothing.
+    !/cluster/generated
+    /cluster/generated/*
+    !/cluster/generated/talos-cloud-controller-manager
     !/cluster/k8s
     /cluster/k8s/*
-    !/cluster/k8s/talos-cloud-controller-manager
     !/cluster/k8s/flux
     /cluster/k8s/flux/*
     !/cluster/k8s/flux/flux-system

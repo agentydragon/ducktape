@@ -21,11 +21,11 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku.namespace import NAMESPACE
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "haku-workloads"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku/workloads"
+OUTPUT_DIR = f"{GENERATED_ROOT}/haku/workloads"
 
 _FLUX_NAMESPACE = "flux-system"
 _RECONCILER = "haku-state-reconciler"
@@ -87,7 +87,7 @@ def chart(app: App) -> Chart:
                     "touch Haku's own images + haku-state. Deliberately NOT secrets (no plaintext-git "
                     "secrets), NOT Gateway-API routes (Kyverno denies those too), and NOT "
                     "notification.toolkit Receivers (a cross-namespace force-reconcile primitive — kept "
-                    "operator-owned, see cluster/k8s/haku/ui-image-webhook). So Haku's GitOps path can "
+                    "operator-owned, see cluster/generated/haku/ui-image-webhook). So Haku's GitOps path can "
                     "run + ship its own workloads but never widen its own perimeter."
                 )
             },

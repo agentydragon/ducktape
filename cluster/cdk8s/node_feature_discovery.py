@@ -14,12 +14,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "node-feature-discovery"
 NAMESPACE = "node-feature-discovery"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/node-feature-discovery"
+OUTPUT_DIR = f"{GENERATED_ROOT}/node-feature-discovery"
 
 
 def chart(app: App) -> Chart:

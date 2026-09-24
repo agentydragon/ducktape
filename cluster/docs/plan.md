@@ -588,7 +588,7 @@ fault can cascade.
 
 ### VPA + Goldilocks
 
-VPA deployed (`k8s/vpa/`). Goldilocks auto-creates VPAs cluster-wide.
+VPA deployed (`generated/vpa/`). Goldilocks auto-creates VPAs cluster-wide.
 Default mode "Off" (recommendation-only). Enable per namespace.
 
 **TODO**: Require explicit `goldilocks.fairwinds.com/vpa-resource-policy` annotations

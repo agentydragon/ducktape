@@ -42,7 +42,7 @@ whenever a node accumulates enough chatty logging pods.
 
 ## Fix
 
-`cluster/k8s/monitoring/loki/promtail-helmrelease.yaml`: raised memory request to 256Mi
+`cluster/generated/monitoring/loki/promtail-helmrelease.yaml`: raised memory request to 256Mi
 and limit to 1Gi (was 64Mi / 128Mi) so the tail working set can stay cached. A log
 shipper must not have its page cache capped near its working set.
 

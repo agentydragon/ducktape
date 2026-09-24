@@ -26,7 +26,7 @@ _IMAGE_POLICY_MARKER = re.compile(r'"\$imagepolicy":\s*"([^"]+)"')
 
 # ImageRepositories defined in Haku's haku-state repo, reconciled into
 # haku-sandbox — not under cluster/k8s, so the validator can't see them. An operator-owned
-# Receiver here may still reference one (cluster/k8s/haku/ui-image-webhook), so exempt these
+# Receiver here may still reference one (cluster/generated/haku/ui-image-webhook), so exempt these
 # from the "Receiver references an undefined ImageRepository" check.
 _HAKU_STATE_IMAGE_REPOS = {"haku-anki", "haku-ui"}
 

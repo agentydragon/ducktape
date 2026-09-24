@@ -68,7 +68,7 @@ def devbox_objects() -> list[dict[str, Any]]:
 
 
 def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
-    k8s_dir: Path, haku_console_objects: list[dict[str, Any]], app_objects: list[dict[str, Any]]
+    k8s_dir: Path, generated_dir: Path, haku_console_objects: list[dict[str, Any]], app_objects: list[dict[str, Any]]
 ) -> None:
     """Configured public diagnostics do not widen secret or exec access."""
     rbac_base = list(yaml.safe_load_all((k8s_dir / "agents/agent-rbac-base/agent-rbac-base.k8s.yaml").read_text()))
@@ -118,7 +118,7 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
 
     # public-coder's cluster-scoped reads come from its own narrow ClusterRole, never from the
     # much broader cluster-diagnostics-reader Haku is bound to.
-    haku_cluster_binding = yaml.safe_load((k8s_dir / "agents/shared-rbac/agent-shared-rbac.k8s.yaml").read_text())
+    haku_cluster_binding = yaml.safe_load((generated_dir / "agents/shared-rbac/agent-shared-rbac.k8s.yaml").read_text())
     assert _subjects(haku_cluster_binding) >= _HAKU_SUBJECTS
     assert _PUBLIC_CODER_SUBJECT not in haku_cluster_binding["subjects"]
 

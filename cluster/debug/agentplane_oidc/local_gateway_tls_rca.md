@@ -217,7 +217,7 @@ separate decisions.
 
 Canary first, on the two `hil-ovh` nodes hosting the app and Actions Pods
 (`ovh-ns103711`, `ovh-ns102453`), through a Flux-managed `CiliumNodeConfig`
-(<../../k8s/kube-system/ciliumnodeconfig-proxy-original-source-canary.yaml>). The
+(<../../generated/kube-system/ciliumnodeconfig-proxy-original-source-canary.yaml>). The
 agent reads it in its `build-config` init container, so after Flux applies it,
 delete the `cilium-agent` Pod on each canary node and wait for the replacement to
 be Ready. No Helm or `//cluster:bootstrap` run is involved until the global flip.
