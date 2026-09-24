@@ -749,7 +749,6 @@ function VirtualizedHistory({
   history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
 }): JSX.Element {
   const list = useRef<VirtuosoHandle>(null);
-  const scroller = useRef<HTMLElement | null>(null);
   // Whether new output keeps the tail in view. Virtuoso's at-bottom is geometry: a card growing past
   // the viewport is not at the bottom to it, which is not the reader leaving. Reaching the bottom
   // sets this; a gesture towards older rows clears it.
@@ -759,37 +758,7 @@ function VirtualizedHistory({
   const leave = (element: HTMLElement) => {
     if (element.scrollTop > 0) following.current = false;
   };
-  // The reader's row and its offset below the viewport top, as the last scroll left them. Virtuoso
-  // compensates a row above the reader changing size only while the reader scrolls up (its item
-  // wrappers opt out of native scroll anchoring), and a prepend only by an estimated height.
-  const anchor = useRef<{ cursor: string; offset: number } | null>(null);
-  // Until 100ms after the last scroll. Meanwhile Virtuoso's upward-scroll compensation may already
-  // be correcting a resize, and correcting it here too would double it.
-  const scrolling = useRef(false);
-  // The bottom as of the last scroll or resize: a return to the bottom can land on it after a card
-  // below grew in the same task, before the scroll event reports it.
-  const bottom = useRef(0);
   const firstItemIndex = useFirstItemIndex(rows);
-  // Set by a prepend until Virtuoso's compensating scroll for it lands.
-  const prepending = useRef(false);
-  const previousFirstItemIndex = useRef(firstItemIndex);
-  if (firstItemIndex < previousFirstItemIndex.current) prepending.current = true;
-  previousFirstItemIndex.current = firstItemIndex;
-  const readerRow = (element: HTMLElement) => {
-    const top = element.getBoundingClientRect().top;
-    const row = [...element.querySelectorAll<HTMLElement>("[data-thread-anchor]")].find(
-      (candidate) => candidate.getBoundingClientRect().bottom > top
-    );
-    return row?.dataset.threadAnchor
-      ? { cursor: row.dataset.threadAnchor, offset: row.getBoundingClientRect().top - top }
-      : null;
-  };
-  const restore = (element: HTMLElement) => {
-    const held = anchor.current;
-    if (following.current || held === null || prepending.current) return;
-    const row = element.querySelector(`[data-thread-anchor="${held.cursor}"]`);
-    if (row) element.scrollTop += row.getBoundingClientRect().top - element.getBoundingClientRect().top - held.offset;
-  };
   // The absolute index of the first row once it last rendered, within the viewport or its overscan.
   const [startReached, setStartReached] = useState<number | null>(null);
   useEffect(() => {
@@ -798,9 +767,6 @@ function VirtualizedHistory({
   return (
     <Virtuoso<HistoryRow, HistoryContext>
       ref={list}
-      scrollerRef={(element) => {
-        scroller.current = element instanceof HTMLElement ? element : null;
-      }}
       role="region"
       aria-label="Thread history"
       style={{ flex: 1, minHeight: 0 }}
@@ -810,21 +776,12 @@ function VirtualizedHistory({
       firstItemIndex={firstItemIndex}
       initialTopMostItemIndex={{ index: "LAST", align: "end" }}
       computeItemKey={(_, row) => rowKey(row)}
-      minOverscanItemCount={5}
       followOutput={() => (following.current ? "auto" : false)}
       atBottomStateChange={(atBottom) => {
         if (atBottom) following.current = true;
       }}
-      isScrolling={(value) => {
-        scrolling.current = value;
-        // A row measured while Virtuoso was scrolling was left to it; settle whatever it left.
-        if (!value && scroller.current) restore(scroller.current);
-      }}
       totalListHeightChanged={() => {
-        const element = scroller.current;
         if (following.current) list.current?.scrollToIndex({ index: "LAST", align: "end" });
-        else if (element && !scrolling.current) restore(element);
-        if (element) bottom.current = element.scrollHeight - element.clientHeight;
       }}
       startReached={setStartReached}
       onWheel={(event) => {
@@ -844,20 +801,9 @@ function VirtualizedHistory({
       }}
       onScroll={(event) => {
         const element = event.currentTarget;
-        if (pointerScrollTop.current !== null) {
-          if (element.scrollTop < pointerScrollTop.current) leave(element);
-          pointerScrollTop.current = element.scrollTop;
-        }
-        const max = element.scrollHeight - element.clientHeight;
-        if (!following.current && max > bottom.current && Math.abs(element.scrollTop - bottom.current) <= 2) {
-          following.current = true;
-          list.current?.scrollToIndex({ index: "LAST", align: "end" });
-        }
-        bottom.current = max;
-        if (prepending.current) {
-          prepending.current = false;
-          restore(element);
-        } else if (!following.current) anchor.current = readerRow(element);
+        if (pointerScrollTop.current === null) return;
+        if (element.scrollTop < pointerScrollTop.current) leave(element);
+        pointerScrollTop.current = element.scrollTop;
       }}
       onTouchStart={(event) => {
         touchY.current = event.touches[0]?.clientY ?? null;
