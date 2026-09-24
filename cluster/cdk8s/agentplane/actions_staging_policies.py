@@ -74,6 +74,7 @@ _GROCY_SF_READS_SET = "grocy-sf-reads"
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
 _AGENTPLANE_TESTING_POLICY = "agentplane-testing"
+_GITHUB_DOWNLOADS_POLICY = "github-downloads"
 
 
 def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: ActionPolicySetSpec) -> None:
@@ -438,6 +439,28 @@ def add_staging_action_policies(scope: Construct) -> None:
         metadata=ApiObjectMetadata(name=_AGENTPLANE_TESTING_POLICY, namespace=_NAMESPACE),
         spec=EgressPolicySpec(rules=[EgressPolicySpecRules(hosts=[testing.ENV.app.hostname])]),
     )
+    # GitHub downloads with nothing substituted: a release asset or a tag archive, which is what a
+    # Bazel `http_archive` fetches, without the write-capable PAT `github-public` carries.
+    EgressPolicy(
+        scope,
+        "egresspolicy-github-downloads",
+        metadata=ApiObjectMetadata(name=_GITHUB_DOWNLOADS_POLICY, namespace=_NAMESPACE),
+        spec=EgressPolicySpec(
+            rules=[
+                EgressPolicySpecRules(
+                    hosts=[
+                        "github.com",
+                        # Where `github.com/.../archive/...` redirects.
+                        "codeload.github.com",
+                        # Where `github.com/.../releases/download/...` redirects.
+                        "objects.githubusercontent.com",
+                        "release-assets.githubusercontent.com",
+                    ],
+                    methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.HEAD],
+                )
+            ]
+        ),
+    )
 
     # What a sandbox of claude-ai's may reach. The binding is on the account rather than on each
     # box because that is what the account is entitled to: the proxy authenticates the Pod's
@@ -456,15 +479,15 @@ def add_staging_action_policies(scope: Construct) -> None:
     # that module's `grocy-sf-readonly` EgressPolicy for why that's Grocy's API rather than the
     # grocy-mcp-sf MCP server). `coinbase` presents nothing: the sandbox signs with the key above.
     # `agentplane-testing` presents nothing either: the acceptance suite brings its own app token.
+    # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
     #
-    # TODO(github-egress): consider binding `github-public` here too. The asymmetry today is that
-    # the ActionPolicyBinding below auto-approves GitHub *reads through the Action Service*, while
-    # a sandbox of the same caller cannot reach github.com at all -- so `git clone` fails in a box
-    # whose caller can read the same repository through an Action. Two things to settle first: the
-    # policy substitutes the `agentydragon-agent` PAT, which is write-capable, on GET and POST with
-    # no path limit, so binding it lets a sandbox push as that bot. The policy includes
-    # `codeload.github.com`, where a `github.com/.../archive/...` fetch actually lands, so the
-    # remaining question is the write-capable credential rather than download reachability.
+    # TODO(github-egress): consider binding `github-public` here too. The ActionPolicyBinding below
+    # auto-approves GitHub *reads through the Action Service*, while a sandbox of the same caller
+    # has only `github-downloads`: GET and HEAD with no credential, so `git clone`, whose fetch
+    # POSTs to `git-upload-pack`, fails for a repository its caller can read through an Action.
+    # What stands in the way is `github-public`'s credential: the `agentydragon-agent` PAT is
+    # write-capable and substituted on GET and POST with no path limit, so binding it lets a
+    # sandbox push as that bot.
     EgressBinding(
         scope,
         "egressbinding-claude-ai",
@@ -485,6 +508,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 HOME_ASSISTANT_READONLY_POLICY,
                 COINBASE_POLICY,
                 _AGENTPLANE_TESTING_POLICY,
+                _GITHUB_DOWNLOADS_POLICY,
             ],
         ),
     )
