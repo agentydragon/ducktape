@@ -23,7 +23,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium, external_creds
-from cluster.cdk8s.agentplane import actions, staging_config
+from cluster.cdk8s.agentplane import actions, command_sandbox, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials, credential_external_secret
@@ -191,11 +191,18 @@ _ACTIONS_SETTINGS = {
                 "description": "Stamped and exec'd by this service, as the caller, in its own namespace.",
                 "namespace": _NAMESPACE,
                 "environments": {
-                    # The integration app's runner template, for now: it already carries the egress
-                    # sidecar, the interception CA and the proxy environment, so the path is real
-                    # end to end. Its workload container is the runner image, which is the wrong
-                    # destination -- a box to run commands in wants neither the harnesses nor the
-                    # state volume (agentplane/docs/sandbox_actions.md).
+                    "sandbox": {
+                        "template": command_sandbox.NAME,
+                        "container": command_sandbox.CONTAINER,
+                        "default_cwd": command_sandbox.HOME,
+                        "description": (
+                            "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, "
+                            "kubectl and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, "
+                            "and no volume: files last as long as the box's Pod."
+                        ),
+                    },
+                    # The integration app's runner template, for a caller that wants the harnesses
+                    # or a state volume that survives its Pod.
                     "runner": {
                         "template": "agentplane-runner",
                         "container": "runner",
@@ -204,9 +211,9 @@ _ACTIONS_SETTINGS = {
                             "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, "
                             "ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
                         ),
-                    }
+                    },
                 },
-                "default_environment": "runner",
+                "default_environment": "sandbox",
             },
         },
         "ssh": {
@@ -365,6 +372,7 @@ ENV = Environment(
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
+    command_sandbox.CommandSandbox(chart, "command-sandbox", ENV)
     reader = ServiceAccount(
         chart, "external-creds-reader", metadata=metadata("external-creds-reader", _NAMESPACE), automount_token=False
     )

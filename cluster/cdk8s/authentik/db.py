@@ -1,5 +1,5 @@
-"""Authentik's CNPG Postgres, rendered into `cluster/k8s/authentik/db`, which the
-`authentik` Kustomization lists as a subdirectory."""
+"""Authentik's CNPG Postgres, rendered into `cluster/k8s/authentik/db`, whose manifest the
+`authentik` Kustomization lists."""
 
 from __future__ import annotations
 
@@ -9,8 +9,7 @@ from cdk8s import App, Chart
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPlugins
 
 from cluster.cdk8s import cnpg
-from cluster.cdk8s.flux import kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "authentik-db-ovh"
@@ -45,4 +44,3 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))

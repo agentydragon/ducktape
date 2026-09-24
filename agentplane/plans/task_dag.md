@@ -87,7 +87,6 @@ flowchart TB
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
     CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
-    SANDBOX_EXEC_IMAGE["Planned environment<br/>sandbox Actions on the plain sandbox image<br/>today an exec box is the runner image"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>some first need an ActionGroup, a kind, or DENY_LISTS"]:::future
 
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
@@ -130,7 +129,6 @@ flowchart TB
     MCPAUTH --> PROD
     ELEVATE --> CONSOLE_POLICIES
     ELEVATE --> MCP_CONSOLE_INTERNAL
-    SANDBOX_EXEC_IMAGE --> MCP_CONSOLE_INTERNAL
     MCP_CONSOLE_INTERNAL --> MCPAGG
     THREAD_OUTLIVES_SANDBOX --> AG
     HOSTED_THREAD_SURFACES --> AG
@@ -386,22 +384,6 @@ settle).
 **Acceptance:** a stated, reviewed authority for the account, rendered by the generator rather than
 accumulated; a real API request from inside a sandbox succeeds for the intended operations and is
 refused outside them; and removing the account or its label still disables the whole path.
-
-### `SANDBOX_EXEC_IMAGE` — a sandbox environment on the plain sandbox image
-
-**Planned environment:** the configured `runner` environment stamps the integration app's runner
-template, which carries the egress sidecar, the interception CA and the proxy environment, so the
-path is real end to end. Its workload container is the runner image, which brings the harnesses, a
-2-core runner container and the state volume, none of which a box to run commands in needs.
-
-**Shape:** Sandbox Actions get a default environment on the plain sandbox image
-(`agentplane/sandbox_image/default.nix`, published as `agentplane-sandbox`), through its own
-`SandboxTemplate` that keeps the sidecar, CA and proxy environment egress needs
-([sandbox Actions](../docs/sandbox_actions.md)), described by what the image holds. `runner` stays
-as a second environment.
-
-**What waits on it:** nothing that `runner` cannot do: the runner image is the same tool list plus
-the runner and both harnesses. The gain is a box that costs the quota a command needs.
 
 ### `CALLER_GRANT_VIEW` — one grant view for Sandboxes and unmanaged agents
 

@@ -1,5 +1,5 @@
-"""The Grocy MCP server: the household-independent `mcp-base` (Deployment, Service) and
-`mcp-servicemonitor-base`, and each household's `<household>/mcp` (pull credentials and
+"""The Grocy MCP server: the household-independent `mcp-base` (Deployment, Service,
+ServiceMonitor), and each household's `<household>/mcp` (pull credentials and
 the public HTTPRoute).
 
 The server's image tag is the placeholder "unset"; the hand-written
@@ -33,7 +33,6 @@ from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.valkey import valkey_instance
 
 BASE_DIR = f"{HAND_WRITTEN_ROOT}/grocy/mcp-base"
-SERVICEMONITOR_BASE_DIR = f"{HAND_WRITTEN_ROOT}/grocy/mcp-servicemonitor-base"
 _NAME = "grocy-mcp-server"
 _LABELS = {"app.kubernetes.io/name": "grocy-mcp", "app.kubernetes.io/component": "server"}
 _IMAGE = "git.allegedly.works/ducktape-ci/grocy-mcp:unset"
@@ -169,11 +168,6 @@ def base_chart(app: App) -> Chart:
             type="ClusterIP",
         ),
     )
-    return chart
-
-
-def servicemonitor_base_chart(app: App) -> Chart:
-    chart = Chart(app, "grocy-mcp-servicemonitor", disable_resource_name_hashes=True)
     ServiceMonitor(
         chart,
         "servicemonitor",
@@ -227,11 +221,6 @@ def write_manifests(root: Path) -> None:
     write_yaml(
         root / BASE_DIR / "kustomization.yaml",
         kustomize_kustomization(resources=["grocy-mcp.k8s.yaml"], components=["./image-pins"]),
-    )
-    write_charts(root, SERVICEMONITOR_BASE_DIR, servicemonitor_base_chart)
-    write_yaml(
-        root / SERVICEMONITOR_BASE_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=["grocy-mcp-servicemonitor.k8s.yaml"]),
     )
     write_charts(
         root, f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", lambda app: household_chart(app, household="sf", display_name="SF")

@@ -163,6 +163,35 @@ py_library(
 )
 
 py_library(
+    name = "command_sandbox",
+    srcs = ["command_sandbox.py"],
+    deps = [
+        ":egress",
+        ":environment",
+        ":sandbox_pod",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/agent_sandbox:sandboxtemplate",
+        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "sandbox_pod",
+    srcs = ["sandbox_pod.py"],
+    deps = [
+        ":egress",
+        ":environment",
+        ":llm_ingress",
+        "//agentplane/egress:sidecar",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s/crd_bindings/agent_sandbox:sandboxtemplate",
+        "//util:settings_contract",
+    ],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
@@ -176,9 +205,9 @@ py_library(
         ":migrate_container",
         ":node_scheduling",
         ":pod_disruption_budget",
+        ":sandbox_pod",
         "//agentplane/app:main",
         "//agentplane/app:oidc",
-        "//agentplane/egress:sidecar",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:forgejo_images",
@@ -347,6 +376,7 @@ py_library(
         ":actions",
         ":actions_staging_policies",
         ":chart",
+        ":command_sandbox",
         ":egress_credentials",
         ":egress_staging_credentials",
         ":environment",

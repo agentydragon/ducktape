@@ -124,7 +124,7 @@ resource "kubernetes_secret" "grocy_mcp_oidc_sf_source" {
 # as HTTP Basic with this app password. The outpost turns Basic credentials into a
 # client_credentials grant against the grocy-sf proxy provider itself, so no token is minted
 # or stored outside Authentik. Grocy creates the matching user on its first request with no
-# permissions (DEFAULT_PERMISSIONS=none, cluster/k8s/grocy/app-base), and the egress proxy
+# permissions (DEFAULT_PERMISSIONS=none, cluster/cdk8s/grocy/app.py), and the egress proxy
 # presents the password only on GETs to Grocy's read routes.
 resource "authentik_user" "agentplane_grocy_sf_readonly" {
   username = "agentplane-grocy-sf-readonly"
