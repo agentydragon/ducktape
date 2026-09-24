@@ -98,11 +98,8 @@ a later sweep.
   - the AST selector atoms (`selector_ir.rs`) and their encoding in
     `selector_constraint_model_builder.rs`, keeping only what candidate,
     reference and relation tables need;
-  - `solver_backends/ortools_spike`;
   - the internal tests of deleted code, once their rules have command-level
     equivalents;
-  - `debug/perf/2026_06_27_large_bundle_selector_csp_profile.md` and
-    `debug/perf/2026_07_13_match_selector_full_domain_profile.md`;
   - `docs/selector_resolution.md`, rewritten for the new engine. Its measured
     rejection of encoding tree matching as solver constraints stays as a short
     decision record citing

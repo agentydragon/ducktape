@@ -15,8 +15,8 @@ Binary built `-c opt`. All runs on one host (a 4-core container), so the
 absolute numbers are not comparable to other hosts — the ratio is the result.
 
 Never compare a `fastbuild` selector timing to anything: the same
-`match-selector` probe measured 19.80s fastbuild against 3.86s optimized
-(<2026_07_13_match_selector_full_domain_profile.md>).
+`match-selector` probe measured 19.80s fastbuild against 3.86s optimized, both
+peaking near 1.55 GB RSS.
 
 ## Measurements
 
@@ -53,10 +53,12 @@ and domain construction, not the match. That also means it does not amortize
 away in a joint solve: it is the floor, and a production-sized program adds
 per-selector model on top of it. The recorded production-sized attempt timed out
 at 120s inside `FactDomains::from_program_and_facts` without reaching the solver
-(<2026_06_27_large_bundle_selector_csp_profile.md>).
+(a 2026-06-27 profile of a large-bundle selector program).
 
-**The solver is not the cost.** Feeding the saved request for one selector to
-the optimized sidecar takes 0.02s against 1.91s of model construction. The
+**The solver is not the cost.** One selector's saved request is 5.19 MB and
+carries 2,383,797 domain values, including two variables over the full
+1,190,984-node AST domain. Feeding it to the optimized sidecar takes 0.02s
+against 1.91s of model construction. The
 encoding, not the search, is what is expensive.
 
 ## Not measured

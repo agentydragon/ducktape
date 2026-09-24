@@ -55,22 +55,20 @@ all on the largest known downstream chunk (6.81 MiB, 204,235 lines) with
 | Path                                              | Scope                          |         Wall |
 | ------------------------------------------------- | ------------------------------ | -----------: |
 | matcher (`spec validate --modules --source-file`) | 6,179 `source_match` selectors | 11.1s warmed |
-| native lowering (`spec match-selector`)           | **one** selector               |  7.1s warmed |
+| native lowering (then `spec match-selector`)      | **one** selector               |  7.1s warmed |
 
 The native path costs more for one selector than the matcher costs for the whole
 spec, and its ~7s is near-constant across selectors of very different
 complexity — it is per-chunk fact and domain construction, not matching work.
 
-The model is why. One selector lowers to a 5.19 MB backend request carrying
+The model is why. One selector lowered to a 5.19 MB backend request carrying
 2,383,797 domain values, including two variables over the full 1,190,984-node
-AST domain; the CP-SAT solve of that request takes **0.02s** against 1.91s of
-model construction
-(<../debug/perf/2026_07_13_match_selector_full_domain_profile.md>). A
-general finite-domain solver has no index over AST shape, so the encoding spends
-its time rebuilding what `selector_match::Index` already provides. Scaled to a
-whole spec the compile does not finish: a production-sized run timed out at 120s
-inside `FactDomains::from_program_and_facts` without ever reaching the solver
-(<../debug/perf/2026_06_27_large_bundle_selector_csp_profile.md>).
+AST domain; the CP-SAT solve of that request took **0.02s** against 1.91s of
+model construction. A general finite-domain solver has no index over AST shape,
+so the encoding spent its time rebuilding what `selector_match::Index` already
+provides. Scaled to a whole spec the compile did not finish: a production-sized
+run timed out at 120s in fact-domain construction without reaching the solver.
+Measurements: <../debug/perf/2026_09_17_matcher_vs_native_lowering.md>.
 
 The capability argument that motivated the native direction — cross-selector
 references, negation, counting, reachability — does not depend on it. Those are
