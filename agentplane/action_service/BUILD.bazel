@@ -925,6 +925,7 @@ py_test(
         "//:conftest",
         "@pypi//httpx2",
         "@pypi//more_itertools",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
