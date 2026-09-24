@@ -178,11 +178,8 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
-        ":chunk_facts",
         ":js_ast",
-        ":selector_ir",
-        ":selector_ir_lowering",
-        ":selector_runtime",
+        ":source_match",
         ":spec",
         "@crates//:anyhow",
         "@crates//:swc_common",
