@@ -129,12 +129,9 @@ member; anonymous blocks where `STMT_LIST` ignores setup/cleanup). Grouped
 against repeated selectors and splitting when one huge selector would need long
 exact bodies or volatile initializers to be unique.
 
-**Reframe.** The cost model ranks and _proves_ candidates but does not _choose_
-the anchor: picking a purpose-bearing,
-forward-compatible anchor over a merely-unique one (the `name`-key vs `"running"`
-problem) is an intelligence task delegated to an agent, with the minimizer demoted
-to a suggester and the prove-gate kept as the validity oracle. The over-pin backlog
-tracked in <../TODO.md> is then about better _defaults_, not about spec quality.
+The minimizer suggests and proves; an agent chooses the anchor
+(<../docs/selectors.md> § The contract and the ladder), so the over-pin backlog
+in <../TODO.md> is about better defaults, not spec quality.
 
 ### Patch Plans
 
@@ -218,21 +215,26 @@ hand-authored module-by-module edits.
 
 ## Flow 3: Port Version 1 Spec to Version 2 Chunks
 
-Porting is step 1c of <selector_engine.md>. The retrieval design in "Repair
-and porting search" below applies to it.
+Resolve the old spec against the old chunks, keep each entity's source
+identity, and use it to search the new chunks and propose repairs (retrieval:
+§ Repair And Porting Search), with a residual report for semantic drift. This is
+the one home for version porting. `nearest_unclaimed` on `no_match` outcomes is
+the within-version starting point.
+
+A two-version held-out evaluation of `debundle_stabilize` builds on it: stabilize
+against version 1, port, and measure how many selectors survive to version 2.
 
 ## Repair Workflow
 
 For a selector that does not match anything:
 
-1. Classify the failure: parse/schema error, unsupported hole, free readable
-   identifier, no top-level candidate, local subtree mismatch, literal mismatch,
-   or context-window mismatch.
-2. Show nearest candidate statements using canonical AST distance and stable
-   anchor overlap.
-3. Try mechanical relaxations: replace volatile subtrees with holes, shrink or
-   expand the statement window, use literal/regex anchors, or group bindings.
-4. Emit a candidate patch only if the repaired selector is unique.
+1. Classify the failure: parse/schema error, unsupported hole, no top-level
+   candidate, local subtree mismatch, literal mismatch, or context-window
+   mismatch.
+2. Starting from `nearest_unclaimed`, try mechanical relaxations: replace
+   volatile subtrees with holes, shrink or expand the statement window, use
+   literal/regex anchors, or group bindings.
+3. Emit a candidate patch only if the repaired selector is unique.
 
 For an ambiguous selector:
 
@@ -242,11 +244,9 @@ For an ambiguous selector:
 3. If no stable differentiator exists, report that the selector must remain
    intentionally more specific or use a different ownership boundary.
 
-For duplicate claims:
-
-1. Report duplicate identity by declaration/declarator, not only minified name.
-2. Identify whether the right rewrite is binding-group collapse,
-   cross-module-group support, or a real ownership conflict.
+For duplicate claims (declaration detail: <../SELECTOR_BUGS.md>), identify
+whether the right rewrite is binding-group collapse, cross-module-group support,
+or a real ownership conflict.
 
 ## Performance Plan
 
@@ -341,14 +341,13 @@ Patch planning and application should be deterministic:
 
 ### Milestone 3: Repair Reports and Patch Plans
 
-- Nearest-candidate and smallest-differentiator diagnostics for `no_match` and
-  `ambiguous` outcomes.
+- Smallest-differentiator diagnostic for `ambiguous` outcomes.
 - `plan repair` consumes the `spec validate --format json` report and emits or
   applies patch plans for mechanically proven cases.
 
 ### Milestone 4: Version-Port Workflow
 
-Step 1c of <selector_engine.md>.
+§ Flow 3.
 
 ### Milestone 5: New-App Bootstrap
 

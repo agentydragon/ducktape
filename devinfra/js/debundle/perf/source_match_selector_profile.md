@@ -152,21 +152,7 @@ That is the intended shape: regexes are still used to test candidate
 string literals, but regex parse/compile setup is no longer on the hot
 path for every candidate AST comparison.
 
-## Remaining Work
-
-The next algorithmic step is a chunk-level source-match index keyed by
-top-level declaration kind and direct literal values/predicates. The
-current change keeps the public resolver API unchanged and still scans
-candidate declarations per distinct selector, but most candidates are
-rejected before recursive AST matching and regex compilation is hoisted
-out of that loop.
-
-Keep-going miss diagnostics can also do repeated nearest-candidate scans
-for selectors that truly miss. This PR targets the observed slow
-ambiguity path; miss-diagnostic caching/indexing should be handled as a
-follow-up if a profile shows `source_match_no_match_hint` dominating.
-
-### Selector Synthesis Dogfood: Filter Latency
+## Open: selector synthesis filter latency
 
 A downstream large-spec run of `debundle spec synthesize-selectors --rewrite
 name-binding-to-source-match` on a single 6.9 MiB / 204k-line chunk showed the
