@@ -13,8 +13,8 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import Namespace, k8s
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
@@ -58,6 +58,18 @@ _CONFIG_MAP_NAME = "public-coder-agent-config"
 _NAME = "public-coder-agent"
 NAMESPACE = "public-coder-agent"
 LABELS = {"app.kubernetes.io/name": _NAME}
+_NAMESPACE_LABELS = {
+    "goldilocks.fairwinds.com/enabled": "true",
+    "goldilocks.fairwinds.com/vpa-update-mode": "auto",
+    "name": NAMESPACE,
+    "rbac.ducktape.io/agent-readable-metadata": "true",
+}
+_NAMESPACE_ANNOTATIONS = {
+    "description": (
+        "Second OpenClaw agent, egress-confined to a CONNECT proxy and reachable only through the Authentik proxy "
+        "outpost. Opens pull requests against public repositories as agentydragon-agent."
+    )
+}
 _IMAGE = "ghcr.io/agentydragon/openclaw:unset"
 _GATEWAY_PORT = 18789
 _HOME = "/home/openclaw"
@@ -1038,6 +1050,28 @@ def _rbac(scope: Construct) -> None:
     )
 
 
+def namespace_chart(app: App) -> Chart:
+    """The namespace shared by the public-coder-agent components, and its `default` ServiceAccount.
+
+    The ServiceAccount carries the pull secret for ducktape-ci, a private tenant in the in-cluster
+    Forgejo registry; cluster/k8s/forgejo-images reflects `forgejo-images-creds` into this namespace.
+    Workloads that don't set their own imagePullSecrets (the devbox VM's containerDisk pull) need it.
+    """
+    chart = Chart(app, "namespace", disable_resource_name_hashes=True)
+    namespace = Namespace(
+        chart,
+        "namespace",
+        metadata=ApiObjectMetadata(name=NAMESPACE, labels=_NAMESPACE_LABELS, annotations=_NAMESPACE_ANNOTATIONS),
+    )
+    k8s.KubeServiceAccount(
+        chart,
+        "default-service-account",
+        metadata=k8s.ObjectMeta(name="default", namespace=namespace.name),
+        image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
+    )
+    return chart
+
+
 def app_chart(app: App) -> Chart:
     """The OpenClaw workload, its credentials, storage, network policy and RBAC."""
     workload = Chart(app, _NAME, disable_resource_name_hashes=True)
@@ -1051,4 +1085,6 @@ def app_chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app", chart, kubeconfig_chart, app_chart)
+    write_charts(
+        root, f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app", namespace_chart, chart, kubeconfig_chart, app_chart
+    )
