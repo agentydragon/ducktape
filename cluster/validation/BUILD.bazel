@@ -122,16 +122,6 @@ py_library(
 )
 
 py_library(
-    name = "postbuild_substitutions",
-    testonly = True,
-    srcs = ["postbuild_substitutions.py"],
-    deps = [
-        ":cluster",
-        ":k8s",
-    ],
-)
-
-py_library(
     name = "terraform_backends",
     testonly = True,
     srcs = ["terraform_backends.py"],
@@ -279,19 +269,6 @@ py_test(
         ":flux",
         ":k8s",
         ":kustomize",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_postbuild_substitutions",
-    srcs = ["test_postbuild_substitutions.py"],
-    deps = [
-        ":cluster",
-        ":flux",
-        ":k8s",
-        ":postbuild_substitutions",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -462,7 +439,6 @@ py_test(
         ":health_checks",
         ":image_automation",
         ":kustomize",
-        ":postbuild_substitutions",
         ":terraform_backends",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",

@@ -203,9 +203,6 @@ by any wave. Each names what would settle it. None is a reason to widen a wave's
   and returns the nodes others need, called from the entry point in order; not a
   registry, not per-module imports of other areas' nodes. Unsure it is needed; the
   file has not yet caused a wrong edit.
-- **`postBuild.substituteFrom: cert-manager-issuer-config`** is the one non-operational
-  block still repeated verbatim, on 6 nodes. Same value everywhere, so it may become a
-  `flux` constant like `SOPS_DECRYPTION`; low value at 6 sites.
 - **`generation.write_charts(*builders)`** still takes builder callables at 157 call
   sites, 3 of them lambdas closing over a value (`lambda app: chart(app, mesh)` in
   `dns_automation`). Confident it should

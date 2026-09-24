@@ -328,7 +328,6 @@ py_library(
         ":generation",
         ":manifest_roots",
         ":metadata",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/gateway_api:gateway",
         "//cluster/cdk8s/crd_bindings/gateway_api:httproute",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",

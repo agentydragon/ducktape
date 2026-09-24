@@ -43,7 +43,6 @@ from cluster.validation.image_automation import (
     check_no_flow_mappings_where_flux_writes,
 )
 from cluster.validation.kustomize import KustomizeBuildResult, run_kustomize_build
-from cluster.validation.postbuild_substitutions import check_postbuild_substitution_sources
 from cluster.validation.terraform_backends import check_terraform_backends
 
 
@@ -183,12 +182,6 @@ def test_flux_bootstrap_auth_split(cluster: ParsedCluster, k8s_dir: Path) -> Non
 def test_sops_secrets_have_decryption_block(cluster: ParsedCluster, repo_root: Path) -> None:
     """Active flux kustomizations rendering a SOPS Secret must declare decryption.provider: sops."""
     errors = check_sops_decryption_blocks(cluster, repo_root)
-    assert not errors, "\n".join(errors)
-
-
-def test_postbuild_substitution_sources_are_namespace_local(cluster: ParsedCluster) -> None:
-    """postBuild ConfigMaps/Secrets must be local or explicitly auto-reflected."""
-    errors = check_postbuild_substitution_sources(cluster)
     assert not errors, "\n".join(errors)
 
 

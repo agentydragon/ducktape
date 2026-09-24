@@ -9,16 +9,12 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecPostBuild,
-    KustomizationSpecPostBuildSubstituteFrom,
-    KustomizationSpecPostBuildSubstituteFromKind,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.flux import (
+    CERT_MANAGER_ISSUER_SUBSTITUTION,
     Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on_many,
@@ -75,13 +71,7 @@ def cert_manager_environment(
         NAME,
         artifact,
         timeout="5m",
-        post_build=KustomizationSpecPostBuild(
-            substitute_from=[
-                KustomizationSpecPostBuildSubstituteFrom(
-                    kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name="cert-manager-issuer-config"
-                )
-            ]
-        ),
+        post_build=CERT_MANAGER_ISSUER_SUBSTITUTION,
         depends_on=flux_kustomization_depends_on_many(
             cert_manager, cert_manager_trust, cert_manager_issuer_config, external_creds, external_secrets_config
         ),

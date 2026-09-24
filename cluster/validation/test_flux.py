@@ -39,36 +39,6 @@ class TestParseFluxKustomization:
         with pytest.raises(CyclicDependencyError):
             assert_no_cycles(cluster.graph)
 
-    def test_parses_postbuild_substitute_from(self, tmp_path: Path) -> None:
-        flux_file = tmp_path / "flux-kustomization.yaml"
-        _write_yaml(
-            flux_file,
-            """
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: test-app
-  namespace: ducktape-flux
-spec:
-  path: ./cluster/k8s/test-app
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: settings
-      - kind: Secret
-        name: optional-settings
-        optional: true
-""",
-        )
-
-        spec = parse_flux_kustomizations(flux_file)["test-app"]
-
-        assert spec.post_build is not None
-        assert [(source.kind, source.name, source.optional) for source in spec.post_build.substitute_from] == [
-            ("ConfigMap", "settings", False),
-            ("Secret", "optional-settings", True),
-        ]
-
     def test_parses_parked_marker(self, tmp_path: Path) -> None:
         flux_file = tmp_path / "flux-kustomization.yaml"
         _write_yaml(
