@@ -344,7 +344,7 @@ export function EntityCard({
         {/* The bubble has no header row: beside its top corner, in the width it leaves free, the
             icon neither grows the bubble nor covers its text. */}
         <EvidenceToggle entity={entity} />
-        <Paper className="agentplane-user-bubble" p="sm" withBorder maw="80%">
+        <Paper className="agentplane-user-bubble" p="sm">
           <Body reference={entity.inputRef} format="text" />
           <EvidencePanel threadId={threadId} entity={entity} />
         </Paper>

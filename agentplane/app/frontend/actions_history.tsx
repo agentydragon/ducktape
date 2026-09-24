@@ -5,6 +5,8 @@ import { ActionCaller, ActionContext, RequestAuditDetails, stateLabel, useAction
 import { actionService, type ActionRequestView, type ActionService } from "./client";
 import { JsonView } from "./json_view";
 
+import "./actions_history.css";
+
 /** A decided/terminal ActionRequest, kept as a durable receipt: the decision it's a record of leads
  * the card, with the exact arguments folded behind a disclosure rather than shown unconditionally
  * (the pending card's job is a live decision, this one's is a compact audit trail). */
