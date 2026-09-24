@@ -1,67 +1,63 @@
 # Selector resolution
 
-How a spec's selectors become a claim map: which minified binding each readable
-entity names. This is the engine contract behind `run`, `spec validate`,
-`spec match-selector`, the editing gates, and the codemods.
+How the spec's selectors become one outcome per entity. What the outcomes
+guarantee is <../SPEC.md>; this is how they are computed.
 
-## The pipeline
+## One resolve
 
-Every selector kind compiles into **one selector IR program** per chunk
-(`selector_ir_lowering`), and one solve assigns every target jointly
-(`selector_runtime::solve_global_selector_program`). Joint assignment is the
-point: `all_different` across claimed targets is selector semantics, so a
-selector that is ambiguous alone can be forced by what the rest of the spec
-already claimed.
+`selector_resolve::Chunk::resolve` (<../selector_resolve.rs>) takes a parsed
+chunk and the spec entities aimed at it and returns one `SelectorOutcome` per
+entity. Every command that resolves selectors calls it:
 
-Facts reach that program two ways, by selector kind:
+| Caller                                                    | Entities                                                                                                                       | Uses the outcomes                                                                                       |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `run` (`lowering/materialize/plan_builder.rs`)            | every module of the chunk, less what `run` claims itself: import-specifier pins, duplicate claims, pins on undeclared bindings | claims each resolved entity, records the rest (and elimination warnings) in `selector_diagnostics.json` |
+| `spec validate --spec`                                    | as `run` (it is a keep-going dry run)                                                                                          | reports every non-`ok` outcome                                                                          |
+| `spec validate --source-file` (`cli/validate.rs`)         | every module file, against one chunk file                                                                                      | reports every non-`ok` outcome                                                                          |
+| `spec match-selector` (`match_selector.rs`)               | the probe alone                                                                                                                | reports its outcome                                                                                     |
+| `synthesize-selectors` proof (`selector_codemod.rs`)      | the candidate selector alone                                                                                                   | proven only when `resolved_by: own_selector` at the intended declaration                                |
+| edit gate, `describe`, `peel` (`anonymous_resolution.rs`) | every module's `source_matches[]` and anonymous statements, per chunk source the owner graph names                             | an entity must resolve in one source and match in no other                                              |
 
-| Selector kind                                                                                               | How it reaches the IR                                                                                                      |
-| ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `binding` (name pin)                                                                                        | lowered natively — a name lookup over `chunk_facts`                                                                        |
-| `cross_ref`, `reads_member`, `member_of_module`, `passed_to_call`, `makes_decorate_call`, `intrinsic_alias` | lowered natively — relation atoms over `chunk_facts`                                                                       |
-| `source_match` (JS template with holes)                                                                     | **`ChunkResolver` enumerates candidates**, which are projected into the IR as a per-target `ProjectedAllowedTuples` domain |
+A command that needs a selector unique on its own resolves it as a spec of one
+entity: its outcome is then its own candidates' verdict.
 
-The backend is an OR-Tools CP-SAT sidecar
-(`selector_constraint_model_builder` compiles the IR to a finite-domain problem;
-`solver_backends/ortools_cpsat` solves it). It is a required tool of the
-`debundle_pipeline` rule, not an optional accelerator.
+## Inside the resolve
 
-## Why `source_match` goes through a matcher
+1. **Entities.** A member carries a name pin, a `source_match` template or a
+   relational selector. `source_matches[].bindings[]` entries sharing one
+   template form one group entity; an anonymous statement is an entity of its
+   own.
+2. **Candidates.** The shape matcher (`ChunkResolver`) lists every place a
+   template matches, and each place maps to its owner (a post-split top-level
+   statement) and binding through the chunk's structural analysis. A template
+   with no place is `no_match`, one with over `MAX_CANDIDATES_PER_SELECTOR`
+   (100, `selector_outcome.rs`) is `too_broad`, and a matcher error or a place
+   with no owner (an import specifier declares none) is `invalid` — all before
+   any solve.
+3. **Program.** Name pins and relational selectors lower to relation atoms over
+   chunk facts (`selector_ir_lowering`); candidates enter as one table of rows
+   per entity. `all_different` spans every non-pin target, with one
+   representative per group. `FactDomains`
+   (`selector_constraint_model_builder`) derives exactly the relation tables
+   the program's atoms read.
+4. **Decision.** When every entity is a `source_match` or an anonymous
+   statement and no place is a candidate of two of the `source_match` entities,
+   nothing can interact and each entity is decided from its own candidates.
+   Otherwise the program goes to the OR-Tools CP-SAT sidecar
+   (`solver_backends/ortools_cpsat`), a required tool of the `debundle_pipeline`
+   rule and a runfile of the `debundle` binary.
 
-Tree-shape matching and target assignment are different problems, and the split
-follows what each engine is good at.
-
-Matching a JS-template-with-holes against a chunk is a tree homomorphism. It is
-local, and an inverted token index over identifiers, literals and property names
-prunes candidates to the structurally compatible few
-(`selector_match::Index`, `subject_tokens`). Assignment is the opposite: a small
-combinatorial problem over candidate-sized domains, where `all_different` and
-shared `@Name` variables genuinely need a solver.
-
-So `ChunkResolver` acts as a **specialized propagator** for the shape subproblem
-and hands the solver a domain of a few rows; the solver does the joint
-assignment. A selector the matcher places nowhere never reaches the solver: it
-is reported unmatched without a solve.
-
-A target whose projected candidate rows exceed `MAX_CANDIDATES_PER_SELECTOR`
-(100, `selector_outcome.rs`) is likewise rejected before the solve, as
-`too_broad`: a selector that loose names no declaration, and its rows would
-only swell the request. This holds for member selectors, `source_matches[]`
-groups and anonymous statements alike, and for the matcher-only commands
-(`spec validate --source-file`, `spec match-selector`), which count matches the
-same way.
+The solve is per chunk.
 
 ## Outcomes
 
-Each entity comes out as one `SelectorOutcome` (`selector_outcome.rs`), the
-record every command emits: `resolved` (by its own selector, or by
-elimination), `no_match`, `ambiguous` (at most `MAX_LISTED_CANDIDATES`
-candidates, 5, the bound the solver enumerates to), `conflict`, `too_broad`,
-`duplicate_claim`, `invalid` (the selector could not be evaluated), or
-`undecided`. Severity is derived from the kind: a resolution by elimination is a
-`warning`, every non-resolved kind an `error`.
+Each entity comes out `resolved` (by its own selector, or by elimination),
+`no_match`, `ambiguous` (at most `MAX_LISTED_CANDIDATES`, 5, candidates — the
+bound the solver enumerates to), `conflict`, `too_broad`, `invalid` or
+`undecided`; `run` adds `duplicate_claim` when it claims. Severity follows the
+kind: elimination is a `warning`, every non-resolved kind an `error`.
 
-`undecided` means the CP-SAT sidecar stopped (its
+`undecided` means the sidecar stopped (its
 `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS` limit) before deciding the
 entity. The sidecar reports which projected variables it had proven fixed by
 then; an entity all of whose variables are among them still resolves, and a
@@ -70,69 +66,12 @@ conflict set found before the stop still stands.
 ## Resolved by elimination
 
 `all_different` can make a selector unique that is ambiguous on its own: its
-other candidates are claimed by other selectors. After a successful solve, each
-unique `source_match` target's own candidate rows are filtered by dropping every
-row whose owner or binding another `all_different` target's solved value holds.
-When it had several rows and one survives, its outcome is `resolved` with
-`resolved_by: elimination` naming the claimers. That is a `warning`: the run
-still succeeds, and the outcome appears in `selector_diagnostics.json` and
-`spec validate`. Such a selector silently moves when a claimer is edited, so it
-should be anchored on its own.
-
-### Rejected: let the solver consume AST facts natively instead of candidate rows
-
-Encoding tree-shape matching as finite-domain constraints over AST nodes —
-dropping `ChunkResolver` so every `source_match` lowers natively — was the
-planned direction through 2026-06. It was measured and abandoned. The numbers,
-all on the largest known downstream chunk (6.81 MiB, 204,235 lines) with
-`-c opt` binaries:
-
-| Path                                              | Scope                          |         Wall |
-| ------------------------------------------------- | ------------------------------ | -----------: |
-| matcher (`spec validate --modules --source-file`) | 6,179 `source_match` selectors | 11.1s warmed |
-| native lowering (then `spec match-selector`)      | **one** selector               |  7.1s warmed |
-
-The native path costs more for one selector than the matcher costs for the whole
-spec, and its ~7s is near-constant across selectors of very different
-complexity — it is per-chunk fact and domain construction, not matching work.
-
-The model is why. One selector lowered to a 5.19 MB backend request carrying
-2,383,797 domain values, including two variables over the full 1,190,984-node
-AST domain; the CP-SAT solve of that request took **0.02s** against 1.91s of
-model construction. A general finite-domain solver has no index over AST shape,
-so the encoding spent its time rebuilding what `selector_match::Index` already
-provides. Scaled to a whole spec the compile did not finish: a production-sized
-run timed out at 120s in fact-domain construction without reaching the solver.
-Measurements: <../debug/perf/2026_09_17_matcher_vs_native_lowering.md>.
-
-The capability argument that motivated the native direction — cross-selector
-references, negation, counting, reachability — does not depend on it. Those are
-relation atoms over `chunk_facts`, and the relational selector kinds in the
-table above already lower natively and solve jointly today.
-
-## The shape matcher
-
-`source_match/chunk_resolver.rs` builds one per-chunk model and resolves many
-selectors against it, so a chunk with thousands of selectors pays setup once.
-`selector_match` is the homomorphism itself: hole-skipping, alpha-equivalence
-bijections, and run-hole subsequence alignment, with
-<../selector_match_differential_test.rs> pinning the exact semantics.
-
-Two properties make it near-linear rather than quadratic in selector count:
-needle-only validation is hoisted out of the candidate loop, and exact-mode
-identifier spellings are indexed so an identifier-only needle prunes through
-postings instead of scanning every top-level statement. Scaling on a synthetic
-corpus of the same shape class measures an exponent of ≈1.30
-(<../debug/perf/2026_06_21_fact_resolver.md>).
-
-## Fail-closed
-
-A selector the matcher cannot resolve becomes an unmatched or resolution
-diagnostic — never a guess.
-`chunk_facts` extraction is likewise fail-closed: a construct it cannot project
-faithfully is `Unsupported` rather than approximated. Rejecting input debundle
-cannot handle is correct behavior; silently resolving it to the wrong binding is
-not.
+other candidates are claimed by other selectors. After a solve, each unique
+`source_match` entity's candidate rows are filtered by dropping every row whose
+owner or binding another `all_different` target's solved value holds. When it
+had several rows and one survives, its outcome is `resolved` with
+`resolved_by: elimination` naming the claimers. Such a selector silently moves
+when a claimer is edited, so it should be anchored on its own.
 
 ## Unsatisfiable programs
 
@@ -169,13 +108,44 @@ conflicting targets disabled. CP-SAT's cores are not necessarily minimal, so a
 conflict set may name a target that is not strictly needed for the
 contradiction.
 
-Each target in a conflict set of two or more comes out `Conflict { with }`,
-naming the others (a `conflict` outcome); a set of
-one is that target's own constraints failing and comes out `NoMatch`. Every
-other target resolves as usual. A target that depends on a conflicting one, such
-as a relation anchored on it, loses that relation with it and may come out
-ambiguous. Only when the hard constraints alone are unsatisfiable does every
-target come out `NoMatch`, with a global diagnostic.
+Each target in a conflict set of two or more comes out `conflict`, naming the
+others; a set of one is that target's own constraints failing and comes out
+`no_match`. Every other target resolves as usual. A target that depends on a
+conflicting one, such as a relation anchored on it, loses that relation with it
+and may come out ambiguous. Only when the hard constraints alone are
+unsatisfiable does every target come out `no_match`, with a global diagnostic.
+
+## The shape matcher
+
+`source_match/chunk_resolver.rs` builds one per-chunk model and resolves many
+selectors against it, so a chunk with thousands of selectors pays setup once.
+`selector_match` is the homomorphism itself: hole-skipping, alpha-equivalence
+bijections, and run-hole subsequence alignment, with
+<../selector_match_differential_test.rs> pinning the exact semantics.
+
+Two properties make it near-linear rather than quadratic in selector count:
+needle-only validation is hoisted out of the candidate loop, and exact-mode
+identifier spellings are indexed so an identifier-only needle prunes through
+postings instead of scanning every top-level statement. Scaling on a synthetic
+corpus of the same shape class measures an exponent of ≈1.30
+(<../debug/perf/2026_06_21_fact_resolver.md>).
+
+`chunk_facts` extraction is fail-closed: a construct it cannot project
+faithfully is `Unsupported` rather than approximated.
+
+### Rejected: tree matching as solver constraints
+
+Encoding `source_match` as finite-domain constraints over AST nodes, so the
+solver matches instead of the shape matcher, was measured on the largest known
+downstream chunk (6.81 MiB) and abandoned. With `-c opt` binaries the matcher
+resolved all 6,179 `source_match` selectors in 11.1s warmed; the native encoding
+took 7.1s for one, almost all of it model construction (the CP-SAT search of
+that request took 0.02s), and a whole spec timed out at 120s before reaching
+the solver. A finite-domain solver has no index over AST shape, so the encoding
+rebuilds what `selector_match::Index` already provides. Cross-selector
+references, negation and counting do not need it: they are relation atoms over
+chunk facts. Measurements:
+<../debug/perf/2026_09_17_matcher_vs_native_lowering.md>.
 
 ## Interactive budget
 

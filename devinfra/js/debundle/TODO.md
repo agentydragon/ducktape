@@ -25,11 +25,10 @@ a second priority queue.
 
 ### P0 — one selector engine
 
-The shape matcher is the only thing that matches, and CP-SAT assigns candidate
-ids with a truthful outcome per selector. What remains in
-<plans/selector_engine.md> is one resolve function every command calls, one
-program across chunks, and template references. Its steps are the dispatch
-order.
+The shape matcher is the only thing that matches, CP-SAT assigns candidate ids
+with a truthful outcome per selector, and every command calls one resolve. What
+remains in <plans/selector_engine.md> is one program across chunks and template
+references. Its steps are the dispatch order.
 
 Selector-language work (<plans/relational_selectors.md>) lands on top of the
 consolidated engine.

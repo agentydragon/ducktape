@@ -1,12 +1,9 @@
 # Plan: one selector engine
 
-Selector resolution today runs through two matching engines, and commands mix
-them. `run` asks the shape matcher (`ChunkResolver`) for candidates and falls
-back to native AST lowering when the matcher finds none. `spec match-selector`
-and the `synthesize-selectors` uniqueness proof use native lowering only.
-`spec validate --source-file` uses the matcher per selector, with no joint
-solve. The same selector and chunk can therefore get different answers from
-different commands (<../SELECTOR_BUGS.md> lists the reproduced cases).
+Every command resolves selectors with one resolve (`selector_resolve.rs`), but
+each chunk is its own program: a module tree is bound to one chunk, two trees
+cannot share a chunk, and a whole chunk's entities go to CP-SAT together unless
+none of them interact. Templates cannot name other entities.
 
 ## Goal
 
@@ -44,20 +41,16 @@ rule gets a command-level equivalent before the code it tests is deleted.
 Consumer specs migrate in lockstep, gated by their generated-output diff
 tests. Each step moves the part of the goal it achieves into <../SPEC.md>.
 
-1. **One resolve function.** `run`, `spec validate` (both modes),
-   `spec match-selector`, the `synthesize-selectors` proof and the edit gate call
-   one `resolve`. `FactDomains` shrinks to what candidate, reference and relation
-   tables need.
-2. **One program across chunks**, with per-tree chunk scope and several trees
+1. **One program across chunks**, with per-tree chunk scope and several trees
    per chunk.
 
 Features, after the steps above:
 
-3. **Template references.** Entity names in templates become constraints.
+2. **Template references.** Entity names in templates become constraints.
    `validate` lists each template's free identifiers by kind.
-4. **Pinning by use site.** An entity with no distinctive shape (a helper copy)
+3. **Pinning by use site.** An entity with no distinctive shape (a helper copy)
    is pinned through a template that mentions it.
-5. **Bump tooling.** Failing selectors reported next to unclaimed code;
+4. **Bump tooling.** Failing selectors reported next to unclaimed code;
    evidence from the previous version's spec directory; a hint when a selector
    no longer matches in its chunk but matches in another; a cross-chunk
    `same_as` relation for mirrored module trees.
@@ -67,11 +60,7 @@ Features, after the steps above:
 Each item is deleted in the PR that lands the step making it removable, not in
 a later sweep.
 
-- **Step 1 (one resolve function):** `docs/selector_resolution.md`, rewritten
-  for the one resolve. Its measured rejection of encoding tree matching as
-  solver constraints stays as a short decision record citing
-  `debug/perf/2026_09_17_matcher_vs_native_lowering.md`.
-- **Step 2 (one program across chunks):**
+- **Step 1 (one program across chunks):**
   - per-chunk CP-SAT request and summary files, the `selector_problem` output
     group in `pipeline.bzl`, and the
     `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_{REQUEST_PROTO,SUMMARY_JSON,DUMP_ONLY}`

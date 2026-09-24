@@ -174,9 +174,11 @@ reporting every selector problem: it takes the **same inputs** (`--spec` /
 `--tree-config` + package roots) and needs the full pipeline, so run it via
 the Bazel `:debundle` target, not the standalone binary. Its source-only
 preflight mode (`--modules` plus `--source-file` or `--source-root
---chunk`) needs only the binary and the chunk; without the joint solve it
-cannot report conflicts, resolution by elimination, duplicate claims or
-relational selectors.
+--chunk`) needs only the binary (with its CP-SAT sidecar runfile) and the
+chunk, and resolves the module files jointly with the same resolve as `run`.
+Only the pipeline sees duplicate claims across modules; a name pin on a binding
+the chunk does not declare is `no_match` there, and an unmatched claim in
+`run`.
 
 ### Selector outcomes
 

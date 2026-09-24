@@ -98,10 +98,13 @@ of re-deriving the fact in another stage.
 
 ## Selector resolution
 
-How a spec's selectors become a claim map — one IR, one joint CP-SAT solve, with
-`ChunkResolver` generating candidates for shape (`source_match`) selectors — is
-<docs/selector_resolution.md>. Read it before touching `source_match/`,
-`selector_ir_lowering`, or `selector_constraint_model_builder`.
+How a spec's selectors become outcomes — one resolve every command calls,
+`ChunkResolver` generating candidates for shape (`source_match`) selectors and
+one joint CP-SAT solve per chunk — is <docs/selector_resolution.md>. Read it
+before touching `selector_resolve.rs`, `source_match/`, `selector_ir_lowering`,
+or `selector_constraint_model_builder`. A command never decides exactly-one
+itself: it resolves, and one that needs a selector unique on its own resolves
+it alone and checks `resolved_by: own_selector`.
 
 That doc records a measured rejection: encoding tree-shape matching as
 finite-domain constraints over AST nodes, so `source_match` lowers natively
