@@ -109,13 +109,8 @@ a later sweep.
   - the README's Bazel section describing them;
   - downstream: chunks aliased twice so two module trees can share them.
 - **As fixes land:** the matching `SELECTOR_BUGS.md` entries.
-- **The `selector_solve` question:** if it is not the relation evaluator, the
-  prototype, its tests, and step 1 of "Landing a new relation" in
-  `relational_selectors.md` go with step 5.
 - **This plan**, when its last step lands.
 
 ## Open questions
 
-- Whether the `selector_solve` Datalog prototype becomes the relation evaluator
-  or is deleted with the rest of the second engine.
 - The default candidate cap and ambiguity listing size N.

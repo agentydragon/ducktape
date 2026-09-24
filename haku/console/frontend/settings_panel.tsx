@@ -175,11 +175,7 @@ function refreshFailureSummary({
 
 function connectionSummary(server: McpServerConnection): string {
   const connection = server.connection;
-  if (connection === null) {
-    return server.backend.kind === "remote_mcp" && server.backend.auth.kind === "static_bearer"
-      ? "Console-managed credential"
-      : "No operator-linked account";
-  }
+  if (connection === null) return "No operator-linked account";
   if (isMcpOperatorAuthStatus(connection)) {
     const linkedUntil = shortDate(
       typeof connection.state.token_expires_at === "string" ? connection.state.token_expires_at : null

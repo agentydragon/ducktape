@@ -30,6 +30,13 @@ export function RetainedDisclosureProvider({ children }: { children: ReactNode }
   return <DisclosureContext.Provider value={value}>{children}</DisclosureContext.Provider>;
 }
 
+/** The retained open state behind `id`, for a disclosure toggled by something other than a summary. */
+export function useRetainedDisclosure(id: string): [boolean, (open: boolean) => void] {
+  const state = useContext(DisclosureContext);
+  if (!state) throw new Error("Retained disclosures require RetainedDisclosureProvider");
+  return [state.open.has(id), (open) => state.setOpen(id, open)];
+}
+
 export function RetainedDisclosure({
   id,
   summary,
@@ -39,11 +46,9 @@ export function RetainedDisclosure({
   summary: ReactNode;
   children: ReactNode;
 }): JSX.Element {
-  const state = useContext(DisclosureContext);
-  if (!state) throw new Error("RetainedDisclosure requires RetainedDisclosureProvider");
-  const open = state.open.has(id);
+  const [open, setOpen] = useRetainedDisclosure(id);
   return (
-    <details open={open} onToggle={(event) => state.setOpen(id, event.currentTarget.open)}>
+    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary>{summary}</summary>
       {open && children}
     </details>
