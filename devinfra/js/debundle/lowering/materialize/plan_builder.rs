@@ -11,6 +11,22 @@ use analysis::{DepKind, OwnerId, StatementOrdinal};
 
 const HUMAN_DIAGNOSTIC_REPORT_LIMIT: usize = 200;
 
+/// A `source_match` target whose projected candidate rows exceed this is
+/// `too_broad_selector`: rejected before the solve instead of handed to it as a
+/// large domain. Counted after the matcher ran and after already-fixed
+/// references narrowed the rows.
+const MAX_CANDIDATES_PER_SELECTOR: usize = 100;
+
+/// Marks a message as a too-broad rejection for [`classify_source_match_failure`].
+const TOO_BROAD_LIMIT: &str = " places (limit ";
+
+fn too_broad_detail(row_count: usize) -> String {
+    format!(
+        "matches {row_count}{TOO_BROAD_LIMIT}{MAX_CANDIDATES_PER_SELECTOR}); anchor it more \
+         specifically"
+    )
+}
+
 #[derive(Debug, Clone)]
 struct DuplicateClaimSite {
     module_id: String,
@@ -33,6 +49,90 @@ struct AnonymousStatementTargetInfo {
     statement: AnonymousStatementRequest,
 }
 
+/// A `source_match` selector projected into the solve: its targets (one, or
+/// every binding of a `source_matches[]` group) and its candidate rows, each
+/// row the `(owner, binding)` places it would claim.
+struct ProjectedEntity {
+    targets: Vec<SelectorTargetId>,
+    rows: Vec<Vec<(OwnerId, Option<String>)>>,
+    subject: ProjectedEntitySubject,
+}
+
+enum ProjectedEntitySubject {
+    Member {
+        request_index: usize,
+        member_index: usize,
+    },
+    Group {
+        request_index: usize,
+        group: SourceMatchGroupAssignment,
+    },
+}
+
+/// The targets whose solved claims made `entity` unique: `Some` when it had
+/// several candidate rows and exactly one survives dropping every row whose
+/// owner or binding another exclusive target's solved value holds. `exclusive`
+/// are the targets the solve keeps on distinct owners; a claim by any other
+/// target never took a row away.
+fn elimination_claimers(
+    entity: &ProjectedEntity,
+    result: &selector_ir::SolverResult,
+    exclusive: &BTreeSet<SelectorTargetId>,
+) -> Option<BTreeSet<SelectorTargetId>> {
+    if entity.rows.len() < 2
+        || !entity.targets.iter().all(|target| {
+            matches!(
+                result.outcome_for(*target),
+                Some(ClaimOutcome::Unique { .. })
+            )
+        })
+    {
+        return None;
+    }
+    let other_claims = exclusive
+        .iter()
+        .filter(|target| !entity.targets.contains(target))
+        .filter_map(|target| match result.outcome_for(*target) {
+            Some(ClaimOutcome::Unique { claim }) => Some((*target, claim)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut survivors = 0;
+    let mut claimers = BTreeSet::new();
+    for row in &entity.rows {
+        let takers = other_claims
+            .iter()
+            .filter(|(_, claim)| {
+                row.iter().any(|(owner, binding)| {
+                    *owner == claim.owner || (binding.is_some() && *binding == claim.binding)
+                })
+            })
+            .map(|(target, _)| *target)
+            .collect::<Vec<_>>();
+        if takers.is_empty() {
+            survivors += 1;
+        }
+        claimers.extend(takers);
+    }
+    (survivors == 1).then_some(claimers)
+}
+
+fn elimination_detail(
+    program: &SelectorProgram,
+    row_count: usize,
+    claimers: &BTreeSet<SelectorTargetId>,
+) -> String {
+    let claimers = claimers
+        .iter()
+        .map(|target| selector_target_label(&program.targets[target.0]))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "resolved by elimination: it matches {row_count} places, and the others are claimed by \
+         {claimers}"
+    )
+}
+
 struct SelectorFactCoverage<'a> {
     owner_kind_by_owner: BTreeMap<OwnerId, &'a str>,
     owners_by_binding: BTreeMap<&'a str, BTreeSet<OwnerId>>,
@@ -51,11 +151,11 @@ impl DuplicateBindingClaim {
 }
 
 // The serialized report shape is the debundler-owned JSON contract shared
-// with the `debundle spec validate --keep-going` reader; it lives in the
+// with the `debundle spec validate` reader; it lives in the
 // `selector_diagnostics` crate so writer and reader cannot drift.
 use selector_diagnostics::{
     DuplicateClaimReport, DuplicateClaimSiteReport, SelectorDiagnosticEntry,
-    SelectorDiagnosticsReport,
+    SelectorDiagnosticsReport, Severity,
 };
 use selector_ir::{
     ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
@@ -604,7 +704,7 @@ fn render_source_match_diagnostics(diagnostics: &[SourceMatchDiagnostic]) -> Str
     });
     let mut report = format!(
         "Source-match selector diagnostic report: {} unresolved selector(s) found. \
-         Under --keep-going, members with unresolved source_match selectors are skipped from \
+         In keep-going mode, members with unresolved source_match selectors are skipped from \
          canonical ownership so the rest of the chunk can still be checked.",
         diagnostics.len()
     );
@@ -628,7 +728,7 @@ fn render_selector_resolution_diagnostics(diagnostics: &[SelectorResolutionDiagn
     });
     let mut report = format!(
         "Selector resolution diagnostic report: {} unresolved selector(s) found. \
-         Under --keep-going, unresolved non-source-match selector members are skipped from \
+         In keep-going mode, unresolved non-source-match selector members are skipped from \
          canonical ownership so the rest of the chunk can still be checked.",
         diagnostics.len()
     );
@@ -697,7 +797,9 @@ fn first_relevant_error_line(message: &str) -> Option<String> {
 }
 
 fn classify_source_match_failure(message: &str) -> &'static str {
-    if message.contains(CONFLICTS_WITH) {
+    if message.contains(TOO_BROAD_LIMIT) {
+        "too_broad_selector"
+    } else if message.contains(CONFLICTS_WITH) {
         "conflicting_selector"
     } else if message.contains(" is ambiguous") {
         "ambiguous_selector"
@@ -750,6 +852,12 @@ fn recommended_source_match_action(category: &str) -> &'static str {
     match category {
         "conflicting_selector" => {
             "Compare this selector with the ones it conflicts with: they compete for the same declarations or impose contradictory relations; narrow or correct one of them."
+        }
+        "too_broad_selector" => {
+            "Anchor the selector on what is distinctive about the intended declaration (a literal, a property name, a referenced entity) so it matches a handful of places at most."
+        }
+        "resolved_by_elimination" => {
+            "Anchor the selector so it resolves on its own: it is unique only because the selectors named in the message claim its other matches, so an edit to them can silently move it."
         }
         "ambiguous_selector" => {
             "Refine the selector, choose the intended local binding in source_matches[].bindings[], or narrow the matched source context."
@@ -896,7 +1004,8 @@ fn declare_source_match_group_targets(
     request: &LogicalRequest,
     group: &SourceMatchGroupAssignment,
     deferred_targets: &mut BTreeMap<SelectorTargetId, (usize, usize)>,
-) -> Result<()> {
+) -> Result<Vec<SelectorTargetId>> {
+    let mut targets = Vec::new();
     for (target_binding, member_index) in &group.members_by_target {
         let member = &request.members[*member_index];
         let selector = member_selector_ref_for_global_solver(member)
@@ -910,8 +1019,9 @@ fn declare_source_match_group_targets(
         if member.resolves_after_chunk_analysis() {
             deferred_targets.insert(target, (request_index, *member_index));
         }
+        targets.push(target);
     }
-    Ok(())
+    Ok(targets)
 }
 
 fn binding_group_member_diagnostics(
@@ -1093,7 +1203,7 @@ fn render_anonymous_statement_diagnostics(diagnostics: &[AnonymousStatementDiagn
     diagnostics.sort_by(|a, b| a.module_id.cmp(&b.module_id));
     let mut report = format!(
         "Anonymous statement selector diagnostic report: {} unresolved selector(s) found. \
-         Under --keep-going, anonymous statements with unresolved selectors are skipped from \
+         In keep-going mode, anonymous statements with unresolved selectors are skipped from \
          canonical ownership so the rest of the chunk can still be checked.",
         diagnostics.len()
     );
@@ -1226,6 +1336,10 @@ pub(super) struct ChunkPlanBuilder {
     /// still be checked for independent selector and duplicate-claim
     /// failures.
     anonymous_statement_diagnostics: Vec<AnonymousStatementDiagnostic>,
+    /// `resolved_by_elimination` warnings: selectors that resolved only
+    /// because other selectors' solved claims took their alternatives. They
+    /// are reported but never fail the chunk.
+    elimination_warnings: Vec<SourceMatchDiagnostic>,
     /// Opt-in diagnostics mode. When false, duplicate binding claims
     /// keep the historical fail-fast behavior. When true, duplicate
     /// members are skipped from canonical ownership state so later
@@ -1250,6 +1364,7 @@ impl ChunkPlanBuilder {
             source_match_diagnostics: Vec::new(),
             selector_resolution_diagnostics: Vec::new(),
             anonymous_statement_diagnostics: Vec::new(),
+            elimination_warnings: Vec::new(),
             keep_going,
         }
     }
@@ -1557,6 +1672,7 @@ impl ChunkPlanBuilder {
         let mut pending_source_match_groups = Vec::<(usize, SourceMatchGroupAssignment)>::new();
         let mut pending_source_match_group_keys =
             BTreeSet::<(String, SourceMatchGroupCacheKey)>::new();
+        let mut projected_entities = Vec::<ProjectedEntity>::new();
         if has_deferred_members {
             for (index, request) in explicit_requests.iter().enumerate() {
                 let group_assignments = source_match_group_assignments(request);
@@ -1643,6 +1759,13 @@ impl ChunkPlanBuilder {
                                 owner_by_body_index,
                                 candidates,
                             ) {
+                                Ok(candidate_rows)
+                                    if candidate_rows.len() > MAX_CANDIDATES_PER_SELECTOR =>
+                                {
+                                    projected_row_count = Some(candidate_rows.len());
+                                    reason_category = "too_broad";
+                                    reason = too_broad_detail(candidate_rows.len());
+                                }
                                 Ok(candidate_rows) if !candidate_rows.is_empty() => {
                                     projected_row_count = Some(candidate_rows.len());
                                     builder.record_source_match_projection_event(
@@ -1713,6 +1836,11 @@ impl ChunkPlanBuilder {
                 ));
                 let message = if reason_category == "shape_matcher_no_candidates" {
                     anonymous_statement_no_match_message(request, statement)
+                } else if reason_category == "too_broad" {
+                    format!(
+                        "logical_module {}: anonymous_statements[].match {reason}. Selector:\n{}",
+                        request.id, statement.selector.match_source,
+                    )
                 } else {
                     format!(
                         "logical_module {}: anonymous_statements[].match could not be matched \
@@ -1743,10 +1871,15 @@ impl ChunkPlanBuilder {
                     candidate_count = Some(candidate_len);
                     match projected_source_match_group_candidate_rows(owner_by_binding, candidates)
                     {
+                        Ok(rows) if rows.len() > MAX_CANDIDATES_PER_SELECTOR => {
+                            projected_row_count = Some(rows.len());
+                            reason_category = "too_broad";
+                            reason = too_broad_detail(rows.len());
+                        }
                         Ok(rows) => {
                             projected_row_count = Some(rows.len());
                             if !rows.is_empty() {
-                                declare_source_match_group_targets(
+                                let targets = declare_source_match_group_targets(
                                     &mut builder,
                                     request_index,
                                     request,
@@ -1772,6 +1905,23 @@ impl ChunkPlanBuilder {
                                         projected_row_count,
                                     ),
                                 );
+                                projected_entities.push(ProjectedEntity {
+                                    targets,
+                                    rows: rows
+                                        .iter()
+                                        .map(|row| {
+                                            row.values()
+                                                .map(|(owner, binding)| {
+                                                    (*owner, Some(binding.clone()))
+                                                })
+                                                .collect()
+                                        })
+                                        .collect(),
+                                    subject: ProjectedEntitySubject::Group {
+                                        request_index,
+                                        group: group.clone(),
+                                    },
+                                });
                                 builder.lower_projected_source_match_group_candidates(
                                     logical_module,
                                     &group.exports_by_target,
@@ -1817,6 +1967,11 @@ impl ChunkPlanBuilder {
                      declaration group. Selector:\n{}",
                     request.id, group.selector_kind, target_bindings, group.selector.match_source,
                 )
+            } else if reason_category == "too_broad" {
+                format!(
+                    "logical_module {}: {} for target bindings [{}] {reason}. Selector:\n{}",
+                    request.id, group.selector_kind, target_bindings, group.selector.match_source,
+                )
             } else {
                 format!(
                     "logical_module {}: {} for target bindings [{}] could not be matched \
@@ -1839,66 +1994,87 @@ impl ChunkPlanBuilder {
             else {
                 unreachable!("pending source_match members have a parsed selector and a resolver");
             };
-            let (reason_category, reason, candidate_count) =
-                match resolver.member_candidates_parsed(&request.id, parsed_selector) {
-                    Ok(candidates) => {
-                        let candidate_len = candidates.len();
-                        match projected_source_match_candidate_rows(owner_by_binding, candidates) {
-                            Ok(rows) if !rows.is_empty() => {
-                                builder.record_source_match_projection_event(
-                                    source_match_projection_event(
-                                        &request.id,
-                                        source_match_projection_kind(&member.claim_origin),
-                                        Some(&member.export_name),
-                                        BTreeMap::new(),
-                                        parsed_selector.selector(),
-                                        SelectorSourceMatchProjectionOutcome::Projected,
-                                        "projected_candidates",
-                                        format!(
-                                            "projected {} shape-matcher candidate(s) to {} \
+            let (reason_category, reason, candidate_count, projected_row_count) = match resolver
+                .member_candidates_parsed(&request.id, parsed_selector)
+            {
+                Ok(candidates) => {
+                    let candidate_len = candidates.len();
+                    match projected_source_match_candidate_rows(owner_by_binding, candidates) {
+                        Ok(rows) if rows.len() > MAX_CANDIDATES_PER_SELECTOR => (
+                            "too_broad",
+                            too_broad_detail(rows.len()),
+                            Some(candidate_len),
+                            rows.len(),
+                        ),
+                        Ok(rows) if !rows.is_empty() => {
+                            builder.record_source_match_projection_event(
+                                source_match_projection_event(
+                                    &request.id,
+                                    source_match_projection_kind(&member.claim_origin),
+                                    Some(&member.export_name),
+                                    BTreeMap::new(),
+                                    parsed_selector.selector(),
+                                    SelectorSourceMatchProjectionOutcome::Projected,
+                                    "projected_candidates",
+                                    format!(
+                                        "projected {} shape-matcher candidate(s) to {} \
                                              owner/binding row(s)",
-                                            candidate_len,
-                                            rows.len()
-                                        ),
-                                        Some(candidate_len),
-                                        Some(rows.len()),
+                                        candidate_len,
+                                        rows.len()
                                     ),
-                                );
-                                let target = builder.declare_member_target_in_module_ref(
-                                    &request.id,
-                                    &member.export_name,
-                                    member_selector_ref_for_global_solver(member)
-                                        .expect("a source_match member has a solver selector"),
-                                )?;
-                                builder.lower_projected_source_match_candidates(
-                                    &request.id,
-                                    &member.export_name,
-                                    rows,
-                                );
-                                deferred_targets.insert(target, (request_index, member_index));
-                                continue;
-                            }
-                            Ok(_) => (
-                                "shape_matcher_no_candidates",
-                                "shape matcher returned no candidates".to_string(),
-                                Some(candidate_len),
-                            ),
-                            Err(error) => (
-                                "projection_owner_mapping_error",
-                                source_match_projection_error_reason(
-                                    "projection_owner_mapping_error",
-                                    &error,
+                                    Some(candidate_len),
+                                    Some(rows.len()),
                                 ),
-                                Some(candidate_len),
-                            ),
+                            );
+                            let target = builder.declare_member_target_in_module_ref(
+                                &request.id,
+                                &member.export_name,
+                                member_selector_ref_for_global_solver(member)
+                                    .expect("a source_match member has a solver selector"),
+                            )?;
+                            projected_entities.push(ProjectedEntity {
+                                targets: vec![target],
+                                rows: rows
+                                    .iter()
+                                    .map(|(owner, binding)| vec![(*owner, Some(binding.clone()))])
+                                    .collect(),
+                                subject: ProjectedEntitySubject::Member {
+                                    request_index,
+                                    member_index,
+                                },
+                            });
+                            builder.lower_projected_source_match_candidates(
+                                &request.id,
+                                &member.export_name,
+                                rows,
+                            );
+                            deferred_targets.insert(target, (request_index, member_index));
+                            continue;
                         }
+                        Ok(_) => (
+                            "shape_matcher_no_candidates",
+                            "shape matcher returned no candidates".to_string(),
+                            Some(candidate_len),
+                            0,
+                        ),
+                        Err(error) => (
+                            "projection_owner_mapping_error",
+                            source_match_projection_error_reason(
+                                "projection_owner_mapping_error",
+                                &error,
+                            ),
+                            Some(candidate_len),
+                            0,
+                        ),
                     }
-                    Err(error) => (
-                        "shape_matcher_error",
-                        source_match_projection_error_reason("shape_matcher_error", &error),
-                        None,
-                    ),
-                };
+                }
+                Err(error) => (
+                    "shape_matcher_error",
+                    source_match_projection_error_reason("shape_matcher_error", &error),
+                    None,
+                    0,
+                ),
+            };
             builder.record_source_match_projection_event(source_match_projection_event(
                 &request.id,
                 source_match_projection_kind(&member.claim_origin),
@@ -1909,12 +2085,20 @@ impl ChunkPlanBuilder {
                 reason_category,
                 reason.clone(),
                 candidate_count,
-                Some(0),
+                Some(projected_row_count),
             ));
             let message = if reason_category == "shape_matcher_no_candidates" {
                 format!(
                     "logical_module {}: {} for export `{}` did not match any top-level \
                      declaration. Selector:\n{}",
+                    request.id,
+                    member.claim_origin,
+                    member.export_name,
+                    parsed_selector.selector().match_source,
+                )
+            } else if reason_category == "too_broad" {
+                format!(
+                    "logical_module {}: {} for export `{}` {reason}. Selector:\n{}",
                     request.id,
                     member.claim_origin,
                     member.export_name,
@@ -2249,7 +2433,92 @@ impl ChunkPlanBuilder {
                 }
             }
         }
+        self.record_elimination_warnings(explicit_requests, &program, &result, &projected_entities);
         Ok(())
+    }
+
+    fn record_elimination_warnings(
+        &mut self,
+        explicit_requests: &[LogicalRequest],
+        program: &SelectorProgram,
+        result: &selector_ir::SolverResult,
+        projected_entities: &[ProjectedEntity],
+    ) {
+        let mut exclusive = program
+            .all_different
+            .iter()
+            .flatten()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        // `all_different` names one representative per `source_matches[]`
+        // group; the group's other bindings are claimed with it.
+        for entity in projected_entities {
+            if entity
+                .targets
+                .iter()
+                .any(|target| exclusive.contains(target))
+            {
+                exclusive.extend(entity.targets.iter().copied());
+            }
+        }
+        for entity in projected_entities {
+            let Some(claimers) = elimination_claimers(entity, result, &exclusive) else {
+                continue;
+            };
+            let detail = elimination_detail(program, entity.rows.len(), &claimers);
+            let warnings = match &entity.subject {
+                ProjectedEntitySubject::Member {
+                    request_index,
+                    member_index,
+                } => {
+                    let request = &explicit_requests[*request_index];
+                    let member = &request.members[*member_index];
+                    vec![SourceMatchDiagnostic::new(
+                        &request.id,
+                        &request.target_path,
+                        member,
+                        Vec::new(),
+                        format!(
+                            "logical_module {}: {} for export `{}` {detail}. Selector:\n{}",
+                            request.id,
+                            member.claim_origin,
+                            member.export_name,
+                            member
+                                .source_match
+                                .as_ref()
+                                .expect("a projected member has a source_match selector")
+                                .match_source,
+                        ),
+                    )]
+                }
+                ProjectedEntitySubject::Group {
+                    request_index,
+                    group,
+                } => {
+                    let request = &explicit_requests[*request_index];
+                    let target_bindings = group
+                        .exports_by_target
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    binding_group_member_diagnostics(
+                        request,
+                        group,
+                        format!(
+                            "logical_module {}: {} for target bindings [{target_bindings}] \
+                             {detail}. Selector:\n{}",
+                            request.id, group.selector_kind, group.selector.match_source,
+                        ),
+                    )
+                }
+            };
+            for mut warning in warnings {
+                eprintln!("warning: {}", warning.render());
+                warning.category = "resolved_by_elimination".to_string();
+                self.elimination_warnings.push(warning);
+            }
+        }
     }
 
     /// Build a `DuplicateBindingClaim` describing a clash between an
@@ -2916,9 +3185,19 @@ impl ChunkPlanBuilder {
         chunk_id: &str,
     ) -> Option<SelectorDiagnosticsReport> {
         let mut diagnostics = Vec::new();
-        for diagnostic in &self.source_match_diagnostics {
+        let source_match_entries = self
+            .source_match_diagnostics
+            .iter()
+            .map(|diagnostic| (diagnostic, Severity::Error))
+            .chain(
+                self.elimination_warnings
+                    .iter()
+                    .map(|diagnostic| (diagnostic, Severity::Warning)),
+            );
+        for (diagnostic, severity) in source_match_entries {
             diagnostics.push(SelectorDiagnosticEntry {
                 category: diagnostic.category.clone(),
+                severity,
                 module_id: diagnostic.module_id.clone(),
                 module_path: Some(diagnostic.module_path.clone()),
                 export_name: Some(diagnostic.export_name.clone()),
@@ -2941,6 +3220,7 @@ impl ChunkPlanBuilder {
         for diagnostic in &self.selector_resolution_diagnostics {
             diagnostics.push(SelectorDiagnosticEntry {
                 category: diagnostic.category.to_string(),
+                severity: Severity::Error,
                 module_id: diagnostic.module_id.clone(),
                 module_path: Some(diagnostic.module_path.clone()),
                 export_name: Some(diagnostic.export_name.clone()),
@@ -2963,6 +3243,7 @@ impl ChunkPlanBuilder {
             let category = classify_source_match_failure(&diagnostic.message);
             diagnostics.push(SelectorDiagnosticEntry {
                 category: category.to_string(),
+                severity: Severity::Error,
                 module_id: diagnostic.module_id.clone(),
                 module_path: module_path_from_id(&diagnostic.module_id),
                 export_name: None,
@@ -2984,6 +3265,7 @@ impl ChunkPlanBuilder {
         for duplicate in &self.duplicate_binding_claims {
             diagnostics.push(SelectorDiagnosticEntry {
                 category: "duplicate_claim".to_string(),
+                severity: Severity::Error,
                 module_id: duplicate.duplicate.module_id.clone(),
                 module_path: module_path_from_id(&duplicate.duplicate.module_id),
                 export_name: duplicate.duplicate.export_name.clone(),

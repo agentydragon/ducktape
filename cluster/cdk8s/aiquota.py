@@ -54,6 +54,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from aiquota.api import Settings
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.fleet_rules import add_fleet_rules
@@ -71,6 +72,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
+from util.settings_contract import checked_value, env_name
 
 NAME = "aiquota"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/aiquota"
@@ -232,22 +234,28 @@ class Aiquota(Construct):
             image_pull_policy=ImagePullPolicy.ALWAYS,
             ports=[ContainerPort(name="http", number=_PORT, protocol=Protocol.TCP)],
             env_variables={
-                "AIQUOTA_API_BEARER_TOKEN": _secret_env(bearer, _BEARER_KEY),
-                "AIQUOTA_CLIPROXY_API_KEY": _secret_env(cli_proxy_api, "management-password"),
-                "AIQUOTA_CLICKHOUSE_URL": EnvValue.from_value(f"http://{client.HOST}:{client.HTTP_PORT}"),
-                "AIQUOTA_CLICKHOUSE_DATABASE": EnvValue.from_value("aiquota"),
-                "AIQUOTA_CLICKHOUSE_USERNAME": _secret_env(clickhouse_credentials, "username"),
-                "AIQUOTA_CLICKHOUSE_PASSWORD": _secret_env(clickhouse_credentials, "password"),
-                "AIQUOTA_POLL_INTERVAL_SECONDS": EnvValue.from_value("300"),
+                env_name(Settings, "api_bearer_token"): _secret_env(bearer, _BEARER_KEY),
+                env_name(Settings, "cli_proxy_api_key"): _secret_env(cli_proxy_api, "management-password"),
+                env_name(Settings, "clickhouse_url"): EnvValue.from_value(f"http://{client.HOST}:{client.HTTP_PORT}"),
+                env_name(Settings, "clickhouse_database"): EnvValue.from_value("aiquota"),
+                env_name(Settings, "clickhouse_username"): _secret_env(clickhouse_credentials, "username"),
+                env_name(Settings, "clickhouse_password"): _secret_env(clickhouse_credentials, "password"),
+                env_name(Settings, "poll_interval_seconds"): EnvValue.from_value(
+                    str(checked_value(Settings, "poll_interval_seconds", 300))
+                ),
                 # History endpoints restate the same months on every call; hourly is frequent
                 # enough to watch the current day accrue.
-                "AIQUOTA_HISTORY_INTERVAL_SECONDS": EnvValue.from_value("3600"),
+                env_name(Settings, "history_interval_seconds"): EnvValue.from_value(
+                    str(checked_value(Settings, "history_interval_seconds", 3600))
+                ),
                 # App-owned Authentik authorization-code flow for the browser UI and `/api/v1/*`;
                 # the bearer-only `/v1/*` surface remains for clients.
-                "AIQUOTA_OAUTH_ISSUER": EnvValue.from_value("https://auth.allegedly.works/application/o/aiquota/"),
-                "AIQUOTA_OAUTH_CLIENT_ID": _secret_env(oidc, "client_id"),
-                "AIQUOTA_OAUTH_CLIENT_SECRET": _secret_env(oidc, "client_secret"),
-                "AIQUOTA_OAUTH_SESSION_SECRET": _secret_env(oidc, "session_secret"),
+                env_name(Settings, "oauth_issuer"): EnvValue.from_value(
+                    "https://auth.allegedly.works/application/o/aiquota/"
+                ),
+                env_name(Settings, "oauth_client_id"): _secret_env(oidc, "client_id"),
+                env_name(Settings, "oauth_client_secret"): _secret_env(oidc, "client_secret"),
+                env_name(Settings, "oauth_session_secret"): _secret_env(oidc, "session_secret"),
             },
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(25), limit=Cpu.millis(250)),

@@ -1181,6 +1181,13 @@ pub struct RejectedFixture {
     _root: TempDir,
 }
 
+pub struct DryRunFixture {
+    pub stderr: String,
+    pub report_root: PathBuf,
+    // Held to keep the tempdir alive for the duration of assertions.
+    _root: TempDir,
+}
+
 pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
     let setup = setup_fixture(&opts);
     let spec_path = setup.root.path().join("transform_spec.yaml");
@@ -1279,10 +1286,26 @@ pub fn run_fail_fast_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> Rejecte
     run_rejection_fixture_with_args(opts, &["--dry-run", "--fail-fast"])
 }
 
-/// Compatibility spelling for tests that need to document the old explicit
-/// flag; keep-going is now the default for broad pipeline runs.
-pub fn run_keep_going_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &["--dry-run", "--keep-going"])
+/// Run `debundle run --dry-run` over `opts` and assert it succeeds. The report
+/// root holds whatever the pass still writes on success, such as selector
+/// warnings in `selector_diagnostics.json`.
+pub fn run_dry_run_fixture(opts: FixtureOpts<'_>) -> DryRunFixture {
+    let setup = setup_fixture(&opts);
+    let spec_path = setup.root.path().join("transform_spec.yaml");
+    write_yaml_file(&spec_path, &build_spec(&opts, &setup));
+    let result = spawn_transform_with_args(&spec_path, &["--dry-run"], &[]);
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+    DryRunFixture {
+        stderr: result.stderr,
+        report_root: setup.report_root,
+        _root: setup.root,
+    }
 }
 
 fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> RejectedFixture {

@@ -36,15 +36,15 @@ from haku.console.identity.operator_identity import ResolvedOperatorIdentity
 from haku.console.mcp import catalog_reconciler as mcp_catalog_reconciler_module, server as mcp_server_module
 from haku.console.mcp.approval import DegradedReflection, ReflectionFailureStage
 from haku.console.mcp.guidance import SERVER_INSTRUCTIONS
-from haku.console.mcp.operator_oauth import (
-    McpOperatorAuthConnected,
-    McpOperatorAuthStatus,
-    McpOperatorAuthStatusResponse,
-    McpOperatorAuthUnconnected,
-)
 from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
-from haku.console.mcp_config import ConsoleConfigFile, McpServerEntry, const_in_process_server
+from haku.console.mcp_config import (
+    ConsoleConfigFile,
+    InProcessCredentialKind,
+    InProcessServerRegistration,
+    InProcessServers,
+    const_in_process_server,
+)
 from haku.console.oauth.provider_connection import ProviderConnected, ProviderConnectionStatusResponse
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
@@ -60,20 +60,23 @@ from haku.console.tools import gmail as gmail_tools, google_calendar as calendar
 from haku.console.tools.google_calendar_client import CalendarEvent
 from mcp_infra.persistence import PostgresPersistence
 from util.net import bind_free_port
-from util.testing.asgi import serve_app_sync, serve_fastmcp
+from util.testing.asgi import serve_app_sync
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
-
-
-def _remote_backend(url: str, auth: dict[str, Any]) -> dict[str, Any]:
-    return {"kind": "remote_mcp", "url": url, "auth": auth}
 
 
 def _in_process_backend(credential: dict[str, Any]) -> dict[str, Any]:
     return {"kind": "in_process", "credential": credential}
 
 
-def _dynamic_remote_oauth() -> dict[str, Any]:
-    return {"kind": "remote_server_oauth", "client_registration": {"kind": "dynamic", "client_name": "Haku Console"}}
+def _credential_free_servers(*server_ids: str) -> tuple[dict[str, Any], InProcessServers]:
+    """Config entries plus empty registered servers, for tests that substitute their catalogs."""
+    return (
+        {
+            server_id.replace("-", "_"): {"id": server_id, "backend": _in_process_backend({"kind": "none"})}
+            for server_id in server_ids
+        },
+        {server_id: const_in_process_server(FastMCP(server_id)) for server_id in server_ids},
+    )
 
 
 # The `/mcp` static bearer used across these tests, and the static-agent config that binds it to the
@@ -987,12 +990,11 @@ def test_running_record_is_reported_as_a_non_terminal_stub() -> None:
     assert "execution continues in the background" in result.structured_content["message"].lower()
 
 
-# ── End-to-end: real upstream MCP server + console served over HTTP + real Postgres ──────────
+# ── End-to-end: registered MCP server + console served over HTTP + real Postgres ─────────────
 
 
-@contextmanager
-def _serve_upstream() -> Generator[str]:
-    """A real upstream MCP server process stand-in (echo tool) served over streamable HTTP."""
+def _standin_server() -> FastMCP:
+    """A stand-in MCP server with one echo tool."""
     upstream: FastMCP = FastMCP("standin")
 
     @upstream.tool(
@@ -1007,209 +1009,221 @@ def _serve_upstream() -> Generator[str]:
         """Echo a string back."""
         return {"echoed": f"echo:{text}"}
 
-    with serve_fastmcp(upstream) as url:
-        yield url
+    return upstream
 
 
-def _console_config(tmp_path: Path, upstream_url: str) -> Path:
+def _console_config(tmp_path: Path) -> Path:
     return _write_console_config(
         tmp_path / "console.yaml",
         {
             "static_agents": _STATIC_AGENTS,
-            "mcp": {
-                "servers": {"standin": {"id": "standin", "backend": _remote_backend(upstream_url, {"kind": "none"})}}
-            },
+            "mcp": {"servers": {"standin": {"id": "standin", "backend": _in_process_backend({"kind": "none"})}}},
         },
     )
 
 
 async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migrated_sessions, tmp_path: Path) -> None:
-    with _serve_upstream() as upstream_url:
-        console_sock = bind_free_port()
-        settings = console_settings(
-            migrated_db_url,
-            config_file=_console_config(tmp_path, upstream_url),
-            public_base_url=f"http://127.0.0.1:{console_sock.getsockname()[1]}",
-        )
-        app = create_app(settings)
-        operator_identity = await resolve_operator_identity(
-            migrated_sessions, issuer=settings.operator_oidc.issuer, subject="42"
-        )
-        with serve_app_sync(app, sock=console_sock) as base:
-            async with httpx.AsyncClient() as anon:
-                # No bearer -> unauthorized at the exact canonical resource URL.
-                unauth = await anon.post(
-                    f"{base}/mcp",
-                    headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"},
-                    json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-                )
-            assert unauth.status_code == 401
+    console_sock = bind_free_port()
+    settings = console_settings(
+        migrated_db_url,
+        config_file=_console_config(tmp_path),
+        public_base_url=f"http://127.0.0.1:{console_sock.getsockname()[1]}",
+    )
+    app = create_app(settings, in_process_servers={"standin": const_in_process_server(_standin_server())})
+    operator_identity = await resolve_operator_identity(
+        migrated_sessions, issuer=settings.operator_oidc.issuer, subject="42"
+    )
+    with serve_app_sync(app, sock=console_sock) as base:
+        async with httpx.AsyncClient() as anon:
+            # No bearer -> unauthorized at the exact canonical resource URL.
+            unauth = await anon.post(
+                f"{base}/mcp",
+                headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"},
+                json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            )
+        assert unauth.status_code == 401
 
-            # The agent (bearer) sees the upstream tool behind the approval envelope and gets a stub.
-            async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-                tools = {t.name: t for t in await client.list_tools()}
-                assert "standin__echo" in tools
-                # Upstream self-declared annotations propagate through the proxy reflection.
-                ann = tools["standin__echo"].annotations
-                assert ann is not None
-                assert ann.read_only_hint is True
-                assert ann.open_world_hint is False
-                # The human-readable title is re-prefixed with the server id, just like the name,
-                # and the spec-preferred `title` field wins over the legacy `annotations.title`.
-                assert tools["standin__echo"].title == "standin: Echo text"
-                # Icons are opaque display assets — propagate unchanged, no server prefix.
-                assert tools["standin__echo"].icons == [Icon(src="https://example.invalid/echo.png")]
-                # Proxied tools declare no output schema: the result-or-stub union can't be
-                # modeled as a conformant outputSchema (claude.ai requires type == "object";
-                # anthropics/claude-ai-mcp#400), and outputSchema is optional. The stub behavior is
-                # described in the tool description, not its output schema.
-                assert tools["standin__echo"].output_schema is None
-                _assert_valid_json_schema(tools["standin__echo"].input_schema)
-                result = await client.call_tool(
-                    "standin__echo", {"input": {"text": "hi"}, "rationale": "e2e", "wait_for_result_ms": 0}
-                )
-                assert result.structured_content is not None
-                assert result.structured_content["status"] == ToolCallStatus.PENDING_APPROVAL
-                tool_call_id = result.structured_content["tool_call_id"]
+        # The agent (bearer) sees the upstream tool behind the approval envelope and gets a stub.
+        async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
+            tools = {t.name: t for t in await client.list_tools()}
+            assert "standin__echo" in tools
+            # Upstream self-declared annotations propagate through the proxy reflection.
+            ann = tools["standin__echo"].annotations
+            assert ann is not None
+            assert ann.read_only_hint is True
+            assert ann.open_world_hint is False
+            # The human-readable title is re-prefixed with the server id, just like the name,
+            # and the spec-preferred `title` field wins over the legacy `annotations.title`.
+            assert tools["standin__echo"].title == "standin: Echo text"
+            # Icons are opaque display assets — propagate unchanged, no server prefix.
+            assert tools["standin__echo"].icons == [Icon(src="https://example.invalid/echo.png")]
+            # Proxied tools declare no output schema: the result-or-stub union can't be
+            # modeled as a conformant outputSchema (claude.ai requires type == "object";
+            # anthropics/claude-ai-mcp#400), and outputSchema is optional. The stub behavior is
+            # described in the tool description, not its output schema.
+            assert tools["standin__echo"].output_schema is None
+            _assert_valid_json_schema(tools["standin__echo"].input_schema)
+            result = await client.call_tool(
+                "standin__echo", {"input": {"text": "hi"}, "rationale": "e2e", "wait_for_result_ms": 0}
+            )
+            assert result.structured_content is not None
+            assert result.structured_content["status"] == ToolCallStatus.PENDING_APPROVAL
+            tool_call_id = result.structured_content["tool_call_id"]
 
-            # The Operator uses the upstream tool's native shape and the exact-Origin-gated MCP
-            # request executes directly, without entering the approval queue.
-            async with httpx.AsyncClient(
-                base_url=base,
-                cookies={
-                    "session": operator_session_cookie(
-                        operator_id=str(operator_identity.operator_id),
-                        identity_id=str(operator_identity.identity_id),
-                        username="operator",
-                    )
-                },
-            ) as operator:
-                direct_request = {
+        # The Operator uses the upstream tool's native shape and the exact-Origin-gated MCP
+        # request executes directly, without entering the approval queue.
+        async with httpx.AsyncClient(
+            base_url=base,
+            cookies={
+                "session": operator_session_cookie(
+                    operator_id=str(operator_identity.operator_id),
+                    identity_id=str(operator_identity.identity_id),
+                    username="operator",
+                )
+            },
+        ) as operator:
+            direct_request = {
+                "jsonrpc": "2.0",
+                "id": 10,
+                "method": "tools/call",
+                "params": {"name": "standin__echo", "arguments": {"text": "operator"}},
+            }
+            mcp_headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+
+            initialized = await operator.post(
+                "/mcp",
+                headers={**mcp_headers, "Origin": base},
+                json={
                     "jsonrpc": "2.0",
-                    "id": 10,
-                    "method": "tools/call",
-                    "params": {"name": "standin__echo", "arguments": {"text": "operator"}},
-                }
-                mcp_headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
-
-                initialized = await operator.post(
-                    "/mcp",
-                    headers={**mcp_headers, "Origin": base},
-                    json={
-                        "jsonrpc": "2.0",
-                        "id": 9,
-                        "method": "initialize",
-                        "params": {
-                            "protocolVersion": "2025-06-18",
-                            "capabilities": {},
-                            "clientInfo": {"name": "operator-test", "version": "1"},
-                        },
+                    "id": 9,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": "operator-test", "version": "1"},
                     },
-                )
-                assert initialized.status_code == 200, (initialized.text, dict(initialized.headers))
+                },
+            )
+            assert initialized.status_code == 200, (initialized.text, dict(initialized.headers))
 
-                direct = await operator.post("/mcp", headers={**mcp_headers, "Origin": base}, json=direct_request)
-                assert direct.status_code == 200, (direct.text, dict(direct.headers))
-                assert "echo:operator" in direct.text
+            direct = await operator.post("/mcp", headers={**mcp_headers, "Origin": base}, json=direct_request)
+            assert direct.status_code == 200, (direct.text, dict(direct.headers))
+            assert "echo:operator" in direct.text
 
-                listed = await operator.get("/api/tool-calls")
-                assert listed.status_code == 200, listed.text
-                assert [call["tool_call_id"] for call in listed.json()["tool_calls"]] == [tool_call_id]
+            listed = await operator.get("/api/tool-calls")
+            assert listed.status_code == 200, listed.text
+            assert [call["tool_call_id"] for call in listed.json()["tool_calls"]] == [tool_call_id]
 
-                missing_origin = await operator.post("/mcp", headers=mcp_headers, json=direct_request)
-                assert missing_origin.status_code == 403
-                assert missing_origin.json()["error"] == "operator_session_rejected"
+            missing_origin = await operator.post("/mcp", headers=mcp_headers, json=direct_request)
+            assert missing_origin.status_code == 403
+            assert missing_origin.json()["error"] == "operator_session_rejected"
 
-                # An explicit bearer always owns admission. A rejected bearer cannot fall back to
-                # the otherwise valid browser session and become an Operator call.
-                invalid_bearer = await operator.post(
-                    "/mcp",
-                    headers={**mcp_headers, "Authorization": "Bearer rejected", "Origin": base},
-                    json=direct_request,
-                )
-                assert invalid_bearer.status_code == 401
+            # An explicit bearer always owns admission. A rejected bearer cannot fall back to
+            # the otherwise valid browser session and become an Operator call.
+            invalid_bearer = await operator.post(
+                "/mcp", headers={**mcp_headers, "Authorization": "Bearer rejected", "Origin": base}, json=direct_request
+            )
+            assert invalid_bearer.status_code == 401
 
-                decided = await operator.post(
-                    f"/api/tool-calls/{tool_call_id}/decision", headers={"Origin": base}, json={"decision": "approve"}
-                )
-            assert decided.status_code == 200, decided.text
-            # decide records the approval and dispatches execution in the background — it returns RUNNING.
-            assert decided.json()["tool_call"]["status"] == "running"
+            decided = await operator.post(
+                f"/api/tool-calls/{tool_call_id}/decision", headers={"Origin": base}, json={"decision": "approve"}
+            )
+        assert decided.status_code == 200, decided.text
+        # decide records the approval and dispatches execution in the background — it returns RUNNING.
+        assert decided.json()["tool_call"]["status"] == "running"
 
-            # The agent resolves its stub; execution runs in the background on the server loop, so
-            # poll get_tool_call until it terminalizes, then check the real upstream result.
-            terminal = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DENIED}
-            async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-                for _ in range(100):
-                    got = await client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
-                    assert got.structured_content is not None
-                    if got.structured_content["status"] in terminal:
-                        break
-                    await asyncio.sleep(0.02)
-            assert got.structured_content["status"] == ToolCallStatus.OK
-            assert "echo:hi" in str(got.structured_content["result"])
+        # The agent resolves its stub; execution runs in the background on the server loop, so
+        # poll get_tool_call until it terminalizes, then check the real upstream result.
+        terminal = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DENIED}
+        async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
+            for _ in range(100):
+                got = await client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
+                assert got.structured_content is not None
+                if got.structured_content["status"] in terminal:
+                    break
+                await asyncio.sleep(0.02)
+        assert got.structured_content["status"] == ToolCallStatus.OK
+        assert "echo:hi" in str(got.structured_content["result"])
 
 
 async def test_tool_surface_tracks_each_operators_connected_servers(
     migrated_db_url: str, migrated_sessions, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    with _serve_upstream() as upstream_url:
-        config_file = _write_console_config(
-            tmp_path / "operator-tools.yaml",
-            {
-                "static_agents": _STATIC_AGENTS,
-                "mcp": {
-                    "servers": {
-                        "standin": {"id": "standin", "backend": _remote_backend(upstream_url, _dynamic_remote_oauth())}
-                    }
-                },
+    config_file = _write_console_config(
+        tmp_path / "operator-tools.yaml",
+        {
+            "static_agents": _STATIC_AGENTS,
+            "operator_connection_providers": {
+                "standin_provider": {"kind": "google", "client_id": "standin-client", "client_secret": "standin-secret"}
             },
-        )
-        settings = console_settings(migrated_db_url, config_file=config_file)
-        app = create_app(settings)
-        operator_identity = await resolve_operator_identity(
-            migrated_sessions, issuer=settings.operator_oidc.issuer, subject="42"
-        )
-        other_operator_identity = await resolve_operator_identity(
-            migrated_sessions, issuer=settings.operator_oidc.issuer, subject="99"
-        )
-        connected = {operator_identity.operator_id}
-        other_operator_id = other_operator_identity.operator_id
-
-        async def access_token_for(*, server: object, operator_id: UUID) -> str | None:
-            return "connected-token" if operator_id in connected else None
-
-        monkeypatch.setattr(app.state.mcp_operator_oauth_store, "access_token_for", access_token_for)
-
-        with serve_app_sync(app) as base:
-            async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-                assert "standin__echo" in {tool.name for tool in await client.list_tools()}
-                status = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
-                assert status.structured_content is not None
-                assert status.structured_content["server"]["state"]["status"] == "alive"
-                assert status.structured_content["server"]["server_id"] == "standin"
-            async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
-                assert "standin__echo" not in {tool.name for tool in await client.list_tools()}
-                status = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
-                assert status.structured_content is not None
-                assert status.structured_content["server"]["state"]["status"] == "degraded"
-                assert status.structured_content["server"]["state"]["failure_stage"] == "credential_resolution"
-                degraded_reason = status.structured_content["server"]["state"]["degraded_reason"]
-                assert "Connect your standin MCP account" in degraded_reason
-                with pytest.raises(ToolError, match="MCP server 'standin' is unavailable"):
-                    await client.call_tool("standin__echo", {"input": {"text": "no"}, "rationale": "test"})
-
-            connected.clear()
-            connected.add(other_operator_id)
-            await asyncio.gather(
-                app.state.mcp_catalogs.refresh_operator(operator_identity.operator_id),
-                app.state.mcp_catalogs.refresh_operator(other_operator_id),
+            "operator_connections": {
+                "standin_account": {"display_name": "Standin", "provider": "standin_provider", "scopes": ["scope"]}
+            },
+            "mcp": {
+                "servers": {
+                    "standin": {
+                        "id": "standin",
+                        "backend": _in_process_backend(
+                            {"kind": "operator_connection", "connection": "standin_account"}
+                        ),
+                    }
+                }
+            },
+        },
+    )
+    settings = console_settings(migrated_db_url, config_file=config_file)
+    standin = _standin_server()
+    app = create_app(
+        settings,
+        in_process_servers={
+            "standin": InProcessServerRegistration(
+                builder=lambda _token: standin, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
             )
+        },
+    )
+    operator_identity = await resolve_operator_identity(
+        migrated_sessions, issuer=settings.operator_oidc.issuer, subject="42"
+    )
+    other_operator_identity = await resolve_operator_identity(
+        migrated_sessions, issuer=settings.operator_oidc.issuer, subject="99"
+    )
+    connected = {operator_identity.operator_id}
+    other_operator_id = other_operator_identity.operator_id
 
-            async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-                assert "standin__echo" not in {tool.name for tool in await client.list_tools()}
-            async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
-                assert "standin__echo" in {tool.name for tool in await client.list_tools()}
+    async def is_connected(*, connection: str, operator_id: UUID) -> bool:
+        return operator_id in connected
+
+    monkeypatch.setattr(app.state.provider_connection_store, "is_connected", is_connected)
+
+    with serve_app_sync(app) as base:
+        async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
+            assert "standin__echo" in {tool.name for tool in await client.list_tools()}
+            status = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
+            assert status.structured_content is not None
+            assert status.structured_content["server"]["state"]["status"] == "alive"
+            assert status.structured_content["server"]["server_id"] == "standin"
+        async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
+            assert "standin__echo" not in {tool.name for tool in await client.list_tools()}
+            status = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
+            assert status.structured_content is not None
+            assert status.structured_content["server"]["state"]["status"] == "degraded"
+            assert status.structured_content["server"]["state"]["failure_stage"] == "credential_resolution"
+            degraded_reason = status.structured_content["server"]["state"]["degraded_reason"]
+            assert "Connect your standin_account account" in degraded_reason
+            with pytest.raises(ToolError, match="MCP server 'standin' is unavailable"):
+                await client.call_tool("standin__echo", {"input": {"text": "no"}, "rationale": "test"})
+
+        connected.clear()
+        connected.add(other_operator_id)
+        await asyncio.gather(
+            app.state.mcp_catalogs.refresh_operator(operator_identity.operator_id),
+            app.state.mcp_catalogs.refresh_operator(other_operator_id),
+        )
+
+        async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
+            assert "standin__echo" not in {tool.name for tool in await client.list_tools()}
+        async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
+            assert "standin__echo" in {tool.name for tool in await client.list_tools()}
 
 
 async def test_list_mcp_servers_passively_reports_persisted_connection_state(
@@ -1227,33 +1241,6 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
             },
             "mcp": {
                 "servers": {
-                    "expired_remote": {
-                        "id": "expired-remote",
-                        "backend": _remote_backend(
-                            "https://must-not-be-contacted.invalid/mcp", _dynamic_remote_oauth()
-                        ),
-                    },
-                    "unconnected_remote": {
-                        "id": "unconnected-remote",
-                        "backend": _remote_backend(
-                            "https://also-must-not-be-contacted.invalid/mcp", _dynamic_remote_oauth()
-                        ),
-                    },
-                    "preregistered_remote": {
-                        "id": "preregistered-remote",
-                        "backend": _remote_backend(
-                            "https://preregistered.invalid/mcp",
-                            {
-                                "kind": "remote_server_oauth",
-                                "client_registration": {
-                                    "kind": "preregistered",
-                                    "client_id": "must-not-be-reflected",
-                                    "client_secret": "must-not-be-reflected",
-                                    "token_endpoint_auth_method": "client_secret_post",
-                                },
-                            },
-                        ),
-                    },
                     "gmail": {
                         "id": "gmail",
                         "backend": _in_process_backend(
@@ -1261,10 +1248,6 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
                         ),
                     },
                     "routine": {"id": "routine", "backend": _in_process_backend({"kind": "none"})},
-                    "open_remote": {
-                        "id": "open-remote",
-                        "backend": _remote_backend("https://open.invalid/mcp", {"kind": "none"}),
-                    },
                 }
             },
         },
@@ -1272,22 +1255,6 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
     settings = console_settings(migrated_db_url, config_file=config_file)
     expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1)
     connected_at = expires_at - datetime.timedelta(days=1)
-    oauth_statuses = AsyncMock(
-        return_value=McpOperatorAuthStatusResponse(
-            associations=[
-                McpOperatorAuthStatus(
-                    server_id="expired-remote",
-                    username="operator",
-                    state=McpOperatorAuthConnected(
-                        connected_at=connected_at, token_expires_at=expires_at, scope="openid offline_access"
-                    ),
-                ),
-                McpOperatorAuthStatus(
-                    server_id="unconnected-remote", username="operator", state=McpOperatorAuthUnconnected()
-                ),
-            ]
-        )
-    )
     provider_statuses = AsyncMock(
         return_value=ProviderConnectionStatusResponse(
             connections=[
@@ -1302,75 +1269,19 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
             ]
         )
     )
-    oauth_store = Mock(list_statuses=oauth_statuses)
     provider_store = Mock(list_statuses=provider_statuses)
-    refresh_remote = AsyncMock(side_effect=AssertionError("list_mcp_servers must not refresh remote OAuth"))
     refresh_provider = AsyncMock(side_effect=AssertionError("list_mcp_servers must not refresh provider OAuth"))
-    fetch_metadata = AsyncMock(side_effect=AssertionError("list_mcp_servers must not contact an MCP server"))
-    oauth_store.access_token_for = refresh_remote
+    fetch_metadata = AsyncMock(side_effect=AssertionError("list_mcp_servers must not reflect an MCP server"))
     provider_store.access_token_for = refresh_provider
     dispatcher = Mock(metadata=fetch_metadata)
     context = mcp_server_module.ConsoleMcpContext(
-        settings=settings,
-        tool_calls=Mock(),
-        oauth_store=oauth_store,
-        provider_store=provider_store,
-        dispatcher=dispatcher,
-        catalogs=Mock(),
+        settings=settings, tool_calls=Mock(), provider_store=provider_store, dispatcher=dispatcher, catalogs=Mock()
     )
     actor = AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
 
     response = await mcp_server_module._passive_server_connection_statuses(context, actor)
 
     statuses = {server.server_id: server for server in response.servers}
-    assert statuses["expired-remote"].model_dump(mode="json") == {
-        "server_id": "expired-remote",
-        "backend": {
-            "kind": "remote_mcp",
-            "url": "https://must-not-be-contacted.invalid/mcp",
-            "auth": {
-                "kind": "remote_server_oauth",
-                "client_registration": {"kind": "dynamic", "client_name": "Haku Console"},
-                "scopes": None,
-            },
-        },
-        "connection": {
-            "server_id": "expired-remote",
-            "username": "operator",
-            "state": {
-                "status": "connected",
-                "connected_at": connected_at.isoformat().replace("+00:00", "Z"),
-                "token_expires_at": expires_at.isoformat().replace("+00:00", "Z"),
-                "scope": "openid offline_access",
-            },
-        },
-    }
-    assert statuses["unconnected-remote"].model_dump(mode="json") == {
-        "server_id": "unconnected-remote",
-        "backend": {
-            "kind": "remote_mcp",
-            "url": "https://also-must-not-be-contacted.invalid/mcp",
-            "auth": {
-                "kind": "remote_server_oauth",
-                "client_registration": {"kind": "dynamic", "client_name": "Haku Console"},
-                "scopes": None,
-            },
-        },
-        "connection": {"server_id": "unconnected-remote", "username": "operator", "state": {"status": "unconnected"}},
-    }
-    assert statuses["preregistered-remote"].model_dump(mode="json") == {
-        "server_id": "preregistered-remote",
-        "backend": {
-            "kind": "remote_mcp",
-            "url": "https://preregistered.invalid/mcp",
-            "auth": {
-                "kind": "remote_server_oauth",
-                "client_registration": {"kind": "preregistered", "token_endpoint_auth_method": "client_secret_post"},
-                "scopes": None,
-            },
-        },
-        "connection": None,
-    }
     assert statuses["gmail"].model_dump(mode="json") == {
         "server_id": "gmail",
         "backend": {
@@ -1392,63 +1303,15 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
         "backend": {"kind": "in_process", "credential": {"kind": "none"}},
         "connection": None,
     }
-    assert statuses["open-remote"].model_dump(mode="json") == {
-        "server_id": "open-remote",
-        "backend": {"kind": "remote_mcp", "url": "https://open.invalid/mcp", "auth": {"kind": "none"}},
-        "connection": None,
-    }
     serialized = response.model_dump_json()
     assert "access_token" not in serialized
     assert "refresh_token" not in serialized
     assert '"client_id":' not in serialized
     assert '"client_secret":' not in serialized
-    assert "must-not-be-reflected" not in serialized
-    oauth_statuses.assert_called_once()
+    assert "google-secret" not in serialized
     provider_statuses.assert_called_once()
-    refresh_remote.assert_not_awaited()
     refresh_provider.assert_not_awaited()
     fetch_metadata.assert_not_awaited()
-
-
-async def test_get_mcp_server_status_reports_refresh_failure_as_degraded(
-    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config_file = _write_console_config(
-        tmp_path / "refresh-failure.yaml",
-        {
-            "static_agents": _STATIC_AGENTS,
-            "mcp": {
-                "servers": {
-                    "standin": {
-                        "id": "standin",
-                        "backend": _remote_backend("https://standin.invalid/mcp", _dynamic_remote_oauth()),
-                    }
-                }
-            },
-        },
-    )
-    app = create_app(console_settings(migrated_db_url, config_file=config_file))
-    monkeypatch.setattr(
-        app.state.mcp_operator_oauth_store,
-        "access_token_for",
-        AsyncMock(side_effect=RuntimeError("MCP OAuth token refresh failed: 401")),
-    )
-
-    with serve_app_sync(app) as base:
-        async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-            result = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
-
-    assert result.structured_content is not None
-    assert result.structured_content["server"] == {
-        "server_id": "standin",
-        "title": "standin",
-        "state": {
-            "status": "degraded",
-            "failure_stage": "credential_resolution",
-            "degraded_reason": "MCP OAuth token refresh failed: 401",
-        },
-    }
-    assert result.structured_content["connection"]["server_id"] == "standin"
 
 
 async def test_cataloged_provider_without_oauth_client_is_reflected_as_unprovisioned(
@@ -1499,21 +1362,11 @@ async def test_cataloged_provider_without_oauth_client_is_reflected_as_unprovisi
 async def test_get_mcp_server_status_includes_schemas_only_when_requested(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    servers, registered = _credential_free_servers("standin")
     config_file = _write_console_config(
-        tmp_path / "schema-detail.yaml",
-        {
-            "static_agents": _STATIC_AGENTS,
-            "mcp": {
-                "servers": {
-                    "standin": {
-                        "id": "standin",
-                        "backend": _remote_backend("https://standin.invalid/mcp", {"kind": "none"}),
-                    }
-                }
-            },
-        },
+        tmp_path / "schema-detail.yaml", {"static_agents": _STATIC_AGENTS, "mcp": {"servers": servers}}
     )
-    app = create_app(console_settings(migrated_db_url, config_file=config_file))
+    app = create_app(console_settings(migrated_db_url, config_file=config_file), in_process_servers=registered)
 
     async def metadata_for_operator(**kwargs: Any) -> ReflectedCatalog:
         return ReflectedCatalog(
@@ -1565,19 +1418,11 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
 async def test_tool_discovery_is_concurrent_and_preserves_config_order(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    servers, registered = _credential_free_servers("beta", "alpha")
     config_file = _write_console_config(
-        tmp_path / "concurrent-tools.yaml",
-        {
-            "static_agents": _STATIC_AGENTS,
-            "mcp": {
-                "servers": {
-                    "beta": {"id": "beta", "backend": _remote_backend("https://beta.invalid/mcp", {"kind": "none"})},
-                    "alpha": {"id": "alpha", "backend": _remote_backend("https://alpha.invalid/mcp", {"kind": "none"})},
-                }
-            },
-        },
+        tmp_path / "concurrent-tools.yaml", {"static_agents": _STATIC_AGENTS, "mcp": {"servers": servers}}
     )
-    app = create_app(console_settings(migrated_db_url, config_file=config_file))
+    app = create_app(console_settings(migrated_db_url, config_file=config_file), in_process_servers=registered)
     started: set[str] = set()
     both_started = asyncio.Event()
 
@@ -1602,25 +1447,11 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
 async def test_tool_discovery_isolates_unexpected_server_failure(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    servers, registered = _credential_free_servers("broken", "healthy")
     config_file = _write_console_config(
-        tmp_path / "isolated-tools.yaml",
-        {
-            "static_agents": _STATIC_AGENTS,
-            "mcp": {
-                "servers": {
-                    "broken": {
-                        "id": "broken",
-                        "backend": _remote_backend("https://broken.invalid/mcp", {"kind": "none"}),
-                    },
-                    "healthy": {
-                        "id": "healthy",
-                        "backend": _remote_backend("https://healthy.invalid/mcp", {"kind": "none"}),
-                    },
-                }
-            },
-        },
+        tmp_path / "isolated-tools.yaml", {"static_agents": _STATIC_AGENTS, "mcp": {"servers": servers}}
     )
-    app = create_app(console_settings(migrated_db_url, config_file=config_file))
+    app = create_app(console_settings(migrated_db_url, config_file=config_file), in_process_servers=registered)
 
     async def metadata_for_operator(**kwargs: Any) -> ReflectedCatalog:
         server_id = str(kwargs["server"].id)
@@ -1639,20 +1470,12 @@ async def test_tool_discovery_isolates_unexpected_server_failure(
 
 
 async def test_tool_dispatch_reads_only_target_server_snapshot(migrated_db_url: str, tmp_path: Path) -> None:
+    servers, registered = _credential_free_servers("alpha", "beta")
     config_file = _write_console_config(
-        tmp_path / "targeted-dispatch.yaml",
-        {
-            "static_agents": _STATIC_AGENTS,
-            "mcp": {
-                "servers": {
-                    "alpha": {"id": "alpha", "backend": _remote_backend("https://alpha.invalid/mcp", {"kind": "none"})},
-                    "beta": {"id": "beta", "backend": _remote_backend("https://beta.invalid/mcp", {"kind": "none"})},
-                }
-            },
-        },
+        tmp_path / "targeted-dispatch.yaml", {"static_agents": _STATIC_AGENTS, "mcp": {"servers": servers}}
     )
     settings = console_settings(migrated_db_url, config_file=config_file)
-    app = create_app(settings)
+    app = create_app(settings, in_process_servers=registered)
     reflected: list[str] = []
 
     def metadata(*, operator_id: UUID, server: Any) -> ReflectedCatalog:
@@ -1674,7 +1497,6 @@ async def test_tool_dispatch_reads_only_target_server_snapshot(migrated_db_url: 
         mcp_server_module.ConsoleMcpContext(
             settings=settings,
             tool_calls=app.state.tool_call_service,
-            oauth_store=app.state.mcp_operator_oauth_store,
             provider_store=app.state.provider_connection_store,
             dispatcher=app.state.mcp_dispatcher,
             catalogs=catalogs,
@@ -1691,19 +1513,12 @@ async def test_tool_dispatch_reads_only_target_server_snapshot(migrated_db_url: 
 
 
 async def test_operator_proxy_advertises_and_dispatches_native_arguments(migrated_db_url: str, tmp_path: Path) -> None:
+    servers, registered = _credential_free_servers("beta")
     config_file = _write_console_config(
-        tmp_path / "operator-input-shape.yaml",
-        {
-            "static_agents": _STATIC_AGENTS,
-            "mcp": {
-                "servers": {
-                    "beta": {"id": "beta", "backend": _remote_backend("https://beta.invalid/mcp", {"kind": "none"})}
-                }
-            },
-        },
+        tmp_path / "operator-input-shape.yaml", {"static_agents": _STATIC_AGENTS, "mcp": {"servers": servers}}
     )
     settings = console_settings(migrated_db_url, config_file=config_file)
-    app = create_app(settings)
+    app = create_app(settings, in_process_servers=registered)
     execute_direct = AsyncMock(return_value={"content": [{"type": "text", "text": "listed"}]})
     app.state.tool_call_service.execute_direct = execute_direct
     catalogs = Mock()
@@ -1723,7 +1538,6 @@ async def test_operator_proxy_advertises_and_dispatches_native_arguments(migrate
         mcp_server_module.ConsoleMcpContext(
             settings=settings,
             tool_calls=app.state.tool_call_service,
-            oauth_store=app.state.mcp_operator_oauth_store,
             provider_store=app.state.provider_connection_store,
             dispatcher=app.state.mcp_dispatcher,
             catalogs=catalogs,
@@ -1747,27 +1561,17 @@ async def test_operator_proxy_advertises_and_dispatches_native_arguments(migrate
 
 
 async def test_targeted_dispatch_reports_a_known_degraded_server(migrated_db_url: str, tmp_path: Path) -> None:
+    servers, registered = _credential_free_servers("grocy-sf")
     config_file = _write_console_config(
-        tmp_path / "degraded-dispatch.yaml",
-        {
-            "static_agents": _STATIC_AGENTS,
-            "mcp": {
-                "servers": {
-                    "grocy_sf": {
-                        "id": "grocy-sf",
-                        "backend": {"kind": "remote_mcp", "url": "https://grocy.invalid/mcp", "auth": {"kind": "none"}},
-                    }
-                }
-            },
-        },
+        tmp_path / "degraded-dispatch.yaml", {"static_agents": _STATIC_AGENTS, "mcp": {"servers": servers}}
     )
     settings = console_settings(migrated_db_url, config_file=config_file)
-    app = create_app(settings)
+    app = create_app(settings, in_process_servers=registered)
 
     catalogs = Mock()
     catalogs.metadata.return_value = DegradedReflection(
         failure_stage=ReflectionFailureStage.CREDENTIAL_RESOLUTION,
-        degraded_reason="MCP OAuth token refresh failed: 401",
+        degraded_reason="Connect your grocy account in the console to use this server.",
     )
     actor_resolver = Mock(spec=mcp_server_module.HakuMcpActorResolver)
     actor_resolver.resolve = AsyncMock(
@@ -1777,7 +1581,6 @@ async def test_targeted_dispatch_reports_a_known_degraded_server(migrated_db_url
         mcp_server_module.ConsoleMcpContext(
             settings=settings,
             tool_calls=app.state.tool_call_service,
-            oauth_store=app.state.mcp_operator_oauth_store,
             provider_store=app.state.provider_connection_store,
             dispatcher=app.state.mcp_dispatcher,
             catalogs=catalogs,
@@ -1859,12 +1662,12 @@ def test_mcp_oauth_reads_nested_shared_persistence_env(monkeypatch: pytest.Monke
 
 
 async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path: Path) -> None:
-    with _serve_mock_oidc() as oidc, _serve_upstream() as upstream_url:
+    with _serve_mock_oidc() as oidc:
         # public_base_url is the console's own URL, so bind its port before building the app.
         console_sock = bind_free_port()
         settings = console_settings(
             migrated_db_url,
-            config_file=_console_config(tmp_path, upstream_url),
+            config_file=_console_config(tmp_path),
             public_base_url=f"http://127.0.0.1:{console_sock.getsockname()[1]}",
             mcp_oauth=McpOAuthConfig(
                 oidc_issuer=oidc.issuer,
@@ -1884,7 +1687,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                 session_secret=SecretStr("operator-session-secret"),
             ),
         )
-        app = create_app(settings)
+        app = create_app(settings, in_process_servers={"standin": const_in_process_server(_standin_server())})
         with serve_app_sync(app, sock=console_sock) as base:
             # The static bearer still authenticates (MultiAuth composes OAuth + static).
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
@@ -2102,50 +1905,6 @@ def test_duplicate_static_agent_tokens_fail_startup(
     )
     with pytest.raises(RuntimeError, match="duplicate static agent bearer tokens"):
         create_app(console_settings(migrated_db_url, config_file=config_file))
-
-
-def test_agent_tool_denylist_applies_only_to_agents() -> None:
-    server = McpServerEntry(
-        id="github",
-        backend=_in_process_backend({"kind": "none"}),
-        agent_tool_denylist={"create_pull_request_with_copilot"},
-    )
-    agent = AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
-    operator = OperatorActor(operator_id=UUID(int=2))
-
-    assert mcp_server_module._is_agent_tool_blocked(server, agent, "create_pull_request_with_copilot")
-    assert not mcp_server_module._is_agent_tool_blocked(server, agent, "get_commit")
-    assert not mcp_server_module._is_agent_tool_blocked(server, operator, "create_pull_request_with_copilot")
-
-
-async def test_agent_tool_denylist_rejects_hand_built_dispatch(tmp_path: Path) -> None:
-    config_file = _write_console_config(
-        tmp_path / "denylist.yaml",
-        {
-            "mcp": {
-                "servers": {
-                    "github": {
-                        "id": "github",
-                        "backend": _in_process_backend({"kind": "none"}),
-                        "agent_tool_denylist": ["create_pull_request_with_copilot"],
-                    }
-                }
-            }
-        },
-    )
-    context = Mock()
-    context.settings = console_settings("postgresql://unused/denylist", config_file=config_file)
-    agent = AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
-
-    with pytest.raises(ToolError, match="not available to Agents"):
-        await mcp_server_module._dispatch(
-            context,
-            server_id="github",
-            tool_name="create_pull_request_with_copilot",
-            arguments={},
-            passthrough=False,
-            actor=agent,
-        )
 
 
 if __name__ == "__main__":

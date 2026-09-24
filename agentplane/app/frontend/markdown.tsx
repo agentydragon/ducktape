@@ -2,6 +2,8 @@ import DOMPurify from "dompurify";
 import { Marked } from "marked";
 import { type JSX, useMemo } from "react";
 
+import "./markdown.css";
+
 // The agent's own text, so the source is untrusted: sanitize the rendered HTML down to the tags a
 // transcript needs, with no attributes that can navigate or script.
 const marked = new Marked({ gfm: true, breaks: true });

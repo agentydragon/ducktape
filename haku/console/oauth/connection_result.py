@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import datetime
 from typing import Annotated, Literal, cast
-from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -18,7 +17,6 @@ from haku.console.identity.operator_auth import OperatorActorDep
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 
 OAUTH_RESULT_PATH_PREFIX = "/_console/oauth-result"
-OAUTH_RESULT_SETTINGS_PATH = "/_console/settings"
 _RESULT_TTL = datetime.timedelta(minutes=5)
 
 
@@ -99,19 +97,10 @@ router = APIRouter(tags=["oauth-connection-results"])
 
 
 async def result_redirect(
-    store: PostgresConnectionResultStore,
-    *,
-    operator_id: UUID,
-    result: ConnectionResult,
-    destination: Literal["result", "settings"] = "result",
+    store: PostgresConnectionResultStore, *, operator_id: UUID, result: ConnectionResult
 ) -> RedirectResponse:
     result_id = await store.create(operator_id=operator_id, result=result)
-    url = (
-        f"{OAUTH_RESULT_SETTINGS_PATH}?{urlencode({'oauth_result': str(result_id)})}"
-        if destination == "settings"
-        else f"{OAUTH_RESULT_PATH_PREFIX}/{result_id}"
-    )
-    return RedirectResponse(url=url, status_code=303)
+    return RedirectResponse(url=f"{OAUTH_RESULT_PATH_PREFIX}/{result_id}", status_code=303)
 
 
 @router.post("/api/oauth-results/{result_id}", response_model=ConnectionResult)

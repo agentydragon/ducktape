@@ -59,7 +59,7 @@ from haku.console.identity.authorization import PostgresAgentAuthority, StaticAg
 from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
 from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.mcp import approval, catalog_reconciler, mount, operator_oauth, server, tool_call_service
+from haku.console.mcp import approval, catalog_reconciler, mount, server, tool_call_service
 from haku.console.mcp.in_process_servers import (
     InProcessServerDependencies,
     SandboxServerConfig,
@@ -175,8 +175,8 @@ def create_app(
     # (Authentik token refresh, login offline_access, hostexec_enabled) is orphaned-but-harmless
     # dead code pending a follow-up removal; hardcode the always-off value here rather than touch it.
     hostexec_config = None
-    # Postgres is required: it backs the approval ledger and the operator OAuth store, both always
-    # constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
+    # Postgres is required: it backs the approval ledger and the operator OAuth token stores, all
+    # always constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
     # the test fixture), not here. Cross-replica fan-out (Postgres LISTEN/NOTIFY) is started by the
     # lifespan below, since the listen loop needs a running event loop.
     # One engine/sessionmaker for the whole console, injected into every SQLAlchemy store, so the
@@ -192,12 +192,6 @@ def create_app(
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     tool_call_ledger = approval.PostgresToolCallLedger(db_sessions)
-    mcp_operator_oauth_store = operator_oauth.PostgresMcpOperatorOAuthStore(
-        db_sessions,
-        operator_identity_store=operator_identity_store,
-        token_states=oauth_token_states,
-        token_timeout_seconds=settings.mcp_operator_oauth_token_timeout_seconds,
-    )
     # Per-Operator external provider connections (Google today), replacing Airlock's brokered
     # token. Only deploy-named providers whose client env vars are present are offered.
     provider_clients = provider_connection.load_provider_clients(console_config)
@@ -238,8 +232,6 @@ def create_app(
     oauth_maintenance = association_maintenance.AssociationMaintenance(
         db_engine,
         db_sessions,
-        servers=list(console_config.mcp.servers.values()),
-        oauth_store=mcp_operator_oauth_store,
         provider_store=provider_connection_store,
         authentik_store=authentik_operator_token_store,
         refresh_authentik_tokens=hostexec_config is not None,
@@ -410,7 +402,6 @@ def create_app(
     catalogs = catalog_reconciler.OperatorCatalogReconciler(
         servers=list(console_config.mcp.servers.values()),
         dispatcher=dispatcher,
-        oauth_store=mcp_operator_oauth_store,
         provider_store=provider_connection_store,
         operator_ids=operator_identity_store.list_active_ids,
         refresh_interval_seconds=settings.mcp_catalog_refresh_interval_seconds,
@@ -421,7 +412,6 @@ def create_app(
         repository=tool_call_ledger,
         invalidation_publisher=console_event_hub,
         executor=dispatcher,
-        oauth_store=mcp_operator_oauth_store,
         in_process_servers=in_process_servers,
         gmail_client_provider=gmail_client_provider,
         provider_store=provider_connection_store,
@@ -436,7 +426,6 @@ def create_app(
     console_mcp_context = server.ConsoleMcpContext(
         settings=settings,
         tool_calls=tool_calls,
-        oauth_store=mcp_operator_oauth_store,
         provider_store=provider_connection_store,
         dispatcher=dispatcher,
         catalogs=catalogs,
@@ -460,7 +449,6 @@ def create_app(
             else await _resolve_static_agent_definitions()
         )
         await agent_authority.reconcile_static_agents(static_definitions)
-        await mcp_operator_oauth_store.forget_unconfigured_servers(list(console_config.mcp.servers.values()))
         async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), catalogs.run():
             await console_event_hub.start()
             try:
@@ -501,7 +489,6 @@ def create_app(
     app.state.operator_identity_store = operator_identity_store
     app.state.operator_login_flows = operator_login_flows
     app.state.tool_call_service = tool_calls
-    app.state.mcp_operator_oauth_store = mcp_operator_oauth_store
     app.state.provider_connection_store = provider_connection_store
     app.state.oauth_connection_result_store = oauth_connection_result_store
     app.state.authentik_operator_token_store = authentik_operator_token_store
@@ -560,7 +547,6 @@ def create_app(
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(approval.router, dependencies=operator_only)
     app.include_router(grant_routes.router, dependencies=operator_only)
-    app.include_router(operator_oauth.router, dependencies=operator_only)
     app.include_router(provider_connection.router, dependencies=operator_only)
     app.include_router(connection_result.router, dependencies=operator_only)
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)

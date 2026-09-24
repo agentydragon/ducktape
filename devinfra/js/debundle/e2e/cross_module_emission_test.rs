@@ -313,7 +313,7 @@ export { runtimeService, runtimeCache };
         ],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
         "Duplicate binding claim report: 2 duplicate claim(s) found",
@@ -432,7 +432,7 @@ export { RuntimeCatalog };
         ],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
         "Source-match selector diagnostic report: 2 unresolved selector(s) found",
@@ -475,7 +475,7 @@ export { RuntimeCatalog };
         )],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
         "Source-match selector diagnostic report: 2 unresolved selector(s) found",
@@ -525,7 +525,7 @@ export { existingHelper };
         )],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
         "Source-match selector diagnostic report: 2 unresolved selector(s) found",

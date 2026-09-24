@@ -468,7 +468,7 @@ fn keep_going_reports_multiple_intrinsic_alias_no_matches() {
         trio("0", "DecoratedClassC", "greet", "hi", "!"),
         trio("1", "DecoratedClassD", "title", "ok", "?")
     );
-    let rejected = run_keep_going_dry_run_rejection_fixture(FixtureOpts::new(
+    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
         &source,
         vec![
             logical_module("model/c", &[Member::new("DecoratedClassC")]),

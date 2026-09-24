@@ -530,8 +530,6 @@ spec:
               value: /etc/haku-console/static-metadata/image-tag
             - name: HAKU_CONSOLE__MAX_WAIT_FOR_RESULT_MS
               value: "60000"
-            - name: HAKU_CONSOLE__MCP_OPERATOR_OAUTH_TOKEN_TIMEOUT_SECONDS
-              value: "30"
             - name: HAKU_CONSOLE_DB_USER
               valueFrom:
                 secretKeyRef:
