@@ -132,6 +132,35 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_ollama_routes",
+    timeout = "eternal",
+    srcs = ["test_ollama_routes.py"],
+    env_inherit = [
+        "HOME",
+        "KUBECONFIG",
+        "OLLAMA_SMOKE_CASE",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":agent",
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app:client",
+        "//agentplane/app:inventory",
+        "//agentplane/app:presets",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # Live, like `test_instructions`: one sandbox and one turn per harness, so `eternal` for the same
 # reasons. Its latency ceilings are asserted inside the test, not by Bazel's clock.
 py_test(
