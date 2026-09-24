@@ -1,25 +1,13 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace
-  - forgejo-images-creds-eso.yaml
-  - certificate.yaml
-  - trust-bundle.yaml
-  - deployment.yaml
-  - service.yaml
-  - poddisruptionbudget.yaml
-  - claude-iron-deployment.yaml
-  - claude-iron-service.yaml
-  - claude-networkpolicy.yaml
-  - claude-code-oauth-token.sops.yaml
-  - external-creds-reader.yaml
-  - claude-github-token-eso.yaml
-  - openclaw-spike-github-token-eso.yaml
-  - openclaw-spike-iron-deployment.yaml
-  - openclaw-spike-iron-service.yaml
-  - openclaw-spike-networkpolicy.yaml
+  # cdk8s-generated (cluster/cdk8s/haku_egress_proxy.py, agents/namespaces.py,
+  # egress_fences.py) -- see cluster/docs/cdk8s.md.
+  - namespace.k8s.yaml
+  - haku-egress-proxy.k8s.yaml
   - openclaw-spike-cnp-egress.k8s.yaml
-  - openclaw-spike-kube-token-probe-rbac.yaml
+  - cnp-haku-cloud-api-egress.k8s.yaml
+  - claude-code-oauth-token.sops.yaml
   # Step two of a deliberate two-step, now complete. authentik-jwt-rotation
   # landed openclaw-spike-kube-token.sops.yaml in 2bb0c7fbd (rotations.yaml:
   # haku-k8s-openclaw), so listing it is safe. Holding it back was not an
@@ -30,17 +18,10 @@ resources:
   # (it is an optional secretKeyRef), iron-proxy has nothing to substitute, and
   # kubectl reaches the apiserver carrying the literal placeholder and 401s.
   - openclaw-spike-kube-token.sops.yaml
-  - networkpolicy.yaml
-  - cnp-haku-cloud-api-egress.k8s.yaml
-  - cnp-haku-claude-egress.k8s.yaml
-  - ccnp-haku-proxy-egress.yaml
-  - ccnp-haku-agent-egress.yaml
+components:
+  - ./image-pins
 
 configMapGenerator:
-  - name: haku-claude-oauth-proxy-config
-    namespace: haku-egress-proxy
-    files:
-      - iron.yaml=claude-iron.yaml
   - name: haku-openclaw-spike-proxy-config
     namespace: haku-egress-proxy
     files:

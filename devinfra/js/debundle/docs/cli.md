@@ -21,7 +21,7 @@ as the rest of ducktape.
 - Read-only queries: `bindings list`, `modules {list,propose}`,
   `spec {stats,selector-debt,match-selector,validate}`, `atoms`, `coverage`,
   `graph-summary`, `describe <id>`, `show-source <id>`, `scc`,
-  `cluster <sym>`, `gate {list,describe,cut}`, `selector-solve`
+  `cluster <sym>`, `gate {list,describe,cut}`
 
 ## Common arguments and env vars
 
@@ -163,18 +163,76 @@ parse/facts/gate checks without writing emitted JS or reports; a gate
 rejection still writes `owner_graph.json` plus the rejection evidence, so
 the `gate` queries work on the rejection that was just reported.
 
-Broad spec migrations continue through supported diagnostic failures by
-default and report all findings from that pass (currently: unresolved
-source-match selectors and duplicate binding claims, with
-module/export/origin evidence). Use `--fail-fast` only when the first
-failing selector or claim is the useful debugging target.
+Selector failures follow the keep-going (default) and `--fail-fast` modes of
+<../SPEC.md> § Modes, in the order of <selector_resolution.md> § Order. Broad
+spec migrations keep going, reporting every failure of a pass in each chunk's
+`selector_diagnostics.json`; use `--fail-fast` only when the first failing
+selector or claim is the useful debugging target (its outcome line is the
+error).
+
+Every chunk's selectors resolve as one program. In a tree spec, several
+module trees may scope to one chunk (`module_roots`, <../README.md>); their
+entities never claim the same place.
 
 `debundle spec validate` is `debundle run` in dry-run keep-going mode
 reporting every selector problem: it takes the **same inputs** (`--spec` /
 `--tree-config` + package roots) and needs the full pipeline, so run it via
 the Bazel `:debundle` target, not the standalone binary. Its source-only
 preflight mode (`--modules` plus `--source-file` or `--source-root
---chunk`) needs only the binary and the chunk.
+--chunk`) needs no pipeline build and resolves the module files jointly with
+the same resolve as `run`. Only the pipeline sees duplicate claims across
+modules, and a name pin on a binding the chunk does not declare is `no_match`
+in this mode but an unmatched claim in `run`.
+
+Each group of interacting selectors is one request to the CP-SAT sidecar, found in the
+`debundle` runfiles or through `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER` — in
+source-only `validate`, and in the edit gate, `describe` and `peel` when they
+resolve source claims. `match-selector` and `synthesize-selectors` resolve one
+selector at a time and never need it.
+
+### Selector outcomes
+
+`run --dry-run` (per chunk, `reports/tree/<chunk-id>/selector_diagnostics.json`),
+`spec validate` and `spec match-selector` all report selectors as
+`SelectorOutcome` records (`selector_outcome.rs`; kinds and severities in
+<../SPEC.md> § Outcomes). JSON is `{counts, outcomes}`; `run` and
+`validate` list only selectors that did not resolve plus warnings,
+`match-selector` its one probe (with `slack`). Text is one line per record:
+
+```text
+[ambiguous] static/app::ui/panel as `Panel` (source_matches[].bindings[`p`]): is ambiguous -- matched 2 top-level declarations: `a` (body[0]), `b` (body[1]) -- selector: const p = renderPanel(ANYTHING);
+```
+
+```json
+{
+  "counts": { "ambiguous": 1 },
+  "outcomes": [
+    {
+      "chunk": "static/app",
+      "placement": {
+        "logical_module": "ui/panel",
+        "entity": { "export": "Panel" },
+        "selector_kind": "source_matches"
+      },
+      "target_binding": "p",
+      "selector_preview": "const p = renderPanel(ANYTHING);",
+      "outcome": {
+        "kind": "ambiguous",
+        "candidates": [
+          { "owner": 0, "binding": "a" },
+          { "owner": 1, "binding": "b" }
+        ],
+        "truncated": false
+      },
+      "severity": "error"
+    }
+  ]
+}
+```
+
+`owner` is the matched statement's index in the chunk body. `validate
+--format ndjson` streams one record per line, then a `summary` line with the
+counts.
 
 ## Batch atomicity (`bindings assign`)
 
@@ -321,7 +379,8 @@ Typical debundle outputs:
   `rename_queue.json`, `vendor_swaps.json` when those outputs are
   configured
 - per-chunk reports under `reports/tree/<chunk-id>/`: `chunk.json`,
-  `modules.json`, `owner_graph.json`, plus `cycles.json` /
+  `modules.json`, `owner_graph.json`, `selector_diagnostics.json` when any
+  selector did not resolve or resolved with a warning, plus `cycles.json` /
   `atomic_unit_conflicts.json` only when validation rejects
 - mirrored per-directory and per-file dependency reports under
   `reports/tree/**/index.json` and `reports/tree/**/*.js.json`
@@ -365,7 +424,6 @@ authoring `comment:` fields". The CLI surface is `bindings comment` /
 
 ## See also
 
-- `AGENTS.md` — generic operator workflows that compose these commands.
 - `design.md` — the realizability theorem the gate enforces; § "Layered
   mental model" + § "Factor assembly inside `debundle run`" for the
   factorization algorithm `modules propose` draws from.

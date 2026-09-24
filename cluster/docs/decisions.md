@@ -160,7 +160,7 @@ All secrets are SOPS (age-encrypted in git, decrypted by Flux). ESO is still ins
 but only with the Kubernetes provider, mirroring a small number of secrets
 cross-namespace — rotator-published tokens out of `flux-system`, shared agent
 credentials out of `claude-sandbox`, Airlock OAuth tokens, CLIProxyAPI keys (stores in
-`k8s/external-secrets/config/`). Stakater Reloader restarts pods on changes. Vault was
+`generated/external-secrets/config/`). Stakater Reloader restarts pods on changes. Vault was
 decommissioned 2026-04-19: much higher bootstrap operational complexity, raft being
 annoying on a 3-replica Vault, and its extra features not actually helping — SOPS + ESO
 and friends are enough.
@@ -283,7 +283,7 @@ capacity; when the node is contended, CFS shares CPU proportionally to requests
 (compressible resource — no pod is killed). Memory limits remain useful
 (`RequestsAndLimits`) since memory is incompressible.
 
-See `cluster/k8s/agents/tana-mcp/facade-deployment.yaml` for a working example
+See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
 (fastmcp takes ~6 CPU-seconds to import; at 60m limit this costs 100s wall time).
 
 ## Dropped Services
@@ -426,9 +426,9 @@ manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
   them with runtime-managed credentials before reactivation.
 - **budget (Fava)**: `cluster/k8s/parked/budget/` — decommissioned read-only Beancount
   ledger viewer. Its `budget` namespace remains active at
-  `cluster/k8s/forgejo/budget-namespace/` because the active ledger Terraform
+  `cluster/generated/forgejo/budget-namespace/` because the active ledger Terraform
   Kustomization writes credentials there. The underlying ledger data (a Forgejo git
-  repo provisioned by `cluster/k8s/forgejo/budget-ledger/`) is untouched. Its Authentik
+  repo provisioned by `cluster/generated/forgejo/budget-ledger/`) is untouched. Its Authentik
   SSO blueprint was tombstoned (`fava-sso-retire.yaml`, replacing `fava-sso.yaml`) per
   <sso.md> § "Deleting Authentik providers or applications".
 - **augur-evidence**: `cluster/k8s/parked/augur-evidence/` — retired Forgejo evidence

@@ -3,7 +3,7 @@
 A passing `bbr test //agentplane/app/frontend:visual` only proves every scene mounted
 without an uncaught error — it says nothing about whether it looks right (there are no checked-in
 pixel baselines here; see `util/testing/frontend_visual/README.md`). Before calling a visual
-change (`session.tsx`, `session.css`, or any other component/stylesheet here) done, actually look
+change (`projected_session.tsx`, `projected_session.css`, or any other component/stylesheet here) done, actually look
 at a rendered PNG of every state you touched. Either of these satisfies that — the point is seeing
 the real pixels, not a specific mechanism for getting there:
 
@@ -29,7 +29,7 @@ fixture switches are per-row overrides.
 
 If a state you changed isn't exercised by any existing scenario/fixture (`visual/harness.tsx`), add
 one rather than skipping the check — see `session_states` for the pattern (a fixture built
-specifically to exercise states the main fixture doesn't produce). Many states are reachable via a
-URL param in the row's `route` (`?raw=1`, `?reasoning=<item-id>`) rather than a simulated click —
-check `scenarios.ts` before assuming a new state needs click-simulation infrastructure this app's
-`visual-test-lib.mjs`-based tests don't have (unlike `haku/console`'s own `render.mjs`).
+specifically to exercise states the main fixture doesn't produce). A state behind a click (an open
+run, a row's evidence, the debug drawer) is a row switch on `Scenario` (`openReasoning`,
+`openEvidence`, `openDebug`, …) that `visual/harness.tsx` acts on once the view mounts — check the
+existing switches before adding one.

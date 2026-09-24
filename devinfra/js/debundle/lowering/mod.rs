@@ -29,9 +29,9 @@ use artifact::{
 };
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
 use output_layout::MODULES_REPORT;
+use selector_resolve::MemberSelector;
 use spec::{
-    BindingSourceKind, ChunkExportPurity, ChunkRenames, LogicalModule, MemberEffect, MemberPurity,
-    UnassignedMode,
+    ChunkExportPurity, ChunkRenames, LogicalModule, MemberEffect, MemberPurity, UnassignedMode,
 };
 
 mod anonymous;
@@ -47,7 +47,6 @@ mod io;
 mod lower;
 mod materialize;
 mod naturalize;
-mod ordinal;
 mod plan_references;
 mod plans;
 pub mod rename_ledger;
@@ -60,7 +59,7 @@ mod util;
 mod vendor_imports;
 mod visitors;
 
-use anonymous::{AnonymousStatementDiagnostic, ResolvedAnonymousStatement};
+use anonymous::ResolvedAnonymousStatement;
 use body_facts::{ModuleBodyFacts, collect_module_body_facts};
 use chunk_ast::{
     ChunkAstAnalysis, TopLevelDecl, analyze_chunk_ast, binding_ids, binding_names, declaration_ids,
@@ -87,7 +86,7 @@ use lower::{
 };
 use materialize::{
     ChunkContext, ChunkSpec, MaterializeLogicalChunkInputs, apply_materialized_logical_chunks,
-    materialize_logical_chunk,
+    finish_logical_chunk, prepare_logical_chunk, resolve_prepared_chunks,
 };
 use naturalize::{NaturalizedRenames, collect_plan_export_rename_intents, naturalize_module_body};
 use plan_references::{
@@ -321,34 +320,56 @@ pub fn materialize_logical_modules(
     // into rayon worker threads. Capture a reference to the current
     // `Globals` and re-set inside each worker closure so `Mark::new()`
     // and `Id`-comparisons stay consistent across the whole pipeline.
-    let chunk_results = GLOBALS.with(|globals| {
-        selected_chunk_ids
-            .par_iter()
-            .map(|chunk_id| {
-                GLOBALS.set(globals, || {
-                    materialize_logical_chunk(MaterializeLogicalChunkInputs {
-                        context: ChunkContext {
-                            artifact: artifact_ref,
-                            artifact_indexes: &artifact_indexes,
-                            chunk_id,
-                            file: options.config.file.as_deref(),
-                            target_dir: &target_dir,
-                            keep_going: options.keep_going,
-                            report_emission: &options.report_emission,
-                            cross_module_purities: &cross_module_purities,
-                            vendor_import_oracle: vendor_import_oracle.as_ref(),
-                        },
-                        spec: ChunkSpec {
-                            logical_modules,
-                            chunk_renames,
-                            unassigned_mode,
-                            chunk_analysis_options,
-                        },
+    //
+    // Chunks are planned in parallel up to the selector resolve, resolved
+    // together, then analysed and lowered in parallel. Each phase's errors
+    // are taken in chunk-id order, so which one fails a run (under
+    // `--fail-fast`, which selector outcome) does not depend on scheduling.
+    let prepared = GLOBALS
+        .with(|globals| {
+            selected_chunk_ids
+                .par_iter()
+                .map(|chunk_id| {
+                    GLOBALS.set(globals, || {
+                        prepare_logical_chunk(MaterializeLogicalChunkInputs {
+                            context: ChunkContext {
+                                artifact: artifact_ref,
+                                artifact_indexes: &artifact_indexes,
+                                chunk_id,
+                                file: options.config.file.as_deref(),
+                                target_dir: &target_dir,
+                                keep_going: options.keep_going,
+                                report_emission: &options.report_emission,
+                                cross_module_purities: &cross_module_purities,
+                                vendor_import_oracle: vendor_import_oracle.as_ref(),
+                            },
+                            spec: ChunkSpec {
+                                logical_modules,
+                                chunk_renames,
+                                unassigned_mode,
+                                chunk_analysis_options,
+                            },
+                        })
                     })
                 })
-            })
-            .collect::<Result<Vec<_>>>()
-    })?;
+                .collect::<Vec<_>>()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
+    let (prepared, projections): (Vec<_>, Vec<_>) = prepared.into_iter().unzip();
+    let resolutions = resolve_prepared_chunks(&prepared, projections)?;
+    let chunk_results = GLOBALS
+        .with(|globals| {
+            prepared
+                .into_par_iter()
+                .zip(resolutions)
+                .map(|(chunk, resolution)| {
+                    GLOBALS.set(globals, || finish_logical_chunk(chunk, resolution))
+                })
+                .collect::<Vec<_>>()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
 
     let mut reports = Vec::with_capacity(chunk_results.len());
     let mut applied = Vec::<SelectedModuleLowering>::new();

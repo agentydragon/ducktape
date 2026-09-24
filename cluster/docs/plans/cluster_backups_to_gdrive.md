@@ -9,13 +9,13 @@ config DBs). Large media is explicitly out of scope for now.
 
 Use the existing personal Google One 2 TB plan (`agentydragon@gmail.com`) as an
 **offsite** copy of cluster backups, driven from the VolSync that's already
-deployed (<../../k8s/volsync/helmrelease.yaml>, chart 0.15.0).
+deployed (<../../cdk8s/volsync.py>).
 
 ## The constraint that shapes everything
 
 VolSync **cannot write to Google Drive directly**. Its movers are
 `rsync(TLS)`, `restic`, `rclone`, `syncthing`. Today we only use `rsyncTLS`
-(PVC→PVC, e.g. <../../k8s/grocy/sf/app/volsync-backup.yaml>). Drive is reachable
+(PVC→PVC, e.g. <../../cdk8s/grocy/app.py>). Drive is reachable
 only via the `restic` mover (restic repo on an `rclone:` backend) or the `rclone`
 mover (dumb file mirror).
 
@@ -58,8 +58,8 @@ Why two stages instead of pointing VolSync's restic mover straight at
   fragile Drive/OAuth/rate-limit concerns are isolated in **one dumb CronJob**,
   decoupled from backup integrity.
 - Stage A reuses the SeaweedFS Bucket CR + per-tenant identity + ESO pattern we
-  already run (e.g. <../../k8s/seaweedfs/langfuse-bucket/bucket.yaml>,
-  <../../k8s/seaweedfs/secrets/secretstore.yaml>).
+  already run (e.g. <../../cdk8s/langfuse/app.py>,
+  <../../cdk8s/seaweedfs/s3_config.py>).
 
 This also **supersedes the ad-hoc rsyncTLS PVC→PVC backups** (Grocy, Tana-MCP):
 restic-to-S3 gives retention + offsite in one mechanism, where rsyncTLS only
@@ -167,7 +167,6 @@ least-privilege token and doesn't broaden the agent-facing read-only Google toke
   token_url: https://oauth2.googleapis.com/token
   scopes:
     - https://www.googleapis.com/auth/drive.file # write, but only files this app creates
-  redirect_uri: https://airlock.allegedly.works/oauth/callback/google_drive_backup
   refresh_secret:
     name: google-drive-backup-tokens
   access_secret:
@@ -244,8 +243,9 @@ No GCP console work, no `rclone authorize`, no SOPS token — airlock handles
 acquisition, storage, and refresh. The OAuth client and a published consent screen
 already exist independently of the decommissioned Google Workspace MCP service.
 
-1. **Land the airlock provider entry** (step 4) so airlock exposes
-   `/oauth/callback/google_drive_backup`.
+1. **Land the airlock provider entry** (step 4), with no `redirect_uri`, so it uses airlock's
+   shared `/oauth/callback`. That is the URI registered on the Google OAuth client; any other
+   fails with `redirect_uri_mismatch`.
 2. **Authorize once in a browser as the personal Gmail account**: visit airlock's
    authorize endpoint for the new provider (the same flow used for oura/google/bsc;
    the Airlock UI surfaces the link). Approve the

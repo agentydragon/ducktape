@@ -74,10 +74,10 @@ pub trait SelectorResolver {
     ) -> Result<ResolvedMemberBindingGroup>;
 
     /// Resolve an anonymous-statement selector to the matched top-level
-    /// body-index groups (one inner vec per matched alignment).
+    /// body-index groups (one per matched alignment).
     fn resolve_anonymous_groups(
         &self,
         request_id: &str,
         selector: &AnonymousStatementSelector,
-    ) -> Result<Vec<Vec<usize>>>;
+    ) -> Result<Vec<AnonymousGroupMatch>>;
 }

@@ -21,7 +21,7 @@ token can push to repositories and open pull requests as `agentydragon-agent`.
 Rotation touches the ExternalSecret source, not the manifests: the value comes
 from `ClusterSecretStore/kubernetes-claude-sandbox-secret-store`, key
 `github-token`, property `token`, consumed by
-<../../cluster/k8s/agents/public-coder-agent/app/github-token-eso.yaml> and by
+<../../cluster/cdk8s/public_coder_agent_config.py> and by
 the OpenShell `agentydragon-github` provider. Both pick up a new value on the
 next refresh (1h) with no manifest change.
 
@@ -33,7 +33,7 @@ The adoption decision asked for digest pinning plus a mirror
 (<../../cluster/docs/container-images.md>), and the answer moved underneath the
 question. The Docker Hub half is settled: production no longer runs
 `ironsh/iron-proxy:0.49.0` but a commit-built image of our own
-(<../../cluster/images/iron-proxy/>, upstream commit `c90f4fe`) from
+(<../../cluster/images/iron-proxy/>, upstream `v0.50.0`) from
 `git.allegedly.works`, so no third-party account stands between an attacker and the
 one process holding the GitHub credential.
 

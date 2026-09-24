@@ -1,22 +1,12 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
-  - postgres-cluster.yaml
-  - forgejo-images-creds-eso.yaml
+  # cdk8s-generated (cluster/cdk8s/nix_cache/attic.py) -- see cluster/docs/cdk8s.md.
+  - attic.k8s.yaml
   - jwt-token.sops.yaml
   - cache-keys.sops.yaml
-  - bucket.yaml
-  - iam.yaml
-  - s3-credentials.yaml
-  - seaweed-reference-grant.yaml
-  - deployment.yaml
-  - service.yaml
-  - httproute.yaml
-  - job.yaml
-  - github-pat.yaml
-  - serviceaccount.yaml
-  - cronjob.yaml
+components:
+  - ./image-pins
 
 configMapGenerator:
   - name: attic-config

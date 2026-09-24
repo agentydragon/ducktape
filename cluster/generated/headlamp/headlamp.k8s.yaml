@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+  name: headlamp
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: headlamp
+  namespace: headlamp
+spec:
+  interval: 24h
+  url: https://kubernetes-sigs.github.io/headlamp/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: headlamp
+  namespace: headlamp
+spec:
+  chart:
+    spec:
+      chart: headlamp
+      sourceRef:
+        kind: HelmRepository
+        name: headlamp
+        namespace: headlamp
+      version: 0.45.0
+  install:
+    remediation:
+      retries: 3
+  interval: 15m
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    config:
+      oidc:
+        externalSecret:
+          enabled: true
+          name: headlamp-oidc-secret
+        secret:
+          create: false
+      watchPlugins: true
+    httpRoute:
+      enabled: true
+      hostnames:
+        - headlamp.allegedly.works
+      parentRefs:
+        - name: cluster-gateway
+          namespace: gateway-system
+    ingress:
+      enabled: false
+    nodeSelector:
+      topology.kubernetes.io/region: hil
+    pluginsManager:
+      configContent: |
+        plugins:
+          - name: headlamp_flux
+            source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_flux
+            version: "0.7.0"
+          - name: headlamp_cert-manager
+            source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_cert-manager
+            version: "0.1.1"
+          - name: headlamp_kyverno
+            source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_kyverno
+            version: "0.1.0"
+          - name: headlamp_keda
+            source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_keda
+            version: "0.1.2"
+          - name: headlamp_kubevirt
+            source: https://artifacthub.io/packages/headlamp/headlamp-kubevirt/headlamp_kubevirt
+            version: "0.3.1"
+        installOptions:
+          parallel: true
+          maxConcurrent: 2
+      enabled: true
+      version: 0.1.1
+    podAnnotations:
+      reloader.stakater.com/auto: "true"
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oidc-agentydragon-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: oidc:agentydragon

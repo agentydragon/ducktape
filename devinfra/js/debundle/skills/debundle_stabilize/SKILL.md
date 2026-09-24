@@ -44,8 +44,8 @@ The selector **mechanics** — hole forms (`ANYTHING`, `STMT_LIST`, `CASE_REST`,
 Four debundler subcommands. `selector-debt` and `synthesize-selectors` read the
 chunk + `modules/` tree directly; `match-selector` reads just the chunk and a
 candidate selector. None of those three need a pipeline build or owner graph.
-The fourth (`spec validate`) is the whole-spec gate and needs the full pipeline
-(see Setup). Treat the **minimizer as a first-class instrument**, not a last
+The fourth (`spec validate`) is the whole-spec gate; its full mode needs the
+pipeline (see Setup). Treat the **minimizer as a first-class instrument**, not a last
 resort:
 
 - **`spec selector-debt`** — the census. Ranks fragile name pins; add
@@ -64,10 +64,17 @@ resort:
   in the readable one when it kept an accidental but-unique token — is judgment you
   supply on top of its output (next section); it cannot be read off the AST.
 - **`spec match-selector`** — the prove/probe. Resolves your candidate and reports
-  unique-or-not, the colliding matches, and over-pin slack.
-- **`spec validate`** — the whole-spec keep-going sweep (`no-match` / `ambiguous` /
-  `duplicate-claim`). Unlike the other three this runs the full pipeline (Bazel
-  `:debundle`, package roots), not the standalone binary — see Setup.
+  its outcome (`resolved`, or `no_match` / `ambiguous` with the colliding
+  candidates / `too_broad`) and over-pin slack.
+- **`spec validate`** — the whole-spec keep-going sweep: one outcome per selector
+  that did not resolve (`no_match` / `ambiguous` / `conflict` / `too_broad` over
+  100 places / `duplicate_claim` / `invalid` / `undecided`), plus warnings for selectors
+  resolved only by elimination (below). The full mode runs the pipeline (Bazel
+  `:debundle`, package roots); the source-only preflight (`--modules` plus
+  `--source-file`) needs no pipeline build and resolves the modules together
+  just as the full mode does, short of duplicate claims across modules; when
+  selectors interact it runs the CP-SAT sidecar (`debundle` runfiles, or
+  `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER`) — see Setup.
 
 Division of labor: the minimizer makes a selector **compact and unique today** by
 mechanical read-off; judging whether its anchor is _meaningful_ (vs an accidental
@@ -95,9 +102,9 @@ base under `/tmp` to avoid lock contention, exactly as the other debundle
 skills do. In a consuming repo the CLI label is `@ducktape//...`; inside the
 debundler repo, drop the prefix.
 
-The whole-spec gate is the exception. `spec validate` (and `debundle run`) is the
-realizability/cycle pipeline in dry-run, so it needs the full `debundle` **pipeline
-target** — the Bazel `:debundle` target with its package roots and a repo-root
+The whole-spec gate is the exception. Full `spec validate` (and `debundle run`) is
+the joint selector solve plus the realizability/cycle pipeline in dry-run, so it
+needs the full `debundle` **pipeline target** — the Bazel `:debundle` target with its package roots and a repo-root
 source root — not the standalone binary against the snapshot dir. Run it through
 Bazel. On NixOS, `--server_javabase=…` is a **startup** option: it must precede
 `build`, not follow it.
@@ -135,12 +142,12 @@ grouped `source_matches[]` suggestions. Treat this run as routine, not a footnot
 it is cheap (tens of seconds whole-spec) and surfaces a population about as large as
 the name-pin backlog that is otherwise invisible.
 
-**3. Re-check existing commented debt.** A name pin kept with a "blocked on X"
-comment (step 6) may have been unblocked since: tooling that has landed (new hole
+**3. Re-check existing noted debt.** A name pin kept with a "blocked on X"
+`note:` (step 6) may have been unblocked since: tooling that has landed (new hole
 forms, declarator support, …) can make a previously-impossible selector convert
 cleanly now. The census lists the name pin but not whether its recorded blocker is
-still real, so periodically re-run the minimizer over commented debt and retire the
-comment where it now converts.
+still real, so periodically re-run the minimizer over noted debt and retire the
+note where it now converts.
 
 A _third_ failure mode is **not** enumerable: a selector that is already
 `source_match` yet pinned on an _incidental_ anchor (the `{ name: ANYTHING }` shape).
@@ -180,15 +187,17 @@ wrong anchor, so slack only prioritizes; it never decides.
    the binding you mean, and its **slack** — the kept things you could still hole
    without losing uniqueness (i.e. whether you over-pinned). It uses the public
    alpha-equivalent source-match identifier policy. For a whole-spec sweep,
-   `debundle spec validate` (keep-going) resolves every selector
-   and reports `no-match` / `ambiguous` / `duplicate-claim`.
+   `debundle spec validate` (keep-going) resolves every selector jointly and
+   reports each one that did not resolve, plus the resolved-by-elimination
+   warnings, in the same outcome format.
 
 5. **Group** adjacent or cohesive bindings that share a declaration context into
    one `source_matches[]` entry rather than emitting N overlapping selectors.
 
 6. **Leave honest debt.** If the entity has no purpose-bearing anchor stable enough
-   to trust, keep the name pin and add a YAML comment saying why. A truthful name
-   pin beats an incidental `source_match` that looks stable and isn't.
+   to trust, keep the name pin and add an `annotations.<export>.note:` saying
+   why. A truthful name pin beats an incidental `source_match` that looks stable
+   and isn't.
 
 ## What makes a good anchor
 
@@ -232,6 +241,11 @@ Disprefer (implementation / incidental — churned by refactors and rebuilds):
   sequences, nested expression trees: the mechanism, never the identity;
 - positional / structural shape with no kept value (arity, declaration order);
 - uniqueness borrowed from an unrelated **neighbor** declaration;
+- uniqueness that holds only because **other selectors claimed the
+  alternatives** — `spec validate` warns (`resolved` with `resolved_by: elimination`) and names
+  the claimers. Unique only in the joint solve, it breaks as soon as a claimer
+  moves; `match-selector` checks the selector alone, so a candidate it proves
+  unique does not have this problem;
 - bare numbers (`0`, `1`), booleans, ubiquitous literals; a generic object key with
   its value holed (`{ name: ANYTHING }`); minified identifiers (already wildcarded);
 - **content hashes and generated ids** — hashed CSS-module class names
@@ -320,7 +334,7 @@ literal the body it pins, the more fragile, not less.
 **No good anchor at all → leave honest debt.** If the entity is just
 `class DocumentAccessorFactory extends NodeAccessor {}` — empty body, no self-name,
 no distinctive surviving member — then every unique selector is either
-neighbor-borrowed or shape-only. Keep the name pin with a comment (step 6). An
+neighbor-borrowed or shape-only. Keep the name pin with a `note:` (step 6). An
 honest pin beats a photograph that _looks_ structural and durable but isn't.
 
 ## Playbook (common cases)
@@ -354,7 +368,7 @@ honest pin beats a photograph that _looks_ structural and durable but isn't.
 If a selector needs roughly a whole function body, object literal, or class body to
 be unique, that is **minimizer backlog, not stabilization**. A `match` block that
 is `>40` lines with `≤2` holes is an over-pin: it is an exact snapshot of today's
-code. Revert it to the name pin with a comment, and report the gap to the debundler
+code. Revert it to the name pin with a `note:`, and report the gap to the debundler
 (a missing hole / anchor capability) rather than scaling a fragile pattern across
 many modules.
 
@@ -366,14 +380,3 @@ many modules.
 
 This skill only chooses selectors. The minimizer is a tool you call, not the
 authority.
-
-## Background
-
-The design rationale (why anchor choice is an agent judgment rather than a cost
-term) and the verifiability asymmetry are summarized in
-`devinfra/js/debundle/docs/selectors.md`. Both `match-selector` (probes "what does
-this candidate match?" and reports over-pin slack in one shot) and
-`synthesize-selectors --candidates N` (a menu of ranked candidates rather than the
-minimizer's single pick) have landed. The two-bundle-version dogfood pair is the
-eventual scorecard for whether these instructions actually produce durable
-selectors.

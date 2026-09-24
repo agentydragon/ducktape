@@ -113,9 +113,9 @@ or bypass Action review on their own.
 All configured synchronous providers run to completion; any deny dominates, otherwise any allow
 wins, otherwise the request remains on the human-review path. Timeouts and exceptions contribute
 `no_opinion` with bounded reason codes. Provider explanations are bounded audit evidence, not
-unrestricted reasoning. Human and provider decisions commit through the same versioned,
-idempotent Decision path; a losing provider callback cannot overwrite a winning human decision or
-caller cancellation. Mandatory authorization bounds for future configurable policies are distinct
+unrestricted reasoning. Providers run before the request is persisted and a decisive vote commits
+with the insert, so no human decision or cancellation can race it and no reader sees the request
+as pending (<../docs/action_policies.md> § Evaluate once). Mandatory authorization bounds for future configurable policies are distinct
 from these optional votes.
 
 ## Cancellation
@@ -136,7 +136,7 @@ principal, not a Thread or caller-supplied provenance. Unknown and non-owned req
 
 The request row lock serializes cancellation with Decision commits and the dispatch claim. A
 successful cancellation guarantees no executor will run for that request, including after restart,
-a queued dispatch task, or late approval/provider completion. Claiming is the cutoff even before
+a queued dispatch task, or a late approval. Claiming is the cutoff even before
 the executor is invoked. Cancellation does not signal executors or kill processes; disconnecting
 or cancelling an HTTP/MCP wait does not cancel the underlying ActionRequest.
 
@@ -341,8 +341,8 @@ manifests grants exactly that.
 
 Each policy kind is one module under `policies/` holding its wire model and its evaluator
 (`exact_actions`; `argument_schema` over the `jsonschema` package; `github_repository` and
-`github_public_repository` over the `github_policy` package the Haku console's GitHub policies
-also use, so the search-qualifier boundaries and the unauthenticated visibility lookup exist once);
+`github_public_repository` over the `github_policy` package, which lives here and holds the search-qualifier
+boundaries and the unauthenticated visibility lookup);
 `policies/registry` assembles the `type`-discriminated union and dispatches evaluation after the
 shared "is the Action listed" gate. `policy_evaluation` holds `resolve_bindings` (the caller's
 unexpired valid bindings and the valid sets they name, nothing before sync) and

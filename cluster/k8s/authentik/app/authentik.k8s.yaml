@@ -1,0 +1,285 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: authentik
+  namespace: authentik
+spec:
+  interval: 24h
+  url: https://charts.goauthentik.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: authentik
+  namespace: authentik
+spec:
+  chart:
+    spec:
+      chart: authentik
+      sourceRef:
+        kind: HelmRepository
+        name: authentik
+        namespace: authentik
+      version: 2026.8.2
+  install:
+    strategy:
+      name: RetryOnFailure
+  interval: 15m
+  timeout: 15m
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+  values:
+    authentik:
+      bootstrap:
+        password: ""
+        token: ""
+      error_reporting:
+        enabled: false
+      postgresql:
+        host: authentik-db-ovh-rw
+        name: authentik
+        password: ""
+        user: authentik
+      redis:
+        host: ""
+      secret_key: ""
+    blueprints:
+      configMaps:
+        - authentik-sso-blueprints
+    global:
+      deploymentAnnotations:
+        configmap.reloader.stakater.com/reload: authentik-sso-blueprints
+        secret.reloader.stakater.com/reload: authentik-db-app,authentik-user-password
+    postgresql:
+      enabled: false
+    redis:
+      enabled: true
+    server:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: server
+                    app.kubernetes.io/instance: authentik
+                topologyKey: kubernetes.io/hostname
+              weight: 100
+      deploymentStrategy:
+        rollingUpdate:
+          maxSurge: 1
+          maxUnavailable: 0
+        type: RollingUpdate
+      env:
+        - name: AUTHENTIK_POSTGRESQL__PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: authentik-db-app
+      envFrom:
+        - configMapRef:
+            name: authentik-host
+        - secretRef:
+            name: authentik-bootstrap
+        - secretRef:
+            name: authentik-admin-password
+        - secretRef:
+            name: authentik-secret-key
+        - secretRef:
+            name: authentik-user-password
+      ingress:
+        enabled: false
+      livenessProbe:
+        failureThreshold: 8
+        periodSeconds: 15
+        timeoutSeconds: 10
+      name: server
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      readinessProbe:
+        timeoutSeconds: 10
+      replicas: 1
+      resources:
+        limits:
+          memory: 1536Mi
+        requests:
+          cpu: 300m
+          memory: 512Mi
+      service:
+        enabled: true
+        port: 80
+        type: ClusterIP
+      startupProbe:
+        failureThreshold: 120
+        periodSeconds: 10
+    serviceAccount:
+      create: true
+      name: authentik
+    worker:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: worker
+                    app.kubernetes.io/instance: authentik
+                topologyKey: kubernetes.io/hostname
+              weight: 100
+      deploymentStrategy:
+        rollingUpdate:
+          maxSurge: 1
+          maxUnavailable: 0
+        type: RollingUpdate
+      env:
+        - name: AUTHENTIK_POSTGRESQL__PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: authentik-db-app
+      envFrom:
+        - configMapRef:
+            name: authentik-host
+        - secretRef:
+            name: authentik-bootstrap
+        - secretRef:
+            name: authentik-admin-password
+        - secretRef:
+            name: authentik-secret-key
+        - secretRef:
+            name: authentik-user-password
+      name: worker
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      replicas: 1
+      resources:
+        limits:
+          memory: 1Gi
+        requests:
+          cpu: 300m
+          memory: 512Mi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-host
+  namespace: authentik
+data:
+  AUTHENTIK_HOST: https://auth.allegedly.works
+  AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS: 10.42.0.0/24,10.244.0.0/16
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: authentik
+  namespace: authentik
+spec:
+  hostnames:
+    - auth.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80
+      filters:
+        - responseHeaderModifier:
+            remove:
+              - X-Frame-Options
+            set:
+              - name: Content-Security-Policy
+                value: frame-ancestors 'self' https://haku.allegedly.works
+          type: ResponseHeaderModifier
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: authentik-server-ingress
+  namespace: authentik
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/component: server
+      app.kubernetes.io/name: authentik
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+            - port: "9443"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: authentik
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+            - port: "9443"
+              protocol: TCP
+            - port: "9300"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: flux-system
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+            - port: "9300"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: gatus
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+            - port: "9443"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kubectl-passthrough-mcp
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: claude-sandbox
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: authentik-server
+  namespace: authentik
+spec:
+  podMetricsEndpoints:
+    - path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: server
+      app.kubernetes.io/name: authentik

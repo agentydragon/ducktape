@@ -1,0 +1,399 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    release: kube-prometheus-stack
+  name: control-plane-io-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: control-plane-io
+      rules:
+        - alert: ControlPlaneSystemDiskBusy
+          annotations:
+            description: /dev/sda on control-plane node {{ $labels.node }} has been busy for more than 50% of wall time over 15 minutes. This disk also carries Talos EPHEMERAL and etcd.
+            summary: Control-plane system disk is busy on {{ $labels.node }}
+          expr: |
+            (
+              rate(node_disk_io_time_seconds_total{device="sda"}[10m])
+              * on(namespace, pod) group_left(node)
+                kube_pod_info{namespace="monitoring", pod=~"prometheus-node-exporter-.+"}
+              * on(node) group_left()
+                kube_node_role{role="control-plane"}
+            ) > 0.50
+          for: 15m
+          labels:
+            severity: warning
+        - alert: ControlPlanePodSystemDiskWriterHigh
+          annotations:
+            description: Pod {{ $labels.namespace }}/{{ $labels.pod }} on {{ $labels.node }} is writing {{ $value | humanize1024 }}B/s to /dev/sda for more than 10 minutes, which can contend with etcd.
+            summary: Pod {{ $labels.namespace }}/{{ $labels.pod }} is writing heavily to control-plane /dev/sda
+          expr: |
+            (
+              sum by (namespace, pod, node) (
+                rate(container_fs_writes_bytes_total{device="/dev/sda", container!="", pod!="", namespace!="kube-system"}[10m])
+              )
+              * on(node) group_left()
+                kube_node_role{role="control-plane"}
+            ) > 1048576
+          for: 10m
+          labels:
+            severity: warning
+        - alert: ControlPlaneLeasePutLatency
+          annotations:
+            description: p99 apiserver lease PUT latency on {{ $labels.instance }} has exceeded 500ms for 10 minutes. This is an early signal for leader-election and node-lease write path contention.
+            summary: Apiserver lease PUT latency is high on {{ $labels.instance }}
+          expr: |
+            histogram_quantile(
+              0.99,
+              sum by (instance, le) (
+                rate(apiserver_request_duration_seconds_bucket{resource="leases", verb="PUT", scope="resource"}[10m])
+              )
+            ) > 0.5
+          for: 10m
+          labels:
+            severity: warning
+        - alert: ControlPlaneLeasePutLatency
+          annotations:
+            description: p99 apiserver lease PUT latency on {{ $labels.instance }} has exceeded 2s for 5 minutes. Leader election and node heartbeats may time out.
+            summary: Apiserver lease PUT latency is critical on {{ $labels.instance }}
+          expr: |
+            histogram_quantile(
+              0.99,
+              sum by (instance, le) (
+                rate(apiserver_request_duration_seconds_bucket{resource="leases", verb="PUT", scope="resource"}[10m])
+              )
+            ) > 2
+          for: 5m
+          labels:
+            severity: critical
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    release: kube-prometheus-stack
+  name: external-secrets-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: external-secrets
+      rules:
+        - alert: ExternalSecretNotReady
+          annotations:
+            description: |
+              ExternalSecret {{ $labels.namespace }}/{{ $labels.name }} has reported Ready=False for more than 10 minutes. For Kubernetes-provider mirrors, this usually means the source Secret/key is missing or unreadable.
+            summary: ExternalSecret {{ $labels.namespace }}/{{ $labels.name }} is not Ready
+          expr: externalsecret_status_condition{condition="Ready",status="False"} == 1
+          for: 10m
+          labels:
+            severity: warning
+        - alert: ClusterExternalSecretNotReady
+          annotations:
+            description: |
+              ClusterExternalSecret {{ $labels.name }} has reported Ready=False for more than 10 minutes. Check failed namespaces and generated ExternalSecret children.
+            summary: ClusterExternalSecret {{ $labels.name }} is not Ready
+          expr: clusterexternalsecret_status_condition{condition="Ready",status="False"} == 1
+          for: 10m
+          labels:
+            severity: warning
+        - alert: ExternalSecretsControllerBacklogged
+          annotations:
+            description: |
+              External Secrets {{ $labels.controller }} has queued work while all workers are busy for more than 15 minutes. Short-refresh mirrors may stop propagating source Secret updates even while Ready=True remains stale.
+            summary: External Secrets {{ $labels.controller }} controller is saturated with queued work
+          expr: |
+            sum by (controller) (
+              workqueue_depth{controller=~"externalsecret|clusterexternalsecret|secretstore|clustersecretstore"}
+            ) > 0
+            and on (controller)
+            controller_runtime_active_workers{controller=~"externalsecret|clusterexternalsecret|secretstore|clustersecretstore"}
+              >= controller_runtime_max_concurrent_reconciles{controller=~"externalsecret|clusterexternalsecret|secretstore|clustersecretstore"}
+          for: 15m
+          labels:
+            severity: warning
+        - alert: ExternalSecretsControllerLongRunningWorker
+          annotations:
+            description: |
+              A single External Secrets {{ $labels.controller }} worker has been processing one item for more than two minutes. With low concurrency, this can starve unrelated mirrors and leave target Secrets stale.
+            summary: External Secrets {{ $labels.controller }} worker has been running for {{ $value | humanizeDuration }}
+          expr: workqueue_longest_running_processor_seconds{controller=~"externalsecret|clusterexternalsecret|secretstore|clustersecretstore"} > 120
+          for: 5m
+          labels:
+            severity: warning
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    release: kube-prometheus-stack
+  name: flux-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: flux
+      rules:
+        - alert: FluxKustomizationNotReady
+          annotations:
+            description: Flux Kustomization {{ $labels.namespace }}/{{ $labels.name }} has reported Ready={{ $labels.status }} for more than 15 minutes.
+            summary: Flux Kustomization {{ $labels.namespace }}/{{ $labels.name }} is not Ready
+          expr: |
+            kube_customresource_flux_kustomization_ready{status!="True"} == 1
+            unless on (namespace, name) (kube_customresource_flux_kustomization_suspended == 1)
+          for: 15m
+          labels:
+            severity: warning
+        - alert: FluxHelmReleaseNotReady
+          annotations:
+            description: Flux HelmRelease {{ $labels.namespace }}/{{ $labels.name }} has reported Ready={{ $labels.status }} for more than 15 minutes.
+            summary: Flux HelmRelease {{ $labels.namespace }}/{{ $labels.name }} is not Ready
+          expr: |
+            kube_customresource_flux_helmrelease_ready{status!="True"} == 1
+            unless on (namespace, name) (kube_customresource_flux_helmrelease_suspended == 1)
+          for: 15m
+          labels:
+            severity: warning
+        - alert: FluxGitRepositoryNotReady
+          annotations:
+            description: Flux GitRepository {{ $labels.namespace }}/{{ $labels.name }} has reported Ready={{ $labels.status }} for more than 15 minutes.
+            summary: Flux GitRepository {{ $labels.namespace }}/{{ $labels.name }} is not Ready
+          expr: |
+            kube_customresource_flux_gitrepository_ready{status!="True"} == 1
+            unless on (namespace, name) (kube_customresource_flux_gitrepository_suspended == 1)
+          for: 15m
+          labels:
+            severity: warning
+        - alert: FluxMainGitRepositoryArtifactLarge
+          annotations:
+            description: GitRepository flux-system/flux-system artifact is {{ $value | humanize1024 }}B, increasing source unpack/write pressure for every dependent Kustomization.
+            summary: Flux main GitRepository artifact is large
+          expr: kube_customresource_flux_gitrepository_artifact_size_bytes{namespace="flux-system",name="flux-system"} > 16777216
+          for: 30m
+          labels:
+            severity: warning
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    release: kube-prometheus-stack
+  name: github-quota-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: github-quota
+      rules:
+        - alert: GitHubGraphQLQuotaBurnRateHigh
+          annotations:
+            description: |
+              Sustained above the 5000/hour budget, so this hour's bucket will exhaust before it resets. Attribution is only possible while this is firing: sample the bucket at 5s resolution to get the shape, and check the connection recorder and pod flow metrics against the same window.
+            summary: GitHub GraphQL points for {{ $labels.github_account }} burning at {{ $value | humanize }}/s
+          expr: deriv(github_graphql_rate_used[5m]) > 1.4
+          for: 2m
+          labels:
+            severity: warning
+        - alert: GitHubGraphQLQuotaExhausted
+          annotations:
+            description: |
+              A retained observation reported zero remaining points. Ordinary GraphQL operations can fail until reset; rate-only probes may still work, and HTTP status varies. This alert remains active briefly after reset. Exhaustion entirely between the one-minute scrapes cannot be detected. REST `/rate_limit` can disagree with this bucket.
+            summary: GitHub GraphQL quota for {{ $labels.github_account }} was exhausted in the last 5 minutes
+          expr: min by (github_account) (min_over_time(github_graphql_rate_remaining[5m])) == 0
+          labels:
+            severity: warning
+        - alert: GitHubGraphQLQuotaObservationsMissing
+          annotations:
+            description: |
+              No remaining-quota sample has been retained for five minutes. Check discovery, Alloy collection/remote write, and the exporter for this account. Missing observations cannot establish that quota stayed nonzero. Explicitly failed scrapes are covered separately by TargetDown after ten minutes.
+            summary: GitHub GraphQL quota observations for {{ $labels.github_account }} are missing
+          expr: |
+            (
+              absent_over_time(github_graphql_rate_remaining{github_account="agentydragon"}[5m])
+              unless on ()
+              (max(up{job="github-graphql-rate-exporter-agentydragon",namespace="monitoring"}) == 0)
+            )
+            or
+            (
+              absent_over_time(github_graphql_rate_remaining{github_account="agentydragon-agent"}[5m])
+              unless on ()
+              (max(up{job="github-graphql-rate-exporter-agentydragon-agent",namespace="monitoring"}) == 0)
+            )
+          labels:
+            severity: warning
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    release: kube-prometheus-stack
+  name: grocy-mcp-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: grocy-mcp
+      rules:
+        - alert: GrocyMcpNoTools
+          annotations:
+            description: |
+              The Grocy MCP server is reachable on its metrics port, but its local FastMCP registry reports zero advertised tools. Clients can authenticate successfully and still see an empty tool list. Check the pod logs for OpenAPI generation, TOOL_OVERRIDES, or batch tool registration failures.
+            summary: Grocy MCP {{ $labels.namespace }}/{{ $labels.pod }} is advertising zero tools
+          expr: grocy_mcp_tools{namespace=~"grocy-.+"} == 0
+          for: 5m
+          labels:
+            severity: warning
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    release: kube-prometheus-stack
+  name: haku-console-connection-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: haku-console-connections
+      rules:
+        - alert: HakuConsoleConnectionRefreshStale
+          annotations:
+            description: |
+              The OAuth refresh for provider connection {{ $labels.connection }} ({{ $labels.provider }}) has been failing continuously for {{ $value | humanizeDuration }}. Agents reading this connection are blind and scheduled runs will report their watches as skipped rather than failing. Fix: re-authorize the connection in the console's Settings → Connections. If it re-breaks immediately, the grant was revoked upstream rather than expired.
+            summary: haku-console connection {{ $labels.connection }} has been failing to refresh for {{ $value | humanizeDuration }}
+          expr: max by (namespace, connection, provider) (haku_console_connection_refresh_failure_age_seconds) > 7200
+          for: 15m
+          labels:
+            severity: warning
+        - alert: HakuConsoleConnectionRefreshStale
+          annotations:
+            description: |
+              {{ $labels.connection }} has not refreshed successfully in over 24 hours ({{ $value | humanizeDuration }}). Re-authorize it in the console's Settings → Connections.
+            summary: haku-console connection {{ $labels.connection }} dead for over a day
+          expr: max by (namespace, connection, provider) (haku_console_connection_refresh_failure_age_seconds) > 86400
+          for: 15m
+          labels:
+            severity: critical
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    release: kube-prometheus-stack
+  name: mcp-auth-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: mcp-auth
+      rules:
+        - alert: McpUpstreamTokenRefreshFailed
+          annotations:
+            description: |
+              {{ $value | printf "%.0f" }} token refresh failure(s) in the last hour on {{ $labels.namespace }}/{{ $labels.pod }} (outcome={{ $labels.outcome }}). outcome=transient means Authentik was unreachable/5xx (client got 503 and may recover on its own); outcome=oauth means Authentik genuinely rejected a grant — the claude.ai connector is likely dead until manually reconnected; outcome=storage means the MCP server could not persist OAuth state to its local store such as Valkey (client got 503 and may retry). Check Settings → Connectors in claude.ai, authentik-server health, and the MCP namespace's state-store pods.
+            summary: "MCP server {{ $labels.namespace }}/{{ $labels.pod }} failed a token refresh (outcome: {{ $labels.outcome }})"
+          expr: increase(mcp_auth_upstream_refresh_failures_total[1h]) > 0
+          labels:
+            severity: warning
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    release: kube-prometheus-stack
+  name: roaming-node-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: roaming-node-alerts
+      rules:
+        - alert: KubeNodeNotReady
+          annotations:
+            description: "{{ $labels.node }} has been unready for more than 15 minutes. Roaming nodes are excluded, so this is a node that was expected to stay up."
+            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubenodenotready
+            summary: Node is not ready.
+          expr: |
+            (
+              kube_node_status_condition{condition="Ready",job="kube-state-metrics",status="true"} == 0
+              and on (cluster, node)
+              kube_node_spec_unschedulable{job="kube-state-metrics"} == 0
+            )
+            unless on (node) (kube_node_spec_taint{job="kube-state-metrics",key="node-role.kubernetes.io/roaming"} == 1)
+          for: 15m
+          labels:
+            severity: warning
+        - alert: KubeNodeUnreachable
+          annotations:
+            description: "{{ $labels.node }} is unreachable and some workloads may be rescheduled. Roaming nodes are excluded, so this is a node that was expected to stay up."
+            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubenodeunreachable
+            summary: Node is unreachable.
+          expr: |
+            (
+              kube_node_spec_taint{effect="NoSchedule",job="kube-state-metrics",key="node.kubernetes.io/unreachable"}
+              unless ignoring (key, value)
+              kube_node_spec_taint{job="kube-state-metrics",key=~"ToBeDeletedByClusterAutoscaler|cloud.google.com/impending-node-termination|aws-node-termination-handler/spot-itn|node-role.kubernetes.io/roaming"}
+            ) == 1
+          for: 15m
+          labels:
+            severity: warning
+    - name: roaming-node-workload-alerts
+      rules:
+        - alert: KubePodNotReady
+          annotations:
+            description: Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in a non-ready state for longer than 15 minutes on cluster {{ $labels.cluster }}.
+            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubepodnotready
+            summary: Pod has been in a non-ready state for more than 15 minutes.
+          expr: |-
+            (
+              sum by (namespace, pod, job, cluster) (
+                max by (namespace, pod, job, cluster) (
+                  kube_pod_status_phase{job="kube-state-metrics", namespace=~".*", phase=~"Pending|Unknown"}
+                  or
+                  (
+                    kube_pod_status_phase{job="kube-state-metrics", namespace=~".*", phase="Running"} == 1
+                    and on (namespace, pod, cluster)
+                    kube_pod_status_ready{job="kube-state-metrics", namespace=~".*", condition="true"} == 0
+                  )
+                ) * on (namespace, pod, cluster) group_left() topk by (namespace, pod, cluster) (
+                  1, max by (namespace, pod, owner_kind, cluster) (kube_pod_owner{owner_kind!="Job"})
+                )
+              ) > 0
+              unless on (namespace, pod, cluster)
+              kube_pod_status_reason{job="kube-state-metrics", namespace=~".*", reason="SchedulingGated"} == 1
+            )
+            unless on (namespace, pod)
+            (
+              kube_pod_info{job="kube-state-metrics", node!=""}
+              and on (node)
+              kube_node_spec_taint{job="kube-state-metrics", key="node-role.kubernetes.io/roaming"} == 1
+            )
+          for: 15m
+          labels:
+            severity: warning
+        - alert: KubeletInstanceUnreachable
+          annotations:
+            description: A Kubelet instance has been unreachable for more than 15 minutes.
+            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubeletinstanceunreachable
+            summary: Kubelet instance is unreachable.
+          expr: |
+            (
+              up{job="kubelet", metrics_path="/metrics"} == 0
+            )
+            unless on (node)
+            kube_node_spec_taint{job="kube-state-metrics", key="node-role.kubernetes.io/roaming"} == 1
+          for: 15m
+          labels:
+            severity: warning
+        - alert: TargetDown
+          annotations:
+            description: '{{ printf "%.4g" $value }}% of the {{ $labels.job }}/{{ $labels.service }} targets in {{ $labels.namespace }} namespace are down. Roaming nodes are excluded from both sides of the ratio.'
+            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/general/targetdown
+            summary: One or more targets are unreachable.
+          expr: |
+            100 * (
+              count by (cluster, job, namespace, service) (
+                (up == 0) unless on (node) (kube_node_spec_taint{key="node-role.kubernetes.io/roaming"} == 1)
+              )
+              /
+              count by (cluster, job, namespace, service) (
+                up unless on (node) (kube_node_spec_taint{key="node-role.kubernetes.io/roaming"} == 1)
+              )
+            ) > 10
+          for: 10m
+          labels:
+            severity: warning

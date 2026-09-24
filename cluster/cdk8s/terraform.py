@@ -25,10 +25,11 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecVars,
 )
 
+from cluster.cdk8s import ducktape_flux, flux
 from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "flux-system"
-_STATE_DB = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+STATE_DB = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
 
 
 def secret_env(name: str, secret: str, key: str) -> TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv:
@@ -55,8 +56,10 @@ def gitops_terraform(
     depends_on: Sequence[str] = (),
     env: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv] = (),
     env_from: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom] = (),
+    schema: str | None = None,
 ) -> TerraformV1Alpha2:
-    """`name` is the module directory under tf/gitops and, underscored, its state schema.
+    """`name` is the module directory under tf/gitops and, underscored, its state schema
+    unless `schema` names the one its state already lives in.
 
     `variables` values are written structurally into the runner's tfvars, so a nested
     map arrives as a Terraform map/object, not a string.
@@ -68,15 +71,17 @@ def gitops_terraform(
         spec=TerraformV1Alpha2Spec(
             interval="15m",
             refresh_before_apply=True,
-            path=f"./tf/gitops/{name}",
+            path=f"./{ducktape_flux.TF_GITOPS_ROOT}/{name}",
             source_ref=TerraformV1Alpha2SpecSourceRef(
-                kind=TerraformV1Alpha2SpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
+                kind=TerraformV1Alpha2SpecSourceRefKind.GIT_REPOSITORY,
+                name=ducktape_flux.SOURCE_NAME,
+                namespace=flux.NAMESPACE,
             ),
             service_account_name="tf-runner",
             approve_plan="auto",
             backend_config=TerraformV1Alpha2SpecBackendConfig(
                 custom_configuration=(
-                    f'backend "pg" {{\n  conn_str    = "{_STATE_DB}"\n  schema_name = "{name.replace("-", "_")}"\n}}\n'
+                    f'backend "pg" {{\n  conn_str    = "{STATE_DB}"\n  schema_name = "{schema or name.replace("-", "_")}"\n}}\n'
                 )
             ),
             vars=[TerraformV1Alpha2SpecVars(name=key, value=value) for key, value in variables.items()] or None,

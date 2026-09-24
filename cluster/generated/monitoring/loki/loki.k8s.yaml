@@ -1,0 +1,601 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: initial
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: privileged
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: loki
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: Merge
+  name: loki-s3-credentials
+  namespace: loki
+type: Opaque
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: loki-s3-credentials
+  namespace: loki
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: seaweedfs
+  to:
+    - group: ""
+      kind: Secret
+      name: loki-s3-credentials
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: loki
+  namespace: seaweedfs
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: loki
+  namespace: seaweedfs
+spec:
+  identityRef:
+    name: loki
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: loki-s3-credentials
+    namespace: loki
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: loki
+  namespace: seaweedfs
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: loki
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: loki
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Loki chunks, ruler, and admin objects.
+  name: loki
+  namespace: loki
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: loki
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: loki
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: loki
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: loki
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: loki
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  annotations:
+    description: Loki's tenant-local SeaweedFS credentials.
+  name: loki
+  namespace: loki
+spec:
+  identityRef:
+    name: loki
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: loki-seaweedfs-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: loki
+  namespace: loki
+spec:
+  chart:
+    spec:
+      chart: loki
+      interval: 12h
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+      version: 7.x
+  install:
+    remediation:
+      retries: 3
+  interval: 30m
+  values:
+    backend:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+              weight: 100
+      annotations:
+        goldilocks.fairwinds.com/enabled: "false"
+      extraEnvFrom:
+        - secretRef:
+            name: loki-seaweedfs-credentials
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      persistence:
+        volumeClaimsEnabled: false
+      replicas: 2
+      resources:
+        limits:
+          cpu: 500m
+          memory: 1Gi
+        requests:
+          cpu: 50m
+          memory: 256Mi
+    chunksCache:
+      enabled: false
+    deploymentMode: SimpleScalable
+    gateway:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+              weight: 100
+      enabled: true
+      extraContainers:
+        - args:
+            - -k
+            - --no-hosts
+            - --listen-address=127.0.0.1
+            - --port=8053
+            - --cache-size=150
+          image: 4km3/dnsmasq:2.90-r3-alpine-3.22.2
+          name: dnsmasq
+          ports:
+            - containerPort: 8053
+              name: dns
+              protocol: UDP
+          resources:
+            limits:
+              cpu: 50m
+              memory: 64Mi
+            requests:
+              cpu: 5m
+              memory: 16Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      nginxConfig:
+        resolver: 127.0.0.1:8053
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      replicas: 1
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+    loki:
+      auth_enabled: false
+      commonConfig:
+        replication_factor: 2
+      compactor:
+        compaction_interval: 10m
+        delete_request_store: s3
+        retention_delete_delay: 2h
+        retention_enabled: true
+      limits_config:
+        ingestion_burst_size_mb: 20
+        ingestion_rate_mb: 10
+        per_stream_rate_limit: 5MB
+        per_stream_rate_limit_burst: 10MB
+        reject_old_samples: true
+        reject_old_samples_max_age: 168h
+        retention_period: 2160h
+        volume_enabled: true
+      schemaConfig:
+        configs:
+          - from: "2026-04-06"
+            index:
+              period: 24h
+              prefix: loki_index_
+            object_store: s3
+            schema: v13
+            store: tsdb
+      storage:
+        bucketNames:
+          admin: loki
+          chunks: loki
+          ruler: loki
+        s3:
+          endpoint: http://seaweedfs-s3.seaweedfs.svc:8333
+          insecure: true
+          region: us-east-1
+          s3ForcePathStyle: true
+        type: s3
+    monitoring:
+      dashboards:
+        enabled: false
+      rules:
+        enabled: false
+      selfMonitoring:
+        enabled: false
+        grafanaAgent:
+          installOperator: false
+      serviceMonitor:
+        enabled: true
+    read:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+              weight: 100
+      annotations:
+        goldilocks.fairwinds.com/enabled: "false"
+      extraEnv:
+        - name: GOMEMLIMIT
+          value: 3277MiB
+      extraEnvFrom:
+        - secretRef:
+            name: loki-seaweedfs-credentials
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      replicas: 2
+      resources:
+        limits:
+          cpu: 500m
+          memory: 4Gi
+        requests:
+          cpu: 50m
+          memory: 128Mi
+    resultsCache:
+      enabled: false
+    singleBinary:
+      replicas: 0
+    test:
+      enabled: false
+    write:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+              weight: 100
+      annotations:
+        goldilocks.fairwinds.com/enabled: "false"
+      extraEnvFrom:
+        - secretRef:
+            name: loki-seaweedfs-credentials
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      persistence:
+        size: 10Gi
+        storageClass: local-path-ovh
+      replicas: 2
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 100m
+          memory: 256Mi
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: promtail
+  namespace: loki
+spec:
+  chart:
+    spec:
+      chart: promtail
+      interval: 12h
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+      version: 6.x
+  install:
+    remediation:
+      retries: 3
+  interval: 30m
+  upgrade:
+    disableWait: true
+  values:
+    config:
+      clients:
+        - url: http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push
+      snippets:
+        pipelineStages:
+          - cri: {}
+          - labeldrop:
+              - filename
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 50m
+        memory: 256Mi
+    tolerations:
+      - effect: NoSchedule
+        operator: Exists
+    updateStrategy:
+      rollingUpdate:
+        maxUnavailable: 3
+      type: RollingUpdate
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: promtail-journal
+  namespace: loki
+spec:
+  chart:
+    spec:
+      chart: promtail
+      interval: 12h
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+      version: 6.x
+  install:
+    remediation:
+      retries: 3
+  interval: 30m
+  upgrade:
+    disableWait: true
+  values:
+    config:
+      clients:
+        - url: http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push
+      snippets:
+        extraScrapeConfigs: |
+          - job_name: journal
+            journal:
+              path: /var/log/journal
+              max_age: 12h
+              labels:
+                job: systemd-journal
+            relabel_configs:
+              - source_labels: ['__journal__systemd_unit']
+                target_label: unit
+              - source_labels: ['__journal__hostname']
+                target_label: node
+              - source_labels: ['__journal_priority_keyword']
+                target_label: level
+        scrapeConfigs: ""
+    extraVolumeMounts:
+      - mountPath: /var/log/journal
+        name: journal
+        readOnly: true
+      - mountPath: /etc/machine-id
+        name: machine-id
+        readOnly: true
+    extraVolumes:
+      - hostPath:
+          path: /var/log/journal
+        name: journal
+      - hostPath:
+          path: /etc/machine-id
+        name: machine-id
+    nodeSelector:
+      node-vendor: nixos
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 50m
+        memory: 256Mi
+    tolerations:
+      - effect: NoSchedule
+        operator: Exists
+    updateStrategy:
+      rollingUpdate:
+        maxUnavailable: 3
+      type: RollingUpdate
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: loki-ingress
+  namespace: loki
+spec:
+  egress:
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: s3
+            app.kubernetes.io/name: seaweedfs
+            k8s:io.kubernetes.pod.namespace: seaweedfs
+      toPorts:
+        - ports:
+            - port: "8333"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: loki
+            k8s:io.kubernetes.pod.namespace: loki
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "8080"
+              protocol: TCP
+            - port: "7946"
+              protocol: TCP
+            - port: "9095"
+              protocol: TCP
+            - port: "3100"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: promtail
+            k8s:io.kubernetes.pod.namespace: loki
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+    - fromEntities:
+        - host
+        - remote-node
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app: grafana
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: backend
+            app.kubernetes.io/instance: props
+            k8s:io.kubernetes.pod.namespace: props
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alloy
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alloy
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "3500"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: gatus
+            k8s:io.kubernetes.pod.namespace: gatus
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: authentik
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: loki-read-proxy
+            k8s:io.kubernetes.pod.namespace: loki-read-proxy
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: loki
+            k8s:io.kubernetes.pod.namespace: loki
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "8080"
+              protocol: TCP
+            - port: "3100"
+              protocol: TCP
+            - port: "9095"
+              protocol: TCP
+            - port: "7946"
+              protocol: TCP

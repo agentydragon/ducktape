@@ -4,6 +4,7 @@ load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "pkg_mkdirs", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
@@ -139,7 +140,6 @@ py_library(
     name = "harness_process",
     srcs = ["harness_process.py"],
     data = [":harness_supervisor"],
-    deps = ["//util/bazel:runfiles"],
 )
 
 rust_binary(
@@ -227,6 +227,7 @@ py_test(
         "//:conftest",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:protocol_pb2",
+        "//agentplane/runner/testing:unanswering_runner",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -512,6 +513,36 @@ oci_image(
     user = "1000:1000",
 )
 
+# The runner release (devinfra/ci/artifact_targets.json), which the Nix-built runner image installs
+# beside nixpkgs' Claude Code and Codex. The harness supervisor rides inside the wheel next to the
+# module that starts it, so the wheel is Linux x86_64 only.
+py_package(
+    name = "runner_pkg",
+    packages = ["agentplane"],
+    deps = [":main"],
+)
+
+py_wheel(
+    name = "runner_wheel",
+    distribution = "agentplane_runner",
+    entry_points = {
+        "console_scripts": ["agentplane-runner = agentplane.runner.main:app"],
+    },
+    platform = "linux_x86_64",
+    python_requires = ">=3.14",
+    requires = [
+        "aiosqlite",
+        "grpcio",
+        # The generated *_pb2 modules refuse an older runtime than the protoc that wrote them.
+        "protobuf>=7.36,<8",
+        "pydantic>=2.0",
+        "sqlalchemy[asyncio]>=2.0",
+        "typer",
+    ],
+    version = "0.1.0",
+    deps = [":runner_pkg"],
+)
+
 oci_layout_rloc(
     name = "image_rloc",
     testonly = True,
@@ -676,11 +707,13 @@ py_test(
     name = "test_service",
     srcs = ["test_service.py"],
     deps = [
+        ":client",
         ":config",
         ":conftest",
         ":service",
         ":store",
         "//:conftest",
+        "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -699,6 +732,39 @@ py_test(
         "//agentplane/protocol:event_pb2",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_session",
+    srcs = ["test_session.py"],
+    deps = [
+        ":adapter",
+        ":config",
+        ":conftest",
+        ":journal",
+        ":session",
+        ":store",
+        "//:conftest",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//aiosqlite",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_harness_supervisor",
+    srcs = ["test_harness_supervisor.py"],
+    data = [":harness_supervisor"],  # keep: the binary under test, reached through runfiles
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )

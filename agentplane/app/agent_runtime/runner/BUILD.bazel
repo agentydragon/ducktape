@@ -1,0 +1,36 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+py_library(
+    name = "runners",
+    srcs = ["runners.py"],
+    deps = [
+        "//agentplane/app:changes",
+        "//agentplane/app:inventory",
+        "//agentplane/app:live",
+        "//agentplane/runner:client",
+    ],
+)
+
+py_library(
+    name = "bridge",
+    srcs = ["bridge.py"],
+    deps = [
+        ":runners",
+        "//agentplane/app:changes",
+        "//agentplane/app:inventory",
+        "//agentplane/app:presets",
+        "//agentplane/app/agent_runtime:ingestion",
+        "//agentplane/app/agent_runtime/events:event_log",
+        "//agentplane/app/agent_runtime/view:content",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//fastapi",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+    ],
+)

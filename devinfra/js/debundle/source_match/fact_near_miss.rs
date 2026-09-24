@@ -43,8 +43,16 @@ fn fact_exact_groups(
     let index_of = |item: &ModuleItem| item_index(item).unwrap_or_else(empty_index);
     let needle_indices: Vec<Index> = needle_body.iter().map(index_of).collect();
     let subject_indices: Vec<Index> = runtime_module.body.iter().map(index_of).collect();
-    selector_match::match_top_level_sequence_indexed(&needle_indices, &subject_indices, mode)
-        .unwrap_or_default()
+    selector_match::match_top_level_sequence_indexed(
+        &needle_indices,
+        &subject_indices,
+        mode,
+        &free_identifiers(&needle_indices),
+    )
+    .unwrap_or_default()
+    .into_iter()
+    .map(|matched| matched.site)
+    .collect()
 }
 
 /// A rootless [`Index`] (no facts): it matches nothing, mirroring the resolver's
@@ -361,8 +369,14 @@ pub(crate) fn fact_first_mismatch_reason(
         return Ok(None);
     };
     // The fact matcher is the non-match oracle; a match means no near-miss row.
-    if selector_match::matches_indexed(needle_index, &candidate_index, mode)
-        .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
+    if selector_match::matches_indexed(
+        needle_index,
+        &candidate_index,
+        mode,
+        &free_identifiers([needle_index]),
+    )
+    .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
+    .is_some()
     {
         return Ok(None);
     }
@@ -673,10 +687,15 @@ fn first_var_decl_divergence(
     // Declarator alignment over facts (wrapper symmetry + keyword already hold at
     // this point, so a `None` is purely a declarator-list mismatch — exactly
     // `match_var_declarator_slice_with_alignment().is_none()` on the AST side).
-    let aligns =
-        selector_match::var_declarator_alignment_indexed(needle_index, candidate_index, mode, None)
-            .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
-            .is_some();
+    let aligns = selector_match::var_declarator_alignment_indexed(
+        needle_index,
+        candidate_index,
+        mode,
+        &[],
+        &free_identifiers([needle_index]),
+    )
+    .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
+    .is_some();
     if aligns {
         return Ok(MismatchReason {
             score: 35,
@@ -731,6 +750,7 @@ fn first_pinned_var_declarator_divergence(
         candidate_index,
         cdecls,
         mode,
+        &free_identifiers([needle_index]),
     )
     .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?;
     let pinned_indices = needle_var
@@ -787,6 +807,7 @@ fn first_class_divergence(
 ) -> Result<MismatchReason> {
     let nmembers = needle_index.children(nclass);
     let cmembers = candidate_index.children(cclass);
+    let free = free_identifiers([needle_index]);
     let mut candidate_start = 0;
     for &nmember in nmembers {
         if selector_match::is_class_rest_member(needle_index, nmember) {
@@ -804,8 +825,15 @@ fn first_class_divergence(
             }
             found_label = true;
             candidate_start = candidate_idx + 1;
-            if !selector_match::nodes_match(needle_index, nmember, candidate_index, cmember, mode)
-                .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
+            if !selector_match::nodes_match(
+                needle_index,
+                nmember,
+                candidate_index,
+                cmember,
+                mode,
+                &free,
+            )
+            .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
             {
                 return Ok(MismatchReason {
                     score: 65,

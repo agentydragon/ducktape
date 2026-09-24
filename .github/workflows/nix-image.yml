@@ -1,0 +1,83 @@
+# Build one dockerTools image from the flake and publish it. Each image's own workflow keeps its
+# triggers and concurrency, and calls this with the flake output and the repository to push to.
+#
+# The archive is a dockerTools docker archive, so `skopeo copy docker-archive:`. Pushes run on
+# devel only: fork PRs do not receive the publish credentials, and only a merged image is one
+# anything pins.
+name: Nix image
+
+on:
+  workflow_call:
+    inputs:
+      attr:
+        description: Flake output to build.
+        required: true
+        type: string
+      image:
+        description: Repository to push to, without a tag.
+        required: true
+        type: string
+      registry:
+        description: "`forgejo` pushes as the ducktape-ci user; `ghcr` with this run's GITHUB_TOKEN."
+        required: true
+        type: string
+      smoke:
+        description: Shell run in the checkout after the build and before any push; `result` is the archive.
+        required: false
+        type: string
+        default: ""
+      attic:
+        description: Also push the archive to the Attic cache, so a host building the same revision substitutes it.
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      SOPS_AGE_KEY:
+        required: true
+
+jobs:
+  image:
+    name: Build & push ${{ inputs.attr }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      IMAGE: ${{ inputs.image }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-nix-attic
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Build image
+        run: nix build ".#${{ inputs.attr }}" --print-build-logs
+
+      - name: Smoke test
+        if: inputs.smoke != ''
+        run: ${{ inputs.smoke }}
+
+      - name: Push to Attic
+        if: inputs.attic && github.ref_name == 'devel'
+        run: |
+          nix profile install nixpkgs#attic-client
+          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
+          attic push ducktape:main result
+
+      - name: Push image
+        if: github.ref_name == 'devel'
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          case "$REGISTRY" in
+            forgejo) creds="$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" ;;
+            ghcr) creds="$GITHUB_ACTOR:$GHCR_TOKEN" ;;
+            *)
+              echo "unknown registry: $REGISTRY" >&2
+              exit 1
+              ;;
+          esac
+          ref="$IMAGE:$GITHUB_REF_NAME-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA:0:7}"
+          skopeo copy --insecure-policy --dest-creds "$creds" --digestfile "$RUNNER_TEMP/digest" \
+            "docker-archive:$(readlink -f result)" "docker://$ref"
+          echo "pushed \`$ref\` as \`$IMAGE@$(cat "$RUNNER_TEMP/digest")\`" >> "$GITHUB_STEP_SUMMARY"

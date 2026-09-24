@@ -31,21 +31,14 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
     ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
-    ExternalSecretSpecTargetTemplateMetadata,
 )
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
@@ -73,46 +66,24 @@ _KEY_VOLUMES = (
 
 
 def _bearer_credentials(scope: Construct) -> None:
+    """agentplane-staging copies it with ESO through a store that can read this one Secret
+    (cluster/cdk8s/agentplane/staging.py): this namespace also holds every target's SSH private
+    key, which no store may reach."""
     Password(
         scope,
         "bearer-password-generator",
         metadata=metadata(BEARER_SECRET_NAME, NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    ExternalSecret(
+    add_external_secret(
         scope,
         "bearer-external-secret",
-        metadata=metadata(BEARER_SECRET_NAME, NAMESPACE),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-            target=ExternalSecretSpecTarget(
-                name=BEARER_SECRET_NAME,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(
-                    type="Opaque",
-                    metadata=ExternalSecretSpecTargetTemplateMetadata(
-                        annotations={
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "^haku-console$,^agentplane-staging$",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "^haku-console$,^agentplane-staging$",
-                        }
-                    ),
-                    data={BEARER_SECRET_KEY: "{{ .password }}"},
-                ),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=BEARER_SECRET_NAME,
-                        )
-                    )
-                )
-            ],
-        ),
+        name=BEARER_SECRET_NAME,
+        namespace=NAMESPACE,
+        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+        data_from=[password_generator(BEARER_SECRET_NAME)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={BEARER_SECRET_KEY: "{{ .password }}"}),
     )
 
 
@@ -251,9 +222,7 @@ class SshMcp(Construct):
             selector=LABELS,
             ingress=[
                 cilium.ingress_from(
-                    cilium.endpoint_labels("agentplane-staging", "agentplane-actions"),
-                    cilium.endpoint_labels("haku-console", "haku-console"),
-                    ports=[HTTP_PORT],
+                    cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[HTTP_PORT]
                 )
             ],
             egress=_egress(mesh, config),
@@ -262,5 +231,14 @@ class SshMcp(Construct):
 
 def chart(app: App, *, config: SshMcpConfig, mesh: Mesh) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    k8s.KubeNamespace(
+        chart,
+        "namespace",
+        metadata=k8s.ObjectMeta(
+            name=NAMESPACE,
+            labels={"name": NAMESPACE, "goldilocks.fairwinds.com/enabled": "false"},
+            annotations={"description": "SSH MCP backend; private keys stay in this namespace."},
+        ),
+    )
     SshMcp(chart, NAME, config=config, mesh=mesh)
     return chart

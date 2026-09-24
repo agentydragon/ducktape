@@ -17,7 +17,7 @@ contained to roughly Haku's existing sandbox blast radius:
   registry/git push creds — but it is **egress-fenced**
   like haku-sandbox (`networkpolicy.yaml`: DNS + base-image registries/npm/pypi + in-cluster
   only).
-- **Rootless daemon in a privileged pod** (`docker:27-dind-rootless`, `privileged: true`). The
+- **Rootless daemon in a privileged pod** (a `docker:*-dind-rootless` image, `privileged: true`). The
   dockerd still runs **rootless** (UID 1000), so it's strictly better than classic rootful
   dind — but `privileged: true` is the documented requirement for dind-rootless (it provides
   `/dev/net/tun` and disables the mount masks RootlessKit needs). The non-privileged path was
@@ -60,12 +60,10 @@ rejections are handled by `oci-cache`'s Zot `http.compat: ["docker2s2"]` setting
 
 ## What's here
 
-| File                           | Role                                                                                                                           |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| `namespace.yaml`               | the `haku-ci` namespace                                                                                                        |
-| `ccnp-force-proxy-egress.yaml` | egress fence (DNS + in-cluster + haku-egress-proxy only)                                                                       |
-| `config.yaml`                  | the forgejo-runner config (labels, dind `DOCKER_HOST`, capacity, job-container `-v` mounts)                                    |
-| `scaledjob.yaml`               | KEDA `ScaledJob`: the one-job runner pod + rootless `dind` native sidecar, the Forgejo queue trigger, and token authentication |
+| File               | Role                                                                                                                                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `haku-ci.k8s.yaml` | generated (`cluster/cdk8s/haku_ci/runner.py`): namespace, egress fence (DNS + in-cluster + haku-egress-proxy only), KEDA `ScaledJob` (one-job runner + rootless `dind` native sidecar, Forgejo queue trigger, token auth) |
+| `config.yaml`      | the forgejo-runner config (labels, dind `DOCKER_HOST`, capacity, job-container `-v` mounts)                                                                                                                               |
 
 The registration-token Secret (`haku-ci-runner-token`) is provisioned by `tf/gitops/haku-state`
 (a `hashicorp/http` GET of the repo's runner registration-token API, written to the Secret) —

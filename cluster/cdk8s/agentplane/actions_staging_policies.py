@@ -1,9 +1,9 @@
 """Staging-only Action Service policy objects: the claude-ai caller ServiceAccount, its
 five reviewed GitHub-reads ActionPolicySets, its reviewed Home Assistant/Gmail/Google
 Calendar-reads ActionPolicySets, and the ActionPolicyBinding granting them to that
-ServiceAccount. See cluster/k8s/agentplane-staging/README.md § Action policies --
-Sandbox-subject bindings are written by the integration app at runtime and are never
-checked in here.
+ServiceAccount; also what its sandboxes may reach (the EgressBinding) and read (the Coinbase
+key). See cluster/k8s/agentplane-staging/README.md § Action policies -- Sandbox-subject
+bindings are written by the integration app at runtime and are never checked in here.
 """
 
 from __future__ import annotations
@@ -24,16 +24,30 @@ from agentplane_egressbinding_crds.works.allegedly.agentplane import (
     EgressBindingSpec,
     EgressBindingSpecSubjects,
 )
+from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
+    EgressPolicy,
+    EgressPolicySpec,
+    EgressPolicySpecRules,
+    EgressPolicySpecRulesMethods,
+)
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import ServiceAccount
+from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 from constructs import Construct
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetDeletionPolicy,
+)
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAction
+from cluster.cdk8s import external_creds
 from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
+    COINBASE_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
+    GROCY_SF_READONLY_POLICY,
+    HOME_ASSISTANT_READONLY_POLICY,
     KUBERNETES_POLICY,
     PACKAGES_POLICY,
 )
@@ -43,6 +57,8 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GAFFER_PRIVATE_READS_SET,
     PUBLIC_GITHUB_READS_SET,
 )
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
+from cluster.cdk8s.metadata import metadata
 
 _NAMESPACE = "agentplane-staging"
 _GITHUB_READS_SET = "github-reads"
@@ -51,6 +67,11 @@ _GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 _HOME_ASSISTANT_READS_SET = "home-assistant-reads"
 _GMAIL_READS_SET = "gmail-reads"
 _GOOGLE_CALENDAR_READS_SET = "google-calendar-reads"
+_TANA_READS_SET = "tana-reads"
+_GROCY_SF_READS_SET = "grocy-sf-reads"
+# The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
+# Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
+_COINBASE_SECRET = "coinbase-api-credentials"
 
 
 def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: ActionPolicySetSpec) -> None:
@@ -64,11 +85,10 @@ def _binding(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: Ac
     BindingSpec.model_validate(ActionPolicyBinding(scope, id, metadata=metadata, spec=spec).to_json()["spec"])
 
 
-# The console's `github_reads` policy (cluster/cdk8s/haku/console_config.py) as an Action
-# policy set. GitHub MCP's normal endpoint exposes its default catalog, including writes.
-# This is the explicit 2026-08-14 upstream read-only subset: new upstream tools
-# intentionally stay manual until reviewed here. `ui_get` reads an MCP App UI resource,
-# not GitHub repository state.
+# GitHub MCP's normal endpoint exposes its default catalog, including writes. This is the
+# explicit 2026-08-14 upstream read-only subset: new upstream tools intentionally stay
+# manual until reviewed here. `ui_get` reads an MCP App UI resource, not GitHub
+# repository state.
 _GITHUB_READS_ACTIONS = [
     "get_me",
     "get_team_members",
@@ -178,7 +198,7 @@ _HOME_ASSISTANT_READS_ACTIONS = [
 
 # Gmail's generated read-only surface (haku/console/tools/gmail.py's _GMAIL_READ_TOOLS); writes
 # (drafts_create/update/delete, threads_modify_labels, labels_create/patch/delete,
-# filters_create/delete) stay on the human path, matching haku-console's own gating.
+# filters_create/delete) stay on the human path.
 _GMAIL_READS_ACTIONS = [
     "drafts_get",
     "drafts_list",
@@ -192,8 +212,46 @@ _GMAIL_READS_ACTIONS = [
 ]
 
 # Google Calendar's read-only surface (haku/console/tools/google_calendar.py); create_event
-# stays on the human path, matching haku-console's own gating.
+# stays on the human path.
 _GOOGLE_CALENDAR_READS_ACTIONS = ["get_event", "list_event_instances", "list_events"]
+
+# Tana's read-only surface, plus `get_or_create_calendar_node`, whose only write is creating a
+# date's calendar node when it is missing. Reviewed exclusion: `open_node` navigates the
+# operator's Tana desktop app. New upstream tools stay manual until reviewed here.
+_TANA_READS_ACTIONS = [
+    "get_children",
+    "get_or_create_calendar_node",
+    "get_tag_schema",
+    "list_tags",
+    "list_workspaces",
+    "read_node",
+    "search_nodes",
+]
+
+# Grocy SF's read-only surface, as haku-console's `grocy_reads` policy auto-approved it.
+# Reviewed exclusion: `open_product_stock` marks a product opened. New upstream tools stay manual
+# until reviewed here.
+_GROCY_SF_READS_ACTIONS = [
+    "entities_get",
+    "entities_list",
+    "file_get",
+    "get_below_minimum_stock",
+    "get_current_user",
+    "get_db_changed_time",
+    "get_expired_stock",
+    "get_expiring_stock",
+    "get_product_stock",
+    "get_system_info",
+    "list_volatile_stock",
+    "locations_list",
+    "product_groups_list",
+    "products_list",
+    "quantity_units_list",
+    "shopping_list_get",
+    "shopping_lists_list",
+    "stock_entries_list",
+    "stock_get",
+]
 
 
 def _repository_reads(scope: Construct, id: str, *, name: str, description: str, owner: str, repository: str) -> None:
@@ -215,12 +273,12 @@ def _repository_reads(scope: Construct, id: str, *, name: str, description: str,
 
 
 def add_staging_action_policies(scope: Construct) -> None:
-    # The principal a Connection enrolled from the Claude.ai MCP connector acts as,
-    # picked by the operator at OAuth consent. No Pod runs as it and it holds no
-    # RoleBinding: the label is what makes it an Action caller, and removing the label
-    # or the object is how it is disabled. What it may do without an operator is an
-    # ActionPolicyBinding naming it; on its own it grants nothing.
-    ServiceAccount(
+    # The principal a Connection enrolled from the Claude.ai MCP connector acts as, picked by
+    # the operator at OAuth consent, and the identity its sandboxes run as. The label is what
+    # makes it an Action caller, and removing the label or the object is how it is disabled.
+    # What it may do without an operator is an ActionPolicyBinding naming it; its Kubernetes
+    # access is listed in cluster/k8s/agents/agent-rbac-base/README.md § 6.
+    claude_ai = ServiceAccount(
         scope,
         "serviceaccount-claude-ai",
         metadata=ApiObjectMetadata(
@@ -326,6 +384,50 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
     )
 
+    # Coinbase authenticates each request with a fresh JWT signed over its method, host and path,
+    # which the egress proxy's placeholder substitution cannot produce. So a sandbox of claude-ai's
+    # holds the key and signs for itself: it may read this one Secret through the API server, and
+    # the `coinbase` policy passes its GETs to api.coinbase.com unchanged. What makes handing the
+    # sandbox the key acceptable is that the key can only view.
+    add_external_secret(
+        scope,
+        "coinbase-external-secret",
+        name=_COINBASE_SECRET,
+        namespace=_NAMESPACE,
+        refresh="1h",
+        store=external_creds.STORE,
+        data=[remote_data(_COINBASE_SECRET, key) for key in ("api_key", "api_secret")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+        annotations={
+            "description": "ESO copy of the view-only Coinbase CDP key from external-creds, read by claude-ai's sandboxes."
+        },
+    )
+    coinbase_reader = Role(
+        scope,
+        "role-claude-ai-coinbase",
+        metadata=metadata("claude-ai-coinbase-reader", _NAMESPACE),
+        rules=[
+            RolePolicyRule(
+                resources=[Secret.from_secret_name(scope, "coinbase-secret", _COINBASE_SECRET)], verbs=["get"]
+            )
+        ],
+    )
+    RoleBinding(
+        scope,
+        "rolebinding-claude-ai-coinbase",
+        metadata=metadata("claude-ai-coinbase-reader", _NAMESPACE),
+        role=coinbase_reader,
+    ).add_subjects(claude_ai)
+    EgressPolicy(
+        scope,
+        "egresspolicy-coinbase",
+        metadata=ApiObjectMetadata(name=COINBASE_POLICY, namespace=_NAMESPACE),
+        spec=EgressPolicySpec(
+            rules=[EgressPolicySpecRules(hosts=["api.coinbase.com"], methods=[EgressPolicySpecRulesMethods.GET])]
+        ),
+    )
+
     # What a sandbox of claude-ai's may reach. The binding is on the account rather than on each
     # box because that is what the account is entitled to: the proxy authenticates the Pod's
     # ServiceAccount, and every sandbox stamped for this caller runs as exactly that. Nothing else
@@ -338,16 +440,19 @@ def add_staging_action_policies(scope: Construct) -> None:
     # should inherit. `packages` is the opposite end: public mirrors, no credential, GET and HEAD.
     # `google-readonly` substitutes Airlock's read-only Google token on Gmail, Calendar, Drive,
     # Drive Activity, Tasks, Contacts, Docs, Sheets, Slides and YouTube reads
-    # (egress_staging_credentials.py).
+    # (egress_staging_credentials.py). `grocy-sf-readonly` presents the app password of an Authentik
+    # service account with no Grocy permissions, as HTTP Basic, on GETs to Grocy's own REST API (see
+    # that module's `grocy-sf-readonly` EgressPolicy for why that's Grocy's API rather than the
+    # grocy-mcp-sf MCP server). `coinbase` presents nothing: the sandbox signs with the key above.
     #
     # TODO(github-egress): consider binding `github-public` here too. The asymmetry today is that
     # the ActionPolicyBinding below auto-approves GitHub *reads through the Action Service*, while
     # a sandbox of the same caller cannot reach github.com at all -- so `git clone` fails in a box
     # whose caller can read the same repository through an Action. Two things to settle first: the
     # policy substitutes the `agentydragon-agent` PAT, which is write-capable, on GET and POST with
-    # no path limit, so binding it lets a sandbox push as that bot; and the policy omits
-    # `codeload.github.com`, where a `github.com/.../archive/...` fetch actually lands, so Bazel and
-    # tarball downloads would still fail until that host joins it.
+    # no path limit, so binding it lets a sandbox push as that bot. The policy includes
+    # `codeload.github.com`, where a `github.com/.../archive/...` fetch actually lands, so the
+    # remaining question is the write-capable credential rather than download reachability.
     EgressBinding(
         scope,
         "egressbinding-claude-ai",
@@ -358,7 +463,16 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
         spec=EgressBindingSpec(
             subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
-            policies=[BASIC_POLICY, KUBERNETES_POLICY, FORGEJO_HAKU_POLICY, PACKAGES_POLICY, GOOGLE_READONLY_POLICY],
+            policies=[
+                BASIC_POLICY,
+                KUBERNETES_POLICY,
+                FORGEJO_HAKU_POLICY,
+                PACKAGES_POLICY,
+                GOOGLE_READONLY_POLICY,
+                GROCY_SF_READONLY_POLICY,
+                HOME_ASSISTANT_READONLY_POLICY,
+                COINBASE_POLICY,
+            ],
         ),
     )
 
@@ -450,9 +564,48 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
     )
 
-    # What the console's `haku_v1` grants for GitHub (github-reads and
-    # github-identity-reads), Home Assistant (home-assistant-reads), and now Gmail/Calendar
-    # (gmail-reads, google-calendar-reads), attached to the Claude.ai connector's principal.
+    _policy_set(
+        scope,
+        "actionpolicyset-tana-reads",
+        metadata=ApiObjectMetadata(
+            name=_TANA_READS_SET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "The reviewed read-only subset of the Tana MCP backend's catalog, plus get_or_create_calendar_node; every other write and open_node stay on the human path."
+            },
+        ),
+        spec=ActionPolicySetSpec(
+            auto_approve_if=[
+                ActionPolicySetSpecAutoApproveIf(
+                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
+                    actions={"tana": _TANA_READS_ACTIONS},
+                )
+            ]
+        ),
+    )
+    _policy_set(
+        scope,
+        "actionpolicyset-grocy-sf-reads",
+        metadata=ApiObjectMetadata(
+            name=_GROCY_SF_READS_SET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "The reviewed read-only subset of the Grocy SF MCP backend's catalog; every write, open_product_stock included, stays on the human path."
+            },
+        ),
+        spec=ActionPolicySetSpec(
+            auto_approve_if=[
+                ActionPolicySetSpecAutoApproveIf(
+                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
+                    actions={"grocy_sf": _GROCY_SF_READS_ACTIONS},
+                )
+            ]
+        ),
+    )
+
+    # The reviewed read sets for GitHub (github-reads and github-identity-reads), Home
+    # Assistant, Gmail, Google Calendar, Tana and Grocy SF, plus sandbox use, attached to the
+    # Claude.ai connector's principal.
     # The binding's existence is the grant: deleting it, or the label on the ServiceAccount,
     # puts every one of these Actions back on the human path.
     _binding(
@@ -462,7 +615,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             name="claude-ai-reads",
             namespace=_NAMESPACE,
             annotations={
-                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
+                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
             },
         ),
         spec=ActionPolicyBindingSpec(
@@ -474,6 +627,8 @@ def add_staging_action_policies(scope: Construct) -> None:
                 _HOME_ASSISTANT_READS_SET,
                 _GMAIL_READS_SET,
                 _GOOGLE_CALENDAR_READS_SET,
+                _TANA_READS_SET,
+                _GROCY_SF_READS_SET,
             ],
         ),
     )

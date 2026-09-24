@@ -1,8 +1,38 @@
-import { ActionIcon, Badge, Button, Group, Paper, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
+import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Box,
+  Button,
+  Flex,
+  Group,
+  Menu,
+  Paper,
+  Select,
+  Stack,
+  Text,
+  Textarea,
+  Tooltip,
+} from "@mantine/core";
 import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
-import { type JSX, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
+import IconSend from "@tabler/icons-react/dist/esm/icons/IconSend.mjs";
+import IconZoomCode from "@tabler/icons-react/dist/esm/icons/IconZoomCode.mjs";
+import {
+  type CSSProperties,
+  type JSX,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
@@ -13,24 +43,28 @@ import {
   displayableError,
   getThread,
   models,
-  renameThread,
   type EvidencePage,
   type NativeFramePage,
+  type SandboxView,
   type ThreadView,
 } from "./client";
 import {
-  ThreadCollection,
-  CommandSelection,
   decimalBigInt,
-  PayloadBody,
-  type ThreadEntity,
+  useThreadSync,
   type PayloadRef,
-} from "./thread_store";
+  type ThreadEntity,
+  type ThreadState,
+  type ThreadWindow,
+} from "./thread_sync";
+import { historyRows, rowKey, summarizeRun, type HistoryRow } from "./history_rows";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
-import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
+import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
+import { HighlightedText, JsonView } from "./json_view";
 import { Markdown } from "./markdown";
-import { RetainedDisclosure, RetainedDisclosureProvider } from "./retained_disclosures";
+import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { ChronologicalDebugLink, ChronologicalDebugProvider } from "./chronological_debug";
+import { ThreadTitle } from "./thread_title";
+import "./projected_session.css";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
 
@@ -39,63 +73,96 @@ export function pruneCommandErrors(errors: Map<string, string>, commandIds: Read
   return new Map(Array.from(errors).filter(([id]) => commandIds.has(id)));
 }
 
-const LIFECYCLE_LABELS: Record<string, string> = {
-  turn_started: "Turn started",
-  turn_completed: "Turn completed",
-  model_changed: "Model changed",
-  harness_started: "Harness started",
-  harness_exited: "Harness exited",
-  harness_lost: "Harness connection lost",
+// An interrupt is usually the operator's own doing, so an interrupted turn reads as ordinary.
+const TURN_OUTCOMES: Record<TurnStatus, { label: string; prominent: boolean }> = {
+  [TurnStatus.UNSPECIFIED]: { label: "Turn ended without a status", prominent: true },
+  [TurnStatus.COMPLETED]: { label: "Turn completed", prominent: false },
+  [TurnStatus.INTERRUPTED]: { label: "Turn interrupted", prominent: false },
+  [TurnStatus.FAILED]: { label: "Turn failed", prominent: true },
+  [TurnStatus.PROCESS_LOST]: { label: "Turn lost", prominent: true },
 };
 
-function lifecyclePresentation(observation: string, event: unknown): { label: string; diagnostic: string | null } {
-  const parsed = event === null || event === undefined ? null : fromJson(EventSchema, event as JsonValue);
-  const completed = parsed?.observation.case === "turnCompleted" ? parsed.observation.value : null;
-  const diagnostic = completed?.error || null;
-  if (completed?.status === TurnStatus.FAILED) return { label: "Turn failed", diagnostic };
-  if (completed?.status === TurnStatus.INTERRUPTED) return { label: "Turn interrupted", diagnostic };
-  return { label: LIFECYCLE_LABELS[observation] ?? observation.replaceAll("_", " "), diagnostic };
+interface LifecyclePresentation {
+  label: string;
+  /** A prominent row is an alert; any other reads as dimmed text. */
+  prominent: boolean;
+  diagnostic: string | null;
 }
 
-function Body({
-  threadId,
-  reference,
-  follow,
-  plain = false,
-}: {
-  threadId: string;
-  reference: PayloadRef | null;
-  follow: boolean;
-  plain?: boolean;
-}): JSX.Element {
+function lifecyclePresentation(observation: string, event: unknown): LifecyclePresentation {
+  const parsed = fromJson(EventSchema, event as JsonValue).observation;
+  switch (parsed.case) {
+    case "turnStarted":
+      return { label: "Turn started", prominent: false, diagnostic: null };
+    case "turnCompleted": {
+      const { status, error } = parsed.value;
+      const diagnostic = error || (status === TurnStatus.FAILED ? "The harness reported no error details." : null);
+      return { ...TURN_OUTCOMES[status], diagnostic };
+    }
+    case "modelChanged":
+      return { label: `Model changed to ${parsed.value.model}`, prominent: false, diagnostic: null };
+    case "harnessStarted":
+      return { label: "Harness started", prominent: false, diagnostic: null };
+    case "harnessExited":
+      return {
+        label: parsed.value.exitCode ? `Harness exited with code ${parsed.value.exitCode}` : "Harness exited",
+        prominent: false,
+        diagnostic: null,
+      };
+    case "harnessLost":
+      return { label: "Harness lost", prominent: true, diagnostic: null };
+    default:
+      return { label: observation.replaceAll("_", " "), prominent: false, diagnostic: null };
+  }
+}
+
+/** How a body renders: the agent's prose (assistant text, reasoning) as Markdown, tool arguments and
+ * output as code (highlighted when it is JSON), and the operator's own input verbatim, as typed. */
+type BodyFormat = "markdown" | "code" | "text";
+
+function Body({ reference, format }: { reference: PayloadRef | null; format: BodyFormat }): JSX.Element {
   if (!reference) return <Text c="dimmed">Body not observed</Text>;
+  return <PayloadText reference={reference} format={format} />;
+}
+
+function PayloadText({ reference, format }: { reference: PayloadRef; format: BodyFormat }): JSX.Element {
+  const { body, error, retry } = useThreadSync().usePayload(reference);
   return (
-    <PayloadBody threadId={threadId} reference={reference} follow={follow}>
-      {(body) =>
-        body === null ? (
-          <Text c="dimmed">Loading complete revision…</Text>
-        ) : plain ? (
-          <Text component="pre" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {body}
-          </Text>
-        ) : (
-          <Markdown source={body} />
-        )
-      }
-    </PayloadBody>
+    <>
+      {error && (
+        <p role="alert">
+          Payload synchronization stopped: {error} <button onClick={retry}>Retry payload synchronization</button>
+        </p>
+      )}
+      {body === null ? (
+        <Text c="dimmed">Loading complete revision…</Text>
+      ) : (
+        <FormattedBody body={body} format={format} />
+      )}
+    </>
   );
 }
 
-function LazyBody({
-  label,
-  ...body
-}: {
-  label: string;
-  threadId: string;
-  reference: PayloadRef;
-  follow: boolean;
-  plain?: boolean;
-}): JSX.Element {
+function FormattedBody({ body, format }: { body: string; format: BodyFormat }): JSX.Element {
+  switch (format) {
+    case "markdown":
+      return <Markdown source={body} />;
+    case "code":
+      return <HighlightedText text={body} />;
+    case "text":
+      return <VerbatimText text={body} />;
+  }
+}
+
+function VerbatimText({ text }: { text: string }): JSX.Element {
+  return (
+    <Text className="agentplane-verbatim" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+      {text}
+    </Text>
+  );
+}
+
+function LazyBody({ label, ...body }: { label: string; reference: PayloadRef; format: BodyFormat }): JSX.Element {
   const id = `${body.reference.projection_epoch}:${body.reference.owner_id}:${body.reference.field}`;
   return (
     <RetainedDisclosure id={id} summary={label}>
@@ -152,18 +219,15 @@ function EvidenceFramesPage({
   return (
     <Stack gap="xs">
       {error && <Text c="red">{error}</Text>}
-      {page?.frames.map((frame) => (
-        <Text
-          component="pre"
-          size="xs"
-          key={frame.source_sequence}
-          style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-        >
-          {frame.availability === "present"
-            ? JSON.stringify(frame.entry, null, 2)
-            : `Raw frame ${frame.source_sequence} unavailable`}
-        </Text>
-      ))}
+      {page?.frames.map((frame) =>
+        frame.availability === "present" ? (
+          <JsonView key={frame.source_sequence} value={frame.entry} />
+        ) : (
+          <Text size="xs" key={frame.source_sequence}>
+            Raw frame {frame.source_sequence} unavailable
+          </Text>
+        )
+      )}
       {!page && error && (
         <Button loading={loading} onClick={() => load()}>
           Retry raw frames
@@ -234,7 +298,7 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
     <Stack gap="xs">
       {error && <Text c="red">{error}</Text>}
       {page?.observations.map((observation) => (
-        <Stack gap="xs" key={observation.observation_cursor}>
+        <Stack gap="xs" key={observation.observation_cursor} data-evidence-observation={observation.observation_cursor}>
           {observation.has_native ? (
             <EvidenceFrames
               key={observation.observation_cursor}
@@ -264,16 +328,41 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
   );
 }
 
-function Evidence({ threadId, entity }: { threadId: string; entity: ThreadEntity }): JSX.Element {
-  const id = `${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:evidence`;
+function evidenceDisclosure(entity: ThreadEntity): string {
+  return `${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:evidence`;
+}
+
+/** An icon, not a disclosure row, so it adds no height to its card: it sits in the card's header
+ * row where there is one, and is pinned out of flow at a corner (`style`) where there is not.
+ *
+ * Labelled by a native `title`, not a Mantine `Tooltip`: rows move under a resting pointer while the
+ * thread streams, and a Tooltip opening then positions itself with `flushSync` from a ResizeObserver
+ * callback, committing the whole list's pending re-render mid-delivery (a "ResizeObserver loop"). */
+function EvidenceToggle({ entity, style }: { entity: ThreadEntity; style?: CSSProperties }): JSX.Element {
+  const [open, setOpen] = useRetainedDisclosure(evidenceDisclosure(entity));
   return (
-    <RetainedDisclosure id={id} summary="Evidence">
-      <EvidencePageView key={id} threadId={threadId} entity={entity} />
-    </RetainedDisclosure>
+    <ActionIcon
+      size="xs"
+      variant={open ? "light" : "subtle"}
+      color="gray"
+      aria-label="Evidence"
+      title="Evidence"
+      aria-expanded={open}
+      onClick={() => setOpen(!open)}
+      style={style}
+    >
+      <IconZoomCode size={14} />
+    </ActionIcon>
   );
 }
 
-function EntityCard({
+function EvidencePanel({ threadId, entity }: { threadId: string; entity: ThreadEntity }): JSX.Element {
+  const id = evidenceDisclosure(entity);
+  const [open] = useRetainedDisclosure(id);
+  return open ? <EvidencePageView key={id} threadId={threadId} entity={entity} /> : <></>;
+}
+
+export function EntityCard({
   threadId,
   entity,
   live,
@@ -284,76 +373,154 @@ function EntityCard({
 }): JSX.Element {
   if (entity.entityKind === "confirmed_input") {
     return (
-      <Group justify="flex-end" data-thread-anchor={entity.cursor.toString()}>
-        <Paper className="agentplane-user-bubble" p="sm" withBorder maw="80%">
-          <Body threadId={threadId} reference={entity.inputRef} follow={false} />
-          <Evidence threadId={threadId} entity={entity} />
+      <Group justify="flex-end" align="flex-start" gap="xs" wrap="nowrap">
+        {/* The bubble has no header row: beside its top corner, in the width it leaves free, the
+            icon neither grows the bubble nor covers its text. */}
+        <EvidenceToggle entity={entity} />
+        <Paper className="agentplane-user-bubble" p="sm">
+          <Body reference={entity.inputRef} format="text" />
+          <EvidencePanel threadId={threadId} entity={entity} />
         </Paper>
       </Group>
     );
   }
-  if (entity.entityKind === "lifecycle") {
-    const observation = "observation" in entity.state ? entity.state.observation : "lifecycle";
-    const event = "event" in entity.state ? entity.state.event : null;
-    const presentation = lifecyclePresentation(observation, event);
+  if (entity.entityKind === "lifecycle" && "observation" in entity.state) {
+    const { label, prominent, diagnostic } = lifecyclePresentation(entity.state.observation, entity.state.event);
+    const wrapped = { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
+    if (!prominent) {
+      return (
+        <Stack gap={0} style={{ position: "relative" }}>
+          <Text size="xs" c="dimmed">
+            {label}
+          </Text>
+          <EvidenceToggle entity={entity} style={{ position: "absolute", top: 0, right: 0 }} />
+          {diagnostic && (
+            <Text size="xs" c="dimmed" style={wrapped}>
+              {diagnostic}
+            </Text>
+          )}
+          <EvidencePanel threadId={threadId} entity={entity} />
+        </Stack>
+      );
+    }
     return (
-      <Stack gap="xs" data-thread-anchor={entity.cursor.toString()}>
-        <Text size="xs" c={presentation.diagnostic || observation === "harness_lost" ? "red" : "dimmed"}>
-          {presentation.label}
-        </Text>
-        {presentation.diagnostic && (
-          <Text c="red" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {presentation.diagnostic}
+      <Alert color="red" title={label} role="alert" style={{ position: "relative" }}>
+        <EvidenceToggle entity={entity} style={{ position: "absolute", top: 8, right: 8 }} />
+        {diagnostic && (
+          <Text size="sm" style={wrapped}>
+            {diagnostic}
           </Text>
         )}
-        {"event" in entity.state && (
-          <details>
-            <summary>Lifecycle details</summary>
-            <Text component="pre" size="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {JSON.stringify(entity.state.event, null, 2)}
-            </Text>
-          </details>
-        )}
-        <Evidence threadId={threadId} entity={entity} />
-      </Stack>
+        <EvidencePanel threadId={threadId} entity={entity} />
+      </Alert>
     );
   }
   if (entity.entityKind === "command" || entity.entityKind === "view_state") return <></>;
   if (!("kind" in entity.state)) return <></>;
-  const kind = entity.state.kind;
-  const tool = entity.state.tool_name;
-  const completion = entity.state.completion;
-  const reasoning = kind === ItemKind.REASONING;
-  const streaming = live && completion === null;
+  const tool = entity.state.kind === ItemKind.TOOL_CALL;
+  // Assistant text carries no role label: it reads as the reply by position, across from the
+  // user's right-aligned bubble. A tool call is labelled by its tool, reasoning by its disclosure.
   return (
-    <Paper p="sm" withBorder data-thread-anchor={entity.cursor.toString()}>
-      <Group justify="space-between" mb="xs">
-        <Badge variant="light">{kind === ItemKind.TOOL_CALL ? tool || "tool" : "assistant"}</Badge>
-        {streaming && (
-          <Badge role="img" aria-label="Streaming">
-            Streaming
-          </Badge>
-        )}
-        {completion === null && !streaming && (
-          <Badge role="img" aria-label="Incomplete">
-            Incomplete
-          </Badge>
-        )}
-      </Group>
-      {entity.textRef &&
-        (reasoning ? (
-          <LazyBody label="Reasoning" threadId={threadId} reference={entity.textRef} follow={streaming} />
+    <Paper p="sm" withBorder style={{ position: "relative" }}>
+      {tool || entity.state.completion === null ? (
+        <Group justify="space-between" mb="xs" wrap="nowrap">
+          <Group gap="xs">
+            {tool && <Badge variant="light">{entity.state.tool_name || "tool"}</Badge>}
+            <ItemStatus items={[entity]} live={live} />
+          </Group>
+          <EvidenceToggle entity={entity} />
+        </Group>
+      ) : (
+        <EvidenceToggle entity={entity} style={{ position: "absolute", top: 4, right: 4 }} />
+      )}
+      {entity.state.kind === ItemKind.REASONING ? (
+        entity.textRef ? (
+          <LazyBody label="Reasoning" reference={entity.textRef} format="markdown" />
         ) : (
-          <Body threadId={threadId} reference={entity.textRef} follow={streaming} />
-        ))}
-      {entity.argumentsRef && (
-        <LazyBody label="Arguments" threadId={threadId} reference={entity.argumentsRef} follow={streaming} plain />
+          <Text c="dimmed">Reasoning</Text>
+        )
+      ) : (
+        entity.textRef && <Body reference={entity.textRef} format="markdown" />
       )}
-      {entity.outputRef && (
-        <LazyBody label="Output" threadId={threadId} reference={entity.outputRef} follow={streaming} plain />
-      )}
-      <Evidence threadId={threadId} entity={entity} />
+      {entity.argumentsRef && <LazyBody label="Arguments" reference={entity.argumentsRef} format="code" />}
+      {entity.outputRef && <LazyBody label="Output" reference={entity.outputRef} format="code" />}
+      <EvidencePanel threadId={threadId} entity={entity} />
     </Paper>
+  );
+}
+
+/** Whether any of `items` is unfinished -- streaming while `live`, otherwise never completed in
+ * the retained history -- and whether any tool call among them failed. */
+function ItemStatus({ items, live }: { items: ThreadEntity[]; live: boolean }): JSX.Element {
+  const states = items.flatMap((item) => ("kind" in item.state ? [item.state] : []));
+  const unfinished = states.some((state) => state.completion === null);
+  return (
+    <>
+      {unfinished && (
+        <Badge role="img" aria-label={live ? "Streaming" : "Incomplete"}>
+          {live ? "Streaming" : "Incomplete"}
+        </Badge>
+      )}
+      {states.some((state) => state.tool_succeeded === false) && (
+        <Badge color="red" role="img" aria-label="Failed">
+          Failed
+        </Badge>
+      )}
+    </>
+  );
+}
+
+/** A run of tool calls and reasoning steps, folded behind its summary until opened. */
+function RunView({
+  threadId,
+  entities,
+  live,
+}: {
+  threadId: string;
+  entities: ThreadEntity[];
+  live: (entity: ThreadEntity) => boolean;
+}): JSX.Element {
+  const first = entities[0];
+  return (
+    <Paper p="sm" withBorder>
+      <RetainedDisclosure
+        id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:run`}
+        summary={
+          <Flex component="span" display="inline-flex" gap="xs" align="center">
+            <Badge variant="light">{summarizeRun(entities)}</Badge>
+            <ItemStatus items={entities} live={entities.some(live)} />
+          </Flex>
+        }
+      >
+        <Stack gap="xs" mt="xs">
+          {entities.map((entity) => (
+            <EntityCard key={entity.entityId} threadId={threadId} entity={entity} live={live(entity)} />
+          ))}
+        </Stack>
+      </RetainedDisclosure>
+    </Paper>
+  );
+}
+
+export function HistoryRowView({
+  threadId,
+  row,
+  live,
+}: {
+  threadId: string;
+  row: HistoryRow;
+  live: (entity: ThreadEntity) => boolean;
+}): JSX.Element {
+  const [first] = row.entities;
+  // A lone reasoning step is already a folded block of its own; a lone tool call keeps its run's
+  // summary, so every tool call reads the same.
+  const lone =
+    row.kind === "entity" ||
+    (row.entities.length === 1 && "kind" in first.state && first.state.kind === ItemKind.REASONING);
+  return lone ? (
+    <EntityCard threadId={threadId} entity={first} live={live(first)} />
+  ) : (
+    <RunView threadId={threadId} entities={row.entities} live={live} />
   );
 }
 
@@ -375,25 +542,42 @@ function useProjectedCommands(threadId: string, entities: ThreadEntity[]) {
   );
   useEffect(() => store.observeCommandIds(effectedCommandIds), [effectedCommandIds, store]);
 
-  async function deliver(value: LocalCommand): Promise<void> {
-    const id = value.command.commandId;
-    if (active.current.has(id)) return;
-    active.current.add(id);
-    try {
-      store.acknowledge(value.command, await command(threadId, value.command));
-      setErrors((previous) => {
-        if (!previous.has(id)) return previous;
-        const next = new Map(previous);
-        next.delete(id);
-        return next;
-      });
-    } catch (reason) {
-      if (store.getSnapshot().commands.some((command) => command.command.commandId === id))
-        setErrors((previous) => new Map(previous).set(id, displayableError(reason)));
-    } finally {
-      active.current.delete(id);
-    }
-  }
+  const deliver = useCallback(
+    async (value: LocalCommand): Promise<void> => {
+      const id = value.command.commandId;
+      if (active.current.has(id)) return;
+      active.current.add(id);
+      try {
+        store.acknowledge(value.command, await command(threadId, value.command));
+        setErrors((previous) => {
+          if (!previous.has(id)) return previous;
+          const next = new Map(previous);
+          next.delete(id);
+          return next;
+        });
+      } catch (reason) {
+        if (store.getSnapshot().commands.some((command) => command.command.commandId === id))
+          setErrors((previous) => new Map(previous).set(id, displayableError(reason)));
+      } finally {
+        active.current.delete(id);
+      }
+    },
+    [store, threadId]
+  );
+  // Deliver each retained command not yet seen admitted once on mount, and again when the browser
+  // comes back online after a failed attempt. An exact retry is safe: the server answers it from its
+  // archive once admitted, and the runner deduplicates by command id.
+  useEffect(() => {
+    for (const value of store.getSnapshot().commands) if (value.admission === null) void deliver(value);
+  }, [deliver, store]);
+  useEffect(() => {
+    const redeliverFailed = () => {
+      for (const value of store.getSnapshot().commands)
+        if (value.admission === null && errors.has(value.command.commandId)) void deliver(value);
+    };
+    window.addEventListener("online", redeliverFailed);
+    return () => window.removeEventListener("online", redeliverFailed);
+  }, [deliver, errors, store]);
   function submit(value: Command): boolean {
     try {
       void deliver(store.remember(value));
@@ -408,46 +592,27 @@ function useProjectedCommands(threadId: string, entities: ThreadEntity[]) {
 }
 
 function SelectedCommandOutcomes({
-  threadId,
-  projectionEpoch,
   commands,
   store,
   errors,
   deliver,
 }: {
-  threadId: string;
-  projectionEpoch: string;
   commands: LocalCommand[];
   store: LocalCommands;
   errors: ReadonlyMap<string, string>;
   deliver: (value: LocalCommand) => Promise<void>;
 }): JSX.Element {
-  const ids = commands.slice(0, 128).map((value) => value.command.commandId);
-  return (
-    <CommandSelection threadId={threadId} projectionEpoch={projectionEpoch} commandIds={ids}>
-      {(rows) => (
-        <SelectedCommandRows
-          threadId={threadId}
-          rows={rows}
-          commands={commands}
-          store={store}
-          errors={errors}
-          deliver={deliver}
-        />
-      )}
-    </CommandSelection>
-  );
+  const rows = useThreadSync().useCommandRows(commands.slice(0, 128).map((value) => value.command.commandId));
+  return <SelectedCommandRows rows={rows} commands={commands} store={store} errors={errors} deliver={deliver} />;
 }
 
 function SelectedCommandRows({
-  threadId,
   rows,
   commands,
   store,
   errors,
   deliver,
 }: {
-  threadId: string;
   rows: ThreadEntity[];
   commands: LocalCommand[];
   store: LocalCommands;
@@ -474,7 +639,7 @@ function SelectedCommandRows({
                   {commandOutcomeLabel(row.state.operation, row.state.outcome)}
                   {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
                 </Text>
-                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
+                {row.inputRef && <Body reference={row.inputRef} format="text" />}
                 <Button variant="subtle" onClick={() => store.dismiss(row.entityId)}>
                   Dismiss
                 </Button>
@@ -483,7 +648,7 @@ function SelectedCommandRows({
               <>
                 <Text size="sm">{admitted ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}</Text>
                 {value.command.operation.case === "submitInput" && (
-                  <Markdown source={value.command.operation.value.text} />
+                  <VerbatimText text={value.command.operation.value.text} />
                 )}
                 {value.command.operation.case === "changeModel" && (
                   <Text>Change model to {value.command.operation.value.model}</Text>
@@ -516,25 +681,30 @@ function commandOutcomeLabel(operation: string, outcome: string): string {
   return `${subject} ${outcome === "failed" ? "failed" : outcome === "noop" ? "not applied" : "applied"}`;
 }
 
+// How close the top of the loaded rows comes to the viewport's before the page before them loads.
+const LOAD_OLDER_WITHIN = 80;
+
 function VirtualizedHistory({
   threadId,
-  segments,
+  rows,
   running,
   activeTurn,
-  onLoadOlder,
+  history,
 }: {
   threadId: string;
-  segments: ThreadEntity[];
+  rows: HistoryRow[];
   running: boolean;
   activeTurn: string | null;
-  onLoadOlder: (cursor: string) => void;
+  history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
 }): JSX.Element {
   const viewport = useRef<HTMLDivElement>(null);
   const contents = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
   const previousScrollTop = useRef(0);
-  const previousScrollHeight = useRef(0);
-  const previousClientHeight = useRef(0);
+  // Every bottom the viewport has had since the last scroll event or content resize was handled.
+  // A return to the bottom lands on whichever one was current when it ran; a card can grow in
+  // that task or an earlier one before the browser dispatches the scroll event.
+  const recentBottoms = useRef<number[]>([]);
   const pointerScrolling = useRef(false);
   const captureNextScroll = useRef(false);
   const scrolledSinceInput = useRef(false);
@@ -542,22 +712,40 @@ function VirtualizedHistory({
   const restorationFrame = useRef<number | null>(null);
   const restoringAnchor = useRef<string | null>(null);
   const restorationSize = useRef<number | null>(null);
-  const previousCount = useRef(segments.length);
+  const previousCount = useRef(rows.length);
   const previousFirstKey = useRef<string | null>(null);
-  const readingAnchor = useRef<{ key: string; cursor: string; offset: number } | null>(null);
-  const requestedBefore = useRef<string | null>(null);
+  const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
+  // The row holding the entity a reading anchor was taken at. A run keeps its key while steps
+  // stream into it, but gains a new first step when older history loads into it.
+  const anchorIndex = (key: string): number =>
+    rows.findIndex((row) => row.entities.some((entity) => `${entity.entityKind}:${entity.entityId}` === key));
+  const anchorElement = (key: string): HTMLElement | null => {
+    const index = anchorIndex(key);
+    if (index < 0) return null;
+    return (
+      viewport.current?.querySelector<HTMLElement>(`[data-thread-anchor="${rows[index].entities[0].cursor}"]`) ?? null
+    );
+  };
   const cancelRestoration = () => {
     if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
     restorationFrame.current = null;
     restorationSize.current = null;
     restoringAnchor.current = null;
   };
+  const recordBottom = (element: HTMLDivElement) => {
+    const bottom = element.scrollHeight - element.clientHeight;
+    if (!recentBottoms.current.includes(bottom)) recentBottoms.current.push(bottom);
+  };
+  // Restoring to a row that is not mounted scrolls to its estimated offset. When the rows above it
+  // measure shorter than estimated, that offset lies past the end and the browser clamps it: the
+  // restoration's own scroll lands on the bottom, which is not the reader returning there.
+  const restoringScroll = () => restorationFrame.current !== null;
   const followPreviousBottom = (element: HTMLDivElement) => {
     // A programmatic return to the old bottom can be delivered after a card grows. Preserve
-    // it before restoring a stale reader anchor, while an explicit user gesture owns its scroll.
-    if (captureNextScroll.current) return false;
-    const previousBottom = previousScrollHeight.current - previousClientHeight.current;
-    if (Math.abs(element.scrollTop - previousBottom) > 2) return false;
+    // it before restoring a stale reader anchor, while an explicit user gesture owns its scroll,
+    // as does a restoration still settling.
+    if (captureNextScroll.current || restoringScroll()) return false;
+    if (!recentBottoms.current.some((bottom) => Math.abs(element.scrollTop - bottom) <= 2)) return false;
     atBottom.current = true;
     cancelRestoration();
     element.scrollTop = element.scrollHeight;
@@ -567,17 +755,17 @@ function VirtualizedHistory({
     const anchor = readingAnchor.current;
     const element = viewport.current;
     if (!anchor || !element || restoringAnchor.current !== anchor.key) return null;
-    const row = element.querySelector<HTMLElement>(`[data-thread-anchor="${anchor.cursor}"]`);
+    const row = anchorElement(anchor.key);
     if (!row) return null;
     const correction = row.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
     element.scrollTop += correction;
     return correction;
   }
   const virtualizer = useVirtualizer({
-    count: segments.length,
+    count: rows.length,
     getScrollElement: () => viewport.current,
     estimateSize: () => 180,
-    getItemKey: (index) => `${segments[index]?.entityKind}:${segments[index]?.entityId}`,
+    getItemKey: (index) => rowKey(rows[index]),
     measureElement: (element) => element.getBoundingClientRect().height,
     overscan: 5,
     onChange: (instance, sync) => {
@@ -609,30 +797,42 @@ function VirtualizedHistory({
     captureNextScroll.current = true;
     scrolledSinceInput.current = false;
   };
+  // A gesture asks for the page before the oldest row as its scroll events reach the top. This asks
+  // where no scroll event will: rows too few to scroll, a gesture that ended at the top, a page that
+  // landed with the reader still there. A gesture or restoration in progress has not settled where
+  // the reader is, and until the tail shows there is no top to reach.
+  const loadOlderAtTop = () => {
+    const element = viewport.current;
+    if (
+      element &&
+      rows.length > 0 &&
+      history.olderAvailable &&
+      !captureNextScroll.current &&
+      restoringAnchor.current === null &&
+      element.scrollTop < LOAD_OLDER_WITHIN
+    )
+      history.loadOlder();
+  };
   const captureReadingAnchor = (element: HTMLDivElement) => {
     const viewportTop = element.getBoundingClientRect().top;
     const first = [...element.querySelectorAll<HTMLElement>("[data-thread-anchor]")].find(
       (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
     );
-    const firstEntity = first
-      ? segments.find((entity) => entity.cursor.toString() === first.dataset.threadAnchor)
+    const firstRow = first
+      ? rows.find((row) => row.entities[0].cursor.toString() === first.dataset.threadAnchor)
       : undefined;
-    if (first && firstEntity) {
-      readingAnchor.current = {
-        key: `${firstEntity.entityKind}:${firstEntity.entityId}`,
-        cursor: firstEntity.cursor.toString(),
-        offset: first.getBoundingClientRect().top - viewportTop,
-      };
+    if (first && firstRow) {
+      readingAnchor.current = { key: rowKey(firstRow), offset: first.getBoundingClientRect().top - viewportTop };
     }
   };
-  const restoreAnchor = (anchor: { key: string; cursor: string; offset: number }, awaitMeasurement = false) => {
-    const index = segments.findIndex((entity) => `${entity.entityKind}:${entity.entityId}` === anchor.key);
+  const restoreAnchor = (anchor: { key: string; offset: number }, awaitMeasurement = false) => {
+    const index = anchorIndex(anchor.key);
     if (index < 0) return;
     cancelRestoration();
     restoringAnchor.current = anchor.key;
     const correctFromDom = (): number | null => {
       const element = viewport.current;
-      const row = element?.querySelector<HTMLElement>(`[data-thread-anchor="${anchor.cursor}"]`);
+      const row = anchorElement(anchor.key);
       if (!element || !row) return null;
       const currentOffset = row.getBoundingClientRect().top - element.getBoundingClientRect().top;
       const correction = currentOffset - anchor.offset;
@@ -641,7 +841,9 @@ function VirtualizedHistory({
     };
     const correction = correctFromDom();
     if (correction === null) virtualizer.scrollToIndex(index, { align: "start" });
-    if (awaitMeasurement && (correction === null || Math.abs(correction) <= 2)) {
+    // Waiting for measurement assumes the row is mounted and in place. One scrolled to by its
+    // estimate needs the frames, whose pending state keeps a clamped scroll from reading as the bottom.
+    if (awaitMeasurement && correction !== null && Math.abs(correction) <= 2) {
       restorationSize.current = virtualizer.getTotalSize();
       return;
     }
@@ -655,30 +857,25 @@ function VirtualizedHistory({
   };
   useLayoutEffect(() => {
     const element = viewport.current;
-    const firstKey = segments[0] ? `${segments[0].entityKind}:${segments[0].entityId}` : null;
-    if (element && atBottom.current && segments.length > previousCount.current)
-      element.scrollTop = element.scrollHeight;
+    const firstKey = rows[0] ? rowKey(rows[0]) : null;
+    if (element && atBottom.current && rows.length > previousCount.current) element.scrollTop = element.scrollHeight;
     if (
       element &&
       !atBottom.current &&
-      segments.length > 0 &&
+      rows.length > 0 &&
       readingAnchor.current &&
       (previousCount.current === 0 || previousFirstKey.current !== firstKey)
     ) {
-      const index = segments.findIndex(
-        (entity) => `${entity.entityKind}:${entity.entityId}` === readingAnchor.current?.key
-      );
-      if (index >= 0) restoreAnchor(readingAnchor.current);
+      restoreAnchor(readingAnchor.current);
     }
-    previousCount.current = segments.length;
+    previousCount.current = rows.length;
     previousFirstKey.current = firstKey;
-  }, [segments, virtualizer]);
+  }, [rows, virtualizer]);
   useLayoutEffect(() => {
     const element = viewport.current;
     const content = contents.current;
     if (!element || !content) return;
-    previousScrollHeight.current = element.scrollHeight;
-    previousClientHeight.current = element.clientHeight;
+    recordBottom(element);
     const observer = new ResizeObserver(() => {
       // A scrollbar drag or programmatic equivalent can reach the old bottom in the same task
       // that grows the last card, before the browser dispatches its scroll event. Preserve that
@@ -688,15 +885,21 @@ function VirtualizedHistory({
       // measured rows do not describe the reader's final position yet; scrollend will
       // capture that position before a later resize restoration is eligible.
       else if (!captureNextScroll.current && readingAnchor.current) restoreAnchor(readingAnchor.current, true);
-      previousScrollHeight.current = element.scrollHeight;
-      previousClientHeight.current = element.clientHeight;
+      recentBottoms.current = [element.scrollHeight - element.clientHeight];
     });
     observer.observe(content);
+    // A body arriving for a remounted or streaming card is a DOM mutation, and the scroll event
+    // of a return to the bottom that follows it in the same frame precedes the ResizeObserver
+    // delivery for it. The mutation callback runs before any later task, so record its bottom.
+    const mutations = new MutationObserver(() => recordBottom(element));
+    mutations.observe(content, { subtree: true, childList: true, characterData: true, attributes: true });
     return () => {
       observer.disconnect();
-      cancelRestoration();
+      mutations.disconnect();
     };
-  }, [segments, virtualizer]);
+  }, [rows, virtualizer]);
+  // The observers above re-subscribe on every render's rows; a restoration in flight outlives that.
+  useLayoutEffect(() => cancelRestoration, []);
   useLayoutEffect(() => {
     const element = viewport.current;
     if (!element) return;
@@ -704,10 +907,12 @@ function VirtualizedHistory({
       if (restoringAnchor.current !== null || !captureNextScroll.current) return;
       captureReadingAnchor(element);
       captureNextScroll.current = false;
+      loadOlderAtTop();
     };
     element.addEventListener("scrollend", onScrollEnd);
     return () => element.removeEventListener("scrollend", onScrollEnd);
-  }, [segments]);
+  }, [rows]);
+  useEffect(loadOlderAtTop);
   return (
     <div
       ref={viewport}
@@ -765,11 +970,13 @@ function VirtualizedHistory({
       }}
       onScroll={(event) => {
         const element = event.currentTarget;
-        if (followPreviousBottom(element)) {
+        const followed = followPreviousBottom(element);
+        recentBottoms.current = [element.scrollHeight - element.clientHeight];
+        if (followed) {
           previousScrollTop.current = element.scrollTop;
           return;
         }
-        if (element.scrollHeight - element.scrollTop - element.clientHeight < 24) {
+        if (!restoringScroll() && element.scrollHeight - element.scrollTop - element.clientHeight < 24) {
           atBottom.current = true;
           cancelRestoration();
         } else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
@@ -778,22 +985,38 @@ function VirtualizedHistory({
         if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
         captureNextScroll.current = true;
         scrolledSinceInput.current = true;
-        // Retain one segment across adjacent reading windows so the virtualizer can restore
-        // the same measured item and pixel offset after the old collection is evicted.
-        const boundary = (segments[1] ?? segments[0])?.cursor.toString();
-        if (element.scrollTop < 80 && boundary && requestedBefore.current !== boundary) {
-          requestedBefore.current = boundary;
-          onLoadOlder(boundary);
-        }
+        if (element.scrollTop < LOAD_OLDER_WITHIN) history.loadOlder();
       }}
     >
+      {history.loadingOlder && (
+        // No height of its own: it floats over the rows without moving any of them.
+        <div
+          style={{
+            position: "sticky",
+            top: 0,
+            height: 0,
+            zIndex: 1,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "flex-start",
+            pointerEvents: "none",
+          }}
+        >
+          <Paper role="status" shadow="xs" radius="xl" px="sm" py={2} mt="xs" withBorder>
+            <Text size="xs" c="dimmed">
+              Loading earlier…
+            </Text>
+          </Paper>
+        </div>
+      )}
       <div ref={contents} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((item) => {
-          const entity = segments[item.index];
-          return entity ? (
+          const row = rows[item.index];
+          return row ? (
             <div
               key={item.key}
               data-index={item.index}
+              data-thread-anchor={row.entities[0].cursor.toString()}
               ref={virtualizer.measureElement}
               style={{
                 position: "absolute",
@@ -804,7 +1027,11 @@ function VirtualizedHistory({
                 paddingBottom: 8,
               }}
             >
-              <EntityCard threadId={threadId} entity={entity} live={running && entity.turnId === activeTurn} />
+              <HistoryRowView
+                threadId={threadId}
+                row={row}
+                live={(entity) => running && entity.turnId === activeTurn}
+              />
             </div>
           ) : null;
         })}
@@ -813,20 +1040,81 @@ function VirtualizedHistory({
   );
 }
 
+interface ThreadStatus {
+  color: string;
+  label: string;
+  breathing?: boolean;
+}
+
+/** A state shown as a small colored dot rather than a labeled badge: the label is still there for a
+ * screen reader, and for anyone hovering or (on a touch/keyboard device) focusing it. `breathing`
+ * pulses the dot, for a state that is still settling rather than settled. */
+function StatusDot({ color, label, breathing }: ThreadStatus): JSX.Element {
+  return (
+    <Tooltip label={label} events={{ hover: true, focus: true, touch: true }}>
+      <Box
+        component="span"
+        role="img"
+        aria-label={label}
+        title={label}
+        tabIndex={0}
+        className={breathing ? "agentplane-status-dot agentplane-breathing-dot" : "agentplane-status-dot"}
+        style={{ backgroundColor: `var(--mantine-color-${color}-6)` }}
+      />
+    </Tooltip>
+  );
+}
+
+type Operational = Extract<ThreadEntity["state"], { operational: unknown }>["operational"];
+
+/** The browser's sync of the thread, the runner feed into the server (`operational`) and the
+ * harness process are independent state machines; this collapses them into one dot by severity,
+ * worst axis first. While the sync is not current, the rest is not either; and an archived thread
+ * or an unavailable sandbox makes the retained feed and harness state history, not a live claim. */
+function threadStatus({
+  sync,
+  archived,
+  available,
+  operational,
+  harness,
+}: {
+  sync: ThreadState;
+  archived: boolean;
+  available: boolean;
+  operational: Operational | null;
+  harness: string | null;
+}): ThreadStatus {
+  if (sync.window?.error) return { color: "red", label: `Thread sync stopped: ${sync.window.error}` };
+  if (!sync.window) return { color: "yellow", breathing: true, label: "Connecting…" };
+  if (sync.error) return { color: "yellow", breathing: true, label: "Reconnecting…" };
+  if (!sync.window.caughtUp) return { color: "yellow", breathing: true, label: "Catching up…" };
+  if (archived) return { color: "gray", label: "Thread archived" };
+  if (!available) return { color: "gray", label: "Sandbox unavailable" };
+  if (operational?.status === "failed") return { color: "red", label: "Runner feed failed" };
+  if (harness === "lost") return { color: "red", label: "Harness lost" };
+  if (operational?.status === "ended") {
+    return { color: "gray", label: `Runner feed ended · harness ${harness ?? "unknown"}` };
+  }
+  if (harness === null) return { color: "yellow", label: "No harness observed" };
+  if (harness === "stopped") return { color: "gray", label: "Runner feed active · harness stopped" };
+  return { color: "green", label: `Runner feed active · harness ${harness}` };
+}
+
 function ProjectedSessionBody({
   threadId,
   entities,
   thread,
-  onLoadOlder,
+  history,
   available,
 }: {
   threadId: string;
   entities: ThreadEntity[];
   thread: ThreadView;
-  onLoadOlder: (cursor: string) => void;
+  history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
   available: boolean;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
+  const sync = useThreadSync().useThread();
   const commands = useProjectedCommands(threadId, entities);
   const view = entities.find((row) => row.entityKind === "view_state");
   const controls = view && "controls" in view.state ? view.state.controls : null;
@@ -850,15 +1138,17 @@ function ProjectedSessionBody({
       active = false;
     };
   }, [thread.harness]);
-  const segments = entities
-    .filter((row) => ["item", "confirmed_input", "lifecycle"].includes(row.entityKind))
-    .sort((left, right) =>
-      decimalBigInt(left.cursor) < decimalBigInt(right.cursor)
-        ? -1
-        : decimalBigInt(left.cursor) > decimalBigInt(right.cursor)
-          ? 1
-          : 0
-    );
+  const rows = historyRows(
+    entities
+      .filter((row) => ["item", "confirmed_input", "lifecycle"].includes(row.entityKind))
+      .sort((left, right) =>
+        decimalBigInt(left.cursor) < decimalBigInt(right.cursor)
+          ? -1
+          : decimalBigInt(left.cursor) > decimalBigInt(right.cursor)
+            ? 1
+            : 0
+      )
+  );
   const localCommandIds = new Set(commands.local.commands.map((value) => value.command.commandId));
   const projectedCommands = entities.filter(
     (row): row is ThreadEntity & { state: Extract<ThreadEntity["state"], { outcome: string }> } =>
@@ -867,13 +1157,37 @@ function ProjectedSessionBody({
   const hasPendingCommands = projectedCommands.length > 0;
   const selectedCommandIds = commands.local.commands.slice(0, 128);
 
+  // Two Enters before the cleared draft renders would otherwise submit the same text twice, under
+  // two command ids. Guards one render, not the lifetime of any HTTP request or command.
+  const submitting = useRef(false);
+  useEffect(() => {
+    submitting.current = false;
+  }, [draft]);
+
   function submit(): void {
-    if (!draft.trim() || !running) return;
+    if (!draft.trim() || !running || submitting.current) return;
+    submitting.current = true;
     const value = create(CommandSchema, {
       commandId: crypto.randomUUID(),
       operation: { case: "submitInput", value: { text: draft } },
     });
     if (commands.submit(value)) setDraft("");
+    else submitting.current = false;
+  }
+
+  function composerKey(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (!(event.ctrlKey || event.metaKey)) {
+      submit();
+      return;
+    }
+    // Insert the newline by hand: a textarea ignores Ctrl+Enter, and setting a controlled value
+    // leaves the caret at the end, so put it back where the newline went.
+    const field = event.currentTarget;
+    const at = field.selectionStart;
+    setDraft(`${draft.slice(0, at)}\n${draft.slice(field.selectionEnd)}`);
+    requestAnimationFrame(() => field.setSelectionRange(at + 1, at + 1));
   }
 
   return (
@@ -882,53 +1196,38 @@ function ProjectedSessionBody({
         style={{ flex: 1, minHeight: 0 }}
         data-projection-cursor={view ? decimalBigInt(view.revisionCursor).toString() : undefined}
       >
-        <Button
-          variant="subtle"
-          disabled={!segments.length}
-          onClick={() => {
-            const boundary = segments[1] ?? segments[0];
-            if (boundary) onLoadOlder(boundary.cursor.toString());
-          }}
-        >
-          Load 30 earlier
-        </Button>
         <VirtualizedHistory
           threadId={threadId}
-          segments={segments}
+          rows={rows}
           running={running}
           activeTurn={activeTurn}
-          onLoadOlder={onLoadOlder}
+          history={history}
         />
         {hasPendingCommands && (
           <Stack role="region" aria-label="Pending commands" gap="xs">
             {projectedCommands.map((row) => (
-              <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder>
+              <Paper
+                key={row.entityId}
+                data-command-id={row.entityId}
+                p="xs"
+                withBorder
+                style={{ position: "relative" }}
+              >
+                <EvidenceToggle entity={row} style={{ position: "absolute", top: 4, right: 4 }} />
                 <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
                   {row.state.outcome === "pending"
                     ? "Saved · awaiting effect"
                     : commandOutcomeLabel(row.state.operation, row.state.outcome)}
                   {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
                 </Text>
-                {row.inputRef && <Body threadId={threadId} reference={row.inputRef} follow={false} />}
-                <Evidence threadId={threadId} entity={row} />
+                {row.inputRef && <Body reference={row.inputRef} format="text" />}
+                <EvidencePanel threadId={threadId} entity={row} />
               </Paper>
             ))}
           </Stack>
         )}
-        {view && selectedCommandIds.length > 0 && (
+        {selectedCommandIds.length > 0 && (
           <SelectedCommandOutcomes
-            threadId={threadId}
-            projectionEpoch={view.projectionEpoch}
-            commands={selectedCommandIds}
-            store={commands.store}
-            errors={commands.errors}
-            deliver={commands.deliver}
-          />
-        )}
-        {!view && selectedCommandIds.length > 0 && (
-          <SelectedCommandRows
-            threadId={threadId}
-            rows={[]}
             commands={selectedCommandIds}
             store={commands.store}
             errors={commands.errors}
@@ -956,49 +1255,73 @@ function ProjectedSessionBody({
           value={draft}
           onChange={(event) => setDraft(event.currentTarget.value)}
           placeholder="Enter sends, Ctrl+Enter for a new line"
+          autosize
+          minRows={2}
+          maxRows={12}
           disabled={!running}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
-              event.preventDefault();
-              submit();
-            }
-          }}
+          onKeyDown={composerKey}
         />
-        <Button disabled={!running || !draft.trim()} onClick={submit}>
-          Send
-        </Button>
         <Group justify="space-between" wrap="nowrap">
-          <Select
-            aria-label="Model"
-            data={modelOptions}
-            value={controls?.applied_model ?? null}
-            disabled={!running}
-            onChange={(model) =>
-              model &&
-              commands.submit(
-                create(CommandSchema, {
-                  commandId: crypto.randomUUID(),
-                  operation: { case: "changeModel", value: { model } },
-                })
-              )
-            }
-          />
-          <Group gap="xs">
-            <Button
-              color="red"
-              variant="subtle"
+          <Group gap="xs" wrap="nowrap">
+            <StatusDot
+              {...threadStatus({
+                sync,
+                archived: thread.archived,
+                available,
+                operational,
+                harness: controls?.harness_state ?? null,
+              })}
+            />
+            <Select
+              aria-label="Model"
+              data={modelOptions}
+              value={controls?.applied_model ?? null}
+              placeholder={
+                sync.window?.error || operational?.status === "failed"
+                  ? "Model unavailable"
+                  : !sync.window?.caughtUp
+                    ? "Catching up…"
+                    : "Model"
+              }
               disabled={!running}
-              onClick={() =>
+              w={200}
+              onChange={(model) =>
+                model &&
                 commands.submit(
                   create(CommandSchema, {
                     commandId: crypto.randomUUID(),
-                    operation: { case: "stopRunnerSession", value: {} },
+                    operation: { case: "changeModel", value: { model } },
                   })
                 )
               }
-            >
-              Shut down harness
-            </Button>
+            />
+          </Group>
+          <Group gap="xs" wrap="nowrap">
+            {/* Opens upward: the composer sits at the bottom of the viewport. */}
+            <Menu position="top-end" withArrow shadow="md">
+              <Menu.Target>
+                <ActionIcon size="lg" variant="light" aria-label="More">
+                  <IconDotsVertical size={16} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  color="red"
+                  leftSection={<IconPower size={15} />}
+                  disabled={!running}
+                  onClick={() =>
+                    commands.submit(
+                      create(CommandSchema, {
+                        commandId: crypto.randomUUID(),
+                        operation: { case: "stopRunnerSession", value: {} },
+                      })
+                    )
+                  }
+                >
+                  Shut down harness
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
             <ActionIcon
               size="lg"
               variant="light"
@@ -1017,6 +1340,9 @@ function ProjectedSessionBody({
             >
               <IconPlayerStop size={16} />
             </ActionIcon>
+            <ActionIcon size="lg" aria-label="Send" disabled={!running || !draft.trim()} onClick={submit}>
+              <IconSend size={16} />
+            </ActionIcon>
           </Group>
         </Group>
       </Stack>
@@ -1024,26 +1350,67 @@ function ProjectedSessionBody({
   );
 }
 
+function SyncedThread({
+  threadId,
+  thread,
+  available,
+}: {
+  threadId: string;
+  thread: ThreadView;
+  available: boolean;
+}): JSX.Element {
+  const { window: shown, error } = useThreadSync().useThread();
+  if (!shown) {
+    if (error) return <p role="alert">Thread sync failed: {error}</p>;
+    return <p role="status">Loading thread…</p>;
+  }
+  return (
+    <>
+      {error && <p role="alert">Thread sync failed: {error}; showing the current window and retrying.</p>}
+      {shown.error && (
+        <p role="alert">
+          Thread synchronization stopped: {shown.error} <button onClick={shown.refresh}>Refresh thread</button>
+        </p>
+      )}
+      {!shown.error && !shown.caughtUp && (
+        <p role="status" data-thread-catchup="true">
+          Catching up thread…
+        </p>
+      )}
+      <ProjectedSessionBody
+        threadId={threadId}
+        entities={shown.caughtUp ? shown.rows : []}
+        thread={thread}
+        history={shown}
+        available={available}
+      />
+    </>
+  );
+}
+
+/** Why the thread's sandbox cannot take commands, as the inventory last reported it; the composer's
+ * dot says only "Sandbox unavailable". An absence reads as a deletion only from a current inventory:
+ * a stale or dropped stream may not have seen the sandbox since. */
+function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean): string | null {
+  if (sandbox === undefined) {
+    return inventoryFresh
+      ? "Sandbox no longer exists. Showing archived Thread history; controls are disabled."
+      : "Sandbox absent from last inventory snapshot. Current availability unknown; controls are disabled.";
+  }
+  if (sandbox.state === "running") return null;
+  return `Last observed Sandbox state: ${sandbox.state}. Showing retained Thread history; controls are disabled.`;
+}
+
 export function ProjectedSession({ threadId, onBack }: { threadId: string; onBack: () => void }): JSX.Element {
+  const sync = useThreadSync();
   const [thread, setThread] = useState<ThreadView | null>(null);
-  const [before, setBefore] = useState<string | undefined>();
-  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl());
-  const sandboxAvailable =
-    environment.connection === "connected" &&
-    environment.health?.fresh === true &&
-    environment.snapshot?.sandboxes.some(
-      (sandbox) => sandbox.name === thread?.sandbox && sandbox.state === "running"
-    ) === true;
+  const inventoryFresh = environment.connection === "connected" && environment.health?.fresh === true;
+  const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
+  const notice = thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
   useEffect(() => {
-    void getThread(threadId).then(
-      (value) => {
-        setThread(value);
-        setName(value.name ?? "");
-      },
-      (reason: unknown) => setError(displayableError(reason))
-    );
+    void getThread(threadId).then(setThread, (reason: unknown) => setError(displayableError(reason)));
   }, [threadId]);
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
@@ -1053,18 +1420,11 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
             ← Threads
           </Button>
           <ChronologicalDebugLink />
-          <TextInput
-            aria-label="Thread name"
-            value={name}
-            placeholder={threadId}
-            onChange={(event) => setName(event.currentTarget.value)}
-            onBlur={() =>
-              void renameThread(threadId, name.trim() || null).then(setThread, (reason: unknown) =>
-                setError(displayableError(reason))
-              )
-            }
-          />
+          <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
         </Group>
+        {/* The controls wait on this stream's word that the sandbox runs, so a dropped or stale one
+            disables them as surely as a stopped sandbox; this says which it is. */}
+        <LiveStatus live={environment} />
         {error && (
           <Text role="alert" c="red">
             {error}
@@ -1080,25 +1440,19 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
             Thread archived. Showing retained thread history; controls are disabled.
           </Text>
         )}
-        {thread &&
-          environment.snapshot &&
-          !environment.snapshot.sandboxes.some((sandbox) => sandbox.name === thread.sandbox) && (
-            <Text role="status" c="dimmed">
-              Sandbox no longer exists. Showing archived Thread history; controls are disabled.
-            </Text>
-          )}
+        {notice && (
+          <Text role="status" c="dimmed">
+            {notice}
+          </Text>
+        )}
         {thread && (
-          <ThreadCollection key={threadId} threadId={threadId} beforeCursor={before}>
-            {(rows) => (
-              <ProjectedSessionBody
-                threadId={threadId}
-                entities={rows}
-                thread={thread}
-                onLoadOlder={setBefore}
-                available={sandboxAvailable}
-              />
-            )}
-          </ThreadCollection>
+          <sync.Thread key={threadId} threadId={threadId}>
+            <SyncedThread
+              threadId={threadId}
+              thread={thread}
+              available={inventoryFresh && sandbox?.state === "running"}
+            />
+          </sync.Thread>
         )}
       </Stack>
     </ChronologicalDebugProvider>

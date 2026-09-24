@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: cert-manager
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: jetstack
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://charts.jetstack.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+spec:
+  chart:
+    spec:
+      chart: cert-manager
+      interval: 12h
+      sourceRef:
+        kind: HelmRepository
+        name: jetstack
+        namespace: flux-system
+      version: v1.21.2
+  install:
+    remediation:
+      retries: 3
+  interval: 30m
+  values:
+    cainjector:
+      resources:
+        limits:
+          cpu: 100m
+          memory: 512Mi
+        requests:
+          cpu: 10m
+          memory: 128Mi
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+    config:
+      apiVersion: controller.config.cert-manager.io/v1alpha1
+      enableGatewayAPI: true
+      kind: ControllerConfiguration
+    crds:
+      enabled: true
+    extraArgs:
+      - --dns01-recursive-nameservers=8.8.8.8:53,1.1.1.1:53
+      - --dns01-recursive-nameservers-only
+    global:
+      priorityClassName: system-cluster-critical
+    ingressShim:
+      defaultIssuerKind: ClusterIssuer
+      defaultIssuerName: ${LETSENCRYPT_ISSUER}
+    prometheus:
+      enabled: true
+      servicemonitor:
+        enabled: false
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    webhook:
+      extraArgs:
+        - --dynamic-serving-dns-names=cert-manager-webhook,cert-manager-webhook.cert-manager,cert-manager-webhook.cert-manager.svc,cert-manager-webhook.cert-manager.svc.cluster.local
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+spec:
+  endpoints:
+    - path: /metrics
+      port: tcp-prometheus-servicemonitor
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: controller
+      app.kubernetes.io/instance: cert-manager
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cert-manager-webhook
+  namespace: cert-manager
+spec:
+  endpoints:
+    - path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: webhook
+      app.kubernetes.io/instance: cert-manager

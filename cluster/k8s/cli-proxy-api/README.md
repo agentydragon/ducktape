@@ -9,7 +9,7 @@ unlike LiteLLM's `/v1/messages` bridge (BerriAI/litellm#25429) and claude-code-r
 
 The `codex-claude` wrapper points Claude Code at the main LiteLLM proxy
 (`litellm.allegedly.works`), which fronts CLIProxyAPI as its `codex-*` upstream
-(see `cluster/k8s/litellm/app/test_litellm_config.py`). The laptop/agent-box/codex-pod
+(see `cluster/cdk8s/litellm/test_config.py`). The laptop/agent-box/codex-pod
 consumers authenticate to LiteLLM with a scoped `codex-clients` virtual key; the client
 key below is now consumed only by the main LiteLLM pod (ESO-mirrored into `litellm`).
 
@@ -19,7 +19,7 @@ key below is now consumed only by the main LiteLLM pod (ESO-mirrored into `litel
 
 - available flagship: `gpt-6-astra`
 - main: `gpt-6-astra`
-- background/Haiku tier: `gpt-5.6-luna` (the small 5.6 — `sol` is overkill for titles etc.)
+- background/Haiku tier: `gpt-6-luna` (the small 6 — `sol` is overkill for titles etc.)
 
 Reasoning effort is driven by Claude Code's `effortLevel` setting and forwarded to Codex
 `reasoning.effort` (not a model-slug suffix).
@@ -71,9 +71,8 @@ The normal server process watches that directory and then owns future refreshes.
 Verify the new account appears in the management UI's auth-file list. The packaged
 image is distroless, so shell commands such as `sh` and `find` are unavailable.
 
-The existing SOPS-managed Claude setup token and its egress proxy remain in
-place for the existing Haku Claude runner. AIQuota has no fallback token path;
-this keeps the quota service from maintaining two Claude credential owners.
+AIQuota has no fallback token path; this keeps the quota service from
+maintaining two Claude credential owners.
 
 AIQuota uses the management API's opaque `auth_index` only because the current
 `/api-call` contract requires it for `$TOKEN$` substitution. It never reads or
@@ -130,7 +129,8 @@ image pulls but does not interrupt a running process.
   `cli-proxy-api-config/config.yaml` for CLIProxyAPI and mirrors it into `litellm` as
   `CLIPROXY_CLIENT_KEY` for the `codex-*` upstream. Laptops/agent-box/codex-pod use a scoped
   `codex-clients` LiteLLM virtual key instead.
-- `config-eso.yaml` — plaintext CLIProxyAPI configuration template. It includes three bounded
+- The `cli-proxy-api-config` ExternalSecret (`cluster/cdk8s/cli_proxy_api/cli_proxy_api.py`) —
+  plaintext CLIProxyAPI configuration template. It includes three bounded
   stream bootstrap retries, which retry a failed upstream stream only before any response bytes
   have been sent to the caller.
 - `management-key.sops.yaml` — SOPS-managed key shared only by CLIProxyAPI's

@@ -47,7 +47,7 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec, KustomizationSpecDeletionPolicy
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpecDeletionPolicy
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -57,7 +57,6 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
@@ -70,12 +69,13 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-APP_DIR = "cluster/k8s/litellm/app"
+APP_DIR = f"{HAND_WRITTEN_ROOT}/litellm/app"
 _CONTAINER_PORT = 4000
 _CONFIG_DIR = "/etc/litellm"
 
@@ -434,18 +434,11 @@ def litellm(
     kustomization = flux_kustomization(
         flux_chart,
         "litellm",
-        spec=KustomizationSpec(
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            decryption=SOPS_DECRYPTION,
-            source_ref=artifact_source_ref(artifact),
-            timeout="10m",
-            retry_interval="1m",
-            wait=True,
-            depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, monitoring_crds),
-        ),
+        artifact,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        decryption=SOPS_DECRYPTION,
+        timeout="10m",
+        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, monitoring_crds),
     )
     write_yaml(
         app_dir / "kustomization.yaml",

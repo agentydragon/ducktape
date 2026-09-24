@@ -7,10 +7,9 @@ reads `sourceRef` and `path` off it, and passes every artifact here last.
 from collections.abc import Sequence
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, Yaml
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
-    KustomizationSpec,
     KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -24,9 +23,10 @@ from source_watcher_crds.io.fluxcd.extensions.source import (
     ArtifactGeneratorSpecSourcesKind,
 )
 
-from cluster.cdk8s.flux import NAMESPACE, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.flux import NAMESPACE, flux_kustomization
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
-_ARTIFACT_GENERATORS_DIR = "cluster/k8s/artifact-generators"
+_ARTIFACT_GENERATORS_DIR = f"{GENERATED_ROOT}/artifact-generators"
 _DUCKTAPE_SOURCE = ArtifactGeneratorSpecSources(
     alias="repo", kind=ArtifactGeneratorSpecSourcesKind.GIT_REPOSITORY, name="ducktape", namespace=NAMESPACE
 )
@@ -48,32 +48,15 @@ def artifact(name: str, *directories: str) -> ArtifactGeneratorSpecArtifacts:
     )
 
 
-def artifact_source_ref(artifact: ArtifactGeneratorSpecArtifacts) -> KustomizationSpecSourceRef:
-    return KustomizationSpecSourceRef(
-        kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=artifact.name, namespace=NAMESPACE
-    )
-
-
-def artifact_path(artifact: ArtifactGeneratorSpecArtifacts) -> str:
-    """The consumer's Kustomization `spec.path`: the artifact's first directory."""
-    return "./" + artifact.copy[0].to.removeprefix("@artifact/").removesuffix("/")
-
-
 def artifact_generators(flux_chart: Chart) -> Kustomization:
     return flux_kustomization(
         flux_chart,
         "artifact-generators",
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            path=f"./{_ARTIFACT_GENERATORS_DIR}",
-            prune=True,
-            wait=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace=NAMESPACE
-            ),
-            depends_on=[KustomizationSpecDependsOn(name="flux-system", namespace="flux-system")],
+        KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace=NAMESPACE
         ),
+        path=f"./{_ARTIFACT_GENERATORS_DIR}",
+        depends_on=[KustomizationSpecDependsOn(name="flux-system", namespace="flux-system")],
     )
 
 
@@ -99,6 +82,3 @@ def write_artifact_generators(
             spec=ArtifactGeneratorSpec(artifacts=list(artifacts), sources=[source]),
         )
     app.synth()
-    (out_dir / "kustomization.yaml").write_text(
-        Yaml.format_objects([kustomize_kustomization(resources=["artifact-generators.k8s.yaml"])])
-    )

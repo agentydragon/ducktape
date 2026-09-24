@@ -4,16 +4,14 @@ from __future__ import annotations
 
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpec,
     KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 
 def agent_box(
@@ -29,40 +27,15 @@ def agent_box(
     return flux_kustomization(
         chart,
         name,
+        artifact,
         annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            # Keep this controller inactive while the unschedulable legacy VM is retired.
-            # Its VM and local disk remain untouched until explicitly deleted.
-            suspend=True,
-            interval="10m",
-            retry_interval="1m",
-            timeout="30m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(
-                kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
-            ),
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="agent-box"),
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="agent-box-vm-images-s3-reader",
-                    namespace="agent-box",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="cdi.kubevirt.io/v1beta1",
-                    kind="DataVolume",
-                    name="agent-box-root",
-                    namespace="agent-box",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="kubevirt.io/v1", kind="VirtualMachine", name="agent-box", namespace="agent-box"
-                ),
-            ],
+        # Keep this controller inactive while the unschedulable legacy VM is retired.
+        # Its VM and local disk remain untouched until explicitly deleted.
+        suspend=True,
+        timeout="30m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
         ),
     )
 
@@ -72,28 +45,14 @@ def buildbuddy_executor(chart: Chart) -> Kustomization:
     return flux_kustomization(
         chart,
         name,
-        annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            suspend=True,
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="flux-system", namespace="flux-system"
-            ),
-            path="./cluster/k8s/parked/buildbuddy-executor",
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="helm.toolkit.fluxcd.io/v2",
-                    kind="HelmRelease",
-                    name="buildbuddy-executor",
-                    namespace="buildbuddy-executor",
-                )
-            ],
-            decryption=SOPS_DECRYPTION,
+        KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="flux-system", namespace="flux-system"
         ),
+        annotations={"ducktape.org/parked": "true"},
+        suspend=True,
+        timeout="5m",
+        path=f"./{HAND_WRITTEN_ROOT}/parked/buildbuddy-executor",
+        decryption=SOPS_DECRYPTION,
     )
 
 
@@ -109,31 +68,16 @@ def haku_cloud_agent(
     return flux_kustomization(
         chart,
         name,
+        # Decrypt the SOPS Secrets in this dir (anthropic-api-key, haku-kube-token);
+        # without this Flux applies the raw ENC[...] ciphertext and the runner gets a
+        # bogus key/token (401).
+        artifact,
         annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            suspend=True,
-            interval="10m",
-            retry_interval="1m",
-            timeout="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            # Decrypt the SOPS Secrets in this dir (anthropic-api-key, haku-kube-token);
-            # without this Flux applies the raw ENC[...] ciphertext and the runner gets a
-            # bogus key/token (401).
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="infra.contrib.fluxcd.io/v1alpha2",
-                    kind="Terraform",
-                    name="haku-cloud-agent",
-                    namespace="flux-system",
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                external_creds, external_secrets_config, tofu_controller, tofu_state_db
-            ),
+        suspend=True,
+        timeout="10m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            external_creds, external_secrets_config, tofu_controller, tofu_state_db
         ),
     )
 
@@ -148,28 +92,16 @@ def docker_ci(
     return flux_kustomization(
         chart,
         name,
+        artifact,
         annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            suspend=True,
-            retry_interval="1m",
-            interval="10m",
-            timeout="5m",
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="docker-ci", namespace="docker-ci"
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                # No storage dep (emptyDir, not a CSI PVC). Needs the cluster-internal-ca
-                # ClusterIssuer for the mTLS Certificates and agent-rbac-base for the
-                # claude-sandbox namespace the client Certificate lives in.
-                cert_manager_environment,
-                claude_rbac,
-            ),
+        suspend=True,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(
+            # No storage dep (emptyDir, not a CSI PVC). Needs the cluster-internal-ca
+            # ClusterIssuer for the mTLS Certificates and agent-rbac-base for the
+            # claude-sandbox namespace the client Certificate lives in.
+            cert_manager_environment,
+            claude_rbac,
         ),
     )
 
@@ -188,36 +120,15 @@ def gecko(
     return flux_kustomization(
         chart,
         name,
+        artifact,
         annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            # Keep this controller inactive while the unschedulable legacy VM is retired.
-            # Its VM and local disk remain untouched until explicitly deleted.
-            suspend=True,
-            interval="10m",
-            retry_interval="1m",
-            timeout="30m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            depends_on=flux_kustomization_depends_on_many(
-                gecko_namespace, kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
-            ),
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name="gecko-vm-images-s3-reader",
-                    namespace="gecko",
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="cdi.kubevirt.io/v1beta1", kind="DataVolume", name="gecko-root", namespace="gecko"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="kubevirt.io/v1", kind="VirtualMachine", name="gecko", namespace="gecko"
-                ),
-            ],
+        # Keep this controller inactive while the unschedulable legacy VM is retired.
+        # Its VM and local disk remain untouched until explicitly deleted.
+        suspend=True,
+        timeout="30m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            gecko_namespace, kubevirt, cdi, external_secrets_operator, seaweedfs_public_s3, local_path_provisioner
         ),
     )
 
@@ -227,20 +138,12 @@ def gecko_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> K
     return flux_kustomization(
         chart,
         name,
+        artifact,
         annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            # The retired VM stack and its namespace were intentionally deleted.
-            # Keep this controller paused so Flux does not recreate the empty namespace.
-            suspend=True,
-            interval="10m",
-            retry_interval="1m",
-            timeout="2m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-            wait=True,
-            health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name="gecko")],
-        ),
+        # The retired VM stack and its namespace were intentionally deleted.
+        # Keep this controller paused so Flux does not recreate the empty namespace.
+        suspend=True,
+        timeout="2m",
     )
 
 
@@ -257,37 +160,18 @@ def haku_dispatch(
     return flux_kustomization(
         chart,
         name,
+        KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
+        ),
         annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            # Haku dispatch is intentionally parked. Flip this to false only when the
-            # worker-zone and provider wiring has been deliberately restored.
-            suspend=True,
-            interval="10m",
-            retry_interval="1m",
-            timeout="10m",
-            path="./haku/x/dispatch/deploy",
-            prune=True,
-            wait=True,
-            deletion_policy=KustomizationSpecDeletionPolicy.WAIT_FOR_TERMINATION,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
-            ),
-            depends_on=flux_kustomization_depends_on_many(
-                cnpg,
-                local_path_provisioner,
-                external_secrets_config,
-                external_secrets_operator,
-                litellm,
-                litellm_keys_tf,
-            ),
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="workers-litellm", namespace="haku-dispatch"
-                ),
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="dispatcher", namespace="haku-dispatch"
-                ),
-            ],
+        # Haku dispatch is intentionally parked. Flip this to false only when the
+        # worker-zone and provider wiring has been deliberately restored.
+        suspend=True,
+        timeout="10m",
+        path="./haku/x/dispatch/deploy",
+        deletion_policy=KustomizationSpecDeletionPolicy.WAIT_FOR_TERMINATION,
+        depends_on=flux_kustomization_depends_on_many(
+            cnpg, local_path_provisioner, external_secrets_config, external_secrets_operator, litellm, litellm_keys_tf
         ),
     )
 
@@ -307,35 +191,23 @@ def haku_managed_agent(
     return flux_kustomization(
         chart,
         name,
+        artifact,
         annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            suspend=True,
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            decryption=SOPS_DECRYPTION,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="apps/v1", kind="Deployment", name="haku-managed-agent", namespace="haku-sandbox"
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                forgejo_images,
-                # provides the canonical AnkiWeb credential and source-side grant
-                external_creds,
-                # provides the external-creds ClusterSecretStore
-                external_secrets_config,
-                haku_namespace,
-                haku_rbac,
-                # provides the haku-forgejo-git secret in haku-sandbox
-                haku_state,
-                # injects the egress proxy + CA the worker imports
-                haku_egress_proxy,
-            ),
+        suspend=True,
+        timeout="5m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            forgejo_images,
+            # provides the canonical AnkiWeb credential and source-side grant
+            external_creds,
+            # provides the external-creds ClusterSecretStore
+            external_secrets_config,
+            haku_namespace,
+            haku_rbac,
+            # provides the haku-forgejo-git secret in haku-sandbox
+            haku_state,
+            # injects the egress proxy + CA the worker imports
+            haku_egress_proxy,
         ),
     )
 
@@ -352,17 +224,10 @@ def sdr(
     return flux_kustomization(
         chart,
         name,
+        artifact,
         annotations={"ducktape.org/parked": "true"},
-        spec=KustomizationSpec(
-            interval="10m",
-            # Temporarily disabled until the radio is set up again after relocation.
-            suspend=True,
-            retry_interval="1m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            timeout="5m",
-            depends_on=flux_kustomization_depends_on_many(external_secrets_config, forgejo_images, gateway, authentik),
-        ),
+        # Temporarily disabled until the radio is set up again after relocation.
+        suspend=True,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(external_secrets_config, forgejo_images, gateway, authentik),
     )

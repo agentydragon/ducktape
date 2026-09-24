@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: git.allegedly.works/ducktape-ci/tana-desktop
+    newTag: devel-20260828070925-20a40e4 # {"$imagepolicy": "flux-system:tana-mcp:tag"}
+  - name: git.allegedly.works/ducktape-ci/tana-firebase-resigner
+    newTag: devel-20260924010807-5ce04fd # {"$imagepolicy": "flux-system:tana-firebase-resigner:tag"}
+  - name: git.allegedly.works/ducktape-ci/mcp-oauth-facade
+    newTag: devel-20260924010720-5ce04fd # {"$imagepolicy": "flux-system:mcp-oauth-facade:tag"}

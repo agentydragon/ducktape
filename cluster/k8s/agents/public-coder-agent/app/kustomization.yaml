@@ -4,32 +4,18 @@ resources:
   - ../namespace
   - ../proxy
   - ../sshpiper
-  - github-token-eso.yaml
-  - gateway-password-eso.yaml
   - devbox-ssh-key.sops.yaml
-  - pvc-v2.yaml
-  - pvc-diagnostics.yaml
-  - deployment.yaml
-  - service.yaml
-  - networkpolicy-egress.yaml
-  - networkpolicy-ingress.yaml
-  - role.yaml
-  - agentplane-acceptance-operator.yaml
-  - node-reader.yaml
-  - cluster-metadata-reader.yaml
-  - extended-diagnostics-reader.yaml
-  - cluster-admin-ceiling.yaml
   # cdk8s-generated (cluster/cdk8s/public_coder_agent_config.py) -- see cluster/docs/cdk8s.md.
   - public-coder-agent-config.k8s.yaml
+  - public-coder-agent-kubeconfig.k8s.yaml
+  - public-coder-agent.k8s.yaml
+components:
+  - ./image-pins
 
 # STYLE.md: config blobs live in their native file, not embedded in YAML.
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
-  - name: public-coder-agent-kubeconfig
-    namespace: public-coder-agent
-    files:
-      - config=agent-kubeconfig.yaml
   - name: public-coder-agent-ssh
     namespace: public-coder-agent
     files:

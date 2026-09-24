@@ -1,0 +1,85 @@
+"""tofu-controller: its HelmRepository and the HelmRelease, which also installs the
+`Terraform` CRD.
+
+`values` is an untyped dict: Helm values carry no schema for `cdk8s_import` to ingest.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from cdk8s import App, Chart
+from flux_helm.io.fluxcd.toolkit.helm import (
+    HelmReleaseSpecInstall,
+    HelmReleaseSpecInstallCrds,
+    HelmReleaseSpecInstallRemediation,
+    HelmReleaseSpecUpgrade,
+    HelmReleaseSpecUpgradeCrds,
+)
+from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+
+from cluster.cdk8s import flux, terraform
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.metadata import metadata
+
+NAME = "tofu-controller"
+NAMESPACE = "flux-system"
+OUTPUT_DIR = f"{GENERATED_ROOT}/tofu-controller"
+
+
+def chart(app: App) -> Chart:
+    chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    repository = HelmRepository(
+        chart,
+        "repository",
+        metadata=metadata(NAME, NAMESPACE),
+        spec=HelmRepositorySpec(interval="24h", url="https://flux-iac.github.io/tofu-controller"),
+    )
+    helm_release(
+        chart,
+        NAME,
+        NAMESPACE,
+        repository=repository,
+        chart="tofu-controller",
+        version="0.16.5",
+        interval="15m",
+        install=HelmReleaseSpecInstall(
+            crds=HelmReleaseSpecInstallCrds.CREATE, remediation=HelmReleaseSpecInstallRemediation(retries=3)
+        ),
+        upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE),
+        values={
+            # Gitops Terraform CRs read the ducktape GitRepository in the Flux namespace.
+            "allowCrossNamespaceRefs": terraform.NAMESPACE != flux.NAMESPACE,
+            "runner": {
+                "grpc": {"maxMessageSize": 50},  # MB, default 4 — defense against repo growth
+                "serviceAccount": {"annotations": {"eks.amazonaws.com/role-arn": ""}},  # Not needed for on-prem
+            },
+            # Security context for Terraform runner pods
+            "podSecurityContext": {"runAsNonRoot": True, "runAsUser": 65532, "fsGroup": 65532},
+            # Resource limits for runner pods
+            "resources": {"limits": {"cpu": "1000m", "memory": "1Gi"}, "requests": {"cpu": "100m", "memory": "128Mi"}},
+            "logLevel": "info",
+        },
+    )
+    return chart
+
+
+def write_manifests(root: Path) -> None:
+    write_charts(root, OUTPUT_DIR, chart)
+
+
+def tofu_controller(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cert_manager: Kustomization, kyverno: Kustomization
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        artifact,
+        interval="10m0s",
+        timeout="10m0s",
+        depends_on=flux_kustomization_depends_on_many(cert_manager, kyverno),
+    )

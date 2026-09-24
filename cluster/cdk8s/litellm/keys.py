@@ -9,14 +9,19 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec, KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
+)
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.litellm.config import main_proxy_config
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
     CLIPROXY_MODELS,
@@ -35,7 +40,7 @@ from cluster.cdk8s.model_rosters import (
     ollama_chat_variant,
 )
 
-OUTPUT_DIR = "cluster/k8s/litellm/keys-tf"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
 
 # The Codex-subscription models on LiteLLM's Responses surface, for Codex CLI clients
 # (codex-pod, agent-workspaces-codex, the agentplane staging session form) -- served
@@ -45,10 +50,9 @@ OAI_LANE_MODELS = [codex_responses_name(model) for model in CLIPROXY_MODELS]
 # (laptop codex-claude, agent-box, codex-pod).
 CODEX_CLIENT_MODELS = [codex_messages_name(model) for model in CLIPROXY_MODELS]
 # Claude-subscription models on the Anthropic Messages surface, fronted through
-# CLIProxyAPI's Claude OAuth session -- the Console-launched Claude runner, the laptop
-# litellm-claude wrapper, and the agentplane staging session form. A different
-# upstream session on the same pod as the Codex lanes; distinct from the direct-API
-# anthropic-api/ant-messages/* entries.
+# CLIProxyAPI's Claude OAuth session -- the laptop litellm-claude wrapper and the
+# agentplane staging session form. A different upstream session on the same pod as the
+# Codex lanes; distinct from the direct-API anthropic-api/ant-messages/* entries.
 CLAUDE_CLIENT_MODELS = [
     exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, model) for model in ANTHROPIC_MODELS
 ]
@@ -75,7 +79,7 @@ EMBEDDING_CLIENT_MODELS = [
 CHEAP_EXPERIMENTS_CLAUDE_MODEL = exposed_name(
     Provider.ANTHROPIC_API, ApiShape.ANT_MESSAGES, "claude-haiku-4-5-20251001"
 )
-_CHEAP_EXPERIMENTS_CODEX = "gpt-5.6-luna"
+_CHEAP_EXPERIMENTS_CODEX = "gpt-6-luna"
 CHEAP_EXPERIMENTS_CODEX_MODEL = codex_responses_name(_CHEAP_EXPERIMENTS_CODEX)
 # The cheap-experiments key, shared with agents only through an expiring Haku Console
 # Kubernetes grant and standing on the agentplane testing LLM ingress. Intentionally an
@@ -141,6 +145,10 @@ def keys_chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, keys_chart)
+    write_yaml(
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(resources=["litellm-keys.k8s.yaml", "litellm-clients-sops-age-key.sops.yaml"]),
+    )
 
 
 # The litellm-keys Terraform CR lives DOWNSTREAM of the litellm app, not in
@@ -160,31 +168,16 @@ def litellm_keys_tf(
     return flux_kustomization(
         chart,
         name,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            # Decrypt litellm-clients-sops-age-key.sops.yaml (the narrow SOPS_AGE_KEY for
-            # the tf-runner) so sops_file in tf/gitops/litellm-keys can read the virtual-key
-            # SSOT. Added when that SOPS file arrived — previously this dir held only plain YAML.
-            decryption=SOPS_DECRYPTION,
-            source_ref=artifact_source_ref(artifact),
-            wait=True,
-            health_checks=[
-                KustomizationSpecHealthChecks(
-                    api_version="infra.contrib.fluxcd.io/v1alpha2",
-                    kind="Terraform",
-                    name="litellm-keys",
-                    namespace="flux-system",
-                )
-            ],
-            depends_on=flux_kustomization_depends_on_many(
-                # The app must serve (with its DB) before keys can mint.
-                litellm,
-                tofu_controller,
-                tofu_state_db,
-            ),
+        artifact,
+        timeout="10m",
+        # Decrypt litellm-clients-sops-age-key.sops.yaml (the narrow SOPS_AGE_KEY for
+        # the tf-runner) so sops_file in tf/gitops/litellm-keys can read the virtual-key
+        # SSOT. Added when that SOPS file arrived — previously this dir held only plain YAML.
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            # The app must serve (with its DB) before keys can mint.
+            litellm,
+            tofu_controller,
+            tofu_state_db,
         ),
     )

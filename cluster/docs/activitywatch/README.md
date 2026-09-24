@@ -79,35 +79,20 @@ Gotchas (bite every consumer): `POST /api/0/query` requires the **trailing slash
 TLS connection resets occur (~1/20 calls) — retry once; bucket `last_updated` is always
 `null` on this server — derive recency from each bucket's newest event.
 
-### Legacy iron-proxy read route (egress-substituted bearer)
+### Read route (static bearer)
 
-The dedicated Claude iron proxy (`cluster/k8s/agents/haku-egress-proxy/claude-iron-deployment.yaml`)
-can't do an OAuth exchange, so the mechanism mirrors aiquota's: a static bearer its pods never
-actually hold.
-
-- The read route is gated on its own token and allows read methods only — GET plus POST
-  to `/api/0/query/` — so even a leaked read token can't write. The token is minted and
-  SOPS-encrypted at `cluster/k8s/activitywatch/activitywatch-read-token.sops.yaml`, and
-  the emberstack reflector mirrors it into the `haku-egress-proxy` namespace.
-- The pod sets only the inert placeholder (`AW_READ_TOKEN: activitywatch-read-token-placeholder`);
-  the iron proxy substitutes the real read token on `activitywatch-read.allegedly.works` read
-  requests (`cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml`).
-- The host is in the Haku-Claude egress fence (`haku_claude` in
-  `cluster/cdk8s/egress_fences.py`).
-
-So the agent queries with the placeholder in its environment:
+The agent can't do an OAuth exchange, so the read route is gated on a static bearer of its
+own and allows read methods only — GET plus POST to `/api/0/query/` — so even a leaked read
+token can't write. The token is minted and SOPS-encrypted at
+`cluster/k8s/activitywatch/activitywatch-read-token.sops.yaml`. It is ESO-mirrored into
+`haku-sandbox` as `activitywatch-read-token` (`cluster/cdk8s/haku/workspaces.py`, store
+`kubernetes-activitywatch-secret-store`), and Haku reads it and calls the read route
+directly:
 
 ```bash
 curl -H "Authorization: Bearer $AW_READ_TOKEN" \
   https://activitywatch-read.allegedly.works/api/0/buckets/
 ```
-
-**Deviation for runtimes outside the fence** (the Claude Code web home, any `kubectl` that
-reads `haku-sandbox`): the same read token is ESO-mirrored into `haku-sandbox` as
-`activitywatch-read-token` (`cluster/k8s/haku/workspaces/app/activitywatch-read-token-eso.yaml`,
-store `kubernetes-activitywatch-secret-store`), and Haku reads it and calls the read route
-directly. Same route, same read-only bound, no approval step — the placeholder path above
-only works for pods whose traffic actually traverses the fence.
 
 ## Storage Debt
 

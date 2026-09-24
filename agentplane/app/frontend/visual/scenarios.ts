@@ -32,16 +32,27 @@ export interface Scenario extends ScenarioOptions {
   openMobileSidebar?: boolean;
   threadlessSandbox?: boolean;
   sidebarSource?: "disconnected" | "database-disconnected";
-  /** Exercise the production interest and Electric shape synchronization boundary. `unavailable`
-   * is a persistent initial service failure, unlike a retired ready shape, whose 410 triggers a refresh. */
+  /** Drop the sandbox inventory stream after its first snapshot, leaving the sidebar's own stream
+   * up: the thread header's banner is the page saying so. */
+  inventoryDropped?: boolean;
+  /** Exercise the production scope and Electric shape synchronization boundary. `unavailable`
+   * is a persistent initial service failure, unlike a retired epoch, whose 410 triggers a refresh. */
   sessionReplay?: "catching-up" | "unavailable";
   /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
   interleavedEvents?: boolean;
   /** Open the chronological archive drawer, the native-frame inspection surface. */
   openDebug?: "latest" | "stderr";
-  /** Open a projected reasoning payload after the semantic row has mounted. */
+  /** Open the tool-call run once it mounts, then the reasoning step folded inside it. */
   openReasoning?: boolean;
+  /** Open the tool-call run once it mounts, then the tool call's Arguments and Output inside it. */
+  openToolPayloads?: boolean;
+  /** Click the Evidence icon of the row at this thread anchor once it mounts: which rows show
+   * their evidence is not in the URL. */
+  openEvidence?: string;
   pendingCommands?: "mixed" | "controls" | "outcomes";
+  /** Answer a command POST as the app does when a runner misses its admission deadline. Without
+   * this it stays unanswered, like one queued behind the browser's connection limit. */
+  commandAdmissionTimedOut?: boolean;
   failedTurn?: "before-content" | "after-content";
 }
 
@@ -51,12 +62,14 @@ const PHONE = { width: 412, height: 915, deviceScaleFactor: 2.625 };
 const CONSENT_ROUTE = "/connection-enrollments/test-only-opaque-handle";
 const SANDBOX_ROUTE = "/sandboxes/demo-a1b2";
 const SESSION_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000001";
-// A standalone failed tool call, a run whose reasoning is still streaming beside a tool call that
-// already failed, and a message queued mid-turn -- every status the session view's badge-to-dot
-// restyle touches that the main `session` fixture doesn't produce on its own. The run's own
-// open/closed state isn't URL-synced (unlike a reasoning block's), so it renders folded, which is
-// fine here: its summary is exactly where the streaming/failed dots these scenarios exist for show.
+// A standalone failed tool call, a run whose reasoning is still streaming beside a tool call, and
+// queued commands -- statuses the main `session` fixture doesn't produce on its own. Both runs
+// render folded, which is the point here: a run's summary is where its streaming and failed
+// indicators show. The run's first step, at cursor 16, is its anchor.
 const SESSION_STATES_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000002";
+// Threads on the fixture's suspended sandbox, and on one the inventory does not list.
+const SUSPENDED_SANDBOX_SESSION_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000004";
+const DELETED_SANDBOX_SESSION_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000005";
 export const SCENARIOS: Record<string, Scenario> = {
   session_error: {
     element: "#app",
@@ -246,6 +259,19 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ["[data-connection-id]"],
     openSettings: true,
   },
+  // Where the MCP-linkage OAuth callback lands: Settings, open on its MCP servers tab.
+  mcp_servers: {
+    element: "#app",
+    route: "/mcp-servers",
+    viewport: { width: 1200, height: 1400 },
+    readySelectors: ["[data-mcp-server]"],
+  },
+  mcp_servers_phone: {
+    element: "#app",
+    route: "/mcp-servers",
+    viewport: { width: 390, height: 1950 },
+    readySelectors: ["[data-mcp-server]"],
+  },
 
   consent: { element: "#app", route: CONSENT_ROUTE, viewport: { width: 1200, height: 1100 } },
   consent_phone: { element: "#app", route: CONSENT_ROUTE, viewport: { width: 390, height: 1100 } },
@@ -322,23 +348,65 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
   session_deleted_sandbox: {
     element: "#app",
-    route: "/threads/5f1c4a2e-0000-4000-8000-000000000005",
+    route: DELETED_SANDBOX_SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
     readySelectors: ['[role="status"]'],
     captureViewport: true,
   },
   session_deleted_sandbox_phone: {
     element: "#app",
-    route: "/threads/5f1c4a2e-0000-4000-8000-000000000005",
+    route: DELETED_SANDBOX_SESSION_ROUTE,
     viewport: PHONE,
     readySelectors: ['[role="status"]'],
     captureViewport: true,
   },
   session_suspended_sandbox: {
     element: "#app",
-    route: "/threads/5f1c4a2e-0000-4000-8000-000000000004",
+    route: SUSPENDED_SANDBOX_SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
-    readySelectors: ["textarea:disabled"],
+    readySelectors: ["::-p-text(Last observed Sandbox state)", '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_suspended_sandbox_phone: {
+    element: "#app",
+    route: SUSPENDED_SANDBOX_SESSION_ROUTE,
+    viewport: PHONE,
+    readySelectors: ["::-p-text(Last observed Sandbox state)", '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  // The sandbox inventory the controls wait on has stopped moving, on a running sandbox: the header's
+  // banner, beside the sidebar's for the same watch, is all that says why the composer is off.
+  session_inventory_stale: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    wedgedWatch: true,
+    readySelectors: ["::-p-text(so this page is not being updated)", '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  // A stale inventory that lacks the thread's sandbox cannot say it was deleted.
+  session_inventory_stale_phone: {
+    element: "#app",
+    route: DELETED_SANDBOX_SESSION_ROUTE,
+    viewport: PHONE,
+    wedgedWatch: true,
+    readySelectors: ["::-p-text(Current availability unknown)", '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_inventory_dropped: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    inventoryDropped: true,
+    readySelectors: ["::-p-text(Not connected to the live stream)", '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_inventory_dropped_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    inventoryDropped: true,
+    readySelectors: ["::-p-text(Not connected to the live stream)", '[data-thread-anchor="34"]'],
     captureViewport: true,
   },
   session_phone: {
@@ -349,13 +417,28 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ['[data-thread-anchor="34"]'],
     captureViewport: true,
   },
+  // An unnamed thread: the title field shows the thread id as its placeholder and nothing beside it.
+  session_unnamed: {
+    element: "#app",
+    route: "/threads/5f1c4a2e-0000-4000-8000-000000000000",
+    viewport: { width: 1200, height: 900 },
+    readySelectors: ['[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_unnamed_phone: {
+    element: "#app",
+    route: "/threads/5f1c4a2e-0000-4000-8000-000000000000",
+    viewport: PHONE,
+    readySelectors: ['[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
   session_reasoning: {
     element: "#app",
     route: SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
     outputName: "session-reasoning",
     openReasoning: true,
-    readySelectors: ["details[open]"],
+    readySelectors: ["details[open] details[open] .agentplane-markdown"],
   },
   session_reasoning_phone: {
     element: "#app",
@@ -363,7 +446,44 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     outputName: "session-reasoning-phone",
     openReasoning: true,
-    readySelectors: ["details[open]"],
+    readySelectors: ["details[open] details[open] .agentplane-markdown"],
+  },
+  // JSON arguments highlighted, and a non-JSON output in the same code block, uninterpreted. The
+  // history follows its bottom, so the viewports are tall enough to keep the tool call, and the
+  // user's input above it, on screen.
+  session_tool_payloads: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 1300 },
+    outputName: "session-tool-payloads",
+    openToolPayloads: true,
+    readySelectors: [".agentplane-hljs .hljs-attr", "details[open] + details[open] .agentplane-hljs"],
+  },
+  session_tool_payloads_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { ...PHONE, height: 1500 },
+    outputName: "session-tool-payloads-phone",
+    openToolPayloads: true,
+    readySelectors: [".agentplane-hljs .hljs-attr", "details[open] + details[open] .agentplane-hljs"],
+  },
+  // A row's evidence opened from its corner icon: on the user bubble, the one card with no header
+  // row to hold the icon, and at phone width in the last reply's header row.
+  session_evidence: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 1100 },
+    openEvidence: "4",
+    readySelectors: ['[data-thread-anchor="4"] [data-evidence-observation]', '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_evidence_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    openEvidence: "34",
+    readySelectors: ['[data-thread-anchor="34"] [data-evidence-observation]'],
+    captureViewport: true,
   },
   // Native observations are inspected through the chronological drawer. The projected view has
   // no raw-event URL mode: its semantic entities stay identical while the drawer shows archive rows.
@@ -387,7 +507,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 900 },
     outputName: "session-states",
-    readySelectors: ['[data-thread-anchor="19"]'],
+    readySelectors: ['[data-thread-anchor="16"]'],
     captureViewport: true,
   },
   session_pending: {
@@ -395,7 +515,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "mixed",
-    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="19"]'],
+    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="16"]'],
     captureViewport: true,
   },
   session_pending_phone: {
@@ -403,7 +523,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
     pendingCommands: "mixed",
-    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="19"]'],
+    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="16"]'],
     captureViewport: true,
   },
   session_pending_raw: {
@@ -412,7 +532,16 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "mixed",
     openDebug: "latest",
-    readySelectors: ['[aria-label="Chronological observations"]', '[data-thread-anchor="19"]'],
+    readySelectors: ['[aria-label="Chronological observations"]', '[data-thread-anchor="16"]'],
+    captureViewport: true,
+  },
+  session_pending_failed: {
+    element: "#app",
+    route: SESSION_STATES_ROUTE,
+    viewport: { width: 1200, height: 1100 },
+    pendingCommands: "mixed",
+    commandAdmissionTimedOut: true,
+    readySelectors: ["::-p-text(runner did not admit the command)", '[data-thread-anchor="16"]'],
     captureViewport: true,
   },
   session_pending_controls: {
@@ -420,7 +549,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "controls",
-    readySelectors: ['[data-command-id="queued-interrupt"]', '[data-thread-anchor="19"]'],
+    readySelectors: ['[data-command-id="queued-interrupt"]', '[data-thread-anchor="16"]'],
     captureViewport: true,
   },
   session_command_outcomes_phone: {
@@ -428,7 +557,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
     pendingCommands: "outcomes",
-    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="19"]'],
+    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="16"]'],
     captureViewport: true,
   },
   session_catching_up: {
@@ -454,7 +583,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
     outputName: "session-states-phone",
-    readySelectors: ['[data-thread-anchor="19"]'],
+    readySelectors: ['[data-thread-anchor="16"]'],
     captureViewport: true,
   },
 };

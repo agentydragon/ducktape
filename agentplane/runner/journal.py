@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -105,6 +105,25 @@ def _apply_checkpoint(checkpoint: Checkpoint, entry: event_log_pb2.EventEntry) -
             checkpoint.active_turn_id = ""
 
 
+type _Transaction = tuple[AsyncSession, list[event_log_pb2.EventEntry]]
+
+
+@dataclass(frozen=True)
+class _Held:
+    """A batch's open transaction: its context, still to be exited, and what that yielded."""
+
+    context: AbstractAsyncContextManager[_Transaction]
+    session: AsyncSession
+    appended: list[event_log_pb2.EventEntry]
+
+
+@dataclass
+class _Batch:
+    owner: asyncio.Task[object]
+    # Open from the batch's first write until its next commit, holding the journal lock throughout.
+    held: _Held | None = None
+
+
 class CommandConflictError(ValueError):
     """One command id was reused with different requested work."""
 
@@ -121,6 +140,7 @@ class Journal:
         self._lock = asyncio.Lock()
         self._changed = asyncio.Event()
         self._failure: BaseException | None = None
+        self._batch: _Batch | None = None
 
     @classmethod
     @asynccontextmanager
@@ -216,13 +236,11 @@ class Journal:
             return [(row.cursor, row.payload) for row in rows]
 
     async def reached_checkpoint(self, name: str, command_id: str) -> bool:
-        async with self._lock, AsyncSession(self._connection) as session:
-            self._check_writable()
+        async with self._reading() as session:
             return await session.get(DebugCheckpoint, (name, command_id)) is not None
 
     async def has_adapter_item(self, adapter_id: str, item_id: str) -> bool:
-        async with self._lock, AsyncSession(self._connection) as session:
-            self._check_writable()
+        async with self._reading() as session:
             return await session.get(AdapterItem, (adapter_id, item_id)) is not None
 
     async def remember_adapter_item(self, adapter_id: str, item_id: str) -> bool:
@@ -254,7 +272,97 @@ class Journal:
             await self._changed.wait()
 
     @asynccontextmanager
-    async def _transaction(self) -> AsyncIterator[tuple[AsyncSession, list[event_log_pb2.EventEntry]]]:
+    async def batch(self) -> AsyncIterator[None]:
+        """Hold every write the calling task makes in one transaction until `commit_batch` or the
+        block's end, then commit and publish them together.
+
+        Once the batch has written, every other writer and reader waits for its commit, so the task
+        must commit before it awaits anything but the journal. A write that raises is rolled back to
+        its savepoint and the batch goes on, as it would outside a batch. A storage failure fails the
+        journal, as a failed commit does: none of the batch is published.
+        """
+        if self._batch is not None:
+            raise RuntimeError("the journal already has a batch open")
+        owner = asyncio.current_task()
+        assert owner is not None
+        batch = self._batch = _Batch(owner)
+        try:
+            yield
+        except BaseException as error:
+            if batch.held is not None:
+                await self._abandon(batch, error)
+            raise
+        else:
+            await self.commit_batch()
+        finally:
+            self._batch = None
+
+    def batching(self) -> bool:
+        """Whether the calling task has a batch open."""
+        return self._own_batch() is not None
+
+    async def commit_batch(self) -> None:
+        """Commit and publish what the calling task's batch holds; later writes start another."""
+        batch = self._own_batch()
+        if batch is None:
+            raise RuntimeError("the calling task has no batch open")
+        if batch.held is not None:
+            context, batch.held = batch.held.context, None
+            await context.__aexit__(None, None, None)
+
+    def _own_batch(self) -> _Batch | None:
+        return self._batch if self._batch is not None and self._batch.owner is asyncio.current_task() else None
+
+    async def _abandon(self, batch: _Batch, error: BaseException) -> None:
+        """Roll back the batch's transaction. Its Events are never published, so the writer stops."""
+        assert batch.held is not None
+        context, batch.held = batch.held.context, None
+        try:
+            await context.__aexit__(type(error), error, error.__traceback__)
+        finally:
+            if self._failure is None:
+                self._failure = error
+            self._changed.set()
+
+    @asynccontextmanager
+    async def _reading(self) -> AsyncIterator[AsyncSession]:
+        """A session for reads: the batch's own, which sees its uncommitted writes, while it holds one."""
+        batch = self._own_batch()
+        if batch is not None and batch.held is not None:
+            yield batch.held.session
+            return
+        async with self._lock, AsyncSession(self._connection) as session:
+            self._check_writable()
+            yield session
+
+    @asynccontextmanager
+    async def _transaction(self) -> AsyncIterator[_Transaction]:
+        batch = self._own_batch()
+        if batch is None:
+            async with self._committed_transaction() as transaction:
+                yield transaction
+            return
+        if batch.held is None:
+            context = self._committed_transaction()
+            session, appended = await context.__aenter__()
+            batch.held = _Held(context, session, appended)
+        held = batch.held
+        before = len(held.appended)
+        try:
+            async with held.session.begin_nested():
+                yield held.session, held.appended
+        except (SQLAlchemyError, JournalStorageError, asyncio.CancelledError) as error:
+            await self._abandon(batch, error)
+            if isinstance(error, (JournalStorageError, asyncio.CancelledError)):
+                raise
+            raise JournalStorageError("journal batch failed") from error
+        except BaseException:
+            # The savepoint undid this write alone; the batch's earlier writes stand.
+            del held.appended[before:]
+            raise
+
+    @asynccontextmanager
+    async def _committed_transaction(self) -> AsyncIterator[_Transaction]:
         # aiosqlite serializes individual statements, not multi-await transactions. This lock
         # owns the connection through commit and publication, including cancellation recovery.
         async with self._lock:
@@ -365,14 +473,12 @@ class Journal:
                 command.native_correlation = {**command.native_correlation, **(native_correlation or {})}
 
     async def pending_commands(self) -> list[command_pb2.Command]:
-        async with self._lock, AsyncSession(self._connection) as session:
-            self._check_writable()
+        async with self._reading() as session:
             payloads = await session.scalars(
                 select(Command.payload).where(Command.terminal_cursor.is_(None)).order_by(Command.admitted_cursor)
             )
             return [command_pb2.Command.FromString(payload) for payload in payloads]
 
     async def get(self, command_id: str) -> Command | None:
-        async with self._lock, AsyncSession(self._connection) as session:
-            self._check_writable()
+        async with self._reading() as session:
             return await session.get(Command, command_id)

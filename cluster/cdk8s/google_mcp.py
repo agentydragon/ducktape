@@ -1,7 +1,6 @@
-"""google-mcp: a standalone Gmail/Calendar MCP backend for agentplane-staging.
+"""google-mcp: a Gmail/Calendar MCP backend for agentplane-staging.
 
-Reuses haku-console's Gmail/Calendar tool code (`x/google_mcp_server`, `haku/console/tools`)
-against a *separate* Google credential from haku-console's own per-Operator connections: a
+Serves the Gmail/Calendar tool code in `haku/console/tools` (`x/google_mcp_server`) against a
 write-scoped Airlock provider (`cluster/k8s/agents/airlock/config.yaml`) whose access token is
 ESO-mirrored into *this namespace only* -- never into claude-sandbox, haku-sandbox, or
 agentplane-staging directly. The agent reaches Gmail/Calendar only through agentplane's
@@ -53,32 +52,26 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
     ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 
 _NAME = "google-mcp"
-OUTPUT_DIR = f"cluster/k8s/{_NAME}"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{_NAME}"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/google-mcp"
 _PLACEHOLDER_TAG = "unset"
 _HTTP_PORT = 8080
@@ -97,10 +90,9 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 def _bearer_credentials(scope: Construct) -> None:
     """Mint this pod's caller-facing bearer here, in its own namespace.
 
-    agentplane-staging reads a copy through the `kubernetes-google-mcp-secret-store`
-    ClusterSecretStore (cluster/k8s/external-secrets/config/google-mcp-secret-store.yaml) --
-    ESO's own cross-namespace read, the same mechanism Airlock's tokens and the Tana PAT
-    already use for agentplane-staging, not Stakater Reflector.
+    agentplane-staging copies it with ESO through a store that can read this one Secret
+    (cluster/cdk8s/agentplane/staging.py): this namespace also holds the write-scoped Google
+    token, which no store may reach.
     """
     Password(
         scope,
@@ -108,29 +100,15 @@ def _bearer_credentials(scope: Construct) -> None:
         metadata=metadata(BEARER_SECRET_NAME, _NAME),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    ExternalSecret(
+    add_external_secret(
         scope,
         "bearer-external-secret",
-        metadata=metadata(BEARER_SECRET_NAME, _NAME),
-        spec=ExternalSecretSpec(
-            refresh_policy=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-            target=ExternalSecretSpecTarget(
-                name=BEARER_SECRET_NAME,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                template=ExternalSecretSpecTargetTemplate(type="Opaque", data={BEARER_SECRET_KEY: "{{ .password }}"}),
-            ),
-            data_from=[
-                ExternalSecretSpecDataFrom(
-                    source_ref=ExternalSecretSpecDataFromSourceRef(
-                        generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                            api_version="generators.external-secrets.io/v1alpha1",
-                            kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                            name=BEARER_SECRET_NAME,
-                        )
-                    )
-                )
-            ],
-        ),
+        name=BEARER_SECRET_NAME,
+        namespace=_NAME,
+        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+        data_from=[password_generator(BEARER_SECRET_NAME)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={BEARER_SECRET_KEY: "{{ .password }}"}),
     )
 
 
@@ -192,11 +170,11 @@ class GoogleMcpApp(Construct):
                 read_only_root_filesystem=False,
             ),
         )
-        # `optional=True`: this Secret is populated by a ClusterExternalSecret in a different
-        # Kustomization (Airlock's) with no Flux-level ordering guarantee, so the pod must come
-        # up (failing readiness, not crash-looping) before that Secret first appears.
+        # Airlock's ClusterExternalSecret fills this Secret from another Kustomization. While it is
+        # absent (before the `google-write` consent), the pod waits in ContainerCreating on this
+        # mount rather than starting without a token.
         google_token_secret = Secret.from_secret_name(self, "google-token-secret-ref", GOOGLE_TOKEN_SECRET_NAME)
-        google_token_volume = Volume.from_secret(self, "google-token-volume", google_token_secret, optional=True)
+        google_token_volume = Volume.from_secret(self, "google-token-volume", google_token_secret)
         deployment.containers[0].mount(_GOOGLE_TOKEN_DIR, google_token_volume, read_only=True)
         return deployment
 
@@ -220,7 +198,10 @@ class GoogleMcpApp(Construct):
                     cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[_HTTP_PORT]
                 )
             ],
-            egress=[cilium.dns_egress(), cilium.egress_to_fqdns("gmail.googleapis.com", "www.googleapis.com")],
+            egress=[
+                cilium.dns_egress(resolves=["*"]),
+                cilium.egress_to_fqdns("gmail.googleapis.com", "www.googleapis.com"),
+            ],
         )
 
 
@@ -259,17 +240,10 @@ def google_mcp(
     kustomization = flux_kustomization(
         flux_chart,
         _NAME,
-        description="Standalone Gmail/Calendar MCP backend for Agentplane staging.",
-        spec=KustomizationSpec(
-            interval="10m",
-            retry_interval="1m",
-            timeout="5m",
-            path=artifact_path(artifact),
-            prune=True,
-            wait=True,
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(external_secrets_operator, forgejo_images),
-        ),
+        artifact,
+        description="Gmail/Calendar MCP backend for Agentplane staging.",
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, forgejo_images),
     )
     write_yaml(
         app_dir / "kustomization.yaml",

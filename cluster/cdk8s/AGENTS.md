@@ -81,13 +81,15 @@ Every Flux `Kustomization` is one function in one shared chart, and its dependen
 its parameters. `generate_manifests.py` is the topological order, written out by hand.
 
 - **A node is `name(chart, artifact, *predecessors: Kustomization) -> Kustomization`.** It
-  builds its `KustomizationSpec` with the literals from its directory, reads `sourceRef`
-  and `path` off its artifact (`artifact_source_ref`, `artifact_path`), and returns
-  `flux.flux_kustomization(chart, name, spec=...)`. The entry point builds the artifact
+  returns `flux.flux_kustomization(chart, name, artifact, ...)`, which derives `sourceRef`
+  and `path` from the artifact and applies our defaults (listed once, in its docstring);
+  the node passes only the `KustomizationSpec` fields that differ, as keywords of the
+  same names and types. The entry point builds the artifact
   (`artifact_generators.artifact(name, directory, *shared_bases)`) just before the call,
   and passes every artifact to `write_artifact_generators` last; a parked node's
   artifact is left out, since nothing packages a suspended directory. A node sourcing a
-  `GitRepository` directly takes no artifact. `dependsOn` is
+  `GitRepository` directly takes no artifact and passes that `sourceRef` and a `path`
+  instead. `dependsOn` is
   `flux_kustomization_depends_on_many(predecessor, ...)`, which reads name and namespace
   off the constructs it is handed; the entry carries an explicit `namespace` for that
   reason. The predecessor is a value the caller already built, never a string, a
@@ -112,50 +114,59 @@ its parameters. `generate_manifests.py` is the topological order, written out by
   from its directory; the `ArtifactGenerator` from all artifacts, last. Building a
   Kustomization from the artifact inventory, or the inventory from the Kustomizations'
   `sourceRef` names, is the same mistake facing opposite ways.
-- **Repetition is not a reason to abstract yet.** Two hundred nodes say
-  `interval="10m"`; keep saying it. The operational fields (`interval`,
-  `retry_interval`, `timeout`, `prune`, `wait`, `suspend`) are per-node choices a reader
-  must see on the node, and Flux's own defaults differ from ours. A literal that is the
-  same _fact_ in two places (the node's name in `metadata` and in its own `sourceRef`)
-  becomes one local; a block that is the same _value_ everywhere (the SOPS `decryption`
-  entry) may become one module constant. Nothing else until every node it would touch is
-  in Python.
+- **A default is policy, not the common value.** `flux_kustomization` defaults a field
+  only where nearly every node agrees and the value is a stance we take for all of them;
+  a per-app choice (`timeout`, `decryption`, `health_checks`) stays on the node. `None`
+  leaves a field unset, so Flux's own default applies; Flux's defaults differ from ours.
+  A literal that is the same _fact_ in two places becomes one local; a block that is the
+  same _value_ everywhere (the SOPS `decryption` entry) may become one module constant.
 - **A node lives with its directory's generator once that directory is fully
   generated** (`aiquota.aiquota`, `litellm.keys.litellm_keys_tf`); until then it stays in
   `<area>/flux_kustomizations.py`, one package per area, and moves as part of the
   conversion. No interim flattening of those packages.
 - **Output routing is by `spec.path`**, with the handful of Kustomizations whose `path`
   is not their own directory listed explicitly in the writer. Keep those explicit.
+- **A directory's root is written once**: its module's `OUTPUT_DIR` (or a named constant
+  like `BASE_DIR`) is `f"{GENERATED_ROOT}/..."` or `f"{HAND_WRITTEN_ROOT}/..."`
+  (`manifest_roots.py`), and the artifact in `generate_manifests.py` takes that constant,
+  never the path spelled again. Moving a directory between roots is that one edit, plus
+  the committed files; `GENERATED_ROOT` is right exactly when the generator writes every
+  file the directory holds.
 
 The worked edge, `monitoring-crds -> cilium-monitoring`:
 
 ```python
+# monitoring/flux_kustomizations.py
 def monitoring_crds(chart: Chart) -> Kustomization:
-    name = "monitoring-crds"
-    return flux_kustomization(chart, name, spec=KustomizationSpec(..., prune=False))
+    return flux_kustomization(
+        chart,
+        "monitoring-crds",
+        KustomizationSpecSourceRef(kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, ...),
+        path="./example/prometheus-operator-crd-full",
+        interval="1h",
+        prune=False,  # Don't delete CRDs on uninstall (safety)
+        timeout="5m",
+    )
 
 
+# monitoring/cilium_monitoring.py, beside the chart it deploys
 def cilium_monitoring(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
 ) -> Kustomization:
-    name = "cilium-monitoring"
     return flux_kustomization(
         chart,
-        name,
-        spec=KustomizationSpec(
-            ...,
-            source_ref=artifact_source_ref(artifact),
-            path=artifact_path(artifact),
-            # The ServiceMonitor CRD.
-            depends_on=flux_kustomization_depends_on_many(monitoring_crds),
-        ),
+        "cilium-monitoring",
+        artifact,
+        timeout="2m",
+        # The ServiceMonitor CRD.
+        depends_on=flux_kustomization_depends_on_many(monitoring_crds),
     )
 
 
 # generate_manifests.py
-monitoring_crds_kustomization = monitoring.monitoring_crds(flux_chart)
-monitoring_cilium_artifact = artifact("monitoring-cilium", "cluster/k8s/monitoring/cilium")
-monitoring.cilium_monitoring(flux_chart, monitoring_cilium_artifact, monitoring_crds_kustomization)
+monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
+monitoring_cilium_artifact = artifact("monitoring-cilium", cilium_monitoring.OUTPUT_DIR)
+cilium_monitoring.cilium_monitoring(flux_chart, monitoring_cilium_artifact, monitoring_crds_kustomization)
 ...
 write_artifact_generators(root, ducktape=[..., monitoring_cilium_artifact, ...], flux_system=[...])
 ```
@@ -171,9 +182,10 @@ indirection, stop and ask before changing the design.
 ## Testing a generator
 
 - **The snapshot is the only pin.** `//cluster/cdk8s:test_generate_manifests`
-  regenerates every generated file in memory and asserts equality with the committed
-  files, including the single `cluster/k8s/flux/kustomizations.k8s.yaml` chart; a change
-  to generated output is a diff in the PR that makes it.
+  regenerates in memory and asserts every written file equals the committed one at its
+  path, including the single `cluster/k8s/flux/kustomizations.k8s.yaml` chart, and that
+  `cluster/generated` holds nothing else; a change to generated output is a diff in the
+  PR that makes it. No list of files to keep: the data deps carry both whole trees.
 - **Invariants live beside the generator**: tests over the in-memory synth
   (`agentplane/conftest.py`'s `agentplane_manifests`), or
   **fleet rules** (`fleet_rules.py`, run by every synth through
@@ -190,6 +202,12 @@ indirection, stop and ask before changing the design.
 - **Synthetic props for construct tests, real environments for invariants.** A
   construct test builds a `Chart(Testing.app(), ...)` with a small props value and
   asserts the shape; `test_fleet_rules.py` is the pattern.
+- **Render identity across a conversion**: `render_diff.py` reconciles the whole Flux
+  graph at two revisions (sources, ArtifactGenerator copies, `kustomize build`, before
+  `postBuild`) and diffs every Kustomization's objects, exiting 1 on any difference.
+  From the devshell: `python3 cluster/cdk8s/render_diff.py origin/devel HEAD`; renders
+  cache under `~/.cache/render-diff` (`--cache-dir` moves it). Its docstring lists the
+  Flux semantics it reproduces.
 
 ## Adding a fleet rule
 
@@ -357,6 +375,10 @@ _whole_ marked field to the full `repository:tag` reference — which corrupted 
 took `litellm` down (`InvalidImageName`), a real incident, not a theoretical one. See
 <https://fluxcd.io/flux/components/image/imageupdateautomations/> § "Field-specific
 update markers". Don't repeat this explanation per directory; point back here instead.
+
+A bare-tag field (an `*_IMAGE_TAG` env value) takes the placeholder too, and the Component
+copies the pinned tag into it with a block-style `replacements` rule that splits the
+container `image` on `:` (`images:` runs first); see `agents/airlock/image-pins`.
 
 Agentplane testing keeps its image pins inline in the hand-maintained root
 `kustomization.yaml`, since the Kustomization itself is part of the flat resource

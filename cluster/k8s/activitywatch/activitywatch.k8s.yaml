@@ -1,0 +1,309 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: activitywatch
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: privileged
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: activitywatch
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: activitywatch
+  name: activitywatch
+  namespace: activitywatch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: activitywatch
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: activitywatch
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - command:
+            - /usr/local/bin/aw-server
+            - --host
+            - 0.0.0.0
+            - --port
+            - "5600"
+            - --dbpath
+            - /data/db.sqlite3
+            - --device-id
+            - activitywatch-cluster
+          image: git.allegedly.works/ducktape-ci/aw-server:unset
+          livenessProbe:
+            httpGet:
+              path: /api/0/info
+              port: 5600
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          name: aw-server
+          ports:
+            - containerPort: 5600
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /api/0/info
+              port: 5600
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          volumeMounts:
+            - mountPath: /data
+              name: data
+        - image: nginx:alpine
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5601
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          name: readonly-proxy
+          ports:
+            - containerPort: 5601
+              name: readonly
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 5601
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          volumeMounts:
+            - mountPath: /etc/nginx/conf.d
+              name: readonly-proxy-config
+              readOnly: true
+        - env:
+            - name: AW_WRITE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: activitywatch-write-token
+            - name: AW_READ_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: activitywatch-read-token
+            - name: NGINX_ENVSUBST_FILTER
+              value: ^AW_
+          image: nginx:alpine
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5602
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          name: bearer-proxy
+          ports:
+            - containerPort: 5602
+              name: write
+            - containerPort: 5603
+              name: read
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 5602
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          volumeMounts:
+            - mountPath: /etc/nginx/templates
+              name: bearer-proxy-config
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      securityContext:
+        fsGroup: 999
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: activitywatch-data
+        - configMap:
+            name: activitywatch-readonly-proxy
+          name: readonly-proxy-config
+        - configMap:
+            name: activitywatch-bearer-proxy
+          name: bearer-proxy-config
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: activitywatch-data
+  namespace: activitywatch
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: local-path-proxmox
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: activitywatch-readonly
+  namespace: activitywatch
+spec:
+  ports:
+    - name: http
+      port: 5600
+      targetPort: 5601
+  selector:
+    app.kubernetes.io/name: activitywatch
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    description: Bearer-gated ActivityWatch write endpoint (bearer-proxy sidecar, 5602), fronted by the public write HTTPRoute for desktop importers.
+  name: activitywatch-write
+  namespace: activitywatch
+spec:
+  ports:
+    - name: http
+      port: 5600
+      targetPort: 5602
+  selector:
+    app.kubernetes.io/name: activitywatch
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    description: Bearer-gated read-only ActivityWatch endpoint (bearer-proxy sidecar, 5603), fronted by the public read HTTPRoute for the Haku agent.
+  name: activitywatch-read
+  namespace: activitywatch
+spec:
+  ports:
+    - name: http
+      port: 5600
+      targetPort: 5603
+  selector:
+    app.kubernetes.io/name: activitywatch
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: activitywatch-write
+  namespace: activitywatch
+spec:
+  hostnames:
+    - activitywatch-write.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: activitywatch-write
+          port: 5600
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: activitywatch-read
+  namespace: activitywatch
+spec:
+  hostnames:
+    - activitywatch-read.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: activitywatch-read
+          port: 5600
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: activitywatch
+  namespace: activitywatch
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: activitywatch
+  ingress:
+    - fromEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "5600"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: server
+            app.kubernetes.io/name: authentik
+            k8s:io.kubernetes.pod.namespace: authentik
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "5602"
+              protocol: TCP
+            - port: "5603"
+              protocol: TCP

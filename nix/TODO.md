@@ -79,7 +79,7 @@ wrappers under `nix/home/claude_code/` are the last consumers naming models outs
 roster and Terraform pins; `haku-console` is already covered by
 `test_console_codex_harnesses_use_oai_responses_wire_models`.
 
-Two ways to close it: add the wrappers to `//cluster/k8s/litellm/app:test_litellm_config`'s
+Two ways to close it: add the wrappers to `//cluster/cdk8s/litellm:test_config`'s
 `data` and parse `model`/`haikuModel` out, asserting both are served by `proxy-config.yaml`
 and admitted by the consuming key (cheap, but introduces nix parsing from a Python test); or
 generate a JSON roster from `cluster/cdk8s/model_rosters.py` that the wrappers

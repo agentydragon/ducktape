@@ -1,6 +1,5 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - source.yaml
+  - gaffer-private-source.k8s.yaml
   - bridge.yaml
-  - image-update-automation.yaml

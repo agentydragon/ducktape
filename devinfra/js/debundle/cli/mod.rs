@@ -110,26 +110,10 @@ enum DebundleCommand {
     Scc(SccArgs),
     /// List the module-quotient neighbors of a binding's owner.
     Cluster(ClusterArgs),
-    /// Resolve an owner-graph EDB with the in-process Datalog solver and report
-    /// name-pin categoricity + the derived alias count. With `--check`, exit
-    /// non-zero unless name-pin resolution is total + categorical (the
-    /// bootstrap-precondition shadow gate).
-    #[command(name = "selector-solve")]
-    SelectorSolve(SelectorSolveArgs),
     /// Spec-wide queries (e.g. `spec stats`).
     Spec(SpecNs),
     /// Query the realizability gate's rejected SCCs (list / describe / cut).
     Gate(GateArgs),
-}
-
-/// Args for `debundle selector-solve`.
-#[derive(Debug, ClapArgs)]
-pub struct SelectorSolveArgs {
-    /// Owner-graph JSON (the `selector_solve` EDB).
-    owner_graph: PathBuf,
-    /// Exit non-zero unless name-pin resolution is total + categorical.
-    #[arg(long)]
-    check: bool,
 }
 
 /// Args for `debundle spec ...`.
@@ -199,14 +183,16 @@ enum SpecNsCommand {
     /// rewritten holes, and skip reasons.
     #[command(name = "synthesize-selectors")]
     SynthesizeSelectors(SelectorCodemodArgs),
-    /// Resolve a candidate `source_match` against a chunk and report what it
-    /// binds: the matching items, whether it pins a unique target, and (unless
-    /// `--no-slack`) which kept values could be holed further without losing
-    /// uniqueness. The interactive prove-gate probe for selector authoring.
+    /// Resolve a candidate `source_match` alone against a chunk and report
+    /// its outcome and (unless `--no-slack`) which kept values could be
+    /// holed further without losing uniqueness. The interactive prove-gate
+    /// probe for selector authoring.
     ///
-    /// Reports `unique` and `matches[]` (`{body_index, binding_name}`
-    /// for every top-level statement hit). Candidate selectors use the
-    /// public alpha-equivalent identifier policy.
+    /// Reports one selector outcome record in the `{counts, outcomes}`
+    /// format `spec validate` uses — `resolved` when it pins a unique
+    /// target, else `no_match`, `ambiguous` with its candidates,
+    /// `too_broad` or `invalid` — plus `slack` when resolved. Candidate
+    /// selectors use the public alpha-equivalent identifier policy.
     #[command(name = "match-selector")]
     MatchSelector(MatchSelectorArgs),
     /// Keep-going selector validation: report every selector problem
@@ -219,9 +205,10 @@ enum SpecNsCommand {
     /// run it via the Bazel `:debundle` target, not the standalone
     /// binary. `--fail-fast` stops at the first problem. The source-only
     /// preflight mode (`--modules` plus `--source-file` or
-    /// `--source-root --chunk`) instead resolves module source selectors
-    /// against one chunk in-process — a fast preflight for sharding
-    /// selector repairs, without the global selector-assignment backend.
+    /// `--source-root --chunk`) instead resolves the module files jointly
+    /// against one chunk, with the same resolve as `run` (and its CP-SAT
+    /// sidecar), but without the pipeline build — a fast preflight for
+    /// sharding selector repairs.
     Validate(ValidateArgs),
 }
 
@@ -389,8 +376,8 @@ pub struct MatchSelectorArgs {
     #[arg(long = "target-binding")]
     pub target_binding: Option<String>,
 
-    /// Skip holing-slack analysis (report matches only). Slack is computed by
-    /// default when the selector pins a unique target.
+    /// Skip holing-slack analysis (report the outcome only). Slack is
+    /// computed by default when the selector pins a unique target.
     #[arg(long = "no-slack")]
     pub no_slack: bool,
 
@@ -827,7 +814,6 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         DebundleCommand::ShowSource(args) => run_show_source(args),
         DebundleCommand::Scc(args) => run_scc(args),
         DebundleCommand::Cluster(args) => run_cluster(args),
-        DebundleCommand::SelectorSolve(args) => run_selector_solve(args),
         DebundleCommand::Spec(args) => match args.command {
             SpecNsCommand::Stats(s) => run_spec_stats_cmd(s),
             SpecNsCommand::SelectorDebt(s) => run_selector_debt_cmd(s),
@@ -1022,41 +1008,6 @@ fn run_show_source(args: ShowSourceArgs) -> Result<()> {
         render_source_slice_text,
         "writing show-source output",
     )
-}
-
-/// Shadow runner: resolve an owner-graph EDB with the in-process Datalog solver
-/// and print name-pin categoricity + the derived `aliases` count. With `--check`
-/// it is the bootstrap-precondition gate (errors out if name-pin resolution is
-/// not total + categorical).
-fn run_selector_solve(args: SelectorSolveArgs) -> Result<()> {
-    let json = std::fs::read_to_string(&args.owner_graph)
-        .with_context(|| format!("reading {}", args.owner_graph.display()))?;
-    let r = selector_solve::solve_str(&json)
-        .with_context(|| format!("parsing owner graph {}", args.owner_graph.display()))?;
-    println!("EDB: declares={} uses={}", r.edb_declares, r.edb_uses);
-    println!(
-        "name-pin: bindings={} unique={} ambiguous={}",
-        r.total(),
-        r.unique(),
-        r.ambiguous()
-    );
-    println!("aliases (var-decl eager_use): {}", r.aliases.len());
-
-    if args.check {
-        let rep = r.shadow_check();
-        if !rep.ok() {
-            let shown = &rep.ambiguous[..rep.ambiguous.len().min(10)];
-            bail!(
-                "shadow: FAIL — {} ambiguous binding name(s) block the bootstrap: {shown:?}",
-                rep.ambiguous.len(),
-            );
-        }
-        println!(
-            "shadow: OK — name-pin resolution total + categorical ({} bindings)",
-            rep.total
-        );
-    }
-    Ok(())
 }
 
 fn run_bindings_list_cmd(args: BindingsListNsArgs) -> Result<()> {
@@ -1659,7 +1610,6 @@ mod tests {
         js_ast::with_swc_globals(|| {
             let args = parsed_run_args(&["debundle", "run", "--spec", "spec.yaml", "--fail-fast"]);
             assert!(args.fail_fast);
-            assert!(!args.keep_going);
         });
     }
 

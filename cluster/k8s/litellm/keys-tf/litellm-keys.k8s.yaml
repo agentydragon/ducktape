@@ -78,8 +78,8 @@ spec:
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
           - ollama/olm-chat/gemma4-31b-it-q8_0-128k
           - anthropic-api/ant-messages/claude-haiku-4-5-20251001
-          - chatgpt/ant-messages/gpt-5.6-luna
-          - chatgpt/oai-responses/gpt-5.6-luna
+          - chatgpt/ant-messages/gpt-6-luna
+          - chatgpt/oai-responses/gpt-6-luna
         claude_client_models:
           - anthropic-max20/ant-messages/claude-opus-5
           - anthropic-max20/ant-messages/claude-sonnet-5
@@ -87,6 +87,8 @@ spec:
           - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
         codex_client_models:
           - chatgpt/ant-messages/gpt-6-astra
+          - chatgpt/ant-messages/gpt-6-sol
+          - chatgpt/ant-messages/gpt-6-luna
           - chatgpt/ant-messages/gpt-5.4
           - chatgpt/ant-messages/gpt-5.5
           - chatgpt/ant-messages/gpt-5.6-sol
@@ -102,6 +104,8 @@ spec:
           - google/goog-generate/gemini-3.5-flash-lite
         oai_lane_models:
           - chatgpt/oai-responses/gpt-6-astra
+          - chatgpt/oai-responses/gpt-6-sol
+          - chatgpt/oai-responses/gpt-6-luna
           - chatgpt/oai-responses/gpt-5.4
           - chatgpt/oai-responses/gpt-5.5
           - chatgpt/oai-responses/gpt-5.6-sol

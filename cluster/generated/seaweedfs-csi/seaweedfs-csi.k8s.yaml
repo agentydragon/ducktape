@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: privileged
+  name: seaweedfs-csi-system
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: seaweedfs-csi-driver
+  namespace: flux-system
+spec:
+  ignore: |
+    /*
+    !/deploy/helm/seaweedfs-csi-driver
+  interval: 24h
+  ref:
+    tag: v1.4.31
+  url: https://github.com/seaweedfs/seaweedfs-csi-driver
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: seaweedfs-csi-driver
+  namespace: seaweedfs-csi-system
+spec:
+  chart:
+    spec:
+      chart: deploy/helm/seaweedfs-csi-driver
+      sourceRef:
+        kind: GitRepository
+        name: seaweedfs-csi-driver
+        namespace: flux-system
+  install:
+    remediation:
+      retries: 3
+  interval: 30m
+  upgrade:
+    disableWait: true
+    remediation:
+      retries: 3
+  values:
+    concurrentWriters: 64
+    controller:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - hil-ovh
+      replicas: 1
+      resources:
+        limits:
+          memory: 256Mi
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+    mountService:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - hil-ovh
+      enabled: true
+      image: chrislusf/seaweedfs-mount
+      resources:
+        limits:
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 640Mi
+      tag: v1.4.30
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+    node:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - hil-ovh
+      enabled: true
+      resources:
+        limits:
+          memory: 256Mi
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+    seaweedfsCsiPlugin:
+      image: chrislusf/seaweedfs-csi-driver
+      tag: v1.4.30
+    seaweedfsFiler: seaweedfs-filer.seaweedfs.svc.cluster.local:8888
+    storageClassName: ""
+    topologyKeys:
+      - topology.kubernetes.io/zone
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  annotations:
+    description: SeaweedFS CSI (RWX, distributed), media-blind (HDD bulk). Default for app data volumes. See sc-seaweedfs-ovh-ssd.yaml for the SSD-pinned tier.
+  name: seaweedfs-ovh
+allowVolumeExpansion: true
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - hil-ovh
+provisioner: seaweedfs-csi-driver
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  annotations:
+    description: SeaweedFS CSI (RWX, distributed) pinned to the SSD volume tier. diskType=ssd maps to `weed mount -disk=ssd`, so volumes land only on ssd-tagged volume servers (the OVH NVMe topology group). Reserved for fsync/latency-critical RWX data (Forgejo git). The default seaweedfs-ovh class is media-blind (HDD bulk). See cluster/docs/plans/ovh_storage_tiering.md.
+  name: seaweedfs-ovh-ssd
+allowVolumeExpansion: true
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - hil-ovh
+parameters:
+  diskType: ssd
+  replication: "001"
+provisioner: seaweedfs-csi-driver
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer

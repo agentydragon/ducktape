@@ -8,7 +8,6 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import DeploymentStrategy
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
-    KustomizationSpec,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
@@ -26,6 +25,7 @@ from cluster.cdk8s.agentplane.actions_testing_fixtures import (
 )
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import TESTING_NAMESPACE, EgressCredentials
+from cluster.cdk8s.agentplane.egress_testing_credentials import add_testing_egress_credentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
@@ -35,7 +35,6 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 
@@ -118,10 +117,9 @@ ENV = Environment(
         "Actions fixtures, app, runner template, and operator RBAC."
     ),
     extra_resources=(_LITELLM_CREDENTIALS_DIR,),
-    include_action_policy_rule=True,
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     app_config={**testing_config.config(), "action_federation": _ACTION_FEDERATION},
-    db=DbProps(instances=1, pod_anti_affinity=False),
+    db=DbProps(instances=1),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(ca_secret_name="agentplane-testing-egress-ca", credentials_namespace=TESTING_NAMESPACE),
     app=AppProps(hostname=_HOSTNAME, oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
@@ -150,6 +148,7 @@ def chart(app: App) -> Chart:
     EgressCredentials(
         chart, "egress-credentials", namespace=ENV.egress.credentials_namespace, proxy_namespace=ENV.namespace
     )
+    add_testing_egress_credentials(chart, credentials_namespace=ENV.egress.credentials_namespace)
     return chart
 
 
@@ -168,32 +167,27 @@ def agentplane_testing(
     return flux_kustomization(
         flux_chart,
         ENV.namespace,
+        artifact,
         description=ENV.flux_description,
-        spec=KustomizationSpec(
-            retry_interval="1m",
-            interval="10m",
-            timeout="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            # This one Kustomization owns the CNPG Cluster's PVCs; pruning on
-            # deletion would take the database with them.
-            deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-            health_checks=health_checks,
-            health_check_exprs=[
-                KustomizationSpecHealthCheckExprs(
-                    api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
-                )
-            ],
-            decryption=sops_decryption(ENV.extra_resources),
-            source_ref=artifact_source_ref(artifact),
-            depends_on=flux_kustomization_depends_on_many(
-                agentplane_crds,
-                agent_sandbox_controller,
-                cert_manager_environment,
-                cert_manager_trust,
-                claude_rbac,
-                cnpg,
-                external_secrets_config,
-            ),
+        wait=None,
+        timeout="10m",
+        # This one Kustomization owns the CNPG Cluster's PVCs; pruning on
+        # deletion would take the database with them.
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        health_checks=health_checks,
+        health_check_exprs=[
+            KustomizationSpecHealthCheckExprs(
+                api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
+            )
+        ],
+        decryption=sops_decryption(ENV.extra_resources),
+        depends_on=flux_kustomization_depends_on_many(
+            agentplane_crds,
+            agent_sandbox_controller,
+            cert_manager_environment,
+            cert_manager_trust,
+            claude_rbac,
+            cnpg,
+            external_secrets_config,
         ),
     )

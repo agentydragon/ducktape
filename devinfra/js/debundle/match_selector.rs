@@ -27,18 +27,17 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use analysis::{AnalysisHints, ChunkId, analyze_chunk, build_owner_graph};
 use anyhow::{Context, Result, bail};
-use selector_ir::{ClaimOutcome, ResolvedClaim, SelectorFactStore};
-use selector_ir_lowering::{MemberSelectorLoweringContext, lower_member_selector};
-use selector_runtime::solve_global_selector_program;
+use selector_outcome::{Outcome, SelectorOutcome, SelectorOutcomeReport};
+use selector_resolve::{Member, MemberSelector, SpecModule};
 use serde::Serialize;
+use source_match::ParsedSourceMatchSelector;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
     EXPR_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, hole_name_for,
     labeled_hole_name_for,
 };
-use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchIdentifierMode};
+use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
     ArrowExpr, ArrowFunctionBody, AssignPatProp, BindingIdent, BlockStmt, CallExpr, Class,
@@ -61,14 +60,6 @@ pub struct MatchSelectorConfig {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct MatchSelectorMatch {
-    /// Top-level statement index the selector matched in the chunk.
-    pub body_index: usize,
-    /// Runtime (minified) name of the binding the selector would claim.
-    pub binding_name: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
 pub struct SlackRelaxation {
     /// A strictly looser selector — the input with one kept thing holed — that
     /// still resolves to the same unique target.
@@ -77,10 +68,9 @@ pub struct SlackRelaxation {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MatchSelectorReport {
-    /// The headline verdict: exactly one item matched, so the selector is a
-    /// valid (unique) pin. Zero or several matches both make it unusable.
-    pub unique: bool,
-    pub matches: Vec<MatchSelectorMatch>,
+    /// The probe's one outcome; `resolved` means the selector is a valid pin.
+    #[serde(flatten)]
+    pub outcomes: SelectorOutcomeReport,
     /// Looser variants that still pin the same unique target — a non-empty list
     /// flags a likely over-pin. `None` when the selector is not unique (slack is
     /// undefined) or `--no-slack` skipped it.
@@ -115,32 +105,42 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
         config.source_root.as_deref(),
         config.chunk.as_deref(),
     )?;
-    let probe = SourceSelectorProbe::from_source_file(&source_file)?;
-    let resolve = |match_source: String| -> Result<Vec<SourceSelectorMatch>> {
+    let source = std::fs::read_to_string(&source_file)
+        .with_context(|| format!("reading source file {}", source_file.display()))?;
+    let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
+        .with_context(|| format!("parsing source file {}", source_file.display()))?;
+    let chunk = selector_resolve::Chunk::analyze("<match-selector>", &parsed.module);
+    // The probe is a one-entity spec: its outcome is the resolve's.
+    let resolve = |match_source: String| -> Result<Outcome> {
         let selector = AnonymousStatementSelector {
             match_source,
             identifiers: SourceMatchIdentifierMode::AlphaAll,
             target_binding: config.target_binding.clone(),
         };
-        probe.resolve_source_match(&selector, "<match-selector>")
+        let probe = SpecModule {
+            path: "<match-selector>".to_string(),
+            members: vec![Member {
+                export_name: "<match-selector>".to_string(),
+                selector: MemberSelector::SourceMatch(ParsedSourceMatchSelector::parse(
+                    "<match-selector>",
+                    "source_match",
+                    "<source_match needle in <match-selector>>".to_string(),
+                    &selector,
+                    "source_match",
+                )?),
+            }],
+            anonymous_statements: Vec::new(),
+        };
+        let [resolved] = <[_; 1]>::try_from(chunk.resolve(&[probe])?.outcomes)
+            .map_err(|outcomes| anyhow::anyhow!("a one-entity resolve returned {outcomes:?}"))?;
+        Ok(resolved.outcome.outcome)
     };
 
-    let baseline = resolve(config.match_source.clone())?;
-    let mut matches: Vec<MatchSelectorMatch> = baseline
-        .iter()
-        .map(|matched| MatchSelectorMatch {
-            body_index: matched.body_idx,
-            binding_name: matched.binding_name.clone(),
-        })
-        .collect();
-    matches.sort_by_key(|matched| matched.body_index);
-
-    let unique = matches.len() == 1;
-    let slack = match (unique, config.check_slack) {
-        (true, true) => Some(compute_slack(
+    let outcome = resolve(config.match_source.clone())?;
+    let slack = match (&outcome, config.check_slack) {
+        (Outcome::Resolved { .. }, true) => Some(compute_slack(
             &config.match_source,
-            baseline[0].body_idx,
-            &baseline[0].binding_name,
+            &outcome,
             config.target_binding.as_deref(),
             &resolve,
         )?),
@@ -148,147 +148,31 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
     };
 
     Ok(MatchSelectorReport {
-        unique,
-        matches,
+        outcomes: SelectorOutcomeReport {
+            outcomes: vec![SelectorOutcome {
+                chunk: config
+                    .chunk
+                    .as_deref()
+                    .unwrap_or(&source_file)
+                    .display()
+                    .to_string(),
+                placement: None,
+                target_binding: config.target_binding.clone(),
+                selector_preview: Some(source_match::source_match_preview(&config.match_source)),
+                outcome,
+            }],
+        },
         slack,
     })
 }
 
-pub(crate) struct SourceSelectorProbe {
-    module: Module,
-    facts: SelectorFactStore,
-}
-
-impl SourceSelectorProbe {
-    pub(crate) fn from_source_file(source_file: &Path) -> Result<Self> {
-        let source = std::fs::read_to_string(source_file)
-            .with_context(|| format!("reading source file {}", source_file.display()))?;
-        let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
-            .with_context(|| format!("parsing source file {}", source_file.display()))?;
-        let facts = selector_fact_store_for_module(&parsed.module)
-            .with_context(|| format!("building selector facts for {}", source_file.display()))?;
-        Ok(Self {
-            module: parsed.module,
-            facts,
-        })
-    }
-
-    pub(crate) fn resolve_source_match(
-        &self,
-        selector: &AnonymousStatementSelector,
-        logical_module: &str,
-    ) -> Result<Vec<SourceSelectorMatch>> {
-        resolve_match_selector(&self.facts, &self.module.body, selector, logical_module)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SourceSelectorMatch {
-    pub body_idx: usize,
-    pub binding_name: String,
-}
-
-fn resolve_match_selector(
-    facts: &SelectorFactStore,
-    module_body: &[ModuleItem],
-    selector: &AnonymousStatementSelector,
-    logical_module: &str,
-) -> Result<Vec<SourceSelectorMatch>> {
-    let selector = MemberSelectorSpec::SourceMatch(selector.clone());
-    let lowered = lower_member_selector(
-        &MemberSelectorLoweringContext::new(ChunkId(0), logical_module),
-        "candidate",
-        &selector,
-    )
-    .with_context(|| "lowering match-selector source_match to selector IR")?;
-    let result = solve_global_selector_program(&lowered.program, facts)
-        .with_context(|| "solving match-selector source_match selector IR")?;
-    let outcome = result
-        .outcome_for(lowered.target)
-        .with_context(|| "selector solver did not return the match-selector target")?;
-    match outcome {
-        ClaimOutcome::Unique { claim } => Ok(vec![solver_match_from_claim(claim, module_body)?]),
-        ClaimOutcome::Ambiguous { candidates } => candidates
-            .iter()
-            .map(|claim| solver_match_from_claim(claim, module_body))
-            .collect::<Result<Vec<_>>>(),
-        ClaimOutcome::NoMatch => Ok(Vec::new()),
-        ClaimOutcome::Unsupported { message } => {
-            bail!("match-selector source_match is unsupported by selector IR solver: {message}")
-        }
-        ClaimOutcome::Duplicate {
-            owner,
-            conflicting_targets,
-        } => bail!(
-            "match-selector source_match produced a duplicate claim for owner {owner:?} across \
-             {conflicting_targets:?}",
-        ),
-    }
-}
-
-fn solver_match_from_claim(
-    claim: &ResolvedClaim,
-    module_body: &[ModuleItem],
-) -> Result<SourceSelectorMatch> {
-    let body_idx = body_index_for_statement_ordinal(module_body, claim.statement_ordinal.0)
-        .with_context(|| {
-            format!(
-                "match-selector source_match matched statement ordinal {} past the source body",
-                claim.statement_ordinal.0
-            )
-        })?;
-    let binding_name = claim.binding.clone().with_context(|| {
-        format!(
-            "match-selector source_match matched body index {body_idx} but did not project a binding; \
-             use --target-binding or a single-binding selector",
-        )
-    })?;
-    Ok(SourceSelectorMatch {
-        body_idx,
-        binding_name,
-    })
-}
-
-fn body_index_for_statement_ordinal(
-    body: &[ModuleItem],
-    statement_ordinal: usize,
-) -> Option<usize> {
-    let mut running = 0usize;
-    for (idx, item) in body.iter().enumerate() {
-        let count = js_ast::post_split_top_level_count(item);
-        if statement_ordinal < running + count {
-            return Some(idx);
-        }
-        running += count;
-    }
-    None
-}
-
-fn selector_fact_store_for_module(module: &Module) -> Result<SelectorFactStore> {
-    let analysis = analyze_chunk(module, &AnalysisHints::default(), None, |_| None);
-    let owner_graph = build_owner_graph(&analysis.facts)?;
-    let chunk_id = ChunkId(0);
-    let mut facts = SelectorFactStore::default();
-    facts.extend_chunk_facts(chunk_id, &chunk_facts::extract_facts(module).map_err(
-        |unsupported| {
-            anyhow::anyhow!(
-                "selector AST fact extraction failed at {}; match-selector needs a complete AST EDB",
-                unsupported.context
-            )
-        },
-    )?);
-    facts.extend_owner_graph_facts(chunk_id, &owner_graph);
-    Ok(facts)
-}
-
 /// Try every single-edit relaxation of the selector; keep the ones that still
-/// resolve to the same unique `(body_idx, binding_name)` target.
+/// resolve to the same `resolved` outcome.
 fn compute_slack(
     match_source: &str,
-    target_body_idx: usize,
-    target_binding_name: &str,
+    resolved: &Outcome,
     selector_target_binding: Option<&str>,
-    resolve: &impl Fn(String) -> Result<Vec<SourceSelectorMatch>>,
+    resolve: &impl Fn(String) -> Result<Outcome>,
 ) -> Result<Vec<SlackRelaxation>> {
     let mut selector_module =
         js_ast::parse_js_module_consuming("<match-selector slack>", match_source.to_string())
@@ -304,10 +188,7 @@ fn compute_slack(
         if relaxed_match == baseline_emit || !seen.insert(relaxed_match.clone()) {
             continue;
         }
-        if let [only] = resolve(relaxed_match.clone())?.as_slice()
-            && only.body_idx == target_body_idx
-            && only.binding_name == target_binding_name
-        {
+        if resolve(relaxed_match.clone())? == *resolved {
             slack.push(SlackRelaxation { relaxed_match });
         }
     }
@@ -715,18 +596,8 @@ fn class_member_hole() -> ClassMember {
 
 pub fn render_match_selector_text(report: &MatchSelectorReport, out: &mut String) {
     use std::fmt::Write;
-    let verdict = match report.matches.len() {
-        1 => "unique",
-        0 => "no-match",
-        _ => "ambiguous",
-    };
-    let _ = writeln!(out, "{verdict} ({} match(es))", report.matches.len());
-    for matched in &report.matches {
-        let _ = writeln!(
-            out,
-            "  body[{}] -> {}",
-            matched.body_index, matched.binding_name
-        );
+    for outcome in &report.outcomes.outcomes {
+        let _ = writeln!(out, "{}", outcome.render_line());
     }
     match &report.slack {
         None => {}

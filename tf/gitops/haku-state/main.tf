@@ -102,17 +102,12 @@ resource "forgejo_collaborator" "claude" {
 #     placeholder.
 #   - flux-system: basic auth for the haku-state GitRepository, which the
 #     haku-state-workloads Kustomization reconciles into haku-sandbox under a
-#     constrained SA (cluster/k8s/haku/workloads). Read-only pull — Flux never
+#     constrained SA (cluster/generated/haku/workloads). Read-only pull — Flux never
 #     pushes; the haku user is just the only principal on the repo.
-#   - haku-runtime-sandbox: the Console-owned Claude runner writes it into ~/.netrc and
-#     checks haku-state out into its workspace, so that session has Haku's manual. Same
-#     credential Haku already holds in haku-sandbox, not a second one: this is the same
-#     agent on a different runtime, and a per-runtime Forgejo account would fragment the
-#     repo's history by which harness happened to be running.
 #   - agentplane-index: the haku-state index worker keeps its own bare clone of the repo
 #     and fetches with these credentials (cluster/k8s/agentplane-index). Read-only pull.
-# Agentplane staging reads only the password through ESO, with an exact-name source
-# grant in cluster/cdk8s/agentplane/egress_credentials.py; it is not a Reflector target.
+# Agentplane staging reads only the password through ESO, with an exact-name source grant
+# in cluster/cdk8s/agentplane/egress_staging_credentials.py; it is not a Reflector target.
 # The canonical copy serves in-cluster scan runs / the self-hosted worker + the
 # haku-ui backend (operator clicks/feedback → Forgejo writes).
 resource "kubernetes_secret" "haku_forgejo_git" {
@@ -121,9 +116,9 @@ resource "kubernetes_secret" "haku_forgejo_git" {
     namespace = "haku-sandbox"
     annotations = {
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-egress-proxy,flux-system,haku-runtime-sandbox,agentplane-index"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-egress-proxy,flux-system,agentplane-index"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-egress-proxy,flux-system,haku-runtime-sandbox,agentplane-index"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-egress-proxy,flux-system,agentplane-index"
     }
   }
 
@@ -367,7 +362,7 @@ resource "kubernetes_secret" "forgejo_webhook_token" {
 # `package` event catches the CI image landing (registry scan), the `push` event catches both
 # ImageUpdateAutomation's tag-bump commit and ordinary haku-state pushes (GitRepository fetch →
 # workloads apply). The receiver is `generic` and force-reconciles all its listed resources on
-# any hit (see cluster/k8s/haku/ui-image-webhook/receiver.yaml), so both events share one hook
+# any hit (see cluster/cdk8s/haku/ui_image_webhook.py), so both events share one hook
 # URL. The generic receiver doesn't validate a signature, so the unguessable sha256(token) path
 # is the secret — no `secret` in the webhook config.
 #

@@ -1,0 +1,49 @@
+# gazelle:resolve py kubevirt_kubevirt_crds //cluster/cdk8s/crd_bindings/kubevirt:kubevirt
+# gazelle:resolve py kubevirt_cdi_crds //cluster/cdk8s/crd_bindings/kubevirt:cdi
+# gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/crd_bindings/kubevirt:virtualmachine
+# gazelle:resolve py kubevirt_storageprofile_crds //cluster/cdk8s/crd_bindings/kubevirt:storageprofile
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+cdk8s_import(
+    name = "kubevirt",
+    crd = "@kubevirt_operator_bundle//file",
+    crd_name = "kubevirts.kubevirt.io",
+    crd_version = "v1",
+    module_name = "kubevirt_kubevirt_crds",
+    module_path = "io/kubevirt",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "cdi",
+    crd = "@cdi_operator_bundle//file",
+    crd_name = "cdis.cdi.kubevirt.io",
+    crd_version = "v1beta1",
+    module_name = "kubevirt_cdi_crds",
+    module_path = "io/kubevirt/cdi",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "virtualmachine",
+    crd = "@kubevirt_crd_validations//file",
+    crd_go_key = "virtualmachine",
+    crd_name = "virtualmachines.kubevirt.io",
+    crd_version = "v1",
+    crd_wrap_kind = "VirtualMachine",
+    module_name = "kubevirt_virtualmachine_crds",
+    module_path = "io/kubevirt",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "storageprofile",
+    crd = "@cdi_crds_generated//file",
+    crd_go_key = "storageprofile",
+    crd_name = "storageprofiles.cdi.kubevirt.io",
+    crd_version = "v1beta1",
+    module_name = "kubevirt_storageprofile_crds",
+    module_path = "io/kubevirt/cdi",
+    visibility = ["//visibility:public"],
+)

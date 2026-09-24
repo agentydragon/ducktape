@@ -3,54 +3,6 @@
 Project-level TODOs for the console. Design rationale lives in `README.md`; this is the
 actionable checklist. Remove entries once done.
 
-## Extend the kubectl-passthrough redundancy check past public-coder
-
-`kubectl_passthrough_redundancy_check` (`auto_approval_policies`, `type: kubernetes_passthrough`)
-auto-denies a `kubectl-passthrough-mcp` call when the caller's own Kubernetes SAR identity already
-covers it, redirecting the Agent to its direct path instead of the operator's broader passthrough
-credential. It's scoped to `public_coder_safe_reads` only. A hard auto-deny is only safe when the
-redirect target is reliably reachable — otherwise it's a denial with nowhere to go.
-
-`haku_v1` spans two contexts, and their _local_ kubectl setups are not equivalent:
-
-- **`haku-sandbox`** (Haku's own pod): kubelet-projected ServiceAccount token, talks straight to
-  `kubernetes.default.svc` in-cluster. No proxy, no OIDC round-trip. Robust.
-- **Claude Code web sessions enrolled as Haku** (e.g. "Claude 2"): a _different_ mechanism, not a
-  weaker copy of the sandbox's. `devinfra/k8s/kubeconfig.py` decrypts `secrets/haku-k8s-jwt.yaml`
-  (SOPS) — a JWT the `authentik-jwt-rotation` CronJob's `haku-k8s` entry mints biweekly via
-  Authentik `kubectl-sandbox-client-credentials` (`expected_group: haku`) — into a bearer-token
-  kubeconfig against `https://kubeapi.allegedly.works`. That route exists specifically because
-  Claude Code web's egress goes through Anthropic's L7 TLS-terminating MITM proxy, which kills
-  client-cert auth (see `cluster/k8s/kube-api-proxy/README.md`). So this path carries real
-  dependencies `haku-sandbox` doesn't: the Gateway/HTTPRoute, the Anthropic proxy round-tripping
-  cleanly, and a JWT that's only as fresh as the last biweekly mint. It authenticates as the OIDC
-  group `oidc-ksbx-groups:haku`, co-subjected onto the same RoleBindings as the sandbox's SA
-  (permissions match), but the transport can degrade independently. These sessions also pick
-  `kubectl` vs `kubectl-passthrough-mcp` per call at will — a passthrough call is not itself
-  evidence the direct path is down.
-
-But the redirect target doesn't have to be each context's own local kubectl. Both already
-share `sandbox_mcp.exec_sandbox` (policy `haku_sandbox_control`, unconditionally in `haku_v1`'s
-`any_of` — not something to add, already live). It runs bash inside a pod that uses the real
-`haku` ServiceAccount (`sandboxtemplate-haku.yaml`: `serviceAccountName: haku`, bound to
-`haku-sandbox-admin` — the same identity `haku-sandbox`'s own pod runs as), reached as an MCP call
-through the same `/mcp` connection every context already needs for anything else — so it doesn't
-depend on the caller's own local kubectl or JWT setup.
-
-What that path isn't is free. The first `exec_sandbox` call in a session provisions/adopts a
-`SandboxClaim` (`provisioning_timeout_seconds: 600` in the `haku-sandbox-mcp` app config), which
-can be slow or fail if the warm pool is exhausted — a heavier failure mode than "the redirect
-target is unreachable." And it grants arbitrary bash, not a kubectl-scoped
-surface: already reviewed and auto-approved for `haku_v1` as "≈ the direct `kubectl exec` Haku's
-SA can already run" (`config.yaml`, `sandbox-mcp` server comment), but the redirect trades a
-narrow SAR-scoped request for a broad one.
-
-Before extending the check to `haku_v1`: point its denial message at `exec_sandbox`, not "your own
-kubectl" (untrue for two of three contexts); and decide whether provisioning latency/failure is an
-acceptable cost for a hard auto-deny, or whether the check should confirm a live claim (or that one
-can be provisioned) before denying, rather than assuming reachability the way it can for a
-same-cluster ServiceAccount.
-
 ## Notification text per tool kind
 
 A push notification is titled with the tool's shared action description
@@ -152,41 +104,6 @@ specified in <../../plans/oauth_architecture.md>. The next product slices are:
 - **Per-Agent tool surface** — derive request-time `list_tools` from the verified binding and
   policy, with `tools/list_changed` on policy edits. Do not key authorization directly on an
   unverified DCR `client_id`.
-
-## Serve a last-known tool catalog for a degraded server
-
-A degraded server reports no tools at all, so an agent can see that `home-assistant` exists, see
-exactly why it is unreachable, and still not learn a single tool name — even though the console
-reflected that catalog successfully minutes earlier. Connection state and catalog knowledge are
-orthogonal: a tool list is _what this server has_, not _may this caller reach it right now_.
-Operator decisions already taken (2026-08-10):
-
-- **Status reads only.** `get_mcp_server_status` may serve a stale catalog, explicitly marked with
-  when it was reflected. `tools/list` must keep contributing nothing for a degraded server —
-  discovery deliberately fails closed once an Operator disconnects, and handing back
-  callable-looking proxy tools would reverse that. Knowing a name is not authorization: execution
-  re-resolves credentials and still fails.
-- **Persisted in Postgres**, not in the reflection cache. Two reasons, both load-bearing:
-  - The cache key is `(server_id, config_fingerprint, credential_fingerprint)` and that third
-    component _is_ the fail-closed property (see `mcp_reflection_cache`'s module docstring). A
-    last-known lookup cannot use it, so this needs its own key — scope it per
-    `(operator_id, server_id, config_fingerprint)` so one Operator's tool list never surfaces for
-    another, since upstreams may vary tools by account.
-  - The cache is per-replica, in-memory, and `_prune` drops entries at expiry (60s default), so
-    there is no long-term memory to serve and a rollout would empty it anyway. The outage that
-    motivated this ran three days.
-
-Two traps for whoever picks this up:
-
-- **The failure that motivated this never reaches the cache.** `home-assistant` was
-  `failure_stage: credential_resolution`, and `metadata_for_operator` returns `DegradedReflection`
-  before it ever calls the dispatcher. Only `tool_discovery` failures get that far, so the
-  last-known lookup belongs in `get_mcp_server_status`, above the dispatcher — not inside
-  `McpServerDispatcher.metadata`.
-- **`_exposed_metadata` early-returns on `DegradedServerState`.** Stale tools must go through the
-  same projection, or a caller gets raw upstream schemas with no `approval_mode` and sends the
-  wrong payload shape to `call_mcp_tool` — the exact failure the exposed reflection exists to
-  prevent.
 
 ## Operator browser auth — parked remainders
 

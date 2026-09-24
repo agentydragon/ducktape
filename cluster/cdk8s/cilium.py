@@ -70,6 +70,11 @@ def network_policy(
 ) -> CiliumNetworkPolicy:
     if isinstance(selector, dict):
         selector = CiliumNetworkPolicySpecEndpointSelector(match_labels=selector)
+    # Cilium matches toFQDNs only against answers its DNS proxy saw, and the proxy sees only the
+    # queries a DNS rule covers. Without one, the toFQDNs rules admit nothing, and connections to
+    # those hosts time out instead of failing.
+    if egress is not None and any(rule.to_fqd_ns for rule in egress) and not any(map(_proxies_dns, egress)):
+        raise ValueError(f"toFQDNs egress needs a DNS rule, dns_egress(resolves=...), in the same policy: {id=}")
     return CiliumNetworkPolicy(
         scope,
         id,
@@ -81,6 +86,10 @@ def network_policy(
             egress_deny=list(egress_deny) if egress_deny is not None else None,
         ),
     )
+
+
+def _proxies_dns(rule: CiliumNetworkPolicySpecEgress) -> bool:
+    return any(port_rule.rules is not None and port_rule.rules.dns for port_rule in rule.to_ports or [])
 
 
 def _ingress_ports(ports: Sequence[int]) -> CiliumNetworkPolicySpecIngressToPorts:

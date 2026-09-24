@@ -1,4 +1,5 @@
 # gazelle:resolve py agent_sandbox_sandboxtemplate_crds //cluster/cdk8s/crd_bindings/agent_sandbox:sandboxtemplate
+# gazelle:resolve py agent_sandbox_sandboxwarmpool_crds //cluster/cdk8s/crd_bindings/agent_sandbox:sandboxwarmpool
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 
@@ -13,6 +14,18 @@ cdk8s_import(
     crd_version = "v1beta1",
     jsii_module_path = "io/x-k8s/agents/extensions",
     module_name = "agent_sandbox_sandboxtemplate_crds",
+    module_path = "io/x_k8s/agents/extensions",
+    visibility = ["//visibility:public"],
+)
+
+# Pinned to v1beta1 for the same reason as SandboxTemplate.
+cdk8s_import(
+    name = "sandboxwarmpool",
+    crd = "@agent_sandbox_release_bundle//file",
+    crd_name = "sandboxwarmpools.extensions.agents.x-k8s.io",
+    crd_version = "v1beta1",
+    jsii_module_path = "io/x-k8s/agents/extensions",
+    module_name = "agent_sandbox_sandboxwarmpool_crds",
     module_path = "io/x_k8s/agents/extensions",
     visibility = ["//visibility:public"],
 )

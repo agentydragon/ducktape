@@ -1,0 +1,324 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: airlock
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: |
+      { "containerPolicies": [ { "containerName": "*", "controlledValues": "RequestsOnly", "minAllowed": { "cpu": "100m", "memory": "128Mi" } } ] }
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+    name: airlock
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: airlock
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: airlock-session-secret
+  namespace: airlock
+spec:
+  allowRepeat: true
+  digits: 16
+  length: 64
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: airlock-session-secret
+  namespace: airlock
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: airlock-session-secret
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Orphan
+    immutable: true
+    name: airlock-session-secret
+    template:
+      data:
+        session-secret: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/name: airlock
+  name: airlock
+  namespace: airlock
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: server
+      app.kubernetes.io/name: airlock
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: server
+        app.kubernetes.io/name: airlock
+    spec:
+      containers:
+        - env:
+            - name: AIRLOCK_IMAGE_TAG
+              value: unset
+            - name: CONFIG_PATH
+              value: /etc/airlock/config.yaml
+            - name: AIRLOCK_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client-id
+                  name: airlock-oidc-config
+            - name: AIRLOCK_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client-secret
+                  name: airlock-oidc-config
+            - name: AIRLOCK_OIDC_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: session-secret
+                  name: airlock-session-secret
+            - name: OURA_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: oura-client-credentials
+            - name: OURA_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: oura-client-credentials
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: google-client-credentials
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: google-client-credentials
+            - name: GOOGLE_WRITE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: google-client-credentials
+            - name: GOOGLE_WRITE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: google-client-credentials
+            - name: BSC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: bsc-client-credentials
+            - name: BSC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: bsc-client-credentials
+          image: git.allegedly.works/ducktape-ci/airlock:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          name: airlock
+          ports:
+            - containerPort: 8765
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          volumeMounts:
+            - mountPath: /etc/airlock
+              name: config
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        fsGroup: 1000
+      serviceAccountName: airlock
+      volumes:
+        - configMap:
+            name: airlock-config
+          name: config
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: airlock
+  namespace: airlock
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: airlock-secret-writer
+  namespace: airlock
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - patch
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: airlock-secret-writer
+  namespace: airlock
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: airlock-secret-writer
+subjects:
+  - kind: ServiceAccount
+    name: airlock
+    namespace: airlock
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/name: airlock
+  name: airlock
+  namespace: airlock
+spec:
+  ports:
+    - name: http
+      port: 8765
+      protocol: TCP
+      targetPort: 8765
+  selector:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/name: airlock
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: airlock
+  namespace: airlock
+spec:
+  hostnames:
+    - airlock.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: airlock
+          port: 8765
+      timeouts:
+        backendRequest: 120s
+        request: 120s
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: airlock-ingress
+  namespace: airlock
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/component: server
+      app.kubernetes.io/name: airlock
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: google-access-token
+spec:
+  externalSecretSpec:
+    dataFrom:
+      - extract:
+          key: google-access-token
+    refreshInterval: 1m
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: kubernetes-airlock-secret-store
+    target:
+      name: google-access-token
+  namespaces:
+    - agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: google-write-access-token
+spec:
+  externalSecretSpec:
+    dataFrom:
+      - extract:
+          key: google-write-access-token
+    refreshInterval: 1m
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: kubernetes-airlock-secret-store
+    target:
+      name: google-write-access-token
+  namespaces:
+    - google-mcp

@@ -69,7 +69,7 @@ Source of truth: `secrets/haku-k8s-jwt.yaml` + kube-apiserver `AuthenticationCon
 
 Full Kubernetes CRUD in `haku-sandbox` only — an explicit resource allowlist with **no**
 `httproutes`/`gateways`; Kubernetes writes nowhere else.
-Source of truth: <../../cluster/k8s/haku/rbac/role.yaml>.
+Source of truth: <../../cluster/cdk8s/haku/rbac.py>.
 
 ### `cluster-diagnostics-reader` + `logs-configmaps-reader`
 
@@ -80,7 +80,7 @@ Source of truth: <../../cluster/k8s/agents/agent-rbac-base/README.md>.
 ### Kyverno `restrict-agent-gateway-routes`
 
 Agents cannot create public routes even if RBAC ever drifted.
-Source of truth: <../../cluster/k8s/kyverno/policies/restrict-agent-gateway-routes.yaml>.
+Source of truth: <../../cluster/cdk8s/kyverno/policies.py>.
 
 ### `haku-egress-proxy` egress fence
 
@@ -99,57 +99,6 @@ Operator-owned data sources are read-only by construction (Plaid RO SQL user,
 all-`.readonly` Google token); Haku-owned write credentials are separately scoped to the
 canonical hard-rule inventory.
 Source of truth: `haku-state` `SOUL.md` → _Hard boundaries_.
-
-### In-process `gmail` + `google_calendar` MCP servers
-
-Privileged Gmail reads/writes and Calendar event reads/creation reach Google only
-through haku-console, executing as the acting Operator's own Google account through
-separate `google_mail` and `google_calendar` grants, each with explicit least-privilege
-scopes and self-refresh in <../console/oauth/provider_connection.py>. Agent calls default to
-operator approval; the reviewed `haku_v1` policy auto-approves authenticated Agents for
-exposed read tools and bounded Gmail label mutations, while Calendar creation remains
-manual. Arguments are validated against the registered FastMCP schema, decision errors
-fail closed, and every evaluated Agent call remains in the ledger. The trusted console
-frontend may call the same tools directly as its DB-revalidated Operator session; those
-exact-Origin-gated calls resolve the configured downstream authentication in that
-Operator's context and deliberately create no tool-call row. The refresh tokens live
-only in the `haku-console` Postgres; Haku never holds them, and they are never reflected
-into `haku-sandbox`.
-Source of truth: <../console/auto_approval/>, <../../cluster/cdk8s/haku/console_config.py>,
-<../console/mcp_agent_auth.py>, <../console/mcp/tool_call_service.py>,
-<../console/tools/gmail.py>, <../console/tools/google_calendar.py>.
-
-### `kubectl-passthrough-mcp` server entry
-
-`auth: remote_server_oauth`, cluster-admin passthrough. Agent-requested cluster
-operations execute only after haku-console approval, with the approving Operator's own
-cluster-admin identity — never a standing Haku credential. A DB-revalidated Operator
-browser session may call the same `/mcp` tool directly with exact-Origin enforcement;
-that path treats trusted console code as the Operator and creates no approval/audit row.
-There is no narrower RBAC backstop underneath either path.
-Source of truth: <../../cluster/k8s/agents/kubectl-passthrough-mcp/>, <../console/README.md>.
-
-### `tana` server entry
-
-`auth: remote_server_oauth`. Tana reads (`search_nodes`, `read_node`, `get_children`, …)
-plus the idempotent `get_or_create_calendar_node` auto-approve for authenticated Agents
-under the console's reviewed policy; every other Tana tool (node edits, moves, deletes,
-tag creation) stays approval-gated, executing under the approving Operator's own linked
-Tana account. Supersedes the standalone `tana-mcp-ro` facade — no separate
-Deployment/secret/route.
-Source of truth: <../console/auto_approval/>, <../console/mcp_config.py>.
-
-### `grocy-sf` server entry
-
-`auth: remote_server_oauth`. Grocy reads (`stock_get`, `products_list`, …) auto-approve
-for authenticated Agents under the console's reviewed `grocy_reads` policy; every
-stock/shopping-list mutation stays approval-gated, executing under the approving
-Operator's own linked Grocy account. Supersedes Haku's dedicated read-only `haku` Grocy
-identity (`grocy-mcp-haku-sf` Authentik provider + JWT rotation) — that credential could
-never reach writes at all; console routing trades a server-side permission scope for an
-allowlist gate, in exchange for approval-gated write access every runtime can now reach.
-Source of truth: <../console/auto_approval/>, <../../cluster/cdk8s/haku/console_config.py>,
-<../console/mcp_config.py>.
 
 ### `sandbox` in-process server
 
@@ -198,7 +147,7 @@ Source of truth: `haku-state` `SOUL.md` → _Hard boundaries_.
 Single-user policy binding, operator-owned. Nobody but the signed-in operator reaches
 haku-ui, regardless of haku-state content — auth sits **in front of** the app, outside
 Haku's write scope.
-Source of truth: <../../cluster/k8s/authentik/proxy-routes/haku-ui-httproute.yaml>,
+Source of truth: <../../cluster/cdk8s/authentik/proxy_routes.py>,
 <../../cluster/k8s/authentik/app/blueprints/haku-ui-sso.yaml>.
 
 ### Console iframe containment
@@ -235,7 +184,7 @@ written to haku-state is genuine. Intra-namespace traffic (sandboxes→haku-ui,
 haku-ui→jupyter) flows freely: sandboxes run at Haku's own privilege and already hold
 its git credential, so this grants nothing they lack. `haku-console`, the privileged
 surface, lives outside the namespace and is untouched.
-Source of truth: <../../cluster/k8s/haku/namespace/networkpolicy.yaml>.
+Source of truth: <../../cluster/cdk8s/haku/namespace.py>.
 
 ### Audit trails
 
@@ -270,7 +219,7 @@ data-bearing third-party URL; no web-platform mechanism blocks that from outside
 **Silent subresource beacons (`fetch`/`<img>`/`sendBeacon`/WebSocket) to a third
 party** — **blocked by the operator-injected CSP** on the haku-ui `HTTPRoute`
 (`ResponseHeaderModifier` sets `connect-src 'self'`, `img-src 'self' data:`, … — the
-same mechanism <../../cluster/k8s/authentik/app/httproute.yaml> uses). Subresource loads
+same mechanism <../../cluster/cdk8s/authentik/app.py> uses on `auth.allegedly.works`). Subresource loads
 obey the _document's own_ CSP, which Haku serves — so the fence must be injected at the
 route, the only public door, where `set` overrides anything Haku's backend sends. The
 policy deliberately relaxes **execution**, not destinations (JupyterLab, served under
@@ -280,7 +229,7 @@ destination stays self/same-document, so the third-party beacon fence is unchang
 the accepted residual that a string-to-eval gadget in the SPA or a dependency would let
 rendered external text execute directly (no prompt-injection step, no git commit, no CSP
 tripwire) — bounded by the destination fence. The full decision rationale (operator,
-2026-08-01) lives in <../../cluster/k8s/authentik/proxy-routes/haku-ui-httproute.yaml>.
+2026-08-01) lives in <../../cluster/cdk8s/authentik/proxy_routes.py>.
 
 **WebRTC data channels to a third party (bypass `connect-src`)** — **open — accepted
 residual** (see Known gaps). The CSP3 `webrtc 'block'` directive is in the injected
@@ -325,10 +274,10 @@ bulk channels.
    Kyverno route denylist.
 2. Every credential for an operator-owned source reflected into `haku-sandbox` is read-only.
    A Haku-owned write credential must be scoped to its surface and named in the canonical base
-   hard-rule inventory; any other write capability requires its own closure-style server (per
-   the in-process `gmail` + `google_calendar` servers above) and an inventory update. In
-   particular, `haku-mail-token` may mutate only the contents of
-   Haku's `haku@allegedly.works` mailbox; it grants neither outbound mail nor server administration.
+   hard-rule inventory; any other write capability requires its own closure-style server (the
+   credential stays behind a console server entry, as with `kubectl-passthrough-mcp` above) and
+   an inventory update. In particular, `haku-mail-token` may mutate only the contents of Haku's
+   `haku@allegedly.works` mailbox; it grants neither outbound mail nor server administration.
 3. The console renders **no** Haku-authored content. No haku-state credential is reflected into
    the haku-console namespace while Recall indexing is disabled; the
    litmus test for console code: _does it hold a secret, perform a privileged action, or

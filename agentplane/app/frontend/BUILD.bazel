@@ -46,7 +46,9 @@ ts_library(
     deps = [
         ":client",
         ":operator_login",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
+        "//agentplane/protocol:command_pb",
     ],
 )
 
@@ -125,12 +127,23 @@ ts_library(
     ],
 )
 
+# actions_history.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "actions_history_css",
+    srcs = ["actions_history.css"],
+)
+
 ts_library(
     name = "actions_history",
-    srcs = ["actions_history.tsx"],
+    srcs = [
+        "actions_history.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":actions",
+        ":actions_history_css",
         ":client",
         ":json_view",
         "//:node_modules/@mantine/core",
@@ -554,11 +567,22 @@ ts_library(
     ],
 )
 
+# markdown.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "markdown_css",
+    srcs = ["markdown.css"],
+)
+
 ts_library(
     name = "markdown",
-    srcs = ["markdown.tsx"],
+    srcs = [
+        "markdown.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
+        ":markdown_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/dompurify",
         "//:node_modules/@types/react",
@@ -575,8 +599,7 @@ js_library(
     srcs = ["json_view.css"],
 )
 
-# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site
-# (actions.tsx, actions_history.tsx, sandbox_page.tsx) and by frame.tsx's raw view.
+# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site.
 ts_library(
     name = "json_view",
     srcs = [
@@ -657,14 +680,24 @@ ts_library(
 )
 
 ts_library(
+    name = "thread_sync",
+    srcs = ["thread_sync.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "thread_store",
     srcs = ["thread_store.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":thread_sync",
         "//:node_modules/@electric-sql/client",
-        "//:node_modules/@tanstack/electric-db-collection",
-        "//:node_modules/@tanstack/react-db",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
@@ -678,6 +711,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":thread_store",
+        ":thread_sync",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -725,21 +759,67 @@ ts_library(
     ],
 )
 
+# projected_session.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "projected_session_css",
+    srcs = ["projected_session.css"],
+)
+
+ts_library(
+    name = "history_rows",
+    srcs = ["history_rows.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_sync",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "history_rows_test",
+    testonly = True,
+    srcs = ["history_rows.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":history_rows",
+        ":thread_entity_fixture",
+        "//:node_modules/vitest",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "thread_entity_fixture",
+    testonly = True,
+    srcs = ["thread_entity_fixture.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_sync",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
 ts_library(
     name = "projected_session",
     srcs = [
         "projected_session.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
         "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
         ":chronological_debug",
         ":client",
+        ":history_rows",
+        ":json_view",
         ":live",
         ":local_commands",
         ":markdown",
+        ":projected_session_css",
         ":retained_disclosures",
-        ":thread_store",
+        ":thread_sync",
+        ":thread_title",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -751,14 +831,69 @@ ts_library(
     ],
 )
 
+# thread_title.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "thread_title_css",
+    srcs = ["thread_title.css"],
+)
+
+ts_library(
+    name = "thread_title",
+    srcs = [
+        "thread_title.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":thread_title_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "thread_title_test",
+    testonly = True,
+    srcs = ["thread_title.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":thread_title",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
 ts_library(
     name = "projected_session_test",
     testonly = True,
     srcs = ["projected_session.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
+        ":history_rows",
+        ":local_commands",
         ":projected_session",
+        ":retained_disclosures",
+        ":thread_entity_fixture",
+        ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/protocol:command_pb",
+        "//agentplane/protocol:event_log_pb",
+        "//agentplane/protocol:event_pb",
     ],
 )
 
@@ -799,6 +934,8 @@ ts_library(
         ":settings",
         ":shell_css",
         ":sidebar",
+        ":thread_store",
+        ":thread_sync",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -863,6 +1000,7 @@ vitest_bin.vitest_test(
         ":connections_test",
         ":consent_test",
         ":frame_test",
+        ":history_rows_test",
         ":json_view_test",
         ":launch_presets_test",
         ":local_commands_test",
@@ -876,6 +1014,7 @@ vitest_bin.vitest_test(
         ":sidebar_test",
         ":thread_groups_test",
         ":thread_store_test",
+        ":thread_title_test",
         "//:node_modules/happy-dom",
         "//:node_modules/vitest",
     ],

@@ -91,26 +91,33 @@ class CodexAdapter(HarnessAdapter):
     async def submit(self, command_id: str, text: str) -> None:
         selected_change = await self._take_pending_model_change()
         selected_model = selected_change[1] if selected_change is not None else self.session.record.model
-        receipt = await self.harness.start_turn(thread_id=self._thread_id, text=text, model=selected_model)
-        response, sequence = receipt.response, receipt.sequence
-        if response.error is not None or response.result is None:
-            reason = response.error.message if response.error is not None else "turn/start returned no result"
+        # Handled in frame order, so the `turn/started` notification after this response starts the
+        # turn with the model the response selects.
+        async with self.session.ordered_reply():
+            receipt = await self.harness.start_turn(thread_id=self._thread_id, text=text, model=selected_model)
+            response, sequence = receipt.response, receipt.sequence
+            if response.error is not None or response.result is None:
+                reason = response.error.message if response.error is not None else "turn/start returned no result"
+                if selected_change is not None:
+                    await self.session._fail(selected_change[0], f"Codex did not select the requested model: {reason}")
+                await self.session._fail(command_id, reason)
+                return
             if selected_change is not None:
-                await self.session._fail(selected_change[0], f"Codex did not select the requested model: {reason}")
-            await self.session._fail(command_id, reason)
-            return
-        if selected_change is not None:
-            # The native response proves Codex accepted the turn that selected this model. This,
-            # rather than command receipt or a guessed future boundary, is its causal effect.
-            await self.session.model_changed(*selected_change, sources=[sequence])
-        turn_id = wire.TurnResult.model_validate(response.result).turn.id
-        if turn_id != self.session.active_turn_id:
-            await self.session.emit(
-                event_pb2.TurnStarted(turn_id=turn_id, model=self.session.record.model), sources=[sequence]
+                # The native response proves Codex accepted the turn that selected this model. This,
+                # rather than command receipt or a guessed future boundary, is its causal effect.
+                await self.session.model_changed(*selected_change, sources=[sequence])
+            turn_id = wire.TurnResult.model_validate(response.result).turn.id
+            if turn_id != self.session.active_turn_id:
+                await self.session.emit(
+                    event_pb2.TurnStarted(turn_id=turn_id, model=self.session.record.model), sources=[sequence]
+                )
+            await self.session.confirm_user_message(
+                harness_message_id=turn_id,
+                text=text,
+                origin_command_ids=[command_id],
+                turn_id=turn_id,
+                sources=[sequence],
             )
-        await self.session.confirm_user_message(
-            harness_message_id=turn_id, text=text, origin_command_ids=[command_id], turn_id=turn_id, sources=[sequence]
-        )
 
     async def interrupt(self, turn_id: str) -> None:
         await self.harness.interrupt(thread_id=self._thread_id, turn_id=turn_id)

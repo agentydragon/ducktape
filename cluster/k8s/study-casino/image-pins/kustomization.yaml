@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: git.allegedly.works/ducktape-ci/study-casino
+    newTag: devel-20260924010612-5ce04fd # {"$imagepolicy": "flux-system:study-casino:tag"}
+# `images:` runs before `replacements` within a Component, so STUDY_CASINO_IMAGE_TAG gets the
+# pinned tag.
+replacements:
+  - source:
+      kind: Deployment
+      name: study-casino
+      fieldPath: spec.template.spec.containers.[name=app].image
+      options:
+        delimiter: ":"
+        index: 1
+    targets:
+      - select:
+          kind: Deployment
+          name: study-casino
+        fieldPaths:
+          - spec.template.spec.containers.[name=app].env.[name=STUDY_CASINO_IMAGE_TAG].value

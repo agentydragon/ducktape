@@ -1,81 +1,70 @@
 """Pinning tests for the cdk8s manifest generators.
 
-`test_generated_manifests_match_committed` is the "LiteLLM config pattern"
-generated-output snapshot (STYLE.md § Testing), generalized from the ConfigMap
-payload to every generated file: the committed files are the source of truth,
-and this test proves regeneration reproduces them exactly.
+The generated-output snapshot (STYLE.md § Testing) over every file the generator writes:
+the committed files are the source of truth, and regeneration must reproduce them exactly.
+`GENERATED_ROOT` is closed in the other direction too, so a hand-added or stale file there
+fails; generated files beside hand-written ones under `HAND_WRITTEN_ROOT` are pinned only
+one way.
 """
 
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
 from cluster.cdk8s.generate_manifests import generate_manifests
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from util.bazel.runfiles import get_required_path
 
-_GENERATED_FILES = (
-    "cluster/k8s/flux/kustomizations.k8s.yaml",
-    "cluster/k8s/artifact-generators/artifact-generators.k8s.yaml",
-    "cluster/k8s/artifact-generators/kustomization.yaml",
-    "cluster/k8s/litellm/app/litellm.k8s.yaml",
-    "cluster/k8s/litellm/app/kustomization.yaml",
-    "cluster/k8s/agents/ha-mcp/app/ha-mcp.k8s.yaml",
-    "cluster/k8s/agents/ha-mcp/app/kustomization.yaml",
-    "cluster/k8s/ssh-mcp/ssh-mcp.k8s.yaml",
-    "cluster/k8s/ssh-mcp/kustomization.yaml",
-    "cluster/k8s/agents/public-coder-agent/sshpiper/pipe-devbox.k8s.yaml",
-    "cluster/k8s/agents/public-coder-agent/devbox/public-coder-devbox.k8s.yaml",
-    "cluster/k8s/agents/public-coder-agent/devbox/kustomization.yaml",
-    "cluster/k8s/agents/public-coder-agent/namespace/public-coder-agent.k8s.yaml",
-    "cluster/k8s/agents/public-coder-agent/namespace/kustomization.yaml",
-    "cluster/k8s/clickhouse/schema/clickhouse-schema.k8s.yaml",
-    "cluster/k8s/clickhouse/schema/kustomization.yaml",
-    "cluster/k8s/aiquota/aiquota.k8s.yaml",
-    "cluster/k8s/aiquota/kustomization.yaml",
-    "cluster/k8s/agentplane-testing/agentplane.k8s.yaml",
-    "cluster/k8s/agentplane-testing/litellm-credentials.k8s.yaml",
-    "cluster/k8s/agentplane-staging/agentplane.k8s.yaml",
-    "cluster/k8s/agentplane-staging/kustomization.yaml",
-    "cluster/k8s/haku/console/haku-console.k8s.yaml",
-    "cluster/k8s/haku/console/kustomization.yaml",
-    "cluster/k8s/agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
-    "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
-    "cluster/k8s/descheduler/helmrelease.k8s.yaml",
-    "cluster/k8s/descheduler/rbac.k8s.yaml",
-    "cluster/k8s/descheduler/kustomization.yaml",
-    "cluster/k8s/seaweedfs/cluster/priorityclass.k8s.yaml",
-    "cluster/k8s/external-creds/external-creds.k8s.yaml",
-    "cluster/k8s/external-creds/kustomization.yaml",
-    "cluster/k8s/agents/haku-egress-proxy/cnp-haku-cloud-api-egress.k8s.yaml",
-    "cluster/k8s/agents/haku-egress-proxy/cnp-haku-claude-egress.k8s.yaml",
-    "cluster/k8s/agents/haku-egress-proxy/openclaw-spike-cnp-egress.k8s.yaml",
-    "cluster/k8s/agents/mitmproxy/cnp-cloud-api-egress.k8s.yaml",
-    "cluster/k8s/dns-automation/dns-records.k8s.yaml",
-    "cluster/k8s/litellm/keys-tf/litellm-keys.k8s.yaml",
-    "cluster/k8s/monitoring/etcd/etcd-monitoring.k8s.yaml",
-    "cluster/k8s/monitoring/etcd/kustomization.yaml",
-    "cluster/k8s/flux-image-automation-forgejo/flux-image-automation-forgejo.k8s.yaml",
-    "cluster/k8s/flux-image-automation-forgejo/kustomization.yaml",
-    "cluster/k8s/ntfy/ntfy.k8s.yaml",
-    "cluster/k8s/ntfy/kustomization.yaml",
-    "cluster/k8s/github-branch-protection/github-branch-protection.k8s.yaml",
-    "cluster/k8s/github-branch-protection/kustomization.yaml",
-    "cluster/k8s/agents/machine-access-tf/agent-machine-access.k8s.yaml",
-    "cluster/k8s/agents/machine-access-tf/kustomization.yaml",
-)
+_REGENERATE = "regenerate with `bb run //cluster/cdk8s:generate_manifests` and commit the result"
 
 
-def test_generated_manifests_match_committed(tmp_path: Path) -> None:
-    """Regenerate with `bb run //cluster/cdk8s:generate_manifests` and commit the result if this fails."""
-    generate_manifests(tmp_path)
-    for relative in _GENERATED_FILES:
-        generated = (tmp_path / relative).read_text()
-        committed = get_required_path(f"ducktape/{relative}").read_text()
-        assert generated == committed, f"{relative} is stale"
-        # cdk8s can't emit YAML comments, so this should be unreachable -- but if it
-        # ever did, Flux's image-automation bot would silently fight the generator
-        # for ownership of this file (cluster/docs/cdk8s.md).
-        assert "$imagepolicy" not in generated, f"{relative} must not carry a Flux image-automation marker"
+def _files(root: Path) -> set[str]:
+    return {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
+
+
+@pytest.fixture(scope="module")
+def generated(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    root = tmp_path_factory.mktemp("generated")
+    generate_manifests(root)
+    return root
+
+
+@pytest.fixture(scope="module")
+def checkout() -> Path:
+    """The runfiles tree, which holds each committed file the data deps package at its repo path."""
+    return get_required_path(f"_main/{GENERATED_ROOT}").parents[1]
+
+
+def test_every_generated_file_is_committed(generated: Path, checkout: Path) -> None:
+    missing = sorted(relative for relative in _files(generated) if not (checkout / relative).is_file())
+    assert not missing, f"Generated but not committed ({_REGENERATE}):\n" + "\n".join(missing)
+
+
+def test_generated_files_match_committed(generated: Path, checkout: Path) -> None:
+    stale = sorted(
+        relative
+        for relative in _files(generated)
+        if (checkout / relative).is_file() and (generated / relative).read_text() != (checkout / relative).read_text()
+    )
+    assert not stale, f"Stale ({_REGENERATE}):\n" + "\n".join(stale)
+
+
+def test_generated_root_holds_only_generated_files(generated: Path, checkout: Path) -> None:
+    committed = {f"{GENERATED_ROOT}/{relative}" for relative in _files(checkout / GENERATED_ROOT)}
+    extra = sorted(committed - _files(generated))
+    assert not extra, (
+        f"Committed under {GENERATED_ROOT} but not written by the generator; delete it, or keep a "
+        "directory holding a hand-written file whole under the hand-written root:\n" + "\n".join(extra)
+    )
+
+
+def test_no_image_automation_markers(generated: Path) -> None:
+    # cdk8s can't emit YAML comments, so this should be unreachable -- but if it ever did,
+    # Flux's image-automation bot would silently fight the generator for ownership of the
+    # file (cluster/docs/cdk8s.md).
+    marked = sorted(relative for relative in _files(generated) if "$imagepolicy" in (generated / relative).read_text())
+    assert not marked, "Generated files must not carry a Flux image-automation marker:\n" + "\n".join(marked)
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ entries:
   # provisioned in tf/gitops/sso-providers/source_google.tf, and `!Find`
   # resolves the referenced Authentik object by slug at blueprint-apply
   # time. The Flux dep chain actually runs `sso-providers-tf` AFTER
-  # `authentik` (see cluster/k8s/authentik/sso-providers-tf/
+  # `authentik` (see cluster/generated/authentik/sso-providers-tf/
   # central Flux chart), so on a cold bootstrap this blueprint's
   # first apply can fail to resolve the source; Authentik's blueprint
   # reconciler retries, and the next pass after TF creates the source

@@ -1,35 +1,31 @@
 //! End-to-end coverage for `member_of_module` member selectors through the
-//! **full lowering pipeline** (P4 step 3, X3 wiring). This is the first
-//! **use-site** selector: it pins a target by *how it is consumed* — "the entity
-//! consumed as `mod.X`", where `mod` is a chunk-top imported binding and `X` an
-//! export off it — rather than by the target's own body (X2 `reads_member`) or
-//! its own minified name (the name pin). Both labels (the import source `module`
-//! and the export `member`) are re-minify-invariant, so the whole edge survives a
-//! bundle rebuild.
+//! **full lowering pipeline**. This is the first **use-site** selector: it pins
+//! a target by *how it is consumed* — "the entity consumed as `mod.X`", where
+//! `mod` is a chunk-top imported binding and `X` an export off it — rather than
+//! by the target's own body (`reads_member`) or its own minified name (the name
+//! pin). Both labels (the import source `module` and the export `member`) are
+//! re-minify-invariant, so the whole edge survives a bundle rebuild.
 //!
-//! Unlike `selector_solve_test` (which exercises the kernel on a synthetic owner
-//! graph), these tests drive the real `debundle` binary: the spec carries
+//! These tests drive the real `debundle` binary: the spec carries
 //! `member_of_module` selectors, the use-site facts are derived from the chunk
 //! AST joined to the import table, and we assert the resolved binding lands in the
 //! right module and the emitted tree runs under Node.
 //!
-//! ## The empty-class / superclass cluster (the case X3 unlocks)
+//! ## The empty-class / superclass cluster
 //!
 //! The headline shape is two **empty** subclasses with no internal anchor of
 //! their own (`class A extends ns.Base {}`), distinguished *only* by the module
-//! member each consumes in its `extends` clause — exactly the `CardsViewAccessor`
-//! debt the cross-ref MVP could not reach (debug/2026_06_19_p4_debt_worklist.md
-//! Step 3). The use-site member access in the `extends` expression is what the
-//! `member_of_module` EDB rides.
+//! member each consumes in its `extends` clause. The use-site member access in
+//! the `extends` expression is what the `member_of_module` EDB rides.
 //!
-//! ## Scope (the faithful boundary, per the abort bar)
+//! ## Scope
 //!
 //! `member_of_module` pins the **declaring owner whose own subtree consumes
 //! `mod.X`** (its `extends` clause, a decorator on it, a body call). It does
 //! **not** reach a target distinguished only by an *external* statement that
 //! consumes it (`registry.register(Target)`): that owner declares nothing, so the
 //! `declares` conjunct correctly excludes it — pinning by a call *argument* needs
-//! a `resolves_to`-of-argument edge, a separate later primitive. This test
+//! a `resolves_to`-of-argument edge, which is `passed_to_call`. This test
 //! exercises the in-subtree use-site, which is the general primitive built here.
 
 use debundle_e2e_support::*;

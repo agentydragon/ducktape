@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -11,6 +13,8 @@ from pydantic.alias_generators import to_camel
 
 from cluster.validation.k8s import K8sResource, parse_k8s_resources
 from cluster.validation.tool_resolve import resolve_tool
+
+KUSTOMIZATION_FILE_NAMES = ("kustomization.yaml", "kustomization.yml", "Kustomization")
 
 
 class _CamelCaseModel(BaseModel):
@@ -35,7 +39,10 @@ class PatchEntry(_CamelCaseModel):
 class KustomizeFile(_CamelCaseModel):
     """Parsed kustomization.yaml — Pydantic coerces YAML string paths to Path objects."""
 
-    path: Path = Field(description="Absolute path to the kustomization.yaml file itself (injected by parser)")
+    path: Path = Field(
+        description="Absolute path to the kustomization file itself (injected by parser), or where "
+        "kustomize-controller writes the one it generates (`flux_generated_kustomization`)"
+    )
     namespace: str = ""
     resources: list[Path] = []
     patches: list[PatchEntry] = []
@@ -81,6 +88,26 @@ class KustomizeBuildResult(BaseModel):
     resources: list[K8sResource] = []
 
 
+def has_kustomization_file(directory: Path) -> bool:
+    return any((directory / name).is_file() for name in KUSTOMIZATION_FILE_NAMES)
+
+
+def flux_generated_kustomization(directory: Path) -> KustomizeFile:
+    """The kustomization kustomize-controller generates for a Flux `spec.path` that has none
+    (fluxcd/pkg/kustomize `scanManifests`): every `.yaml`/`.yml` file under `directory`,
+    recursively, except that a subdirectory holding a kustomization file is listed whole."""
+    resources: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(directory):
+        here = Path(dirpath)
+        dirnames.sort()
+        for name in list(dirnames):
+            if has_kustomization_file(here / name):
+                resources.append((here / name).relative_to(directory))
+                dirnames.remove(name)
+        resources += [(here / f).relative_to(directory) for f in sorted(filenames) if f.endswith((".yaml", ".yml"))]
+    return KustomizeFile(path=directory / "kustomization.yaml", resources=resources)
+
+
 def parse_kustomize_file(kust_file: Path) -> KustomizeFile:
     """Parse a kustomization.yaml file."""
     with kust_file.open() as f:
@@ -105,22 +132,38 @@ class KustomizeBuildError(Exception):
         super().__init__(f"kustomize build failed for {kustomization_path.parent}: {error}")
 
 
-async def run_kustomize_build(kustomization_path: Path) -> KustomizeBuildResult:
+def _kustomize_build_args(kust: KustomizeFile, scratch: Path) -> list[str | Path]:
+    """`kustomize build` arguments for `kust`. A generated one (no file at its path) is built
+    the way kustomize-controller builds it: written out, here into `scratch`, and built
+    without load restrictions."""
+    if kust.path.is_file():
+        return [kust.path.parent]
+    generated = {
+        "apiVersion": "kustomize.config.k8s.io/v1beta1",
+        "kind": "Kustomization",
+        "resources": [os.path.relpath(r, scratch) for r in kust.resolved_resources],
+    }
+    (scratch / "kustomization.yaml").write_text(yaml.safe_dump(generated))
+    return [scratch, "--load-restrictor", "LoadRestrictionsNone"]
+
+
+async def run_kustomize_build(kust: KustomizeFile) -> KustomizeBuildResult:
     """Run kustomize build and parse the output. Raises KustomizeBuildError on failure."""
     kustomize_bin = resolve_tool("kustomize", "multitool/tools/kustomize/kustomize")
-    proc = await asyncio.create_subprocess_exec(
-        kustomize_bin,
-        "build",
-        kustomization_path.parent,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await proc.communicate()
+    with tempfile.TemporaryDirectory() as scratch:
+        proc = await asyncio.create_subprocess_exec(
+            kustomize_bin,
+            "build",
+            *_kustomize_build_args(kust, Path(scratch)),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
 
     if proc.returncode != 0:
-        raise KustomizeBuildError(kustomization_path, stderr.decode())
+        raise KustomizeBuildError(kust.path, stderr.decode())
 
     output = stdout.decode()
     resources = parse_k8s_resources(yaml.safe_load_all(output))
 
-    return KustomizeBuildResult(kustomization_path=kustomization_path, resources=resources)
+    return KustomizeBuildResult(kustomization_path=kust.path, resources=resources)

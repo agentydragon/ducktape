@@ -11,6 +11,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.flux import health_checks as flux_health_checks, kustomize_kustomization
 from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 _HEALTH_CHECK_KINDS = ("Namespace", "Cluster", "Database", "Deployment", "Certificate", "Bundle")
 
@@ -29,10 +30,14 @@ def environment_health_checks(chart: Chart, namespace: str) -> list[Kustomizatio
     ]
 
 
+def output_dir(env: Environment) -> str:
+    return f"{HAND_WRITTEN_ROOT}/{env.namespace}"
+
+
 def write_environment_manifests(
     root: Path, env: Environment, build: Callable[[App], Chart], *, write_kustomization: bool = True
 ) -> Chart:
-    """Synthesize the environment's chart into `cluster/k8s/<namespace>` as a single
+    """Synthesize the environment's chart into `output_dir(env)` as a single
     `agentplane.k8s.yaml`. Single failure domain by design -- including the CNPG Postgres
     `Cluster` -- accepted for both non-production environments.
 
@@ -42,8 +47,7 @@ def write_environment_manifests(
     the chart so the per-environment Flux factory can build health checks from these same
     objects.
     """
-    env_dir = f"cluster/k8s/{env.namespace}"
-    out_dir = root / env_dir
+    out_dir = root / output_dir(env)
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
     chart = build(app)

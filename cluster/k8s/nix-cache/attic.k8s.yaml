@@ -1,0 +1,431 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+    rbac.ducktape.io/agent-readable-metadata: "true"
+  name: nix-cache
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: nix-cache
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: attic-db
+  namespace: nix-cache
+spec:
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: attic
+      owner: attic
+  instances: 2
+  monitoring:
+    enablePodMonitor: true
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 2Gi
+    storageClass: local-path-ovh
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: attic
+  namespace: nix-cache
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: attic
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: attic
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: nix-cache
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: nix-cache
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: nix-cache
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: attic
+  namespace: seaweedfs
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: attic
+  namespace: nix-cache
+spec:
+  identityRef:
+    name: attic
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: attic-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  name: attic
+  namespace: nix-cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: attic
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: attic
+    spec:
+      containers:
+        - args:
+            - -f
+            - /config/server.toml
+            - --mode
+            - monolithic
+          env:
+            - name: ATTIC_SERVER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: attic-db-app
+            - name: ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64
+              valueFrom:
+                secretKeyRef:
+                  key: jwt-token
+                  name: attic-jwt-token
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  key: AWS_ACCESS_KEY_ID
+                  name: attic-s3-credentials
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: AWS_SECRET_ACCESS_KEY
+                  name: attic-s3-credentials
+          image: ghcr.io/zhaofengli/attic:latest
+          imagePullPolicy: Always
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          name: attic
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - mountPath: /config
+              name: config
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      volumes:
+        - configMap:
+            name: attic-config
+          name: config
+        - emptyDir: {}
+          name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: attic
+  namespace: nix-cache
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: http
+  selector:
+    app.kubernetes.io/name: attic
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: nix-cache
+  namespace: nix-cache
+spec:
+  hostnames:
+    - cache.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: attic
+          port: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: nix-cache
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: github-secrets-sync-pat
+  namespace: nix-cache
+spec:
+  data:
+    - remoteRef:
+        key: github-agentydragon-2
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: github-secrets-sync-pat
+    template:
+      type: Opaque
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: Runs the Attic JWT rotation CronJobs. RBAC is `pods/exec` scoped to the nix-cache namespace so the rotator can `kubectl exec deploy/attic -- atticadm make-token …` without ever holding the HS256 signing secret.
+  name: attic-jwt-rotator
+  namespace: nix-cache
+imagePullSecrets:
+  - name: forgejo-images-creds
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: attic-jwt-rotator
+  namespace: nix-cache
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - create
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: attic-jwt-rotator
+  namespace: nix-cache
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: attic-jwt-rotator
+subjects:
+  - kind: ServiceAccount
+    name: attic-jwt-rotator
+    namespace: nix-cache
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    description: Rotates all Attic JWTs (per-host readers, claude-web reader, ducktape and gaffer CI writer tokens) defined in rotators.yaml. Hourly cron; per-token freshness check skips entries with >24h remaining, so a real mint runs ~once per token per year. See rotate.py.
+  name: attic-jwt-rotation
+  namespace: nix-cache
+spec:
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1800
+      backoffLimit: 2
+      template:
+        spec:
+          containers:
+            - args:
+                - rotate
+                - --config
+                - /config/rotators.yaml
+              env:
+                - name: GIT_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      key: token
+                      name: github-secrets-sync-pat
+              image: git.allegedly.works/ducktape-ci/attic-jwt-rotation:unset
+              name: rotate
+              resources:
+                limits:
+                  memory: 512Mi
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - mountPath: /config
+                  name: rotators-config
+                  readOnly: true
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: attic-jwt-rotator
+          volumes:
+            - configMap:
+                name: attic-rotators-config
+              name: rotators-config
+      ttlSecondsAfterFinished: 86400
+  schedule: 30 * * * *
+  successfulJobsHistoryLimit: 3
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    description: Idempotently ensure required Attic caches (main, gaffer, public) exist and print their public keys.
+    kustomize.toolkit.fluxcd.io/force: enabled
+  name: attic-bootstrap-caches
+  namespace: nix-cache
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        app: attic-bootstrap-caches
+    spec:
+      containers:
+        - args:
+            - bootstrap-caches
+            - --cache=main
+            - --cache=gaffer
+            - --public-cache=public
+            - --keypair-dir=/secrets/cache-keys
+          image: git.allegedly.works/ducktape-ci/attic-jwt-rotation:unset
+          name: bootstrap
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /secrets/cache-keys
+              name: cache-keys
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: attic-jwt-rotator
+      volumes:
+        - name: cache-keys
+          secret:
+            secretName: attic-cache-keys

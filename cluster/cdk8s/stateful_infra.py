@@ -15,6 +15,7 @@ from cdk8s_plus_34 import k8s
 from constructs import Construct
 
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "stateful-infra"
 # Above ordinary workloads (default 0) so scheduler preemption defers these pods; far below
@@ -24,7 +25,7 @@ PRIORITY = 1_000_000
 
 def priority_class(scope: Construct) -> k8s.KubePriorityClass:
     """Not `globalDefault`: only pods that opt in via `priorityClassName` get it. Carried by
-    the SeaweedFS master/volume/filer/s3 components (cluster/k8s/seaweedfs/cluster/seaweed.yaml);
+    the SeaweedFS master/volume/filer/s3 components (cluster/cdk8s/seaweedfs/cluster.py);
     reusable for other stateful infra, see
     cluster/docs/lessons_learned/2026_06_19_seaweedfs_descheduler_dns_race_crashloop.md.
     """
@@ -55,4 +56,4 @@ def priority_class_chart(app: App) -> Chart:
 
 
 def write_seaweedfs_manifests(root: Path) -> None:
-    write_charts(root, "cluster/k8s/seaweedfs/cluster", priority_class_chart)
+    write_charts(root, f"{HAND_WRITTEN_ROOT}/seaweedfs/cluster", priority_class_chart)

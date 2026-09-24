@@ -65,7 +65,7 @@ since there's no first-class Forgejo provider in OpenHands.
 
 ## Proxmox drift watch
 
-`cluster/k8s/infra-drift/` plans the OVH half of `cluster/terraform/main` and
+`cluster/generated/infra-drift/` plans the OVH half of `cluster/terraform/main` and
 deliberately leaves the Proxmox resources out: the `proxmox` provider
 authenticates as `root@pam!tofu`, a full-root API token, and putting that in a
 tf-runner pod is a bigger step than the scoped OVH credentials the CR already
@@ -154,8 +154,8 @@ Follow-up on the mechanism itself:
 Goldilocks VPA enabled (auto mode) for nix-cache, ollama, and litellm —
 will recommend limits.
 
-- `nix-cache/deployment.yaml` — attic container missing `resources:`
-- `ollama/deployment.yaml` — auth-proxy sidecar missing `resources:`
+- `cdk8s/nix_cache/attic.py` — attic container missing `resources:`
+- `cdk8s/ollama/app.py` — auth-proxy sidecar missing `resources:`
 
 ## SecurityContext
 
@@ -205,7 +205,7 @@ Options to consider:
 ## Gateway: `allowedRoutes` Selector (belt-and-suspenders; deferred)
 
 Agent self-exposure — an HTTPRoute in any namespace attaching to the public gateway and
-bypassing Authentik (`cluster/k8s/gateway/gateway.yaml` listeners are all `allowedRoutes:
+bypassing Authentik (`cluster/cdk8s/gateway.py`'s listeners are all `allowedRoutes:
 namespaces: from: All`) — is **already fenced**: the `restrict-agent-gateway-routes`
 Kyverno ClusterPolicy denies route/Gateway creation in the agent namespaces, and
 `haku-sandbox-admin`/`claude-sandbox-admin` omit `httproutes`/`gateways` anyway. So the
@@ -223,7 +223,7 @@ staying closed is closed. What's left is the gateway-layer belt-and-suspenders:
 
 ## Haku `haku-ui` / workloads pipe — hardening follow-ups
 
-The `cluster/k8s/haku/workloads/` Flux pipe and the `haku-ui.allegedly.works`
+The `cluster/generated/haku/workloads/` Flux pipe and the `haku-ui.allegedly.works`
 Authentik route work; these tighten them (operator-approved as follow-ups):
 
 - [ ] **Read-only deploy key for the `haku-state` GitRepository.** The pipe's
@@ -375,11 +375,10 @@ as of 2026-08-04 (operator-facing summary: `haku/docs/security.md`):
       `--ignore-hosts` raw TLS passthrough for `api.anthropic.com` (interception breaks
       the Managed Agents HTTP/2 session stream).
 - [ ] Enforce at two layers. The mitmproxy fences confine only via Cilium `toFQDNs` —
-      the container has no allowlist; the iron fences confine only in app config — the
-      spike's policy opens `toEntities: [world, remote-node, host]` on 443 and
-      `claude-iron.yaml` carries no `allowlist` transform.
+      the container has no allowlist; the iron fence confines only in app config — the
+      spike's policy opens `toEntities: [world, remote-node, host]` on 443.
 - [ ] Route cluster-internal traffic through the proxies too. The Kyverno injection
-      (`kyverno/policies/inject-haku-egress-proxy.yaml`) sets `NO_PROXY` to
+      (`cluster/cdk8s/kyverno/proxy_injection.py`) sets `NO_PROXY` to
       `*.allegedly.works`, `.svc`, `.svc.cluster.local` and `10.0.0.0/8`, so anything
       under the operator's own domains or the cluster network is reached with no proxy
       in the path and no allowlist applied.

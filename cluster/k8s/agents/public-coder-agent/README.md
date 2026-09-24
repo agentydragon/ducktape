@@ -69,14 +69,14 @@ it in group rooms.
 
 Two layers, and the split matters:
 
-1. **`app/networkpolicy-egress.yaml` is the enforcement.** The agent pod may
+1. **The app's `public-coder-agent-egress` NetworkPolicy is the enforcement.** The agent pod may
    reach DNS, the proxy on 8080, and in-cluster LiteLLM on 4000. Nothing else.
    The `HTTP_PROXY` variables in the Deployment are convenience — an agent that
    unsets them does not gain egress, it loses its only route out.
-2. **`proxy/cnp-egress.yaml` is the allowlist.** Enforced by Cilium `toFQDNs` on
+2. **The proxy's `allow-public-coder-agent-proxy-egress` policy is the allowlist.** Enforced by Cilium `toFQDNs` on
    the _proxy's_ egress, not by proxy configuration, so a CONNECT to a
    non-allowlisted host fails at the network layer. Every widening is a
-   reviewable diff in that one file.
+   reviewable diff in `cluster/cdk8s/public_coder_proxy.py`.
 
 The model path never leaves the cluster: LiteLLM is reached directly, bypassing
 the proxy, via `NO_PROXY`.
@@ -120,10 +120,9 @@ Haku Console privileged calls use the same mediated shape. Terraform generates a
 `public-coder-agent` static-Agent bearer and delivers it only to Haku Console and iron-proxy. The
 OpenClaw container sees `proxy-haku-console-placeholder`, which is replaced only in the
 `Authorization` header for `haku.allegedly.works`. Haku Console assigns this Agent the
-`public-coder` access profile: its typed repository policy auto-approves only reviewed reads of
-`agentydragon/ducktape` and `agentydragon/gaffer-private`. Every other downstream tool remains an
-operator-reviewed request, including the cluster-admin-backed kubectl passthrough surface, and the
-Agent bearer cannot approve requests. Ordinary public GitHub writes should instead use the
+`public-coder` access profile, which auto-approves only the Agent's own `grants` reads and
+revocations. Every other downstream tool remains an operator-reviewed request, and the Agent
+bearer cannot approve requests. Haku Console serves no GitHub tools: GitHub goes through the
 proxy-mediated `agentydragon-agent` token directly; see <TOOLING.md> for the operational
 playbook.
 
@@ -152,17 +151,16 @@ proxy environment handling.
   `embedded-outpost.yaml` owns outpost membership; a Terraform provider would
   split one object graph across two owners. Moves with the rest under issue #987.
 - **Temporary commit-built iron-proxy image.** <../../../images/iron-proxy/>
-  and `.github/workflows/iron-proxy-image.yml` build upstream commit `c90f4fe`
-  into the private Forgejo registry because it adds the HTTP/2/gRPC MITM support
-  BuildBuddy needs but is not in the upstream latest stable release (`v0.49.0`)
-  as of this audit. Flux rolls the proxy to that image after it is published.
-  Return to the official image and delete this build path once a stable release
-  includes the required support. The image is shared with
-  `haku-claude-oauth-proxy` and `haku-openclaw-spike-proxy`, so it is not owned
+  and `.github/workflows/iron-proxy-image.yml` build upstream `v0.50.0`
+  (`5bd11ab`), the first stable release with the HTTP/2/gRPC MITM support
+  BuildBuddy needs, into the private Forgejo registry. Flux rolls the proxy to
+  that image after it is published. Whether to return to the official image is
+  the pinning decision in <../../../../plans/personal_agents/TODO.md>. The image
+  is shared with `haku-openclaw-spike-proxy`, so it is not owned
   here — it was first named for public-coder because this was its first consumer.
 - **`gateway.bind: lan`**, unlike the loopback-bound lab rig, because the outpost
   reaches this pod over the cluster network. What makes that safe is
-  `app/networkpolicy-ingress.yaml`, which admits only the outpost's pods —
+  the app's `public-coder-agent-ingress` NetworkPolicy, which admits only the outpost's pods —
   without it any pod could forge `x-authentik-username`.
 
 ## Known gaps

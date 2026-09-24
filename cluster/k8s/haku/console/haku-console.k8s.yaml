@@ -1,3 +1,31 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+    name: haku-console
+  name: haku-console
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: haku-console
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
@@ -40,15 +68,9 @@ metadata:
   namespace: haku-console
 spec:
   affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
   bootstrap:
     initdb:
@@ -300,28 +322,6 @@ metadata:
   namespace: haku-console
 automountServiceAccountToken: false
 ---
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  annotations:
-    description: ESO copy of the canonical Tana PAT from external-creds.
-  name: tana-agentydragon-gmail-com-account-pat
-  namespace: haku-console
-spec:
-  data:
-    - remoteRef:
-        key: tana-agentydragon-gmail-com-account-pat
-        property: token
-      secretKey: token
-  refreshInterval: 1h
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: kubernetes-external-creds-secret-store
-  target:
-    creationPolicy: Owner
-    deletionPolicy: Retain
-    name: tana-agentydragon-gmail-com-account-pat
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -330,221 +330,6 @@ metadata:
 data:
   config.yaml: |
     auto_approval_policies:
-      - id: gmail_reads
-        type: exact_tools
-        tools:
-          gmail:
-            - threads_list
-            - threads_get
-            - messages_get
-            - labels_list
-            - labels_get
-            - filters_list
-            - filters_get
-            - drafts_list
-            - drafts_get
-      - id: google_calendar_reads
-        type: exact_tools
-        tools:
-          google_calendar:
-            - get_event
-            - list_events
-            - list_event_instances
-      - id: grocy_reads
-        type: exact_tools
-        tools:
-          grocy-sf:
-            - entities_get
-            - entities_list
-            - file_get
-            - get_below_minimum_stock
-            - get_current_user
-            - get_db_changed_time
-            - get_expired_stock
-            - get_expiring_stock
-            - get_product_stock
-            - get_system_info
-            - list_volatile_stock
-            - locations_list
-            - product_groups_list
-            - products_list
-            - quantity_units_list
-            - shopping_list_get
-            - shopping_lists_list
-            - stock_entries_list
-            - stock_get
-      - id: github_reads
-        type: exact_tools
-        tools:
-          github:
-            - get_me
-            - get_team_members
-            - get_teams
-            - ui_get
-            - find_duplicate
-            - get_label
-            - issue_dependency_read
-            - issue_read
-            - list_issue_fields
-            - list_issue_types
-            - list_issues
-            - search_issues
-            - list_pull_requests
-            - pull_request_read
-            - search_pull_requests
-            - get_commit
-            - get_file_blame
-            - get_file_contents
-            - get_latest_release
-            - get_release_by_tag
-            - get_tag
-            - list_branches
-            - list_commits
-            - list_releases
-            - list_repository_collaborators
-            - list_tags
-            - search_code
-            - search_commits
-            - search_repositories
-            - search_users
-      - id: github_identity_reads
-        type: exact_tools
-        tools:
-          github:
-            - get_me
-      - id: public_ducktape_reads
-        type: github_repository
-        server: github
-        owner: agentydragon
-        repository: ducktape
-        tools:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_issues
-          - search_pull_requests
-          - search_code
-      - id: public_ducktape_fork_reads
-        type: github_repository
-        server: github
-        owner: agentydragon-agent
-        repository: ducktape
-        tools:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_issues
-          - search_pull_requests
-          - search_code
-      - id: public_gaffer_private_reads
-        type: github_repository
-        server: github
-        owner: agentydragon
-        repository: gaffer-private
-        tools:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_issues
-          - search_pull_requests
-          - search_code
-      - id: public_github_reads
-        type: github_public_repository
-        server: github
-        tools:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_issues
-          - search_pull_requests
-          - search_code
-      - id: public_coder_github_reads
-        type: any_of
-        policies:
-          - public_ducktape_reads
-          - public_ducktape_fork_reads
-          - public_gaffer_private_reads
-          - public_github_reads
       - id: kubernetes_reads
         type: exact_tools
         tools:
@@ -572,65 +357,9 @@ data:
       - id: public_coder_v1
         type: any_of
         policies:
-          - public_coder_github_reads
-          - github_identity_reads
           - kubernetes_reads
           - grants_self_introspection
           - grants_own_revoke
-      - id: tana_safe_tools
-        type: exact_tools
-        tools:
-          tana:
-            - get_or_create_calendar_node
-            - search_nodes
-            - read_node
-            - get_children
-            - open_node
-            - list_tags
-            - list_workspaces
-            - get_tag_schema
-      - id: home_assistant_reads
-        type: exact_tools
-        tools:
-          home-assistant:
-            - ha_config_get_automation
-            - ha_config_get_calendar_events
-            - ha_config_get_category
-            - ha_config_get_label
-            - ha_config_get_scene
-            - ha_config_get_script
-            - ha_config_list_dashboard_resources
-            - ha_config_list_groups
-            - ha_config_list_helpers
-            - ha_get_addon
-            - ha_get_automation_traces
-            - ha_get_blueprint
-            - ha_get_camera_image
-            - ha_get_device
-            - ha_get_entity
-            - ha_get_entity_exposure
-            - ha_get_hacs_info
-            - ha_get_history
-            - ha_get_integration
-            - ha_get_logs
-            - ha_get_operation_status
-            - ha_get_overview
-            - ha_get_skill_guide
-            - ha_get_state
-            - ha_get_system_health
-            - ha_get_todo
-            - ha_get_zone
-            - ha_list_floors_areas
-            - ha_list_services
-            - ha_search
-      - id: home_assistant_desk_light_control
-        type: home_assistant_entity_control
-        server: home-assistant
-        entities:
-          light.h6006_pegboard:
-            - turn_on
-            - turn_off
-            - toggle
       - id: haku_sandbox_control
         type: exact_tools
         tools:
@@ -640,23 +369,10 @@ data:
             - get_sandbox_info
             - list_sandboxes
             - dispose_sandbox
-      - id: managed_gmail_labels
-        type: gmail_label_namespace
-        server: gmail
-        label_prefix: haku/
       - id: haku_v1
         type: any_of
         policies:
-          - gmail_reads
-          - google_calendar_reads
-          - grocy_reads
-          - github_reads
-          - github_identity_reads
-          - tana_safe_tools
-          - home_assistant_reads
-          - home_assistant_desk_light_control
           - haku_sandbox_control
-          - managed_gmail_labels
           - kubernetes_reads
           - grants_self_introspection
           - grants_own_revoke
@@ -716,61 +432,8 @@ data:
         agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
         display_name: public-coder-agent
         access_profile_id: public-coder
-    operator_connection_providers:
-      google_mail:
-        kind: google
-      google_calendar:
-        kind: google
-    operator_connections:
-      google_mail:
-        display_name: Google Mail
-        provider: google_mail
-        scopes:
-          - https://www.googleapis.com/auth/gmail.modify
-          - https://www.googleapis.com/auth/gmail.compose
-          - https://www.googleapis.com/auth/gmail.settings.basic
-      google_calendar:
-        display_name: Google Calendar
-        provider: google_calendar
-        scopes:
-          - https://www.googleapis.com/auth/calendar.events
     mcp:
       servers:
-        github:
-          id: github
-          catalog_refresh_interval_seconds: 900
-          agent_tool_denylist:
-            - assign_copilot_to_issue
-            - create_pull_request_with_copilot
-            - get_copilot_job_status
-            - request_copilot_review
-          backend:
-            kind: remote_mcp
-            url: https://api.githubcopilot.com/mcp/
-            headers:
-              X-MCP-Toolsets: default,actions
-            auth:
-              kind: remote_server_oauth
-              client_registration:
-                kind: preregistered
-                token_endpoint_auth_method: client_secret_post
-        grocy_sf:
-          id: grocy-sf
-          backend:
-            kind: remote_mcp
-            url: https://grocy-mcp-sf.allegedly.works/mcp
-            auth:
-              kind: remote_server_oauth
-              client_registration:
-                kind: dynamic
-                client_name: Haku Console
-        tana:
-          id: tana
-          backend:
-            kind: remote_mcp
-            url: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
-            auth:
-              kind: static_bearer
         sandbox:
           id: sandbox
           backend:
@@ -783,44 +446,6 @@ data:
             kind: in_process
             credential:
               kind: none
-        ssh:
-          id: ssh
-          backend:
-            kind: remote_mcp
-            url: http://ssh-mcp.ssh-mcp.svc.cluster.local:8080/mcp
-            auth:
-              kind: static_bearer
-        home_assistant:
-          id: home-assistant
-          backend:
-            kind: remote_mcp
-            url: http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp
-            auth:
-              kind: static_bearer
-        kubectl_passthrough_mcp:
-          id: kubectl-passthrough-mcp
-          backend:
-            kind: remote_mcp
-            url: https://kubectl-passthrough-mcp.allegedly.works/mcp
-            auth:
-              kind: remote_server_oauth
-              client_registration:
-                kind: preregistered
-                client_id: kubectl-passthrough-mcp
-        gmail:
-          id: gmail
-          backend:
-            kind: in_process
-            credential:
-              kind: operator_connection
-              connection: google_mail
-        google_calendar:
-          id: google_calendar
-          backend:
-            kind: in_process
-            credential:
-              kind: operator_connection
-              connection: google_calendar
 immutable: false
 ---
 apiVersion: apps/v1
@@ -828,7 +453,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: aiquota-api-bearer-haku-console,ha-mcp-bearer,haku-console-agent-api,haku-console-github-mcp-client-credentials,haku-console-google-calendar-client-credentials,haku-console-google-client-credentials,haku-console-oidc,haku-console-public-coder-agent,haku-console-web-push-vapid,haku-routine-launch-token,ssh-mcp-bearer,tana-agentydragon-gmail-com-account-pat
+    secret.reloader.stakater.com/reload: aiquota-api-bearer-haku-console,haku-console-agent-api,haku-console-oidc,haku-console-public-coder-agent,haku-console-web-push-vapid,haku-routine-launch-token
   labels:
     app.kubernetes.io/name: haku-console
   name: haku-console
@@ -905,26 +530,6 @@ spec:
               value: /etc/haku-console/static-metadata/image-tag
             - name: HAKU_CONSOLE__MAX_WAIT_FOR_RESULT_MS
               value: "60000"
-            - name: HAKU_CONSOLE__MCP_OPERATOR_OAUTH_TOKEN_TIMEOUT_SECONDS
-              value: "30"
-            - name: HAKU_CONSOLE__MCP__SERVERS__TANA__BACKEND__AUTH__TOKEN
-              valueFrom:
-                secretKeyRef:
-                  key: token
-                  name: tana-agentydragon-gmail-com-account-pat
-                  optional: false
-            - name: HAKU_CONSOLE__MCP__SERVERS__HOME_ASSISTANT__BACKEND__AUTH__TOKEN
-              valueFrom:
-                secretKeyRef:
-                  key: bearer-token
-                  name: ha-mcp-bearer
-                  optional: false
-            - name: HAKU_CONSOLE__MCP__SERVERS__SSH__BACKEND__AUTH__TOKEN
-              valueFrom:
-                secretKeyRef:
-                  key: bearer-token
-                  name: ssh-mcp-bearer
-                  optional: false
             - name: HAKU_CONSOLE_DB_USER
               valueFrom:
                 secretKeyRef:
@@ -964,42 +569,6 @@ spec:
                   key: token
                   name: haku-console-public-coder-agent
                   optional: false
-            - name: HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_MAIL__CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  key: client_id
-                  name: haku-console-google-client-credentials
-                  optional: true
-            - name: HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_MAIL__CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  key: client_secret
-                  name: haku-console-google-client-credentials
-                  optional: true
-            - name: HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_CALENDAR__CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  key: client_id
-                  name: haku-console-google-calendar-client-credentials
-                  optional: true
-            - name: HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_CALENDAR__CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  key: client_secret
-                  name: haku-console-google-calendar-client-credentials
-                  optional: true
-            - name: HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  key: client_id
-                  name: haku-console-github-mcp-client-credentials
-                  optional: true
-            - name: HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  key: client_secret
-                  name: haku-console-github-mcp-client-credentials
-                  optional: true
             - name: HAKU_CONSOLE__STATIC_AGENTS__HAKU__OPERATOR_SUBJECT
               valueFrom:
                 secretKeyRef:

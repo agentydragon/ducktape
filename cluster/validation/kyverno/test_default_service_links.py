@@ -13,7 +13,7 @@ from cluster.validation.kyverno.paths import manifest, policy
 
 @pytest.fixture
 def service_links_policy() -> Path:
-    return policy("default-disable-service-links.yaml")
+    return policy("default-disable-service-links.k8s.yaml")
 
 
 class TestDefaultDisableServiceLinks:
@@ -22,12 +22,6 @@ class TestDefaultDisableServiceLinks:
         assert result.ok, result.stdout
         assert result.passed == 1, result.stdout
         assert result.mutated_resources[0]["spec"]["enableServiceLinks"] is False
-
-    def test_token_provisioner_is_explicit_exception(self, service_links_policy: Path):
-        result = apply_policy(service_links_policy, manifest("pod_service_links_exception.yaml"))
-        assert result.ok, result.stdout
-        assert result.passed == 0, result.stdout
-        assert result.failed == 0, result.stdout
 
 
 if __name__ == "__main__":

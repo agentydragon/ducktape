@@ -101,120 +101,12 @@ indexes out of connected MCP-client catalogs. The `recall_index` schema/data and
 `haku_indexer` database role remain in place for now; no migration drops them. Re-enabling Recall
 must restore the catalog, access-profile grants, and maintenance workers as one reviewed change.
 
-## One-time bootstrap: the in-process `gmail` + `google_calendar` MCP servers
+## `haku-console-github-mcp-client-credentials` belongs to agentplane-staging
 
-The console's two Google-backed in-process MCP servers — `gmail` (`haku/console/tools/gmail.py` — Gmail
-reads mirroring the REST API, draft creation, thread-label changes, label CRUD) and
-`google_calendar` (`haku/console/tools/google_calendar.py` — recurrence-aware event reads and
-creation), both behind the ordinary operator-approval queue — execute as the **acting
-Operator's own Google account**: each call resolves that Operator's per-Operator Google access
-token from the console's own connection store (`haku/console/oauth/provider_connection.py`),
-self-refreshed in-process. This replaces Airlock's brokered `haku_console_google` token — the
-console holds the Google OAuth clients and each Operator's refresh token itself. The console pod
-starts fine before anything is connected; until an Operator connects, both servers are
-`degraded` (hidden from that Operator) and their tools return a "connect your Google account"
-error.
-
-Authenticated-agent Calendar reads (`get_event`, `list_events`, `list_event_instances`) are
-reviewed transparent auto-approved tools; `create_event` always remains operator-approved.
-
-**Deploy prerequisites (operator, one time):**
-
-1. **Gmail OAuth client secret.** The existing `haku-console-google-client-credentials` Secret
-   (keys `client_id`, `client_secret`) supplies the nested
-   `HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_MAIL__CLIENT_{ID,SECRET}` settings.
-   It is the restricted-scope Gmail project's client, independent of Airlock's
-   `google-client-credentials`.
-2. **Calendar OAuth client secret.** The separate `haku-console` Google Cloud project/client requests
-   only `calendar.events`. Its client is stored in the SOPS-encrypted
-   `haku-console-google-calendar-client-credentials` Secret with the same two keys. The deployment's
-   references remain optional so a missing or temporarily unreconciled Secret degrades only Calendar.
-3. **Redirect URI.** Register `https://haku.allegedly.works/api/provider-connections/callback`
-   as an authorized redirect URI on both Google OAuth clients, or that client's callback fails with
-   `redirect_uri_mismatch`.
-
-**Connect (operator, per linkage):** open the console's Settings → Connected accounts and connect
-Google Mail and Google Calendar separately, then complete consent (`access_type=offline`,
-`prompt=consent`). Each callback stores its own refresh token in Postgres; disconnecting one linkage
-deletes only that local grant. Separate projects/clients isolate their verification and credential
-lifecycles.
-
-**Gotcha — Testing publishing status expires the refresh token every 7 days.** The Gmail OAuth app
-(project `rai-personal`) remains in **Testing** because its restricted scopes make publication require
-the expensive verification/security-assessment path. Its connection therefore needs reauthorization
-roughly weekly. Calendar uses a separate project/client so its narrower sensitive-scope verification
-can proceed without Gmail's restricted scopes; once that project is published, Calendar tokens no
-longer inherit Gmail's Testing-mode churn.
-
-Scopes are explicit per deploy-named connection in `console_config.py`: Google Mail requests
-`gmail.modify`, `gmail.compose`, and `gmail.settings.basic`; Google Calendar requests
-`calendar.events`. Add a new logical connection when another Google surface is actually exposed
-rather than broadening either existing grant.
-
-## One-time bootstrap: GitHub's hosted MCP server
-
-GitHub's hosted MCP endpoint is `https://api.githubcopilot.com/mcp/`. It discovers its OAuth
-authorization server normally, but GitHub does **not** support Dynamic Client Registration, so the
-Console needs an organization-owned, pre-registered **GitHub App**. The Console uses GitHub's normal
-endpoint: its upstream catalog includes write tools, but `console_config.py` explicitly auto-approves only
-the reviewed read-only tool names for Haku. The same entry denies the Copilot delegation tools to every Agent, including stale-schema and generic-dispatch calls. Other GitHub tools remain per-call operator approval.
-
-1. Create a private GitHub App owned by the organization. Set its user-authorization callback URL
-   to `https://haku.allegedly.works/api/mcp/operator-auth/callback`. Grant only the repository and
-   write permissions the intended toolset needs; Console approval never widens the App's GitHub
-   permissions. Install/approve the App for the intended organization and
-   repositories. Do not substitute a PAT or the OAuth client embedded in GitHub's local MCP binary.
-2. Put the App's `client_id` and `client_secret` in a new SOPS-encrypted Secret named
-   `haku-console-github-mcp-client-credentials`, with those exact keys, listed in the `haku-console`
-   directory's `extra_resources` (`cluster/cdk8s/haku/charts.py`). The Deployment overlays the values directly at
-   `HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_{ID,SECRET}`
-   and tolerates the Secret being absent until this step is complete.
-3. Keep the existing keyed `mcp.servers.github` entry in `console_config.py`. Its non-secret shape (as YAML) is:
-
-   ```yaml
-   github:
-     id: github
-     backend:
-       kind: remote_mcp
-       url: https://api.githubcopilot.com/mcp/
-       auth:
-         kind: remote_server_oauth
-         client_registration:
-           kind: preregistered
-           token_endpoint_auth_method: client_secret_post
-   ```
-
-4. In Console Settings → Access, connect the GitHub server and complete GitHub's authorization
-   prompt. The Console stores each operator's grant separately; disconnecting replaces only that
-   operator's link. Haku's reviewed reads execute immediately; GitHub writes always enter the
-   Console's per-call approval queue.
-
-GitHub's host guide describes the prerequisite and explicitly notes that its remote MCP server has
-no Dynamic Client Registration: <https://github.com/github/github-mcp-server/blob/main/docs/host-integration.md>.
-
-## One-time bootstrap: `kubectl-passthrough-mcp` (cluster-admin, operator-linked)
-
-The `kubectl-passthrough-mcp` MCP server entry (console_config.py — `pods_*`, `resources_*`,
-`nodes_*`, `events_list`, `configuration_view`) uses `auth: {kind: remote_server_oauth}`, the same
-per-operator browser-linked mechanism as `grocy-sf`: the operator connects once
-from the console's Access tab (⚙ → Access → Connect next to `kubectl-passthrough-mcp`),
-which runs Authentik's PKCE flow against `kubectl-passthrough-mcp`'s own OAuth2
-application and stores the association in the console's Postgres database — no static
-token, no secret to mount.
-
-Unlike `grocy-sf`, this server forwards the connecting operator's own token
-straight to kube-apiserver (`cluster_auth_mode = passthrough` in
-`agents/kubectl-passthrough-mcp/`) rather than acting through a scoped service credential
-of its own — the operator's real permissions apply, via the
-`oidc-ksbx-agentydragon-admin` `ClusterRoleBinding`
-(`agents/kubectl-passthrough-mcp/app/clusterrolebinding-agentydragon-admin.yaml`, cluster-admin).
-So every tool call here runs with full cluster-admin once approved; the operator-approval
-click in trusted console chrome is the only gate. See `haku/docs/security.md` for the
-enforcement-inventory entry.
-
-## Tana backend credential
-
-`tana` uses the cluster-internal Tana MCP endpoint with a static bearer held by the Console
-server. The encrypted account PAT is reflected only into the `haku-console` namespace and injected
-only into this deployment; the inner Haku workload sees the proxied tool surface, never the PAT.
-The public Tana OAuth facade remains available for external MCP clients but is not on Haku's path.
+The console reads nothing from this SOPS Secret, the pre-registered OAuth client of the GitHub App
+behind GitHub's hosted MCP. `agentplane-staging` copies it with ESO, through a store that reaches
+only this Secret, and its Action Service links GitHub with it
+(<../../agentplane-staging/README.md> § MCP OAuth callbacks); deleting it here breaks that linkage.
+Moving it there means re-encrypting it under that namespace, which needs the cluster decryption
+identity (the SOPS MAC covers `metadata.namespace`). The same identity is needed to drop the file's
+leftover Reflector annotations.

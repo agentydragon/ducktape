@@ -32,13 +32,12 @@ pub struct CompileSpecTreeOptions {
 #[serde(deny_unknown_fields)]
 struct AuthoringConfig {
     main_chunk_id: String,
-    /// Optional per-chunk module roots, relative to `--tree-modules`.
-    /// When omitted, every module below `--tree-modules` belongs to
-    /// `main_chunk_id`, preserving the original single-chunk authoring shape.
-    /// When present, only the listed subtrees are loaded and each subtree's
-    /// modules belong to its map key.
+    /// Optional module trees, relative to `--tree-modules`, each mapped to
+    /// the chunk its modules are scoped to. When omitted, every module below
+    /// `--tree-modules` belongs to `main_chunk_id`. When present, only the
+    /// listed subtrees are loaded; several trees may scope to one chunk.
     #[serde(default)]
-    module_roots: BTreeMap<String, PathBuf>,
+    module_roots: BTreeMap<PathBuf, String>,
     inputs: AuthoringInputs,
     /// Optional: only meaningful for a browser-delivered chunk. Omit for a
     /// target with no HTML entry point (e.g. a Node CLI bundle) to skip the
@@ -148,6 +147,8 @@ struct VendorPackageSource {
 #[serde(deny_unknown_fields)]
 struct ModuleSource {
     chunk_id: String,
+    #[serde(skip)]
+    tree: PathBuf,
     path: String,
     #[serde(default)]
     members: Vec<Member>,
@@ -257,34 +258,33 @@ impl OutputLayout {
 fn load_module_sources(
     modules_root: &Path,
     main_chunk_id: &str,
-    module_roots: &BTreeMap<String, PathBuf>,
+    module_roots: &BTreeMap<PathBuf, String>,
 ) -> Result<Vec<ModuleSource>> {
     if module_roots.is_empty() {
-        return load_chunk_modules(modules_root, main_chunk_id);
+        return load_chunk_modules(modules_root, Path::new(""), main_chunk_id);
     }
 
     validate_module_roots(module_roots)?;
     let mut active = Vec::new();
-    for (chunk_id, relative_root) in module_roots {
+    for (relative_root, chunk_id) in module_roots {
         active.extend(
-            load_chunk_modules(&modules_root.join(relative_root), chunk_id).with_context(|| {
-                format!(
-                    "loading module_roots entry `{chunk_id}` from {}",
-                    relative_root.display()
-                )
-            })?,
+            load_chunk_modules(&modules_root.join(relative_root), relative_root, chunk_id)
+                .with_context(|| {
+                    format!(
+                        "loading module_roots entry `{}` for chunk `{chunk_id}`",
+                        relative_root.display()
+                    )
+                })?,
         );
     }
     active.sort_by(|left, right| (&left.chunk_id, &left.path).cmp(&(&right.chunk_id, &right.path)));
     Ok(active)
 }
 
-fn validate_module_roots(module_roots: &BTreeMap<String, PathBuf>) -> Result<()> {
-    let mut roots: Vec<(&str, &Path)> = Vec::new();
-    for (chunk_id, root) in module_roots {
-        if chunk_id.is_empty() {
-            bail!("module_roots contains an empty chunk id");
-        }
+/// Roots are normalized relative paths and no tree contains another, so a
+/// module file belongs to exactly one tree. Several trees may name one chunk.
+fn validate_module_roots(module_roots: &BTreeMap<PathBuf, String>) -> Result<()> {
+    for (root, chunk_id) in module_roots {
         if root.as_os_str().is_empty()
             || root.is_absolute()
             || root
@@ -292,26 +292,25 @@ fn validate_module_roots(module_roots: &BTreeMap<String, PathBuf>) -> Result<()>
                 .any(|component| !matches!(component, std::path::Component::Normal(_)))
         {
             bail!(
-                "module_roots entry `{chunk_id}` must be a non-empty normalized relative path, got `{}`",
+                "module_roots entry `{}` must be a non-empty normalized relative path",
                 root.display()
             );
         }
-        roots.push((chunk_id, root));
+        if chunk_id.is_empty() {
+            bail!(
+                "module_roots entry `{}` names an empty chunk id",
+                root.display()
+            );
+        }
     }
-
-    for (index, (left_chunk, left_root)) in roots.iter().enumerate() {
-        for (right_chunk, right_root) in roots.iter().skip(index + 1) {
-            if left_root == right_root {
+    let roots = module_roots.keys().collect::<Vec<_>>();
+    for (index, left) in roots.iter().enumerate() {
+        for right in &roots[index + 1..] {
+            if left.starts_with(right) || right.starts_with(left) {
                 bail!(
-                    "module_roots entries `{left_chunk}` and `{right_chunk}` use the same root `{}`",
-                    left_root.display()
-                );
-            }
-            if left_root.starts_with(right_root) || right_root.starts_with(left_root) {
-                bail!(
-                    "module_roots entries `{left_chunk}` (`{}`) and `{right_chunk}` (`{}`) overlap",
-                    left_root.display(),
-                    right_root.display()
+                    "module_roots entries `{}` and `{}` overlap",
+                    left.display(),
+                    right.display()
                 );
             }
         }
@@ -319,13 +318,20 @@ fn validate_module_roots(module_roots: &BTreeMap<String, PathBuf>) -> Result<()>
     Ok(())
 }
 
-fn load_chunk_modules(modules_root: &Path, chunk_id: &str) -> Result<Vec<ModuleSource>> {
+/// The modules of the tree at `modules_root`, scoped to `chunk_id`; `tree`
+/// is its `module_roots` entry (empty without `module_roots`).
+fn load_chunk_modules(
+    modules_root: &Path,
+    tree: &Path,
+    chunk_id: &str,
+) -> Result<Vec<ModuleSource>> {
     let mut active = Vec::new();
     for path in collect_module_files(modules_root)? {
         let module_path = module_path_from_file(&path, modules_root);
         let data = read_module_file(&path)?;
         active.push(ModuleSource {
             chunk_id: chunk_id.to_string(),
+            tree: tree.to_path_buf(),
             path: module_path,
             members: data.members,
             source_matches: data.source_matches,
@@ -562,12 +568,24 @@ fn logical_modules_map(
     sources: Vec<ModuleSource>,
 ) -> Result<BTreeMap<String, BTreeMap<String, LogicalModule>>> {
     let mut out = BTreeMap::new();
+    let mut trees = BTreeMap::<(String, String), PathBuf>::new();
     for source in sources {
-        let previous = out
-            .entry(source.chunk_id.clone())
+        if let Some(first) = trees.insert(
+            (source.chunk_id.clone(), source.path.clone()),
+            source.tree.clone(),
+        ) {
+            bail!(
+                "module_roots entries `{}` and `{}` both define module `{}` of chunk `{}`",
+                first.display(),
+                source.tree.display(),
+                source.path,
+                source.chunk_id,
+            );
+        }
+        out.entry(source.chunk_id)
             .or_insert_with(BTreeMap::new)
             .insert(
-                source.path.clone(),
+                source.path,
                 LogicalModule {
                     members: source.members,
                     source_matches: source.source_matches,
@@ -577,13 +595,6 @@ fn logical_modules_map(
                     note: source.note,
                 },
             );
-        if previous.is_some() {
-            bail!(
-                "duplicate logical module for chunk {} path {}",
-                source.chunk_id,
-                source.path
-            );
-        }
     }
     Ok(out)
 }
@@ -724,8 +735,9 @@ unassigned_mode:
             &config,
             r#"main_chunk_id: cli
 module_roots:
-  cli: chunks/cli
-  print: chunks/print
+  chunks/cli: cli
+  chunks/print: print
+  shared/print: print
 inputs:
   root: snapshot
   js_list_path: extracted/js-files.txt
@@ -759,6 +771,10 @@ unassigned_mode:
 "#,
         );
         write_file(
+            &modules.join("shared/print/protocol/routing.yaml"),
+            "members: [{ name: Routing, selector: { binding: { name: minifiedRouting } } }]\n",
+        );
+        write_file(
             &modules.join("not_mapped.yaml"),
             "members: [{ selector: { binding: { name: ignored } } }]\n",
         );
@@ -778,10 +794,11 @@ unassigned_mode:
                 .values()
                 .map(BTreeMap::len)
                 .sum::<usize>(),
-            2
+            3
         );
         assert!(spec.logical_modules["cli"].contains_key("runtime/session"));
         assert!(spec.logical_modules["print"].contains_key("protocol/stream"));
+        assert!(spec.logical_modules["print"].contains_key("protocol/routing"));
         assert_eq!(
             spec.logical_modules["cli"]["runtime/session"].source_matches[0].bindings[0].local(),
             "selectedCli"
@@ -800,29 +817,29 @@ unassigned_mode:
     fn rejects_invalid_multi_chunk_module_roots() {
         let cases = [
             (
-                "duplicate",
-                "  cli: chunks/shared\n  print: chunks/shared\n",
-                "use the same root",
-            ),
-            (
                 "overlap",
-                "  cli: chunks\n  print: chunks/print\n",
+                "  chunks: cli\n  chunks/print: print\n",
                 "overlap",
             ),
             (
                 "traversal",
-                "  cli: ../outside\n  print: chunks/print\n",
+                "  ../outside: cli\n  chunks/print: print\n",
                 "normalized relative path",
             ),
             (
                 "absolute",
-                "  cli: /tmp/cli\n  print: chunks/print\n",
+                "  /tmp/cli: cli\n  chunks/print: print\n",
                 "normalized relative path",
             ),
             (
-                "empty",
-                "  cli: ''\n  print: chunks/print\n",
+                "empty root",
+                "  '': cli\n  chunks/print: print\n",
                 "normalized relative path",
+            ),
+            (
+                "empty chunk",
+                "  chunks/cli: ''\n  chunks/print: print\n",
+                "empty chunk id",
             ),
         ];
 
@@ -855,6 +872,38 @@ unassigned_mode:
                 "{case}: expected `{expected}` in `{message}`"
             );
         }
+    }
+
+    #[test]
+    fn rejects_one_module_path_in_two_trees_of_a_chunk() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let config = root.join("spec_config.yaml");
+        let modules = root.join("modules");
+        let vendor_marks = root.join("vendor_marks.yaml");
+        write_file(
+            &config,
+            "main_chunk_id: cli\nmodule_roots:\n  left: cli\n  right: cli\ninputs:\n  root: snapshot\n  js_list_path: extracted/js-files.txt\nunassigned_mode:\n  cli: { kind: inline_in_entry }\n",
+        );
+        write_file(&vendor_marks, "vendor_marks: []\n");
+        for tree in ["left", "right"] {
+            write_file(&modules.join(tree).join("shared.yaml"), "members: []\n");
+        }
+
+        let error = compile_spec_tree(&CompileSpecTreeOptions {
+            config_path: config,
+            modules_root: modules,
+            vendor_marks_path: vendor_marks,
+            source_root: None,
+            out_root: root.join("out"),
+        })
+        .unwrap_err();
+        assert!(
+            format!("{error:#}").contains(
+                "module_roots entries `left` and `right` both define module `shared` of chunk `cli`"
+            ),
+            "{error:#}"
+        );
     }
 
     #[test]

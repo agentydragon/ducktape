@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from pathlib import Path
 
 from cluster.validation.cluster import ParsedCluster
@@ -11,16 +10,12 @@ from cluster.validation.k8s import (
     CronJobResource,
     EgressBindingResource,
     ExternalSecretResource,
-    HelmReleaseResource,
     K8sResource,
     PodTemplateWorkloadResource,
-    RoleBindingResource,
-    RoleResource,
     SandboxTemplateResource,
     SecretResource,
     SecretStoreResource,
 )
-from cluster.validation.kustomize import KustomizeBuildResult
 
 _FORGEJO_REGISTRY = "git.allegedly.works"
 _FORGEJO_CREDENTIAL_SECRET = "forgejo-images-creds"
@@ -31,14 +26,14 @@ _FORGEJO_IMAGE_WORKLOAD_TYPES = (CronJobResource, PodTemplateWorkloadResource, S
 # (see x/codex_pod_image/deploy/README.md before reactivation).
 _INTENTIONALLY_STORED_ONLY_FILES = frozenset(
     {
-        Path("external-creds/dreo-account.sops.yaml"),
-        Path("parked/codex-pod/codex-bootstrap-identity.sops.yaml"),
-        Path("parked/codex-pod/forgejo-tea.sops.yaml"),
+        Path("cluster/k8s/external-creds/dreo-account.sops.yaml"),
+        Path("cluster/k8s/parked/codex-pod/codex-bootstrap-identity.sops.yaml"),
+        Path("cluster/k8s/parked/codex-pod/forgejo-tea.sops.yaml"),
     }
 )
 
 
-def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
+def find_orphaned_files(cluster: ParsedCluster, repo_root: Path) -> list[str]:
     """Find YAML files not referenced by any kustomization, except stored-only inputs."""
     referenced: set[Path] = set()
     for kust in cluster.kustomize_files.values():
@@ -51,7 +46,7 @@ def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
     for yaml_file in cluster.all_yaml_files:
         if yaml_file.name == "kustomization.yaml":
             continue
-        relative = yaml_file.relative_to(k8s_dir)
+        relative = yaml_file.relative_to(repo_root)
         if relative in _INTENTIONALLY_STORED_ONLY_FILES:
             continue
         if yaml_file not in referenced:
@@ -59,116 +54,30 @@ def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
     return errors
 
 
-def check_duplicate_external_secrets(build_results: list[KustomizeBuildResult]) -> list[str]:
-    """Check for duplicate external-secrets HelmRelease installations."""
-    errors = []
-    deployments: dict[str, list[str]] = defaultdict(list)
-
-    for result in build_results:
-        for resource in result.resources:
-            if isinstance(resource, HelmReleaseResource) and resource.name == "external-secrets":
-                key = f"{resource.namespace}/{resource.chart_version or 'unknown'}"
-                deployments[key].append(str(result.kustomization_path.parent))
-
-    if len(deployments) > 1:
-        errors.append("Multiple external-secrets HelmRelease found:")
-        for deployment, paths in deployments.items():
-            errors.append(f"  {deployment}: {', '.join(paths)}")
-        errors.append("There should be exactly ONE external-secrets installation.")
-    elif len(deployments) == 0:
-        errors.append("No external-secrets HelmRelease found. At least one is required.")
-
-    return errors
-
-
-def check_external_credential_ownership(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
-    """Keep credential approval at the source and consumer machinery with consumers."""
-    supplier = "external-creds"
+def check_external_credential_ownership(cluster: ParsedCluster, repo_root: Path) -> list[str]:
+    """Only the shared external-creds ClusterSecretStore reads ducktape-flux."""
     store_owner = "external-secrets-config"
     store_name = "kubernetes-external-creds-secret-store"
-    referent_service_account = "external-creds-reader"
-    supplier_resources = cluster.flux_kust_resources(k8s_dir).get(supplier, [])
+    resources_by_kustomization = cluster.flux_kust_resources(repo_root)
     errors: list[str] = []
-    approved_namespaces: set[str] = set()
-
-    allowed_supplier_kinds = {"Secret", "Role", "RoleBinding"}
-    for resource in supplier_resources:
-        if resource.kind not in allowed_supplier_kinds:
-            errors.append(
-                f"{supplier} renders consumer-owned {resource.kind} "
-                f"'{resource.namespace}/{resource.name}'; keep only Secrets and source-side RBAC in the supplier"
-            )
-        if isinstance(resource, RoleResource):
-            expected = [([""], ["secrets"], ["get"])]
-            actual = [(rule.api_groups, rule.resources, rule.verbs) for rule in resource.rules]
-            if actual != expected or len(resource.rules[0].resource_names) != 1:
-                errors.append(
-                    f"{supplier} Role '{resource.namespace}/{resource.name}' must contain one exact-name, "
-                    "get-only Secret rule"
-                )
-        if isinstance(resource, RoleBindingResource):
-            valid_binding = (
-                resource.role_ref.api_group == "rbac.authorization.k8s.io"
-                and resource.role_ref.kind == "Role"
-                and len(resource.subjects) == 1
-                and resource.subjects[0].kind == "ServiceAccount"
-                and resource.subjects[0].name == referent_service_account
-                and bool(resource.subjects[0].namespace)
-            )
-            if not valid_binding:
-                errors.append(
-                    f"{supplier} RoleBinding '{resource.namespace}/{resource.name}' must approve exactly one "
-                    f"explicitly namespaced {referent_service_account} ServiceAccount for a source Role"
-                )
-            elif resource.subjects[0].namespace:
-                approved_namespaces.add(resource.subjects[0].namespace)
-
-    supplier_spec = cluster.flux_kustomizations.get(supplier)
-    if supplier_spec is not None:
-        dependencies = {dependency.name for dependency in supplier_spec.depends_on}
-        if dependencies != {"claude-rbac"}:
-            errors.append(
-                f"{supplier} must depend only on claude-rbac, not ESO or consumer namespaces; got "
-                f"{sorted(dependencies)}"
-            )
-
     stores: list[SecretStoreResource] = []
-    for kustomization, resources in cluster.flux_kust_resources(k8s_dir).items():
+    for kustomization, resources in resources_by_kustomization.items():
         for resource in resources:
-            if isinstance(resource, SecretStoreResource):
-                provider = resource.spec.provider.kubernetes
-                if provider is None or provider.remote_namespace != "ducktape-flux":
-                    continue
-                if resource.kind != "ClusterSecretStore" or resource.name != store_name or kustomization != store_owner:
-                    errors.append(
-                        f"{kustomization} {resource.kind} '{resource.namespace}/{resource.name}' reads "
-                        f"external-creds; use {store_owner}'s shared ClusterSecretStore '{store_name}'"
-                    )
-                    continue
+            if not isinstance(resource, SecretStoreResource):
+                continue
+            provider = resource.spec.provider.kubernetes
+            if provider is None or provider.remote_namespace != "ducktape-flux":
+                continue
+            if resource.kind != "ClusterSecretStore" or resource.name != store_name or kustomization != store_owner:
+                errors.append(
+                    f"{kustomization} {resource.kind} '{resource.namespace}/{resource.name}' reads "
+                    f"external-creds; use {store_owner}'s shared ClusterSecretStore '{store_name}'"
+                )
+            else:
                 stores.append(resource)
-                service_account = provider.auth.service_account if provider.auth is not None else None
-                if service_account is None or service_account.name != referent_service_account:
-                    errors.append(
-                        f"{store_owner} ClusterSecretStore '{store_name}' must authenticate as "
-                        f"{referent_service_account}"
-                    )
-                elif service_account.namespace is not None:
-                    errors.append(
-                        f"{store_owner} ClusterSecretStore '{store_name}' must omit the ServiceAccount namespace "
-                        "so ESO uses referent authentication"
-                    )
 
     if len(stores) != 1:
         errors.append(f"expected exactly one {store_owner} ClusterSecretStore '{store_name}', found {len(stores)}")
-    else:
-        allowed_namespaces = {
-            namespace for condition in stores[0].spec.conditions for namespace in condition.namespaces
-        }
-        if allowed_namespaces != approved_namespaces:
-            errors.append(
-                f"{store_owner} ClusterSecretStore '{store_name}' namespace conditions must equal the "
-                f"source-approved namespaces; expected {sorted(approved_namespaces)}, got {sorted(allowed_namespaces)}"
-            )
 
     return errors
 
@@ -267,7 +176,7 @@ def check_goldilocks_explicit_decision(cluster: ParsedCluster) -> list[str]:
     return errors
 
 
-def check_sops_decryption_blocks(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
+def check_sops_decryption_blocks(cluster: ParsedCluster, repo_root: Path) -> list[str]:
     """Active Flux Kustomizations that render a SOPS-encrypted Secret must declare
     spec.decryption with provider: sops AND a secretRef.name — otherwise Flux applies
     the ENC[...] ciphertext literally (no provider) or has no age key to decrypt with
@@ -275,7 +184,7 @@ def check_sops_decryption_blocks(cluster: ParsedCluster, k8s_dir: Path) -> list[
     applies, so it neither over-counts SOPS files in sibling/child kustomizations nor
     misses those pulled in via nested kustomize refs."""
     errors: list[str] = []
-    for name, resources in cluster.flux_kust_resources(k8s_dir).items():
+    for name, resources in cluster.flux_kust_resources(repo_root).items():
         if not any(isinstance(r, SecretResource) and r.sops is not None for r in resources):
             continue
         spec = cluster.active_flux_kustomizations[name]

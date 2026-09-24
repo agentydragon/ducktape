@@ -163,7 +163,6 @@ spec:
       volumes:
         - name: secret-google-write-access-token
           secret:
-            optional: true
             secretName: google-write-access-token
 ---
 apiVersion: v1
@@ -199,6 +198,9 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
     - toFQDNs:
         - matchName: gmail.googleapis.com
         - matchName: www.googleapis.com

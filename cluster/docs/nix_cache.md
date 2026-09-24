@@ -38,7 +38,7 @@ cache signs with the same key as before.
 
 Tokens (admin, per-host readers, CI writers) are HS256 JWTs signed with the
 `attic-jwt-token` secret. Reader/writer tokens are auto-rotated by the
-`attic-jwt-rotation` CronJob (`cluster/k8s/nix-cache/cronjob.yaml`, driven by
+`attic-jwt-rotation` CronJob (`cluster/cdk8s/nix_cache/attic.py`, driven by
 `rotators.yaml` — merged into this Kustomization so its `attic-jwt-rotator`
 ServiceAccount and the bootstrap Job that reuses it apply in one ordered pass,
 rather than deadlocking across two Kustomizations depending on each other);

@@ -18,15 +18,13 @@ from itsdangerous import BadSignature, TimestampSigner
 from sqlalchemy import DateTime, Text, delete, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
 
-
-class Base(DeclarativeBase):
-    pass
+from agentplane.app.database import Base
 
 
 class BrowserSession(Base):

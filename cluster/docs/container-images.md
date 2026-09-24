@@ -34,12 +34,12 @@ registry proxy (`props.allegedly.works` → `git.allegedly.works/props/*`).
 
 3. **Tag policy — avoid `:latest`**: Use Flux image automation to track pinned tags
    (`{branch}-{timestamp}-{sha7}`). For in-cluster images:
-   - Create `ImageRepository` + `ImagePolicy` in `k8s/flux-image-automation-forgejo/`
+   - Create `ImageRepository` + `ImagePolicy` in `generated/flux-image-automation-forgejo/`
      (with `secretRef: forgejo-images-creds` on the repository) or, for a GHCR image,
      in `k8s/flux-image-automation-ghcr/`
    - Add `{"$imagepolicy": "flux-system:<policy-name>"}` comment to the image field
    - **GHCR only: add the `ImageRepository` to the GitHub webhook receiver** at
-     `k8s/flux-webhook/github-webhook-receiver.yaml` — without this, the image only
+     `cdk8s/flux_webhook/chart.py` — without this, the image only
      gets picked up on the 5m poll interval instead of immediately on push. Forgejo
      images ride the poll; the webhook is GitHub's.
    - Flux updates the tag in-repo on each new push
@@ -75,7 +75,7 @@ Flux image scan are retired.
 --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD"`. Direct to
    Forgejo — no proxy (unlike props).
 3. **Auto-roll** — add `ImageRepository` (with `secretRef: forgejo-images-creds`)
-   - `ImagePolicy` under `cluster/k8s/flux-image-automation-forgejo/`, and the
+   - `ImagePolicy` under `cluster/generated/flux-image-automation-forgejo/`, and the
      `{"$imagepolicy": "flux-system:<name>"}` marker on the image field. The
      cluster-wide `all-images` `ImageUpdateAutomation` updates it.
 4. **Consume** — image `git.allegedly.works/ducktape-ci/<image>` +

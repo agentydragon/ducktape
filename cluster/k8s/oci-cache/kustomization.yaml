@@ -2,13 +2,9 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: oci-cache
 resources:
-  - namespace.yaml
-  - valkey-instance.yaml
-  - deployment.yaml
-  - service.yaml
-  - httproute.yaml
+  # cdk8s-generated (cluster/cdk8s/oci_cache/zot.py) -- see cluster/docs/cdk8s.md.
+  - oci-cache.k8s.yaml
   - puller-credential.sops.yaml
-  - servicemonitor.yaml
 configMapGenerator:
   - name: oci-cache-zot-config
     files:

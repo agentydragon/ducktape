@@ -1,5 +1,7 @@
 # gazelle:resolve py cert_manager_crds //cluster/cdk8s/crd_bindings/cert_manager:certificate
 # gazelle:resolve py trust_manager_crds //cluster/cdk8s/crd_bindings/cert_manager:bundle
+# gazelle:resolve py cert_manager_clusterissuer_crds //cluster/cdk8s/crd_bindings/cert_manager:clusterissuer
+# gazelle:resolve py cert_manager_issuer_crds //cluster/cdk8s/crd_bindings/cert_manager:issuer
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 
@@ -20,5 +22,23 @@ cdk8s_import(
     jsii_module_path = "io/cert-manager/trust",
     module_name = "trust_manager_crds",
     module_path = "io/cert_manager/trust",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "clusterissuer",
+    crd = "@cert_manager_clusterissuer_crd//file",
+    jsii_module_path = "io/cert-manager",
+    module_name = "cert_manager_clusterissuer_crds",
+    module_path = "io/cert_manager",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "issuer",
+    crd = "@cert_manager_issuer_crd//file",
+    jsii_module_path = "io/cert-manager",
+    module_name = "cert_manager_issuer_crds",
+    module_path = "io/cert_manager",
     visibility = ["//visibility:public"],
 )

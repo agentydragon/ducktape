@@ -35,15 +35,14 @@ from haku.console.mcp.tool_call_service import (
 )
 from haku.console.mcp_config import (
     AccessProfile,
+    InProcessBackend,
     InProcessCredentialKind,
     InProcessServerRegistration,
     InProcessServers,
     McpServerEntry,
     McpServerNotFoundError,
     NoCredential,
-    RemoteMcpBackend,
 )
-from haku.console.oauth.provider_connection import PostgresProviderConnectionStore
 from haku.console.oauth.token_state import PostgresTokenStateStore
 from haku.console.recall_index_access import RecallIndexAccessPolicy
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
@@ -179,14 +178,26 @@ class _BlockingExecutor(_RecordingExecutor):
         raise AssertionError("unreachable: blocking executor is only released by cancellation")
 
 
+_BACKEND_ACCOUNT = "backend_account"
+
+
 class _OperatorTokens:
+    """The operator-linked account behind `operator-backend`, one token per Operator."""
+
     def __init__(self, tokens: dict[UUID, str]) -> None:
         self.tokens = tokens
         self.lookups: list[UUID] = []
 
-    async def access_token_for(self, *, server: McpServerEntry, operator_id: UUID) -> str | None:
+    async def access_token_for(self, *, connection: str, operator_id: UUID) -> str | None:
+        assert connection == _BACKEND_ACCOUNT
         self.lookups.append(operator_id)
         return self.tokens.get(operator_id)
+
+    async def is_connected(self, *, connection: str, operator_id: UUID) -> bool:
+        return operator_id in self.tokens
+
+    async def is_provisioned(self, *, connection: str) -> bool:
+        return True
 
 
 class _RecordingLedger(PostgresToolCallLedger):
@@ -324,12 +335,8 @@ def _service(
         {
             "id": "operator-backend",
             "backend": {
-                "kind": "remote_mcp",
-                "url": "https://backend.invalid/mcp",
-                "auth": {
-                    "kind": "remote_server_oauth",
-                    "client_registration": {"kind": "dynamic", "client_name": "Haku Console"},
-                },
+                "kind": "in_process",
+                "credential": {"kind": "operator_connection", "connection": _BACKEND_ACCOUNT},
             },
         }
     ]
@@ -339,6 +346,10 @@ def _service(
             "auto_approval_policies": [{"id": "manual", "type": "never"}],
             "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
             "default_access_profile_id": "manual",
+            "operator_connection_providers": {"backend_provider": {"kind": "google"}},
+            "operator_connections": {
+                _BACKEND_ACCOUNT: {"display_name": "Backend", "provider": "backend_provider", "scopes": ["scope"]}
+            },
             "mcp": {"servers": {server["id"].replace("-", "_"): server for server in configured_servers}},
         },
     )
@@ -347,16 +358,8 @@ def _service(
         repository=ledger,
         invalidation_publisher=publisher,
         executor=executor,
-        oauth_store=tokens,
         in_process_servers=in_process_servers or {},
-        provider_store=PostgresProviderConnectionStore(
-            sessions,
-            operator_identity_store=identity_store,
-            token_states=token_states,
-            provider_definitions={},
-            provider_clients={},
-            operator_connections={},
-        ),
+        provider_store=tokens,
         authentik_token_store=PostgresAuthentikOperatorTokenStore(
             sessions,
             operator_identity_store=identity_store,
@@ -522,9 +525,7 @@ async def test_two_operator_two_agent_authorization_matrix(
         await service.list_tool_calls(actor=invalid_actor)
     with pytest.raises(TypeError, match="unsupported tool-call actor"):
         await ledger.submit(
-            server=McpServerEntry(
-                id="operator-backend", backend=RemoteMcpBackend(url="https://backend.invalid/mcp", auth=NoCredential())
-            ),
+            server=McpServerEntry(id="operator-backend", backend=InProcessBackend(credential=NoCredential())),
             req=_request(owner="lookalike"),
             actor=invalid_actor,
         )
@@ -1106,9 +1107,7 @@ async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
 async def test_finish_only_accepts_running_calls(actors: dict[str, RuntimeActor], ledger: _RecordingLedger) -> None:
     operator = actors["oa"]
     assert isinstance(operator, OperatorActor)
-    server = McpServerEntry(
-        id="operator-backend", backend=RemoteMcpBackend(url="https://backend.invalid/mcp", auth=NoCredential())
-    )
+    server = McpServerEntry(id="operator-backend", backend=InProcessBackend(credential=NoCredential()))
     record = await ledger.submit(server=server, req=_request(owner="terminal"), actor=operator)
 
     with pytest.raises(ToolCallStateConflictError, match="not running"):
@@ -1130,9 +1129,7 @@ async def test_execution_authorization_reloads_profile_changed_after_operator_ap
     assert isinstance(agent, AgentActor)
     assert isinstance(operator, OperatorActor)
     record = await ledger.submit(
-        server=McpServerEntry(
-            id="operator-backend", backend=RemoteMcpBackend(url="https://backend.invalid/mcp", auth=NoCredential())
-        ),
+        server=McpServerEntry(id="operator-backend", backend=InProcessBackend(credential=NoCredential())),
         req=_request(owner="profile-changed-after-approval"),
         actor=agent,
     )
@@ -1155,9 +1152,7 @@ async def test_binding_revoked_after_execution_authorization_does_not_strand_run
     agent = actors["aa1"]
     assert isinstance(agent, AgentActor)
     record = await ledger.submit(
-        server=McpServerEntry(
-            id="operator-backend", backend=RemoteMcpBackend(url="https://backend.invalid/mcp", auth=NoCredential())
-        ),
+        server=McpServerEntry(id="operator-backend", backend=InProcessBackend(credential=NoCredential())),
         req=_request(owner="revoked-during-execution"),
         actor=agent,
         auto_approval_policy_id="policy:test",

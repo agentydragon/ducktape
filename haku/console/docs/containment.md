@@ -38,7 +38,7 @@ privileged-action tier_ inventory entries.
 The operator owns _the frame, the secret, and the public door_; Haku owns _the picture
 inside the frame_. Haku ships the UI end-to-end from `haku-state`: Forgejo CI builds and
 pushes the image, Flux image automation rolls it out (see
-<../../../cluster/k8s/haku/workloads/README.md>); no ducktape rebuild is involved.
+<../../../cluster/cdk8s/haku/workloads.md>); no ducktape rebuild is involved.
 
 ## Containment invariants (the load-bearing part)
 
@@ -253,7 +253,7 @@ popups). Rules:
 Haku's backend reads `X-authentik-username` on requests arriving through its gated route.
 Those headers are only forgeable by a direct in-cluster call to the Service — which the
 `haku-sandbox-ingress` CiliumNetworkPolicy
-(<../../../cluster/k8s/haku/namespace/networkpolicy.yaml>) blocks: the whole namespace
+(<../../../cluster/cdk8s/haku/namespace.py>) blocks: the whole namespace
 admits ingress only from itself and the authentik-server pods running the outpost.
 (Same-namespace pods are Haku's own code at Haku's privilege — in-namespace forgery
 gains nothing over the git credential those pods already hold.)

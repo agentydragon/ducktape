@@ -86,7 +86,7 @@ tofu-controller; the metal infra under `cluster/terraform/` is applied by
 
 Forgejo tokens consumed by `haku-ci` or Haku pods are produced by the in-cluster GitOps
 Terraform controller — never minted or synchronized manually. Fix stale token state by
-fixing the wiring under <tf/gitops/haku-state> and <cluster/k8s/forgejo/haku-state> and
+fixing the wiring under <tf/gitops/haku-state> and <cluster/generated/forgejo/haku-state> and
 reconciling; manual `curl`/`tea`/`kubectl` edits are incident diagnostics only, followed
 by a PR that makes the controller own the state.
 

@@ -157,9 +157,9 @@ rust_test(
 )
 
 rust_test(
-    name = "multi_chunk_selector_diagnostics_test",
-    srcs = ["multi_chunk_selector_diagnostics_test.rs"],
-    crate_root = "multi_chunk_selector_diagnostics_test.rs",
+    name = "module_trees_test",
+    srcs = ["module_trees_test.rs"],
+    crate_root = "module_trees_test.rs",
     data = [
         "//devinfra/js/debundle",
         "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
@@ -168,7 +168,7 @@ rust_test(
     edition = "2024",
     deps = [
         ":support",
-        "@crates//:tempfile",
+        "@crates//:serde_json",
     ],
 )
 
@@ -680,6 +680,22 @@ rust_test(
 )
 
 rust_test(
+    name = "selector_outcomes_test",
+    size = "small",
+    srcs = ["selector_outcomes_test.rs"],
+    crate_root = "selector_outcomes_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
     name = "sibling_declarator_steal_test",
     size = "small",
     srcs = ["sibling_declarator_steal_test.rs"],
@@ -706,6 +722,24 @@ rust_test(
     ],
     edition = "2024",
     deps = [":support"],
+)
+
+rust_test(
+    name = "selector_commands_agree_test",
+    size = "small",
+    srcs = ["selector_commands_agree_test.rs"],
+    crate_root = "selector_commands_agree_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
 )
 
 rust_test(
@@ -925,48 +959,6 @@ rust_test(
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:peel",
         "//devinfra/js/debundle:spec",
-    ],
-)
-
-# Bootstrap shadow gate: the in-process Datalog selector solver
-# (`:selector_solve`) must reproduce the production binding-name resolver
-# (`peel::resolve_binding_owners`) on the minified-name surface, over an
-# `owner_graph.json` the real pipeline emits. The equivalence check the
-# relational-selector prototype's EDB rests on.
-rust_test(
-    name = "selector_solve_shadow_test",
-    srcs = ["selector_solve_shadow_test.rs"],
-    crate_root = "selector_solve_shadow_test.rs",
-    data = [
-        "//devinfra/js/debundle",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    edition = "2024",
-    deps = [
-        ":support",
-        "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:peel",
-        "//devinfra/js/debundle:selector_solve",
-        "@crates//:serde_json",
-    ],
-)
-
-# The @Name cross-reference primitive (selector_solve's referencer_for /
-# alias_owner_for) must resolve the metaNode debt shapes -- a shapeless
-# delegator pinned by what it calls, a re-export pinned by what it aliases --
-# on an owner_graph.json the real pipeline emits, not a synthetic EDB.
-rust_test(
-    name = "selector_solve_cross_reference_test",
-    srcs = ["selector_solve_cross_reference_test.rs"],
-    crate_root = "selector_solve_cross_reference_test.rs",
-    data = [
-        "//devinfra/js/debundle",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    edition = "2024",
-    deps = [
-        ":support",
-        "//devinfra/js/debundle:selector_solve",
     ],
 )
 

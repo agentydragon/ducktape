@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity
 from agentplane.action_service.db import ActionConflictError, ActionStore, make_sessionmaker
+from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.models import (
     ActionRequestInput,
@@ -40,7 +41,6 @@ from agentplane.action_service.providers import DecisionContext
 from agentplane.action_service.service import ActionService, InvalidActionArgumentsError
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
-from github_policy.visibility import RepositoryVisibilityService
 
 NAMESPACE = "agentplane-test"
 SUBJECT = ServiceAccountRef(namespace=NAMESPACE, name="workload-a")
@@ -94,25 +94,18 @@ class ExplodingProvider:
         raise RuntimeError("backend rejected Authorization: Bearer provider-secret-must-not-leak")
 
 
-class RacingHumanProvider:
-    """Simulates an operator Decision landing while this provider is still evaluating."""
+class GatedProvider:
+    name = "gated-provider"
 
-    def __init__(self, store: ActionStore, verdict: ProviderVerdict):
-        self._store = store
-        self._verdict = verdict
-
-    @property
-    def name(self) -> str:
-        return "racing"
+    def __init__(self, verdict: ProviderVerdict) -> None:
+        self.verdict = verdict
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
 
     async def decide(self, context: DecisionContext) -> ProviderOutcome:
-        await self._store.decide(
-            context.request_id,
-            DecisionInput(verdict=Verdict.DENY, expected_version=1, idempotency_key="human-wins-race"),
-            OPERATOR,
-            provider=ActionService.HUMAN_PROVIDER,
-        )
-        return ProviderOutcome(verdict=self._verdict, reason_code="late-vote")
+        self.entered.set()
+        await self.release.wait()
+        return ProviderOutcome(verdict=self.verdict, reason_code="test-gated-vote")
 
 
 def body(idempotency_key: str, n: int = 1) -> ActionRequestInput:
@@ -276,17 +269,22 @@ async def test_stale_human_decision_after_auto_provider_already_decided(
         await service.close()
 
 
-async def test_stale_auto_decision_after_human_already_decided(
+async def test_request_is_invisible_until_providers_finish(
     mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
+    """No reader -- the operator queue, Web Push -- may see an auto-approved request as pending."""
     store = ActionStore(make_sessionmaker(engine))
-    racing = RacingHumanProvider(store, ProviderVerdict.ALLOW)
-    service = ActionService(store, echo_catalog, {"agentplane": mcp_executor}, providers=[racing])
+    provider = GatedProvider(ProviderVerdict.ALLOW)
+    service = ActionService(store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider])
     try:
-        result = await service.submit(body("stale-auto-after-human"), CALLER)
-        assert result.state is ActionState.DENIED, "the human Decision that committed first must win"
-        assert result.decision is not None
-        assert result.decision.provider == ActionService.HUMAN_PROVIDER
+        async with asyncio.timeout(10), asyncio.TaskGroup() as tasks:
+            submitted = tasks.create_task(service.submit(body("gated"), CALLER))
+            await provider.entered.wait()
+            assert await store.list_requests(OPERATOR) == []
+            provider.release.set()
+        events = await store.events(submitted.result().id, OPERATOR)
+        assert [event.state for event in events[:2]] == [ActionState.DECISION_PENDING, ActionState.ALLOWED]
+        assert events[0].at == events[1].at, "pending and allowed commit together"
     finally:
         await service.close()
 

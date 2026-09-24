@@ -65,7 +65,7 @@ to `talos-vps-cp-*` hosts.
 
 Current cluster state:
 
-- HelmRelease: `cluster/k8s/valkey/helmrelease.yaml`
+- HelmRelease: `cluster/generated/valkey/helmrelease.yaml`
 - chart version: `0.24.0`
 - running operator image: `quay.io/opstree/redis-operator:v0.25.0`,
   deployed through chart `0.24.0` with image-tag overrides

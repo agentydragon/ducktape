@@ -70,6 +70,7 @@ from agentplane.egress.main import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, container_security, database, llm_ingress, node_scheduling
 from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_PUBLIC_POLICY, KUBERNETES_POLICY, PACKAGES_POLICY
+from cluster.cdk8s.agentplane.egress_credentials import GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -102,11 +103,14 @@ KUBERNETES_AUDIENCE = "https://localhost:7445"
 # Where a sandbox's kubectl sends everything. Cluster-internal by definition, hence the rule below.
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 # The in-cluster Forgejo, not `git.allegedly.works`: the public name would hairpin out through
-# the Gateway and back for a Service one hop away, which is why haku's own agent has no public
-# route either (cluster/k8s/agents/haku-egress-proxy/ccnp-haku-agent-egress.yaml). Plain HTTP on
-# 3000, so the proxy reads the request without bumping TLS.
+# the Gateway and back for a Service one hop away. Plain HTTP on 3000, so the proxy reads the
+# request without bumping TLS.
 FORGEJO_HOST = "forgejo-http.forgejo.svc.cluster.local"
 FORGEJO_PORT = 3000
+# Home Assistant's in-cluster Service, plain HTTP. Its pod runs on its node's host network, so
+# Cilium sees a node there, not an endpoint: the proxy's rule for it is an entity rule on its port.
+HOME_ASSISTANT_HOST = "home-assistant.home-assistant.svc.cluster.local"
+HOME_ASSISTANT_PORT = 8123
 _SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"
 # The trust bundle's ConfigMap key -- the runner SandboxTemplate's volumeMount subPath
 # (app.py) must name the same key.
@@ -145,7 +149,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
                 "limit it adds, so treat anything the token can reach on those hosts as reachable."
             ),
             source=EgressCredentialSpecSource(
-                secret_ref=EgressCredentialSpecSourceSecretRef(name="agentplane-github-pat", key="token")
+                secret_ref=EgressCredentialSpecSourceSecretRef(name=GITHUB_PAT_SECRET, key="token")
             ),
             targets=[
                 EgressCredentialSpecTargets(
@@ -296,7 +300,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
         spec=EgressPolicySpec(
             rules=[
                 EgressPolicySpecRules(
-                    hosts=["api.github.com", "github.com", "*.githubusercontent.com"],
+                    hosts=["api.github.com", "github.com", "codeload.github.com", "*.githubusercontent.com"],
                     methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="github-pat"),
                 )
@@ -634,6 +638,7 @@ class Egress(Construct):
                     {"k8s:io.kubernetes.pod.namespace": "forgejo", "k8s:app.kubernetes.io/name": "forgejo"},
                     FORGEJO_PORT,
                 ),
+                cilium.egress_to_entities("remote-node", "host", ports=[HOME_ASSISTANT_PORT]),
                 cilium.egress_to_entities("world", "remote-node", "host", ports=[443, 80]),
             ],
         )

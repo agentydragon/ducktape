@@ -1,0 +1,205 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mitmproxy-root-ca
+  namespace: agents-mitmproxy
+spec:
+  commonName: mitmproxy-root-ca
+  duration: 87600h
+  isCA: true
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-ca-bootstrap
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  renewBefore: 8760h
+  secretName: mitmproxy-ca
+  secretTemplate:
+    annotations:
+      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager
+      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: mitmproxy-ca-cert
+spec:
+  sources:
+    - useDefaultCAs: true
+    - secret:
+        key: ca.crt
+        name: cluster-root-ca-secret
+    - secret:
+        key: tls.crt
+        name: mitmproxy-ca
+  target:
+    configMap:
+      key: ca-certificates.crt
+      metadata:
+        annotations:
+          description: Trust bundle for mitmproxy-inspected sandbox HTTPS traffic
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - claude-sandbox
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: mitmproxy
+  name: mitmproxy
+  namespace: agents-mitmproxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mitmproxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mitmproxy
+    spec:
+      containers:
+        - command:
+            - mitmweb
+            - --listen-host
+            - 0.0.0.0
+            - --listen-port
+            - "8080"
+            - --web-host
+            - 0.0.0.0
+            - --web-port
+            - "8081"
+            - --set
+            - confdir=/mitmproxy-data
+          image: mitmproxy/mitmproxy:12.2.3
+          name: mitmproxy
+          ports:
+            - containerPort: 8080
+              name: proxy
+            - containerPort: 8081
+              name: web
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          volumeMounts:
+            - mountPath: /mitmproxy-data
+              name: mitmproxy-data
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - |
+              cat /mitmproxy-ca/tls.key /mitmproxy-ca/tls.crt > /mitmproxy-data/mitmproxy-ca.pem
+              cp /mitmproxy-ca/tls.crt /mitmproxy-data/mitmproxy-ca-cert.pem
+          image: busybox:1.38
+          name: mitmproxy-ca-init
+          volumeMounts:
+            - mountPath: /mitmproxy-ca
+              name: mitmproxy-ca
+              readOnly: true
+            - mountPath: /mitmproxy-data
+              name: mitmproxy-data
+      volumes:
+        - name: mitmproxy-ca
+          secret:
+            secretName: mitmproxy-ca
+        - emptyDir: {}
+          name: mitmproxy-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mitmproxy
+  namespace: agents-mitmproxy
+spec:
+  ports:
+    - name: proxy
+      port: 8080
+      targetPort: 8080
+    - name: web
+      port: 8081
+      targetPort: 8081
+  selector:
+    app.kubernetes.io/name: mitmproxy
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-authentik-mitmproxy-ingress
+  namespace: agents-mitmproxy
+spec:
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - claude-sandbox
+      ports:
+        - port: 8080
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+      ports:
+        - port: 8081
+          protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mitmproxy
+  policyTypes:
+    - Ingress
+---
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: sandbox-force-proxy-egress
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - cluster
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:app.kubernetes.io/name: mitmproxy
+            k8s:io.kubernetes.pod.namespace: agents-mitmproxy
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  endpointSelector:
+    matchExpressions:
+      - key: k8s:io.kubernetes.pod.namespace
+        operator: In
+        values:
+          - claude-sandbox

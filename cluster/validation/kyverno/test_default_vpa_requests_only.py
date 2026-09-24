@@ -17,6 +17,7 @@ import pytest
 import pytest_bazel
 import yaml
 
+from cluster.cdk8s.manifest_roots import manifest_files
 from cluster.validation.kyverno.apply import apply_policy
 from cluster.validation.kyverno.paths import manifest, policy
 from util.bazel.runfiles import get_required_path
@@ -27,12 +28,12 @@ VPA_UPDATE_MODE_LABEL = "goldilocks.fairwinds.com/vpa-update-mode"
 
 @pytest.fixture
 def vpa_policy() -> Path:
-    return policy("default-vpa-requests-only.yaml")
+    return policy("default-vpa-requests-only.k8s.yaml")
 
 
 @pytest.fixture(scope="session")
-def k8s_dir() -> Path:
-    return get_required_path("_main/cluster/k8s/kustomization.yaml").parent
+def repo_root() -> Path:
+    return get_required_path("_main/cluster/k8s/kustomization.yaml").parents[2]
 
 
 def _declared_policy(ns: dict) -> dict | None:
@@ -68,7 +69,7 @@ class TestPolicyBehaviour:
             assert _declared_policy(ns) is None, f"non-auto namespace was annotated\n{result.stdout}"
 
 
-def test_declared_policies_set_controlled_values(k8s_dir: Path) -> None:
+def test_declared_policies_set_controlled_values(repo_root: Path) -> None:
     """An auto-mode namespace with its own policy must spell out controlledValues.
 
     The policy only adds the annotation when it is absent, so declaring any
@@ -77,7 +78,7 @@ def test_declared_policies_set_controlled_values(k8s_dir: Path) -> None:
     limits. airlock was exactly that case before this test existed.
     """
     offenders: list[str] = []
-    for path in k8s_dir.rglob("*.yaml"):
+    for path in manifest_files(repo_root):
         if path.name.endswith(".sops.yaml"):
             continue
         text = path.read_text()
@@ -97,7 +98,7 @@ def test_declared_policies_set_controlled_values(k8s_dir: Path) -> None:
             if declared is None:
                 continue  # the Kyverno default applies
             offenders += [
-                f"{path.relative_to(k8s_dir)}: {meta.get('name')} containerName="
+                f"{path.relative_to(repo_root)}: {meta.get('name')} containerName="
                 f"{container.get('containerName')!r} has no controlledValues"
                 for container in declared["containerPolicies"]
                 if "controlledValues" not in container

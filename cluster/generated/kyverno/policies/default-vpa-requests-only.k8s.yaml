@@ -1,0 +1,31 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/description: "Adds a goldilocks vpa-resource-policy annotation setting controlledValues: RequestsOnly to namespaces running goldilocks VPA in auto mode, so VPA never scales a container's limits down in proportion to its requests. Only applied when the namespace does not already declare its own policy."
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Namespace
+    policies.kyverno.io/title: Default VPA to RequestsOnly
+  name: default-vpa-requests-only
+spec:
+  admission: true
+  background: false
+  rules:
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              operations:
+                - CREATE
+                - UPDATE
+              selector:
+                matchLabels:
+                  goldilocks.fairwinds.com/vpa-update-mode: auto
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            annotations:
+              +(goldilocks.fairwinds.com/vpa-resource-policy): '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
+      name: default-vpa-requests-only

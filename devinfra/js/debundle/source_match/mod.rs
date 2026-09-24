@@ -8,7 +8,7 @@
 //! crate-internal items re-exported below via `pub(crate) use`, so each
 //! submodule only needs `use super::*;`:
 //!
-//! - `identity` — selector identity keys and log-safe previews.
+//! - `preview` — log-safe selector previews.
 //! - `parse_validate` — selector/module parsing and capability validation.
 //! - `types` — shared result/selector types.
 //! - `binding_resolution` — canonical source-match claim expansion and
@@ -16,6 +16,7 @@
 //! - `declared_bindings` — declared-binding extraction from AST items.
 //! - `chunk_resolver` — the shape matcher's per-chunk candidate resolver.
 //! - `fact_near_miss` — fact-based `source_match` debt / near-miss diagnostics.
+//! - `free_identifiers` — a template's free (referenced, undeclared) names.
 //! - `resolver` — the candidate-resolution seam trait.
 //! - `anonymous_statement` — anonymous source-match statement validation.
 //! - `holes` — local hole-keyword dispatch over AST nodes.
@@ -56,9 +57,10 @@ mod binding_resolution;
 pub mod chunk_resolver;
 mod declared_bindings;
 mod fact_near_miss;
+mod free_identifiers;
 mod holes;
-mod identity;
 mod parse_validate;
+mod preview;
 mod resolver;
 mod types;
 
@@ -81,10 +83,11 @@ pub use binding_resolution::{
     source_match_claim_member_selectors, source_match_declared_binding_names,
 };
 pub use fact_near_miss::fact_source_match_body_debt;
-pub use identity::{selector_body_key, selector_key, source_match_preview};
+pub use free_identifiers::free_identifiers;
 pub use parse_validate::parse_selector_module_with_capability_check;
+pub use preview::source_match_preview;
 pub use types::{
-    BindingGroupMemberSelector, MemberBindingGroupMatch, MemberBindingMatch,
+    AnonymousGroupMatch, BindingGroupMemberSelector, MemberBindingGroupMatch, MemberBindingMatch,
     ParsedSourceMatchSelector, ResolvedMemberBinding, ResolvedMemberBindingGroup,
     SourceMatchBodyDebt, SourceMatchNearMiss,
 };

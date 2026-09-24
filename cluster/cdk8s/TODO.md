@@ -8,10 +8,8 @@ can't drift _by construction_; a future edit that reintroduces two independent
 literals is then a visible, reviewable diff instead of a silent runtime break.
 
 This file tracks the candidates found by a full-repo audit (every test that reads a
-cdk8s-generated YAML file, plus every `cluster/validation/` test) that are **not yet
-reachable from cdk8s** — the manifests/configs on one or both sides are still
-hand-written, so unifying them needs a YAML→cdk8s conversion before the drift can be
-closed by construction. Candidates where both sides were already cdk8s-generated Python were
+cdk8s-generated YAML file, plus every `cluster/validation/` test) that are not closed by
+construction yet. Candidates where both sides were already cdk8s-generated Python were
 fixed directly instead of listed here (see git log — `cluster/cdk8s/litellm/config.py`,
 `model_rosters.py`, `agentplane/staging.py`, `generate_manifests.py`,
 `app.py`, `egress.py`, `dex.py`,
@@ -22,10 +20,10 @@ Entries are removed once landed — this is a burn-down, not a changelog.
 
 ## Follow-ups from the agentplane conversion
 
-- **A light `settings.py` per agentplane service.** Synth imports each service's
-  `main` for its `Settings`, pulling mitmproxy/fastapi in; the synth tests sit at
-  `size = "medium"` for that alone. Moving `Settings` and the sub-models it needs
-  into a `settings.py` the constructs import returns them to `small`.
+- **A light `settings.py` per agentplane service and aiquota.** Synth imports each
+  service's `main` (aiquota's `api`) for its `Settings`, pulling mitmproxy/fastapi in;
+  the synth tests sit at `size = "medium"` for that alone. Moving `Settings` and the
+  sub-models it needs into a `settings.py` the constructs import returns them to `small`.
 - **`Chart(namespace=...)`** once cluster-scoped objects (ClusterRole/Binding, the
   trust-manager Bundle) move to their own chart; then `metadata(name, namespace)`
   drops out of every namespaced object.
@@ -57,17 +55,21 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   - Reject declared providers no Pod reads. These were source-graph consistency checks;
     they did not query the cluster or prove a live resource existed.
 
-- **Cross-check ESO namespace whitelists once ESO manifests are uniformly in cdk8s.** A
-  `ClusterExternalSecret.spec.namespaces` entry only actually syncs if the backing
-  `ClusterSecretStore.spec.conditions[].namespaces` also allows it — two independently
-  hand-written namespace lists that can silently drift. PR #7407 widened
-  `google-access-token`'s `ClusterExternalSecret` to add `agentplane-staging` without
-  widening `kubernetes-airlock-secret-store`'s `conditions`, so the sync failed with
-  `SecretSyncedError: could not get secret data from provider` until caught by hand.
-  Once every `ClusterExternalSecret`/`ClusterSecretStore` pair is a cdk8s construct,
-  derive both namespace lists from one source, or validate at synth that a
-  ClusterExternalSecret's namespaces are a subset of its store's condition namespaces,
-  so this can't recur.
+- **Check ESO wiring against each store.** An `ExternalSecret`, or a
+  `ClusterExternalSecret.spec.namespaces` entry, only syncs if the backing
+  `ClusterSecretStore.spec.conditions[].namespaces` admits its namespace, and, for a store
+  with referent auth (`auth.serviceAccount` without a namespace), only if that namespace
+  has the named ServiceAccount. Each is a pair of independently written lists that drift
+  silently: ESO reports `SecretSyncedError` on the live cluster and nothing in CI fails.
+  It has shipped three times: PR #7407 widened `google-access-token`'s
+  `ClusterExternalSecret` to add `agentplane-staging` without widening
+  `kubernetes-airlock-secret-store`'s `conditions`; `kubernetes-forgejo-images-secret-store`
+  never admitted `google-mcp`'s pull secret (#7630); and agentplane-testing's GitHub PAT
+  copy lost its `external-creds-reader` ServiceAccount. `cluster/validation/checks.py`
+  already sees rendered and hand-written resources together (the store checks beside
+  `check_forgejo_image_namespace_reflection`), so resolve every (Cluster)ExternalSecret's
+  store there and fail on either gap. Once every pair is a cdk8s construct, derive both
+  sides from one source instead.
 
   Specific coverage removed:
   - Agentplane staging: `agentplane-oidc` and `agentplane-mcp-oauth` from
@@ -77,18 +79,15 @@ Entries are removed once landed — this is a burn-down, not a changelog.
     Testing checked `litellm-key-cheap-experiments` from `litellm-credentials/`.
   - aiquota: `aiquota-api-bearer` from SOPS, `cli-proxy-api-management` from
     `cli-proxy-api`, `aiquota-oidc` from `agent-machine-access-tf`, and
-    `clickhouse-aiquota-credentials` from `reflector`; ConfigMaps generated from
-    `config.toml` and `schema.sql`.
+    `clickhouse-aiquota-credentials` from `reflector`; the `aiquota-api-config` and
+    `schema.sql` ConfigMaps.
   - ClickHouse schema: `clickhouse-admin-credentials` from `clickhouse` and the
     `schema.sql` ConfigMap.
   - Haku console: Secrets `forgejo-images-creds`, `haku-console-oidc`,
-    `haku-console-public-coder-agent`, `haku-console-agent-api`,
-    `tana-agentydragon-gmail-com-account-pat`, `ha-mcp-bearer`, `ssh-mcp-bearer`,
+    `haku-console-public-coder-agent`, `haku-console-agent-api`, `ssh-mcp-bearer`,
     `aiquota-api-bearer-haku-console`, `haku-routine-launch-token`,
-    `haku-console-web-push-vapid`, `haku-console-google-client-credentials`,
-    `haku-console-google-calendar-client-credentials`, and
-    `haku-console-github-mcp-client-credentials`; ConfigMaps from `static-metadata.yaml`,
-    `image-metadata.yaml`, and `indexer-role.sql`.
+    `haku-console-web-push-vapid`, and `haku-console-github-mcp-client-credentials`;
+    ConfigMaps from `static-metadata.yaml`, `image-metadata.yaml`, and `indexer-role.sql`.
   - ha-mcp: `home-assistant-break-glass`, the SOPS `ha-mcp-bearer`, and the
     Job-created `ha-mcp-home-assistant-token`.
   - ssh-mcp: `ssh-mcp-keys`, `ssh-mcp-keys-public-coder-devbox`, and `ssh-mcp-keys-atlas`.
@@ -109,34 +108,32 @@ Entries are removed once landed — this is a burn-down, not a changelog.
   `test_openclaw_spike_resolves_exactly_its_iron_allowlist`). The spike's Cilium DNS
   rule is generated from `egress_fences.OPENCLAW_SPIKE_ALLOWLIST`, but the iron config
   it mirrors is still a hand-written `configMapGenerator` input. Render the iron
-  ConfigMap from the same tuple (the `<name>-config.k8s.yaml` shape
-  `agents/public-coder-agent/app` uses) and the pin collapses.
+  ConfigMap from the same tuple (as `public_coder_proxy.py` renders its iron config) and
+  the pin collapses.
 
-## Larger conversions — whole hand-written directories, no cdk8s presence yet
+## Reachable since the one-to-one conversion — the manifests are generated, the tests remain
 
-- **`cluster/k8s/agents/public-coder-agent/{app,proxy,devbox}/`,
-  `agent-rbac-base/`, and `clickhouse/cluster/`** — `test_haku_public_coder_contract.py`
-  and `test_public_coder_clickhouse_reader_contract.py` tie together ~15-22
-  hand-written manifests (RBAC roles/bindings, NetworkPolicies, a kubeconfig, a SOPS
-  secret, Iron proxy transform config) on subject/selector/port agreement. Only
-  `public-coder-agent/app`'s one ConfigMap is cdk8s-generated today; `deployment.yaml`,
-  `role.yaml`, the NetworkPolicies, and the proxy/devbox directories are not.
-- **`cluster/k8s/agents/haku-egress-proxy/` script contract** —
-  `test_haku_sandbox_contract.py` regex-extracts required env vars and a clone
-  host:port from `haku-sandbox-setup.sh` and checks a hand-written SandboxTemplate
-  and egress policy cover them. Converting the SandboxTemplate/policy alone doesn't
-  fully close this (the script itself would need to declare its own requirements in
-  a checkable form), but it removes half the duplication.
-- **`cluster/k8s/authentik/app/`** — `test_authentik_blueprint_contracts.py`'s
-  `configMapGenerator.files` list vs. a glob of `blueprints/*.yaml` is a plain
-  hand-typed-list-vs-directory-contents check a cdk8s `glob()` at generation time
-  would close. The outpost/provider referential-integrity half of that test walks
-  Authentik's own blueprint DSL (`!Find`/`!KeyOf`) and stays a real external-format
-  check regardless of conversion.
-- **`cluster/k8s/haku/mailbox/`** — `test_mailbox_plan.py`'s init/prod image
-  equality and configMapGenerator-name-vs-mount-name checks. Small enough this might
-  not be worth a dedicated cdk8s chart on its own; reconsider if `mailbox/` gets
-  touched for another reason first.
+Each side the test compares is now a construct, except the hand-written inputs named;
+retiring a test means deriving both sides from one value.
+
+- **`agents/public-coder-agent/{app,proxy}`** — what the tests still compare:
+  - The proxy's and the piper's ingress rules spell the app's labels, because
+    `public_coder_agent_config` imports both modules for their addresses
+    (`test_public_coder_agent_config.py`'s `test_proxy_admits_the_app`).
+  - The `aiquota-api-bearer-public-coder` mirror `aiquota.py` writes for the proxy
+    (`test_proxy_aiquota_bearer_is_mirrored_into_its_namespace`).
+- **`haku/workspaces` setup-script contract** — `test_haku_sandbox_setup.py`
+  regex-extracts the variables `haku-sandbox-setup.sh` (an image build input) requires and
+  checks the synthesized SandboxTemplate (`haku/workspaces.py`) sets them. No `Settings`
+  reads this env: `haku/runtime/agent/config.py` shares the `HAKU_GIT_*` names but
+  configures another, undeployed binary. Closing it needs the script's requirements in a
+  form the generator reads (a Python bootstrap with its own `Settings`, or a declaration in
+  the script), a design for the operator.
+- **`authentik/app`** — `test_authentik_blueprint_contracts.py`'s
+  `configMapGenerator.files` list vs. a glob of `blueprints/*.yaml`: the
+  `kustomization.yaml` is still hand-written, so a generated one listing the glob would
+  close it. The outpost/provider referential-integrity half walks Authentik's blueprint
+  DSL (`!Find`/`!KeyOf`) and stays an external-format check.
 
 ## Parked — lower priority
 
@@ -153,12 +150,11 @@ Entries are removed once landed — this is a burn-down, not a changelog.
 Confirmed via the same audit and intentionally _not_ listed above:
 GENUINE-BOUNDARY tests that exercise a real external tool or a different deployable
 (all of `cluster/validation/kyverno/`, `test_flux_build.py`, `test_helm_templates.py`,
-`test_github_proxy_rules.py`, `test_github_quota_rules.py`,
+`github_api_proxy/test_proxy.py`, `monitoring/test_rules.py`,
 `test_cluster_integration.py`'s `kustomize build` core,
 `agentplane/acceptance/test_egress.py`, `cluster/cdk8s/crd_bindings/flux/test_kustomization_import.py`);
 and pure unit/schema tests with no
 second independently-authored source to drift against (`test_checks.py`,
 `test_cluster.py`, `test_crd_layering.py`, `test_dependencies.py`, `test_flux.py`,
 `test_generator_namespace.py`, `test_health_checks.py`, `test_image_automation.py`,
-`test_k8s.py`, `test_postbuild_substitutions.py`, `test_sops_decryption.py`,
-`test_terraform_backends.py`).
+`test_k8s.py`, `test_sops_decryption.py`).

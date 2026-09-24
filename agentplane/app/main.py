@@ -20,21 +20,29 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.action_federation import ActionFederationSettings, FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
+from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.agent_runtime.updates import ThreadUpdates
+from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, create_app
-from agentplane.app.bridge import DiscoverSandboxes, RunnerBridge, runner_address
+from agentplane.app.database import connect
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
-from agentplane.app.inventory import ProvisioningState, SandboxInventory
+from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import load_settings
+from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.shutdown import Drain, drain_of
-from agentplane.app.thread.store import ThreadStore
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
@@ -152,7 +160,7 @@ class Settings(BaseSettings):
     shutdown_timeout: int = Field(
         default=5,
         description="Seconds Uvicorn waits after SIGTERM for open requests and streams before cancelling "
-        "them; the rest of the Deployment's grace period is the bridge's lease release and the store's.",
+        "them; the rest of the Deployment's grace period is the ingester's lease release and closing the database.",
     )
     resync_seconds: int = Field(
         default=300,
@@ -252,17 +260,20 @@ async def async_main(settings: Settings) -> None:
             sandbox_namespace=settings.sandbox_namespace,
             resync_seconds=settings.resync_seconds,
         )
-        store = ThreadStore.connect(settings.database_url)
-        await store.start_updates()
-
-        async def running_sandboxes() -> list[str]:
-            return [view.name for view in live.sandbox_views() if view.state is ProvisioningState.RUNNING]
-
+        engine = connect(settings.database_url)
+        thread_updates = ThreadUpdates(engine.url)
+        await thread_updates.start()
+        store = ThreadStore(engine)
+        event_logs = EventLogStore(engine)
+        content = ContentStore(engine)
+        runners = Runners(live, settings.runner_port)
+        ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine))
         bridge = RunnerBridge(
-            address_of=runner_address(live, settings.runner_port),
-            store=store,
-            discover_sandboxes=running_sandboxes,
-            sandbox_changes=live.changes,
+            runners=runners,
+            event_logs=event_logs,
+            content=content,
+            ingester=ingester,
+            thread_changes=thread_updates.changes,
         )
 
         operator_actions = (
@@ -283,7 +294,11 @@ async def async_main(settings: Settings) -> None:
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=operator_actions,
-            electric=(ElectricProxy(electric_http, store) if settings.electric_url is not None else None),
+            electric=(
+                ElectricProxy(electric_http, content, event_logs=event_logs, thread_changes=thread_updates.changes)
+                if settings.electric_url is not None
+                else None
+            ),
             presets=PresetCatalog(
                 sandboxes=settings.sandbox_presets,
                 threads=settings.thread_presets,
@@ -293,6 +308,10 @@ async def async_main(settings: Settings) -> None:
                     actions_service_url=settings.agent_actions_service_url,
                 ),
             ),
+            event_logs=event_logs,
+            content=content,
+            thread_updates=thread_updates,
+            operator_sessions=OperatorSessionStore(engine),
         )
         worker = await asyncio.to_thread(Path(get_required_path(SERVICE_WORKER)).read_bytes)
 
@@ -315,9 +334,10 @@ async def async_main(settings: Settings) -> None:
                     ),
                     drain_of(app),
                 ),
-                bridge=bridge,
-                store=store,
-                sandboxes=running_sandboxes,
+                ingester=ingester,
+                runners=runners,
+                thread_updates=thread_updates,
+                engine=engine,
             )
         finally:
             watch_task.cancel()
@@ -325,17 +345,19 @@ async def async_main(settings: Settings) -> None:
 
 
 async def serve_then_close(
-    server: uvicorn.Server, *, bridge: RunnerBridge, store: ThreadStore, sandboxes: DiscoverSandboxes
+    server: uvicorn.Server, *, ingester: Ingester, runners: Runners, thread_updates: ThreadUpdates, engine: AsyncEngine
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
-    timeout bounds the requests and streams still open, and the bridge's lease release and the store's
-    close have the rest of the Pod's grace period to themselves."""
+    timeout bounds the requests and streams still open, and the ingester's lease release and closing the
+    runner connections and the database have the rest of the Pod's grace period to themselves."""
     try:
-        await bridge.start(await sandboxes())
+        await ingester.start()
         await server.serve()
     finally:
-        await bridge.close()
-        await store.close()
+        await ingester.close()
+        await runners.close()
+        await thread_updates.close()
+        await engine.dispose()
 
 
 if __name__ == "__main__":

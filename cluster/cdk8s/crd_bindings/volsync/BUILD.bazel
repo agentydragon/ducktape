@@ -1,0 +1,20 @@
+# gazelle:resolve py volsync_replicationdestination_crds //cluster/cdk8s/crd_bindings/volsync:replicationdestination
+# gazelle:resolve py volsync_replicationsource_crds //cluster/cdk8s/crd_bindings/volsync:replicationsource
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+cdk8s_import(
+    name = "replicationdestination",
+    crd = "@volsync_replicationdestination_crd//file",
+    module_name = "volsync_replicationdestination_crds",
+    module_path = "backube/volsync",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "replicationsource",
+    crd = "@volsync_replicationsource_crd//file",
+    module_name = "volsync_replicationsource_crds",
+    module_path = "backube/volsync",
+    visibility = ["//visibility:public"],
+)

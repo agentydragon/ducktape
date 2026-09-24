@@ -1,0 +1,441 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: haku-egress-proxy
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: haku-egress-proxy
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: haku-egress-proxy-root-ca
+  namespace: haku-egress-proxy
+spec:
+  commonName: haku-egress-proxy-root-ca
+  duration: 87600h
+  isCA: true
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-ca-bootstrap
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  renewBefore: 8760h
+  secretName: haku-egress-proxy-ca
+  secretTemplate:
+    annotations:
+      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager,haku-console
+      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager,haku-console
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: haku-egress-proxy-ca-cert
+spec:
+  sources:
+    - useDefaultCAs: true
+    - secret:
+        key: ca.crt
+        name: cluster-root-ca-secret
+    - secret:
+        key: tls.crt
+        name: haku-egress-proxy-ca
+  target:
+    configMap:
+      key: ca-certificates.crt
+      metadata:
+        annotations:
+          description: Trust bundle for haku-egress-proxy-inspected sandbox HTTPS traffic
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - haku-sandbox
+            - haku-openclaw-spike
+            - haku-ci
+            - public-coder-agent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: haku-egress-proxy
+  name: haku-egress-proxy
+  namespace: haku-egress-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-egress-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-egress-proxy
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: haku-egress-proxy
+                topologyKey: kubernetes.io/hostname
+              weight: 100
+      containers:
+        - command:
+            - mitmdump
+            - --listen-host
+            - 0.0.0.0
+            - --listen-port
+            - "8080"
+            - --set
+            - confdir=/mitmproxy-data
+            - --set
+            - stream_large_bodies=1m
+            - --ignore-hosts
+            - api\.anthropic\.com
+          image: mitmproxy/mitmproxy:12.2.3
+          name: mitmproxy
+          ports:
+            - containerPort: 8080
+              name: proxy
+          readinessProbe:
+            periodSeconds: 5
+            tcpSocket:
+              port: proxy
+          resources:
+            limits:
+              cpu: 500m
+              memory: 3Gi
+            requests:
+              cpu: 50m
+              memory: 256Mi
+          volumeMounts:
+            - mountPath: /mitmproxy-data
+              name: mitmproxy-data
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - |
+              cat /mitmproxy-ca/tls.key /mitmproxy-ca/tls.crt > /mitmproxy-data/mitmproxy-ca.pem
+              cp /mitmproxy-ca/tls.crt /mitmproxy-data/mitmproxy-ca-cert.pem
+          image: busybox:1.38
+          name: mitmproxy-ca-init
+          volumeMounts:
+            - mountPath: /mitmproxy-ca
+              name: mitmproxy-ca
+              readOnly: true
+            - mountPath: /mitmproxy-data
+              name: mitmproxy-data
+      volumes:
+        - name: mitmproxy-ca
+          secret:
+            secretName: haku-egress-proxy-ca
+        - emptyDir: {}
+          name: mitmproxy-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: haku-egress-proxy
+  namespace: haku-egress-proxy
+spec:
+  ports:
+    - name: proxy
+      port: 8080
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: haku-egress-proxy
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: haku-egress-proxy
+  namespace: haku-egress-proxy
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-egress-proxy
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-authentik-egress-proxy-ingress
+  namespace: haku-egress-proxy
+spec:
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: haku-sandbox
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: haku-ci
+      ports:
+        - port: 8080
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+      ports:
+        - port: 8081
+          protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-egress-proxy
+  policyTypes:
+    - Ingress
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-openclaw-spike-github-token
+  namespace: haku-egress-proxy
+spec:
+  data:
+    - remoteRef:
+        key: github-agentydragon-agent
+        property: token
+      secretKey: GITHUB_TOKEN
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: haku-openclaw-spike-github-token
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Holds Haku OpenClaw spike credentials and substitutes placeholders only for exact destination hosts.
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: haku-openclaw-spike-proxy
+  name: haku-openclaw-spike-proxy
+  namespace: haku-egress-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-openclaw-spike-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-openclaw-spike-proxy
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - -config
+            - /etc/iron-proxy/iron.yaml
+          env:
+            - name: CLAUDE_CODE_OAUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: CLAUDE_CODE_OAUTH_TOKEN
+                  name: haku-claude-oauth-token
+            - name: HAKU_GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: haku-forgejo-git
+            - name: HAKU_CONSOLE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: haku-console-agent-api
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: GITHUB_TOKEN
+                  name: haku-openclaw-spike-github-token
+            - name: HAKU_KUBE_JWT
+              valueFrom:
+                secretKeyRef:
+                  key: jwt
+                  name: haku-openclaw-spike-kube-token
+                  optional: true
+          image: git.allegedly.works/ducktape-ci/iron-proxy:unset
+          name: iron-proxy
+          ports:
+            - containerPort: 8181
+              name: proxy
+            - containerPort: 9090
+              name: metrics
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /etc/iron-proxy
+              name: config
+              readOnly: true
+            - mountPath: /ca
+              name: ca
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: haku-openclaw-spike-proxy-config
+          name: config
+        - name: ca
+          secret:
+            secretName: haku-egress-proxy-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: haku-openclaw-spike-proxy
+  namespace: haku-egress-proxy
+spec:
+  ports:
+    - name: proxy
+      port: 8181
+      targetPort: proxy
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+  selector:
+    app.kubernetes.io/name: haku-openclaw-spike-proxy
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-haku-openclaw-spike-proxy-ingress
+  namespace: haku-egress-proxy
+spec:
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: haku-openclaw-spike
+      ports:
+        - port: 8181
+          protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-openclaw-spike-proxy
+  policyTypes:
+    - Ingress
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    description: Lets the authentik-jwt-rotation CronJob read back the one Secret it publishes here, so its probe can verify the live token against kubeapi.allegedly.works. Nothing else in this namespace is readable.
+  name: authentik-jwt-rotation-published-secrets-reader
+  namespace: haku-egress-proxy
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-openclaw-spike-kube-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: authentik-jwt-rotation-published-secrets-reader
+  namespace: haku-egress-proxy
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: authentik-jwt-rotation-published-secrets-reader
+subjects:
+  - kind: ServiceAccount
+    name: authentik-jwt-rotation
+    namespace: agents-infra
+---
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: haku-sandbox-force-proxy-egress
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - cluster
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:app.kubernetes.io/name: haku-egress-proxy
+            k8s:io.kubernetes.pod.namespace: haku-egress-proxy
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:app.kubernetes.io/name: haku-console
+            k8s:io.kubernetes.pod.namespace: haku-console
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+  endpointSelector:
+    matchExpressions:
+      - key: k8s:io.kubernetes.pod.namespace
+        operator: In
+        values:
+          - haku-sandbox

@@ -1,8 +1,9 @@
-# Haku Google access: console mediation and Airlock decoupling
+# Haku Google access: mediation and Airlock decoupling
 
-How Haku reaches Google (Gmail, Calendar, Drive, Tasks) and how that access moves off Airlock
-onto haku-console. This is a Haku credential-architecture plan; the cross-cutting OAuth/identity
-program that contains it lives in `plans/oauth_architecture.md`.
+How Haku reaches Google (Gmail, Calendar, Drive, Tasks): first moved off Airlock onto
+haku-console, and since G4 mediated by agentplane-staging. This is a Haku credential-architecture
+plan; the cross-cutting OAuth/identity program that contains it lives in
+`plans/oauth_architecture.md`.
 
 Sequenced later than the common Agent lifecycle (H1–H3 there).
 
@@ -23,76 +24,42 @@ Sequenced later than the common Agent lifecycle (H1–H3 there).
    approval-gated MCP tools.
 3. **G3 (done):** stopped mirroring the read-only `google-access-token` (`$TOK`) into
    `haku-sandbox`, ending Haku's Airlock dependency. Haku's direct Drive/Tasks reads and its
-   Gmail/Calendar REST fallback (per-source docs in the `haku-state` repo) went with it; the
-   read-tool list below is what restores them.
+   Gmail/Calendar REST fallback (per-source docs in the `haku-state` repo) went with it; G4
+   restored them.
+4. **G4 (done):** removed the console's `gmail`/`google_calendar` servers from the deployment
+   (#7671). Haku reaches Google through agentplane-staging as its `claude-ai` principal. Reads go
+   out from its sandboxes by egress substitution: the `google-readonly` credential, a token from
+   Airlock's `google` grant held by the egress proxy, never by the sandbox. Writes are the
+   `gmail`/`google_calendar` ActionGroups served by `google-mcp`, which alone holds Airlock's
+   separate `google-write` grant: their reads auto-approve, every write waits for the operator.
+   The `google-write` consent is still pending, so both groups read `disconnected`. Airlock is back
+   in the chain as the broker for both grants, but its tokens reach only the proxy and
+   `google-mcp`: the decoupling G3 was for — no Google token in the agent — still holds.
 
 Do not couple G1/G2/G3 to Airlock's unrelated Oura, BSC, or remaining credential consumers.
 
-## Target: console mediates all Google access, agent holds no standing token
+## Target: a mediator holds every Google grant, the agent holds no standing token
 
-The clean end state: **haku-console holds the Google client(s) and mediates every Google operation;
-no Google token with standing capability ever reaches the agent.**
+The end state: **a mediator outside the agent — agentplane-staging since G4 — holds the Google
+grants and mediates every Google operation; no Google token with standing capability ever reaches
+the agent.**
 
 - **High-risk operations — invariant, not a preference.** Anything the operator does not want Haku
   to execute autonomously (sending mail, deleting/modifying Drive files, mutating calendars, …) runs
-  only through haku-console tools behind its approval policy. A token carrying those permissions must
+  only through mediated tools behind an approval policy. A token carrying those permissions must
   never be handed to the agent. This already holds for Gmail/Calendar writes.
 - **Low-risk (read-only) — no standing token either.** A read-only token in agent context is still
   a standing bearer secret: leaked through the LLM provider, it reads all of the operator's
   mail/Drive until rotation. Reads go through mediated tools instead; the cost is the read-tool
   surface below.
 
-## Console read-tool surface to build (priority list)
+## Read surface: egress, not tools
 
-The Google reads Haku lost with `$TOK`, as an implementation priority list. Ordering is by former
-use, then value, then long tail. Each tool maps to a Google REST method so it
-is directly implementable.
-
-Writes are **not** on this list — high-risk mutations (send mail, mutate calendar/tasks/Drive) are a
-separate approval-gated console surface (Gmail drafts/labels + Calendar create already exist); they are
-never added here.
-
-### P1 — used by Haku's scans until `$TOK` was removed
-
-- **Drive — recency + activity** (`drive.readonly`, `drive.activity.readonly`): Haku's "what is the
-  operator working on right now" window (its Drive source doc, `haku-state`).
-  - `drive_files_list` — recent files by `modifiedTime desc` (`files.list`; id, name, modifiedTime,
-    owners, shared, webViewLink; paged). The core recency scan.
-  - `drive_activity_query` — change feed since a bookmark (`driveactivity.activity.query`): edits,
-    shares, comments, moves.
-  - `drive_file_get` — single file metadata (`files.get`) to enrich a referenced file.
-- **Tasks** (`tasks.readonly`) — overdue/stale to-do scan (its Tasks source doc, `haku-state`).
-  - `tasks_lists_list` (`tasklists.list`) and `tasks_list` (`tasks.list`, `showCompleted=false`, with
-    `due`/`updated`).
-- **Gmail / Calendar** — already console-mediated (reads + bounded writes). Gaps against the former
-  REST fallback are tracked in `haku/console/TODO.md`.
-
-### P2 — held scope, high value, not yet wired
-
-- **Drive content & collaboration** (`drive.readonly`):
-  - `drive_file_export` / `drive_file_download` — export a Doc/Sheet/Slide to text/PDF or download a
-    binary (`files.export` / `files.get?alt=media`), so Haku can actually _read_ a file it flagged
-    (summarize before a meeting, extract an implied task).
-  - `drive_comments_list` — comments + @-mentions on a file directed at the operator (`comments.list`);
-    a finding source called out in the Drive source doc.
-- **Google Docs** (`documents.readonly`):
-  - `docs_get` — structured document content (`documents.get`) for summarization / task extraction.
-- **Google Sheets** (`spreadsheets.readonly`):
-  - `sheets_values_get` — a range/tab (`spreadsheets.values.get` / `batchGet`) for trackers, budgets,
-    lists the operator keeps in Sheets.
-  - `sheets_get` — spreadsheet metadata (`spreadsheets.get`: tab names, structure).
-- **Contacts / People** (`contacts.readonly`):
-  - `people_search` — resolve a name/email to a person + relationship context
-    (`people.searchContacts` / `people.get`), so attendees/senders in other findings are legible.
-
-### P3 — long tail / opportunistic
-
-- **Google Slides** (`presentations.readonly`): `slides_get` (`presentations.get`) — presentation text,
-  read on demand when a deck is flagged. Rarely the operator's own working surface.
-- **Drive sharing detail** (`drive.readonly`): `drive_permissions_list` (`permissions.list`) — who a
-  file is shared with, only when a finding needs it.
-- **YouTube** (`youtube.readonly`): weak interest/attention signal, privacy-heavy, no current source.
-  Prefer **dropping the scope** over building a tool unless a concrete use appears.
+G4's `google-readonly` egress route admits GET on `gmail`, `tasks`, `people`, `docs`, `sheets`,
+`slides` and `youtube.googleapis.com`, on `www.googleapis.com/{calendar,drive,youtube}/v3/**`, and
+Drive Activity's `activity:query` POST. That covers every read this plan used to rank as console
+tools to build (Drive recency and activity, Tasks, Docs, Sheets, Slides, Contacts). Build a read
+tool only for a need a sandbox request cannot serve.
 
 ## Implementation: tiered, discovery-generated tools
 

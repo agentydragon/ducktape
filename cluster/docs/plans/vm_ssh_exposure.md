@@ -129,7 +129,7 @@ comes first.
 
 - <../../k8s/parked/gecko/app/ciliumenvoyconfig.yaml> — current implementation.
 - <../kubevirt_nixos_vm.md> "Exposing SSH Publicly" — runbook reference.
-- <../../k8s/gateway/gateway.yaml> — where a new `tls-passthrough-vms`
+- <../../cdk8s/gateway.py> — where a new `tls-passthrough-vms`
   listener would live for Option A.
-- <../../k8s/kube-api-proxy/tlsroute.yaml> — existing TLSRoute (v1) example
+- <../../generated/kube-api-proxy/tlsroute.yaml> — existing TLSRoute (v1) example
   in the cluster, suitable as a template.

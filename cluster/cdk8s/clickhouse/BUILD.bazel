@@ -10,6 +10,7 @@ py_library(
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/clickhouse:__pkg__",
+        "//cluster/validation:__pkg__",
     ],
     deps = [
         "@pypi//cdk8s",
@@ -27,10 +28,10 @@ py_library(
     ],
     deps = [
         ":client",
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s:pod_spec_patches",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
@@ -41,13 +42,37 @@ py_library(
 )
 
 py_library(
-    name = "flux_kustomizations",
-    srcs = ["flux_kustomizations.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    name = "installation",
+    srcs = ["installation.py"],
     deps = [
-        "//cluster/cdk8s:artifact_generators",
+        ":client",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:public_coder_proxy",
+        "//cluster/cdk8s/crd_bindings/clickhouse:clickhouseinstallation",
+        "//cluster/cdk8s/crd_bindings/clickhouse:clickhousekeeperinstallation",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/haku:console_config",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "operator",
+    srcs = ["operator.py"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:helm",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",

@@ -28,24 +28,17 @@ from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
     ImageRepositorySpec,
     ImageRepositorySpecSecretRef,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.artifact_generators import artifact_path, artifact_source_ref
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "flux-image-automation-forgejo"
 # Flux's own namespace, where the image-reflector controller reads these.
 NAMESPACE = "flux-system"
-OUTPUT_DIR = "cluster/k8s/flux-image-automation-forgejo"
+OUTPUT_DIR = f"{GENERATED_ROOT}/flux-image-automation-forgejo"
 _REGISTRY = "git.allegedly.works/ducktape-ci"
 _SCAN_INTERVAL = "5m"
 # The ducktape-ci pull credential, reflected here from cluster/k8s/forgejo-images/;
@@ -85,14 +78,15 @@ IMAGES = (
     "google-mcp",
     "grocy-mcp-oidc-server",
     "grocy-user-perms-provisioner",
-    "ha-mcp-token-provisioner",
     "haku-console",
     "haku-console-static",
     "haku-kube-api-proxy",
     "haku-openclaw-spike",
     # The trailing `-image` is in the repository path too, unlike every other entry.
     "haku-sandbox-image",
-    "homeassistant-provisioner",
+    "homeassistant-component-installer",
+    "homeassistant-onboarding",
+    "homeassistant-token-provisioner",
     "iron-proxy",
     "loki-read-proxy",
     "matrix-user-provisioner",
@@ -159,8 +153,6 @@ def write_manifests(root: Path) -> None:
     add_fleet_rules(chart)
     app.synth()
 
-    write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))
-
 
 def flux_image_automation_forgejo(
     chart: Chart,
@@ -171,13 +163,10 @@ def flux_image_automation_forgejo(
     return flux_kustomization(
         chart,
         NAME,
-        spec=KustomizationSpec(
-            depends_on=flux_kustomization_depends_on_many(forgejo_images, flux_image_automation_ghcr),
-            interval="10m",
-            path=artifact_path(artifact),
-            prune=True,
-            source_ref=artifact_source_ref(artifact),
-        ),
+        artifact,
+        retry_interval=None,
+        wait=None,
+        depends_on=flux_kustomization_depends_on_many(forgejo_images, flux_image_automation_ghcr),
         description=(
             "Image automation for images hosted in our Forgejo registry "
             "(authenticated scans via the reflected ducktape-ci credential)."

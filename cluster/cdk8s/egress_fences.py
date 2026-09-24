@@ -1,7 +1,7 @@
 """The FQDN fences on the agent egress proxies: one CiliumNetworkPolicy per proxy Pod naming
 what it may resolve and connect to on the public internet, each in its own chart so the
-committed file keeps the name its hand-written predecessor had. The directories around them
-(`cluster/k8s/agents/{haku-egress-proxy,mitmproxy}`) stay hand-written.
+committed file keeps the name its hand-written predecessor had. `agents/mitmproxy` is written
+by `mitmproxy.py`.
 
 A fence bounds the proxy Pod, not the sandboxes behind it, whose force-proxy
 CiliumClusterwideNetworkPolicies admit kube-dns as a plain L4 rule. In-cluster traffic is not
@@ -23,6 +23,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 HAKU_EGRESS_PROXY_NAMESPACE = "haku-egress-proxy"
@@ -47,12 +48,6 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
         # oci-cache README "Phase 2").
         "ghcr.io",
         "pkg-containers.githubusercontent.com",
-        "gmail.googleapis.com",
-        "www.googleapis.com",
-        # Google Tasks API -- Haku reads the operator's task list. www.googleapis.com covers
-        # Calendar/Drive; Tasks is on its own host. (A 403 here is a token-scope gap, not this
-        # allowlist -- but the host must still be reachable once the scope is granted.)
-        "tasks.googleapis.com",
         # Claude Agent SDK smoke/runtime telemetry. The sandbox CLI subprocess removes
         # *.allegedly.works from its inherited NO_PROXY so this public Authentik-gated endpoint
         # stays behind the forced proxy.
@@ -119,26 +114,6 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
     ("*.ankiweb.net",),
 )
 
-# The hosts for which claude-iron.yaml defines an Authorization substitution, plus the
-# githubusercontent hosts a GitHub clone redirects to. The redirect targets deliberately get
-# no substitution rule: they serve pre-signed URLs, so an Authorization header is unnecessary
-# there and sending the PAT to them would widen where the credential travels for no gain.
-_HAKU_CLAUDE_HOSTS = (
-    "api.anthropic.com",
-    "api.github.com",
-    "codeload.github.com",
-    "github.com",
-    "objects.githubusercontent.com",
-    "raw.githubusercontent.com",
-    "release-assets.githubusercontent.com",
-    # aiquota's read API and the ActivityWatch read API, both substitution-ruled in
-    # claude-iron.yaml with the bearer held here, never in the sandbox. Both resolve to node
-    # IPs, so their toFQDNs entries enforce nothing: the remote-node/host rule admits the
-    # connection and the DNS half fences the name.
-    "aiquota.allegedly.works",
-    "activitywatch-read.allegedly.works",
-)
-
 # openclaw-spike-iron.yaml's `allowlist` transform, which bounds that proxy at L7; the DNS rule
 # built from it is the fence's second layer. //cluster/validation:test_egress_allowlists keeps
 # the two equal until the iron config is generated from here too (cluster/cdk8s/TODO.md).
@@ -182,7 +157,7 @@ OPENCLAW_SPIKE_ALLOWLIST = (
 # internet.
 _MITMPROXY_GROUPS: tuple[tuple[str, ...], ...] = (
     # The build-registry bucket: public package, source and toolchain registries, granted
-    # all-or-none (//cluster/validation:test_egress_allowlists).
+    # all-or-none (//cluster/cdk8s:test_egress_fences).
     (
         "bcr.bazel.build",
         "cache.nixos.org",
@@ -227,7 +202,7 @@ def _fence(
 
 def haku_cloud_api(app: App) -> Chart:
     """The haku-egress-proxy fence. Plaid Postgres is reached cluster-internally, not through
-    this proxy: the `cluster` rule of ccnp-haku-proxy-egress.yaml."""
+    this proxy: the `cluster` rule of haku_egress_proxy.py's haku-sandbox-force-proxy-egress."""
     return _fence(
         app,
         "cnp-haku-cloud-api-egress",
@@ -241,29 +216,6 @@ def haku_cloud_api(app: App) -> Chart:
             # explicit bypass for `*.svc.cluster.local` and `10.0.0.0/8`). The widest rule in
             # this fence, deliberately -- see the module docstring.
             cilium.egress_to_entities("cluster", ports=[80, 443, 8000, 8080, 11434]),
-        ],
-    )
-
-
-def haku_claude(app: App) -> Chart:
-    """The credential-holding Claude proxy resolves and connects to exactly `_HAKU_CLAUDE_HOSTS`.
-    It reaches nothing by cluster name, hence no cluster DNS."""
-    return _fence(
-        app,
-        "cnp-haku-claude-egress",
-        name="allow-haku-claude-oauth-proxy-egress",
-        namespace=HAKU_EGRESS_PROXY_NAMESPACE,
-        proxy="haku-claude-oauth-proxy",
-        egress=[
-            *cilium.fqdn_fence(_HAKU_CLAUDE_HOSTS),
-            # aiquota.allegedly.works and activitywatch-read.allegedly.works resolve to the OVH
-            # nodes' ExternalIPs (Envoy binds 443 there in hostNetwork mode), which carry
-            # reserved:remote-node -- or reserved:host when this Pod happens to share a node,
-            # since it has no nodeSelector. A toFQDNs rule cannot reach them: policy-cidr-match-mode
-            # is unset cluster-wide, so its CIDR-derived selectors never match node IPs. The DNS
-            # rule above still bounds which names resolve; this reaches the in-cluster public
-            # gateway the resolved name points at (cluster/docs/cilium_network_policy.md).
-            cilium.egress_to_entities("remote-node", "host", ports=[443]),
         ],
     )
 
@@ -316,5 +268,4 @@ def mitmproxy_cloud_api(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, "cluster/k8s/agents/haku-egress-proxy", haku_cloud_api, haku_claude, haku_openclaw_spike)
-    write_charts(root, "cluster/k8s/agents/mitmproxy", mitmproxy_cloud_api)
+    write_charts(root, f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy", haku_cloud_api, haku_openclaw_spike)

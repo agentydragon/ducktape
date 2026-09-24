@@ -3,143 +3,95 @@
 Forward-looking gaps in the Rust debundler. Items are written to be removed
 once closed; this file is not a changelog.
 
-## Current AI-worker priority queue (2026-09-17)
+## Current AI-worker priority queue (2026-09-24)
 
 This file is the dispatch queue, not a design record or changelog. Detailed
 plans and evidence live here:
 
 - <docs/selector_resolution.md> — how selectors resolve, and the measured reason
   the architecture is shaped that way.
-- <plans/relational_selectors.md> — the remaining selector-language work (R1–R7).
+- <plans/selector_engine.md> — template references, pinning by use site, then
+  bump tooling.
+- <plans/relational_selectors.md> — the remaining selector-language work.
 - <plans/automated_spec_workflows.md> — automation-first CLI/workflow design.
 - <SELECTOR_BUGS.md> — matcher/diagnostic bugs with anonymized examples.
 - <ARCHITECTURE_BACKLOG.md> — deeper refactors, urgent only when they block this
   queue.
-- `perf/` and `debug/perf/` — measured performance notes. Update from real
+- `perf/` — measured performance notes. Update from real
   profiles before major matcher/index rewrites.
 
 Planning hygiene: keep active dispatch order here. When a plan's core work is
 complete, summarize only its remaining tail here instead of leaving the plan as
 a second priority queue.
 
-### P0 — selector language and engine cost
+### P0 — template references
 
-The resolution architecture is settled and shipped: one IR, one joint CP-SAT
-solve, with `ChunkResolver` generating candidates for shape selectors. Do not
-reopen it without a measurement that beats
-<debug/perf/2026_09_17_matcher_vs_native_lowering.md>. What is open is the
-selector _language_ and the joint solve's cost:
+Every command resolves selectors through one resolve over one program across
+chunks, with the semantics of <SPEC.md>. What remains in
+<plans/selector_engine.md> is template references, then pinning by use site,
+then bump tooling. Its steps are the dispatch order.
 
-1. Extend the relational selector language — negation, counting/uniqueness,
-   transitive closure, shape-and-relation conjunction, and `@Name` inside a
-   shape. The language burn-down and its downstream acceptance cases live in
-   <plans/relational_selectors.md>.
-2. Cut the joint solve's per-chunk floor: `FactDomains` still builds eager
-   `BTreeSet<String>` domains and every derived relation regardless of demand
-   (<debug/perf/2026_06_27_large_bundle_selector_csp_profile.md>).
-3. Prune unreferenced full-domain AST variables out of native `source_match`
-   lowering before backend serialization
-   (<debug/perf/2026_07_13_match_selector_full_domain_profile.md>).
-4. Wire `e2e/testdata/global_selector_assignment_stress/broad_specific_injective/`
-   to a test. `all_different` propagation is covered at model and backend level
-   but has no end-to-end case.
-5. Measure the complete downstream `run` wall with an execution-config
-   debundler. Selector resolution is the largest single component on a
-   `source_match`-heavy spec, but the end-to-end number is unmeasured.
-
-Interactive agent-facing commands should target under 10 seconds on warmed
-inputs for the largest known downstream specs. Anything over 60 seconds is a
-workflow blocker unless the command is explicitly an offline/profile mode with
-progress output and a resumable or cacheable plan.
+Selector-language work (<plans/relational_selectors.md>) lands on top of the
+same engine.
 
 ### P1 — automation product flows over the solver
 
-1. **Patch-plan based bulk codemods.** Extend `debundle spec selector-codemod`
-   or add adjacent verbs so every broad rewrite can emit a dry-run patch plan,
-   apply with filters, and explain every skipped candidate. The prove gate
-   should be solver categoricity, not an independent selector-matcher path.
-2. **Selector diagnostics — solver-backed replacement.** The keep-going JSON
-   report (`debundle spec validate --keep-going --format text|json|ndjson`)
-   landed (#2302; shared contract in `selector_diagnostics.rs`) and classifies
-   unresolved / ambiguous / duplicate-claim failures with full provenance.
-   Treat that as the current user-facing contract, not as architecture to carry
-   forward unchanged: the new backend should emit per-target solver
-   explanations directly. Fold remaining anonymous-statement failures, blocker
-   comments, free-readable-identifier cases, and nearest-candidate needs into
-   that solver-backed report shape.
-3. **Spec repair from diagnostics.** Add a workflow that consumes the
-   solver-backed keep-going report, proposes mechanically proven patch plans for
-   no-match, ambiguous, duplicate-claim, and unsupported-selector cases, and
-   leaves residual semantic decisions as explicit tasks.
-4. **Orthogonal CLI surface.** Converge new automation on the
-   inventory/plan/apply/validate/explain model in
-   <plans/automated_spec_workflows.md>. Avoid one-off command shapes that cannot
-   pipe a dry-run plan into review, apply, validation, and repair.
-5. **Workflow latency budget.** Interactive commands target <10s on warmed
-   inputs; >60s is a blocker unless explicitly an offline/profile mode with
-   progress output and a resumable plan. The whole-spec minimize budget and the
-   measured real-chunk numbers live in <debug/selector_minimizer_dogfood.md>.
-6. **Version-port workflow.** Given v1 chunks + spec and v2 chunks, resolve v1
-   selectors to source identities/fingerprints, search v2 for matching
-   entities, apply confident selector repairs, and emit a residual report for
-   semantic drift.
-7. **New-app spec bootstrap.** Connect module proposals, naming output, and
-   selector synthesis so new debundle specs start with structural selectors and
-   an explicit debt/confidence report.
-8. **Selector-debt ranking improvements.** Extend `debundle spec selector-debt`
+Design and milestones: <plans/automated_spec_workflows.md> — patch-plan bulk
+codemods that explain every skipped candidate and prove through the one
+resolve, repair from the keep-going report, the inventory/plan/apply/validate
+CLI model, and new-app bootstrap. Version porting, and a two-version held-out
+evaluation of `debundle_stabilize` built on it, is step 3d of
+<plans/selector_engine.md>. Every flow is held to the interactive budget in
+<docs/selector_resolution.md> § Interactive budget.
+
+1. **Selector diagnostics.** Nearest-candidate and smallest-differentiator
+   diagnostics for `no_match` and `ambiguous` outcomes, reporting the first
+   mismatch: the first unmatched item of a multi-declaration range, the first
+   incompatible identifier binding or sub-expression, a parameter-pattern
+   mismatch, and list-hole binding spans.
+2. **Selector-debt ranking improvements.** Extend `debundle spec selector-debt`
    with source-aware ranking for multi-statement windows, repeated selector
    bodies that can become binding groups, and "stable literal by value"
-   candidates. Prefer output that can feed the solver-backed patch-plan dry-run.
-9. **Cross-module binding-group design.** Design a form for one matched source
-   context to export bindings into different logical modules without duplicating
-   the selector body.
-10. **Free-readable-identifier diagnostics.** When an `alpha_all` selector uses
-    readable names that are free references rather than local binders, explain
-    that they do not refer to previously exported symbols. Suggest grouping or
-    holes.
-11. **Duplicate-claim identity.** Track claims by declaration identity instead
-    of only emitted/minified spelling; include declaration kind and source
-    location in duplicate-claim diagnostics.
-12. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke so
-    private-corpus debundler issues can be reproduced and protected in public CI.
-13. **Ground selector-stabilization skill fixtures.** The `debundle_stabilize`
-    loop and playbook landed; add tested, anonymized fixtures for the common
-    anchor-choice cases so the skill's guidance is executable rather than only
-    prose.
-14. **Port-based selector-stability evaluation.** Run a two-version bundle pair
-    as a held-out evaluation of `debundle_stabilize`: report survived/broke
-    verdicts by anchor kind and feed the scorecard back into the playbook.
+   candidates. Prefer output that can feed the patch-plan dry-run.
+3. **Cross-module binding groups.** `source_matches[]` entries export every
+   binding of one matched context into one logical module. Design a form for
+   one matched context whose bindings land in different modules, without
+   repeating the selector body.
+4. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke
+   (§ Excalidraw live-browser smoke) so private-corpus debundler issues can be
+   reproduced and protected in public CI.
+5. **Ground selector-stabilization skill fixtures.** Add tested, anonymized
+   fixtures for the common anchor-choice cases of the `debundle_stabilize`
+   playbook so its guidance is executable rather than only prose.
 
 ### P2 — pipeline performance and architecture cleanup
+
+Proposer-gate, `debundle run`, and materialize-stage performance work lives in
+<perf/proposer.md>.
 
 1. Add `debundle run --reports=<list>` so dry-run/spec-check workflows can skip
    expensive reports they do not need.
 2. Add chunk-level incremental rebuilds keyed by upstream bytes, spec slice,
    and Ducktape version.
 3. Add an AST-hash SWC codegen cache for unchanged post-lowering modules.
-4. Replace `JsChunk::{get_file,get_file_mut,remove_file}` linear scans with a
-   path-keyed index if fresh profiles show chunk file lookup hot.
-5. Move `split_entry_body` to a draining/move-based implementation if fresh
-   profiles show retained-statement cloning hot.
-6. Replace diagnostic-only matcher mirrors with solver-native explanations:
-   generic `NoMatch` fallback reporting, empty `nearest_candidates`, fact
-   near-miss/source-aware debt scoring, `match-selector` slack relaxation, and
-   selector-IR row/stat stderr diagnostics.
-   Keep cheap wrappers over production data; remove side data structures that
-   exist only for the old matcher/row-solver path.
+4. `JsChunk::{get_file,get_file_mut,remove_file}` (`artifact.rs`) are linear
+   scans over `files`, so passes that touch every file go O(n²) per chunk.
+   Replace them with a path-keyed index if fresh profiles show chunk file
+   lookup hot.
+5. `split_entry_body` (`lowering/lower.rs`) clones every retained statement out
+   of the chunk AST even though the chunk body is replaced wholesale afterward.
+   Move it to a draining/move-based split if fresh profiles show
+   retained-statement cloning hot.
 
 ### P3 — read-off minimizer polish
-
-The read-off minimizer's completed design and research notes were pruned from
-`plans/` on 2026-06-22. The live maintenance tail is:
 
 1. **Dogfood-apply on the private downstream repo.** Run `synthesize-selectors --apply` on
    the real spec to convert the large set of fragile name-pins into robust
    `source_match` selectors, review for over-pin, and PR the beneficial ones.
    Revert any converted selector whose `match` block is >40 lines and has <=2
    holes back to a name pin. Keep pin-compatible with the released debundler
-   expected by the the downstream corpus validation flow, regenerate goldens, and re-measure
-   selector debt after each batch.
+   expected by the downstream corpus validation flow, regenerate goldens, and
+   re-measure selector debt after each batch.
 2. **Retire the keep-shallow group cover.** Multi-target var binding-group
    read-off landed, but `minimize_var_group_selector` still falls back to
    `collect_expr_anchors` plus `AnchorCandidates` for groups whose per-slot
@@ -157,12 +109,21 @@ The read-off minimizer's completed design and research notes were pruned from
    can be pinned whole while the equivalent class declaration minimizes via
    class-body holing. Ignored expectation fixture:
    `class_expression_const_whole_body`.
-5. **Journal `AlphaMatchScope` and reduce prove-gate fan-out.** Whole-spec
-   apply spends too much time cloning alpha scopes during matcher backtracking.
-   Replace clone-on-snapshot with an undo log, switch the alpha maps to
-   `FxHashMap`, and use the candidate-index intersection to prune neighbor/group
-   prove-gate fan-out. Profile evidence lives in
-   <debug/selector_minimizer_perf.md>.
+5. **Undo-log alpha bindings in the matcher.** `selector_match`'s `Bindings`
+   (a stack of `AlphaScope` frames of `HashMap`s) is cloned to snapshot before
+   each backtracking alternative. If fresh profiles of whole-spec
+   `synthesize-selectors --apply` show that cloning hot, replace
+   clone-on-snapshot with an undo log and switch the maps to `FxHashMap`.
+6. **Skip neighbor-borrowed uniqueness.** When a candidate's uniqueness comes
+   only from a non-target neighbor (the target's own body fully holed, a
+   neighboring declaration pinned), skip it with a reason instead of reporting
+   `would_change`. Key the check on that property, not on selector length:
+   neighbor-borrows as short as two lines slip under the >40-line over-pin
+   heuristic.
+7. **Say why a `--candidates N` menu is short.** `synthesize-selectors
+--candidates N` returning one candidate does not say whether only one anchor
+   exists or the menu is not enumerated for that shape (seen on an empty
+   `class X extends Y {}`). Distinguish the two in the JSON.
 
 ## Code refactor / dedup opportunities
 
@@ -226,21 +187,14 @@ SWC-reuse evaluations (what to adopt, what was rejected and why):
    trait or table to collapse repeated per-variant match clusters. ~150 LOC,
    medium risk (over-abstraction hazard; the per-form holing strategies differ
    for good reasons).
-2. Rename `ids.rs::LogicalModule` → `LogicalModuleIr` so it no longer clashes
-   with `spec::LogicalModule`. The two are distinct types (IR materialization
-   record vs. spec authoring input) that share a name purely historically,
-   forcing qualified-path imports wherever both are visible. Ripples widely —
-   update every reference under `lowering/`, `pipeline.rs`, and the e2e
-   fixtures; the rename is mechanical but touches many files, so it was
-   deferred out of the `MaterializeLogicalModulesOptions` embed PR.
-3. Migrate `e2e/vendor_swap_test.rs` off raw `serde_json::json!` vendor-mark
+2. Migrate `e2e/vendor_swap_test.rs` off raw `serde_json::json!` vendor-mark
    literals onto the typed vendor-mark builders. The raw-`json!` form bypasses
    `FixtureOpts` and the typed `VendorResolutionPlan` constructors, so test
    fixtures can drift from real config shapes without a compile error
    (e.g. a renamed vendor-mark field stays green in tests while breaking real
    specs). Points: <e2e/vendor_swap_test.rs> (~lines 1680, 1821 and the
    `report_out_dir` literals), builder surface in `vendor/mod.rs`.
-4. Consolidate the two `*BindingProjection` enums
+3. Consolidate the two `*BindingProjection` enums
    (`TargetBindingProjection` in `selector_constraint_backend.rs`,
    `SourceBindingProjection` in `selector_constraint_model_builder.rs`) into one
    shared projection type.
@@ -250,8 +204,8 @@ SWC-reuse evaluations (what to adopt, what was rejected and why):
    extension) and re-point the three stages at it.
 
 **Organization only (≈0 LOC removed, navigability win):** split the giant
-files by responsibility — <selector_codemod.rs> (2.8k), <peel/quotient.rs>
-(2.5k), <lowering/rename_ledger.rs> (1.7k).
+files by responsibility — <selector_codemod.rs>, <peel/quotient.rs>,
+<lowering/rename_ledger.rs>.
 
 **Evaluated and declined:** CLI common args via clap `#[command(flatten)]`. The
 recurring flags (`--modules` / `--source-root` / `--format`) occur in
@@ -380,9 +334,7 @@ from the dump itself — a canonical emitted-JS string or AST fingerprint per
 anonymous owner, keyed by owner id and statement ordinal — so CLI tools can
 match `anonymous_statements[].match` against graph-owned statements without
 reading source files. This is conditional on hitting that cost; not yet
-observed. (The `owner:<id>`-in-spec-notes framing that used to live here was
-stale — no such mechanism exists; `owner:N` ids are machine-generated graph
-keys and a `describe`/`show-source` input, not a spec authoring hint.)
+observed.
 
 ## Structural selector language
 
@@ -391,9 +343,8 @@ Detailed workflow priorities live above and in
 implemented only when they unlock synthesis, stabilization, repair, or porting
 workflows, and must use generic synthetic fixtures.
 
-- **Contextual selectors.** The disambiguation _capability_ for
-  helper-boilerplate that appears multiple times has landed (#2315): the
-  minimizer reads off a stable immediate neighbor's unique anchor and
+- **Contextual selectors.** For helper boilerplate that appears multiple
+  times, the minimizer reads off a stable immediate neighbor's unique anchor and
   emits a 2-statement-window `source_matches[]` claim rather than a copied
   overlapping selector body (the matcher already rejects ambiguous windows via
   the prove-gate). Decorator-helper neighborhoods — a helper
@@ -408,10 +359,6 @@ workflows, and must use generic synthetic fixtures.
   argument, callback body, object property value, or statement-list slot. This
   should avoid scanning unrelated subtrees while preserving the current rule
   that ambiguous matches are hard errors.
-- **Cross-module source claims.** Current `source_matches[]` entries export
-  multiple bindings into one logical module. Add or design a form for one
-  matched declaration context whose bindings should land in different modules,
-  without repeating the whole source selector.
 
 ## Logical materialization breadth
 
@@ -424,28 +371,6 @@ Still to do:
 - Owner-fragment modeling parity for nested declarations and re-exports.
 - Keep new analysis tooling on the existing owner graph and embedded atomic
   DAG side outputs; do not add parallel selected-owner cache formats.
-
-## Performance
-
-Proposer-gate, `debundle run`, and materialize-stage performance work
-all live in <perf/proposer.md>. Known lowering-side items not yet in
-that log:
-
-- `JsChunk::{get_file,get_file_mut,remove_file}` (`artifact.rs`) are
-  linear scans over `files`, so passes that touch every file go O(n²)
-  per chunk. A path-keyed index fixes it.
-- `split_entry_body` (`lowering/lower.rs`) clones every retained
-  statement out of the chunk AST even though the chunk body is
-  replaced wholesale afterward; a draining/move-based split avoids
-  the full-AST clone.
-
-## Factorize / atomic-DAG docs drift
-
-- **"Factorize" remains overloaded.** Broadly, factorization/assembly
-  produces the authoritative owner partition (`factor_assembly.rs`),
-  while `peel/factorize.rs` produces advisory planner proposals from
-  the serialized atomic DAG (surfaced as `debundle modules propose`).
-  Keep docs explicit about which one they mean.
 
 ## Analysis semantics breadth
 
@@ -501,10 +426,6 @@ still open:
 Open usability and scripting-safety findings from exercising the documented
 workflows against a real spec; resolved items are deleted. Corpus-specific
 paths and owner ids belong in the consuming repo.
-
-- **`<downstream-spec>/AGENTS.md` BIN path stale** (the private downstream repo): says
-  `BIN=bazel-bin/external/ducktape_debundle_bin/file/debundle`; the actual
-  path now carries a `+_repo_rules+` prefix. Fix in the private downstream repo.
 
 ### Planner CLI follow-ups
 

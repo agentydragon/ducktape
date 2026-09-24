@@ -9,10 +9,15 @@ from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import suppress
 from pathlib import Path
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
-
 # Tool results ride inside single frames, so a line can run to megabytes.
 _LINE_LIMIT = 64 * 1024 * 1024
+# The most stdout one read takes. The lines it completes are one journal batch, so this bounds how
+# long that batch holds the journal from the session's other writers and readers.
+_READ_BYTES = 64 * 1024
+# Beside this module in the Bazel runfiles tree and in the installed runner wheel alike.
+_SUPERVISOR = Path(__file__).with_name("harness_supervisor")
+# How much of the end of its stderr `describe_exit` reports; the supervisor's own failure is one line.
+_STDERR_TAIL_BYTES = 4096
 
 
 class HarnessProcess:
@@ -26,13 +31,14 @@ class HarnessProcess:
         self._process: asyncio.subprocess.Process | None = None
         self._native_pid = 0
         self._stdin_lock = asyncio.Lock()
+        self._stderr_tail = b""
 
     async def start(self) -> None:
         report_reader, report_writer = os.pipe()
         os.set_inheritable(report_writer, True)
         try:
             self._process = await asyncio.create_subprocess_exec(
-                str(get_required_path(own_repo_rlocation("agentplane/runner/harness_supervisor"))),
+                _SUPERVISOR,
                 "--native-pid-fd",
                 str(report_writer),
                 *self.command,
@@ -54,14 +60,20 @@ class HarnessProcess:
         finally:
             os.close(report_writer)
         try:
+            # One read suffices only because the supervisor writes its report in one write.
             reported = await asyncio.to_thread(os.read, report_reader, 32)
         finally:
             os.close(report_reader)
         try:
             self._native_pid = int(reported)
         except ValueError as error:
+            # No reader is attached before the pid; this one keeps the supervisor's account of why.
+            async for _ in self.stderr_chunks():
+                pass
             await self._process.wait()
-            raise RuntimeError(f"harness supervisor did not report a native pid: {reported!r}") from error
+            raise RuntimeError(
+                f"harness supervisor did not report a native pid: {reported!r}; {self.describe_exit()}"
+            ) from error
 
     @property
     def process(self) -> asyncio.subprocess.Process:
@@ -86,18 +98,36 @@ class HarnessProcess:
             stdin.write(line.encode() + b"\n")
             await stdin.drain()
 
-    async def lines(self) -> AsyncIterator[str]:
-        """stdout lines without their newline, until EOF."""
+    async def line_batches(self) -> AsyncIterator[list[str]]:
+        """stdout lines without their newline, until EOF: each batch the lines one read completes.
+
+        A read returns what the pipe already holds and waits only while it holds nothing, so a
+        batch is what arrived while the caller handled the one before, and no line waits for more.
+        """
         stdout = self.process.stdout
         assert stdout is not None
-        while line := await stdout.readline():
-            yield line.rstrip(b"\r\n").decode()
+        buffered = bytearray()
+        while chunk := await stdout.read(_READ_BYTES):
+            buffered += chunk
+            if b"\n" in chunk:
+                *lines, buffered = buffered.split(b"\n")
+                yield [line.rstrip(b"\r").decode() for line in lines]
+            if len(buffered) > _LINE_LIMIT:
+                raise ValueError(f"a harness stdout line exceeds {_LINE_LIMIT} bytes")
+        if buffered:
+            yield [buffered.rstrip(b"\r").decode()]
 
     async def stderr_chunks(self) -> AsyncIterator[str]:
         stderr = self.process.stderr
         assert stderr is not None
         while chunk := await stderr.read(65536):
+            self._stderr_tail = (self._stderr_tail + chunk)[-_STDERR_TAIL_BYTES:]
             yield chunk.decode(errors="replace")
+
+    def describe_exit(self) -> str:
+        """The exit status and the end of stderr, which say why a harness did not survive its launch."""
+        exit_code, stderr_tail = self.process.returncode, self._stderr_tail.decode(errors="replace")
+        return f"{exit_code=}, {stderr_tail=}"
 
     async def wait(self) -> int:
         return await self.process.wait()

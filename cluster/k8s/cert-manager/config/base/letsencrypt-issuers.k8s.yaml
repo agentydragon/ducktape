@@ -1,0 +1,49 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    email: agentydragon@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-key
+    server: https://acme-v02.api.letsencrypt.org/directory
+    solvers:
+      - dns01:
+          route53:
+            accessKeyIDSecretRef:
+              key: AWS_ACCESS_KEY_ID
+              name: aws-route53-credentials
+            hostedZoneID: Z02901943N8ZFQFOD9P5I
+            region: us-east-1
+            secretAccessKeySecretRef:
+              key: AWS_SECRET_ACCESS_KEY
+              name: aws-route53-credentials
+        selector:
+          dnsZones:
+            - allegedly.works
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    email: agentydragon@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-staging-key
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    solvers:
+      - dns01:
+          route53:
+            accessKeyIDSecretRef:
+              key: AWS_ACCESS_KEY_ID
+              name: aws-route53-credentials
+            hostedZoneID: Z02901943N8ZFQFOD9P5I
+            region: us-east-1
+            secretAccessKeySecretRef:
+              key: AWS_SECRET_ACCESS_KEY
+              name: aws-route53-credentials
+        selector:
+          dnsZones:
+            - allegedly.works

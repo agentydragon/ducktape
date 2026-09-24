@@ -4,8 +4,8 @@
 //!
 //! Most tests run in CI. Two remain `#[ignore]`d as desiderata
 //! for future work — each ignore-reason names the specific
-//! analysis still missing (fresh-literal-arg gate for
-//! `Object.freeze`, `Expr::New` whitelist for `Set`/`Map`/`RegExp`).
+//! analysis still missing (interprocedural argument freshness for
+//! `Object.freeze`, an `Expr::New` whitelist entry for `RegExp`).
 //! Their bodies become regression fixtures the moment those
 //! analyses land.
 //!
@@ -113,8 +113,9 @@ export { A, B, C };
 }
 
 #[test]
-#[ignore = "blocked on Object.freeze whitelist with fresh-literal-arg gate \
-            (Step D in the purity-desiderata follow-up plan)"]
+#[ignore = "blocked on interprocedural freshness: `Object.freeze` of a fresh object \
+            literal is admitted, but here it freezes `schema`'s parameter, so the \
+            call-site literal's freshness must flow into the helper's body"]
 fn inferred_pure_schema_builder_across_modules_emits_no_s_cycle() {
     // `Object.freeze` is a statically-known pure built-in;
     // `schema(spec)` returns the frozen spec object. All `schema(...)`

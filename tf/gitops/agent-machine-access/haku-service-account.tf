@@ -1,13 +1,9 @@
 # ============================================================================
 # haku-service-account — Haku's shared Authentik service-account identity
 # ============================================================================
-# The `haku` service account and its app-password token. Formerly also carried
-# Haku's dedicated read-only grocy-sf identity (grocy-mcp-haku-sf provider +
-# bindings + credentials secret) — retired once Haku's grocy-sf access moved
-# to haku-console's own remote_server_oauth entry (console reads/writes now
-# gate on the console's approval policy instead of a server-side permission
-# scope). The user + token stay: haku-mail.tf's stalwart-haku provider binds
-# this same SA for Haku's mailbox identity.
+# The `haku` service account and its app-password token, which haku-mail.tf's
+# stalwart-haku provider binds for Haku's mailbox identity. The `haku_grocy`
+# resource names date from the SA's first use as Haku's read-only grocy-sf identity.
 
 resource "authentik_user" "haku_grocy" {
   username = "haku"

@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: proxmox-proxy
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: proxmox-proxy
+  name: proxmox-proxy
+  namespace: proxmox-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: proxmox-proxy
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        reloader.stakater.com/auto: "true"
+      labels:
+        app.kubernetes.io/name: proxmox-proxy
+    spec:
+      containers:
+        - image: docker.io/library/nginx:alpine
+          livenessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            tcpSocket:
+              port: 8080
+          name: nginx
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            tcpSocket:
+              port: 8080
+          resources:
+            limits:
+              cpu: 200m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          volumeMounts:
+            - mountPath: /etc/nginx/nginx.conf
+              name: config
+              readOnly: true
+              subPath: nginx.conf
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      volumes:
+        - configMap:
+            name: proxmox-proxy-config
+          name: config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: proxmox-proxy
+  namespace: proxmox-proxy
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: proxmox-proxy

@@ -1,21 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - external-creds.yaml
-  - forgejo-images-creds-eso.yaml
-  - namespace.yaml
-  - firebase-resigner-config.yaml
-  - deployment.yaml
-  - service.yaml
+  # cdk8s-generated (cluster/cdk8s/tana_mcp.py) -- see cluster/docs/cdk8s.md.
+  - tana-mcp.k8s.yaml
   - tana-firebase-refresh-token.sops.yaml
-  - firebase-resigner-rbac.yaml
-  - facade-configmap.yaml
-  - facade-deployment.yaml
-  - facade-httproute.yaml
-  - facade-service.yaml
-  - facade-valkey-ovh-instance.yaml
-  - facade-servicemonitor.yaml
-  - facade-prometheusrule.yaml
+components:
+  - ./image-pins
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:

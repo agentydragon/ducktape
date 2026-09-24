@@ -237,7 +237,10 @@ fn assert_read_off_resolves_uniquely(module: &Module, body_idx: usize) -> Anchor
             })
     });
     // A single-statement read-off resolves to exactly one one-element group.
-    let matches: Vec<usize> = groups.into_iter().flatten().collect();
+    let matches: Vec<usize> = groups
+        .into_iter()
+        .flat_map(|group| group.body_indices)
+        .collect();
     assert_eq!(
         matches,
         vec![body_idx],

@@ -1,25 +1,30 @@
-"""Isolated ESO-backed credentials for outbound authentication."""
+"""Isolated credentials namespaces for outbound authentication.
+
+`EgressCredentials` renders only the namespace and the egress proxy's read access to it. Each
+environment's own module copies in the credentials that environment gets
+(`egress_staging_credentials.py`, `egress_testing_credentials.py`).
+"""
 
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Namespace, Role, RoleBinding, RolePolicyRule, ServiceAccount
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpec,
-    ExternalSecretSpecData,
-    ExternalSecretSpecDataRemoteRef,
-    ExternalSecretSpecSecretStoreRef,
-    ExternalSecretSpecSecretStoreRefKind,
-    ExternalSecretSpecTarget,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.metadata import metadata
 
 STAGING_NAMESPACE = "agentplane-staging-egress-credentials"
 TESTING_NAMESPACE = "agentplane-testing-egress-credentials"
+# The Secret `egress.py`'s `github-pat` EgressCredential reads, in both environments.
+GITHUB_PAT_SECRET = "agentplane-github-pat"
+EXTERNAL_CREDS_STORE = "kubernetes-external-creds-secret-store"
+# The store authenticates as this ServiceAccount in the consuming namespace (ESO referent auth), so a
+# namespace that copies from external-creds needs its own.
+EXTERNAL_CREDS_READER = "external-creds-reader"
 
 
 class EgressCredentials(Construct):
@@ -49,38 +54,19 @@ class EgressCredentials(Construct):
             ServiceAccount.from_service_account_name(self, "proxy", "agentplane-egress", namespace_name=proxy_namespace)
         )
 
-        credential_external_secret(
-            self,
-            namespace=namespace,
-            target="agentplane-github-pat",
-            source="github-agentydragon-agent",
-            key="token",
-            store="kubernetes-external-creds-secret-store",
-        )
-
 
 def credential_external_secret(
     scope: Construct, *, namespace: str, target: str, source: str, key: str, store: str
 ) -> None:
-    """ESO copy of one credential into an egress-credentials namespace, as Secret `target`."""
-    ExternalSecret(
+    """ESO copy of one credential into `namespace`, as Secret `target`."""
+    add_external_secret(
         scope,
         target,
-        metadata=metadata(target, namespace),
-        spec=ExternalSecretSpec(
-            refresh_interval="1h",
-            secret_store_ref=ExternalSecretSpecSecretStoreRef(
-                kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE, name=store
-            ),
-            data=[
-                ExternalSecretSpecData(
-                    secret_key=key, remote_ref=ExternalSecretSpecDataRemoteRef(key=source, property=key)
-                )
-            ],
-            target=ExternalSecretSpecTarget(
-                name=target,
-                creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-                deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-            ),
-        ),
+        name=target,
+        namespace=namespace,
+        refresh="1h",
+        store=cluster_secret_store(store),
+        data=[remote_data(source, key)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )

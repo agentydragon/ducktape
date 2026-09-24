@@ -64,10 +64,9 @@ without conflating their authorship. `auto_approval_evaluation` retains the poli
 
 The browser reads pending calls and the audit ledger through `/api/approvals/pending` and
 `/api/tool-calls`; `POST /api/tool-calls/{tool_call_id}/decision` is exact-Origin-gated. The event
-WebSocket is only a lossy invalidation channel: REST remains authoritative. Operator
-OAuth and provider associations are managed by `mcp/operator_oauth.py` and
-`oauth/provider_connection.py`; browser rendering and callback-result handling are specified in
-<docs/oauth_browser_surfaces.md>.
+WebSocket is only a lossy invalidation channel: REST remains authoritative. Operator provider
+associations are managed by `oauth/provider_connection.py`; browser rendering and callback-result
+handling are specified in <docs/oauth_browser_surfaces.md>.
 
 ### MCP server (`/mcp`)
 
@@ -76,8 +75,9 @@ submit through `ToolCallApplicationService.submit_and_wait`. A DB-revalidated Op
 `execute_direct`, resolving downstream credentials in that Operator's context without creating an
 approval row; browser MCP requests still require the exact console Origin.
 
-Discovery is request-local and actor-scoped. Shared/in-process servers plus remote servers connected
-by the actor's canonical Operator are exposed in two forms:
+Discovery is request-local and actor-scoped. The configured servers the actor's canonical Operator
+can reach — a server bound to a provider account needs that Operator's connection — are exposed in
+two forms:
 
 - an unconditionally auto-approved tool is a transparent pass-through with its upstream schema;
 - every other tool uses `{input, rationale, title?, wait_for_result_ms?}` and returns either the
@@ -96,11 +96,11 @@ parameter cannot bypass approval.
 `list_mcp_servers` is passive: configured catalog plus persisted connection state, with no token
 refresh or downstream call. `get_mcp_server_status` actively resolves credentials and probes one
 server, returning degraded stage/reason data instead of erasing the server. Status never includes
-access/refresh tokens, client secrets, or static-bearer secret references; a configured connection
-whose deploy-time client is absent reports `unprovisioned` rather than disappearing. Reflected
-`approval_mode` and `input_schema` describe the caller-visible proxy shape. Upstream
-`initialize.instructions` pass through rather than being restated here; tool descriptions carry the
-stub semantics because many clients do not display server instructions.
+access/refresh tokens or client secrets; a configured connection whose deploy-time client is absent
+reports `unprovisioned` rather than disappearing. Reflected `approval_mode` and `input_schema`
+describe the caller-visible proxy shape. Upstream `initialize.instructions` pass through rather than
+being restated here; tool descriptions carry the stub semantics because many clients do not display
+server instructions.
 
 Agent admission composes Haku's FastMCP OAuth adapter and configured static credentials through the
 same canonical authority. An explicit invalid bearer never falls back to an ambient browser cookie.
@@ -111,16 +111,14 @@ and the Postgres-backed state required by the accepted private seam. See
 #### Catalog reconciliation
 
 `tools/list` is a snapshot read. `mcp/catalog_reconciler.py` builds one complete per-Operator
-generation before readiness and refreshes each configured server's snapshot on its own interval.
-Connection changes invalidate that Operator's generation across replicas through Postgres
-`LISTEN`/`NOTIFY`; a newly admitted Operator queues an immediate pass.
+generation before readiness and refreshes each configured server's snapshot on the process-wide
+interval. Provider-connection changes invalidate that Operator's generation across replicas through
+Postgres `LISTEN`/`NOTIFY`; a newly admitted Operator queues an immediate pass.
 
-Successful reflection is TTL-reused and single-flighted by server/config/credential fingerprints;
-the process-wide interval is the default and a server may override it in the deploy-time catalog.
-Failures publish a degraded snapshot with no callable proxies. Execution never treats a catalog
-snapshot as authority: it revalidates the actor binding and current credential. Upstream tool-list
-changes may remain stale for the configured server's refresh interval; persistent sessions and
-`notifications/tools/list_changed` are optional latency improvements, not correctness requirements.
+Reflection builds each server without a credential, so a successful catalog is TTL-reused and
+single-flighted by server/config fingerprint across Operators. Failures publish a degraded snapshot
+with no callable proxies. Execution never treats a catalog snapshot as authority: it revalidates the
+actor binding and current credential.
 
 ### Canonical Agent authority and enrollment
 
@@ -133,11 +131,10 @@ Agents submit/read only their own calls and never approve themselves.
 
 ### In-process MCP servers — no second deployment
 
-An `mcp.servers` entry selects a remote HTTP MCP backend or a registered in-process `FastMCP`
-instance. `McpServerDispatcher` uses the same client/reflection path for both, while reviewed
-implementation code injects any in-process credential only at execution. Startup rejects a
-credential kind the implementation did not declare.
-An entry's `agent_tool_denylist` removes named upstream tools from every Agent's listing, status metadata, and execution path; Operators retain access unless the upstream server itself denies it.
+An `mcp.servers` entry names a registered in-process `FastMCP` instance; the console reaches no
+remote MCP server (those are Agentplane ActionGroups). `McpServerDispatcher` drives each one through
+an in-memory MCP client, while reviewed implementation code injects any credential only at
+execution. Startup rejects a credential kind the implementation did not declare.
 
 Built-ins are assembled in `mcp/in_process_servers.py`:
 
@@ -201,7 +198,7 @@ credential outside the console's origin, contrary to <../docs/security.md> invar
 
 Cluster topology and operations are owned by <../../cluster/k8s/haku/console/README.md>. In
 particular, that document is canonical for static/API routing, migration Jobs, rollout strategy,
-OAuth/client bootstrap, connected MCP servers, credentials, and placement. Keep the high-level
+OAuth/client bootstrap, credentials, and placement. Keep the high-level
 boundary here: Haku cannot mutate or inspect the `haku-console` namespace; browser auth is
 app-owned; `/mcp` Agent auth and Operator browser auth are separate; every new top-level backend
 prefix must also be routed by the static nginx shell; and API replicas overlap during a rollout, so

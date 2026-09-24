@@ -250,16 +250,14 @@ per-app reasons: <docs/decisions.md> § "Parked application manifests".
 
 ## Generated manifests
 
-Every `*.k8s.yaml` under `cluster/k8s`, and the `kustomization.yaml` beside generated
-resources in `agentplane-{staging,testing}`, `litellm/app`,
-`agents/ha-mcp/app`, `aiquota`, `artifact-generators`, `clickhouse/schema`,
-`external-creds`, `haku/console{,/db,/migration}`, `monitoring/etcd`, `descheduler` and
-`agents/public-coder-agent/namespace`, is
-`bb run //cluster/cdk8s:generate_manifests` output
-(`.gitattributes` lists them). Change the generator under `cluster/cdk8s/` and
-regenerate; `//cluster/cdk8s:test_generate_manifests` fails on drift. The layout rules in
-this file for hand-written directories bind a generated directory only where the
-generator has a knob for them. An invariant over generated objects is a fleet rule or a
+Every file under `cluster/generated`, every `*.k8s.yaml` under `cluster/k8s`, and each
+`kustomization.yaml` there that `.gitattributes` marks `linguist-generated=true` (the list
+of record), is `bb run //cluster/cdk8s:generate_manifests` output. A directory lives under
+`cluster/generated` exactly when the generator writes all of it (<docs/cdk8s.md>). Change the generator under
+`cluster/cdk8s/` and regenerate; `//cluster/cdk8s:test_generate_manifests` fails on
+drift. What stays hand-written, and why: <docs/cdk8s.md> § What stays hand-written. The
+layout rules in this file for hand-written directories bind a generated directory only
+where the generator has a knob for them. An invariant over generated objects is a fleet rule or a
 test beside the generator, never a new test under `cluster/validation/` reading the
 committed output; `cluster/validation/` keeps the whole-graph checks (dependency cycles,
 CRD layering, `kustomize build`) and tests of hand-written directories. Conventions:

@@ -1,0 +1,160 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: privileged
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: local-path-storage
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: local-path-provisioner
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://charts.containeroo.ch
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: local-path-provisioner
+  namespace: local-path-storage
+spec:
+  chart:
+    spec:
+      chart: local-path-provisioner
+      sourceRef:
+        kind: HelmRepository
+        name: local-path-provisioner
+        namespace: flux-system
+      version: 0.0.38
+  install:
+    remediation:
+      retries: 3
+  interval: 30m
+  values:
+    configmap:
+      helperPodNamespace: local-path-storage
+    nodePathMap:
+      - node: DEFAULT_PATH_FOR_NON_LISTED_NODES
+        paths:
+          - /var/local-path-provisioner
+      - node: ovh-ns103656
+        paths:
+          - /var/mnt/local-path-ovh-hdd/local-path
+      - node: ovh-ns103711
+        paths:
+          - /var/mnt/local-path-ovh-hdd/local-path
+      - node: ovh-ns102453
+        paths:
+          - /var/mnt/local-path-ovh-hdd/local-path
+      - node: ovh-ns104952
+        paths:
+          - /var/mnt/seaweedfs-data/local-path
+      - node: ovh-ns104963
+        paths:
+          - /var/mnt/seaweedfs-data/local-path
+      - node: ovh-ns1001419
+        paths:
+          - /var/mnt/seaweedfs-data/local-path
+      - node: optiplex
+        paths:
+          - /var/local-path-provisioner
+    storageClass:
+      create: false
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-ovh
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - hil-ovh
+      - key: storage.allegedly.works/tier
+        values:
+          - hdd
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-ovh-hdd
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - hil-ovh
+      - key: storage.allegedly.works/tier
+        values:
+          - hdd
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-ovh-hdd-retain
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - hil-ovh
+      - key: storage.allegedly.works/tier
+        values:
+          - hdd
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-ovh-ssd
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - hil-ovh
+      - key: storage.allegedly.works/tier
+        values:
+          - ssd
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-proxmox
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/region
+        values:
+          - proxmox
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-home-ssd
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/region
+        values:
+          - home
+      - key: storage.allegedly.works/tier
+        values:
+          - ssd
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer

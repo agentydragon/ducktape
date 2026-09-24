@@ -178,11 +178,10 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
-        ":chunk_facts",
         ":js_ast",
-        ":selector_ir",
-        ":selector_ir_lowering",
-        ":selector_runtime",
+        ":selector_outcome",
+        ":selector_resolve",
+        ":source_match",
         ":spec",
         "@crates//:anyhow",
         "@crates//:swc_common",
@@ -198,9 +197,9 @@ rust_library(
 )
 
 rust_library(
-    name = "selector_diagnostics",
-    srcs = ["selector_diagnostics.rs"],
-    crate_root = "selector_diagnostics.rs",
+    name = "selector_outcome",
+    srcs = ["selector_outcome.rs"],
+    crate_root = "selector_outcome.rs",
     edition = "2024",
     deps = [
         "@crates//:serde",
@@ -675,14 +674,11 @@ rust_library(
     crate_root = "selector_codemod.rs",
     edition = "2024",
     deps = [
-        ":analysis",
-        ":chunk_facts",
         ":js_ast",
         ":readoff_render",
         ":selector_candidate_index",
-        ":selector_ir",
-        ":selector_ir_lowering",
-        ":selector_runtime",
+        ":selector_outcome",
+        ":selector_resolve",
         ":shape_index",
         ":source_match",
         ":source_match_holes",
@@ -702,9 +698,6 @@ rust_library(
 rust_test(
     name = "selector_codemod_test",
     crate = ":selector_codemod",
-    data = [
-        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
-    ],
     edition = "2024",
     deps = [
         "@crates//:proptest",
@@ -726,8 +719,6 @@ rust_library(
         ":analysis",
         ":anonymous_resolution",
         ":gate",
-        ":js_ast",
-        ":source_match",
         ":spec",
         ":spec_modules",
         "@crates//:anyhow",
@@ -833,10 +824,10 @@ rust_library(
         "lowering/lower.rs",
         "lowering/materialize/apply.rs",
         "lowering/materialize/mod.rs",
+        "lowering/materialize/outcome_sink.rs",
         "lowering/materialize/plan_builder.rs",
         "lowering/mod.rs",
         "lowering/naturalize.rs",
-        "lowering/ordinal.rs",
         "lowering/plan_references.rs",
         "lowering/plans.rs",
         "lowering/rename_ledger.rs",
@@ -854,17 +845,12 @@ rust_library(
         ":analysis",
         ":artifact",
         ":binding_targets",
-        ":chunk_facts",
         ":gate",
         ":js_ast",
         ":output_layout",
         ":program_analysis",
-        ":selector_backend_solver",
-        ":selector_diagnostics",
-        ":selector_ir",
-        ":selector_ir_lowering",
-        ":selector_ortools_cpsat_backend",
-        ":selector_runtime",
+        ":selector_outcome",
+        ":selector_resolve",
         ":source_match",
         ":spec",
         ":stage_one",
@@ -1012,9 +998,9 @@ rust_library(
         ":pipeline",
         ":selector_codemod",
         ":selector_debt",
-        ":selector_diagnostics",
         ":selector_ir_lowering",
-        ":selector_solve",
+        ":selector_outcome",
+        ":selector_resolve",
         ":source_match",
         ":spec",
         ":spec_modules",
@@ -1054,7 +1040,6 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
-        ":chunk_facts",
         "@crates//:serde",
     ],
 )
@@ -1074,8 +1059,8 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
-        ":chunk_facts",
         ":selector_ir",
+        ":selector_outcome",
         "@crates//:serde",
     ],
 )
@@ -1097,10 +1082,8 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
-        ":chunk_facts",
         ":selector_constraint_backend",
         ":selector_ir",
-        "@crates//:regex",
     ],
 )
 
@@ -1111,7 +1094,6 @@ rust_test(
     edition = "2024",
     deps = [
         ":analysis",
-        ":chunk_facts",
         ":js_ast",
         ":selector_constraint_backend",
         ":selector_ir",
@@ -1129,7 +1111,6 @@ rust_library(
         ":selector_constraint_backend",
         ":selector_constraint_model_builder",
         ":selector_ir",
-        "@crates//:serde_json",
     ],
 )
 
@@ -1143,7 +1124,6 @@ rust_test(
         ":selector_constraint_backend",
         ":selector_constraint_model_builder",
         ":selector_ir",
-        "@crates//:serde_json",
     ],
 )
 
@@ -1155,7 +1135,6 @@ rust_library(
         ":selector_constraint_backend",
         ":selector_ir",
         "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cp_sat_rust_proto",
-        "@crates//:serde_json",
         "@rules_rust_prost//private/3rdparty/crates:prost",
     ],
 )
@@ -1191,6 +1170,28 @@ rust_library(
         ":selector_ir",
         ":selector_ortools_cpsat_backend",
         "@crates//:anyhow",
+    ],
+)
+
+# The one selector resolve every command calls: spec entities and a parsed
+# chunk in, one outcome per entity out.
+rust_library(
+    name = "selector_resolve",
+    srcs = ["selector_resolve.rs"],
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":chunk_facts",
+        ":js_ast",
+        ":selector_ir",
+        ":selector_ir_lowering",
+        ":selector_outcome",
+        ":selector_runtime",
+        ":source_match",
+        ":spec",
+        "@crates//:anyhow",
+        "@crates//:rayon",
+        "@crates//:swc_ecma_ast",
     ],
 )
 
@@ -1258,27 +1259,6 @@ rust_binary(
     ],
 )
 
-# The relational-selector prototype: in-process Datalog (Ascent) over the
-# owner-graph EDB, exposed as `debundle selector-solve`. Not on the `run` path
-# (see docs/selector_resolution.md); new relations are proven here against real
-# pipeline output before they are lowered into the selector IR.
-rust_library(
-    name = "selector_solve",
-    srcs = ["selector_solve.rs"],
-    edition = "2024",
-    deps = [
-        "@crates//:ascent",
-        "@crates//:serde",
-        "@crates//:serde_json",
-    ],
-)
-
-rust_test(
-    name = "selector_solve_test",
-    crate = ":selector_solve",
-    edition = "2024",
-)
-
 # P1 of the Datalog selector resolver: a faithful, fail-closed projection of a
 # parsed chunk into AST facts (kind/child/str_lit/prop_name/ident_name + the
 # owner-ordinal join). The extractor errors loudly on any construct it has not
@@ -1328,6 +1308,7 @@ rust_test(
         ":chunk_facts",
         ":js_ast",
         ":selector_match",
+        ":source_match",
         "@crates//:swc_ecma_ast",
     ],
 )

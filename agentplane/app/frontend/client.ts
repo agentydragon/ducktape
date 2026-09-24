@@ -32,8 +32,7 @@ export type SandboxView = components["schemas"]["SandboxView"];
 export type NewSandbox = components["schemas"]["NewSandbox"];
 export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
-export type EntityInterest = components["schemas"]["EntityInterestResponse"];
-export type PayloadInterest = components["schemas"]["PayloadInterestResponse"];
+export type ThreadScope = components["schemas"]["ThreadScopeResponse"];
 export type ThreadEntityView = components["schemas"]["ThreadEntityView"];
 export type CommandReconciliationResponse = components["schemas"]["CommandReconciliationResponse"];
 export type EvidencePage = components["schemas"]["EvidencePage"];
@@ -326,6 +325,14 @@ export async function models(): Promise<ModelCatalog> {
 }
 
 /**
+ * Above the server's own bound: two sequential `COMMAND_ADMISSION_S` (15 s) waits, for runner
+ * admission and then for its archive copy (`agentplane/app/agent_runtime/runner/bridge.py`). The
+ * clock also runs while the browser queues the request for a free connection, so a queued or hung
+ * request surfaces as a failed attempt rather than waiting silently forever.
+ */
+const COMMAND_TIMEOUT_MS = 45_000;
+
+/**
  * The saved command boundary: this is the exact archived CommandAdmitted EventEntry, not a
  * prediction that a harness has already executed the operation. Replaying the same immutable
  * command returns that same entry, so a lost HTTP response is safe to retry.
@@ -334,6 +341,7 @@ export async function command(threadId: string, message: Command): Promise<Event
   const { data, error } = await api.POST("/threads/{thread_id}/commands", {
     params: { path: { thread_id: threadId } },
     body: toJson(CommandSchema, message) as JsonObject,
+    signal: AbortSignal.timeout(COMMAND_TIMEOUT_MS),
   });
   if (error) throw new Error(displayableError(error));
   return fromJson(EventEntrySchema, data as JsonValue);
@@ -343,16 +351,16 @@ export function eventsUrl(threadId: string): string {
   return `/threads/${encodeURIComponent(threadId)}/events/stream`;
 }
 
-export async function threadEntityInterest(
-  threadId: string,
-  beforeCursor?: string,
-  signal?: AbortSignal
-): Promise<EntityInterest> {
-  const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/interest`, window.location.href);
-  if (beforeCursor !== undefined) url.searchParams.set("before_cursor", beforeCursor);
+/**
+ * The epoch a thread's shapes are pinned to. A long poll: the server holds the read until the
+ * thread has a fold, and answers null if it still has none when the hold runs out.
+ */
+export async function threadScope(threadId: string, signal?: AbortSignal): Promise<ThreadScope | null> {
+  const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/scope`, window.location.href);
   const response = await fetch(url, { signal });
-  if (!response.ok) throw new Error(`Entity interest failed with ${response.status}`);
-  return (await response.json()) as EntityInterest;
+  if (response.status === 204) return null;
+  if (!response.ok) throw new Error(`Thread scope failed with ${response.status}`);
+  return (await response.json()) as ThreadScope;
 }
 
 export async function getThread(threadId: string): Promise<ThreadView> {

@@ -96,8 +96,8 @@ single_version_override(
 
 # or-tools@9.15 pulls pybind11_abseil for wrapper targets even when we only
 # build the C++ CP-SAT backend. Its module creates a dev-only pip hub named
-# "pypi", which collides with Ducktape's root pip hub during module extension
-# resolution. Keep pybind11_abseil's apparent @pypi mapping inside that module,
+# "pypi", the name rules_python reserves for its generated unified hub. Keep
+# pybind11_abseil's apparent @pypi mapping inside that module,
 # but give its generated hub a module-specific name. Upstream PR #73 is merged, but
 # the fix is not in a released version yet; remove this override only after a
 # release containing that PR and a successful OR-Tools consumer build.
@@ -679,8 +679,11 @@ pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 # session-start hook on Claude Code web. No hardcoded proxy here - this file
 # should work both on local dev machines and on CC web.
 
+# Hub names are shared by every module using the pip extension, and rules_python
+# reserves "pypi" for its generated unified hub, so this hub carries the module
+# name. use_repo maps it back to the @pypi that BUILD files use.
 pip.parse(
-    hub_name = "pypi",
+    hub_name = "ducktape_pypi",
     python_version = "3.14",
     requirements_lock = "//:requirements_bazel.txt",
 )
@@ -701,7 +704,7 @@ pip.parse(
     python_version = "3.14",
     requirements_lock = "//tana/litellm_proxy:requirements.txt",
 )
-use_repo(pip, "pypi", "pypi_homeassistant", "pypi_tana_litellm_proxy")
+use_repo(pip, "pypi_homeassistant", "pypi_tana_litellm_proxy", pypi = "ducktape_pypi")
 
 # Type stubs for mypy - extracts types-* and *-stubs packages from requirements
 # and provides them to the mypy aspect for per-target stub inclusion.
@@ -711,7 +714,7 @@ types.requirements(
     # Exclusions prevent rules_mypy from generating requirement("X") mappings
     # for type stubs whose runtime package isn't in the pip hub (or has a
     # different name). Without exclusion, Bazel fails at analysis time with
-    # "no such package '@@rules_python++pip+pypi//X'".
+    # "no such package '@@rules_python++pip+ducktape_pypi//X'".
     #
     # Cleaned-up stubs (no longer need exclusion):
     # - sqlalchemy-stubs, types-sqlalchemy: removed from pyproject.toml
@@ -770,13 +773,10 @@ register_toolchains("@rust_toolchains//:all")
 # Keep this extension visible to downstream modules. Ducktape BUILD files use
 # apparent labels such as `@crates//:anyhow`, and those labels are resolved in
 # Ducktape's own repository mapping when another workspace consumes Ducktape via
-# `bazel_dep` + `archive_override`. A downstream workspace's root `@crates`
-# repository cannot satisfy those labels.
-#
-# Do not attach Ducktape's `Cargo.Bazel.lock` here. rules_rust's rendered-lock
-# checksum is not portable across root-module and dependency-module path
-# contexts, which makes downstream consumers fail analysis even though
-# `Cargo.lock` is pinned. Let crate_universe render from the Cargo lock instead.
+# `bazel_dep` + `git_override`. A downstream workspace's root `@crates`
+# repository cannot satisfy those labels. crate_universe refuses a non-root
+# `from_cargo` without a `lockfile` (it never repins across module boundaries
+# and skips the digest check there), so the lockfile is what dependents render.
 crate = use_extension(
     "@rules_rust//crate_universe:extensions.bzl",
     "crate",
@@ -786,6 +786,7 @@ crate = use_extension(
 crate.from_cargo(
     name = "crates",  # this becomes the repo name
     cargo_lockfile = "//:Cargo.lock",
+    lockfile = "//:Cargo.Bazel.lock",
     manifests = ["//:Cargo.toml"],
 )
 
@@ -934,6 +935,13 @@ http_file(
 )
 
 http_file(
+    name = "flux_gitrepository_crd",
+    downloaded_file_path = "source.toolkit.fluxcd.io_gitrepositories.yaml",
+    sha256 = "bd0c08183287b2eea0d885751fc686bc4b2b583e919de6bd57859170b8d1727f",
+    urls = ["https://raw.githubusercontent.com/fluxcd/source-controller/v1.9.5/config/crd/bases/source.toolkit.fluxcd.io_gitrepositories.yaml"],
+)
+
+http_file(
     name = "flux_imagerepository_crd",
     downloaded_file_path = "image.toolkit.fluxcd.io_imagerepositories.yaml",
     sha256 = "122a58bcaa78770fdeffef9246576513df4bc4452a98b5dba4c2bbbaf7d0f2c9",
@@ -947,7 +955,35 @@ http_file(
     urls = ["https://raw.githubusercontent.com/fluxcd/image-reflector-controller/v1.2.5/config/crd/bases/image.toolkit.fluxcd.io_imagepolicies.yaml"],
 )
 
-# Match the deployed version in cluster/k8s/tofu-controller/tofu-controller.yaml.
+http_file(
+    name = "flux_imageupdateautomation_crd",
+    downloaded_file_path = "image.toolkit.fluxcd.io_imageupdateautomations.yaml",
+    sha256 = "f12d1ee34ac92b0055a18152e55f91742c08c228aeedaa93b9ee4b72325c44cf",
+    urls = ["https://raw.githubusercontent.com/fluxcd/image-automation-controller/v1.2.5/config/crd/bases/image.toolkit.fluxcd.io_imageupdateautomations.yaml"],
+)
+
+http_file(
+    name = "flux_receiver_crd",
+    downloaded_file_path = "notification.toolkit.fluxcd.io_receivers.yaml",
+    sha256 = "4c8be1ad7789b78f0727557d01e5f33eef9447a1f4aa9b830a3c1cc8a1508a9b",
+    urls = ["https://raw.githubusercontent.com/fluxcd/notification-controller/v1.9.4/config/crd/bases/notification.toolkit.fluxcd.io_receivers.yaml"],
+)
+
+http_file(
+    name = "flux_provider_crd",
+    downloaded_file_path = "notification.toolkit.fluxcd.io_providers.yaml",
+    sha256 = "243ad33ac88ed965c6cd72b342dc5a93ecf5eefde2e03f4c2ea026b52d872135",
+    urls = ["https://raw.githubusercontent.com/fluxcd/notification-controller/v1.9.4/config/crd/bases/notification.toolkit.fluxcd.io_providers.yaml"],
+)
+
+http_file(
+    name = "flux_alert_crd",
+    downloaded_file_path = "notification.toolkit.fluxcd.io_alerts.yaml",
+    sha256 = "2b8f79249b39881bd23c49868f114c44c6e632dfcda451da576adfa16c64226f",
+    urls = ["https://raw.githubusercontent.com/fluxcd/notification-controller/v1.9.4/config/crd/bases/notification.toolkit.fluxcd.io_alerts.yaml"],
+)
+
+# Match the deployed version in cluster/cdk8s/tofu_controller/release.py.
 http_file(
     name = "tofu_controller_terraform_crd",
     downloaded_file_path = "infra.contrib.fluxcd.io_terraforms.yaml",
@@ -956,12 +992,26 @@ http_file(
 )
 
 # Match kube-prometheus-stack's operator version tracked by
-# cluster/k8s/flux/sources/monitoring.yaml.
+# cluster/cdk8s/flux_sources.py.
 http_file(
     name = "prometheus_operator_servicemonitor_crd",
     downloaded_file_path = "monitoring.coreos.com_servicemonitors.yaml",
     sha256 = "10a5f90038608d9a2758d5a8700e1be5adbaff5d6355a52fa7b6e8488b71156d",
     urls = ["https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.0/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml"],
+)
+
+http_file(
+    name = "prometheus_operator_prometheusrule_crd",
+    downloaded_file_path = "monitoring.coreos.com_prometheusrules.yaml",
+    sha256 = "2f2015458b5f70695efc918e2c5ca063563e1dd4c9b1324a28f7a0367de26e88",
+    urls = ["https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.0/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml"],
+)
+
+http_file(
+    name = "prometheus_operator_podmonitor_crd",
+    downloaded_file_path = "monitoring.coreos.com_podmonitors.yaml",
+    sha256 = "96fcdcd7f9b4e3f37d8fd1e0848d3cfd25de6691ca8412c4f5db294027574242",
+    urls = ["https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.0/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml"],
 )
 
 # Match gateway_api_version in cluster/terraform/main/cilium.tf. Cilium 1.19 requires
@@ -973,8 +1023,22 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_httproutes.yaml"],
 )
 
+http_file(
+    name = "gateway_api_gateway_crd",
+    downloaded_file_path = "gateway.networking.k8s.io_gateways.yaml",
+    sha256 = "ecb21e3a23757108e74399c49365864f5e0d87c694679d63e4c34c7ccf579e2a",
+    urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_gateways.yaml"],
+)
+
+http_file(
+    name = "gateway_api_tlsroute_crd",
+    downloaded_file_path = "gateway.networking.k8s.io_tlsroutes.yaml",
+    sha256 = "6a74bbe019916d1b53ec270634185aec2eeee1a4e100d6029a53f63ae448f77c",
+    urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_tlsroutes.yaml"],
+)
+
 # Upstream publishes one bundle; the bindings BUILD extracts each needed CRD. Match
-# cluster/k8s/flux/sources/external-secrets.yaml.
+# cluster/cdk8s/flux_sources.py.
 http_file(
     name = "external_secrets_crds_bundle",
     downloaded_file_path = "external-secrets-crds-bundle.yaml",
@@ -982,7 +1046,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/external-secrets/external-secrets/v2.10.0/deploy/crds/bundle.yaml"],
 )
 
-# Match the sshpiper image tag in cluster/k8s/agents/public-coder-agent/sshpiper/.
+# Match the sshpiper image tag in cluster/cdk8s/public_coder_sshpiper.py.
 http_file(
     name = "sshpiper_pipe_crd",
     downloaded_file_path = "crd-pipes.yaml",
@@ -998,7 +1062,23 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cilium/cilium/v1.19.6/pkg/k8s/apis/cilium.io/client/crds/v2/ciliumnetworkpolicies.yaml"],
 )
 
-# CloudNativePG CRDs follow the operator appVersion in cluster/k8s/cnpg/helmrelease.yaml.
+# Match cluster/terraform/main/cilium.tf's local.cilium_version.
+http_file(
+    name = "cilium_clusterwide_networkpolicy_crd",
+    downloaded_file_path = "cilium.io_ciliumclusterwidenetworkpolicies.yaml",
+    sha256 = "ae742b7ad66ddb4af752b6ae9787f2d3bc4597e3f29df80417967767f9bf2a79",
+    urls = ["https://raw.githubusercontent.com/cilium/cilium/v1.19.6/pkg/k8s/apis/cilium.io/client/crds/v2/ciliumclusterwidenetworkpolicies.yaml"],
+)
+
+# Match cluster/terraform/main/cilium.tf's local.cilium_version.
+http_file(
+    name = "cilium_envoyconfig_crd",
+    downloaded_file_path = "cilium.io_ciliumenvoyconfigs.yaml",
+    sha256 = "9641a7b9034508798ac8ecf58cf29fd2ae21e320df7ad59c8596bf7f414c420b",
+    urls = ["https://raw.githubusercontent.com/cilium/cilium/v1.19.6/pkg/k8s/apis/cilium.io/client/crds/v2/ciliumenvoyconfigs.yaml"],
+)
+
+# CloudNativePG CRDs follow the operator appVersion in cluster/cdk8s/cnpg_operator.py.
 http_file(
     name = "cnpg_cluster_crd",
     downloaded_file_path = "postgresql.cnpg.io_clusters.yaml",
@@ -1013,7 +1093,23 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/v1.30.0/config/crd/bases/postgresql.cnpg.io_databases.yaml"],
 )
 
-# Match the deployed version in cluster/k8s/cert-manager/app/helmrelease.yaml.
+http_file(
+    name = "cnpg_scheduledbackup_crd",
+    downloaded_file_path = "postgresql.cnpg.io_scheduledbackups.yaml",
+    sha256 = "1dffb969a92ed6b09abe59d9c848ff97c6646c7824e75f8e0b8379df8473a145",
+    urls = ["https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/v1.30.0/config/crd/bases/postgresql.cnpg.io_scheduledbackups.yaml"],
+)
+
+# Match the plugin-barman-cloud chart 0.8.0 (appVersion v0.15.0) in cluster/cdk8s/cnpg_operator.py;
+# the chart ships this CRD unchanged.
+http_file(
+    name = "barman_cloud_objectstore_crd",
+    downloaded_file_path = "barmancloud.cnpg.io_objectstores.yaml",
+    sha256 = "2d8be9265b99571a560e80f2a54dbbcc19cbfb2254575ff2e7bba9dc4429e99e",
+    urls = ["https://raw.githubusercontent.com/cloudnative-pg/plugin-barman-cloud/v0.15.0/config/crd/bases/barmancloud.cnpg.io_objectstores.yaml"],
+)
+
+# Match the deployed version in cluster/cdk8s/cert_manager/app.py.
 http_file(
     name = "cert_manager_certificate_crd",
     downloaded_file_path = "cert-manager.io_certificates.yaml",
@@ -1021,7 +1117,21 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cert-manager/cert-manager/v1.21.2/deploy/crds/cert-manager.io_certificates.yaml"],
 )
 
-# Match the deployed version in cluster/k8s/cert-manager/trust/helmrelease.yaml.
+http_file(
+    name = "cert_manager_clusterissuer_crd",
+    downloaded_file_path = "cert-manager.io_clusterissuers.yaml",
+    sha256 = "30008001b78aafb8e110af61359561104b5fafc3a4dc6ac0013245d0ee3fe4ca",
+    urls = ["https://raw.githubusercontent.com/cert-manager/cert-manager/v1.21.2/deploy/crds/cert-manager.io_clusterissuers.yaml"],
+)
+
+http_file(
+    name = "cert_manager_issuer_crd",
+    downloaded_file_path = "cert-manager.io_issuers.yaml",
+    sha256 = "05e37efb02777e0362d24269fa103c2fc11419f9c85e31854ef873e5d9e5c5cc",
+    urls = ["https://raw.githubusercontent.com/cert-manager/cert-manager/v1.21.2/deploy/crds/cert-manager.io_issuers.yaml"],
+)
+
+# Match the deployed version in cluster/cdk8s/cert_manager/trust.py.
 http_file(
     name = "trust_manager_bundle_crd",
     downloaded_file_path = "trust.cert-manager.io_bundles.yaml",
@@ -1037,6 +1147,204 @@ http_file(
     downloaded_file_path = "sandbox-with-extensions.yaml",
     sha256 = "aaa9d931acb8af90a0a458b6d72bd245d224faac7117e8a241f9e7086acc24e9",
     urls = ["https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v0.5.5/sandbox-with-extensions.yaml"],
+)
+
+# Match the seaweedfs-operator chart version in cluster/cdk8s/seaweedfs/operator_release.py;
+# the chart's CRD template equals these per-kind files at the same tag.
+http_file(
+    name = "seaweed_adminscript_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_adminscripts.yaml",
+    sha256 = "9d5747462d1350493ca28a13dd76d38624b36ed17e7135f1a1dc0e97268d2e7d",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_adminscripts.yaml"],
+)
+
+http_file(
+    name = "seaweed_bucket_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_buckets.yaml",
+    sha256 = "e4835613f02f0227ad7c801b3f6c08d147ae168621bfbb587761d74c21125358",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_buckets.yaml"],
+)
+
+http_file(
+    name = "seaweed_resourcereferencegrant_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_resourcereferencegrants.yaml",
+    sha256 = "13ae0ea9795ccb2f9ea9e56789b1ec9c3fed730a17c5db9079bd4bed5fe9c56d",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_resourcereferencegrants.yaml"],
+)
+
+http_file(
+    name = "seaweed_s3credentials_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_s3credentials.yaml",
+    sha256 = "c2c19138d7dd4d4ad5efef642176b0d2fefb8bf6c41581bba267b60160f19157",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_s3credentials.yaml"],
+)
+
+http_file(
+    name = "seaweed_s3identity_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_s3identities.yaml",
+    sha256 = "e4cd566e32a6d9e52c21c088f6d522fdfe6013e559ff7c49d87b6a601fa3d9e8",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_s3identities.yaml"],
+)
+
+http_file(
+    name = "seaweed_s3policy_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_s3policies.yaml",
+    sha256 = "104eb50ff5c0c3809163b453c2b26e15126ea8f3b1d765fe09b2cd57c01a0497",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_s3policies.yaml"],
+)
+
+http_file(
+    name = "seaweed_s3policybinding_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_s3policybindings.yaml",
+    sha256 = "f2646bef91a267789676ce518cd6d74118422c64ebaa4649e692159d00840a49",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_s3policybindings.yaml"],
+)
+
+http_file(
+    name = "seaweed_seaweed_crd",
+    downloaded_file_path = "seaweed.seaweedfs.com_seaweeds.yaml",
+    sha256 = "8a01553289c42ef486aa5ba7da4dd39ddc691441fb7413caff7ea94c7225d76d",
+    urls = ["https://raw.githubusercontent.com/seaweedfs/seaweedfs-operator/seaweedfs-operator-0.1.42/config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml"],
+)
+
+# Match the grafana-operator release deployed by cluster/cdk8s/monitoring/grafana_operator.py
+# (chart `~5.22`, resolved to 5.22.2); the chart ships these CRD files unchanged.
+http_file(
+    name = "grafana_grafana_crd",
+    downloaded_file_path = "grafana.integreatly.org_grafanas.yaml",
+    sha256 = "d57db09cb69ae181ee6f3dd93a974ef2cc5fb8d4feb5de60d101159b76690b70",
+    urls = ["https://raw.githubusercontent.com/grafana/grafana-operator/v5.22.2/config/crd/bases/grafana.integreatly.org_grafanas.yaml"],
+)
+
+http_file(
+    name = "grafana_grafanadashboard_crd",
+    downloaded_file_path = "grafana.integreatly.org_grafanadashboards.yaml",
+    sha256 = "e0a76978377eb49e4d082d352b2a4c1a168c54f6c4d7c64dd911a54f0f780813",
+    urls = ["https://raw.githubusercontent.com/grafana/grafana-operator/v5.22.2/config/crd/bases/grafana.integreatly.org_grafanadashboards.yaml"],
+)
+
+http_file(
+    name = "grafana_grafanadatasource_crd",
+    downloaded_file_path = "grafana.integreatly.org_grafanadatasources.yaml",
+    sha256 = "7c97903e50ace55b6cd94a2066c8398e12ce1dd7453942604c67401fd09565df",
+    urls = ["https://raw.githubusercontent.com/grafana/grafana-operator/v5.22.2/config/crd/bases/grafana.integreatly.org_grafanadatasources.yaml"],
+)
+
+http_file(
+    name = "grafana_grafanaserviceaccount_crd",
+    downloaded_file_path = "grafana.integreatly.org_grafanaserviceaccounts.yaml",
+    sha256 = "35422e22bb8c1f5be563484cd24eda0d93c64a8cabc9a794272d1f31e5323dae",
+    urls = ["https://raw.githubusercontent.com/grafana/grafana-operator/v5.22.2/config/crd/bases/grafana.integreatly.org_grafanaserviceaccounts.yaml"],
+)
+
+# Match the kyverno chart 3.9.1 (appVersion v1.19.1) in cluster/cdk8s/kyverno/app.py.
+http_file(
+    name = "kyverno_clusterpolicy_crd",
+    downloaded_file_path = "kyverno.io_clusterpolicies.yaml",
+    sha256 = "8b567653a33c7db9843ec2d2c2f4845625bed6d4b005dbb5485e6646b9376703",
+    urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/kyverno/kyverno.io_clusterpolicies.yaml"],
+)
+
+http_file(
+    name = "kyverno_cleanuppolicy_crd",
+    downloaded_file_path = "kyverno.io_cleanuppolicies.yaml",
+    sha256 = "84d8f500897ad14122177129adfeb3cbb0dac1d24796abf7cf22001c2ac9eb25",
+    urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/kyverno/kyverno.io_cleanuppolicies.yaml"],
+)
+
+# Match the volsync chart 0.16.0 in cluster/cdk8s/volsync.py; the chart templates these CRDs verbatim.
+http_file(
+    name = "volsync_replicationdestination_crd",
+    downloaded_file_path = "volsync.backube_replicationdestinations.yaml",
+    sha256 = "503cb28f7eafc73b9c3332cdc084aca3149f8520e3b265769caf02a47f51251d",
+    urls = ["https://raw.githubusercontent.com/backube/volsync/v0.16.0/config/crd/bases/volsync.backube_replicationdestinations.yaml"],
+)
+
+http_file(
+    name = "volsync_replicationsource_crd",
+    downloaded_file_path = "volsync.backube_replicationsources.yaml",
+    sha256 = "597e68a855277fe5bfb86f1239ab472dda1fe4660fca22fa932ff2f13b72d29b",
+    urls = ["https://raw.githubusercontent.com/backube/volsync/v0.16.0/config/crd/bases/volsync.backube_replicationsources.yaml"],
+)
+
+# Match the external-snapshotter tag in cluster/cdk8s/flux_sources.py.
+http_file(
+    name = "external_snapshotter_volumesnapshotclass_crd",
+    downloaded_file_path = "snapshot.storage.k8s.io_volumesnapshotclasses.yaml",
+    sha256 = "75e6565aac2c0f2949ed13ea884bbaa388cb7be576b558b709cf1168e011828d",
+    urls = ["https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.6.0/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml"],
+)
+
+# The redis-operator chart's CRD bundle. Chart 0.26.1 (cluster/cdk8s/valkey.py) ships the same
+# crds.yaml as the operator repo's v0.26.0 tag, which is the raw URL this pins.
+http_file(
+    name = "redis_operator_crds",
+    downloaded_file_path = "crds.yaml",
+    sha256 = "64b5dbd6eb96a1970e53e37e6b8f17195ea030ddbdc5789d26da2a4d2a7803e2",
+    urls = ["https://raw.githubusercontent.com/OT-CONTAINER-KIT/redis-operator/v0.26.0/charts/redis-operator/crds/crds.yaml"],
+)
+
+# The release assets cluster/k8s/kubevirt/{operator,cdi-operator}/kustomization.yaml install; the bindings
+# BUILD extracts the operator CRs' CRDs.
+http_file(
+    name = "kubevirt_operator_bundle",
+    downloaded_file_path = "kubevirt-operator.yaml",
+    sha256 = "57e0822062e6617964fd7e1731f9ace531f8ee34a0e48cf8dd0ccce72196e1d6",
+    urls = ["https://github.com/kubevirt/kubevirt/releases/download/v1.8.2/kubevirt-operator.yaml"],
+)
+
+http_file(
+    name = "cdi_operator_bundle",
+    downloaded_file_path = "cdi-operator.yaml",
+    sha256 = "e96d59abdf358c5161cb96adcfdcc6107efc3fb608ec93ade11578c94a222015",
+    urls = ["https://github.com/kubevirt/containerized-data-importer/releases/download/v1.65.0/cdi-operator.yaml"],
+)
+
+# The operators create their other CRDs (VirtualMachine, StorageProfile) at runtime and upstream
+# publishes no YAML for them: the schemas are raw strings in these generated Go files, at the
+# same tags as the bundles above.
+http_file(
+    name = "kubevirt_crd_validations",
+    downloaded_file_path = "validations_generated.go",
+    sha256 = "96a643d3f39ca676a56717d91d85e6ef248b8a18e2b9d080cd4ff98e520591d6",
+    urls = ["https://raw.githubusercontent.com/kubevirt/kubevirt/v1.8.2/pkg/virt-operator/resource/generate/components/validations_generated.go"],
+)
+
+http_file(
+    name = "cdi_crds_generated",
+    downloaded_file_path = "crds_generated.go",
+    sha256 = "431213f286f0a4939dc0a7cf37b42f2472fdc9bc9c5e839eba50adafdeb677d5",
+    urls = ["https://raw.githubusercontent.com/kubevirt/containerized-data-importer/v1.65.0/pkg/operator/resources/crds_generated.go"],
+)
+
+# Match the keda chart 2.20.2 in cluster/cdk8s/keda.py.
+http_file(
+    name = "keda_scaledjob_crd",
+    downloaded_file_path = "keda.sh_scaledjobs.yaml",
+    sha256 = "8805cd6c5b05161fb1541726e2c32c8e2990f435649fa74cbc616600b84b583a",
+    urls = ["https://raw.githubusercontent.com/kedacore/keda/v2.20.2/config/crd/bases/keda.sh_scaledjobs.yaml"],
+)
+
+http_file(
+    name = "keda_triggerauthentication_crd",
+    downloaded_file_path = "keda.sh_triggerauthentications.yaml",
+    sha256 = "275307b4cb19ca8f0f506a879282aa4c67587ac16ec757f494d6585c5c185d65",
+    urls = ["https://raw.githubusercontent.com/kedacore/keda/v2.20.2/config/crd/bases/keda.sh_triggerauthentications.yaml"],
+)
+
+# Match the altinity-clickhouse-operator chart 0.27.3 in cluster/cdk8s/clickhouse/operator.py.
+http_file(
+    name = "clickhouse_installation_crd",
+    downloaded_file_path = "CustomResourceDefinition-clickhouseinstallations.clickhouse.altinity.com.yaml",
+    sha256 = "f1dae530b066fd43a0e65be16f10f95eddca6b523c0011baf93754d5cd8b455d",
+    urls = ["https://raw.githubusercontent.com/Altinity/clickhouse-operator/release-0.27.3/deploy/helm/clickhouse-operator/crds/CustomResourceDefinition-clickhouseinstallations.clickhouse.altinity.com.yaml"],
+)
+
+http_file(
+    name = "clickhouse_keeper_installation_crd",
+    downloaded_file_path = "CustomResourceDefinition-clickhousekeeperinstallations.clickhouse-keeper.altinity.com.yaml",
+    sha256 = "50bcd8df813d8eeea4a730e8723f233713c6a06fda9d17126af27c5a461d49c2",
+    urls = ["https://raw.githubusercontent.com/Altinity/clickhouse-operator/release-0.27.3/deploy/helm/clickhouse-operator/crds/CustomResourceDefinition-clickhousekeeperinstallations.clickhouse-keeper.altinity.com.yaml"],
 )
 
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so

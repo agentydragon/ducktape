@@ -154,7 +154,38 @@ def shape_for(upstream_prefix: str, protocol: str) -> ApiShape:
 # ChatGPT/Codex-subscription models behind CLIProxyAPI, exposed on both wire surfaces
 # for clients that need them. OpenClaw uses the Responses surface below because it is
 # the working native passthrough to CLIProxyAPI.
-CLIPROXY_MODELS: list[str] = ["gpt-6-astra", "gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
+#
+# OpenAI API price reference, fetched 2026-09-24 from
+# developers.openai.com/api/docs/pricing (USD per 1M tokens; standard, short-context
+# rates; cached input / cache write / output):
+# GPT-6 Sol and Luna were added to the Codex model catalog on 2026-09-22 (source:
+# learn.chatgpt.com/docs/changelog), so they belong in this CLIProxyAPI-backed route
+# roster even though their serving-path limits are not yet measured here.
+#
+# Standard short-context rates, listed as input / cached input / cache write / output:
+#   gpt-6-astra:   $10 / $1 / $12.50 / $50
+#   gpt-6-sol:      $2 / $0.20 / $2.50 / $10
+#   gpt-6-luna:  $0.10 / $0.01 / $0.125 / $0.50
+#   gpt-5.6-sol:    $4 / $0.40 / $5 / $20
+#   gpt-5.6-terra:  $2 / $0.20 / $2.50 / $12
+#   gpt-5.6-luna: $0.20 / $0.02 / $0.25 / $1.20
+# GPT-6 long-context input/output rates are $20/$75, $4/$15, and $0.20/$0.75 for
+# Astra/Sol/Luna; prompts over 272K are billed at those long-context rates for the
+# full request. GPT-5.6 model pages state the same 2x-input/1.5x-output rule (so the
+# implied long-context rates are $8/$30, $4/$18, and $0.40/$1.80). These are direct
+# API prices, not measured subscription/CLIProxyAPI costs; GPT-5.6 Sol's promotional
+# rate is documented through at least 2026-11-21. They are kept here as dated
+# accounting reference only.
+CLIPROXY_MODELS: list[str] = [
+    "gpt-6-astra",
+    "gpt-6-sol",
+    "gpt-6-luna",
+    "gpt-5.4",
+    "gpt-5.5",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+]
 
 # Context window + max output tokens for the Codex-subscription models. Measured,
 # not published: litellm's model_cost DB (live-fetched from BerriAI) has exact
@@ -192,14 +223,21 @@ class CodexModel:
 
 
 # The Codex models with known serving-path limits: Astra from Codex's bundled metadata,
-# the 5.6 models measured (CODEX_CONTEXT_WINDOW above). The LiteLLM manifest advertises
-# these limits in model_info, and OpenClaw's model picker exposes exactly this subset,
-# declaring the limits itself because its bundled LiteLLM provider does not query the
-# proxy's authenticated /v1/models endpoint. gpt-5.4/5.5/5.3-codex-spark were never
-# probed and stay out; a newly added 5.6 model must be probed before joining.
+# the 5.6 models measured (CODEX_CONTEXT_WINDOW above), and GPT-6 Sol/Luna using the
+# same conservative bound until their subscription path is probed. The LiteLLM manifest
+# advertises these limits in model_info, and OpenClaw's model picker exposes exactly this
+# subset, declaring the limits itself because its bundled LiteLLM provider does not query
+# the proxy's authenticated /v1/models endpoint. gpt-5.4/5.5/5.3-codex-spark were never
+# probed and stay out.
 OPENCLAW_CODEX_MODELS: tuple[CodexModel, ...] = (
     CodexModel(
         id="gpt-6-astra", display_name="GPT-6 Astra", context_window=ASTRA_CONTEXT_WINDOW, max_tokens=ASTRA_MAX_TOKENS
+    ),
+    CodexModel(
+        id="gpt-6-luna", display_name="GPT-6 Luna", context_window=CODEX_CONTEXT_WINDOW, max_tokens=CODEX_MAX_TOKENS
+    ),
+    CodexModel(
+        id="gpt-6-sol", display_name="GPT-6 Sol", context_window=CODEX_CONTEXT_WINDOW, max_tokens=CODEX_MAX_TOKENS
     ),
     CodexModel(
         id="gpt-5.6-luna", display_name="GPT-5.6 Luna", context_window=CODEX_CONTEXT_WINDOW, max_tokens=CODEX_MAX_TOKENS

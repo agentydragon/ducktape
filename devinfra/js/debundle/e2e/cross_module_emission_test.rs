@@ -277,11 +277,11 @@ export { runtimeProcessor };
     expect_rejection_containing_all(
         opts,
         &[
-            "Duplicate binding claim",
+            "[duplicate_claim]",
             "\"runtimeProcessor\"",
             "mod_a",
             "as `RuntimeProcessor`",
-            "members[].selector.binding as `RuntimeProcessor`",
+            "is already claimed by mod_a as `RuntimeProcessor`",
             "mod_b",
             "as `RuntimeProcessorAlias`",
         ],
@@ -313,10 +313,10 @@ export { runtimeService, runtimeCache };
         ],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
-        "Duplicate binding claim report: 2 duplicate claim(s) found",
+        "2 selector outcome(s): duplicate_claim=2",
         "\"runtimeService\"",
         "owners/service",
         "as `service`",
@@ -382,7 +382,8 @@ export { RuntimeCatalog };
     expect_rejection_containing_all(
         opts,
         &[
-            "valid global selector assignment",
+            "conflicts with `DuplicateCatalog`",
+            "conflicts with `PrimaryCatalog`",
             "catalog/primary",
             "as `PrimaryCatalog`",
             "source_matches[].bindings[`K`]",
@@ -431,11 +432,12 @@ export { RuntimeCatalog };
         ],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
-        "Source-match selector diagnostic report: 2 unresolved selector(s) found",
-        "valid global selector assignment",
+        "2 selector outcome(s): conflict=2",
+        "conflicts with `DuplicateCatalog`",
+        "conflicts with `PrimaryCatalog`",
         "catalog/primary",
         "catalog/duplicate",
     ] {
@@ -473,14 +475,15 @@ export { RuntimeCatalog };
         )],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
-        "Source-match selector diagnostic report: 2 unresolved selector(s) found",
-        "valid global selector assignment",
-        "export `PrimaryCatalog`",
+        "2 selector outcome(s): conflict=2",
+        "conflicts with `DuplicateCatalog`",
+        "conflicts with `PrimaryCatalog`",
+        "as `PrimaryCatalog`",
         "source_matches[].bindings[`K`]",
-        "export `DuplicateCatalog`",
+        "as `DuplicateCatalog`",
         "source_matches[].bindings[`K`]",
     ] {
         assert!(
@@ -522,14 +525,14 @@ export { existingHelper };
         )],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
-        "Source-match selector diagnostic report: 2 unresolved selector(s) found",
+        "2 selector outcome(s): no_match=2",
         "diagnostics/source_match",
         "as `MissingFormatter`",
         "as `MissingParser`",
-        "valid global selector assignment",
+        "did not match any top-level declaration",
         "missingFormatter",
         "missingParser",
     ] {
@@ -587,13 +590,13 @@ fn dry_run_defaults_to_collecting_source_match_failures_and_duplicate_claims_tog
     let rejected = run_dry_run_rejection_fixture(source_match_and_duplicate_claims_fixture());
     let stderr = rejected.stderr;
     for required in [
-        "Source-match selector diagnostic report: 2 unresolved selector(s) found",
+        "3 selector outcome(s): no_match=1, ambiguous=1, duplicate_claim=1",
         "diagnostics/missing",
         "as `MissingFormatter`",
-        "valid global selector assignment",
+        "did not match any top-level declaration",
         "diagnostics/ambiguous",
         "as `AmbiguousHelper`",
-        "Duplicate binding claim report: 1 duplicate claim(s) found",
+        "is ambiguous",
         "\"renderCard\"",
         "owners/card",
         "duplicates/card",
@@ -606,33 +609,31 @@ fn dry_run_defaults_to_collecting_source_match_failures_and_duplicate_claims_tog
     }
 }
 
+/// The name pins' duplicate claim is found while requests are built, before
+/// any selector is matched, so fail-fast stops there.
 #[test]
-fn fail_fast_dry_run_stops_before_later_duplicate_claim_diagnostics() {
-    let rejected =
-        run_fail_fast_dry_run_rejection_fixture(source_match_and_duplicate_claims_fixture());
-    let stderr = rejected.stderr;
-    for required in [
-        "diagnostics/ambiguous",
-        "export `AmbiguousHelper`",
-        "source_matches[].bindings[`repeatedHelper`]",
-        "valid global selector assignment",
-    ] {
-        assert!(
-            stderr.contains(required),
-            "stderr missing {required:?}\nstderr:\n{stderr}",
-        );
-    }
-    for absent in [
-        "Source-match selector diagnostic report:",
-        "Duplicate binding claim report:",
-        "duplicates/card",
-        "as `renderCardAgain`",
-    ] {
-        assert!(
-            !stderr.contains(absent),
-            "fail-fast stderr unexpectedly contained {absent:?}\nstderr:\n{stderr}",
-        );
-    }
+fn fail_fast_dry_run_stops_at_the_duplicate_claim_found_while_building_requests() {
+    let line = assert_fail_fast_stops_at_first_outcome(
+        source_match_and_duplicate_claims_fixture,
+        "duplicate_claim",
+    );
+    assert!(line.contains("\"renderCard\""), "{line}");
+}
+
+/// Without the duplicate pins, the unmatched selector is rejected before the
+/// solve that finds the ambiguous one.
+#[test]
+fn fail_fast_dry_run_stops_at_the_first_no_match() {
+    let line = assert_fail_fast_stops_at_first_outcome(
+        || {
+            let mut opts = source_match_and_duplicate_claims_fixture();
+            opts.logical_modules
+                .retain(|(path, _)| !path.ends_with("/card"));
+            opts
+        },
+        "no_match",
+    );
+    assert!(line.contains("as `MissingFormatter`"), "{line}");
 }
 
 #[test]
@@ -870,7 +871,7 @@ export { a };
     expect_rejection_containing_all(
         opts,
         &[
-            "Duplicate binding claim",
+            "[duplicate_claim]",
             "\"a\"",
             "mod_jsx_runtime",
             "mod_dunder_jsx",

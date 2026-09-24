@@ -45,7 +45,7 @@ that the controller can proceed on the healthy nodes.
 Cost: up to 3 nodes briefly without log shipping during a rollout. Promtail
 resumes from its positions file, so that is a freshness gap, not lost logs.
 
-`//cluster/validation:test_roaming_daemonset_capacity` enforces the relation,
+`//cluster/cdk8s/monitoring:test_roaming_daemonset_capacity` enforces the relation,
 deriving the roaming count from `nebula-mesh.json` (`role: "laptop"`) rather than
 trusting a comment. Its one remaining gap is coverage: a new roaming DaemonSet
 must be added to that test's list, or it is unprotected.
@@ -54,7 +54,7 @@ must be added to that test's list, or it is unprotected.
 
 Any DaemonSet scheduled onto roaming nodes has this exposure, not just promtail.
 When adding one, either set `maxUnavailable` above the roaming count or exclude
-roaming nodes via `nodeAffinity`. `k8s/monitoring/stack/helmrelease.yaml` carries
+roaming nodes via `nodeAffinity`. `cdk8s/monitoring/stack.py` carries
 a standing `TODO(roaming-nodes)` proposing exactly that choice cluster-wide;
 this incident is the concrete argument for resolving it.
 

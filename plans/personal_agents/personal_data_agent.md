@@ -124,8 +124,9 @@ session, unlike restarting the agent (F14).
 How often that fires is the part that matters, and for Gmail it is weekly. Google keeps
 an app requesting restricted scopes in **Testing** publishing status unless it goes
 through the verification and security-assessment path, and a Testing-status app's
-refresh token expires every 7 days — documented in `cluster/k8s/haku/console/README.md`
-from the console's own experience with project `rai-personal`. So a Gmail grant needs
+refresh token expires every 7 days — the console hit this with project `rai-personal`; the
+gotcha sits beside Airlock's `google-write` provider (`cluster/k8s/agents/airlock/config.yaml`).
+So a Gmail grant needs
 reauthorization roughly weekly **regardless of which option above you choose**. That is
 a human-in-the-loop event, not an automation gap, and it is the single best argument for
 Airlock keeping custody: it is the thing with a browser flow and an Authentik login in

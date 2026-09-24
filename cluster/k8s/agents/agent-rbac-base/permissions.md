@@ -3,7 +3,7 @@ sensitive grants are sourced from the set of `*rolebinding-*.yaml` files under:
 
 - `cluster/k8s/**/agent-rbac/`
 - `cluster/k8s/**/gateway-agent-rbac/`
-- `cluster/k8s/agents/shared-rbac/`
+- `cluster/generated/agents/shared-rbac/`
 
 Use `roleRef.name` in those files to determine which permission class is bound:
 `namespace-diagnostics-reader`, `agent-readable-namespace-metadata`,
@@ -31,9 +31,10 @@ one of two data-classification labels:
   `agent-readable-namespace-logs` role, which grants only `get` on `pods/log`.
 
 Both classifications grant the same subjects: Haku's OIDC and synthetic access-profile groups,
-its in-cluster ServiceAccounts, `kubectl-sandbox-users`, and the synthetic public-coder group. The
-Kyverno policy at `cluster/k8s/kyverno/policies/generate-agent-diagnostics-readers.yaml` generates
-the corresponding namespaced RoleBindings. Sensitive or identity-specific access remains explicit
+its in-cluster ServiceAccounts, `kubectl-sandbox-users`, the synthetic public-coder group, and
+agentplane-staging's `claude-ai` ServiceAccount. The Kyverno policy
+`generate-agent-diagnostics-readers` (`cluster/cdk8s/kyverno/policies.py`) generates the
+corresponding namespaced RoleBindings. Sensitive or identity-specific access remains explicit
 service RBAC.
 
 Augur is reconciled from `gaffer-private`, so its agent RBAC lives cross-repo at

@@ -2,7 +2,7 @@
 #
 # All DNS is served by AWS Route 53. No in-cluster DNS authority.
 # var.public_nodes is the mesh roster's projection, set on the generated Terraform CR
-# (cluster/k8s/dns-automation/dns-records.k8s.yaml) from the repo-root nebula-mesh.json.
+# (cluster/generated/dns-automation/dns-records.k8s.yaml) from the repo-root nebula-mesh.json.
 
 terraform {
   required_version = ">= 1.0"
@@ -73,7 +73,7 @@ resource "aws_route53_record" "apex" {
 # not depend on wildcard semantics — keep an explicit A record on the same
 # public-gateway roster. A haku-mailbox-smtp-ingress DaemonSet binds port 25 on
 # every node and forwards the sending MTA's address to Stalwart with PROXY
-# protocol (cluster/k8s/haku/mailbox/smtp-ingress.yaml).
+# protocol (cluster/cdk8s/haku/mailbox.py).
 resource "aws_route53_record" "mx_host" {
   #checkov:skip=CKV2_AWS_23:A records point to external public gateway nodes, not AWS resources
   zone_id         = var.route53_zone_id

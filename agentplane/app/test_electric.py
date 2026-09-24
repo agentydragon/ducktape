@@ -1,171 +1,223 @@
-"""The proxy's forwarding and validation, over the real projection it reads its bounds from.
+"""The proxy's forwarding and validation, over the real projection it reads a thread's scope from.
 
-Electric itself is a `MockTransport`, because what these assert is the query the proxy builds and
-what it refuses to build. The interest, scope and payload revision behind it are real: a faked
-resolver can drift from `entity_interest` without any test noticing, and the bounds it
-returns are exactly what the shape's identity is made of.
+Electric itself is a `MockTransport`, because what these assert is the request the proxy builds and
+what it refuses to build. The scope behind it is real: the epoch a shape is pinned to is whatever the
+fold materialized, and a faked resolver could drift from it without any test noticing.
 """
 
 from __future__ import annotations
 
 import asyncio
-import re
-from collections.abc import AsyncIterator, Iterator
+import json
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
 import pytest_bazel
 from fastapi import FastAPI, Request
+from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.requests import ClientDisconnect
 from starlette.types import Message
 from testcontainers.postgres import PostgresContainer
 
+from agentplane.app.agent_runtime.events.event_log import EventLogStore
+from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
+from agentplane.app.agent_runtime.ingestion import Ingestion
+from agentplane.app.agent_runtime.updates import ThreadUpdates
+from agentplane.app.agent_runtime.view.content import ContentStore, ThreadScope
 from agentplane.app.conftest import migrated_database
-from agentplane.app.electric import ElectricProxy, router
+from agentplane.app.electric import SUBSET_BODY_LIMIT, SUBSET_ROW_LIMIT, ElectricProxy, router
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.thread.store import ThreadEntityInterest, ThreadPayloadSelection, ThreadStore
-from agentplane.app.thread.views import EntityKind
-from agentplane.app.thread_fold import PayloadField
 from agentplane.protocol import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
-# Enough items that a latest-30 interest has segments on both sides of its bound.
-_ITEMS = 35
-
 
 @dataclass(frozen=True)
 class Seeded:
-    """One projected thread, and the identities the proxy's routes take as parameters."""
-
     thread: UUID
-    interest: ThreadEntityInterest
-    selection: ThreadPayloadSelection
+    scope: ThreadScope
 
 
-# Every case here reads: the proxy builds a query and forwards or refuses it, and none writes. The
-# expensive part of a per-test database is creating and migrating it, and that helper is
-# synchronous, so the module can share one without a module-scoped event loop the async fixtures
-# would then need. Each case still seeds its own sandbox, so they share no thread and no lease.
+# The proxy only reads: it builds a request and forwards or refuses it. The expensive part of a
+# per-test database is creating and migrating it, and that helper is synchronous, so the module can
+# share one without a module-scoped event loop the async fixtures would then need. Each case seeds
+# its own sandbox, so they share no thread and no lease.
 @pytest.fixture(scope="module")
 def db_url(postgres_container: PostgresContainer) -> Iterator[str]:
     yield from migrated_database(postgres_container, "test_electric")
 
 
+@dataclass(frozen=True)
+class Unfolded:
+    """A thread whose runner has attached and has events to send, none of them recorded yet."""
+
+    thread: UUID
+    source: ReplicationSource
+    lease: IngestionLease
+
+
 @pytest.fixture
-async def seeded(store: ThreadStore) -> Seeded:
+async def unfolded(event_logs: EventLogStore, ingestion: Ingestion) -> Unfolded:
     sandbox = f"{SANDBOX}-{uuid4().hex[:8]}"
     source = ReplicationSource()
-    started: dict[str, int] = {}
-    for index in range(_ITEMS):
+    for index in range(3):
         item_id = f"item-{index}"
-        started[item_id] = source.append(
+        source.append(
             event_pb2.Event(
                 item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
             )
-        ).cursor
-        for part in ("first ", f"body {index}"):
-            source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=item_id, text=part)))
-    thread = await store.thread(sandbox, SESSION, source.attached.spec)
-    lease = await store.acquire_ingestion(sandbox, timedelta(minutes=2))
-    assert lease is not None
-    await store.set_attached(thread, source.attached, lease=lease)
-    await store.record(thread, source.entries, lease=lease)
-
-    interest = await store.entity_interest(thread)
-    assert interest is not None
-    # Two deltas, so the generation the chain opened and the revision it has reached are different
-    # cursors and a route cannot pass one where it means the other. Resolving them here makes the
-    # projector's rule a checked fact: if it changes, this fixture fails instead of a case below.
-    owner_id = f"item-{_ITEMS - 1}"
-    owner_cursor = started[owner_id]
-    selection = await store.payload_selection(
-        thread,
-        owner_cursor=owner_cursor,
-        owner_id=owner_id,
-        field=PayloadField.TEXT,
-        generation=owner_cursor + 1,
-        revision_cursor=owner_cursor + 2,
-    )
-    assert selection is not None
-    assert selection.chunk_count > 0
-    return Seeded(thread, interest, selection)
-
-
-def make_app(upstream: httpx.MockTransport, store: ThreadStore) -> tuple[FastAPI, httpx.AsyncClient]:
-    electric = httpx.AsyncClient(transport=upstream, base_url="http://electric")
-    app = FastAPI()
-    app.state.electric = ElectricProxy(electric, store)
-    app.include_router(router)
-    return app, electric
-
-
-def entity_query(seeded: Seeded) -> dict[str, str]:
-    return {
-        "projection_epoch": seeded.interest.scope.projection_epoch,
-        "anchor_cursor": str(seeded.interest.anchor_cursor),
-        "tail_from": str(seeded.interest.tail_from),
-    }
-
-
-def payload_query(seeded: Seeded) -> dict[str, str]:
-    selection = seeded.selection
-    return {
-        "projection_epoch": selection.scope.projection_epoch,
-        "owner_cursor": str(selection.owner_cursor),
-        "owner_id": selection.owner_id,
-        "field": selection.field,
-        "generation": str(selection.generation),
-        "revision_cursor": str(selection.revision_cursor),
-    }
-
-
-async def test_entity_shape_names_only_kinds_the_projection_writes(store: ThreadStore, seeded: Seeded) -> None:
-    """A kind in the predicate that nothing writes is dead, and rides in every shape's cache key."""
-    seen: httpx.Request | None = None
-
-    async def upstream(request: httpx.Request) -> httpx.Response:
-        nonlocal seen
-        seen = request
-        return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
-
-    app, electric = make_app(httpx.MockTransport(upstream), store)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        response = await client.get(
-            f"/threads/{seeded.thread}/sync/entities", params=entity_query(seeded) | {"offset": "-1"}
         )
+        source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=item_id, text=f"body {index}")))
+    thread = await event_logs.open(sandbox, SESSION, source.attached.spec)
+    lease = await ingestion.acquire(sandbox, timedelta(minutes=2))
+    assert lease is not None
+    await ingestion.set_attached(thread, source.attached, lease=lease)
+    return Unfolded(thread, source, lease)
+
+
+@pytest.fixture
+async def seeded(unfolded: Unfolded, content: ContentStore, ingestion: Ingestion) -> Seeded:
+    await ingestion.record(unfolded.thread, unfolded.source.entries, lease=unfolded.lease)
+    scope = await content.current_scope(unfolded.thread)
+    assert scope is not None
+    return Seeded(unfolded.thread, scope)
+
+
+def serving(proxy: ElectricProxy) -> FastAPI:
+    app = FastAPI()
+    app.state.electric = proxy
+    app.include_router(router)
+    return app
+
+
+MakeApp = Callable[[httpx.MockTransport], tuple[FastAPI, httpx.AsyncClient]]
+
+
+@pytest.fixture
+def make_app(content: ContentStore, event_logs: EventLogStore, thread_updates: ThreadUpdates) -> MakeApp:
+    def make(upstream: httpx.MockTransport) -> tuple[FastAPI, httpx.AsyncClient]:
+        electric = httpx.AsyncClient(transport=upstream, base_url="http://electric")
+        proxy = ElectricProxy(electric, content, event_logs=event_logs, thread_changes=thread_updates.changes)
+        return serving(proxy), electric
+
+    return make
+
+
+async def _unexpected(_request: httpx.Request) -> httpx.Response:
+    raise AssertionError("rejected requests must not reach Electric")
+
+
+def _pinned(request: httpx.Request) -> dict[str, str]:
+    """The part of a forwarded query that decides which rows a shape holds."""
+    query = httpx.QueryParams(request.url.query)
+    return {key: value for key, value in query.multi_items() if key in {"table", "where"} or key.startswith("params[")}
+
+
+async def test_scope_names_the_epoch_and_how_far_the_fold_has_applied(seeded: Seeded, make_app: MakeApp) -> None:
+    app, electric = make_app(httpx.MockTransport(_unexpected))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        scope = await client.get(f"/threads/{seeded.thread}/sync/scope")
+        unknown = await client.get(f"/threads/{UUID(int=0)}/sync/scope")
     await electric.aclose()
 
+    assert scope.json() == {
+        "projection_epoch": seeded.scope.projection_epoch,
+        "through_cursor": str(seeded.scope.through_cursor),
+    }
+    # Refused at once: a held read would have ended with 204.
+    assert unknown.status_code == 404
+
+
+class ScopeReads(ContentStore):
+    """Signals a scope read that found no fold, so a case can record one while the read waits."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        super().__init__(engine)
+        self.unfolded = asyncio.Event()
+
+    async def current_scope(self, thread_id: UUID) -> ThreadScope | None:
+        scope = await super().current_scope(thread_id)
+        if scope is None:
+            self.unfolded.set()
+        return scope
+
+
+async def test_a_scope_read_before_the_first_fold_answers_once_it_is_recorded(
+    unfolded: Unfolded,
+    engine: AsyncEngine,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
+    thread_updates: ThreadUpdates,
+) -> None:
+    content = ScopeReads(engine)
+    electric = httpx.AsyncClient(transport=httpx.MockTransport(_unexpected), base_url="http://electric")
+    app = serving(ElectricProxy(electric, content, event_logs=event_logs, thread_changes=thread_updates.changes))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        read = asyncio.create_task(client.get(f"/threads/{unfolded.thread}/sync/scope"))
+        await content.unfolded.wait()
+        # What wakes the read is the commit's notification, through the listener every replica runs.
+        await ingestion.record(unfolded.thread, unfolded.source.entries, lease=unfolded.lease)
+        response = await read
+    await electric.aclose()
+
+    scope = await content.current_scope(unfolded.thread)
+    assert scope is not None
     assert response.status_code == 200
-    assert seen is not None
-    named = set(re.findall(r"'([a-z_]+)'", httpx.QueryParams(seen.url.query)["where"]))
-    written = set(EntityKind)
-    assert named
-    assert named <= written, f"predicate names kinds the projection never writes: {sorted(named - written)}"
+    assert response.json() == {"projection_epoch": scope.projection_epoch, "through_cursor": str(scope.through_cursor)}
 
 
-async def test_entity_shape_is_bounded_and_fixed_by_server(store: ThreadStore, seeded: Seeded) -> None:
-    seen: httpx.Request | None = None
+async def test_a_thread_still_without_a_fold_at_the_end_of_the_hold_is_answered_empty(
+    unfolded: Unfolded, content: ContentStore, event_logs: EventLogStore, thread_updates: ThreadUpdates
+) -> None:
+    electric = httpx.AsyncClient(transport=httpx.MockTransport(_unexpected), base_url="http://electric")
+    proxy = ElectricProxy(
+        electric, content, event_logs=event_logs, thread_changes=thread_updates.changes, scope_hold_seconds=0.1
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=serving(proxy)), base_url="http://app") as client:
+        response = await client.get(f"/threads/{unfolded.thread}/sync/scope")
+    await electric.aclose()
+
+    assert response.status_code == 204
+    assert response.content == b""
+
+
+async def test_entity_shape_is_the_whole_thread_pinned_by_the_server(seeded: Seeded, make_app: MakeApp) -> None:
+    seen: list[httpx.Request] = []
 
     async def upstream(request: httpx.Request) -> httpx.Response:
-        nonlocal seen
-        seen = request
+        seen.append(request)
         return httpx.Response(
             200,
             stream=httpx.ByteStream(b'[{"headers":{"control":"up-to-date"}}]'),
             headers={"electric-offset": "7_0", "electric-up-to-date": "true", "x-private": "no"},
         )
 
-    app, electric = make_app(httpx.MockTransport(upstream), store)
+    app, electric = make_app(httpx.MockTransport(upstream))
+    # Everything Electric's client sends, including what it adds when recovering an expired handle and
+    # when it follows a shape over SSE.
+    protocol = {
+        "offset": "now",
+        "handle": "h",
+        "live": "true",
+        "live_sse": "true",
+        "experimental_live_sse": "true",
+        "cursor": "c",
+        "log": "changes_only",
+        "expired_handle": "old",
+        "cache-buster": "b",
+    }
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         response = await client.get(
             f"/threads/{seeded.thread}/sync/entities",
-            params=entity_query(seeded) | {"offset": "now", "live": "false", "cursor": "cache", "log": "changes_only"},
+            params={"projection_epoch": seeded.scope.projection_epoch, **protocol},
+            headers={"electric-protocol-version": "1.0"},
         )
     await electric.aclose()
 
@@ -174,24 +226,26 @@ async def test_entity_shape_is_bounded_and_fixed_by_server(store: ThreadStore, s
     assert response.headers["electric-up-to-date"] == "true"
     assert response.headers["cache-control"] == "private, no-cache"
     assert "x-private" not in response.headers
-    assert seen is not None
-    query = httpx.QueryParams(seen.url.query)
-    assert query["table"] == "thread_entity"
-    assert query["log"] == "changes_only"
-    assert query["queryable_columns"] == query["columns"]
-    assert query["replica"] == "full"
-    assert "cursor >= $3" in query["where"]
-    # The shape's lower bound is the interest's, verbatim: the proxy owns the predicate and a
-    # browser cannot widen it, and the value is whatever the real resolver computed.
-    assert {str(index): query[f"params[{index}]"] for index in range(1, 4)} == {
-        "1": str(seeded.thread),
-        "2": seeded.interest.scope.projection_epoch,
-        "3": str(seeded.interest.tail_from),
+    [forwarded] = seen
+    assert forwarded.method == "GET"
+    assert forwarded.headers["electric-protocol-version"] == "1.0"
+    assert _pinned(forwarded) == {
+        "table": "thread_entity",
+        "where": "thread_id = $1 AND projection_epoch = $2",
+        "params[1]": str(seeded.thread),
+        "params[2]": seeded.scope.projection_epoch,
     }
+    query = httpx.QueryParams(forwarded.url.query)
+    # Rows are mutable: a reader bootstraps from subsets of current state, never a replayed log.
+    assert query["log"] == "changes_only"
+    assert query["replica"] == "full"
+    assert query["queryable_columns"] == query["columns"]
+    assert "projection_epoch" not in query
+    assert {key: query[key] for key in protocol} == protocol
 
 
-async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(store: ThreadStore, seeded: Seeded) -> None:
-    """Immutable history is cached and revalidated, never re-transferred and never served unchecked."""
+async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(seeded: Seeded, make_app: MakeApp) -> None:
+    """A served offset is cached and revalidated, never re-transferred and never served unchecked."""
     seen: list[httpx.Request] = []
 
     async def upstream(request: httpx.Request) -> httpx.Response:
@@ -200,13 +254,12 @@ async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(store: T
             return httpx.Response(304, stream=httpx.ByteStream(b""), headers={"etag": '"shape-7_0"'})
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"), headers={"etag": '"shape-7_0"'})
 
-    app, electric = make_app(httpx.MockTransport(upstream), store)
+    app, electric = make_app(httpx.MockTransport(upstream))
+    params = {"projection_epoch": seeded.scope.projection_epoch, "offset": "7_0", "handle": "h"}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         path = f"/threads/{seeded.thread}/sync/entities"
-        first = await client.get(path, params=entity_query(seeded) | {"offset": "-1"})
-        again = await client.get(
-            path, params=entity_query(seeded) | {"offset": "-1"}, headers={"if-none-match": first.headers["etag"]}
-        )
+        first = await client.get(path, params=params)
+        again = await client.get(path, params=params, headers={"if-none-match": first.headers["etag"]})
     await electric.aclose()
 
     assert first.status_code == 200
@@ -219,185 +272,209 @@ async def test_a_re_read_revalidates_and_relays_electric_s_not_modified(store: T
     assert [request.headers.get("if-none-match") for request in seen] == [None, '"shape-7_0"']
 
 
-async def test_stale_or_client_widened_interest_is_rejected(store: ThreadStore, seeded: Seeded) -> None:
-    async def unexpected(_request: httpx.Request) -> httpx.Response:
-        raise AssertionError("rejected requests must not reach Electric")
-
-    app, electric = make_app(httpx.MockTransport(unexpected), store)
+@pytest.mark.parametrize(
+    "query",
+    [
+        "offset=now&table=event",
+        "offset=now&log=full",
+        "offset=now&offset=-1",
+        "offset=now&queryable_columns=state",
+        # A subset rides in a POST body, where its form is checked; never in the query.
+        "offset=0_0&handle=h&subset__where=true",
+        "offset=0_0&handle=h&subset__limit=1",
+    ],
+)
+async def test_shape_requests_outside_the_protocol_are_rejected(query: str, seeded: Seeded, make_app: MakeApp) -> None:
+    app, electric = make_app(httpx.MockTransport(_unexpected))
+    epoch = httpx.QueryParams({"projection_epoch": seeded.scope.projection_epoch})
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        path = f"/threads/{seeded.thread}/sync/entities"
-        stale_tail = await client.get(path, params=entity_query(seeded) | {"tail_from": "0", "offset": "-1"})
-        arbitrary = await client.get(path, params=entity_query(seeded) | {"table": "event"})
-        bad_log = await client.get(path, params=entity_query(seeded) | {"log": "full"})
+        response = await client.get(f"/threads/{seeded.thread}/sync/entities?{epoch}&{query}")
     await electric.aclose()
-
-    assert stale_tail.status_code == 410
-    assert arbitrary.status_code == 400
-    assert bad_log.status_code == 400
+    assert response.status_code == 400
 
 
-async def test_old_entity_scope_is_rejected_before_forwarding(store: ThreadStore, seeded: Seeded) -> None:
-    async def unexpected(_request: httpx.Request) -> httpx.Response:
-        raise AssertionError("retired scopes must not reach Electric")
-
-    app, electric = make_app(httpx.MockTransport(unexpected), store)
+async def test_a_retired_epoch_or_a_thread_without_a_fold_is_gone(seeded: Seeded, make_app: MakeApp) -> None:
+    """A rebuilt fold is a new epoch, and a reader holding the old one re-resolves its scope."""
+    app, electric = make_app(httpx.MockTransport(_unexpected))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        response = await client.get(
-            f"/threads/{seeded.thread}/sync/entities",
-            params=entity_query(seeded) | {"projection_epoch": "retired-scope"},
+        retired = await client.get(
+            f"/threads/{seeded.thread}/sync/entities", params={"projection_epoch": "retired", "offset": "now"}
+        )
+        unfolded = await client.post(
+            f"/threads/{UUID(int=0)}/sync/chunks/text",
+            params={"projection_epoch": seeded.scope.projection_epoch, "offset": "0_0", "handle": "h"},
+            json=_bodies(1),
         )
     await electric.aclose()
-    assert response.status_code == 410
+    assert (retired.status_code, unfolded.status_code) == (410, 410)
 
 
 @pytest.mark.parametrize(
     "subset",
     [
-        {"subset__where": "true = true"},
-        {"subset__where": "TRUE = TRUE", "subset__params": "{}"},
-        {"subset__where": "true = true", "subset__params": "[]"},
+        {"order_by": "entity_index DESC", "limit": 60},
+        {
+            "where": "entity_index < $1",
+            "params": {"1": "40"},
+            "order_by": "entity_index DESC",
+            "limit": SUBSET_ROW_LIMIT,
+        },
+        {"where": "entity_kind = 'view_state'", "order_by": "entity_index DESC", "limit": 1},
+        {"where": "entity_kind = 'command' AND pending = true", "order_by": "entity_index DESC", "limit": 200},
+        {
+            "where": "entity_kind = 'command' AND entity_id = ANY($1)",
+            "params": {"1": '{"a","b"}'},
+            "order_by": "entity_index DESC",
+            "limit": 2,
+        },
     ],
 )
-async def test_current_snapshot_cannot_change_fixed_shape(
-    subset: dict[str, str], store: ThreadStore, seeded: Seeded
+async def test_entity_subsets_forward_within_the_thread_s_shape(
+    subset: dict[str, Any], seeded: Seeded, make_app: MakeApp
 ) -> None:
+    seen: list[httpx.Request] = []
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, stream=httpx.ByteStream(b'{"data":[],"metadata":{}}'))
+
+    app, electric = make_app(httpx.MockTransport(upstream))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        response = await client.post(
+            f"/threads/{seeded.thread}/sync/entities",
+            params={"projection_epoch": seeded.scope.projection_epoch, "offset": "0_0", "handle": "h"},
+            json=subset,
+        )
+    await electric.aclose()
+
+    assert response.status_code == 200
+    [forwarded] = seen
+    assert forwarded.method == "POST"
+    # Electric ANDs a subset with the shape's own predicate, which the server still pins.
+    assert _pinned(forwarded) == {
+        "table": "thread_entity",
+        "where": "thread_id = $1 AND projection_epoch = $2",
+        "params[1]": str(seeded.thread),
+        "params[2]": seeded.scope.projection_epoch,
+    }
+    assert json.loads(forwarded.content) == subset
+
+
+@pytest.mark.parametrize(
+    ("subset", "expected"),
+    [
+        ({"where": "true", "order_by": "entity_index DESC", "limit": 1}, 400),
+        ({"where": "entity_kind = 'turn'", "order_by": "entity_index DESC", "limit": 1}, 400),
+        ({"where": "entity_kind = 'view_state'", "limit": 1}, 400),
+        ({"order_by": "entity_index DESC"}, 400),
+        ({"order_by": "entity_index DESC", "limit": 0}, 400),
+        ({"order_by": "entity_index DESC", "limit": SUBSET_ROW_LIMIT + 1}, 400),
+        ({"order_by": "cursor DESC", "limit": 1}, 400),
+        ({"order_by": "entity_index DESC", "limit": 1, "params": {"1": "x"}}, 400),
+        (
+            {"where": "entity_index < $1", "params": {"1": "1 OR true"}, "order_by": "entity_index DESC", "limit": 1},
+            400,
+        ),
+        ({"where": "entity_index < $1", "order_by": "entity_index DESC", "limit": 1}, 400),
+        (
+            {"where": "entity_kind = 'command' AND entity_id = ANY($1)", "order_by": "entity_index DESC", "limit": 1},
+            400,
+        ),
+        ({"order_by": "entity_index DESC", "limit": 1, "offset": 5}, 422),
+    ],
+)
+async def test_entity_subsets_outside_the_forms_are_rejected(
+    subset: dict[str, Any], expected: int, seeded: Seeded, make_app: MakeApp
+) -> None:
+    app, electric = make_app(httpx.MockTransport(_unexpected))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
+        response = await client.post(
+            f"/threads/{seeded.thread}/sync/entities",
+            params={"projection_epoch": seeded.scope.projection_epoch, "offset": "0_0", "handle": "h"},
+            json=subset,
+        )
+    await electric.aclose()
+    assert response.status_code == expected
+
+
+def _bodies(count: int) -> dict[str, Any]:
+    return {
+        "where": " OR ".join(f"(owner_id = ${2 * n - 1} AND generation = ${2 * n})" for n in range(1, count + 1)),
+        "params": {
+            key: value
+            for n in range(1, count + 1)
+            for key, value in ((str(2 * n - 1), f"item-{n}"), (str(2 * n), str(10 + n)))
+        },
+    }
+
+
+async def test_chunk_shape_and_body_subsets_are_pinned_to_one_field(seeded: Seeded, make_app: MakeApp) -> None:
     seen: list[httpx.Request] = []
 
     async def upstream(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
 
-    app, electric = make_app(httpx.MockTransport(upstream), store)
+    app, electric = make_app(httpx.MockTransport(upstream))
+    params = {"projection_epoch": seeded.scope.projection_epoch, "offset": "0_0", "handle": "h"}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        response = await client.get(
-            f"/threads/{seeded.thread}/sync/entities",
-            params=entity_query(seeded) | {"offset": "0_0", "handle": "fixed", **subset},
-            headers={"electric-protocol-version": "1.0"},
-        )
+        path = f"/threads/{seeded.thread}/sync/chunks/text"
+        shape = await client.get(path, params=params)
+        one = await client.post(path, params=params, json=_bodies(1))
+        most = await client.post(path, params=params, json=_bodies(SUBSET_BODY_LIMIT))
+        unknown_field = await client.get(f"/threads/{seeded.thread}/sync/chunks/secret", params=params)
     await electric.aclose()
-    assert response.status_code == 200
-    forwarded = seen[0].url.params
-    assert forwarded["log"] == "changes_only"
-    assert "cursor >= $3" in forwarded["where"]
-    assert forwarded["params[3]"] == str(seeded.interest.tail_from)
-    assert seen[0].headers["electric-protocol-version"] == "1.0"
-    for key, value in subset.items():
-        assert forwarded[key] == value
+
+    assert (shape.status_code, one.status_code, most.status_code) == (200, 200, 200)
+    assert unknown_field.status_code == 422
+    assert [request.method for request in seen] == ["GET", "POST", "POST"]
+    for forwarded in seen:
+        assert _pinned(forwarded) == {
+            "table": "thread_payload_chunk",
+            "where": "thread_id = $1 AND projection_epoch = $2 AND field = $3",
+            "params[1]": str(seeded.thread),
+            "params[2]": seeded.scope.projection_epoch,
+            "params[3]": "text",
+        }
+    assert json.loads(seen[1].content) == _bodies(1)
 
 
 @pytest.mark.parametrize(
-    "query",
+    "subset",
     [
-        "subset__where=entity_id+%3D+'other'",
-        "subset__params=%7B%221%22%3A%22other%22%7D",
-        "subset__params=invalid-json",
-        "subset__params=null",
-        "subset__limit=1",
-        "subset__offset=1",
-        "subset__order_by=cursor",
-        "subset__where=true+%3D+true&subset__where=false",
-        "offset=now&offset=-1",
-        "queryable_columns=state",
+        {"where": "(owner_id = $1 AND generation = $2) OR true", "params": {"1": "a", "2": "1"}},
+        {"where": "(generation = $2 AND owner_id = $1)", "params": {"1": "a", "2": "1"}},
+        {
+            "where": "(owner_id = $1 AND generation = $2) OR (owner_id = $4 AND generation = $3)",
+            "params": {"1": "a", "2": "1", "3": "2", "4": "b"},
+        },
+        {"where": "(owner_id = $1 AND generation = $2)", "params": {"1": "a", "2": "1 OR true"}},
+        {"where": "(owner_id = $1 AND generation = $2)", "params": {"1": "a"}},
+        {"where": "(owner_id = $1 AND generation = $2)", "params": {"1": "a", "2": "1", "3": "b"}},
+        _bodies(1) | {"limit": 1},
+        _bodies(1) | {"order_by": "chunk_index"},
+        _bodies(SUBSET_BODY_LIMIT + 1),
+        {"where": "owner_id = ANY($1)", "params": {"1": "{a}"}},
+        {},
     ],
 )
-async def test_snapshot_rejects_caller_selection_and_duplicate_parameters(
-    query: str, store: ThreadStore, seeded: Seeded
+async def test_body_subsets_name_only_owner_generation_pairs(
+    subset: dict[str, Any], seeded: Seeded, make_app: MakeApp
 ) -> None:
-    async def unexpected(_request: httpx.Request) -> httpx.Response:
-        raise AssertionError("rejected snapshots must not reach Electric")
-
-    app, electric = make_app(httpx.MockTransport(unexpected), store)
-    fixed = httpx.QueryParams(entity_query(seeded))
+    app, electric = make_app(httpx.MockTransport(_unexpected))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        response = await client.get(f"/threads/{seeded.thread}/sync/entities?{fixed}&{query}")
+        response = await client.post(
+            f"/threads/{seeded.thread}/sync/chunks/text",
+            params={"projection_epoch": seeded.scope.projection_epoch, "offset": "0_0", "handle": "h"},
+            json=subset,
+        )
     await electric.aclose()
     assert response.status_code == 400
 
 
-async def test_payload_shape_uses_server_verified_exact_revision(store: ThreadStore, seeded: Seeded) -> None:
-    seen: httpx.Request | None = None
-
-    async def upstream(request: httpx.Request) -> httpx.Response:
-        nonlocal seen
-        seen = request
-        return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
-
-    app, electric = make_app(httpx.MockTransport(upstream), store)
-    selection = seeded.selection
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        interest = await client.get(f"/threads/{seeded.thread}/sync/payload-interest", params=payload_query(seeded))
-        chunks = await client.get(
-            f"/threads/{seeded.thread}/sync/payload-chunks", params=payload_query(seeded) | {"offset": "-1"}
-        )
-        missing = await client.get(
-            f"/threads/{seeded.thread}/sync/payload-interest",
-            params=payload_query(seeded) | {"revision_cursor": str(selection.revision_cursor + 1)},
-        )
-    await electric.aclose()
-
-    # The interest is the manifest's, so a reader's extent comes from the row the projector wrote.
-    assert interest.json()["chunk_count"] == str(selection.chunk_count)
-    assert interest.json()["content_bytes"] == str(selection.content_bytes)
-    assert chunks.status_code == 200
-    assert missing.status_code == 410
-    assert seen is not None
-    forwarded = httpx.QueryParams(seen.url.query)
-    assert forwarded["table"] == "thread_payload_chunk"
-    # The shape stops at the revision's own extent: a later append to the same generation is a
-    # different shape, and this one never grows past what its metadata named.
-    assert "chunk_index < $7" in forwarded["where"]
-    assert forwarded["params[6]"] == str(selection.generation)
-    assert forwarded["params[7]"] == str(selection.chunk_count)
-
-
-async def test_command_shape_is_scoped_bounded_and_includes_settled_or_future_ids(
-    store: ThreadStore, seeded: Seeded
-) -> None:
-    seen: list[httpx.Request] = []
-
-    async def upstream(request: httpx.Request) -> httpx.Response:
-        seen.append(request)
-        return httpx.Response(200, stream=httpx.ByteStream(b"[]"))
-
-    app, electric = make_app(httpx.MockTransport(upstream), store)
-    scope = seeded.interest.scope
-    params = [("projection_epoch", scope.projection_epoch), ("offset", "-1")]
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
-        response = await client.get(
-            f"/threads/{seeded.thread}/sync/commands",
-            params=[*params, ("command_id", "future"), ("command_id", "failed"), ("command_id", "failed")],
-        )
-        assert response.status_code == 200
-        for invalid in [
-            params,
-            [*params, ("command_id", "")],
-            [*params, *[("command_id", str(n)) for n in range(129)]],
-        ]:
-            invalid_response = await client.get(f"/threads/{seeded.thread}/sync/commands", params=tuple(invalid))
-            assert invalid_response.status_code == 422
-        stale = [(key, "old" if key == "projection_epoch" else value) for key, value in params]
-        assert (
-            await client.get(f"/threads/{seeded.thread}/sync/commands", params=[*stale, ("command_id", "failed")])
-        ).status_code == 410
-        assert (
-            await client.get(f"/threads/{UUID(int=0)}/sync/commands", params=[*params, ("command_id", "failed")])
-        ).status_code == 410
-    await electric.aclose()
-    assert len(seen) == 1
-    query = httpx.QueryParams(seen[0].url.query)
-    assert query["where"] == (
-        "thread_id = $1 AND projection_epoch = $2 AND entity_kind = 'command' AND entity_id IN ($3,$4)"
-    )
-    assert query["params[1]"] == str(seeded.thread)
-    assert query["params[2]"] == scope.projection_epoch
-    assert query["params[3]"] == "failed"
-    assert query["params[4]"] == "future"
-    assert "command_id" not in query
-
-
 @pytest.mark.parametrize("disconnect", ["cancel", "send", "receive"])
 async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_response(
-    disconnect: str, store: ThreadStore, seeded: Seeded
+    disconnect: str, seeded: Seeded, make_app: MakeApp
 ) -> None:
     class Chunks(httpx.AsyncByteStream):
         def __init__(self) -> None:
@@ -417,21 +494,15 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
     async def upstream(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, stream=chunks)
 
-    app, electric = make_app(httpx.MockTransport(upstream), store)
+    app, electric = make_app(httpx.MockTransport(upstream))
     scope = {
         "type": "http",
         "asgi": {"spec_version": "2.3" if disconnect == "receive" else "2.4"},
-        "query_string": b"offset=-1",
+        "query_string": b"offset=now",
         "headers": [],
     }
     response = await app.state.electric.entities(
-        Request(scope),
-        thread_id=seeded.thread,
-        projection_epoch=seeded.interest.scope.projection_epoch,
-        anchor_cursor=seeded.interest.anchor_cursor,
-        tail_from=seeded.interest.tail_from,
-        window_from=None,
-        window_before=None,
+        Request(scope), thread_id=seeded.thread, projection_epoch=seeded.scope.projection_epoch
     )
     first = asyncio.Event()
     release = asyncio.Event()

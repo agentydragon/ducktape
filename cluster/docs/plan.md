@@ -112,7 +112,7 @@ editing a route.
       either never came up post-rename or `/dev/sdb` doesn't exist on
       this physical server. Currently cordoned (2026-06-03) so the
       broken local-path-ovh entry stops biting study-casino-db's
-      rebuild. Lying-by-omission: `cluster/k8s/local-path-provisioner/helmrelease.yaml`
+      rebuild. Lying-by-omission: `cluster/cdk8s/local_path_provisioner.py`
       lists it in `nodePathMap` as if the disk were mounted. - **ovh-ns104963** (KS-GAME worker): disk is fine
       (`/var/mnt/seaweedfs-data` works — study-casino-db-5 just
       provisioned there), but no SeaweedFS volume server runs on it.
@@ -144,7 +144,7 @@ editing a route.
       differs from the old one. Diff `tana-desktop` logs from a previously
       working pod against current.
 - [ ] **Eliminate per-node hostname references** in repo files
-      (`cluster/k8s/local-path-provisioner/helmrelease.yaml`'s `nodePathMap`,
+      (`cluster/cdk8s/local_path_provisioner.py`'s `nodePathMap`,
       `nebula-mesh.json` keys, etc.). Every node rename today requires editing
       a fixed list of files; ideally local-path-provisioner could match OVH
       nodes via a node-label selector (e.g. `topology.kubernetes.io/zone:
@@ -254,7 +254,7 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
     `kubectl get node ovh-ns102453 -o json` — `status.addresses` has only
     `InternalIP=10.42.0.15` (Nebula) and hostname; no `ExternalIP`, no public-IP
     annotation, `spec.providerID` empty. The talos-CCM is _installed_ (Flux
-    `k8s/talos-cloud-controller-manager/helmrelease.yaml`, configured with
+    `cdk8s/talos_cloud_controller_manager.py`, configured with
     `publicIPDiscovery: true` for `topology.kubernetes.io/region=hil`) but
     switched off: its log says `is kubelet has args: --cloud-provider=external on the node?`
     — the Talos kubelet isn't started with that flag, so it never
@@ -588,7 +588,7 @@ fault can cascade.
 
 ### VPA + Goldilocks
 
-VPA deployed (`k8s/vpa/`). Goldilocks auto-creates VPAs cluster-wide.
+VPA deployed (`generated/vpa/`). Goldilocks auto-creates VPAs cluster-wide.
 Default mode "Off" (recommendation-only). Enable per namespace.
 
 **TODO**: Require explicit `goldilocks.fairwinds.com/vpa-resource-policy` annotations

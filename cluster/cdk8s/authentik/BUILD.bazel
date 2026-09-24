@@ -3,15 +3,106 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
+    name = "db",
+    srcs = ["db.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/crd_bindings/cnpg:cluster",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "flux_kustomizations",
     srcs = ["flux_kustomizations.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:artifact_generators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "namespace",
+    srcs = ["namespace.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+    ],
+)
+
+py_library(
+    name = "sso_providers",
+    srcs = ["sso_providers.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:terraform",
+        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        ":db",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:helm",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
+        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
+        "//cluster/cdk8s/crd_bindings/gateway_api:httproute",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "db_backups",
+    srcs = ["db_backups.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/cnpg:objectstore",
+        "//cluster/cdk8s/crd_bindings/cnpg:scheduledbackup",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/seaweedfs:s3",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "proxy_routes",
+    srcs = ["proxy_routes.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/gateway_api:httproute",
         "@pypi//cdk8s",
     ],
 )

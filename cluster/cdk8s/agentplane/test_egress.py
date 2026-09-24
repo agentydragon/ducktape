@@ -14,6 +14,8 @@ from cluster.cdk8s.agentplane.app_settings import (
     FORGEJO_HAKU_POLICY,
     GITHUB_PUBLIC_POLICY,
     GOOGLE_READONLY_POLICY,
+    GROCY_SF_READONLY_POLICY,
+    HOME_ASSISTANT_READONLY_POLICY,
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
@@ -44,14 +46,17 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
     github = one(
         doc for doc in manifests if doc["kind"] == "EgressPolicy" and doc["metadata"]["name"] == GITHUB_PUBLIC_POLICY
     )
-    credential_name = one(github["spec"]["rules"])["credentialRef"]["name"]
+    github_rule = one(github["spec"]["rules"])
+    assert "codeload.github.com" in github_rule["hosts"]
+    credential_name = github_rule["credentialRef"]["name"]
     credential = one(
         doc for doc in manifests if doc["kind"] == "EgressCredential" and doc["metadata"]["name"] == credential_name
     )
     assert credential["spec"]["source"]["secretRef"]
     assert not any(
         doc["kind"] in {"EgressCredential", "EgressPolicy"}
-        and doc["metadata"]["name"] in {FORGEJO_HAKU_POLICY, GOOGLE_READONLY_POLICY}
+        and doc["metadata"]["name"]
+        in {FORGEJO_HAKU_POLICY, GOOGLE_READONLY_POLICY, GROCY_SF_READONLY_POLICY, HOME_ASSISTANT_READONLY_POLICY}
         for doc in manifests
     )
 

@@ -2,7 +2,7 @@
 # litellm_tana_key sops secret — a tana-scoped virtual key (SSOT in
 # tf/gitops/litellm-keys). The main proxy's in-process Tana provider owns the Tana
 # credential; this client key never carries it. Tana encodes reasoning effort in the model name, so each entry is one
-# family at its default effort (see cluster/k8s/litellm/app/test_litellm_config.py). See
+# family at its default effort (see cluster/cdk8s/litellm/test_config.py). See
 # ./gateway.nix for the shared wrapper pattern.
 { pkgs, config }:
 let

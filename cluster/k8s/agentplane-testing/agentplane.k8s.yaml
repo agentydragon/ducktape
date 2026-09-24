@@ -59,14 +59,14 @@ data:
       HARNESS_CLAUDE:
         - anthropic-api/ant-messages/claude-haiku-4-5-20251001
       HARNESS_CODEX:
-        - chatgpt/oai-responses/gpt-5.6-luna
+        - chatgpt/oai-responses/gpt-6-luna
     agent_egress_api_url: http://agentplane-egress.agentplane-testing.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
     thread_presets:
       public-coder-codex:
         title: Public coder / Codex
         harness: HARNESS_CODEX
-        model: chatgpt/oai-responses/gpt-5.6-luna
+        model: chatgpt/oai-responses/gpt-6-luna
         cwd: /state/workspaces/{session_id}
         reasoning_effort: medium
         instructions: Work as a public-repository coding agent. Keep private cluster data out of the workspace and outputs.
@@ -215,19 +215,14 @@ metadata:
   namespace: agentplane-testing
 spec:
   affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
     tolerations:
       - effect: NoSchedule
         key: node-role.kubernetes.io/control-plane
         operator: Exists
+    topologyKey: kubernetes.io/hostname
   bootstrap:
     initdb:
       database: app
@@ -288,20 +283,6 @@ spec:
   databaseReclaimPolicy: delete
   name: egress
   owner: egress
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: agentplane-electric-storage
-  namespace: agentplane-testing
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
-  storageClassName: seaweedfs-ovh
-  volumeMode: Filesystem
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -420,7 +401,7 @@ spec:
             runAsNonRoot: true
           volumeMounts:
             - mountPath: /var/lib/electric
-              name: pvc-agentplane-electric-storage
+              name: storage
       dnsPolicy: ClusterFirst
       hostNetwork: false
       restartPolicy: Always
@@ -436,10 +417,9 @@ spec:
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
       volumes:
-        - name: pvc-agentplane-electric-storage
-          persistentVolumeClaim:
-            claimName: agentplane-electric-storage
-            readOnly: false
+        - emptyDir:
+            sizeLimit: 5120Mi
+          name: storage
 ---
 apiVersion: v1
 kind: Service
@@ -1145,6 +1125,13 @@ spec:
             - port: "3000"
               protocol: TCP
     - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "8123"
+              protocol: TCP
+    - toEntities:
         - world
         - remote-node
         - host
@@ -1325,6 +1312,7 @@ spec:
     - hosts:
         - api.github.com
         - github.com
+        - codeload.github.com
         - "*.githubusercontent.com"
       methods:
         - GET
@@ -3378,6 +3366,13 @@ subjects:
     kind: ServiceAccount
     name: agentplane-egress
     namespace: agentplane-testing
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: agentplane-testing-egress-credentials
+automountServiceAccountToken: false
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
