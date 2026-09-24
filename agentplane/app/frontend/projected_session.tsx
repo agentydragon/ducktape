@@ -329,23 +329,26 @@ function evidenceDisclosure(entity: ThreadEntity): string {
 }
 
 /** An icon, not a disclosure row, so it adds no height to its card: it sits in the card's header
- * row where there is one, and is pinned out of flow at a corner (`style`) where there is not. */
+ * row where there is one, and is pinned out of flow at a corner (`style`) where there is not.
+ *
+ * Labelled by a native `title`, not a Mantine `Tooltip`: rows move under a resting pointer while the
+ * thread streams, and a Tooltip opening then positions itself with `flushSync` from a ResizeObserver
+ * callback, committing the whole list's pending re-render mid-delivery (a "ResizeObserver loop"). */
 function EvidenceToggle({ entity, style }: { entity: ThreadEntity; style?: CSSProperties }): JSX.Element {
   const [open, setOpen] = useRetainedDisclosure(evidenceDisclosure(entity));
   return (
-    <Tooltip label="Evidence" events={{ hover: true, focus: true, touch: false }}>
-      <ActionIcon
-        size="xs"
-        variant={open ? "light" : "subtle"}
-        color="gray"
-        aria-label="Evidence"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        style={style}
-      >
-        <IconZoomCode size={14} />
-      </ActionIcon>
-    </Tooltip>
+    <ActionIcon
+      size="xs"
+      variant={open ? "light" : "subtle"}
+      color="gray"
+      aria-label="Evidence"
+      title="Evidence"
+      aria-expanded={open}
+      onClick={() => setOpen(!open)}
+      style={style}
+    >
+      <IconZoomCode size={14} />
+    </ActionIcon>
   );
 }
 
