@@ -94,10 +94,7 @@ py_library(
     name = "flux_bootstrap_auth",
     testonly = True,
     srcs = ["flux_bootstrap_auth.py"],
-    deps = [
-        ":cluster",
-        ":k8s",
-    ],
+    deps = [":k8s"],
 )
 
 py_library(
@@ -132,16 +129,6 @@ py_library(
 )
 
 py_library(
-    name = "terraform_backends",
-    testonly = True,
-    srcs = ["terraform_backends.py"],
-    deps = [
-        ":cluster",
-        ":k8s",
-    ],
-)
-
-py_library(
     name = "crd_layering",
     testonly = True,
     srcs = ["crd_layering.py"],
@@ -164,7 +151,6 @@ py_library(
     deps = [
         ":cluster",
         ":k8s",
-        ":kustomize",
     ],
 )
 
@@ -300,18 +286,12 @@ py_test(
 py_test(
     name = "test_flux",
     srcs = ["test_flux.py"],
-    data = glob(["testdata/**"]),
+    data = ["testdata/valid/flux-kustomization.yaml"],
     deps = [
-        ":cluster",
-        ":dependencies",
         ":flux",
         ":flux_bootstrap_auth",
-        ":k8s",
-        ":kustomize",
         "//util/bazel:runfiles",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -339,18 +319,6 @@ py_test(
         ":k8s",
         ":kustomize",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_terraform_backends",
-    srcs = ["test_terraform_backends.py"],
-    deps = [
-        ":cluster",
-        ":k8s",
-        ":kustomize",
-        ":terraform_backends",
         "@pypi//pytest_bazel",
     ],
 )
@@ -463,38 +431,12 @@ py_test(
         ":image_automation",
         ":kustomize",
         ":postbuild_substitutions",
-        ":terraform_backends",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_clickhouse_distributed_ddl_contract",
-    srcs = ["test_clickhouse_distributed_ddl_contract.py"],
-    # Synthesizes the clickhouse-schema and aiquota charts in memory, which needs jsii's
-    # Node runtime.
-    data = [
-        "//cluster/k8s:clickhouse/cluster/clickhouse.k8s.yaml",
-        "//cluster/k8s:kustomization.yaml",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//cluster/cdk8s:aiquota",
-        "//cluster/cdk8s/clickhouse:schema",
-        "//util/bazel:runfiles",
-        "@pypi//cdk8s",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

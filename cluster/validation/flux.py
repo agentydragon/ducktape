@@ -250,7 +250,7 @@ class _FluxKustomizationDoc(BaseModel):
 
 
 def parse_flux_kustomizations(flux_file: Path) -> dict[str, FluxKustomizationSpec]:
-    """Parse a flux-kustomization.yaml file, returning {name: spec} for each document."""
+    """Parse a file of Flux Kustomization documents, returning {name: spec} for each."""
     results: dict[str, FluxKustomizationSpec] = {}
     with flux_file.open() as f:
         for doc in yaml.safe_load_all(f):

@@ -1,9 +1,9 @@
 """Kubernetes resource models and parsing utilities.
 
 `parse_k8s_resources` is a small kind-discriminated parser: it returns the typed subclass
-for the kinds that carry extra spec fields checks care about (HelmRelease, ImageRepository,
-ImagePolicy, Receiver, and selected workloads); every other kind stays as the generic
-`K8sResource` base. Consumers isinstance-narrow to the variant they need.
+for the kinds checks care about (ImageRepository, ImagePolicy, Receiver, secret stores, and
+selected workloads); every other kind stays as the generic `K8sResource` base. Consumers
+isinstance-narrow to the variant they need.
 """
 
 from __future__ import annotations
@@ -153,29 +153,6 @@ class SandboxTemplateResource(K8sResource):
         return [self.spec.pod_template.spec]
 
 
-class HelmChartSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    version: str | None = None
-
-
-class HelmChart(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    spec: HelmChartSpec = Field(default_factory=HelmChartSpec)
-
-
-class HelmReleaseSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    chart: HelmChart = Field(default_factory=HelmChart)
-
-
-class HelmReleaseResource(K8sResource):
-    spec: HelmReleaseSpec = Field(default_factory=HelmReleaseSpec)
-
-    @property
-    def chart_version(self) -> str | None:
-        return self.spec.chart.spec.version
-
-
 class ImageRepositorySpec(BaseModel):
     model_config = ConfigDict(extra="ignore")
     image: str = ""
@@ -185,58 +162,18 @@ class ImageRepositoryResource(K8sResource):
     spec: ImageRepositorySpec = Field(default_factory=ImageRepositorySpec)
 
 
-class TerraformBackendConfig(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-    custom_configuration: str = ""
-
-
-class TerraformSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-    backend_config: TerraformBackendConfig | None = None
-
-
-class TerraformResource(K8sResource):
-    spec: TerraformSpec = Field(default_factory=TerraformSpec)
-
-
 class SecretRef(BaseModel):
     model_config = ConfigDict(extra="ignore")
     name: str = ""
 
 
-class RoleRule(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
-    api_groups: list[str] = Field(default_factory=list)
-    resources: list[str] = Field(default_factory=list)
-    resource_names: list[str] = Field(default_factory=list)
-    verbs: list[str] = Field(default_factory=list)
-
-
-class RoleResource(K8sResource):
-    rules: list[RoleRule] = Field(default_factory=list)
-
-
 class RoleBindingSubject(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    kind: str = ""
-    name: str = ""
     namespace: str = ""
 
 
-class RoleBindingRoleRef(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
-    api_group: str = ""
-    kind: str = ""
-    name: str = ""
-
-
 class RoleBindingResource(K8sResource):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
-    role_ref: RoleBindingRoleRef = Field(default_factory=RoleBindingRoleRef)
     subjects: list[RoleBindingSubject] = Field(default_factory=list)
 
 
@@ -250,23 +187,9 @@ class EgressBindingResource(K8sResource):
     spec: EgressBindingSpec = Field(default_factory=EgressBindingSpec)
 
 
-class SecretStoreServiceAccountAuth(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    name: str = ""
-    namespace: str | None = None
-
-
-class SecretStoreKubernetesAuth(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
-    service_account: SecretStoreServiceAccountAuth | None = None
-
-
 class SecretStoreKubernetesProvider(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
-    auth: SecretStoreKubernetesAuth | None = None
     remote_namespace: str = ""
 
 
@@ -310,13 +233,6 @@ class ExternalSecretResource(K8sResource):
     spec: ExternalSecretSpec = Field(default_factory=ExternalSecretSpec)
 
 
-class FluxSourceRef(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    kind: str = "GitRepository"
-    name: str = ""
-    namespace: str | None = None
-
-
 class GitRepositorySpec(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
     url: str = ""
@@ -328,43 +244,13 @@ class GitRepositoryResource(K8sResource):
     spec: GitRepositorySpec = Field(default_factory=GitRepositorySpec)
 
 
-class ImageUpdateAutomationSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-    source_ref: FluxSourceRef = Field(default_factory=FluxSourceRef)
-
-
-class ImageUpdateAutomationResource(K8sResource):
-    spec: ImageUpdateAutomationSpec = Field(default_factory=ImageUpdateAutomationSpec)
-
-
-class _ImageRepositoryRef(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    name: str = ""
-
-
-class ImagePolicySpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-    image_repository_ref: _ImageRepositoryRef = Field(default_factory=_ImageRepositoryRef)
-
-
 class ImagePolicyResource(K8sResource):
-    spec: ImagePolicySpec = Field(default_factory=ImagePolicySpec)
-
-
-class _ArtifactCopy(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    to: str = ""
-
-    def artifact_dir(self) -> str:
-        """The repo-relative directory this copy lands in: `@artifact/cluster/k8s/parked/` -> `cluster/k8s/parked`."""
-        return self.to.removeprefix("@artifact/").strip("/")
+    """An image-automation `ImagePolicy`: what a `$imagepolicy` setter marker names."""
 
 
 class _ArtifactGeneratorArtifact(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+    model_config = ConfigDict(extra="ignore")
     name: str
-    # `copy` is BaseModel's own method; the wire key stays `copy`.
-    copies: list[_ArtifactCopy] = Field(default_factory=list, alias="copy")
 
 
 class ArtifactGeneratorSpec(BaseModel):
@@ -438,14 +324,10 @@ class CiliumPolicyResource(K8sResource):
 
 _KIND_MODELS: dict[str, type[K8sResource]] = {
     "GitRepository": GitRepositoryResource,
-    "ImageUpdateAutomation": ImageUpdateAutomationResource,
-    "HelmRelease": HelmReleaseResource,
-    "Terraform": TerraformResource,
     "ImageRepository": ImageRepositoryResource,
     "ImagePolicy": ImagePolicyResource,
     "ArtifactGenerator": ArtifactGeneratorResource,
     "Receiver": ReceiverResource,
-    "Role": RoleResource,
     "RoleBinding": RoleBindingResource,
     "Secret": SecretResource,
     "SecretStore": SecretStoreResource,
