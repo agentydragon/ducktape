@@ -317,9 +317,13 @@ enum Referent {
         member_index: usize,
         name: String,
     },
-    /// An entity whose place is not known from its rows: a relational
-    /// selector, or a `source_match` rejected before the solve. Its name
-    /// stays a wildcard.
+    /// A member pinned by a relational selector: its binding is known only
+    /// in the solve.
+    Relational {
+        module_index: usize,
+        member_index: usize,
+    },
+    /// A `source_match` rejected before the solve. Its name stays a wildcard.
     Unprojected,
 }
 
@@ -1091,7 +1095,11 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         member_index,
                         name: pin.name.clone(),
                     },
-                    _ => Referent::Unprojected,
+                    (MemberSelector::SourceMatch(_), None) => Referent::Unprojected,
+                    (_, None) => Referent::Relational {
+                        module_index,
+                        member_index,
+                    },
                 };
                 exports
                     .entry(member.export_name.as_str())
@@ -1224,6 +1232,19 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     } => target_by_member
                         .get(&(*module_index, *member_index))
                         .copied(),
+                    Referent::Relational {
+                        module_index,
+                        member_index,
+                    } => {
+                        columns.push(
+                            self.builder
+                                .relational_binding_variable(&self.ids[*module_index], name),
+                        );
+                        column_names.push(name.clone());
+                        target_by_member
+                            .get(&(*module_index, *member_index))
+                            .copied()
+                    }
                     Referent::Unprojected => continue,
                 };
                 referenced.push((name.clone(), *module_index, target));
@@ -1751,7 +1772,9 @@ fn narrow_by_references(
             references.iter().all(|(name, _, referent)| match referent {
                 Referent::Unprojected => true,
                 Referent::Pin { name: pinned, .. } => row.free_bindings.get(name) == Some(pinned),
-                Referent::Projected(_) => row.free_bindings.contains_key(name),
+                Referent::Projected(_) | Referent::Relational { .. } => {
+                    row.free_bindings.contains_key(name)
+                }
             })
         })
         .cloned()
