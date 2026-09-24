@@ -24,6 +24,11 @@ in <../../cluster/k8s/cli-proxy-api/README.md>.
   downloads and replacement, including when the file is missing.
 - `patches/bazel.patch`: BUILD additions applied after Gazelle generates upstream
   package definitions. This build glue is separate from the upstream feature.
+- `patches/upstream-timing.patch`: the access log line ends with
+  `| upstream attempts=N sent=… headers=… first_chunk=… first_byte=…`, offsets from the
+  request's arrival to the upstream request going out, its response headers, its first body
+  chunk, and the first byte back to the client. It works with `request-log` off, so the
+  split reaches Loki from stdout without writing request bodies anywhere.
 
 These are downstream changes, not assumed upstream bug fixes. No exact upstream
 issue currently tracks the OIDC/session or read-only-panel behavior. Remove
@@ -31,7 +36,8 @@ issue currently tracks the OIDC/session or read-only-panel behavior. Remove
 backend/UI pair provides equivalent OIDC, browser-session, CSRF, and logout
 behavior. Remove `bundled-panel.patch` when the upstream panel has an equivalent
 read-only/no-download contract or the deployment no longer requires it. Remove
-`bazel.patch` when the pinned upstream sources provide compatible BUILD metadata.
+`bazel.patch` when the pinned upstream sources provide compatible BUILD metadata. Remove
+`upstream-timing.patch` when upstream logs per-request upstream timing to stdout.
 Each removal requires the test suite and image build below to pass.
 
 Source revisions and checksums are in `MODULE.bazel`. The binary is installed at

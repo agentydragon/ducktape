@@ -96,6 +96,7 @@ go_deps.archive_override(
         "//patches:management-oidc.patch",
         "//patches:bundled-panel.patch",
         "//patches:bazel.patch",
+        "//patches:upstream-timing.patch",
     ],
     path = "github.com/router-for-me/CLIProxyAPI/v7",
     sha256 = "3f829041f62175a546750520d1c160cba1a7618d30f17618731e250c048d77e5",
