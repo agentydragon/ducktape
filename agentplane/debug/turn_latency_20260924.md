@@ -1,21 +1,75 @@
 # One-word turn latency on `agentplane-testing` — 2026-09-24
 
 `//agentplane/acceptance:test_thread_latency` asks each harness to say PING and times the turn from
-the app admitting the input to `TurnCompleted` arriving on the thread's event stream. Against a 3 s
-ceiling it measured **7.51 s** on Claude (`claude-haiku-4-5`) and **5.22 s** on Codex
-(`gpt-5.6-luna`, low effort). The harnesses report their own turns as 1.26 s and 3.82 s.
+the app admitting the input to `TurnCompleted` arriving on the thread's event stream. The harness
+reports its own turn in the frame that ends it; the difference is what agentplane adds, which #7772
+targets at 0.5 s or less.
 
-**Most of the rest is the runner's journal.** It commits every Event in its own SQLite transaction,
-one after another, at about 90 ms each. The harness finishes and its output waits in the stdout
-pipe while the runner works through it: 5.9 s of the Claude turn and 1.1 s of the Codex turn.
+**With group commit (#7843) agentplane adds 0.41 s on Claude and 0.50 s on Codex**, down from
+6.25 s and 1.40 s (§ After group commit). Codex cleared the test's 0.5 s ceiling by 4 ms in its one
+run. What is left is journal commits the stdout reader does not batch: three or four in series
+before the harness sees its input, and two after it finishes.
+
+The first measurement, before group commit, found **7.51 s** on Claude (`claude-haiku-4-5`) and
+**5.22 s** on Codex (`gpt-5.6-luna`, low effort), against the harnesses' own 1.26 s and 3.82 s.
+
+**Most of the rest was the runner's journal.** It committed every Event in its own SQLite
+transaction, one after another, at about 90 ms each. The harness finished and its output waited in
+the stdout pipe while the runner worked through it: 5.9 s of the Claude turn and 1.1 s of the Codex
+turn.
 
 **The proxies we own on the model path add about 0.1 s.** Those are the egress proxy, llm-ingress,
 LiteLLM and CLIProxyAPI; CLIProxyAPI's own share is about 2 ms. Codex's model leg is the ChatGPT
 Codex backend behind them: the same tiny request took 1.8–4.3 s in three runs (§ The model path).
 
-App `devel-20260923231228-b867c67`, llm-ingress `devel-20260920014010-89ebdd6`, Electric 1.8.1 on
-the emptyDir it moved to that night. Threads `d9372034-4c33-4761-a92d-2818c68289d6` (Claude) and
-`89c598af-43a4-46a9-a3fa-6fe6c6f1083a` (Codex).
+First run: app `devel-20260923231228-b867c67`, llm-ingress `devel-20260920014010-89ebdd6`, Electric
+1.8.1 on the emptyDir it moved to that night. Threads `d9372034-4c33-4761-a92d-2818c68289d6`
+(Claude) and `89c598af-43a4-46a9-a3fa-6fe6c6f1083a` (Codex).
+
+## After group commit (#7843)
+
+Re-run at 16:21 UTC: runner `devel-20260924155356-569953f`, app `devel-20260924094904-b4d103b`,
+llm-ingress `devel-20260924010559-5ce04fd`, Electric 1.8.1. Threads
+`0449cc2c-a106-4d81-ba6c-5d2c14147872` (Claude, `claude-haiku-4-5`) and
+`74f97c34-674a-4388-91aa-451c1d6d5f57` (Codex, now `gpt-6-luna`, low effort). One run of each; the
+test passed on both.
+
+| Harness | Turn   | Harness's own | Added  | Added before |
+| ------- | ------ | ------------- | ------ | ------------ |
+| Claude  | 2.50 s | 2.09 s        | 0.41 s | 6.25 s       |
+| Codex   | 3.06 s | 2.57 s        | 0.50 s | 1.40 s       |
+
+**The backlog is gone.** The lines of one pipe read and their Events share a commit. Claude's 59
+Events from its user echo to `result` were recorded about 3 ms apart whenever they arrived together,
+and `TurnCompleted.at` came 0.13 s after the harness's own clock stopped, against 5.90 s in the
+first run.
+
+**What is left is the commits the stdout reader does not batch.** On the runner's clock, with
+t = 0 at `CommandAdmitted.at`:
+
+| Span                                         | Claude  | Codex   |
+| -------------------------------------------- | ------- | ------- |
+| Admission to the harness receiving its input | ~0.17 s | 0.295 s |
+| Harness's end to `TurnCompleted.at`          | ~0.13 s | 0.159 s |
+
+- **Before the harness sees its input, commits run in series:** `CommandAdmitted`, the dispatch
+  record (`Journal.dispatch_planned`), Claude's `TurnStarted`, and the outbound frame, which is
+  written after its own commit. A commit took 40–60 ms in Claude's sandbox and about 100 ms in
+  Codex's. Codex emitted its first frame at t = 0.294, and its `durationMs` puts the start of its
+  turn at t = 0.295. Claude's `request_sent_wall_ms` less `time_to_request_ms` gives t = 0.17.
+- **After the harness finishes, two more:** the batch holding the last frame, then `TurnCompleted`
+  in its own transaction, since `turn_completed` commits the batch before taking the session lock.
+  Codex emitted `turn/completed` at t = 2.861, and `TurnCompleted.at` is t = 3.020. Frames of its
+  answer also waited 0.11–0.13 s for the batch the reader was committing when they arrived.
+- For Codex, the runner's span from `CommandAdmitted.at` to `TurnCompleted.at` is 3.020 s, against
+  the test's 3.062 s, so the app's share stays small, as in the first run.
+
+**The ordered reply holds the reader at turn start.** The runner recorded Codex's `turn/start`
+response at t = 0.442. `submit` then committed `TurnStarted` (t = 0.585) and
+`HarnessUserMessageConfirmed` (t = 0.710) one at a time while the reader waited. The reader
+recorded the frames Codex had emitted at t = 0.678 from t = 0.812 on. That overlapped the model call
+here, since the answer started at t = 2.673, so it cost nothing. With a model that answers within
+about 0.4 s, it would add to the turn.
 
 ## Where the timestamps come from
 
@@ -35,7 +89,7 @@ The runner and the harness share a container clock. The proxies run on other nod
 their logs with the sandbox's timestamps assumes the node clocks agree to well under 0.1 s; nobody
 checked that.
 
-## Claude: 7.51 s
+## Before group commit: Claude, 7.51 s
 
 t = 0 is `CommandAdmitted.at`, 00:10:26.614.
 
@@ -54,7 +108,7 @@ accounts for 6.27 s. A one-word answer produced 62 Events, 42 of them native fra
 thinking delta arrives as a `stream_event` plus a `thinking_tokens` estimate, and the adapter adds
 a `TextDelta` for it.
 
-## Codex: 5.22 s
+## Before group commit: Codex, 5.22 s
 
 t = 0 is `CommandAdmitted.at`, 00:10:58.477.
 
@@ -95,12 +149,12 @@ admission's answer path, and this run cannot split that path further.
 
 ## Why a commit costs ~90 ms
 
-- **The commits are serial and on the critical path.** `_read_stdout` (<../runner/session.py>)
-  commits a line's `Native` Event, then the adapter commits each Event derived from it, before the
-  next line is read. `send` commits an outbound frame before writing it to the harness. During a
-  backlog, entries start at least 83 ms apart, 92 ms at the median. The Claude turn also had two
-  commits of about 0.6 s. The average of 123 ms includes adapter work, so a session journals about
-  8–12 Events a second.
+- **The commits were serial and on the critical path.** Before #7843, `_read_stdout`
+  (<../runner/session.py>) committed a line's `Native` Event, then the adapter committed each Event
+  derived from it, before the next line was read. `send` commits an outbound frame before writing it
+  to the harness. During a backlog, entries started at least 83 ms apart, 92 ms at the median. The
+  Claude turn also had two commits of about 0.6 s. The average of 123 ms included adapter work, so a
+  session journalled about 8–12 Events a second.
 - **Each commit is several fsyncs.** `journal_mode=DELETE` with `synchronous=EXTRA` syncs the
   rollback journal, then the database, then the directory after deleting the journal.
 - **`/state` is `local-path-ovh-hdd`,** a spinning disk, per the testing SandboxTemplate's
@@ -109,20 +163,19 @@ admission's answer path, and this run cannot split that path further.
 Not measured directly: fsync latency on that disk. Agents cannot exec into sandbox pods. The
 ~90 ms is inferred from the spacing above.
 
-A streamed answer produces Events faster than 10 a second. So the lag grows with the length of the
-turn, not just by a fixed amount at the end. The 2026-09-15 staging thread in
-<thread_load_20260915.md> held 3,091 Events over eight turns. At this rate that is about five
-minutes of journal time. Staging's `/state` is on the same storage class.
+A streamed answer produces Events faster than 10 a second, so without batching the lag grew with
+the length of the turn, not just by a fixed amount at the end. The 2026-09-15 staging thread in
+<thread_load_20260915.md> held 3,091 Events over eight turns: about five minutes of journal time at
+that rate. Staging's `/state` is on the same storage class.
 
 ## Getting the runner's cost to tens of milliseconds
 
-These are candidates, not measured fixes:
+Group commit in the stdout reader (#7843) removed the per-Event backlog (§ After group commit). The
+remaining candidates are not measured fixes:
 
-1. **Group commit in the stdout reader.** Commit every line already buffered on the pipe, and the
-   Events derived from them, in one transaction, and publish after that commit as now. The
-   publication-after-fence contract is unchanged. A burst then costs one commit instead of one per
-   line: the Claude harness emitted all 34 lines from `message_start` through `result` within
-   about 0.35 s.
+1. **Fewer serial commits before dispatch.** Three or four transactions separate admission from the
+   harness receiving its input. The dispatch record, Claude's `TurnStarted` and the outbound frame
+   could share one; `CommandAdmitted` still commits before the app is answered.
 2. **`/state` on `local-path-ovh-ssd`.** A constant factor on every fsync; the serial structure
    stays.
 3. **WAL with `synchronous=FULL`,** one fsync per commit. This waits on a SQLite with the WAL-reset
@@ -169,20 +222,26 @@ stream was still open, for 5 output tokens and no reasoning tokens. The stream c
 
 Also left with the harness: Codex's 0.57 s between receiving `turn/start` and sending its request.
 
-## Opening the thread, same run
+## Opening the thread
 
-The browser's reads through the sync proxy, each timed from its first request to its last body,
-from a developer host about 0.11 s from the app:
+The browser's reads through the sync proxy, each timed from its first request to its last body.
+The first run was from a developer host about 0.11 s from the app, and the 16:21 run was from a
+Claude Code web session:
 
-| Harness | Open | `scope` | `entity_shape` | `tail` | `body_shape` | `body` |
-| ------- | ---- | ------- | -------------- | ------ | ------------ | ------ |
-| Claude  | cold | 0.54 s  | 0.15 s         | 0.60 s | 0.19 s       | 0.15 s |
-| Claude  | warm | 0.11 s  | 0.11 s         | 0.25 s | 0.12 s       | 0.13 s |
-| Codex   | cold | 0.52 s  | 0.16 s         | 0.61 s | 0.13 s       | 0.18 s |
-| Codex   | warm | 0.12 s  | 0.14 s         | 0.18 s | 0.13 s       | 0.15 s |
+| Run   | Harness | Open | `scope` | `entity_shape` | `tail` | `body_shape` | `body` |
+| ----- | ------- | ---- | ------- | -------------- | ------ | ------------ | ------ |
+| First | Claude  | cold | 0.54 s  | 0.15 s         | 0.60 s | 0.19 s       | 0.15 s |
+| First | Claude  | warm | 0.11 s  | 0.11 s         | 0.25 s | 0.12 s       | 0.13 s |
+| First | Codex   | cold | 0.52 s  | 0.16 s         | 0.61 s | 0.13 s       | 0.18 s |
+| First | Codex   | warm | 0.12 s  | 0.14 s         | 0.18 s | 0.13 s       | 0.15 s |
+| 16:21 | Claude  | cold | 0.65 s  | 0.14 s         | 1.69 s | 0.13 s       | 0.15 s |
+| 16:21 | Claude  | warm | 0.12 s  | 0.13 s         | 0.18 s | 0.11 s       | 0.14 s |
+| 16:21 | Codex   | cold | 0.55 s  | 0.13 s         | 0.61 s | 0.14 s       | 0.15 s |
+| 16:21 | Codex   | warm | 0.12 s  | 0.13 s         | 0.15 s | 0.12 s       | 0.14 s |
 
 Every stage is under its ceiling. A warm open is one round trip per request. The cold `scope` is
-the client's first request, so it includes setting up the connection.
+the client's first request, so it includes setting up the connection. Claude's cold `tail` at
+16:21, 1.69 s against a 2 s ceiling, is one sample; the runner change does not touch this path.
 
 ## Reproducing
 

@@ -1,4 +1,5 @@
-"""The stdout reader commits the lines it has read, with what the adapter derives from them, at once.
+"""The stdout reader commits the lines it has read, with what the adapter derives from them, at once,
+and a harness that dies under a command's input fails that command.
 
 A scripted harness writes whatever the test asks for in a single write, so the lines arrive
 together; the adapter derives one Event from each frame and answers a frame that asks.
@@ -6,10 +7,13 @@ together; the adapter derives one Event from each frame and answers a frame that
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+import signal
 import sys
 import textwrap
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -19,7 +23,7 @@ import pytest
 import pytest_bazel
 from pydantic import BaseModel
 
-from agentplane.protocol import event_log_pb2, event_pb2
+from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.journal import Journal
@@ -80,6 +84,17 @@ class DerivingAdapter(HarnessAdapter):
             await self.session.send(Answer(answer=frame["n"]))
 
 
+class DeafAdapter(DerivingAdapter):
+    """Its harness never reads stdin, so an input larger than the pipe and the writer's buffer
+    together keeps the write waiting until the harness is gone."""
+
+    def command(self) -> list[str]:
+        return [sys.executable, "-c", "import signal; signal.pause()"]
+
+    async def submit(self, command_id: str, text: str) -> None:
+        await self.session.send(Write(write=text))
+
+
 @dataclass
 class Commits:
     count: int = 0
@@ -99,7 +114,12 @@ def commits(monkeypatch: pytest.MonkeyPatch) -> Commits:
 
 
 @pytest.fixture
-async def session(tmp_path: Path) -> AsyncIterator[Session]:
+def make_adapter() -> Callable[[Session], HarnessAdapter]:
+    return DerivingAdapter
+
+
+@pytest.fixture
+async def session(tmp_path: Path, make_adapter: Callable[[Session], HarnessAdapter]) -> AsyncIterator[Session]:
     state_dir = tmp_path / "state"
     store = SessionStore(state_dir / "sessions")
     owner = StateOwner(state_dir)
@@ -117,7 +137,7 @@ async def session(tmp_path: Path) -> AsyncIterator[Session]:
                 journal=journal,
                 store=store,
                 config=RunnerConfig(state_dir=state_dir),
-                make_adapter=DerivingAdapter,
+                make_adapter=make_adapter,
                 state_owner_descriptor=owner.descriptor,
             )
             await session.ensure_running()
@@ -213,6 +233,29 @@ async def test_a_request_receives_its_reply_once_the_reply_and_its_translation_a
     [translation] = await session.journal.since(receipt.sequence, limit=1)
     assert _summary(translation) == ("text_delta", "1")
     assert translation.cursor <= published
+
+
+@pytest.mark.parametrize("make_adapter", [DeafAdapter])
+async def test_a_harness_that_dies_under_an_input_fails_its_command(session: Session) -> None:
+    assert session.process is not None
+    before = session.journal.last_cursor
+    await session.command(
+        command_pb2.Command(command_id="input-1", submit_input=command_pb2.SubmitInput(text="x" * (1 << 20)))
+    )
+    dispatch = session._normal_dispatch_task
+    assert dispatch is not None
+    # The admission, then the input's own record, which `send` writes only once it found the harness running.
+    await _published_through(session, before + 2)
+    os.kill(session.process.native_pid, signal.SIGKILL)
+    await dispatch
+    await asyncio.gather(*session._tasks)
+
+    stored = await session.journal.get("input-1")
+    assert stored is not None
+    assert stored.terminal_cursor is not None
+    (terminal,) = await session.journal.since(stored.terminal_cursor - 1, limit=1)
+    assert terminal.event.command_failed.command_id == "input-1"
+    assert not session.harness_running
 
 
 if __name__ == "__main__":

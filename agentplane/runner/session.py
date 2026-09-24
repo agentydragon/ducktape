@@ -31,7 +31,7 @@ _INTERRUPT_GRACE_S = 15
 
 
 class HarnessGoneError(RuntimeError):
-    """The harness ended while a native response was still awaited."""
+    """The harness ended before a frame could be written to it, or while its response was awaited."""
 
 
 @dataclass(frozen=True)
@@ -161,7 +161,7 @@ class Session:
                 self.process, self.adapter = None, None
                 if not isinstance(error, Exception):
                     raise
-                # A harness that died mid-handshake surfaces here as a broken pipe; its exit says why.
+                # A harness that died mid-handshake surfaces here as HarnessGoneError; its exit says why.
                 raise RuntimeError(f"harness handshake failed: {error!r}; {process.describe_exit()}") from error
             if self.record.native_session_id != native_session_id:
                 self.record.native_session_id = native_session_id
@@ -416,7 +416,11 @@ class Session:
         line = frame.model_dump_json(by_alias=True)
         await self.emit(event_pb2.Native(direction=event_pb2.DIRECTION_TO_HARNESS, line=line), sources=[])
         await self._commit_batch()
-        await self.process.write_line(line)
+        try:
+            await self.process.write_line(line)
+        except (BrokenPipeError, ConnectionResetError) as error:
+            # The harness died after the check above; the stdout reader reports its exit.
+            raise HarnessGoneError(f"the harness closed its stdin: {error!r}") from error
 
     async def request(self, frame: BaseModel, *, matches: FrameMatcher, timeout_s: float = 60) -> NativeReceipt:
         """Write a frame and return the first later frame `matches` accepts, once that is committed
