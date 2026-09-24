@@ -72,33 +72,30 @@ derived roster is not written until every node it would touch is a construct.
 
 ## Wave 2: split the trees
 
-No conversion depends on it, and it is the one step that can prune live objects. Until
-it lands, progress is measured per directory (generated vs hand-written files), not by
-looking at `cluster/k8s`.
+The two roots exist (#7741) and the first 82 directories moved (#7742); layout rules are
+in <../docs/cdk8s.md>. A directory moves whole, never split across the roots. What is
+left is moving each remaining directory once nothing hand-written is left in it:
 
-One PR for the move, because each half is broken alone; the sparse-checkout change below
-lands and reconciles before it.
-
-- cdk8s output moves to `cluster/generated/k8s/<same path>`; `cluster/k8s` holds
-  hand-written files only. Each artifact gets a second copy op from the generated
-  tree into the same `@artifact/cluster/k8s/<path>/`, so no Kustomization changes.
-  `.gitattributes` collapses to one glob. A test helper overlays the two trees the way
-  the artifact does, for `test_flux_build` and `test_cluster_integration`. Exit:
-  artifact contents byte-identical per Kustomization before and after the move.
-- Before the move: add `cluster/generated/k8s/` to the `ducktape` GitRepository's
-  `sparseCheckout`. Landing the move first rebuilds artifacts without the generated
-  files, and their Kustomizations prune those objects (CNPG Clusters included).
-- Three generated outputs are read without an artifact and stay in `cluster/k8s` unless
-  bootstrap changes: `flux/kustomizations.k8s.yaml` and `external-creds` (the
-  `flux-system` GitRepository, whose `sparseCheckout` is in `gotk-sync.yaml`), and
-  `artifact-generators` (read from the `ducktape` GitRepository directly).
+- **Mixed directories (about 80):** generated files beside SOPS files, `image-pins/`
+  Components, a hand-written `kustomization.yaml`, or config inputs. Each moves when its
+  hand-written part is gone or has a home of its own.
+- **Fully generated but pinned in place:**
+  - `agents-mitmproxy`: read through the bootstrap `flux-system` GitRepository, whose
+    `sparseCheckout` (`gotk-sync.yaml`) covers only `cluster/k8s/`. The same holds for
+    `flux/` and `external-creds` once they stop being mixed, unless bootstrap changes.
+  - `claude-rbac`: `agents/agent-rbac-base` is also the RBAC docs hub the root
+    `AGENTS.md` links.
+  - `clickhouse-schema`, `proxmox-proxy`, `vector-talos-logs`: a `configMapGenerator`
+    reads a hand-written input (`schema.sql`, `nginx.conf`, `vector.toml`) from the
+    directory. They move with the input, or once it is rendered from Python.
+- **Per move:** `render_diff.py` must show no added or removed object. A moved directory
+  that another Kustomization's path or artifact copy still covered shows up there as
+  removed objects, which Flux would prune.
 
 **Pause after Wave 2.** With `cluster/k8s` showing only what is still hand-written:
 
 - Re-read the remainder by directory against § The floor: each open decision there
   settles to "stays hand-written" or a conversion, and the floor is final.
-- Local ergonomics: is `kustomize build` through the overlay helper acceptable, or does
-  the mixed-directory workflow need a small `bb run` target?
 - Whether generated output should stay committed. The alternative is a CI-pushed
   `OCIRepository` as the second artifact source, with CI in the deploy path and PR
   review losing the rendered diff. Default: stay committed; revisit only with a
@@ -212,13 +209,13 @@ by any wave. Each names what would settle it. None is a reason to widen a wave's
 - **`generation.write_charts(*builders)`** still takes builder callables at 157 call
   sites, 3 of them lambdas closing over a value (`lambda app: chart(app, mesh)` in
   `dns_automation`). Confident it should
-  become `app = directory_app(root, path); chart(app, mesh); app.synth()`; only the
-  timing is open, since Wave 2 changes where every output goes. Fold into Wave 2.
-- **A dumb writer.** After Wave 2, every module's `write_manifests(root)` repeats
+  become `app = directory_app(root, path); chart(app, mesh); app.synth()`. Nothing
+  blocks it now that every writer takes its root from `manifest_roots.py` (#7741).
+- **A dumb writer.** Every module's `write_manifests(root)` repeats
   `mkdir`, `App(outdir=...)`, `synth`, `write_yaml`. The forward shape is each module
   returning what it built (a mapping of output path to chart or manifest) and one loop
   at the end writing them. Leaning yes; it is values flowing forward, not a registry.
-  Settle it when Wave 2's move touches every writer.
+  Settle it together with the `write_charts` change above.
 - **Peer labels as exported values, not constructs.** `cilium.endpoint_labels(namespace,
 name)` takes strings at 35 sites. The TODO entry proposes passing the workload
   construct; the same reasoning that kept `Chart` out of Kustomization nodes argues for
@@ -241,11 +238,9 @@ name)` takes strings at 35 sites. The TODO entry proposes passing the workload
   rule a backstop that rarely fires. Unsure between factory and subclass, and whether
   the per-construct variation (init containers, sidecars) fits either. Try it on one
   workload, not across the tree.
-- **`ServiceMonitor` and `ExternalSecret` helpers.** 19 and 46 construction sites; one
-  shared helper (`forgejo_images`) and a few module-private ones (`github_exporter`,
-  `haku/workspaces.py`). The PDB helper was worth it; these may not be the same
-  shape (ExternalSecret varies by store and data mapping). Measure the sites before
-  writing either.
+- **A `ServiceMonitor` helper.** 19 construction sites, with module-private wrappers in
+  eight modules. `add_external_secret` (#7709) and the PDB helper were worth it; measure
+  whether these sites share a shape before writing one.
 - **Two props styles.** agentplane uses an `Environment` props object (two
   environments); haku uses module constants (one). Both fit their case; converge only
   if a second haku environment appears.
