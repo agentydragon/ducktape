@@ -1,11 +1,11 @@
-//! Source-backed anonymous statement selector resolution.
+//! Source-backed selector claim resolution for graph-backed CLI paths.
 //!
-//! Spec files identify anonymous top-level statements by JS selector
-//! snippets (`anonymous_statements[].match`). Graph-backed CLI paths
-//! that need owner ids use this module as the single implementation
-//! for mapping matched selectors back to owner-graph nodes. Matching is
-//! the shape matcher's ([`ChunkResolver`]); each selector must match on
-//! its own, with no joint assignment across selectors.
+//! Spec files claim declarations by `source_matches[]` templates and anonymous
+//! top-level statements by `anonymous_statements[]` selectors. The CLI edit
+//! gate and `peel` need those claims as owner-graph facts: the binding names a
+//! module's `source_matches[]` claim and the anonymous owners it co-moves. They
+//! get them from [`selector_resolve`], the resolve `debundle run` uses, over
+//! each chunk source the owner graph's `source_location` data names.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
@@ -14,151 +14,351 @@ use std::path::{Path, PathBuf};
 
 use analysis::{OwnerGraphReport, OwnerId, StatementKind};
 use anyhow::{Context, Result, bail};
-use source_match::ResolvedMemberBinding;
-use source_match::chunk_resolver::ChunkResolver;
-use spec::{AnonymousStatementSelector, BindingSourceKind};
+use selector_outcome::{Candidate, Outcome, SelectorOutcome, Severity};
+use selector_resolve::{AnonymousStatement, EntityIndex, Member, MemberSelector, SpecModule};
+use source_match::ParsedSourceMatchSelector;
+use spec::{AnonymousStatementSelector, SourceMatchClaim};
 use swc_common::{EqIgnoreSpan, SyntaxContext};
-use swc_ecma_ast::ModuleItem;
 
+/// One module's source-backed claims.
 #[derive(Debug, Clone, Copy)]
-pub struct AnonymousStatementClaimSet<'a> {
+pub struct SourceClaimSet<'a> {
     pub module_path: &'a Path,
-    pub selectors: &'a BTreeSet<AnonymousStatementSelector>,
+    pub source_matches: &'a [SourceMatchClaim],
+    pub anonymous_selectors: &'a BTreeSet<AnonymousStatementSelector>,
 }
 
-/// Source-backed binding claims for one module. Resolved by
-/// [`resolve_member_selector_claims`] into the chunk-top binding
-/// names they claim.
-#[derive(Debug, Clone, Copy)]
-pub struct MemberSelectorClaimSet<'a> {
-    pub module_path: &'a Path,
-    pub selectors: &'a BTreeSet<AnonymousStatementSelector>,
+/// What one module's source-backed claims resolve to.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ResolvedSourceClaims {
+    /// Chunk-top binding names its `source_matches[]` claim.
+    pub bindings: BTreeSet<String>,
+    pub anonymous_owners: BTreeSet<OwnerId>,
 }
 
-/// Resolve member-form `source_match` selectors to the chunk-top
-/// binding names they claim, by matching each selector against the
-/// chunk sources referenced by `graph`'s `source_location` data with the
-/// shape matcher the run pipeline takes candidates from. Each selector must
-/// match exactly one declared binding across all chunk sources;
-/// zero or multiple matches are hard errors, as is unresolvable
-/// chunk source — the caller (the CLI edit gate) must never
-/// silently treat a source_match-claimed owner as residual.
-///
-/// Bindings resolved to import specifiers are skipped: they refer
-/// to upstream symbols, not chunk-top owners (same exclusion as
-/// `spec_modules::load_active_claims`).
-pub fn resolve_member_selector_claims(
+/// Resolve every module's claims together against each chunk source the
+/// owner graph names. An entity must resolve in exactly one source and match
+/// nowhere else; anything else is an error, since the caller (the CLI edit
+/// gate) must never silently treat a claimed owner as residual. As in `run`, a
+/// claim unique only because other claims took its alternatives resolves, with
+/// a warning on stderr.
+pub fn resolve_source_claims(
     graph: &OwnerGraphReport,
     owner_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
-    claims_by_module: &[MemberSelectorClaimSet<'_>],
-) -> Result<Vec<BTreeSet<String>>> {
-    js_ast::with_swc_globals(|| {
-        resolve_member_selector_claims_in_globals(
-            graph,
-            owner_graph_path,
-            modules_root,
-            source_root,
-            claims_by_module,
-        )
-    })
-}
-
-fn resolve_member_selector_claims_in_globals(
-    graph: &OwnerGraphReport,
-    owner_graph_path: &Path,
-    modules_root: &Path,
-    source_root: Option<&Path>,
-    claims_by_module: &[MemberSelectorClaimSet<'_>],
-) -> Result<Vec<BTreeSet<String>>> {
-    if claims_by_module
-        .iter()
-        .all(|claims| claims.selectors.is_empty())
-    {
-        return Ok(vec![BTreeSet::new(); claims_by_module.len()]);
-    }
-
-    with_source_modules(
+    claim_sets: &[SourceClaimSet<'_>],
+) -> Result<Vec<ResolvedSourceClaims>> {
+    resolve_claim_sets(
         graph,
         owner_graph_path,
         modules_root,
         source_root,
-        "spec contains source_matches[] binding claims, but owner_graph.json has no \
-         source_location data; cannot resolve source_match selectors",
-        |parsed_by_source| {
-            let resolvers: Vec<(&String, ChunkResolver<'_>)> = parsed_by_source
-                .iter()
-                .map(|(source_path, parsed)| (source_path, ChunkResolver::new(&parsed.module)))
-                .collect();
-            let mut out = vec![BTreeSet::<String>::new(); claims_by_module.len()];
-            for (module_idx, claims) in claims_by_module.iter().enumerate() {
-                let request_id = claims.module_path.to_string_lossy();
-                for selector in claims.selectors {
-                    let mut matches = Vec::<ResolvedMemberBinding>::new();
-                    for (source_path, resolver) in &resolvers {
-                        matches.extend(
-                            resolver
-                                .member_candidates(&request_id, selector)
-                                .with_context(|| {
-                                    format!(
-                                        "module {} source_matches[] against source {source_path}",
-                                        claims.module_path.display(),
-                                    )
-                                })?
-                                .into_iter()
-                                .map(|matched| matched.binding),
-                        );
-                    }
-                    match matches.as_slice() {
-                        [single] => {
-                            if single.kind != Some(BindingSourceKind::ImportSpecifier) {
-                                out[module_idx].insert(single.binding_name.clone());
-                            }
-                        }
-                        [] => bail!(
-                            "module {} source_matches[] did not match any top-level \
-                     declaration in the chunk sources:\n{}",
-                            claims.module_path.display(),
-                            selector.match_source,
-                        ),
-                        multiple => bail!(
-                            "module {} source_matches[] is ambiguous — matched {} \
-                     declarations ({}); refine the selector:\n{}",
-                            claims.module_path.display(),
-                            multiple.len(),
-                            multiple
-                                .iter()
-                                .map(|matched| matched.binding_name.as_str())
-                                .collect::<Vec<_>>()
-                                .join(", "),
-                            selector.match_source,
-                        ),
-                    }
-                }
-            }
-
-            Ok(out)
-        },
-    )
+        claim_sets,
+    )?
+    .into_iter()
+    .map(|resolved| resolved.map(ResolvedClaimSet::warn))
+    .collect()
 }
 
-pub fn resolve_anonymous_statement_claims(
+/// [`resolve_source_claims`] for `claim_sets[index]` alone, resolved together
+/// with the others: an error in another set does not fail it.
+pub fn resolve_source_claims_of(
     graph: &OwnerGraphReport,
     owner_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
-    claims_by_module: &[AnonymousStatementClaimSet<'_>],
-) -> Result<Vec<BTreeSet<OwnerId>>> {
+    claim_sets: &[SourceClaimSet<'_>],
+    index: usize,
+) -> Result<ResolvedSourceClaims> {
+    resolve_claim_sets(
+        graph,
+        owner_graph_path,
+        modules_root,
+        source_root,
+        claim_sets,
+    )?
+    .swap_remove(index)
+    .map(ResolvedClaimSet::warn)
+}
+
+/// A claim set's resolution and the warnings it carries.
+#[derive(Default)]
+struct ResolvedClaimSet {
+    claims: ResolvedSourceClaims,
+    warnings: Vec<String>,
+}
+
+impl ResolvedClaimSet {
+    fn warn(self) -> ResolvedSourceClaims {
+        for warning in &self.warnings {
+            eprintln!("{warning}");
+        }
+        self.claims
+    }
+}
+
+fn resolve_claim_sets(
+    graph: &OwnerGraphReport,
+    owner_graph_path: &Path,
+    modules_root: &Path,
+    source_root: Option<&Path>,
+    claim_sets: &[SourceClaimSet<'_>],
+) -> Result<Vec<Result<ResolvedClaimSet>>> {
+    let mut resolved = claim_sets
+        .iter()
+        .map(|_| Ok(ResolvedClaimSet::default()))
+        .collect::<Vec<Result<ResolvedClaimSet>>>();
+    let has_anonymous = claim_sets
+        .iter()
+        .any(|claims| !claims.anonymous_selectors.is_empty());
+    if !has_anonymous
+        && claim_sets
+            .iter()
+            .all(|claims| claims.source_matches.is_empty())
+    {
+        return Ok(resolved);
+    }
     js_ast::with_swc_globals(|| {
-        resolve_anonymous_statement_claims_in_globals(
+        let modules = claim_sets
+            .iter()
+            .map(spec_module)
+            .collect::<Result<Vec<_>>>()?;
+        let mut anonymous_owner_by_source_ordinal = HashMap::<(String, usize), OwnerId>::new();
+        for (idx, node) in graph.nodes.iter().enumerate() {
+            if let (true, Some(location)) =
+                (node.declared_bindings.is_empty(), &node.source_location)
+            {
+                anonymous_owner_by_source_ordinal.insert(
+                    (location.source_path.clone(), node.statement_ordinal.0),
+                    OwnerId(idx),
+                );
+            }
+        }
+        let no_sources = if has_anonymous {
+            "spec contains anonymous_statements, but owner_graph.json has no source_location \
+             data; cannot resolve anonymous selectors"
+        } else {
+            "spec contains source_matches[] binding claims, but owner_graph.json has no \
+             source_location data; cannot resolve source_match selectors"
+        };
+        with_source_modules(
             graph,
             owner_graph_path,
             modules_root,
             source_root,
-            claims_by_module,
+            no_sources,
+            |parsed_by_source| {
+                // Per entity, its outcome in every source.
+                let mut per_source = BTreeMap::<(usize, EntityIndex), Vec<SourceOutcome>>::new();
+                for (source_path, parsed) in parsed_by_source {
+                    let resolution = selector_resolve::Chunk::analyze(source_path, &parsed.module)
+                        .resolve(&modules)?;
+                    for entity in resolution.outcomes {
+                        per_source
+                            .entry((entity.module, entity.entity))
+                            .or_default()
+                            .push(SourceOutcome {
+                                source_path,
+                                module: &parsed.module,
+                                outcome: entity.outcome,
+                            });
+                    }
+                }
+                // Anonymous statements first, then members, in module order.
+                let mut entities = per_source.into_iter().collect::<Vec<_>>();
+                entities.sort_by_key(|((module, entity), _)| {
+                    (matches!(entity, EntityIndex::Member(_)), *module, *entity)
+                });
+                for ((module_index, entity), outcomes) in entities {
+                    let Ok(set) = &mut resolved[module_index] else {
+                        continue;
+                    };
+                    if let Err(error) = claim_entity(
+                        &claim_sets[module_index],
+                        &modules[module_index],
+                        entity,
+                        &outcomes,
+                        &anonymous_owner_by_source_ordinal,
+                        set,
+                    ) {
+                        resolved[module_index] = Err(error);
+                    }
+                }
+                Ok(())
+            },
         )
+    })?;
+    Ok(resolved)
+}
+
+/// Adds what `entity` claims, given its outcome in every source, to `set`.
+fn claim_entity(
+    claims: &SourceClaimSet<'_>,
+    module: &SpecModule,
+    entity: EntityIndex,
+    outcomes: &[SourceOutcome<'_>],
+    anonymous_owner_by_source_ordinal: &HashMap<(String, usize), OwnerId>,
+    set: &mut ResolvedClaimSet,
+) -> Result<()> {
+    let (place, source) = one_place(claims, module, entity, outcomes)?;
+    if source.outcome.severity() != Severity::Ok {
+        set.warnings.push(source.outcome.render_line());
+    }
+    match entity {
+        EntityIndex::AnonymousStatement(_) => {
+            let ordinal = js_ast::statement_ordinal_for_body_index(&source.module.body, place);
+            let owner = anonymous_owner_by_source_ordinal
+                .get(&(source.source_path.clone(), ordinal))
+                .copied()
+                .with_context(|| {
+                    format!(
+                        "module {} anonymous statement selector matched source {} statement \
+                         ordinal {ordinal}, but owner_graph.json has no anonymous owner at that \
+                         source position",
+                        claims.module_path.display(),
+                        source.source_path,
+                    )
+                })?;
+            set.claims.anonymous_owners.insert(owner);
+        }
+        EntityIndex::Member(_) => {
+            let Outcome::Resolved {
+                binding: Some(binding),
+                ..
+            } = &source.outcome.outcome
+            else {
+                unreachable!("a resolved member names its binding");
+            };
+            set.claims.bindings.insert(binding.clone());
+        }
+    }
+    Ok(())
+}
+
+/// One claim set as the entities it claims.
+fn spec_module(claims: &SourceClaimSet<'_>) -> Result<SpecModule> {
+    let request_id = claims.module_path.to_string_lossy().to_string();
+    let mut members = Vec::new();
+    for claim in claims.source_matches {
+        for expanded in source_match::source_match_claim_member_selectors(&request_id, claim)? {
+            members.push(Member {
+                export_name: expanded.export_name,
+                selector: MemberSelector::SourceMatch(expanded.parsed_selector),
+            });
+        }
+    }
+    let anonymous_statements = claims
+        .anonymous_selectors
+        .iter()
+        .enumerate()
+        .map(|(index, selector)| {
+            Ok(AnonymousStatement {
+                index,
+                selector: ParsedSourceMatchSelector::parse(
+                    &request_id,
+                    "source_match",
+                    format!("<source_match needle in {request_id}>"),
+                    selector,
+                    "source_match",
+                )?,
+            })
+        })
+        .collect::<Result<_>>()?;
+    Ok(SpecModule {
+        path: request_id,
+        members,
+        anonymous_statements,
     })
+}
+
+struct SourceOutcome<'s> {
+    source_path: &'s String,
+    module: &'s swc_ecma_ast::Module,
+    outcome: SelectorOutcome,
+}
+
+/// The one body index `entity` resolves to across the chunk sources, and the
+/// source it is in: it resolves in exactly one source and matches in no other.
+fn one_place<'o, 's>(
+    claims: &SourceClaimSet<'_>,
+    module: &SpecModule,
+    entity: EntityIndex,
+    outcomes: &'o [SourceOutcome<'s>],
+) -> Result<(usize, &'o SourceOutcome<'s>)> {
+    let (what, selector) = match entity {
+        EntityIndex::Member(index) => (
+            "source_matches[]",
+            module.members[index]
+                .selector
+                .source_match()
+                .expect("claim members are source_match members"),
+        ),
+        EntityIndex::AnonymousStatement(index) => (
+            "anonymous statement selector",
+            module.anonymous_statements[index].selector.selector(),
+        ),
+    };
+    let module_path = claims.module_path.display();
+    let match_source = &selector.match_source;
+    let mut places = Vec::<(Candidate, &'o SourceOutcome<'s>)>::new();
+    let mut truncated = false;
+    for source in outcomes {
+        match &source.outcome.outcome {
+            Outcome::NoMatch => {}
+            Outcome::Resolved { owner, binding, .. } => {
+                places.push((
+                    Candidate {
+                        owner: *owner,
+                        binding: binding.clone(),
+                    },
+                    source,
+                ));
+            }
+            Outcome::Ambiguous {
+                candidates,
+                truncated: more,
+            } => {
+                truncated |= more;
+                places.extend(
+                    candidates
+                        .iter()
+                        .map(|candidate| (candidate.clone(), source)),
+                );
+            }
+            _ => bail!(
+                "module {module_path} {what} did not resolve:\n{}",
+                source.outcome.render_line()
+            ),
+        }
+    }
+    let at_least = if truncated { "at least " } else { "" };
+    match (places.as_slice(), entity) {
+        ([(place, source)], _) if !truncated => Ok((place.owner, source)),
+        ([], EntityIndex::Member(_)) => bail!(
+            "module {module_path} source_matches[] did not match any top-level declaration in the \
+             chunk sources:\n{match_source}"
+        ),
+        ([], EntityIndex::AnonymousStatement(_)) => bail!(
+            "module {module_path} anonymous statement selector did not match any source \
+             statement:\n{match_source}"
+        ),
+        (multiple, EntityIndex::Member(_)) => bail!(
+            "module {module_path} source_matches[] is ambiguous — matched {at_least}{} \
+             declarations ({}); refine the selector:\n{match_source}",
+            multiple.len(),
+            multiple
+                .iter()
+                .filter_map(|(place, _)| place.binding.as_deref())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+        (multiple, EntityIndex::AnonymousStatement(_)) => bail!(
+            "module {module_path} anonymous statement selector matched {at_least}{} source \
+             statement groups; refine the selector:\n{match_source}",
+            multiple.len(),
+        ),
+    }
 }
 
 pub fn addressable_anonymous_statement_owner_ids(
@@ -236,145 +436,6 @@ fn addressable_anonymous_statement_owner_ids_in_globals(
         }
     }
     Ok(out)
-}
-
-fn resolve_anonymous_statement_claims_in_globals(
-    graph: &OwnerGraphReport,
-    owner_graph_path: &Path,
-    modules_root: &Path,
-    source_root: Option<&Path>,
-    claims_by_module: &[AnonymousStatementClaimSet<'_>],
-) -> Result<Vec<BTreeSet<OwnerId>>> {
-    if claims_by_module
-        .iter()
-        .all(|claims| claims.selectors.is_empty())
-    {
-        return Ok(vec![BTreeSet::new(); claims_by_module.len()]);
-    }
-
-    with_source_modules(
-        graph,
-        owner_graph_path,
-        modules_root,
-        source_root,
-        "spec contains anonymous_statements, but owner_graph.json has no source_location \
-         data; cannot resolve anonymous selectors",
-        |parsed_by_source| {
-            let mut out = vec![BTreeSet::<OwnerId>::new(); claims_by_module.len()];
-            let mut anonymous_owner_by_source_ordinal = HashMap::<(String, usize), OwnerId>::new();
-            for (idx, node) in graph.nodes.iter().enumerate() {
-                if !node.declared_bindings.is_empty() {
-                    continue;
-                }
-                if let Some(location) = &node.source_location {
-                    anonymous_owner_by_source_ordinal.insert(
-                        (location.source_path.clone(), node.statement_ordinal.0),
-                        OwnerId(idx),
-                    );
-                }
-            }
-
-            let anonymous_claims = claims_by_module
-                .iter()
-                .enumerate()
-                .flat_map(|(module_idx, claims)| {
-                    let request_id = claims.module_path.to_string_lossy().to_string();
-                    claims
-                        .selectors
-                        .iter()
-                        .map(move |selector| AnonymousSelectorClaimInfo {
-                            module_idx,
-                            module_path: claims.module_path,
-                            request_id: request_id.clone(),
-                            selector,
-                        })
-                })
-                .collect::<Vec<_>>();
-            let mut match_groups_by_claim =
-                vec![Vec::<Vec<OwnerId>>::new(); anonymous_claims.len()];
-
-            for (source_path, parsed) in parsed_by_source {
-                let resolver = ChunkResolver::new(&parsed.module);
-                for (claim, match_groups) in anonymous_claims.iter().zip(&mut match_groups_by_claim)
-                {
-                    for group in resolver
-                        .anonymous_group_candidates(&claim.request_id, claim.selector)
-                        .with_context(|| {
-                            format!(
-                                "module {} anonymous statement selector against source {source_path}",
-                                claim.module_path.display(),
-                            )
-                        })?
-                    {
-                        match_groups.push(
-                            group
-                                .into_iter()
-                                .map(|body_idx| {
-                                    anonymous_owner_for_body_index(
-                                        source_path,
-                                        &parsed.module.body,
-                                        body_idx,
-                                        claim,
-                                        &anonymous_owner_by_source_ordinal,
-                                    )
-                                })
-                                .collect::<Result<_>>()?,
-                        );
-                    }
-                }
-            }
-
-            for (claim, match_groups) in anonymous_claims.iter().zip(match_groups_by_claim) {
-                match match_groups.as_slice() {
-                    [owners] => {
-                        out[claim.module_idx].extend(owners.iter().copied());
-                    }
-                    [] => bail!(
-                        "module {} anonymous statement selector did not match any source statement:\n{}",
-                        claim.module_path.display(),
-                        claim.selector.match_source,
-                    ),
-                    multiple => bail!(
-                        "module {} anonymous statement selector matched {} source statement groups; \
-                 refine the selector:\n{}",
-                        claim.module_path.display(),
-                        multiple.len(),
-                        claim.selector.match_source,
-                    ),
-                }
-            }
-            Ok(out)
-        },
-    )
-}
-
-#[derive(Debug, Clone)]
-struct AnonymousSelectorClaimInfo<'a> {
-    module_idx: usize,
-    module_path: &'a Path,
-    request_id: String,
-    selector: &'a AnonymousStatementSelector,
-}
-
-fn anonymous_owner_for_body_index(
-    source_path: &str,
-    body: &[ModuleItem],
-    body_idx: usize,
-    claim: &AnonymousSelectorClaimInfo<'_>,
-    anonymous_owner_by_source_ordinal: &HashMap<(String, usize), OwnerId>,
-) -> Result<OwnerId> {
-    let statement_ordinal = js_ast::statement_ordinal_for_body_index(body, body_idx);
-    anonymous_owner_by_source_ordinal
-        .get(&(source_path.to_string(), statement_ordinal))
-        .copied()
-        .with_context(|| {
-            format!(
-                "module {} anonymous statement selector matched source {source_path} statement \
-                 ordinal {statement_ordinal}, but owner_graph.json has no anonymous owner at that \
-                 source position",
-                claim.module_path.display(),
-            )
-        })
 }
 
 /// Parse every distinct `source_location.source_path` in `graph` and hand

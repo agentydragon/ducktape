@@ -251,13 +251,8 @@ pub(super) fn materialize_logical_chunk(
     let result = builder.resolve_and_claim_global_selectors(
         &explicit_requests,
         &resolve_chunk,
-        &runtime_ast.module,
-        &runtime_import_facts,
-        &mut imported_binding_resolver,
-        &mut imported_from_by_src,
         chunk_top_level_mark,
         chunk_id,
-        &target_file,
         &declaration_by_name,
     );
     emit_debundle_progress(chunk_id, "resolve_global_selector_members", "end");

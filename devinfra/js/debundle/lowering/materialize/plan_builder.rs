@@ -362,18 +362,12 @@ impl ChunkPlanBuilder {
     /// what resolved. A name pin whose binding no top-level declaration carries
     /// was already recorded as an unmatched claim, and a duplicate claim as its
     /// outcome, so neither is resolved.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn resolve_and_claim_global_selectors(
         &mut self,
         explicit_requests: &[LogicalRequest],
         chunk: &selector_resolve::Chunk<'_>,
-        module: &swc_ecma_ast::Module,
-        runtime_import_facts: &RuntimeImportFacts,
-        imported_binding_resolver: &mut ArtifactSourceImportResolutionCache<'_>,
-        imported_from_by_src: &mut BTreeMap<String, String>,
         chunk_top_level_mark: swc_common::Mark,
         chunk_id: &str,
-        target_file: &str,
         declaration_by_name: &HashMap<Id, usize>,
     ) -> Result<()> {
         // Per request, the index in `request.members` of each resolved member.
@@ -469,35 +463,15 @@ impl ChunkPlanBuilder {
                             request.id, member.export_name,
                         )
                     })?;
-                    let selects_import = matches!(member.selector, MemberSelector::SourceMatch(_))
-                        && matches!(
-                            module.body[owner],
-                            ModuleItem::ModuleDecl(ModuleDecl::Import(_))
-                        );
-                    if selects_import {
-                        self.claim_imported_binding_after_chunk_analysis(
-                            request,
-                            member,
-                            &binding,
-                            index,
-                            chunk_top_level_mark,
-                            chunk_id,
-                            target_file,
-                            runtime_import_facts,
-                            imported_binding_resolver,
-                            imported_from_by_src,
-                        )?;
-                    } else {
-                        self.claim_binding_after_chunk_analysis(
-                            request,
-                            member,
-                            &binding,
-                            index,
-                            chunk_top_level_mark,
-                            chunk_id,
-                            declaration_by_name,
-                        )?;
-                    }
+                    self.claim_binding_after_chunk_analysis(
+                        request,
+                        member,
+                        &binding,
+                        index,
+                        chunk_top_level_mark,
+                        chunk_id,
+                        declaration_by_name,
+                    )?;
                     if matches!(resolved_by, ResolvedBy::Elimination { .. }) {
                         eliminated.push(outcome);
                     }
@@ -549,52 +523,6 @@ impl ChunkPlanBuilder {
         )
     }
 
-    /// Claim a binding the global selector solver resolved to: record an
-    /// unmatched-claim if the binding has no top-level declaration; error / record a
-    /// duplicate if already claimed; otherwise move it out of the residual sweep and
-    /// into module `index`, registering its export name, claim origin, and comment.
-    /// The binding was parked at the residual plan when the pre-analysis sweep ran,
-    /// before the solver knew its identity.
-    #[allow(clippy::too_many_arguments)]
-    fn claim_imported_binding_after_chunk_analysis(
-        &mut self,
-        request: &LogicalRequest,
-        member: &MemberRequest,
-        binding: &str,
-        index: usize,
-        chunk_top_level_mark: swc_common::Mark,
-        chunk_id: &str,
-        target_file: &str,
-        runtime_import_facts: &RuntimeImportFacts,
-        imported_binding_resolver: &mut ArtifactSourceImportResolutionCache<'_>,
-        imported_from_by_src: &mut BTreeMap<String, String>,
-    ) -> Result<()> {
-        if let Some(existing_kind) = self.catalogue_index_by_name.get(binding) {
-            let duplicate =
-                self.duplicate_claim_for(existing_kind, binding, chunk_id, request, member);
-            return self.record(duplicate);
-        }
-        let (imported_name, imported_from) = resolve_imported_binding(
-            imported_binding_resolver,
-            runtime_import_facts,
-            chunk_id,
-            target_file,
-            binding,
-            imported_from_by_src,
-        )?;
-        let kind = BindingKind::Imported {
-            imported_name: imported_name.into(),
-            imported_from,
-            re_exporter: ModuleId(LogicalModuleIndex(index)),
-            public_name: member.export_name.as_str().into(),
-        };
-        self.catalogue_index_by_name
-            .insert(binding.to_string(), kind.clone());
-        self.bindings_catalogue
-            .insert(top_level_id(binding, chunk_top_level_mark), kind);
-        Ok(())
-    }
-
     fn same_module_duplicate_source_binding_report(
         &self,
         existing_kind: &BindingKind,
@@ -632,6 +560,12 @@ impl ChunkPlanBuilder {
         ))
     }
 
+    /// Claim a binding the global selector solver resolved to: record an
+    /// unmatched-claim if the binding has no top-level declaration; error / record a
+    /// duplicate if already claimed; otherwise move it out of the residual sweep and
+    /// into module `index`, registering its export name, claim origin, and comment.
+    /// The binding was parked at the residual plan when the pre-analysis sweep ran,
+    /// before the solver knew its identity.
     #[allow(clippy::too_many_arguments)]
     fn claim_binding_after_chunk_analysis(
         &mut self,

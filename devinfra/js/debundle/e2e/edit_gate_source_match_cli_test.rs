@@ -323,9 +323,9 @@ fn gate_rejects_source_match_that_matches_two_declarations() {
 }
 
 #[test]
-fn gate_skips_source_match_resolving_to_an_import_specifier() {
-    // An import specifier is an upstream symbol, not a chunk-top owner,
-    // so its claim contributes nothing and the edit passes.
+fn gate_rejects_source_match_resolving_to_an_import_specifier() {
+    // An import specifier declares no chunk-top owner, so a claim on one
+    // names nothing the gate (or `run`) can place.
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     let (modules, graph) = write_custom_fixture(
@@ -338,11 +338,7 @@ fn gate_skips_source_match_resolving_to_an_import_specifier() {
 
     let out = run_unassign(root, &modules, &graph, "gamma");
 
-    assert!(
-        out.status.success(),
-        "an import-specifier claim must not block the edit; stderr: {}",
-        String::from_utf8_lossy(&out.stderr),
-    );
+    assert_gate_error(&out, "binding `dep` does not map to an owner-graph node");
 }
 
 #[test]
