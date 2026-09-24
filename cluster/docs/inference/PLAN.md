@@ -98,20 +98,55 @@ The V4.1 author reports ~5.1 tok/s on new content and ~21 on repeated content wi
 These are short-prompt, short-output external measurements. Wyrm2 has less RAM and a virtualized storage path;
 two-GPU scaling, reasoning quality, sustained changing expert working sets, and long-context behavior are unknown.
 Expand the existing VM model disk to accommodate the 502 GB checkpoint and working headroom.
-The current 500 GiB virtual allocation is not a physical capacity ceiling; Atlas pool capacity still needs inspection.
+The current 500 GiB virtual allocation is not a physical capacity ceiling; see the subsequent storage inspection below.
 Keep every expert; caching changes placement, whereas dropping experts changes the model.
+
+## Storage recommendation
+
+Subsequent September 24 inspection of Atlas confirmed that `virtio8` is
+`local-zfs:vm-110-disk-7`, backed by the 4 TB Sabrent NVMe in `rpool`.
+ZFS reported about 1.03 TB (956 GiB) available to datasets, shared with other VMs;
+the pool had about 1.22 TB physically free. These are different accounting figures,
+not additive capacity. The HDD share had about 27 TiB free.
+Root free space had increased to 105 GiB by this later check; the earlier disk-pressure
+observation above was not rechecked at that time.
+
+| Storage                             | Current allocation | Proposed allocation | Reason                                                          |
+| ----------------------------------- | ------------------ | ------------------- | --------------------------------------------------------------- |
+| SSD models (`virtio8`)              | 500 GiB            | 1,024 GiB           | V4.1 plus comparison checkpoints, with inactive models archived |
+| Bazel output/cache (`virtio4`)      | 150 GiB            | 250 GiB             | Only 4 GiB free at inspection                                   |
+| Root (`scsi0`)                      | 500 GiB            | 500 GiB             | 105 GiB free after cleanup                                      |
+| Games, containerd, Kubernetes disks | Existing           | Existing            | No expansion needed for this program                            |
+
+Rename the model mount from `/var/lib/colibri` to **`/var/lib/llm-models`**,
+with the human-facing description **SSD model storage**. Keep the existing virtual
+disk and ext4 filesystem. The generic name describes all inference runtimes;
+Colibri remains the name of that runtime's checkout and historical experiments.
+Update the NixOS mount and tmpfiles ownership, Terraform description, monitoring
+mountpoint selector and generated manifest, and executable launcher defaults together.
+Stop consumers before changing the mount and verify the new path is mounted before
+resuming downloads or inference. Historical result narratives should retain the paths
+actually used; runnable recipes should use the new path or an explicit override.
+
+The operator is comfortable archiving or deleting unused models. Candidate archives
+are GLM-5.2 Colibri (358 GiB) and the July DeepSeek IQ2 checkpoint (86 GiB).
+Confirm they are unused, copy to HDD and verify before removing the SSD copies;
+retain small run records. With both archived, the 502 GB V4.1 checkpoint and three
+comparison checkpoints total roughly 770 GiB, fitting the proposed model filesystem.
+Use 400 GiB of pool-available SSD space as an operating headroom target, checking it
+before downloads. Existing disks are thin-provisioned: shrinking an empty allocation
+does not recover the nominal size as physical space.
 
 ## Ranked execution plan
 
 1. **Prepare capacity for experiments.** Recheck root disk pressure after the operator's garbage collection;
    if it persists, inspect kubelet eviction signals and remaining consumers before more cleanup. Account for
-   Ollama's two-GPU reservation before trials. Expand the existing model disk after checking Atlas pool capacity:
-   `virtio8`, currently `size = 500`, in <../../terraform/main/proxmox-vms.tf>. Its `/var/lib/colibri`
-   ext4 mount in <../../../nix/nixos/hosts/wyrm2/default.nix> already has `autoResize = true`.
-   Size the expansion for retained checkpoints, the 502 GB V4.1 target, a 120–130 GB comparison, and free-space
-   headroom. Review the Terraform plan for an in-place disk grow; verify guest block-device and filesystem sizes
+   Ollama's two-GPU reservation before trials. Apply the storage recommendation above, refreshing shared pool
+   capacity first. `virtio8` is declared in <../../terraform/main/proxmox-vms.tf>; its ext4 mount in
+   <../../../nix/nixos/hosts/wyrm2/default.nix> already has `autoResize = true`.
+   Review the Terraform plan for in-place disk growth; verify guest block-device and filesystem sizes
    after applying through the normal bootstrap path. Enlarging this disk does not enlarge the separate root disk
-   or Ollama PVC. No resize is included in this documentation PR.
+   or Ollama PVC. No resize, mount rename, or model archival is included in this documentation PR.
    Run a bounded GPU workload with failure monitoring; current idle health is insufficient proof.
 2. **Repair the small measurement harness.** Tokenize exact inputs, reserve output, record termination reason,
    complete reasoning/content/tool output, server timings and wall time. Separate genuinely new prompts, cached prefixes,
