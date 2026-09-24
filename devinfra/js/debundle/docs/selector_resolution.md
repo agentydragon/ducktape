@@ -39,7 +39,10 @@ The resolve is two halves, so `run` can do the first per chunk in parallel:
    (100, `selector_outcome.rs`) is `too_broad`, and a matcher error or a place
    with no owner (an import specifier declares none) is `invalid` — all before
    any solve. A name pin's places are the top-level declarations of its name
-   (of its kind); a pin with none is `no_match`.
+   (of its kind); a pin with none is `no_match`. A `bindings[]` local the
+   template uses without declaring (pinning by use site) is placed at each
+   non-import top-level declaration of the identifier it bound in that match;
+   a match where it bound none, or two identifiers, yields no row.
 3. **Program.** Name pins and relational selectors lower to relation atoms over
    chunk facts (`selector_ir_lowering`); candidates enter as one table of rows
    per entity. `all_different` spans every non-pin target of the chunk, with
@@ -107,7 +110,7 @@ directly. Only a reference to an entity still open reaches the solver, as a
 column of the referencer's candidate table over the referenced entity's binding
 variable (`projected_binding_variable`), so equality comes from the shared
 variable. Settling first keeps groups small: with a column for every reference,
-the Tana web spec chained 9,055 targets into one request and the sidecar was
+the largest downstream spec chained 9,055 targets into one request and the sidecar was
 killed for memory (2026-09-24). An entity whose rows all disagree with a
 reference is `conflict` with the entities referenced.
 
@@ -125,6 +128,15 @@ owner or binding another `all_different` target's solved value holds. When it
 had several rows and one survives, its outcome is `resolved` with
 `resolved_by: elimination` naming the claimers. Such a selector silently moves
 when a claimer is edited, so it should be anchored on its own.
+
+## Nearest unclaimed
+
+Once a chunk's outcomes are recorded, each `no_match` template entity gets the
+top-level statements no entity of the chunk resolved to that its template comes
+closest to (`add_nearest_unclaimed`, scored by `source_match::fact_near_misses`,
+bounded by `NEAREST_UNCLAIMED_MIN_SCORE` and `NEAREST_UNCLAIMED_LIMIT`). It
+runs after the solve because "unclaimed" needs every entity's result; only a
+one-statement template that is not all holes is scored.
 
 ## Unsatisfiable programs
 
@@ -196,10 +208,10 @@ resolved all 6,179 `source_match` selectors in 11.1s warmed; the native encoding
 took 7.1s for one, almost all of it model construction (the CP-SAT search of
 that request took 0.02s), and a whole spec timed out at 120s before reaching
 the solver. A finite-domain solver has no index over AST shape, so the encoding
-rebuilds what `selector_match::Index` already provides. Cross-selector
-references do not need it: they are relation atoms over chunk facts, and
-negation and counting (not expressible yet, <selectors.md> § Relational
-selectors) would be too. Measured `-c opt` on a 4-core host, 2026-09-17; the
+rebuilds what `selector_match::Index` already provides. Template references do
+not need it either: they share the referenced entity's binding variable
+(§ Template references), and negation and counting (not expressible yet,
+<selectors.md> § Relational selectors) would be relation atoms over chunk facts. Measured `-c opt` on a 4-core host, 2026-09-17; the
 ratio is the result.
 
 ### Rejected: binding free template names in the root frame
@@ -210,7 +222,7 @@ template. The root frame's bijection then rejects real templates that rename a
 declaration yet reference it by its chunk spelling: in
 `const wrap = () => use(q), readable = () => 1;` against the chunk's
 `const w = () => use(q), q = () => 1;`, the free `q` and the declared `readable`
-both need chunk `q`. On the Tana web spec that turned 16 resolved group bindings
+both need chunk `q`. On the largest downstream spec that turned 16 resolved group bindings
 into `no_match` (2026-09-24). Free names bind in their frame like any other
 reference; the matcher only records what each bound to, and reports a name that
 bound two different identifiers as unbound.

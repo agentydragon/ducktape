@@ -335,7 +335,7 @@ impl Outcome {
     /// declarations (an anonymous statement).
     fn describe(&self, statements: bool) -> String {
         let places = if statements {
-            "top-level statement group"
+            "top-level statement"
         } else {
             "top-level declaration"
         };

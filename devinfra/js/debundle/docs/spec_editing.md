@@ -123,8 +123,8 @@ without `binding_ids`, and rows containing
 `anonymous_statement_owner_ids`; use an explicit move array when you
 need `readable` renames.
 
-`sym` and `module` are required; `readable` is optional. Array order
-controls dedupe (last-wins on duplicate `sym`).
+`sym` and `module` are required; `readable` is optional. Duplicate and
+contradictory entries: <cli.md> § Batch atomicity.
 
 ### Default validation, `--dry-run`, `--no-verify`
 
@@ -153,6 +153,12 @@ debundle bindings rename XOe PluginSettingsAccessor
 name-collision detection (no two bindings share the same readable name
 within the chunk). Mostly a convenience over `bindings assign` for the
 rename-only case. `--no-verify` / `--dry-run` available.
+
+A rename can change other templates: a free identifier naming the old export
+name stops being a reference and alpha-renames, and one naming the new name
+becomes a reference, or makes its template `invalid` when several modules export
+it (<../SPEC.md> § Matching). Rerun source-only `spec validate` afterwards and
+check its outcomes and `templates` listing.
 
 ## Workflow: fixing an atom-split rejection
 

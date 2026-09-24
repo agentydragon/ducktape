@@ -110,8 +110,10 @@ intrinsic method names — while adjacency to an unrelated declaration is exactl
 what a rebuild destroys.
 
 What the relational language cannot express yet: negation, counting/uniqueness,
-transitive reachability, combining a shape and a relation for one target,
-referring to `@Name` from inside a `source_match` body, and sub-owner targets.
+transitive reachability, a relational selector kind combined with a shape in
+one member, and sub-owner targets. A template can already name a relationally
+pinned entity (§ Naming other entities), which covers "has this shape and
+references @Anchor".
 Selectors resolve at owner granularity (one top-level statement), so a property
 inside one declaration's object literal — a getter of a returned accessor
 object — is not a place of its own; pin the whole declaration. Those are open
@@ -491,11 +493,6 @@ statement. Prefer a small selector whose distinguished target is the anonymous
 statement itself, using stable literals/properties or relation atoms to make
 that target unique.
 
-At top level in an anonymous-statement selector, `STMT_LIST;` absorbs a run of
-module-body statements that should be used only as skipped context. Treat
-top-level statement-list holes as a compatibility surface: they pin by source
-order, which a rebuild reorders.
-
 Do not solve ambiguity with opaque hashes. A selector should be readable
 enough for a reviewer to audit and edit. When an anonymous statement needs
 nearby declarations to be unique, prefer a relation-shaped selector or a
@@ -610,9 +607,8 @@ absorbed sequence for cross-occurrence equality.
   ```
 
 - `STMT_LIST;` (or `STMT_LIST_name;`) in a block body matches any run of
-  statements, including none. Top-level `STMT_LIST` support for anonymous
-  statements is a compatibility surface; avoid new selectors that require
-  source-order indexing.
+  statements, including none. An anonymous-statement selector is one top-level
+  statement; a top-level `STMT_LIST` is rejected.
 - `ANYTHING` (or `ANYTHING_name`) as an object-literal shorthand property
   matches any run of key/value properties or spreads. Use it to pin only the
   stable keys needed to make the selector unique, without overpinning generated
