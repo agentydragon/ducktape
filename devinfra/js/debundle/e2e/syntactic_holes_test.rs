@@ -3003,3 +3003,116 @@ export { runtimePrefix, runtimeTarget, runtimeSuffix, makeTarget };
         );
     }
 }
+
+/// Two `source_matches[]` entries in one module whose templates both spell the
+/// same function: one binds the function, the other binds the `WeakMap` that a
+/// multi-declarator `const` declares just before it.
+#[test]
+fn grouped_source_matches_sharing_a_statement_bind_each_target() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const limit = 10, cache = new WeakMap();
+function lookup(n, e) {
+  let t = cache.get(n);
+  if (!t) {
+    t = { [e]: limit };
+    cache.set(n, t);
+  }
+  return t[e];
+}
+console.log(lookup({}, "x"));
+export { lookup };
+"#,
+        vec![logical_module_with_binding_groups(
+            "cache",
+            &[],
+            &[
+                BindingGroup::source_alpha(
+                    r#"function getCached(n, e) {
+  let t = cache.get(n);
+  STMT_LIST;
+}"#,
+                    &[("getCached", "getCached")],
+                ),
+                BindingGroup::source_alpha(
+                    r#"const DECLARATORS, propertyCache = new WeakMap();
+function getCached(n, e) {
+  let t = propertyCache.get(n);
+  STMT_LIST;
+}"#,
+                    &[("propertyCache", "propertyCache")],
+                ),
+            ],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "10\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/cache.js",
+        &["const propertyCache = new WeakMap()", "function getCached"],
+        &["const propertyCache = 10"],
+    );
+}
+
+/// A multi-statement member selector whose target sits after a `DECLARATORS`
+/// run binds the declarator the run leaves pinned, not the first one.
+#[test]
+fn multi_statement_member_target_after_declarators_run_binds_its_declarator() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const limit = 10, cache = new WeakMap();
+function lookup(n) {
+  return cache.get(n) ?? limit;
+}
+console.log(lookup({}));
+export { lookup };
+"#,
+        vec![logical_module(
+            "cache",
+            &[Member::source_alpha_target(
+                "propertyCache",
+                "propertyCache",
+                r#"const DECLARATORS, propertyCache = new WeakMap();
+function lookupCached(n) {
+  return propertyCache.get(n) ?? ANYTHING;
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "10\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/cache.js",
+        &["const propertyCache = new WeakMap()"],
+        &["const propertyCache = 10"],
+    );
+}
+
+/// A floating `ANYTHING = <init>` declarator declares nothing in the selector
+/// but absorbs a declarator in the chunk; the pinned target after it still
+/// binds its own declarator.
+#[test]
+fn target_after_floating_anything_declarator_binds_its_declarator() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const cache = new WeakMap(), limit = 10;
+console.log(cache instanceof WeakMap, limit);
+export { cache, limit };
+"#,
+        vec![logical_module(
+            "limits",
+            &[Member::source_alpha_target(
+                "maxEntries",
+                "maxEntries",
+                r#"const ANYTHING = new WeakMap(), maxEntries = 10;"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "true 10\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/limits.js",
+        &["const maxEntries = 10"],
+        &["const maxEntries = new WeakMap()"],
+    );
+}
