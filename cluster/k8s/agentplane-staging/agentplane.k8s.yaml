@@ -63,6 +63,8 @@ data:
         - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
       HARNESS_CODEX:
         - chatgpt/oai-responses/gpt-6-astra
+        - chatgpt/oai-responses/gpt-6-sol
+        - chatgpt/oai-responses/gpt-6-luna
         - chatgpt/oai-responses/gpt-5.4
         - chatgpt/oai-responses/gpt-5.5
         - chatgpt/oai-responses/gpt-5.6-sol
@@ -74,7 +76,7 @@ data:
       public-coder-codex:
         title: Public coder / Codex
         harness: HARNESS_CODEX
-        model: chatgpt/oai-responses/gpt-5.6-luna
+        model: chatgpt/oai-responses/gpt-6-luna
         cwd: /state/workspaces/{session_id}
         reasoning_effort: medium
         instructions: Work as a public-repository coding agent. Keep private cluster data out of the workspace and outputs.

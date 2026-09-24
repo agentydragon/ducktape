@@ -59,14 +59,14 @@ data:
       HARNESS_CLAUDE:
         - anthropic-api/ant-messages/claude-haiku-4-5-20251001
       HARNESS_CODEX:
-        - chatgpt/oai-responses/gpt-5.6-luna
+        - chatgpt/oai-responses/gpt-6-luna
     agent_egress_api_url: http://agentplane-egress.agentplane-testing.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
     thread_presets:
       public-coder-codex:
         title: Public coder / Codex
         harness: HARNESS_CODEX
-        model: chatgpt/oai-responses/gpt-5.6-luna
+        model: chatgpt/oai-responses/gpt-6-luna
         cwd: /state/workspaces/{session_id}
         reasoning_effort: medium
         instructions: Work as a public-repository coding agent. Keep private cluster data out of the workspace and outputs.

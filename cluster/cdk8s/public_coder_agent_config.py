@@ -52,7 +52,7 @@ from cluster.cdk8s.openclaw_gateway import (
 )
 
 _CODEX_BY_ID = {model.id: model for model in OPENCLAW_CODEX_MODELS}
-_DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-5.6-luna"]
+_DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-6-luna"]
 _TPM_CODEX_MODEL = _CODEX_BY_ID["gpt-6-astra"]
 _CONFIG_MAP_NAME = "public-coder-agent-config"
 _NAME = "public-coder-agent"

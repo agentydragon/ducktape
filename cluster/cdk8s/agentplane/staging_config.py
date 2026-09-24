@@ -32,6 +32,6 @@ def config() -> dict:
         # staging key admits (litellm_key.agentplane_staging in tf/gitops/litellm-keys).
         harness_claude=CLAUDE_CLIENT_MODELS,
         harness_codex=OAI_LANE_MODELS,
-        thread_preset_codex_model=codex_responses_name("gpt-5.6-luna"),
+        thread_preset_codex_model=codex_responses_name("gpt-6-luna"),
         action_policy_sets=list(PUBLIC_CODER_ACTION_POLICY_SETS),
     )
