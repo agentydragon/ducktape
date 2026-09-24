@@ -13,8 +13,6 @@ from cdk8s_plus_34 import (
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
-    PersistentVolumeAccessMode,
-    PersistentVolumeClaim,
     PodSecurityContextProps,
     Protocol,
     Secret,
@@ -44,14 +42,6 @@ class Electric(Construct):
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
         secret = Secret.from_secret_name(self, "postgres-electric-secret", "postgres-electric")
-        claim = PersistentVolumeClaim(
-            self,
-            "storage",
-            metadata=metadata(f"{NAME}-storage", env.namespace),
-            access_modes=[PersistentVolumeAccessMode.READ_WRITE_ONCE],
-            storage=Size.gibibytes(5),
-            storage_class_name="seaweedfs-ovh",
-        )
         deployment = Deployment(
             self,
             "deployment",
@@ -98,7 +88,11 @@ class Electric(Construct):
             ),
             security_context=container_security.WRITABLE_ROOT,
         )
-        container.mount(_STORAGE_DIR, Volume.from_persistent_volume_claim(self, "storage-volume", claim))
+        # Shape logs are a cache of Postgres: a restart starts them empty, and each reader refetches
+        # on its shape's 409.
+        container.mount(
+            _STORAGE_DIR, Volume.from_empty_dir(self, "storage-volume", "storage", size_limit=Size.gibibytes(5))
+        )
         node_scheduling.attract_to_zone(deployment)
         apply_pod_spec_patches(deployment)
 
