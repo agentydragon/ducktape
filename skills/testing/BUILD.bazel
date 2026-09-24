@@ -13,6 +13,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//skills:frontmatter_validation",
+        "@pypi//markdown_it_py",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

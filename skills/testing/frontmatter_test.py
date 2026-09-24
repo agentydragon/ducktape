@@ -2,19 +2,16 @@ import os
 import posixpath
 import re
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest_bazel
+from markdown_it import MarkdownIt
+from markdown_it.token import Token
 
 from skills.frontmatter_validation import validate_skill_frontmatter_text
 
-_FENCE = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
-_INLINE_CODE = re.compile(r"`[^`\n]*`")
-_TARGETS = (
-    re.compile(r"<([^<>\s]+)>"),  # <path.md> autolinks, the repo's link style
-    re.compile(r"\]\(([^()\s]+)\)"),  # [text](path)
-    re.compile(r"^@(\S+)$", re.MULTILINE),  # @path transclusion
-)
+_INCLUDE = re.compile(r"^@(\S+)$", re.MULTILINE)
 
 
 def _archive() -> Path:
@@ -23,14 +20,24 @@ def _archive() -> Path:
     return Path(archive_path)
 
 
+def _walk(tokens: list[Token]) -> Iterator[Token]:
+    for token in tokens:
+        yield token
+        yield from _walk(token.children or [])
+
+
 def _relative_targets(markdown: str) -> set[str]:
-    prose = _INLINE_CODE.sub("", _FENCE.sub("", markdown))
-    targets = {m.group(1) for pattern in _TARGETS for m in pattern.finditer(prose)}
+    """Link and image targets, plus Claude Code `@path` includes (a paragraph line
+    of their own), that name a path relative to the file."""
+    tokens = list(_walk(MarkdownIt().parse(markdown)))
+    targets = {str(t.attrGet("href")) for t in tokens if t.type == "link_open"}
+    targets |= {str(t.attrGet("src")) for t in tokens if t.type == "image"}
+    targets |= {m.group(1) for t in tokens if t.type == "inline" for m in _INCLUDE.finditer(t.content)}
     return {
         path
         for target in targets
         if not re.match(r"^[a-z][a-z0-9+.-]*:", target) and not target.startswith(("#", "/"))
-        if (path := target.split("#", 1)[0]) and ("." in posixpath.basename(path) or path.endswith("/"))
+        if (path := target.split("#", 1)[0])
     }
 
 
