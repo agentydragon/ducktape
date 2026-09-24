@@ -142,7 +142,52 @@ Implications:
 - Resume can merge known UUIDs that do not yet have a local file and lazily hydrate driver-backed
   agent transcripts without overwriting locally written ones.
 
-The broad transcript parser/reducer and the UI/autocompact policy were not recovered in this pass.
+The broad transcript parser/reducer was not recovered in this pass.
+
+### Compaction on the wire (measured 2.1.233; re-verify on 2.1.252)
+
+Measured live on 2.1.233 with a forced auto-compaction (`--autocompact 100000`,
+`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=60`); the frame sequence reproduced across runs at different
+thresholds. No agentplane test pins it yet ([TODO](../native/TODO.md)).
+
+**When it fires.** The `autocompact_state` frame, pushed at boot and whenever the resolution
+changes, is authoritative:
+`{enabled, effective_window, threshold, enforced, source}`. `--autocompact <tokens>` sets the window
+(floor 100k, minus 20k headroom, so `100000` resolves to `effective_window: 80000`) and
+`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` the fraction that trips; `CLAUDE_CODE_MAX_CONTEXT_TOKENS` does not
+move it. **Gotcha:** `get_context_usage.autoCompactThreshold` is wrong whenever the percentage
+override is set — it reported 67000 while `autocompact_state` said 48000, and compaction fired at
+`pre_tokens: 49773`.
+
+**What arrives, in order:**
+
+```text
+control_request  hook_callback PreCompact   { trigger: "auto", custom_instructions: null }
+system/status    { status: "compacting" }
+control_request  hook_callback SessionStart { source: "compact" }
+system/status    { status: null, compact_result: "success" }
+system/compact_boundary
+user             isSynthetic: true — one text block, the summary
+```
+
+- `compact_boundary` carries accounting only: `compact_metadata` (`trigger`, `pre_tokens`,
+  `post_tokens`, `cumulative_dropped_tokens` = pre − post, `duration_ms`,
+  `pre_compact_discovered_tools`) and `logical_parent_uuid`. The latter names a turn in the CLI's
+  on-disk transcript that never appears on the wire, so it cannot relink the stream.
+- **The next frame rewrites the conversation** and looks like a prompt: a `user` frame whose single
+  text block opens "This session is being continued from a previous conversation that ran out of
+  context." `isSynthetic: true` is its only distinguishing mark. A consumer that renders `user`
+  frames as user turns attributes the summary to the operator.
+- `SessionStart` fires here with `source: "compact"`, and never at startup for hooks registered at
+  `initialize` ([hooks](hooks.md)). `PreCompact` arrives before the compaction runs.
+- The schema's `preserved_segment` (for a compaction that keeps a suffix) was absent: this shape
+  summarised everything; the partial shape is unobserved.
+
+**Against the runner's `Native` log** ([SPEC](../runner/SPEC.md) § Harness-originated messages):
+compaction appends and retracts nothing — every earlier frame stays, unedited, with no uuid reused —
+so a replay cursor over the log keeps its meaning. The cut is positional: everything before the
+boundary is out of the model's context. A consumer folding every `user` frame into one
+conversation gets the pre-compaction turns and their summary, the second copy as a user message.
 
 ## Driver-hosted MCP
 
@@ -178,6 +223,9 @@ A future interactive host must preserve these rules:
 
 Returning no decision from a host callback intentionally leaves the request parked. That is useful
 for async approval, but only if Agentplane persists and later redelivers the durable identity.
+Measured on 2.1.220: a `can_use_tool` left unanswered produced no `result` within 60 s, so a host
+must answer every inbound control request, with an error if it implements none
+([TODO](../native/TODO.md): how long the CLI actually waits).
 
 ## Background tasks
 
@@ -221,7 +269,9 @@ Refusal fallback is separate from availability retry. It selects a category/catc
 checks entitlement and model family, prevents retry loops, and may preserve safe partial output.
 When policy needs a choice it parks on `retry_fallback`, `edit_prompt`, or `cancelled`; a newly queued
 prompt cancels that parked dialog. A fallback can be latched for the session or limited to one
-response.
+response. The dialog parks only if the host listed its kind (`refusal_fallback_prompt`) in
+`initialize.supportedDialogKinds`; otherwise it fails closed to the classic refusal error, and the
+first client to attach fixes the set for the session (schema reading, 2.1.220).
 
 Until the runner handles these surfaces, preserve `rate_limit_event`, model-fallback frames, and
 dialog requests as native evidence. Do not translate them into a generic retry or claim that a
