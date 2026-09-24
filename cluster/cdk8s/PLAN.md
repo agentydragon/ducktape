@@ -78,11 +78,10 @@ left is moving each remaining directory once nothing hand-written is left in it:
 
 - **Mixed directories (about 80):** generated files beside SOPS files, `image-pins/`
   Components, a hand-written `kustomization.yaml`, or config inputs. Each moves when its
-  hand-written part is gone or has a home of its own.
+  hand-written part is gone or has a home of its own. `flux/` and `external-creds` stay
+  even then, unless bootstrap changes: they are read through the bootstrap `flux-system`
+  GitRepository, whose `sparseCheckout` (`gotk-sync.yaml`) covers only `cluster/k8s/`.
 - **Fully generated but pinned in place:**
-  - `agents-mitmproxy`: read through the bootstrap `flux-system` GitRepository, whose
-    `sparseCheckout` (`gotk-sync.yaml`) covers only `cluster/k8s/`. The same holds for
-    `flux/` and `external-creds` once they stop being mixed, unless bootstrap changes.
   - `clickhouse-schema`, `vector-talos-logs`: a `configMapGenerator` reads a
     hand-written input (`schema.sql`, `vector.toml`) from the directory. They move with
     the input, or once it is rendered from Python.
