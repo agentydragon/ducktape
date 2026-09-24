@@ -2,7 +2,7 @@
 
 What `debundle` guarantees when it places spec entities in a bundle chunk. How to
 write selectors: <docs/selectors.md>. How it is implemented:
-<docs/selector_resolution.md>.
+`docs/selector_resolution.md`.
 
 ## Entities
 

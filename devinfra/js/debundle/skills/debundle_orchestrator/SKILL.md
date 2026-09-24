@@ -11,16 +11,16 @@ routes work between specialist roles and owns project-adapter details.
 Shared CLI workflows land here so planner, intake, and worker routing use the
 same command semantics:
 
-@references/cli.md
-@references/spec_editing.md
+@references/docs/cli.md
+@references/docs/spec_editing.md
 
 Read other bundled references as needed:
 
 - `references/workflow.md` for the shared multi-agent workflow
 - `references/README.md` for the crate pitch + Comments
-- `references/bazel_integration.md` for the `debundle_pipeline` rule and profiling targets
+- `references/docs/bazel_integration.md` for the `debundle_pipeline` rule and profiling targets
 - `references/module_shape.md` for when to route to architect or lane workers
-- `references/selectors.md` for the bar selector-stabilization work must meet
+- `references/docs/selectors.md` for the bar selector-stabilization work must meet
 
 ## Adapter Contract
 
@@ -41,7 +41,7 @@ Before dispatching work, collect:
   `debundle spec selector-debt --group-module-depth N --format json` and
   dispatch broad, coherent buckets to lane workers. Prefer buckets that can be
   handled by `debundle spec synthesize-selectors` over hand-authored YAML; the
-  bar their output must meet is `references/selectors.md` § The contract and
+  bar their output must meet is `references/docs/selectors.md` § The contract and
   the ladder.
 - Send seed clusters or reorg tasks to `debundle_lane_worker`.
 - Wake `debundle_architect` periodically or when module shape seems to drift.
@@ -66,7 +66,7 @@ dispatch the integrator.
    maintained exact generated bodies.
 4. Ask intake for dispatchable seeds. Only `landable_today: true` proposals
    are directly dispatchable; what the others need first:
-   `references/cli.md` § `--batch` JSON format.
+   `references/docs/cli.md` § `--batch` JSON format.
 5. Dispatch independent lane workers and any reorg/naming/doc cleanup work.
 6. Integrate green worker branches in batches.
 7. Rerun gate, regen, and adapter smoke tests as required.

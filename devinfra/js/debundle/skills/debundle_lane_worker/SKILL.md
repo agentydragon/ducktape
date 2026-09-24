@@ -12,9 +12,9 @@ the architect.
 Shared CLI workflows land here for binding moves, renames, module merges, and
 atom-split recovery:
 
-@references/cli.md
-@references/selectors.md
-@references/spec_editing.md
+@references/docs/cli.md
+@references/docs/selectors.md
+@references/docs/spec_editing.md
 
 Read other bundled references as needed:
 
@@ -45,16 +45,16 @@ The orchestrator or project adapter provides:
 5. Apply the assignment using the shared guide's CLI workflows. Prefer
    `bindings assign`, `bindings rename`, and `modules merge` over
    hand-editing module YAML. Which proposals `bindings assign --batch` takes
-   directly, and what the others need: `references/cli.md` § `--batch` JSON
+   directly, and what the others need: `references/docs/cli.md` § `--batch` JSON
    format.
 
-   For selector-stabilization assignments, follow `references/selectors.md`
+   For selector-stabilization assignments, follow `references/docs/selectors.md`
    (the ladder and § "Bulk conversion loop"): confirm the bucket with
    `selector-debt`, draft with `synthesize-selectors` dry-run scoped to the
    assignment, minimize before `--apply`, then run `git diff --check`, the
    adapter's gate/regen command and `selector-debt` again to report the debt
    delta. Never modify the upstream/source bundle. A binding Ducktape cannot yet
-   stabilize becomes selector debt (`references/selectors.md` § Selector
+   stabilize becomes selector debt (`references/docs/selectors.md` § Selector
    debt), routed back to Ducktape tooling.
 
 6. Remove now-owned entries from the non-emitting rename/annotation patch

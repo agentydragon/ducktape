@@ -167,7 +167,7 @@ rejection still writes `owner_graph.json` plus the rejection evidence, so
 the `gate` queries work on the rejection that was just reported.
 
 Selector failures follow the keep-going (default) and `--fail-fast` modes of
-<../SPEC.md> § Modes, in the order of <selector_resolution.md> § Order. Broad
+<../SPEC.md> § Modes, in the order of `docs/selector_resolution.md` § Order. Broad
 spec migrations keep going, reporting every failure of a pass in each chunk's
 `selector_diagnostics.json`; use `--fail-fast` only when the first failing
 selector or claim is the useful debugging target (its outcome line is the
