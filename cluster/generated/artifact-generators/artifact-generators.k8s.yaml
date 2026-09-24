@@ -827,8 +827,8 @@ spec:
       name: user-agentydragon
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/vector-talos-logs/**"
-          to: "@artifact/cluster/k8s/vector-talos-logs/"
+        - from: "@repo/cluster/generated/vector-talos-logs/**"
+          to: "@artifact/cluster/generated/vector-talos-logs/"
       name: vector-talos-logs
       originRevision: "@repo"
     - copy:
