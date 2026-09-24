@@ -305,7 +305,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
 
     await page.route("**/evidence?*", hold_old_evidence)
     try:
-        await page.locator('[data-thread-anchor="3"] summary', has_text="Evidence").click()
+        await page.locator('[data-thread-anchor="3"]').get_by_role("button", name="Evidence", exact=True).click()
         async with asyncio.timeout(15):
             await ready.wait()
 
@@ -442,7 +442,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 ).to_be_visible()
                 assert not any("/evidence" in url for url in requests)
                 first_card = page.locator(f'[data-thread-anchor="{first.cursor}"]')
-                await first_card.locator("summary", has_text="Evidence").click()
+                await first_card.get_by_role("button", name="Evidence", exact=True).click()
                 frame_summary = first_card.locator("summary", has_text=f"Observation {observed.cursor} raw frames")
                 await expect(frame_summary).to_be_visible()
                 assert not any("/frames?" in url for url in requests)
@@ -450,13 +450,13 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 frame = first_card.locator("pre")
                 await expect(frame).to_contain_text("test-text-delta")
                 assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
-                await first_card.locator("summary", has_text="Evidence").click()
+                await first_card.get_by_role("button", name="Evidence", exact=True).click()
                 await expect(frame).to_have_count(0)
-                await first_card.locator("summary", has_text="Evidence").click()
+                await first_card.get_by_role("button", name="Evidence", exact=True).click()
                 await expect(frame).to_contain_text("test-text-delta")
                 assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-evidence-reopened.png")
-                await first_card.locator("summary", has_text="Evidence").click()
+                await first_card.get_by_role("button", name="Evidence", exact=True).click()
                 tool_card = page.locator(f'[data-thread-anchor="{tool.cursor}"]')
                 await tool_card.locator("summary", has_text="Arguments").click()
                 await expect(tool_card.get_by_text("{", exact=True)).to_be_visible()
@@ -573,7 +573,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     # Follow the exact semantic observation back into the original archive, including packets
     # that have no item association. The context query ends at the selected observation.
     card = page.locator('[data-thread-anchor="3"]')
-    await card.locator("summary", has_text="Evidence").click()
+    await card.get_by_role("button", name="Evidence", exact=True).click()
     await card.get_by_role("button", name="Inspect chronological context").first.click()
     await expect(observations.last).to_have_attribute("data-debug-observation", "3")
     assert parse_qs(urlsplit([url for url in requests if "/observations" in url][-1]).query)["before_cursor"] == ["4"]
@@ -582,7 +582,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     await page.keyboard.press("Escape")
     await expect(dialog).to_have_count(0)
     await expect(draft).to_have_value("Draft survives debug inspection")
-    await expect(card.locator("details").first).to_have_attribute("open", "")
+    await expect(card.get_by_role("button", name="Evidence", exact=True)).to_have_attribute("aria-expanded", "true")
 
     # Closing the drawer cancels an in-flight real archive response. A response released
     # afterwards must not repopulate the closed view or disturb the thread draft.
@@ -954,13 +954,13 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(page.get_by_role("region", name="Pending commands")).to_have_count(0)
     if raw:
         lifecycle = page.locator(f'[data-thread-anchor="{failed.cursor}"]')
-        await lifecycle.locator("summary", has_text="Evidence").click()
+        await lifecycle.get_by_role("button", name="Evidence", exact=True).click()
         raw_frames = lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames")
         await raw_frames.click()
         frame = raw_frames.locator("..").locator("pre")
         await expect(frame).to_contain_text("unsafe diagnostic")
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
-        await lifecycle.locator("summary", has_text="Evidence").click()
+        await lifecycle.get_by_role("button", name="Evidence", exact=True).click()
 
     await composer.fill("Test distinct input after the failed turn")
     await composer.press("Enter")
@@ -1190,7 +1190,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
 
 
 async def expand_item_evidence(page: Page) -> None:
-    await page.locator('[data-thread-anchor="3"]').locator("summary", has_text="Evidence").click()
+    await page.locator('[data-thread-anchor="3"]').get_by_role("button", name="Evidence", exact=True).click()
 
 
 @pytest.mark.parametrize("replay_after", [4])

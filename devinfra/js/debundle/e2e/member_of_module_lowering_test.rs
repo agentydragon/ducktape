@@ -7,8 +7,7 @@
 //! and the export `member`) are re-minify-invariant, so the whole edge survives a
 //! bundle rebuild.
 //!
-//! Unlike `selector_solve_test` (which exercises the kernel on a synthetic owner
-//! graph), these tests drive the real `debundle` binary: the spec carries
+//! These tests drive the real `debundle` binary: the spec carries
 //! `member_of_module` selectors, the use-site facts are derived from the chunk
 //! AST joined to the import table, and we assert the resolved binding lands in the
 //! right module and the emitted tree runs under Node.

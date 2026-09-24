@@ -96,11 +96,11 @@ parameter cannot bypass approval.
 `list_mcp_servers` is passive: configured catalog plus persisted connection state, with no token
 refresh or downstream call. `get_mcp_server_status` actively resolves credentials and probes one
 server, returning degraded stage/reason data instead of erasing the server. Status never includes
-access/refresh tokens, client secrets, or static-bearer secret references; a configured connection
-whose deploy-time client is absent reports `unprovisioned` rather than disappearing. Reflected
-`approval_mode` and `input_schema` describe the caller-visible proxy shape. Upstream
-`initialize.instructions` pass through rather than being restated here; tool descriptions carry the
-stub semantics because many clients do not display server instructions.
+access/refresh tokens or client secrets; a configured connection whose deploy-time client is absent
+reports `unprovisioned` rather than disappearing. Reflected `approval_mode` and `input_schema`
+describe the caller-visible proxy shape. Upstream `initialize.instructions` pass through rather than
+being restated here; tool descriptions carry the stub semantics because many clients do not display
+server instructions.
 
 Agent admission composes Haku's FastMCP OAuth adapter and configured static credentials through the
 same canonical authority. An explicit invalid bearer never falls back to an ambient browser cookie.
