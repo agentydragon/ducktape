@@ -1,22 +1,19 @@
 //! Lowering from selector IR plus facts into a compact finite-domain problem.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::time::Instant;
 
 use analysis::{OwnerId, StatementOrdinal};
-use chunk_facts::NodeId;
-use regex::Regex;
 use selector_constraint_backend::{
-    AllDifferentReason, AllowedTupleRowsId, BackendValueId, BinaryConstraintKind,
-    CompiledSelectorProblem, CompiledSelectorProblemBuilder, CompiledSelectorProblemError,
-    ConstraintValue, ConstraintVariableId, SharedVariableDomainId, TargetBindingProjection,
+    AllDifferentReason, AllowedTupleRowsId, BackendValueId, CompiledSelectorProblem,
+    CompiledSelectorProblemBuilder, CompiledSelectorProblemError, ConstraintValue,
+    ConstraintVariableId, SharedVariableDomainId, TargetBindingProjection,
 };
 use selector_ir::{
-    ClaimKind, NodeTerm, OrdinalTerm, OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore,
-    SelectorProgram, SelectorProgramError, SelectorProjectedValue, SelectorVariableId, StringTerm,
-    VariableDomain,
+    ClaimKind, OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
+    SelectorProgramError, SelectorProjectedValue, SelectorVariableId, StringTerm, VariableDomain,
 };
 
 pub fn compile_selector_problem(
@@ -65,12 +62,7 @@ pub fn compile_selector_problem_with_summary(
     let target_binding_projections = TargetBindingProjections::from_program(program)?;
 
     let mut model = CompiledSelectorProblemBuilder::default();
-    for domain in [
-        VariableDomain::Owner,
-        VariableDomain::AstNode,
-        VariableDomain::String,
-        VariableDomain::StatementOrdinal,
-    ] {
+    for domain in [VariableDomain::Owner, VariableDomain::String] {
         model.add_full_domain_values(domain, domains.values_for(domain))?;
     }
     domains.discard_full_domain_source_sets();
@@ -257,13 +249,6 @@ fn lower_atom_constraint(
             "owner_kind",
             support_cache,
         ),
-        SelectorAtom::OwnerStatementOrdinal { owner, ordinal } => add_owner_ordinal_allowed_tuples(
-            model,
-            variables,
-            owner,
-            ordinal,
-            &domains.owner_statement_ordinals,
-        ),
         SelectorAtom::OwnerDeclaresBinding { owner, binding } => {
             add_cached_owner_string_indexed_allowed_tuples(
                 model,
@@ -332,182 +317,6 @@ fn lower_atom_constraint(
                 support_cache,
             )
         }
-        SelectorAtom::OwnerTopLevelRoot { owner, root } => add_cached_owner_node_allowed_tuples(
-            model,
-            variables,
-            owner,
-            root,
-            &domains.owner_top_level_roots,
-            "owner_top_level_root",
-            support_cache,
-        ),
-        SelectorAtom::AstKind { node, node_kind } => add_cached_node_string_indexed_allowed_tuples(
-            model,
-            variables,
-            node,
-            &StringTerm::Const {
-                value: node_kind.as_tag().to_string(),
-            },
-            &domains.ast_kinds_index,
-            "ast_kind",
-            support_cache,
-        ),
-        SelectorAtom::AstChild {
-            parent,
-            index,
-            child,
-        } => add_cached_ast_child_indexed_allowed_tuples(
-            model,
-            variables,
-            parent,
-            *index,
-            child,
-            domains,
-            support_cache,
-        ),
-        SelectorAtom::AstSuperClass {
-            class_node,
-            super_class,
-        } => add_cached_node_node_allowed_tuples(
-            model,
-            variables,
-            class_node,
-            super_class,
-            &domains.ast_super_classes,
-            "ast_super_class".to_string(),
-            support_cache,
-        ),
-        SelectorAtom::AstChildCount { node, count } => add_cached_node_indexed_allowed_tuples(
-            model,
-            variables,
-            node,
-            domains
-                .ast_child_counts_by_count
-                .get(count)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]),
-            format!("ast_child_count fact {node:?} {count:?}"),
-            "ast_child_count",
-            *count,
-            support_cache,
-        ),
-        SelectorAtom::AstStringLiteral { node, value } => {
-            add_cached_node_string_indexed_allowed_tuples(
-                model,
-                variables,
-                node,
-                value,
-                &domains.ast_string_literals_index,
-                "ast_string_literal",
-                support_cache,
-            )
-        }
-        SelectorAtom::AstStringLiteralMatchingRegex { node, pattern } => {
-            add_cached_ast_string_literal_matching_regex_allowed_tuples(
-                model,
-                variables,
-                node,
-                pattern,
-                &domains.ast_string_literals,
-                support_cache,
-            )
-        }
-        SelectorAtom::AstNumberLiteral { node, value } => {
-            add_cached_node_string_indexed_allowed_tuples(
-                model,
-                variables,
-                node,
-                value,
-                &domains.ast_number_literals_index,
-                "ast_number_literal",
-                support_cache,
-            )
-        }
-        SelectorAtom::AstBoolLiteral { node, value } => add_cached_node_indexed_allowed_tuples(
-            model,
-            variables,
-            node,
-            domains
-                .ast_bool_literals_by_value
-                .get(value)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]),
-            format!("ast_bool_literal fact {node:?} {value:?}"),
-            "ast_bool_literal",
-            if *value { 1 } else { 0 },
-            support_cache,
-        ),
-        SelectorAtom::AstIdentifierName { node, value } => {
-            add_cached_node_string_indexed_allowed_tuples(
-                model,
-                variables,
-                node,
-                value,
-                &domains.ast_identifier_names_index,
-                "ast_identifier_name",
-                support_cache,
-            )
-        }
-        SelectorAtom::AstPropertyName { node, value } => {
-            add_cached_node_string_indexed_allowed_tuples(
-                model,
-                variables,
-                node,
-                value,
-                &domains.ast_property_names_index,
-                "ast_property_name",
-                support_cache,
-            )
-        }
-        SelectorAtom::AstBareProperty {
-            node,
-            key,
-            identifier,
-            is_binding,
-        } => add_ast_bare_property_allowed_tuples(
-            model,
-            variables,
-            node,
-            key,
-            identifier,
-            *is_binding,
-            &domains.ast_bare_properties,
-            support_cache,
-        ),
-        SelectorAtom::AstOperator { node, value } => add_cached_node_string_indexed_allowed_tuples(
-            model,
-            variables,
-            node,
-            value,
-            &domains.ast_operators_index,
-            "ast_operator",
-            support_cache,
-        ),
-        SelectorAtom::AstRegexLiteral {
-            node,
-            pattern,
-            flags,
-        } => add_ast_regex_literal_allowed_tuples(
-            model,
-            variables,
-            node,
-            pattern,
-            flags,
-            &domains.ast_regex_literals,
-            support_cache,
-        ),
-        SelectorAtom::AstTopLevel { node, ordinal } => add_node_ordinal_allowed_tuples(
-            model,
-            variables,
-            node,
-            ordinal,
-            &domains.ast_top_level_positions,
-        ),
-        SelectorAtom::OrdinalOffset {
-            base,
-            ordinal,
-            offset,
-        } => add_ordinal_offset_constraint(model, variables, base, ordinal, *offset),
         SelectorAtom::ReadsMember {
             owner,
             object: None,
@@ -699,42 +508,6 @@ fn lower_atom_constraint(
                 support_cache,
             )
         }
-        SelectorAtom::Equal { left, right } => model
-            .add_binary_constraint(
-                model_variable(variables, *left)?,
-                model_variable(variables, *right)?,
-                BinaryConstraintKind::Equal,
-            )
-            .map_err(Into::into),
-        SelectorAtom::NotEqual { left, right } => model
-            .add_binary_constraint(
-                model_variable(variables, *left)?,
-                model_variable(variables, *right)?,
-                BinaryConstraintKind::NotEqual,
-            )
-            .map_err(Into::into),
-        SelectorAtom::OrdinalBefore { before, after } => {
-            add_ordinal_before_constraint(model, variables, before, after)
-        }
-        SelectorAtom::AstChildListPattern {
-            parent,
-            start_index,
-            segments,
-            anchored_left,
-            anchored_right,
-        } => add_ast_child_list_pattern_allowed_tuples(
-            model,
-            variables,
-            ChildListPatternTerms {
-                parent,
-                start_index: *start_index,
-                segments,
-                anchored_left: *anchored_left,
-                anchored_right: *anchored_right,
-            },
-            domains,
-            support_cache,
-        ),
     }
 }
 
@@ -742,79 +515,10 @@ fn lower_atom_constraint(
 struct EncodedSupportCache {
     owner_unary: BTreeMap<String, SharedVariableDomainId>,
     string_unary: BTreeMap<String, SharedVariableDomainId>,
-    node_unary: BTreeMap<String, SharedVariableDomainId>,
     owner_string_binary_by_key: BTreeMap<String, AllowedTupleRowsId>,
     owner_owner_binary: BTreeMap<String, AllowedTupleRowsId>,
-    node_node_binary: BTreeMap<String, AllowedTupleRowsId>,
-    node_string_binary_by_key: BTreeMap<String, AllowedTupleRowsId>,
     owner_string_unary: BTreeMap<(&'static str, String), SharedVariableDomainId>,
     owner_string_binary: BTreeMap<&'static str, AllowedTupleRowsId>,
-    owner_node_binary: BTreeMap<&'static str, AllowedTupleRowsId>,
-    node_string_unary: BTreeMap<(&'static str, String), SharedVariableDomainId>,
-    node_string_binary: BTreeMap<&'static str, AllowedTupleRowsId>,
-    node_unary_u32: BTreeMap<(&'static str, u32), SharedVariableDomainId>,
-    ast_child_binary_by_index: BTreeMap<u32, AllowedTupleRowsId>,
-    child_list_segment: BTreeMap<ChildListSegmentCacheKey, AllowedTupleRowsId>,
-    child_list_index_domains: BTreeMap<ChildListIndexDomainCacheKey, SharedVariableDomainId>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct ChildListIndexDomainCacheKey {
-    parent: ChildListIndexDomainParent,
-    start_index: u32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum ChildListIndexDomainParent {
-    Any,
-    Const(NodeId),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum ChildListSegmentCacheKey {
-    Generic(ChildListGenericSegmentCacheKey),
-    Filtered(ChildListFilteredSegmentCacheKey),
-    Repeated(ChildListRepeatedSegmentCacheKey),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct ChildListGenericSegmentCacheKey {
-    start_index: u32,
-    segment_len: usize,
-    has_position: bool,
-    anchored_left: bool,
-    anchored_right: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct ChildListRepeatedSegmentCacheKey {
-    start_index: u32,
-    has_position: bool,
-    anchored_left: bool,
-    anchored_right: bool,
-    parent: ChildListRepeatedTerm,
-    segment: Vec<ChildListRepeatedTerm>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct ChildListFilteredSegmentCacheKey {
-    start_index: u32,
-    has_position: bool,
-    anchored_left: bool,
-    anchored_right: bool,
-    parent: ChildListFilteredTerm,
-    segment: Vec<ChildListFilteredTerm>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum ChildListFilteredTerm {
-    Const(NodeId),
-    Var(usize),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum ChildListRepeatedTerm {
-    Var(usize),
 }
 
 fn restrict_owner_variable_to_candidates(
@@ -825,20 +529,6 @@ fn restrict_owner_variable_to_candidates(
     let values = candidates
         .into_iter()
         .map(|owner| model.intern_owner(owner))
-        .collect::<Result<Vec<_>, _>>()?;
-    model
-        .restrict_variable_to_encoded_values(variable, values)
-        .map_err(Into::into)
-}
-
-fn restrict_node_variable_to_candidates(
-    model: &mut CompiledSelectorProblemBuilder,
-    variable: ConstraintVariableId,
-    candidates: impl IntoIterator<Item = NodeId>,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    let values = candidates
-        .into_iter()
-        .map(|node| model.intern_ast_node(node))
         .collect::<Result<Vec<_>, _>>()?;
     model
         .restrict_variable_to_encoded_values(variable, values)
@@ -874,24 +564,6 @@ fn cached_owner_domain(
         .collect::<Result<Vec<_>, _>>()?;
     let domain_id = model.intern_shared_sparse_variable_domain(VariableDomain::Owner, values)?;
     support_cache.owner_unary.insert(key, domain_id);
-    Ok(domain_id)
-}
-
-fn cached_node_domain(
-    model: &mut CompiledSelectorProblemBuilder,
-    support_cache: &mut EncodedSupportCache,
-    key: String,
-    nodes: impl IntoIterator<Item = NodeId>,
-) -> Result<SharedVariableDomainId, CompiledSelectorProblemBuildError> {
-    if let Some(domain_id) = support_cache.node_unary.get(&key) {
-        return Ok(*domain_id);
-    }
-    let values = nodes
-        .into_iter()
-        .map(|node| model.intern_ast_node(node))
-        .collect::<Result<Vec<_>, _>>()?;
-    let domain_id = model.intern_shared_sparse_variable_domain(VariableDomain::AstNode, values)?;
-    support_cache.node_unary.insert(key, domain_id);
     Ok(domain_id)
 }
 
@@ -1046,331 +718,6 @@ fn add_cached_owner_string_indexed_allowed_tuples(
     }
 }
 
-fn add_node_string_indexed_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    node: &NodeTerm,
-    string: &StringTerm,
-    index: &NodeStringIndex,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    match (node, string) {
-        (NodeTerm::Const { node }, StringTerm::Const { value }) => {
-            index.contains(*node, value).then_some(()).ok_or_else(|| {
-                CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
-                    atom: format!("node/string fact {node:?} {value:?}"),
-                }
-            })
-        }
-        (NodeTerm::Var { id }, StringTerm::Const { value }) => {
-            let variable = model_variable(variables, *id)?;
-            restrict_node_variable_to_candidates(
-                model,
-                variable,
-                index
-                    .nodes_by_value
-                    .get(value)
-                    .into_iter()
-                    .flatten()
-                    .copied(),
-            )
-        }
-        (NodeTerm::Const { node }, StringTerm::Var { id }) => {
-            let variable = model_variable(variables, *id)?;
-            restrict_string_variable_to_candidates(
-                model,
-                variable,
-                index
-                    .values_by_node
-                    .get(node)
-                    .into_iter()
-                    .flatten()
-                    .map(String::as_str),
-            )
-        }
-        (NodeTerm::Var { id: node_id }, StringTerm::Var { id: string_id }) => {
-            let constraint_variables = [
-                model_variable(variables, *node_id)?,
-                model_variable(variables, *string_id)?,
-            ];
-            let tuples = index
-                .rows
-                .iter()
-                .map(|(fact_node, fact_string)| {
-                    Ok((
-                        model.intern_ast_node(*fact_node)?,
-                        model.intern_string(fact_string)?,
-                    ))
-                })
-                .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-            add_encoded_allowed_binary_tuple_set(model, constraint_variables, tuples)
-        }
-    }
-}
-
-fn add_cached_node_string_indexed_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    node: &NodeTerm,
-    string: &StringTerm,
-    index: &NodeStringIndex,
-    relation: &'static str,
-    support_cache: &mut EncodedSupportCache,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    match (node, string) {
-        (NodeTerm::Var { id }, StringTerm::Const { value }) => {
-            let variable = model_variable(variables, *id)?;
-            let key = (relation, value.clone());
-            let domain_id = if let Some(domain_id) = support_cache.node_string_unary.get(&key) {
-                *domain_id
-            } else {
-                let values = index
-                    .nodes_by_value
-                    .get(value)
-                    .into_iter()
-                    .flatten()
-                    .map(|node| model.intern_ast_node(*node))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let domain_id =
-                    model.intern_shared_sparse_variable_domain(VariableDomain::AstNode, values)?;
-                support_cache.node_string_unary.insert(key, domain_id);
-                domain_id
-            };
-            model
-                .restrict_variable_to_shared_sparse_domain(variable, domain_id)
-                .map_err(Into::into)
-        }
-        (NodeTerm::Var { id: node_id }, StringTerm::Var { id: string_id }) => {
-            let constraint_variables = [
-                model_variable(variables, *node_id)?,
-                model_variable(variables, *string_id)?,
-            ];
-            if constraint_variables[0] == constraint_variables[1] {
-                return add_node_string_indexed_allowed_tuples(
-                    model, variables, node, string, index,
-                );
-            }
-            let row_set = if let Some(row_set) = support_cache.node_string_binary.get(relation) {
-                *row_set
-            } else {
-                let tuples = index
-                    .rows
-                    .iter()
-                    .map(|(fact_node, fact_string)| {
-                        Ok((
-                            model.intern_ast_node(*fact_node)?,
-                            model.intern_string(fact_string)?,
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-                let row_set = model.intern_encoded_allowed_binary_row_set(
-                    constraint_variables,
-                    [VariableDomain::AstNode, VariableDomain::String],
-                    tuples,
-                )?;
-                support_cache.node_string_binary.insert(relation, row_set);
-                row_set
-            };
-            model
-                .add_encoded_allowed_row_set(constraint_variables.to_vec(), row_set)
-                .map(|_| ())
-                .map_err(Into::into)
-        }
-        _ => add_node_string_indexed_allowed_tuples(model, variables, node, string, index),
-    }
-}
-
-fn add_node_indexed_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    node: &NodeTerm,
-    candidates: &[NodeId],
-    atom: String,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    match node {
-        NodeTerm::Var { id } => {
-            let variable = model_variable(variables, *id)?;
-            restrict_node_variable_to_candidates(model, variable, candidates.iter().copied())
-        }
-        NodeTerm::Const { node } => candidates
-            .binary_search(node)
-            .is_ok()
-            .then_some(())
-            .ok_or(CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied { atom }),
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn add_cached_node_indexed_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    node: &NodeTerm,
-    candidates: &[NodeId],
-    atom: String,
-    relation: &'static str,
-    value: u32,
-    support_cache: &mut EncodedSupportCache,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    match node {
-        NodeTerm::Var { id } => {
-            let variable = model_variable(variables, *id)?;
-            let key = (relation, value);
-            let domain_id = if let Some(domain_id) = support_cache.node_unary_u32.get(&key) {
-                *domain_id
-            } else {
-                let values = candidates
-                    .iter()
-                    .copied()
-                    .map(|node| model.intern_ast_node(node))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let domain_id =
-                    model.intern_shared_sparse_variable_domain(VariableDomain::AstNode, values)?;
-                support_cache.node_unary_u32.insert(key, domain_id);
-                domain_id
-            };
-            model
-                .restrict_variable_to_shared_sparse_domain(variable, domain_id)
-                .map_err(Into::into)
-        }
-        NodeTerm::Const { .. } => {
-            add_node_indexed_allowed_tuples(model, variables, node, candidates, atom)
-        }
-    }
-}
-
-fn add_ast_child_indexed_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    parent: &NodeTerm,
-    child_index: u32,
-    child: &NodeTerm,
-    domains: &FactDomains,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    match (parent, child) {
-        (NodeTerm::Const { node: parent }, NodeTerm::Const { node: child }) => domains
-            .ast_children_by_parent_index
-            .get(&(*parent, child_index))
-            .is_some_and(|children| children.binary_search(child).is_ok())
-            .then_some(())
-            .ok_or_else(
-                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
-                    atom: format!("ast_child fact {parent:?} {child_index} {child:?}"),
-                },
-            ),
-        (NodeTerm::Const { node: parent }, NodeTerm::Var { id }) => {
-            let variable = model_variable(variables, *id)?;
-            restrict_node_variable_to_candidates(
-                model,
-                variable,
-                domains
-                    .ast_children_by_parent_index
-                    .get(&(*parent, child_index))
-                    .into_iter()
-                    .flatten()
-                    .copied(),
-            )
-        }
-        (NodeTerm::Var { id }, NodeTerm::Const { node: child }) => {
-            let variable = model_variable(variables, *id)?;
-            restrict_node_variable_to_candidates(
-                model,
-                variable,
-                domains
-                    .ast_child_parents_by_child_index
-                    .get(&(*child, child_index))
-                    .into_iter()
-                    .flatten()
-                    .copied(),
-            )
-        }
-        (NodeTerm::Var { id: parent_id }, NodeTerm::Var { id: child_id }) => {
-            let constraint_variables = [
-                model_variable(variables, *parent_id)?,
-                model_variable(variables, *child_id)?,
-            ];
-            let tuples = domains
-                .ast_children_by_index
-                .get(&child_index)
-                .into_iter()
-                .flatten()
-                .map(|(fact_parent, fact_child)| {
-                    Ok((
-                        model.intern_ast_node(*fact_parent)?,
-                        model.intern_ast_node(*fact_child)?,
-                    ))
-                })
-                .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-            add_encoded_allowed_binary_tuple_set(model, constraint_variables, tuples)
-        }
-    }
-}
-
-fn add_cached_ast_child_indexed_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    parent: &NodeTerm,
-    child_index: u32,
-    child: &NodeTerm,
-    domains: &FactDomains,
-    support_cache: &mut EncodedSupportCache,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    match (parent, child) {
-        (NodeTerm::Var { id: parent_id }, NodeTerm::Var { id: child_id }) => {
-            let constraint_variables = [
-                model_variable(variables, *parent_id)?,
-                model_variable(variables, *child_id)?,
-            ];
-            if constraint_variables[0] == constraint_variables[1] {
-                return add_ast_child_indexed_allowed_tuples(
-                    model,
-                    variables,
-                    parent,
-                    child_index,
-                    child,
-                    domains,
-                );
-            }
-            let row_set =
-                if let Some(row_set) = support_cache.ast_child_binary_by_index.get(&child_index) {
-                    *row_set
-                } else {
-                    let tuples = domains
-                        .ast_children_by_index
-                        .get(&child_index)
-                        .into_iter()
-                        .flatten()
-                        .map(|(fact_parent, fact_child)| {
-                            Ok((
-                                model.intern_ast_node(*fact_parent)?,
-                                model.intern_ast_node(*fact_child)?,
-                            ))
-                        })
-                        .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-                    let row_set = model.intern_encoded_allowed_binary_row_set(
-                        constraint_variables,
-                        [VariableDomain::AstNode, VariableDomain::AstNode],
-                        tuples,
-                    )?;
-                    support_cache
-                        .ast_child_binary_by_index
-                        .insert(child_index, row_set);
-                    row_set
-                };
-            model
-                .add_encoded_allowed_row_set(constraint_variables.to_vec(), row_set)
-                .map(|_| ())
-                .map_err(Into::into)
-        }
-        _ => add_ast_child_indexed_allowed_tuples(
-            model,
-            variables,
-            parent,
-            child_index,
-            child,
-            domains,
-        ),
-    }
-}
-
 fn add_cached_owner_string_allowed_tuples(
     model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
@@ -1453,55 +800,6 @@ fn add_cached_owner_string_allowed_tuples(
                 .map_err(Into::into)
         }
     }
-}
-
-fn add_owner_ordinal_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    owner: &OwnerTerm,
-    ordinal: &OrdinalTerm,
-    facts: &BTreeSet<(OwnerId, StatementOrdinal)>,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    let mut constraint_variables = Vec::new();
-    if let OwnerTerm::Var { id } = owner {
-        constraint_variables.push(model_variable(variables, *id)?);
-    }
-    if let OrdinalTerm::Var { id } = ordinal {
-        constraint_variables.push(model_variable(variables, *id)?);
-    }
-    if constraint_variables.is_empty() {
-        return facts
-            .iter()
-            .any(|(fact_owner, fact_ordinal)| {
-                owner_term_matches(owner, *fact_owner)
-                    && ordinal_term_matches(ordinal, *fact_ordinal)
-            })
-            .then_some(())
-            .ok_or_else(
-                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
-                    atom: format!("owner/ordinal fact {owner:?} {ordinal:?}"),
-                },
-            );
-    }
-
-    let tuples = facts
-        .iter()
-        .filter(|(fact_owner, fact_ordinal)| {
-            owner_term_matches(owner, *fact_owner) && ordinal_term_matches(ordinal, *fact_ordinal)
-        })
-        .map(|(fact_owner, fact_ordinal)| {
-            let mut tuple = Vec::with_capacity(constraint_variables.len());
-            if matches!(owner, OwnerTerm::Var { .. }) {
-                tuple.push(model.intern_owner(*fact_owner)?);
-            }
-            if matches!(ordinal, OrdinalTerm::Var { .. }) {
-                tuple.push(model.intern_statement_ordinal(*fact_ordinal)?);
-            }
-            Ok(tuple)
-        })
-        .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-
-    add_encoded_allowed_tuple_set(model, constraint_variables, tuples)
 }
 
 fn add_cached_owner_allowed_tuples(
@@ -1624,1394 +922,6 @@ fn add_cached_owner_owner_allowed_tuples(
     }
 }
 
-fn add_owner_node_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    owner: &OwnerTerm,
-    node: &NodeTerm,
-    facts: &BTreeSet<(OwnerId, NodeId)>,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    let mut constraint_variables = Vec::new();
-    if let OwnerTerm::Var { id } = owner {
-        constraint_variables.push(model_variable(variables, *id)?);
-    }
-    if let NodeTerm::Var { id } = node {
-        constraint_variables.push(model_variable(variables, *id)?);
-    }
-    if constraint_variables.is_empty() {
-        return facts
-            .iter()
-            .any(|(fact_owner, fact_node)| {
-                owner_term_matches(owner, *fact_owner) && node_term_matches(node, *fact_node)
-            })
-            .then_some(())
-            .ok_or_else(
-                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
-                    atom: format!("owner/node fact {owner:?} {node:?}"),
-                },
-            );
-    }
-
-    let tuples = facts
-        .iter()
-        .filter(|(fact_owner, fact_node)| {
-            owner_term_matches(owner, *fact_owner) && node_term_matches(node, *fact_node)
-        })
-        .map(|(fact_owner, fact_node)| {
-            let mut tuple = Vec::with_capacity(constraint_variables.len());
-            if matches!(owner, OwnerTerm::Var { .. }) {
-                tuple.push(model.intern_owner(*fact_owner)?);
-            }
-            if matches!(node, NodeTerm::Var { .. }) {
-                tuple.push(model.intern_ast_node(*fact_node)?);
-            }
-            Ok(tuple)
-        })
-        .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-
-    add_encoded_allowed_tuple_set(model, constraint_variables, tuples)
-}
-
-fn add_cached_owner_node_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    owner: &OwnerTerm,
-    node: &NodeTerm,
-    facts: &BTreeSet<(OwnerId, NodeId)>,
-    relation: &'static str,
-    support_cache: &mut EncodedSupportCache,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    match (owner, node) {
-        (OwnerTerm::Var { id: owner_id }, NodeTerm::Var { id: node_id }) => {
-            let constraint_variables = [
-                model_variable(variables, *owner_id)?,
-                model_variable(variables, *node_id)?,
-            ];
-            if constraint_variables[0] == constraint_variables[1] {
-                return add_owner_node_allowed_tuples(model, variables, owner, node, facts);
-            }
-            let row_set = if let Some(row_set) = support_cache.owner_node_binary.get(relation) {
-                *row_set
-            } else {
-                let tuples = facts
-                    .iter()
-                    .map(|(fact_owner, fact_node)| {
-                        Ok((
-                            model.intern_owner(*fact_owner)?,
-                            model.intern_ast_node(*fact_node)?,
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-                let row_set = model.intern_encoded_allowed_binary_row_set(
-                    constraint_variables,
-                    [VariableDomain::Owner, VariableDomain::AstNode],
-                    tuples,
-                )?;
-                support_cache.owner_node_binary.insert(relation, row_set);
-                row_set
-            };
-            model
-                .add_encoded_allowed_row_set(constraint_variables.to_vec(), row_set)
-                .map(|_| ())
-                .map_err(Into::into)
-        }
-        _ => add_owner_node_allowed_tuples(model, variables, owner, node, facts),
-    }
-}
-
-fn add_cached_node_node_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    left: &NodeTerm,
-    right: &NodeTerm,
-    facts: &BTreeSet<(NodeId, NodeId)>,
-    relation_key: String,
-    support_cache: &mut EncodedSupportCache,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    match (left, right) {
-        (NodeTerm::Const { node: left }, NodeTerm::Const { node: right }) => facts
-            .contains(&(*left, *right))
-            .then_some(())
-            .ok_or_else(
-                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
-                    atom: format!("node/node fact {left:?} {right:?}"),
-                },
-            ),
-        (NodeTerm::Var { id }, NodeTerm::Const { node: right }) => {
-            let variable = model_variable(variables, *id)?;
-            let domain_id = cached_node_domain(
-                model,
-                support_cache,
-                format!("{relation_key}:left-by-right:{right}"),
-                facts.iter().filter_map(|(fact_left, fact_right)| {
-                    (fact_right == right).then_some(*fact_left)
-                }),
-            )?;
-            model
-                .restrict_variable_to_shared_sparse_domain(variable, domain_id)
-                .map_err(Into::into)
-        }
-        (NodeTerm::Const { node: left }, NodeTerm::Var { id }) => {
-            let variable = model_variable(variables, *id)?;
-            let domain_id = cached_node_domain(
-                model,
-                support_cache,
-                format!("{relation_key}:right-by-left:{left}"),
-                facts.iter().filter_map(|(fact_left, fact_right)| {
-                    (fact_left == left).then_some(*fact_right)
-                }),
-            )?;
-            model
-                .restrict_variable_to_shared_sparse_domain(variable, domain_id)
-                .map_err(Into::into)
-        }
-        (NodeTerm::Var { id: left_id }, NodeTerm::Var { id: right_id }) => {
-            let constraint_variables = [
-                model_variable(variables, *left_id)?,
-                model_variable(variables, *right_id)?,
-            ];
-            if constraint_variables[0] == constraint_variables[1] {
-                let domain_id = cached_node_domain(
-                    model,
-                    support_cache,
-                    format!("{relation_key}:same-variable"),
-                    facts
-                        .iter()
-                        .filter_map(|(left, right)| (left == right).then_some(*left)),
-                )?;
-                return model
-                    .restrict_variable_to_shared_sparse_domain(constraint_variables[0], domain_id)
-                    .map_err(Into::into);
-            }
-            let row_set = if let Some(row_set) = support_cache.node_node_binary.get(&relation_key) {
-                *row_set
-            } else {
-                let tuples = facts
-                    .iter()
-                    .map(|(fact_left, fact_right)| {
-                        Ok((
-                            model.intern_ast_node(*fact_left)?,
-                            model.intern_ast_node(*fact_right)?,
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-                let row_set = model.intern_encoded_allowed_binary_row_set(
-                    constraint_variables,
-                    [VariableDomain::AstNode, VariableDomain::AstNode],
-                    tuples,
-                )?;
-                support_cache.node_node_binary.insert(relation_key, row_set);
-                row_set
-            };
-            model
-                .add_encoded_allowed_row_set(constraint_variables.to_vec(), row_set)
-                .map(|_| ())
-                .map_err(Into::into)
-        }
-    }
-}
-
-fn add_cached_ast_string_literal_matching_regex_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    node: &NodeTerm,
-    pattern: &StringTerm,
-    facts: &BTreeSet<(NodeId, String)>,
-    support_cache: &mut EncodedSupportCache,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    let pattern = required_string_term_const(pattern, "ast_string_literal_matching_regex.pattern")?;
-    match node {
-        NodeTerm::Const { node } => Regex::new(&pattern)
-            .ok()
-            .is_some_and(|regex| {
-                facts
-                    .iter()
-                    .any(|(fact_node, value)| fact_node == node && regex.is_match(value))
-            })
-            .then_some(())
-            .ok_or_else(
-                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
-                    atom: format!("ast_string_literal_matching_regex fact {node:?} {pattern:?}"),
-                },
-            ),
-        NodeTerm::Var { id } => {
-            let variable = model_variable(variables, *id)?;
-            let domain_id = cached_node_domain(
-                model,
-                support_cache,
-                format!("ast_string_literal_matching_regex:{pattern}"),
-                Regex::new(&pattern)
-                    .map(|regex| {
-                        facts.iter().filter_map(move |(fact_node, value)| {
-                            regex.is_match(value).then_some(*fact_node)
-                        })
-                    })
-                    .into_iter()
-                    .flatten(),
-            )?;
-            model
-                .restrict_variable_to_shared_sparse_domain(variable, domain_id)
-                .map_err(Into::into)
-        }
-    }
-}
-
-fn add_node_ordinal_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    node: &NodeTerm,
-    ordinal: &OrdinalTerm,
-    facts: &BTreeSet<(NodeId, StatementOrdinal)>,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    let mut constraint_variables = Vec::new();
-    if let NodeTerm::Var { id } = node {
-        constraint_variables.push(model_variable(variables, *id)?);
-    }
-    if let OrdinalTerm::Var { id } = ordinal {
-        constraint_variables.push(model_variable(variables, *id)?);
-    }
-    if constraint_variables.is_empty() {
-        return facts
-            .iter()
-            .any(|(fact_node, fact_ordinal)| {
-                node_term_matches(node, *fact_node) && ordinal_term_matches(ordinal, *fact_ordinal)
-            })
-            .then_some(())
-            .ok_or_else(
-                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
-                    atom: format!("node/ordinal fact {node:?} {ordinal:?}"),
-                },
-            );
-    }
-
-    let tuples = facts
-        .iter()
-        .filter(|(fact_node, fact_ordinal)| {
-            node_term_matches(node, *fact_node) && ordinal_term_matches(ordinal, *fact_ordinal)
-        })
-        .map(|(fact_node, fact_ordinal)| {
-            let mut tuple = Vec::with_capacity(constraint_variables.len());
-            if matches!(node, NodeTerm::Var { .. }) {
-                tuple.push(model.intern_ast_node(*fact_node)?);
-            }
-            if matches!(ordinal, OrdinalTerm::Var { .. }) {
-                tuple.push(model.intern_statement_ordinal(*fact_ordinal)?);
-            }
-            Ok(tuple)
-        })
-        .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-
-    add_encoded_allowed_tuple_set(model, constraint_variables, tuples)
-}
-
-fn add_ordinal_offset_constraint(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    base: &OrdinalTerm,
-    ordinal: &OrdinalTerm,
-    offset: i32,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    let base = ordinal_linear_variable(model, variables, base)?;
-    let ordinal = ordinal_linear_variable(model, variables, ordinal)?;
-    add_linear_offset_equality(model, base, ordinal, i64::from(offset))
-}
-
-fn add_ordinal_before_constraint(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    before: &OrdinalTerm,
-    after: &OrdinalTerm,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    let before = ordinal_linear_variable(model, variables, before)?;
-    let after = ordinal_linear_variable(model, variables, after)?;
-    add_linear_offset_less_or_equal(model, before, after, 1)
-}
-
-fn ordinal_linear_variable(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    term: &OrdinalTerm,
-) -> Result<ConstraintVariableId, CompiledSelectorProblemBuildError> {
-    match term {
-        OrdinalTerm::Var { id } => model_variable(variables, *id),
-        OrdinalTerm::Const { ordinal } => {
-            let value = model.intern_statement_ordinal(*ordinal)?;
-            model
-                .add_internal_integer_variable(
-                    Some(format!("ordinal_const.{}", ordinal.0)),
-                    std::iter::once(value),
-                )
-                .map_err(Into::into)
-        }
-    }
-}
-
-fn add_linear_offset_equality(
-    model: &mut CompiledSelectorProblemBuilder,
-    left: ConstraintVariableId,
-    right: ConstraintVariableId,
-    offset: i64,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    model
-        .add_linear_constraint(vec![left, right], vec![1, -1], offset, vec![0, 0])
-        .map_err(Into::into)
-}
-
-fn add_linear_offset_less_or_equal(
-    model: &mut CompiledSelectorProblemBuilder,
-    left: ConstraintVariableId,
-    right: ConstraintVariableId,
-    offset: i64,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    let lower_bound = linear_offset_less_or_equal_lower_bound(model, left, right, offset)?;
-    model
-        .add_linear_constraint(vec![left, right], vec![1, -1], offset, vec![lower_bound, 0])
-        .map_err(Into::into)
-}
-
-fn linear_offset_less_or_equal_lower_bound(
-    model: &CompiledSelectorProblemBuilder,
-    left: ConstraintVariableId,
-    right: ConstraintVariableId,
-    offset: i64,
-) -> Result<i64, CompiledSelectorProblemBuildError> {
-    let left_values = model.variable_domain_values(left)?;
-    let right_values = model.variable_domain_values(right)?;
-    let Some(min_left) = left_values.first() else {
-        return Ok(0);
-    };
-    let Some(max_right) = right_values.last() else {
-        return Ok(0);
-    };
-    let lower = i128::from(min_left.0) - i128::from(max_right.0) + i128::from(offset);
-    let lower = lower.min(0);
-    i64::try_from(lower).map_err(|_| CompiledSelectorProblemBuildError::UnsupportedAtom {
-        atom: "linear constraint lower bound exceeds i64 range".to_string(),
-    })
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LoweredNodeTerm {
-    Var(ConstraintVariableId),
-    Const(NodeId),
-}
-
-struct ChildListPatternTerms<'a> {
-    parent: &'a NodeTerm,
-    start_index: u32,
-    segments: &'a [Vec<NodeTerm>],
-    anchored_left: bool,
-    anchored_right: bool,
-}
-
-struct LoweredChildListPattern {
-    parent: LoweredNodeTerm,
-    start_index: u32,
-    segments: Vec<Vec<LoweredNodeTerm>>,
-    anchored_left: bool,
-    anchored_right: bool,
-}
-
-impl LoweredChildListPattern {
-    fn from_terms(
-        terms: ChildListPatternTerms<'_>,
-        variables: &[ConstraintVariableId],
-    ) -> Result<Self, CompiledSelectorProblemBuildError> {
-        let parent = lower_node_term(terms.parent, variables)?;
-        let mut segments = Vec::with_capacity(terms.segments.len());
-        for segment in terms.segments {
-            let mut lowered_segment = Vec::with_capacity(segment.len());
-            for child in segment {
-                lowered_segment.push(lower_node_term(child, variables)?);
-            }
-            if !lowered_segment.is_empty() {
-                segments.push(lowered_segment);
-            }
-        }
-        Ok(Self {
-            parent,
-            start_index: terms.start_index,
-            segments,
-            anchored_left: terms.anchored_left,
-            anchored_right: terms.anchored_right,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ChildListSegmentPosition {
-    start: ConstraintVariableId,
-}
-
-fn add_ast_child_list_pattern_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    terms: ChildListPatternTerms<'_>,
-    domains: &FactDomains,
-    support_cache: &mut EncodedSupportCache,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    let pattern = LoweredChildListPattern::from_terms(terms, variables)?;
-
-    if pattern.segments.iter().all(Vec::is_empty) {
-        return Ok(());
-    }
-
-    if pattern.segments.len() == 1 {
-        return add_child_list_segment_constraint(model, &pattern, 0, None, domains, support_cache);
-    }
-
-    let positions =
-        add_child_list_segment_position_variables(model, &pattern, domains, support_cache)?;
-    for (segment_index, position) in positions.iter().copied().enumerate() {
-        add_child_list_segment_constraint(
-            model,
-            &pattern,
-            segment_index,
-            Some(position),
-            domains,
-            support_cache,
-        )?;
-    }
-    for segment_index in 1..pattern.segments.len() {
-        add_linear_offset_less_or_equal(
-            model,
-            positions[segment_index - 1].start,
-            positions[segment_index].start,
-            child_list_segment_length(&pattern.segments[segment_index - 1])?,
-        )?;
-    }
-    Ok(())
-}
-
-fn add_child_list_segment_position_variables(
-    model: &mut CompiledSelectorProblemBuilder,
-    pattern: &LoweredChildListPattern,
-    domains: &FactDomains,
-    support_cache: &mut EncodedSupportCache,
-) -> Result<Vec<ChildListSegmentPosition>, CompiledSelectorProblemBuildError> {
-    let cache_key = child_list_index_domain_cache_key(pattern);
-    let index_domain =
-        if let Some(domain_id) = support_cache.child_list_index_domains.get(&cache_key) {
-            *domain_id
-        } else {
-            let values = child_list_index_domain_values(pattern, domains);
-            let domain_id =
-                model.intern_internal_statement_ordinal_shared_sparse_variable_domain(values)?;
-            support_cache
-                .child_list_index_domains
-                .insert(cache_key, domain_id);
-            domain_id
-        };
-    let mut positions = Vec::with_capacity(pattern.segments.len());
-    for segment_index in 0..pattern.segments.len() {
-        let start = model.add_internal_shared_sparse_variable(
-            index_domain,
-            Some(format!("ast_child_list.segment{segment_index}.start")),
-        )?;
-        positions.push(ChildListSegmentPosition { start });
-    }
-    Ok(positions)
-}
-
-fn child_list_index_domain_cache_key(
-    pattern: &LoweredChildListPattern,
-) -> ChildListIndexDomainCacheKey {
-    let parent = match pattern.parent {
-        LoweredNodeTerm::Var(_) => ChildListIndexDomainParent::Any,
-        LoweredNodeTerm::Const(node) => ChildListIndexDomainParent::Const(node),
-    };
-    ChildListIndexDomainCacheKey {
-        parent,
-        start_index: pattern.start_index,
-    }
-}
-
-fn child_list_segment_length(
-    segment: &[LoweredNodeTerm],
-) -> Result<i64, CompiledSelectorProblemBuildError> {
-    i64::try_from(segment.len()).map_err(|_| CompiledSelectorProblemBuildError::UnsupportedAtom {
-        atom: "child-list segment length exceeds i64 range".to_string(),
-    })
-}
-
-fn child_list_index_domain_values(
-    pattern: &LoweredChildListPattern,
-    domains: &FactDomains,
-) -> Vec<BackendValueId> {
-    let mut values = BTreeSet::new();
-    for candidate_parent in
-        child_list_candidate_parents(pattern.parent, &domains.ast_children_by_parent)
-    {
-        for (index, _child) in child_list_subject_children(
-            &domains.ast_children_by_parent,
-            candidate_parent,
-            pattern.start_index,
-        ) {
-            values.insert(BackendValueId(i64::from(*index)));
-        }
-    }
-    if values.is_empty() {
-        return vec![BackendValueId(0)];
-    }
-    values.into_iter().collect()
-}
-
-fn add_child_list_segment_constraint(
-    model: &mut CompiledSelectorProblemBuilder,
-    pattern: &LoweredChildListPattern,
-    segment_index: usize,
-    position: Option<ChildListSegmentPosition>,
-    domains: &FactDomains,
-    support_cache: &mut EncodedSupportCache,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    let segment = &pattern.segments[segment_index];
-    let mut constraint_variables = position
-        .map(|position| vec![position.start])
-        .unwrap_or_default();
-    constraint_variables.extend(child_list_constraint_variables(
-        std::iter::once(pattern.parent).chain(segment.iter().copied()),
-    ));
-
-    if let Some((cache_key, cache_variables)) =
-        child_list_segment_cache_entry(pattern, segment_index, position, segment)?
-    {
-        let row_set = if let Some(row_set) = support_cache.child_list_segment.get(&cache_key) {
-            *row_set
-        } else {
-            let row_set = build_child_list_segment_row_set(
-                model,
-                &cache_key,
-                cache_variables.as_slice(),
-                domains,
-            )?;
-            support_cache.child_list_segment.insert(cache_key, row_set);
-            row_set
-        };
-        return add_cached_child_list_row_set(model, cache_variables, row_set);
-    }
-
-    let mut tuples = Vec::new();
-    let mut constant_only_match = false;
-
-    for candidate_parent in
-        child_list_candidate_parents(pattern.parent, &domains.ast_children_by_parent)
-    {
-        let subject_children = child_list_subject_children(
-            &domains.ast_children_by_parent,
-            candidate_parent,
-            pattern.start_index,
-        );
-        let Some(latest_start) = subject_children.len().checked_sub(segment.len()) else {
-            continue;
-        };
-        let mut lo = 0;
-        let mut hi = latest_start;
-        if segment_index == 0 && pattern.anchored_left {
-            hi = 0;
-        }
-        if segment_index == pattern.segments.len() - 1 && pattern.anchored_right {
-            lo = latest_start;
-        }
-        if lo > hi {
-            continue;
-        }
-
-        for start in lo..=hi {
-            let mut current = Vec::new();
-            if let Some(position) = position {
-                current.push((
-                    position.start,
-                    BackendValueId(i64::from(subject_children[start].0)),
-                ));
-            }
-            if !bind_node_term(model, pattern.parent, candidate_parent, &mut current)? {
-                continue;
-            }
-            let mut segment_matches = true;
-            for (offset, term) in segment.iter().enumerate() {
-                if !bind_node_term(
-                    model,
-                    *term,
-                    subject_children[start + offset].1,
-                    &mut current,
-                )? {
-                    segment_matches = false;
-                    break;
-                }
-            }
-            if segment_matches {
-                finish_child_list_tuple(
-                    &constraint_variables,
-                    &current,
-                    &mut tuples,
-                    &mut constant_only_match,
-                );
-            }
-        }
-    }
-
-    if constraint_variables.is_empty() {
-        return constant_only_match.then_some(()).ok_or_else(|| {
-            CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
-                atom: "ast_child_list_pattern".to_string(),
-            }
-        });
-    }
-
-    add_encoded_allowed_tuple_set(model, constraint_variables, tuples)
-}
-
-fn child_list_segment_cache_entry(
-    pattern: &LoweredChildListPattern,
-    segment_index: usize,
-    position: Option<ChildListSegmentPosition>,
-    segment: &[LoweredNodeTerm],
-) -> Result<
-    Option<(ChildListSegmentCacheKey, Vec<ConstraintVariableId>)>,
-    CompiledSelectorProblemBuildError,
-> {
-    let terms = std::iter::once(pattern.parent)
-        .chain(segment.iter().copied())
-        .collect::<Vec<_>>();
-    let has_external_variable = position.is_some()
-        || terms
-            .iter()
-            .any(|term| matches!(term, LoweredNodeTerm::Var(_)));
-    if !has_external_variable {
-        return Ok(None);
-    }
-
-    let has_constant = terms
-        .iter()
-        .any(|term| matches!(term, LoweredNodeTerm::Const(_)));
-    if has_constant {
-        let mut variables = position
-            .map(|position| vec![position.start])
-            .unwrap_or_default();
-        let mut variable_columns = variables
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(index, variable)| (variable, index))
-            .collect::<BTreeMap<_, _>>();
-        let parent =
-            child_list_filtered_term(pattern.parent, &mut variables, &mut variable_columns);
-        let segment = segment
-            .iter()
-            .copied()
-            .map(|term| child_list_filtered_term(term, &mut variables, &mut variable_columns))
-            .collect::<Vec<_>>();
-        return Ok(Some((
-            ChildListSegmentCacheKey::Filtered(ChildListFilteredSegmentCacheKey {
-                start_index: pattern.start_index,
-                has_position: position.is_some(),
-                anchored_left: segment_index == 0 && pattern.anchored_left,
-                anchored_right: segment_index == pattern.segments.len() - 1
-                    && pattern.anchored_right,
-                parent,
-                segment,
-            }),
-            variables,
-        )));
-    }
-
-    let mut variables = position
-        .map(|position| vec![position.start])
-        .unwrap_or_default();
-    let mut variable_columns = variables
-        .iter()
-        .copied()
-        .enumerate()
-        .map(|(index, variable)| (variable, index))
-        .collect::<BTreeMap<_, _>>();
-    let parent = child_list_cache_term(pattern.parent, &mut variables, &mut variable_columns);
-    let segment = segment
-        .iter()
-        .copied()
-        .map(|term| child_list_cache_term(term, &mut variables, &mut variable_columns))
-        .collect::<Vec<_>>();
-
-    let has_repeated_variable = terms.len() + usize::from(position.is_some()) > variables.len();
-    if has_repeated_variable {
-        return Ok(Some((
-            ChildListSegmentCacheKey::Repeated(ChildListRepeatedSegmentCacheKey {
-                start_index: pattern.start_index,
-                has_position: position.is_some(),
-                anchored_left: segment_index == 0 && pattern.anchored_left,
-                anchored_right: segment_index == pattern.segments.len() - 1
-                    && pattern.anchored_right,
-                parent,
-                segment,
-            }),
-            variables,
-        )));
-    }
-
-    Ok(Some((
-        ChildListSegmentCacheKey::Generic(ChildListGenericSegmentCacheKey {
-            start_index: pattern.start_index,
-            segment_len: segment.len(),
-            has_position: position.is_some(),
-            anchored_left: segment_index == 0 && pattern.anchored_left,
-            anchored_right: segment_index == pattern.segments.len() - 1 && pattern.anchored_right,
-        }),
-        variables,
-    )))
-}
-
-fn child_list_filtered_term(
-    term: LoweredNodeTerm,
-    variables: &mut Vec<ConstraintVariableId>,
-    variable_columns: &mut BTreeMap<ConstraintVariableId, usize>,
-) -> ChildListFilteredTerm {
-    match term {
-        LoweredNodeTerm::Const(node) => ChildListFilteredTerm::Const(node),
-        LoweredNodeTerm::Var(variable) => {
-            let column = if let Some(column) = variable_columns.get(&variable) {
-                *column
-            } else {
-                let column = variables.len();
-                variables.push(variable);
-                variable_columns.insert(variable, column);
-                column
-            };
-            ChildListFilteredTerm::Var(column)
-        }
-    }
-}
-
-fn child_list_cache_term(
-    term: LoweredNodeTerm,
-    variables: &mut Vec<ConstraintVariableId>,
-    variable_columns: &mut BTreeMap<ConstraintVariableId, usize>,
-) -> ChildListRepeatedTerm {
-    match term {
-        LoweredNodeTerm::Const(_) => {
-            unreachable!("constant terms use the generic child-list cache")
-        }
-        LoweredNodeTerm::Var(variable) => {
-            let column = if let Some(column) = variable_columns.get(&variable) {
-                *column
-            } else {
-                let column = variables.len();
-                variables.push(variable);
-                variable_columns.insert(variable, column);
-                column
-            };
-            ChildListRepeatedTerm::Var(column)
-        }
-    }
-}
-
-fn build_child_list_segment_row_set(
-    model: &mut CompiledSelectorProblemBuilder,
-    cache_key: &ChildListSegmentCacheKey,
-    variables: &[ConstraintVariableId],
-    domains: &FactDomains,
-) -> Result<AllowedTupleRowsId, CompiledSelectorProblemBuildError> {
-    match cache_key {
-        ChildListSegmentCacheKey::Generic(cache_key) => {
-            build_generic_child_list_segment_row_set(model, cache_key, variables, domains)
-        }
-        ChildListSegmentCacheKey::Filtered(cache_key) => {
-            build_filtered_child_list_segment_row_set(model, cache_key, variables, domains)
-        }
-        ChildListSegmentCacheKey::Repeated(cache_key) => {
-            build_repeated_child_list_segment_row_set(model, cache_key, variables, domains)
-        }
-    }
-}
-
-fn build_generic_child_list_segment_row_set(
-    model: &mut CompiledSelectorProblemBuilder,
-    cache_key: &ChildListGenericSegmentCacheKey,
-    variables: &[ConstraintVariableId],
-    domains: &FactDomains,
-) -> Result<AllowedTupleRowsId, CompiledSelectorProblemBuildError> {
-    debug_assert_eq!(
-        variables.len(),
-        usize::from(cache_key.has_position) + 1 + cache_key.segment_len
-    );
-    let mut values = Vec::new();
-    for candidate_parent in domains.ast_children_by_parent.keys().copied() {
-        let subject_children = child_list_subject_children(
-            &domains.ast_children_by_parent,
-            candidate_parent,
-            cache_key.start_index,
-        );
-        let Some(latest_start) = subject_children.len().checked_sub(cache_key.segment_len) else {
-            continue;
-        };
-        let mut lo = 0;
-        let mut hi = latest_start;
-        if cache_key.anchored_left {
-            hi = 0;
-        }
-        if cache_key.anchored_right {
-            lo = latest_start;
-        }
-        if lo > hi {
-            continue;
-        }
-
-        for start in lo..=hi {
-            if cache_key.has_position {
-                values.push(BackendValueId(i64::from(subject_children[start].0)));
-            }
-            values.push(model.intern_ast_node(candidate_parent)?);
-            for offset in 0..cache_key.segment_len {
-                values.push(model.intern_ast_node(subject_children[start + offset].1)?);
-            }
-        }
-    }
-    model
-        .intern_flat_encoded_allowed_row_set_for_variables(variables, values)
-        .map_err(Into::into)
-}
-
-fn build_filtered_child_list_segment_row_set(
-    model: &mut CompiledSelectorProblemBuilder,
-    cache_key: &ChildListFilteredSegmentCacheKey,
-    variables: &[ConstraintVariableId],
-    domains: &FactDomains,
-) -> Result<AllowedTupleRowsId, CompiledSelectorProblemBuildError> {
-    let mut values = Vec::new();
-    for candidate_parent in
-        filtered_child_list_candidate_parents(cache_key.parent, &domains.ast_children_by_parent)
-    {
-        let subject_children = child_list_subject_children(
-            &domains.ast_children_by_parent,
-            candidate_parent,
-            cache_key.start_index,
-        );
-        let Some(latest_start) = subject_children.len().checked_sub(cache_key.segment.len()) else {
-            continue;
-        };
-        let mut lo = 0;
-        let mut hi = latest_start;
-        if cache_key.anchored_left {
-            hi = 0;
-        }
-        if cache_key.anchored_right {
-            lo = latest_start;
-        }
-        if lo > hi {
-            continue;
-        }
-
-        for start in lo..=hi {
-            let mut row = vec![None; variables.len()];
-            if cache_key.has_position {
-                row[0] = Some(BackendValueId(i64::from(subject_children[start].0)));
-            }
-            if !bind_child_list_filtered_term(model, cache_key.parent, candidate_parent, &mut row)?
-            {
-                continue;
-            }
-            let mut segment_matches = true;
-            for (offset, term) in cache_key.segment.iter().copied().enumerate() {
-                if !bind_child_list_filtered_term(
-                    model,
-                    term,
-                    subject_children[start + offset].1,
-                    &mut row,
-                )? {
-                    segment_matches = false;
-                    break;
-                }
-            }
-            if !segment_matches {
-                continue;
-            }
-            if row.iter().all(Option::is_some) {
-                values.extend(row.into_iter().flatten());
-            }
-        }
-    }
-    model
-        .intern_flat_encoded_allowed_row_set_for_variables(variables, values)
-        .map_err(Into::into)
-}
-
-fn build_repeated_child_list_segment_row_set(
-    model: &mut CompiledSelectorProblemBuilder,
-    cache_key: &ChildListRepeatedSegmentCacheKey,
-    variables: &[ConstraintVariableId],
-    domains: &FactDomains,
-) -> Result<AllowedTupleRowsId, CompiledSelectorProblemBuildError> {
-    let mut values = Vec::new();
-    for candidate_parent in domains.ast_children_by_parent.keys().copied() {
-        let subject_children = child_list_subject_children(
-            &domains.ast_children_by_parent,
-            candidate_parent,
-            cache_key.start_index,
-        );
-        let Some(latest_start) = subject_children.len().checked_sub(cache_key.segment.len()) else {
-            continue;
-        };
-        let mut lo = 0;
-        let mut hi = latest_start;
-        if cache_key.anchored_left {
-            hi = 0;
-        }
-        if cache_key.anchored_right {
-            lo = latest_start;
-        }
-        if lo > hi {
-            continue;
-        }
-
-        for start in lo..=hi {
-            let mut row = vec![None; variables.len()];
-            if cache_key.has_position {
-                row[0] = Some(BackendValueId(i64::from(subject_children[start].0)));
-            }
-            if !bind_child_list_repeated_term(model, cache_key.parent, candidate_parent, &mut row)?
-            {
-                continue;
-            }
-            let mut segment_matches = true;
-            for (offset, term) in cache_key.segment.iter().copied().enumerate() {
-                if !bind_child_list_repeated_term(
-                    model,
-                    term,
-                    subject_children[start + offset].1,
-                    &mut row,
-                )? {
-                    segment_matches = false;
-                    break;
-                }
-            }
-            if !segment_matches {
-                continue;
-            }
-            if let Some(row) = row.into_iter().collect::<Option<Vec<_>>>() {
-                values.extend(row);
-            }
-        }
-    }
-    model
-        .intern_flat_encoded_allowed_row_set_for_variables(variables, values)
-        .map_err(Into::into)
-}
-
-fn add_cached_child_list_row_set(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: Vec<ConstraintVariableId>,
-    row_set: AllowedTupleRowsId,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    if let [variable] = variables.as_slice() {
-        let values = model
-            .allowed_tuple_row_set(row_set)
-            .map_err(CompiledSelectorProblemBuildError::from)?
-            .values()
-            .to_vec();
-        return model
-            .restrict_variable_to_encoded_values(*variable, values)
-            .map_err(Into::into);
-    }
-
-    model
-        .add_encoded_allowed_row_set(variables, row_set)
-        .map(|_| ())
-        .map_err(Into::into)
-}
-
-fn bind_child_list_repeated_term(
-    model: &mut CompiledSelectorProblemBuilder,
-    term: ChildListRepeatedTerm,
-    actual: NodeId,
-    row: &mut [Option<BackendValueId>],
-) -> Result<bool, CompiledSelectorProblemError> {
-    match term {
-        ChildListRepeatedTerm::Var(column) => {
-            let value = model.intern_ast_node(actual)?;
-            let Some(current) = row.get_mut(column) else {
-                return Ok(false);
-            };
-            match current {
-                Some(existing) => Ok(*existing == value),
-                None => {
-                    *current = Some(value);
-                    Ok(true)
-                }
-            }
-        }
-    }
-}
-
-fn bind_child_list_filtered_term(
-    model: &mut CompiledSelectorProblemBuilder,
-    term: ChildListFilteredTerm,
-    actual: NodeId,
-    row: &mut [Option<BackendValueId>],
-) -> Result<bool, CompiledSelectorProblemError> {
-    match term {
-        ChildListFilteredTerm::Const(expected) => Ok(expected == actual),
-        ChildListFilteredTerm::Var(column) => {
-            let value = model.intern_ast_node(actual)?;
-            let Some(current) = row.get_mut(column) else {
-                return Ok(false);
-            };
-            match current {
-                Some(existing) => Ok(*existing == value),
-                None => {
-                    *current = Some(value);
-                    Ok(true)
-                }
-            }
-        }
-    }
-}
-
-fn child_list_constraint_variables<I>(terms: I) -> Vec<ConstraintVariableId>
-where
-    I: IntoIterator<Item = LoweredNodeTerm>,
-{
-    let mut variables = Vec::new();
-    let mut seen = BTreeSet::new();
-    for term in terms {
-        if let LoweredNodeTerm::Var(variable) = term
-            && seen.insert(variable)
-        {
-            variables.push(variable);
-        }
-    }
-    variables
-}
-
-fn lower_node_term(
-    term: &NodeTerm,
-    variables: &[ConstraintVariableId],
-) -> Result<LoweredNodeTerm, CompiledSelectorProblemBuildError> {
-    match term {
-        NodeTerm::Var { id } => model_variable(variables, *id).map(LoweredNodeTerm::Var),
-        NodeTerm::Const { node } => Ok(LoweredNodeTerm::Const(*node)),
-    }
-}
-
-fn child_list_candidate_parents(
-    parent: LoweredNodeTerm,
-    ast_children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>,
-) -> Box<dyn Iterator<Item = NodeId> + '_> {
-    match parent {
-        LoweredNodeTerm::Const(node) => Box::new(std::iter::once(node)),
-        LoweredNodeTerm::Var(_) => Box::new(ast_children_by_parent.keys().copied()),
-    }
-}
-
-fn filtered_child_list_candidate_parents(
-    parent: ChildListFilteredTerm,
-    ast_children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>,
-) -> Box<dyn Iterator<Item = NodeId> + '_> {
-    match parent {
-        ChildListFilteredTerm::Const(node) => Box::new(std::iter::once(node)),
-        ChildListFilteredTerm::Var(_) => Box::new(ast_children_by_parent.keys().copied()),
-    }
-}
-
-fn child_list_subject_children(
-    ast_children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>,
-    parent: NodeId,
-    start_index: u32,
-) -> &[(u32, NodeId)] {
-    let Some(children) = ast_children_by_parent.get(&parent) else {
-        return &[];
-    };
-    let start = children.partition_point(|(index, _child)| *index < start_index);
-    &children[start..]
-}
-
-fn bind_node_term(
-    model: &mut CompiledSelectorProblemBuilder,
-    term: LoweredNodeTerm,
-    actual: NodeId,
-    current: &mut Vec<(ConstraintVariableId, BackendValueId)>,
-) -> Result<bool, CompiledSelectorProblemError> {
-    match term {
-        LoweredNodeTerm::Var(variable) => {
-            current.push((variable, model.intern_ast_node(actual)?));
-            Ok(true)
-        }
-        LoweredNodeTerm::Const(expected) => Ok(expected == actual),
-    }
-}
-
-fn finish_child_list_tuple(
-    constraint_variables: &[ConstraintVariableId],
-    current: &[(ConstraintVariableId, BackendValueId)],
-    tuples: &mut Vec<Vec<BackendValueId>>,
-    constant_only_match: &mut bool,
-) {
-    if constraint_variables.is_empty() {
-        *constant_only_match = true;
-        return;
-    }
-    let mut tuple = Vec::with_capacity(constraint_variables.len());
-    for variable in constraint_variables {
-        let mut bound_value = None;
-        for (current_variable, current_value) in current {
-            if current_variable != variable {
-                continue;
-            }
-            match bound_value {
-                Some(existing) if existing != *current_value => {
-                    return;
-                }
-                Some(_) => {}
-                None => bound_value = Some(*current_value),
-            }
-        }
-        let Some(value) = bound_value else {
-            return;
-        };
-        tuple.push(value);
-    }
-    tuples.push(tuple);
-}
-
-#[allow(clippy::too_many_arguments)]
-fn add_ast_bare_property_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    node: &NodeTerm,
-    key: &StringTerm,
-    identifier: &StringTerm,
-    is_binding: bool,
-    facts: &BTreeSet<(NodeId, String, String, bool)>,
-    support_cache: &mut EncodedSupportCache,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    match (node, key, identifier) {
-        (
-            NodeTerm::Var { id: node_id },
-            StringTerm::Const { value: key },
-            StringTerm::Var { id: identifier_id },
-        ) => {
-            let constraint_variables = [
-                model_variable(variables, *node_id)?,
-                model_variable(variables, *identifier_id)?,
-            ];
-            let relation_key = format!("ast_bare_property:{is_binding}:{key}");
-            let row_set =
-                if let Some(row_set) = support_cache.node_string_binary_by_key.get(&relation_key) {
-                    *row_set
-                } else {
-                    let tuples = facts
-                        .iter()
-                        .filter(
-                            |(_fact_node, fact_key, _fact_identifier, fact_is_binding)| {
-                                *fact_is_binding == is_binding && fact_key == key
-                            },
-                        )
-                        .map(
-                            |(fact_node, _fact_key, fact_identifier, _fact_is_binding)| {
-                                Ok((
-                                    model.intern_ast_node(*fact_node)?,
-                                    model.intern_string(fact_identifier)?,
-                                ))
-                            },
-                        )
-                        .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-                    let row_set = model.intern_encoded_allowed_binary_row_set(
-                        constraint_variables,
-                        [VariableDomain::AstNode, VariableDomain::String],
-                        tuples,
-                    )?;
-                    support_cache
-                        .node_string_binary_by_key
-                        .insert(relation_key, row_set);
-                    row_set
-                };
-            return model
-                .add_encoded_allowed_row_set(constraint_variables.to_vec(), row_set)
-                .map(|_| ())
-                .map_err(Into::into);
-        }
-        (
-            NodeTerm::Var { id },
-            StringTerm::Const { value: key },
-            StringTerm::Const { value: identifier },
-        ) => {
-            let variable = model_variable(variables, *id)?;
-            let domain_id = cached_node_domain(
-                model,
-                support_cache,
-                format!("ast_bare_property:{is_binding}:{key}:{identifier}"),
-                facts.iter().filter_map(
-                    |(fact_node, fact_key, fact_identifier, fact_is_binding)| {
-                        (*fact_is_binding == is_binding
-                            && fact_key == key
-                            && fact_identifier == identifier)
-                            .then_some(*fact_node)
-                    },
-                ),
-            )?;
-            return model
-                .restrict_variable_to_shared_sparse_domain(variable, domain_id)
-                .map_err(Into::into);
-        }
-        _ => {}
-    }
-
-    let mut constraint_variables = Vec::new();
-    if let NodeTerm::Var { id } = node {
-        constraint_variables.push(model_variable(variables, *id)?);
-    }
-    if let StringTerm::Var { id } = key {
-        constraint_variables.push(model_variable(variables, *id)?);
-    }
-    if let StringTerm::Var { id } = identifier {
-        constraint_variables.push(model_variable(variables, *id)?);
-    }
-    if constraint_variables.is_empty() {
-        return facts
-            .iter()
-            .any(|(fact_node, fact_key, fact_identifier, fact_is_binding)| {
-                *fact_is_binding == is_binding
-                    && node_term_matches(node, *fact_node)
-                    && string_term_matches(key, fact_key)
-                    && string_term_matches(identifier, fact_identifier)
-            })
-            .then_some(())
-            .ok_or_else(
-                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
-                    atom: format!(
-                        "ast_bare_property fact {node:?} {key:?} {identifier:?} {is_binding}"
-                    ),
-                },
-            );
-    }
-
-    let tuples = facts
-        .iter()
-        .filter(|(fact_node, fact_key, fact_identifier, fact_is_binding)| {
-            *fact_is_binding == is_binding
-                && node_term_matches(node, *fact_node)
-                && string_term_matches(key, fact_key)
-                && string_term_matches(identifier, fact_identifier)
-        })
-        .map(|(fact_node, fact_key, fact_identifier, _)| {
-            let mut tuple = Vec::with_capacity(constraint_variables.len());
-            if matches!(node, NodeTerm::Var { .. }) {
-                tuple.push(model.intern_ast_node(*fact_node)?);
-            }
-            if matches!(key, StringTerm::Var { .. }) {
-                tuple.push(model.intern_string(fact_key)?);
-            }
-            if matches!(identifier, StringTerm::Var { .. }) {
-                tuple.push(model.intern_string(fact_identifier)?);
-            }
-            Ok(tuple)
-        })
-        .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-
-    add_encoded_allowed_tuple_set(model, constraint_variables, tuples)
-}
-
-fn add_ast_regex_literal_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    node: &NodeTerm,
-    pattern: &StringTerm,
-    flags: &StringTerm,
-    facts: &BTreeSet<(NodeId, String, String)>,
-    support_cache: &mut EncodedSupportCache,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    if let (
-        NodeTerm::Var { id },
-        StringTerm::Const { value: pattern },
-        StringTerm::Const { value: flags },
-    ) = (node, pattern, flags)
-    {
-        let variable = model_variable(variables, *id)?;
-        let domain_id = cached_node_domain(
-            model,
-            support_cache,
-            format!("ast_regex_literal:{pattern}:{flags}"),
-            facts
-                .iter()
-                .filter_map(|(fact_node, fact_pattern, fact_flags)| {
-                    (fact_pattern == pattern && fact_flags == flags).then_some(*fact_node)
-                }),
-        )?;
-        return model
-            .restrict_variable_to_shared_sparse_domain(variable, domain_id)
-            .map_err(Into::into);
-    }
-
-    let mut constraint_variables = Vec::new();
-    if let NodeTerm::Var { id } = node {
-        constraint_variables.push(model_variable(variables, *id)?);
-    }
-    if let StringTerm::Var { id } = pattern {
-        constraint_variables.push(model_variable(variables, *id)?);
-    }
-    if let StringTerm::Var { id } = flags {
-        constraint_variables.push(model_variable(variables, *id)?);
-    }
-    if constraint_variables.is_empty() {
-        return facts
-            .iter()
-            .any(|(fact_node, fact_pattern, fact_flags)| {
-                node_term_matches(node, *fact_node)
-                    && string_term_matches(pattern, fact_pattern)
-                    && string_term_matches(flags, fact_flags)
-            })
-            .then_some(())
-            .ok_or_else(
-                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
-                    atom: format!("ast_regex_literal fact {node:?} {pattern:?} {flags:?}"),
-                },
-            );
-    }
-
-    let tuples = facts
-        .iter()
-        .filter(|(fact_node, fact_pattern, fact_flags)| {
-            node_term_matches(node, *fact_node)
-                && string_term_matches(pattern, fact_pattern)
-                && string_term_matches(flags, fact_flags)
-        })
-        .map(|(fact_node, fact_pattern, fact_flags)| {
-            let mut tuple = Vec::with_capacity(constraint_variables.len());
-            if matches!(node, NodeTerm::Var { .. }) {
-                tuple.push(model.intern_ast_node(*fact_node)?);
-            }
-            if matches!(pattern, StringTerm::Var { .. }) {
-                tuple.push(model.intern_string(fact_pattern)?);
-            }
-            if matches!(flags, StringTerm::Var { .. }) {
-                tuple.push(model.intern_string(fact_flags)?);
-            }
-            Ok(tuple)
-        })
-        .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-
-    add_encoded_allowed_tuple_set(model, constraint_variables, tuples)
-}
-
-fn add_encoded_allowed_tuple_set(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: Vec<ConstraintVariableId>,
-    tuples: Vec<Vec<BackendValueId>>,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    let (variables, tuples) = normalize_encoded_allowed_tuple_columns(variables, tuples);
-    if let [variable] = variables.as_slice()
-        && tuples.iter().all(|tuple| tuple.len() == 1)
-    {
-        return model
-            .restrict_variable_to_encoded_values(
-                *variable,
-                tuples.into_iter().map(|mut tuple| tuple.remove(0)),
-            )
-            .map_err(Into::into);
-    }
-    model
-        .add_encoded_allowed_tuples(variables, tuples)
-        .map(|_| ())
-        .map_err(Into::into)
-}
-
 fn add_projected_allowed_tuples(
     model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
@@ -3054,18 +964,14 @@ fn intern_constraint_value(
 ) -> Result<BackendValueId, CompiledSelectorProblemError> {
     match value {
         ConstraintValue::Owner(value) => model.intern_owner(value),
-        ConstraintValue::AstNode(value) => model.intern_ast_node(value),
         ConstraintValue::String(value) => model.intern_string(&value),
-        ConstraintValue::StatementOrdinal(value) => model.intern_statement_ordinal(value),
     }
 }
 
 fn projected_value(value: SelectorProjectedValue) -> ConstraintValue {
     match value {
         SelectorProjectedValue::Owner(value) => ConstraintValue::Owner(value),
-        SelectorProjectedValue::AstNode(value) => ConstraintValue::AstNode(value),
         SelectorProjectedValue::String(value) => ConstraintValue::String(value),
-        SelectorProjectedValue::StatementOrdinal(value) => ConstraintValue::StatementOrdinal(value),
     }
 }
 
@@ -3088,91 +994,6 @@ fn add_encoded_allowed_binary_tuple_set(
         .add_encoded_allowed_binary_tuples(variables, tuples)
         .map(|_| ())
         .map_err(Into::into)
-}
-
-fn normalize_encoded_allowed_tuple_columns(
-    variables: Vec<ConstraintVariableId>,
-    tuples: Vec<Vec<BackendValueId>>,
-) -> (Vec<ConstraintVariableId>, Vec<Vec<BackendValueId>>) {
-    let mut unique_variables = Vec::new();
-    let mut column_by_variable = BTreeMap::new();
-    let mut output_column_by_input = Vec::with_capacity(variables.len());
-    for variable in &variables {
-        let output_column = if let Some(output_column) = column_by_variable.get(variable) {
-            *output_column
-        } else {
-            let output_column = unique_variables.len();
-            unique_variables.push(*variable);
-            column_by_variable.insert(*variable, output_column);
-            output_column
-        };
-        output_column_by_input.push(output_column);
-    }
-
-    if unique_variables.len() == variables.len() {
-        return (variables, tuples);
-    }
-
-    let mut normalized_tuples = HashSet::new();
-    'row: for tuple in tuples {
-        let mut normalized = vec![None; unique_variables.len()];
-        for (value, output_column) in tuple
-            .into_iter()
-            .zip(output_column_by_input.iter().copied())
-        {
-            if let Some(existing) = &normalized[output_column] {
-                if existing != &value {
-                    continue 'row;
-                }
-            } else {
-                normalized[output_column] = Some(value);
-            }
-        }
-        normalized_tuples.insert(
-            normalized
-                .into_iter()
-                .map(|value| value.expect("every output column is referenced"))
-                .collect(),
-        );
-    }
-
-    (unique_variables, normalized_tuples.into_iter().collect())
-}
-
-fn owner_term_matches(term: &OwnerTerm, owner: OwnerId) -> bool {
-    match term {
-        OwnerTerm::Var { .. } => true,
-        OwnerTerm::Const {
-            owner: expected_owner,
-        } => *expected_owner == owner,
-    }
-}
-
-fn node_term_matches(term: &NodeTerm, node: NodeId) -> bool {
-    match term {
-        NodeTerm::Var { .. } => true,
-        NodeTerm::Const {
-            node: expected_node,
-        } => *expected_node == node,
-    }
-}
-
-fn string_term_matches(term: &StringTerm, value: &str) -> bool {
-    match term {
-        StringTerm::Var { .. } => true,
-        StringTerm::Const {
-            value: expected_value,
-        } => expected_value == value,
-    }
-}
-
-fn ordinal_term_matches(term: &OrdinalTerm, ordinal: StatementOrdinal) -> bool {
-    match term {
-        OrdinalTerm::Var { .. } => true,
-        OrdinalTerm::Const {
-            ordinal: expected_ordinal,
-        } => *expected_ordinal == ordinal,
-    }
 }
 
 fn optional_string_term_const(
@@ -3293,51 +1114,6 @@ impl OwnerStringIndex {
 
     fn contains(&self, owner: OwnerId, value: &str) -> bool {
         self.values_by_owner.get(&owner).is_some_and(|values| {
-            values
-                .binary_search_by(|candidate| candidate.as_str().cmp(value))
-                .is_ok()
-        })
-    }
-}
-
-#[derive(Debug, Default)]
-struct NodeStringIndex {
-    nodes_by_value: BTreeMap<String, Vec<NodeId>>,
-    values_by_node: BTreeMap<NodeId, Vec<String>>,
-    rows: Vec<(NodeId, String)>,
-}
-
-impl NodeStringIndex {
-    fn from_facts(facts: &BTreeSet<(NodeId, String)>) -> Self {
-        let mut index = Self::default();
-        for (node, value) in facts {
-            index
-                .nodes_by_value
-                .entry(value.clone())
-                .or_default()
-                .push(*node);
-            index
-                .values_by_node
-                .entry(*node)
-                .or_default()
-                .push(value.clone());
-            index.rows.push((*node, value.clone()));
-        }
-        for nodes in index.nodes_by_value.values_mut() {
-            nodes.sort_unstable();
-            nodes.dedup();
-        }
-        for values in index.values_by_node.values_mut() {
-            values.sort();
-            values.dedup();
-        }
-        index.rows.sort();
-        index.rows.dedup();
-        index
-    }
-
-    fn contains(&self, node: NodeId, value: &str) -> bool {
-        self.values_by_node.get(&node).is_some_and(|values| {
             values
                 .binary_search_by(|candidate| candidate.as_str().cmp(value))
                 .is_ok()
@@ -3631,12 +1407,9 @@ impl RelationSupportCache {
 
 #[derive(Debug, Default)]
 struct DerivedFactRequirements {
-    owner_top_level_roots: bool,
     owner_references_binding: bool,
     references_owner: bool,
     aliases_owner: bool,
-    ast_child_counts: bool,
-    ast_top_level_positions: bool,
     member_reads: bool,
     member_reads_from_binding: bool,
     reads_member_of_owner: bool,
@@ -3662,15 +1435,6 @@ impl DerivedFactRequirements {
                 }
                 SelectorAtom::OwnerAliasesOwner { .. } => {
                     requirements.aliases_owner = true;
-                }
-                SelectorAtom::OwnerTopLevelRoot { .. } => {
-                    requirements.owner_top_level_roots = true;
-                }
-                SelectorAtom::AstChildCount { .. } => {
-                    requirements.ast_child_counts = true;
-                }
-                SelectorAtom::AstTopLevel { .. } => {
-                    requirements.ast_top_level_positions = true;
                 }
                 SelectorAtom::ReadsMember { object: None, .. } => {
                     requirements.member_reads = true;
@@ -3712,27 +1476,9 @@ impl DerivedFactRequirements {
                     requirements.intrinsic_alias_referenced_by = true;
                 }
                 SelectorAtom::OwnerKind { .. }
-                | SelectorAtom::OwnerStatementOrdinal { .. }
                 | SelectorAtom::OwnerDeclaresBinding { .. }
                 | SelectorAtom::ProjectedAllowedTuples { .. }
-                | SelectorAtom::OwnerExportName { .. }
-                | SelectorAtom::AstKind { .. }
-                | SelectorAtom::AstChild { .. }
-                | SelectorAtom::AstSuperClass { .. }
-                | SelectorAtom::AstStringLiteral { .. }
-                | SelectorAtom::AstStringLiteralMatchingRegex { .. }
-                | SelectorAtom::AstNumberLiteral { .. }
-                | SelectorAtom::AstBoolLiteral { .. }
-                | SelectorAtom::AstIdentifierName { .. }
-                | SelectorAtom::AstPropertyName { .. }
-                | SelectorAtom::AstBareProperty { .. }
-                | SelectorAtom::AstOperator { .. }
-                | SelectorAtom::AstRegexLiteral { .. }
-                | SelectorAtom::OrdinalOffset { .. }
-                | SelectorAtom::OrdinalBefore { .. }
-                | SelectorAtom::Equal { .. }
-                | SelectorAtom::NotEqual { .. }
-                | SelectorAtom::AstChildListPattern { .. } => {}
+                | SelectorAtom::OwnerExportName { .. } => {}
             }
         }
         requirements
@@ -3742,32 +1488,15 @@ impl DerivedFactRequirements {
 #[derive(Debug, Default)]
 struct FactDomains {
     owners: BTreeSet<OwnerId>,
-    nodes: BTreeSet<NodeId>,
     strings: BTreeSet<String>,
-    ordinals: BTreeSet<StatementOrdinal>,
     owner_kinds: BTreeSet<(OwnerId, String)>,
     owner_statement_ordinals: BTreeSet<(OwnerId, StatementOrdinal)>,
-    owner_top_level_roots: BTreeSet<(OwnerId, NodeId)>,
     declared_bindings: BTreeSet<(OwnerId, String)>,
     export_names: BTreeSet<(OwnerId, String)>,
     raw_owner_references_binding: BTreeSet<(OwnerId, String, String)>,
     owner_references_binding: BTreeSet<(OwnerId, String, String)>,
     references_owner: BTreeSet<(OwnerId, OwnerId)>,
     aliases_owner: BTreeSet<(OwnerId, OwnerId)>,
-    ast_kinds: BTreeSet<(NodeId, String)>,
-    ast_children_by_parent: BTreeMap<NodeId, Vec<(u32, NodeId)>>,
-    ast_child_counts: BTreeSet<(NodeId, u32)>,
-    ast_super_classes: BTreeSet<(NodeId, NodeId)>,
-    ast_string_literals: BTreeSet<(NodeId, String)>,
-    ast_number_literals: BTreeSet<(NodeId, String)>,
-    ast_bool_literals: BTreeSet<(NodeId, bool)>,
-    ast_identifier_names: BTreeSet<(NodeId, String)>,
-    ast_property_names: BTreeSet<(NodeId, String)>,
-    ast_bare_properties: BTreeSet<(NodeId, String, String, bool)>,
-    ast_operators: BTreeSet<(NodeId, String)>,
-    ast_regex_literals: BTreeSet<(NodeId, String, String)>,
-    ast_top_levels: BTreeSet<(NodeId, StatementOrdinal)>,
-    ast_top_level_positions: BTreeSet<(NodeId, StatementOrdinal)>,
     raw_member_reads: BTreeSet<(StatementOrdinal, Option<String>, String)>,
     member_reads: BTreeSet<(OwnerId, String)>,
     member_reads_from_binding: BTreeSet<(OwnerId, String, String)>,
@@ -3786,17 +1515,6 @@ struct FactDomains {
     owner_kinds_index: OwnerStringIndex,
     declared_bindings_index: OwnerStringIndex,
     export_names_index: OwnerStringIndex,
-    ast_kinds_index: NodeStringIndex,
-    ast_string_literals_index: NodeStringIndex,
-    ast_number_literals_index: NodeStringIndex,
-    ast_identifier_names_index: NodeStringIndex,
-    ast_property_names_index: NodeStringIndex,
-    ast_operators_index: NodeStringIndex,
-    ast_child_counts_by_count: BTreeMap<u32, Vec<NodeId>>,
-    ast_bool_literals_by_value: BTreeMap<bool, Vec<NodeId>>,
-    ast_children_by_index: BTreeMap<u32, Vec<(NodeId, NodeId)>>,
-    ast_children_by_parent_index: BTreeMap<(NodeId, u32), Vec<NodeId>>,
-    ast_child_parents_by_child_index: BTreeMap<(NodeId, u32), Vec<NodeId>>,
     relation_supports: RelationSupportCache,
 }
 
@@ -3805,7 +1523,6 @@ impl FactDomains {
         let mut domains = Self::default();
         let requirements = DerivedFactRequirements::from_program(program);
         domains.add_facts(facts);
-        domains.finalize_indexes();
         domains.add_derived_facts(&requirements);
         domains.add_program_constants(program);
         domains.build_lookup_indexes();
@@ -3816,9 +1533,7 @@ impl FactDomains {
         SelectorModelBuildSummary {
             domain_value_counts: BTreeMap::from([
                 ("owner", self.owners.len()),
-                ("ast_node", self.nodes.len()),
                 ("string", self.strings.len()),
-                ("statement_ordinal", self.ordinals.len()),
             ]),
             stored_relation_counts: BTreeMap::from([
                 ("owner_kind", self.owner_kinds.len()),
@@ -3826,7 +1541,6 @@ impl FactDomains {
                     "owner_statement_ordinal",
                     self.owner_statement_ordinals.len(),
                 ),
-                ("owner_top_level_root", self.owner_top_level_roots.len()),
                 ("declared_binding", self.declared_bindings.len()),
                 ("export_name", self.export_names.len()),
                 (
@@ -3839,21 +1553,6 @@ impl FactDomains {
                 ),
                 ("references_owner", self.references_owner.len()),
                 ("aliases_owner", self.aliases_owner.len()),
-                ("ast_kind", self.ast_kinds.len()),
-                ("ast_child", ast_child_count(&self.ast_children_by_parent)),
-                ("ast_child_parent", self.ast_children_by_parent.len()),
-                ("ast_child_count", self.ast_child_counts.len()),
-                ("ast_super_class", self.ast_super_classes.len()),
-                ("ast_string_literal", self.ast_string_literals.len()),
-                ("ast_number_literal", self.ast_number_literals.len()),
-                ("ast_bool_literal", self.ast_bool_literals.len()),
-                ("ast_identifier_name", self.ast_identifier_names.len()),
-                ("ast_property_name", self.ast_property_names.len()),
-                ("ast_bare_property", self.ast_bare_properties.len()),
-                ("ast_operator", self.ast_operators.len()),
-                ("ast_regex_literal", self.ast_regex_literals.len()),
-                ("ast_top_level", self.ast_top_levels.len()),
-                ("ast_top_level_position", self.ast_top_level_positions.len()),
                 ("raw_member_read", self.raw_member_reads.len()),
                 ("member_read", self.member_reads.len()),
                 (
@@ -3889,15 +1588,12 @@ impl FactDomains {
                 ),
             ]),
             derived_relation_counts: BTreeMap::from([
-                ("owner_top_level_root", self.owner_top_level_roots.len()),
                 (
                     "owner_references_binding",
                     self.owner_references_binding.len(),
                 ),
                 ("references_owner", self.references_owner.len()),
                 ("aliases_owner", self.aliases_owner.len()),
-                ("ast_child_count", self.ast_child_counts.len()),
-                ("ast_top_level_position", self.ast_top_level_positions.len()),
                 ("member_read", self.member_reads.len()),
                 (
                     "member_read_from_binding",
@@ -3939,23 +1635,11 @@ impl FactDomains {
                 .copied()
                 .map(ConstraintValue::Owner)
                 .collect(),
-            VariableDomain::AstNode => self
-                .nodes
-                .iter()
-                .copied()
-                .map(ConstraintValue::AstNode)
-                .collect(),
             VariableDomain::String => self
                 .strings
                 .iter()
                 .cloned()
                 .map(ConstraintValue::String)
-                .collect(),
-            VariableDomain::StatementOrdinal => self
-                .ordinals
-                .iter()
-                .copied()
-                .map(ConstraintValue::StatementOrdinal)
                 .collect(),
         }
     }
@@ -3970,7 +1654,6 @@ impl FactDomains {
                     ..
                 } => {
                     self.add_owner(*owner);
-                    self.add_ordinal(*statement_ordinal);
                     self.add_string(statement_kind);
                     self.owner_kinds.insert((*owner, statement_kind.clone()));
                     self.owner_statement_ordinals
@@ -4005,99 +1688,12 @@ impl FactDomains {
                         edge_kind.clone(),
                     ));
                 }
-                SelectorFact::AstKind {
-                    node, node_kind, ..
-                } => {
-                    self.add_node(*node);
-                    self.ast_kinds
-                        .insert((*node, node_kind.as_tag().to_string()));
-                }
-                SelectorFact::AstStringLiteral { node, value, .. } => {
-                    self.add_node(*node);
-                    self.ast_string_literals.insert((*node, value.clone()));
-                }
-                SelectorFact::AstNumberLiteral { node, value, .. } => {
-                    self.add_node(*node);
-                    self.ast_number_literals.insert((*node, value.clone()));
-                }
-                SelectorFact::AstBoolLiteral { node, value, .. } => {
-                    self.add_node(*node);
-                    self.ast_bool_literals.insert((*node, *value));
-                }
-                SelectorFact::AstIdentifierName { node, value, .. } => {
-                    self.add_node(*node);
-                    self.ast_identifier_names.insert((*node, value.clone()));
-                }
-                SelectorFact::AstPropertyName { node, value, .. } => {
-                    self.add_node(*node);
-                    self.ast_property_names.insert((*node, value.clone()));
-                }
-                SelectorFact::AstBareProperty {
-                    node,
-                    key,
-                    identifier,
-                    is_binding,
-                    ..
-                } => {
-                    self.add_node(*node);
-                    self.ast_bare_properties.insert((
-                        *node,
-                        key.clone(),
-                        identifier.clone(),
-                        *is_binding,
-                    ));
-                }
-                SelectorFact::AstOperator { node, value, .. } => {
-                    self.add_node(*node);
-                    self.ast_operators.insert((*node, value.clone()));
-                }
-                SelectorFact::AstRegexLiteral {
-                    node,
-                    pattern,
-                    flags,
-                    ..
-                } => {
-                    self.add_node(*node);
-                    self.ast_regex_literals
-                        .insert((*node, pattern.clone(), flags.clone()));
-                }
-                SelectorFact::AstTopLevel {
-                    node,
-                    statement_ordinal,
-                    ..
-                } => {
-                    self.add_node(*node);
-                    self.ast_top_levels.insert((*node, *statement_ordinal));
-                }
-                SelectorFact::AstChild {
-                    parent,
-                    index,
-                    child,
-                    ..
-                } => {
-                    self.add_node(*parent);
-                    self.add_node(*child);
-                    self.ast_children_by_parent
-                        .entry(*parent)
-                        .or_default()
-                        .push((*index, *child));
-                }
-                SelectorFact::AstSuperClass {
-                    class_node,
-                    super_class,
-                    ..
-                } => {
-                    self.add_node(*class_node);
-                    self.add_node(*super_class);
-                    self.ast_super_classes.insert((*class_node, *super_class));
-                }
                 SelectorFact::MemberRead {
                     statement_ordinal,
                     object,
                     member,
                     ..
                 } => {
-                    self.add_ordinal(*statement_ordinal);
                     if let Some(object) = object {
                         self.add_string(object);
                     }
@@ -4114,7 +1710,6 @@ impl FactDomains {
                     member,
                     ..
                 } => {
-                    self.add_ordinal(*statement_ordinal);
                     self.add_string(module);
                     self.add_string(member);
                     self.raw_module_member_uses.insert((
@@ -4168,16 +1763,6 @@ impl FactDomains {
                         .insert((binding.clone(), property.clone()));
                 }
             }
-
-            self.add_fact_strings(fact);
-            self.add_fact_ordinals(fact);
-        }
-    }
-
-    fn finalize_indexes(&mut self) {
-        for children in self.ast_children_by_parent.values_mut() {
-            children.sort_unstable();
-            children.dedup();
         }
     }
 
@@ -4185,83 +1770,10 @@ impl FactDomains {
         self.owner_kinds_index = OwnerStringIndex::from_facts(&self.owner_kinds);
         self.declared_bindings_index = OwnerStringIndex::from_facts(&self.declared_bindings);
         self.export_names_index = OwnerStringIndex::from_facts(&self.export_names);
-        self.ast_kinds_index = NodeStringIndex::from_facts(&self.ast_kinds);
-        self.ast_string_literals_index = NodeStringIndex::from_facts(&self.ast_string_literals);
-        self.ast_number_literals_index = NodeStringIndex::from_facts(&self.ast_number_literals);
-        self.ast_identifier_names_index = NodeStringIndex::from_facts(&self.ast_identifier_names);
-        self.ast_property_names_index = NodeStringIndex::from_facts(&self.ast_property_names);
-        self.ast_operators_index = NodeStringIndex::from_facts(&self.ast_operators);
-
-        self.ast_child_counts_by_count.clear();
-        for (node, count) in &self.ast_child_counts {
-            self.ast_child_counts_by_count
-                .entry(*count)
-                .or_default()
-                .push(*node);
-        }
-
-        self.ast_bool_literals_by_value.clear();
-        for (node, value) in &self.ast_bool_literals {
-            self.ast_bool_literals_by_value
-                .entry(*value)
-                .or_default()
-                .push(*node);
-        }
-
-        self.ast_children_by_index.clear();
-        self.ast_children_by_parent_index.clear();
-        self.ast_child_parents_by_child_index.clear();
-        for (parent, children) in &self.ast_children_by_parent {
-            for (index, child) in children {
-                self.ast_children_by_index
-                    .entry(*index)
-                    .or_default()
-                    .push((*parent, *child));
-                self.ast_children_by_parent_index
-                    .entry((*parent, *index))
-                    .or_default()
-                    .push(*child);
-                self.ast_child_parents_by_child_index
-                    .entry((*child, *index))
-                    .or_default()
-                    .push(*parent);
-            }
-        }
-
-        for nodes in self.ast_child_counts_by_count.values_mut() {
-            nodes.sort_unstable();
-            nodes.dedup();
-        }
-        for nodes in self.ast_bool_literals_by_value.values_mut() {
-            nodes.sort_unstable();
-            nodes.dedup();
-        }
-        for pairs in self.ast_children_by_index.values_mut() {
-            pairs.sort_unstable();
-            pairs.dedup();
-        }
-        for children in self.ast_children_by_parent_index.values_mut() {
-            children.sort_unstable();
-            children.dedup();
-        }
-        for parents in self.ast_child_parents_by_child_index.values_mut() {
-            parents.sort_unstable();
-            parents.dedup();
-        }
-
         self.relation_supports = RelationSupportCache::from_domains(self);
     }
 
     fn discard_unneeded_raw_relations(&mut self) {
-        self.ast_kinds.clear();
-        self.ast_child_counts.clear();
-        self.ast_number_literals.clear();
-        self.ast_bool_literals.clear();
-        self.ast_identifier_names.clear();
-        self.ast_property_names.clear();
-        self.ast_operators.clear();
-        self.ast_top_levels.clear();
-
         self.raw_owner_references_binding.clear();
         self.raw_member_reads.clear();
         self.raw_module_member_uses.clear();
@@ -4272,9 +1784,7 @@ impl FactDomains {
 
     fn discard_full_domain_source_sets(&mut self) {
         self.owners.clear();
-        self.nodes.clear();
         self.strings.clear();
-        self.ordinals.clear();
     }
 
     fn add_derived_facts(&mut self, requirements: &DerivedFactRequirements) {
@@ -4286,16 +1796,6 @@ impl FactDomains {
                 .entry(binding.clone())
                 .or_default()
                 .insert(*owner);
-        }
-
-        if requirements.ast_top_level_positions {
-            let mut top_levels = self.ast_top_levels.iter().copied().collect::<Vec<_>>();
-            top_levels.sort_by_key(|(node, ordinal)| (*ordinal, *node));
-            for (position, (node, _ordinal)) in top_levels.into_iter().enumerate() {
-                let position = StatementOrdinal(position);
-                self.add_ordinal(position);
-                self.ast_top_level_positions.insert((node, position));
-            }
         }
 
         if requirements.owner_references_binding {
@@ -4500,97 +2000,6 @@ impl FactDomains {
                 }
             }
         }
-
-        if requirements.ast_child_counts {
-            let mut child_counts = self
-                .nodes
-                .iter()
-                .map(|node| (*node, 0))
-                .collect::<BTreeMap<_, _>>();
-            for (parent, children) in &self.ast_children_by_parent {
-                let count = child_counts.entry(*parent).or_insert(0);
-                for (index, _child) in children {
-                    *count = (*count).max(index + 1);
-                }
-            }
-            self.ast_child_counts
-                .extend(child_counts.into_iter().collect::<BTreeSet<_>>());
-        }
-
-        if requirements.owner_top_level_roots {
-            let mut top_level_nodes_by_ordinal: BTreeMap<StatementOrdinal, Vec<NodeId>> =
-                BTreeMap::new();
-            for (node, ordinal) in &self.ast_top_levels {
-                top_level_nodes_by_ordinal
-                    .entry(*ordinal)
-                    .or_default()
-                    .push(*node);
-            }
-            for (owner, ordinal) in &self.owner_statement_ordinals {
-                if let Some(nodes) = top_level_nodes_by_ordinal.get(ordinal) {
-                    self.owner_top_level_roots
-                        .extend(nodes.iter().map(|node| (*owner, *node)));
-                }
-            }
-
-            let binding_ident_nodes = self
-                .ast_kinds
-                .iter()
-                .filter_map(|(node, kind)| {
-                    (kind == chunk_facts::NodeKind::BindingIdent.as_tag()).then_some(*node)
-                })
-                .collect::<BTreeSet<_>>();
-            let identifier_by_node = self
-                .ast_identifier_names
-                .iter()
-                .map(|(node, value)| (*node, value.as_str()))
-                .collect::<BTreeMap<_, _>>();
-            for (root, _ordinal) in &self.ast_top_levels {
-                let mut stack = vec![*root];
-                while let Some(node) = stack.pop() {
-                    if binding_ident_nodes.contains(&node)
-                        && let Some(binding) = identifier_by_node.get(&node)
-                        && let Some(owners) = owners_by_binding.get(*binding)
-                    {
-                        self.owner_top_level_roots
-                            .extend(owners.iter().map(|owner| (*owner, *root)));
-                    }
-                    if let Some(children) = self.ast_children_by_parent.get(&node) {
-                        stack.extend(children.iter().map(|(_index, child)| *child));
-                    }
-                }
-            }
-        }
-    }
-
-    fn add_fact_strings(&mut self, fact: &SelectorFact) {
-        match fact {
-            SelectorFact::AstStringLiteral { value, .. }
-            | SelectorFact::AstNumberLiteral { value, .. }
-            | SelectorFact::AstIdentifierName { value, .. }
-            | SelectorFact::AstPropertyName { value, .. }
-            | SelectorFact::AstOperator { value, .. } => self.add_string(value),
-            SelectorFact::AstBareProperty {
-                key, identifier, ..
-            } => {
-                self.add_string(key);
-                self.add_string(identifier);
-            }
-            SelectorFact::AstRegexLiteral { pattern, flags, .. } => {
-                self.add_string(pattern);
-                self.add_string(flags);
-            }
-            _ => {}
-        }
-    }
-
-    fn add_fact_ordinals(&mut self, fact: &SelectorFact) {
-        if let SelectorFact::AstTopLevel {
-            statement_ordinal, ..
-        } = fact
-        {
-            self.add_ordinal(*statement_ordinal);
-        }
     }
 
     fn add_program_constants(&mut self, program: &SelectorProgram) {
@@ -4617,14 +2026,6 @@ impl FactDomains {
             } => {
                 self.add_owner_term(owner);
                 self.add_string_term(statement_kind);
-            }
-            SelectorAtom::OwnerStatementOrdinal { owner, ordinal } => {
-                self.add_owner_term(owner);
-                self.add_ordinal_term(ordinal);
-            }
-            SelectorAtom::OwnerTopLevelRoot { owner, root } => {
-                self.add_owner_term(owner);
-                self.add_node_term(root);
             }
             SelectorAtom::OwnerDeclaresBinding { owner, binding } => {
                 self.add_owner_term(owner);
@@ -4663,73 +2064,6 @@ impl FactDomains {
             } => {
                 self.add_owner_term(owner);
                 self.add_owner_term(referenced);
-            }
-            SelectorAtom::AstKind { node, .. }
-            | SelectorAtom::AstChildCount { node, .. }
-            | SelectorAtom::AstBoolLiteral { node, .. } => self.add_node_term(node),
-            SelectorAtom::AstChild { parent, child, .. } => {
-                self.add_node_term(parent);
-                self.add_node_term(child);
-            }
-            SelectorAtom::AstChildListPattern {
-                parent, segments, ..
-            } => {
-                self.add_node_term(parent);
-                for segment in segments {
-                    for child in segment {
-                        self.add_node_term(child);
-                    }
-                }
-            }
-            SelectorAtom::AstSuperClass {
-                class_node,
-                super_class,
-            } => {
-                self.add_node_term(class_node);
-                self.add_node_term(super_class);
-            }
-            SelectorAtom::AstStringLiteral { node, value }
-            | SelectorAtom::AstStringLiteralMatchingRegex {
-                node,
-                pattern: value,
-            }
-            | SelectorAtom::AstNumberLiteral { node, value }
-            | SelectorAtom::AstIdentifierName { node, value }
-            | SelectorAtom::AstPropertyName { node, value }
-            | SelectorAtom::AstOperator { node, value } => {
-                self.add_node_term(node);
-                self.add_string_term(value);
-            }
-            SelectorAtom::AstBareProperty {
-                node,
-                key,
-                identifier,
-                ..
-            } => {
-                self.add_node_term(node);
-                self.add_string_term(key);
-                self.add_string_term(identifier);
-            }
-            SelectorAtom::AstRegexLiteral {
-                node,
-                pattern,
-                flags,
-            } => {
-                self.add_node_term(node);
-                self.add_string_term(pattern);
-                self.add_string_term(flags);
-            }
-            SelectorAtom::AstTopLevel { node, ordinal } => {
-                self.add_node_term(node);
-                self.add_ordinal_term(ordinal);
-            }
-            SelectorAtom::OrdinalOffset { base, ordinal, .. }
-            | SelectorAtom::OrdinalBefore {
-                before: base,
-                after: ordinal,
-            } => {
-                self.add_ordinal_term(base);
-                self.add_ordinal_term(ordinal);
             }
             SelectorAtom::ReadsMember {
                 owner,
@@ -4813,7 +2147,6 @@ impl FactDomains {
                 self.add_string_term(property);
                 self.add_owner_term(referenced_by);
             }
-            SelectorAtom::Equal { .. } | SelectorAtom::NotEqual { .. } => {}
         }
     }
 
@@ -4823,30 +2156,16 @@ impl FactDomains {
         }
     }
 
-    fn add_node_term(&mut self, term: &NodeTerm) {
-        if let NodeTerm::Const { node } = term {
-            self.add_node(*node);
-        }
-    }
-
     fn add_string_term(&mut self, term: &StringTerm) {
         if let StringTerm::Const { value } = term {
             self.add_string(value);
         }
     }
 
-    fn add_ordinal_term(&mut self, term: &OrdinalTerm) {
-        if let OrdinalTerm::Const { ordinal } = term {
-            self.add_ordinal(*ordinal);
-        }
-    }
-
     fn add_projected_value(&mut self, value: &SelectorProjectedValue) {
         match value {
             SelectorProjectedValue::Owner(value) => self.add_owner(*value),
-            SelectorProjectedValue::AstNode(value) => self.add_node(*value),
             SelectorProjectedValue::String(value) => self.add_string(value),
-            SelectorProjectedValue::StatementOrdinal(value) => self.add_ordinal(*value),
         }
     }
 
@@ -4854,36 +2173,18 @@ impl FactDomains {
         self.owners.insert(owner);
     }
 
-    fn add_node(&mut self, node: NodeId) {
-        self.nodes.insert(node);
-    }
-
     fn add_string(&mut self, value: &str) {
         self.strings.insert(value.to_string());
     }
-
-    fn add_ordinal(&mut self, ordinal: StatementOrdinal) {
-        self.ordinals.insert(ordinal);
-    }
-}
-
-fn ast_child_count(ast_children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>) -> usize {
-    ast_children_by_parent
-        .values()
-        .map(|children| children.len())
-        .sum()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use analysis::{ChunkId, OwnerId, StatementOrdinal};
-    use chunk_facts::NodeKind;
     use selector_constraint_backend::{
-        AllowedTupleConstraintId, BackendValueId, BinaryConstraintKind,
-        CompiledAllDifferentConstraint as AllDifferentConstraint,
-        CompiledBinaryConstraint as BinaryConstraint, CompiledLinearConstraint as LinearConstraint,
-        ConstraintValue,
+        AllowedTupleConstraintId, BackendValueId,
+        CompiledAllDifferentConstraint as AllDifferentConstraint, ConstraintValue,
     };
     use selector_ir::ClaimOrigin;
 
@@ -4908,14 +2209,6 @@ mod tests {
         ConstraintValue::String(value.to_string())
     }
 
-    fn ordinal(value: usize) -> ConstraintValue {
-        ConstraintValue::StatementOrdinal(StatementOrdinal(value))
-    }
-
-    fn ast_node(value: u32) -> ConstraintValue {
-        ConstraintValue::AstNode(value)
-    }
-
     fn owner_fact(owner: usize, ordinal: usize, statement_kind: &str) -> SelectorFact {
         SelectorFact::Owner {
             chunk_id: ChunkId(0),
@@ -4931,74 +2224,6 @@ mod tests {
             owner: OwnerId(owner),
             binding: binding.to_string(),
             export_name: None,
-        }
-    }
-
-    fn ast_kind(node: u32, node_kind: NodeKind) -> SelectorFact {
-        SelectorFact::AstKind {
-            chunk_id: ChunkId(0),
-            node,
-            node_kind,
-        }
-    }
-
-    fn ast_child(parent: u32, index: u32, child: u32) -> SelectorFact {
-        SelectorFact::AstChild {
-            chunk_id: ChunkId(0),
-            parent,
-            index,
-            child,
-        }
-    }
-
-    fn ast_string_literal(node: u32, value: &str) -> SelectorFact {
-        SelectorFact::AstStringLiteral {
-            chunk_id: ChunkId(0),
-            node,
-            value: value.to_string(),
-        }
-    }
-
-    fn ast_identifier_name(node: u32, value: &str) -> SelectorFact {
-        SelectorFact::AstIdentifierName {
-            chunk_id: ChunkId(0),
-            node,
-            value: value.to_string(),
-        }
-    }
-
-    fn ast_bare_property(node: u32, key: &str, identifier: &str, is_binding: bool) -> SelectorFact {
-        SelectorFact::AstBareProperty {
-            chunk_id: ChunkId(0),
-            node,
-            key: key.to_string(),
-            identifier: identifier.to_string(),
-            is_binding,
-        }
-    }
-
-    fn ast_regex_literal(node: u32, pattern: &str, flags: &str) -> SelectorFact {
-        SelectorFact::AstRegexLiteral {
-            chunk_id: ChunkId(0),
-            node,
-            pattern: pattern.to_string(),
-            flags: flags.to_string(),
-        }
-    }
-
-    fn ast_super_class(class_node: u32, super_class: u32) -> SelectorFact {
-        SelectorFact::AstSuperClass {
-            chunk_id: ChunkId(0),
-            class_node,
-            super_class,
-        }
-    }
-
-    fn ast_top_level(node: u32, ordinal: usize) -> SelectorFact {
-        SelectorFact::AstTopLevel {
-            chunk_id: ChunkId(0),
-            node,
-            statement_ordinal: StatementOrdinal(ordinal),
         }
     }
 
@@ -5136,33 +2361,6 @@ mod tests {
                 .map(|variable| assignment.get(variable).copied())
                 .collect::<Option<Vec<_>>>()
                 .is_some_and(|row| model.allowed_tuple_rows(constraint).contains(&row))
-        }) && model.binary_constraints.iter().all(|constraint| {
-            let Some(left) = assignment.get(&constraint.left) else {
-                return false;
-            };
-            let Some(right) = assignment.get(&constraint.right) else {
-                return false;
-            };
-            match constraint.kind {
-                BinaryConstraintKind::Equal => left == right,
-                BinaryConstraintKind::NotEqual => left != right,
-                BinaryConstraintKind::OrdinalBefore => left < right,
-            }
-        }) && model.linear_constraints.iter().all(|constraint| {
-            let mut value = i128::from(constraint.offset);
-            for (variable, coefficient) in constraint
-                .variables
-                .iter()
-                .zip(constraint.coefficients.iter())
-            {
-                let Some(variable_value) = assignment.get(variable) else {
-                    return false;
-                };
-                value += i128::from(variable_value.0) * i128::from(*coefficient);
-            }
-            constraint.domain.as_chunks::<2>().0.iter().any(|interval| {
-                i128::from(interval[0]) <= value && value <= i128::from(interval[1])
-            })
         }) && model.all_different.iter().all(|constraint| {
             let mut seen = BTreeSet::new();
             constraint.variables.iter().all(|variable| {
@@ -5210,24 +2408,30 @@ mod tests {
     #[test]
     fn duplicate_variables_in_allowed_tuple_atoms_are_merged() {
         let mut program = SelectorProgram::default();
-        let node = program.add_variable(VariableDomain::AstNode, Some("node".to_string()));
-        program.add_atom(SelectorAtom::AstChild {
-            parent: NodeTerm::Var { id: node },
-            index: 0,
-            child: NodeTerm::Var { id: node },
+        let owner_var = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
+        program.add_atom(SelectorAtom::OwnerReferencesOwner {
+            owner: OwnerTerm::Var { id: owner_var },
+            referenced: OwnerTerm::Var { id: owner_var },
         });
 
         let facts = fact_store(vec![
-            ast_child(10, 0, 10),
-            ast_child(10, 1, 20),
-            ast_child(20, 0, 20),
+            owner_fact(10, 0, "var"),
+            owner_fact(20, 1, "var"),
+            owner_fact(30, 2, "var"),
+            declared_binding(10, "a"),
+            declared_binding(20, "b"),
+            declared_binding(30, "c"),
+            owner_reference(10, "a", "eager_use"),
+            owner_reference(10, "b", "eager_use"),
+            owner_reference(20, "b", "eager_use"),
+            owner_reference(30, "a", "eager_use"),
         ]);
 
         let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
             decoded_variable_domain(&model, ConstraintVariableId(0)),
-            vec![ast_node(10), ast_node(20)]
+            vec![owner(10), owner(20)]
         );
     }
 
@@ -5363,7 +2567,6 @@ mod tests {
             model.target_projections[1].binding_projection,
             Some(TargetBindingProjection::Const("specific".to_string()))
         );
-        assert_eq!(model.binary_constraints, Vec::<BinaryConstraint>::new());
         assert_eq!(model.all_different, Vec::<AllDifferentConstraint>::new());
 
         assert_eq!(
@@ -5397,13 +2600,15 @@ mod tests {
                 value: "widget".to_string(),
             },
         });
-        program.add_atom(SelectorAtom::AstIdentifierName {
-            node: NodeTerm::Const { node: 1 },
-            value: StringTerm::Var { id: left },
+        program.add_atom(SelectorAtom::ProjectedAllowedTuples {
+            variables: vec![left],
+            rows: vec![vec![SelectorProjectedValue::String("a".to_string())]],
+            reason: "left".to_string(),
         });
-        program.add_atom(SelectorAtom::AstIdentifierName {
-            node: NodeTerm::Const { node: 2 },
-            value: StringTerm::Var { id: right },
+        program.add_atom(SelectorAtom::ProjectedAllowedTuples {
+            variables: vec![right],
+            rows: vec![vec![SelectorProjectedValue::String("b".to_string())]],
+            reason: "right".to_string(),
         });
         program.require_variables_all_different(
             vec![left, right],
@@ -5413,8 +2618,6 @@ mod tests {
         let facts = fact_store(vec![
             owner_fact(10, 0, "var"),
             declared_binding(10, "widget"),
-            ast_identifier_name(1, "a"),
-            ast_identifier_name(2, "b"),
         ]);
 
         let model = compile_selector_problem(&program, &facts).unwrap();
@@ -5476,477 +2679,6 @@ mod tests {
                     vec![owner(8), string("other")],
                 ],
             }
-        );
-    }
-
-    #[test]
-    fn ast_fact_atoms_lower_to_allowed_tuple_constraints() {
-        let mut program = SelectorProgram::default();
-        let owner_var = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
-        let root_var = program.add_variable(VariableDomain::AstNode, Some("root".to_string()));
-        let ident_node_var =
-            program.add_variable(VariableDomain::AstNode, Some("ident_node".to_string()));
-        let literal_node_var =
-            program.add_variable(VariableDomain::AstNode, Some("literal_node".to_string()));
-        let prop_node_var =
-            program.add_variable(VariableDomain::AstNode, Some("prop_node".to_string()));
-        let super_node_var =
-            program.add_variable(VariableDomain::AstNode, Some("super_node".to_string()));
-        let ordinal_var = program.add_variable(
-            VariableDomain::StatementOrdinal,
-            Some("ordinal".to_string()),
-        );
-        let next_ordinal_var =
-            program.add_variable(VariableDomain::StatementOrdinal, Some("next".to_string()));
-        let ident_var = program.add_variable(VariableDomain::String, Some("ident".to_string()));
-        let regex_pattern_var =
-            program.add_variable(VariableDomain::String, Some("regex_pattern".to_string()));
-
-        program.add_atom(SelectorAtom::OwnerTopLevelRoot {
-            owner: OwnerTerm::Var { id: owner_var },
-            root: NodeTerm::Var { id: root_var },
-        });
-        program.add_atom(SelectorAtom::AstTopLevel {
-            node: NodeTerm::Var { id: root_var },
-            ordinal: OrdinalTerm::Var { id: ordinal_var },
-        });
-        program.add_atom(SelectorAtom::AstKind {
-            node: NodeTerm::Var { id: root_var },
-            node_kind: NodeKind::FnDecl,
-        });
-        program.add_atom(SelectorAtom::AstChild {
-            parent: NodeTerm::Var { id: root_var },
-            index: 0,
-            child: NodeTerm::Var { id: ident_node_var },
-        });
-        program.add_atom(SelectorAtom::AstChild {
-            parent: NodeTerm::Var { id: root_var },
-            index: 1,
-            child: NodeTerm::Var {
-                id: literal_node_var,
-            },
-        });
-        program.add_atom(SelectorAtom::AstChildCount {
-            node: NodeTerm::Var { id: root_var },
-            count: 2,
-        });
-        program.add_atom(SelectorAtom::AstIdentifierName {
-            node: NodeTerm::Var { id: ident_node_var },
-            value: StringTerm::Var { id: ident_var },
-        });
-        program.add_atom(SelectorAtom::AstStringLiteral {
-            node: NodeTerm::Var {
-                id: literal_node_var,
-            },
-            value: StringTerm::Const {
-                value: "needle".to_string(),
-            },
-        });
-        program.add_atom(SelectorAtom::AstBareProperty {
-            node: NodeTerm::Var { id: prop_node_var },
-            key: StringTerm::Const {
-                value: "key".to_string(),
-            },
-            identifier: StringTerm::Var { id: ident_var },
-            is_binding: true,
-        });
-        program.add_atom(SelectorAtom::AstRegexLiteral {
-            node: NodeTerm::Var { id: prop_node_var },
-            pattern: StringTerm::Var {
-                id: regex_pattern_var,
-            },
-            flags: StringTerm::Const {
-                value: "g".to_string(),
-            },
-        });
-        program.add_atom(SelectorAtom::AstSuperClass {
-            class_node: NodeTerm::Var { id: root_var },
-            super_class: NodeTerm::Var { id: super_node_var },
-        });
-        program.add_atom(SelectorAtom::OrdinalOffset {
-            base: OrdinalTerm::Var { id: ordinal_var },
-            ordinal: OrdinalTerm::Var {
-                id: next_ordinal_var,
-            },
-            offset: 1,
-        });
-
-        let facts = fact_store(vec![
-            owner_fact(1, 0, "function"),
-            owner_fact(2, 1, "function"),
-            ast_top_level(100, 0),
-            ast_top_level(200, 1),
-            ast_kind(100, NodeKind::FnDecl),
-            ast_kind(200, NodeKind::ClassDecl),
-            ast_child(100, 0, 110),
-            ast_child(100, 1, 120),
-            ast_identifier_name(110, "selectedIdent"),
-            ast_string_literal(120, "needle"),
-            ast_bare_property(130, "key", "selectedIdent", true),
-            ast_regex_literal(130, "^x", "g"),
-            ast_super_class(100, 140),
-        ]);
-
-        let model = compile_selector_problem(&program, &facts).unwrap();
-
-        assert_eq!(
-            satisfying_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
-            vec![vec![owner(1), ast_node(100)]]
-        );
-        assert_eq!(
-            satisfying_tuples_for(&model, &[ConstraintVariableId(1), ConstraintVariableId(2)]),
-            vec![vec![ast_node(100), ast_node(110)]]
-        );
-        assert_eq!(
-            satisfying_tuples_for(&model, &[ConstraintVariableId(2), ConstraintVariableId(8)]),
-            vec![vec![ast_node(110), string("selectedIdent")]]
-        );
-        assert_eq!(
-            satisfying_tuples_for(&model, &[ConstraintVariableId(4), ConstraintVariableId(8)]),
-            vec![vec![ast_node(130), string("selectedIdent")]]
-        );
-        assert_eq!(
-            satisfying_tuples_for(&model, &[ConstraintVariableId(4), ConstraintVariableId(9)]),
-            vec![vec![ast_node(130), string("^x")]]
-        );
-        assert_eq!(
-            model.linear_constraints,
-            vec![LinearConstraint {
-                variables: vec![ConstraintVariableId(6), ConstraintVariableId(7)],
-                coefficients: vec![1, -1],
-                offset: 1,
-                domain: vec![0, 0],
-            }]
-        );
-    }
-
-    #[test]
-    fn ast_top_level_constraints_use_dense_top_level_positions() {
-        let mut program = SelectorProgram::default();
-        let first_root = program.add_variable(VariableDomain::AstNode, Some("first".to_string()));
-        let second_root = program.add_variable(VariableDomain::AstNode, Some("second".to_string()));
-        let first_ordinal = program.add_variable(
-            VariableDomain::StatementOrdinal,
-            Some("first_ord".to_string()),
-        );
-        let second_ordinal = program.add_variable(
-            VariableDomain::StatementOrdinal,
-            Some("second_ord".to_string()),
-        );
-        program.add_atom(SelectorAtom::AstTopLevel {
-            node: NodeTerm::Var { id: first_root },
-            ordinal: OrdinalTerm::Var { id: first_ordinal },
-        });
-        program.add_atom(SelectorAtom::AstTopLevel {
-            node: NodeTerm::Var { id: second_root },
-            ordinal: OrdinalTerm::Var { id: second_ordinal },
-        });
-        program.add_atom(SelectorAtom::OrdinalOffset {
-            base: OrdinalTerm::Var { id: first_ordinal },
-            ordinal: OrdinalTerm::Var { id: second_ordinal },
-            offset: 1,
-        });
-        let facts = fact_store(vec![ast_top_level(100, 0), ast_top_level(200, 3)]);
-
-        let model = compile_selector_problem(&program, &facts).unwrap();
-
-        assert_eq!(
-            satisfying_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
-            vec![vec![ast_node(100), ast_node(200)]]
-        );
-    }
-
-    #[test]
-    fn ast_string_literal_matching_regex_restricts_node_domain() {
-        let mut program = SelectorProgram::default();
-        let node = program.add_variable(VariableDomain::AstNode, Some("literal".to_string()));
-        program.add_atom(SelectorAtom::AstStringLiteralMatchingRegex {
-            node: NodeTerm::Var { id: node },
-            pattern: StringTerm::Const {
-                value: "^button-".to_string(),
-            },
-        });
-
-        let facts = fact_store(vec![
-            ast_string_literal(10, "button-primary"),
-            ast_string_literal(20, "input-primary"),
-            ast_string_literal(30, "button-secondary"),
-        ]);
-
-        let model = compile_selector_problem(&program, &facts).unwrap();
-
-        assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(0)),
-            vec![ast_node(10), ast_node(30)]
-        );
-    }
-
-    #[test]
-    fn ast_string_literal_matching_regex_rejects_variable_pattern() {
-        let mut program = SelectorProgram::default();
-        let node = program.add_variable(VariableDomain::AstNode, Some("literal".to_string()));
-        let pattern = program.add_variable(VariableDomain::String, Some("pattern".to_string()));
-        program.add_atom(SelectorAtom::AstStringLiteralMatchingRegex {
-            node: NodeTerm::Var { id: node },
-            pattern: StringTerm::Var { id: pattern },
-        });
-
-        let facts = fact_store(vec![ast_string_literal(10, "button-primary")]);
-
-        let err = compile_selector_problem(&program, &facts).unwrap_err();
-        assert!(matches!(
-            err,
-            CompiledSelectorProblemBuildError::UnsupportedAtom { .. }
-        ));
-    }
-
-    #[test]
-    fn ast_child_list_pattern_emits_ordered_segment_tuples() {
-        let mut program = SelectorProgram::default();
-        let parent = program.add_variable(VariableDomain::AstNode, Some("parent".to_string()));
-        let left = program.add_variable(VariableDomain::AstNode, Some("left".to_string()));
-        let right = program.add_variable(VariableDomain::AstNode, Some("right".to_string()));
-        program.add_atom(SelectorAtom::AstChildListPattern {
-            parent: NodeTerm::Var { id: parent },
-            start_index: 0,
-            segments: vec![
-                vec![NodeTerm::Var { id: left }],
-                vec![NodeTerm::Var { id: right }],
-            ],
-            anchored_left: false,
-            anchored_right: false,
-        });
-
-        let facts = fact_store(vec![
-            ast_child(100, 0, 10),
-            ast_child(100, 1, 20),
-            ast_child(100, 2, 30),
-            ast_child(200, 0, 20),
-            ast_child(200, 1, 10),
-        ]);
-
-        let model = compile_selector_problem(&program, &facts).unwrap();
-
-        assert_eq!(
-            model.linear_constraints,
-            vec![LinearConstraint {
-                variables: vec![ConstraintVariableId(3), ConstraintVariableId(4)],
-                coefficients: vec![1, -1],
-                offset: 1,
-                domain: vec![-1, 0],
-            }]
-        );
-        assert_eq!(
-            satisfying_tuples_for(
-                &model,
-                &[
-                    ConstraintVariableId(0),
-                    ConstraintVariableId(1),
-                    ConstraintVariableId(2)
-                ]
-            ),
-            vec![
-                vec![ast_node(100), ast_node(10), ast_node(20)],
-                vec![ast_node(100), ast_node(10), ast_node(30)],
-                vec![ast_node(100), ast_node(20), ast_node(30)],
-                vec![ast_node(200), ast_node(20), ast_node(10)],
-            ]
-        );
-    }
-
-    #[test]
-    fn ast_child_list_pattern_anchors_fixed_segments_to_edges() {
-        let mut program = SelectorProgram::default();
-        let parent = program.add_variable(VariableDomain::AstNode, Some("parent".to_string()));
-        program.add_atom(SelectorAtom::AstChildListPattern {
-            parent: NodeTerm::Var { id: parent },
-            start_index: 0,
-            segments: vec![
-                vec![NodeTerm::Const { node: 10 }],
-                vec![NodeTerm::Const { node: 30 }],
-            ],
-            anchored_left: true,
-            anchored_right: true,
-        });
-
-        let facts = fact_store(vec![
-            ast_child(100, 0, 10),
-            ast_child(100, 1, 20),
-            ast_child(100, 2, 30),
-            ast_child(200, 0, 5),
-            ast_child(200, 1, 10),
-            ast_child(200, 2, 30),
-            ast_child(300, 0, 10),
-            ast_child(300, 1, 30),
-            ast_child(300, 2, 40),
-        ]);
-
-        let model = compile_selector_problem(&program, &facts).unwrap();
-
-        assert_eq!(
-            satisfying_tuples_for(&model, &[ConstraintVariableId(0)]),
-            vec![vec![ast_node(100)]]
-        );
-    }
-
-    #[test]
-    fn ast_child_list_pattern_start_index_rebases_left_anchor() {
-        let mut program = SelectorProgram::default();
-        let parent = program.add_variable(VariableDomain::AstNode, Some("parent".to_string()));
-        let child = program.add_variable(VariableDomain::AstNode, Some("child".to_string()));
-        program.add_atom(SelectorAtom::AstChildListPattern {
-            parent: NodeTerm::Var { id: parent },
-            start_index: 1,
-            segments: vec![vec![NodeTerm::Var { id: child }]],
-            anchored_left: true,
-            anchored_right: false,
-        });
-
-        let facts = fact_store(vec![
-            ast_child(100, 0, 10),
-            ast_child(100, 1, 20),
-            ast_child(100, 2, 30),
-            ast_child(200, 0, 40),
-        ]);
-
-        let model = compile_selector_problem(&program, &facts).unwrap();
-
-        assert_eq!(
-            satisfying_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
-            vec![vec![ast_node(100), ast_node(20)]]
-        );
-    }
-
-    #[test]
-    fn ast_child_list_pattern_run_holes_do_not_impose_child_count() {
-        let mut program = SelectorProgram::default();
-        let parent = program.add_variable(VariableDomain::AstNode, Some("parent".to_string()));
-        program.add_atom(SelectorAtom::AstChildListPattern {
-            parent: NodeTerm::Var { id: parent },
-            start_index: 0,
-            segments: vec![vec![NodeTerm::Const { node: 20 }]],
-            anchored_left: false,
-            anchored_right: false,
-        });
-
-        let facts = fact_store(vec![
-            ast_child(100, 0, 10),
-            ast_child(100, 1, 20),
-            ast_child(100, 2, 30),
-            ast_child(200, 0, 20),
-            ast_child(300, 0, 10),
-            ast_child(300, 1, 30),
-        ]);
-
-        let model = compile_selector_problem(&program, &facts).unwrap();
-
-        assert_eq!(
-            satisfying_tuples_for(&model, &[ConstraintVariableId(0)]),
-            vec![ast_node(100), ast_node(200)]
-                .into_iter()
-                .map(|node| vec![node])
-                .collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn ast_child_list_pattern_all_holes_is_neutral() {
-        let parent = SelectorVariableId(0);
-        let mut model = CompiledSelectorProblemBuilder::default();
-        model
-            .add_full_domain_values(VariableDomain::AstNode, vec![ast_node(100), ast_node(200)])
-            .unwrap();
-        let parent_model_var = model
-            .add_variable(parent, VariableDomain::AstNode, Some("parent".to_string()))
-            .unwrap();
-        let variables = vec![parent_model_var];
-        let segments = Vec::new();
-        let domains = FactDomains::default();
-        let mut support_cache = EncodedSupportCache::default();
-
-        add_ast_child_list_pattern_allowed_tuples(
-            &mut model,
-            &variables,
-            ChildListPatternTerms {
-                parent: &NodeTerm::Var { id: parent },
-                start_index: 0,
-                segments: &segments,
-                anchored_left: false,
-                anchored_right: false,
-            },
-            &domains,
-            &mut support_cache,
-        )
-        .unwrap();
-
-        let model = model.finish().unwrap();
-        assert!(model.allowed_tuples.is_empty());
-        assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(0)),
-            vec![ConstraintValue::AstNode(100), ConstraintValue::AstNode(200)]
-        );
-    }
-
-    #[test]
-    fn ast_child_list_pattern_merges_repeated_variables() {
-        let mut program = SelectorProgram::default();
-        let parent = program.add_variable(VariableDomain::AstNode, Some("parent".to_string()));
-        let child = program.add_variable(VariableDomain::AstNode, Some("child".to_string()));
-        program.add_atom(SelectorAtom::AstChildListPattern {
-            parent: NodeTerm::Var { id: parent },
-            start_index: 0,
-            segments: vec![vec![
-                NodeTerm::Var { id: child },
-                NodeTerm::Var { id: child },
-            ]],
-            anchored_left: false,
-            anchored_right: false,
-        });
-
-        let facts = fact_store(vec![
-            ast_child(100, 0, 10),
-            ast_child(100, 1, 10),
-            ast_child(200, 0, 10),
-            ast_child(200, 1, 20),
-        ]);
-
-        let model = compile_selector_problem(&program, &facts).unwrap();
-
-        assert_eq!(
-            satisfying_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
-            vec![vec![ast_node(100), ast_node(10)]]
-        );
-    }
-
-    #[test]
-    fn ordinal_before_lowers_to_linear_constraint() {
-        let mut program = SelectorProgram::default();
-        let left = program.add_variable(VariableDomain::StatementOrdinal, Some("left".to_string()));
-        let right =
-            program.add_variable(VariableDomain::StatementOrdinal, Some("right".to_string()));
-        program.add_atom(SelectorAtom::OrdinalBefore {
-            before: OrdinalTerm::Var { id: left },
-            after: OrdinalTerm::Var { id: right },
-        });
-
-        let facts = fact_store(vec![owner_fact(10, 0, "var"), owner_fact(20, 1, "var")]);
-
-        let model = compile_selector_problem(&program, &facts).unwrap();
-
-        assert!(model.allowed_tuples.is_empty());
-        assert!(model.binary_constraints.is_empty());
-        assert_eq!(
-            model.linear_constraints,
-            vec![LinearConstraint {
-                variables: vec![ConstraintVariableId(0), ConstraintVariableId(1)],
-                coefficients: vec![1, -1],
-                offset: 1,
-                domain: vec![0, 0],
-            }]
-        );
-        assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(0)),
-            vec![ordinal(0), ordinal(1)]
         );
     }
 

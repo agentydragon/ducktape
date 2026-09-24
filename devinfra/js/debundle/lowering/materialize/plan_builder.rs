@@ -8,7 +8,6 @@ use super::super::ordinal::body_index_for_statement_ordinal;
 use super::*;
 use crate::plans::{AnonymousStatementRequest, RelationalSelector};
 use analysis::{DepKind, OwnerId, StatementOrdinal};
-use anyhow::anyhow;
 
 const HUMAN_DIAGNOSTIC_REPORT_LIMIT: usize = 200;
 
@@ -239,7 +238,7 @@ fn selector_fact_store_for_chunk(
     structural: &analysis::facts::StructuralChunkAnalysis<'_>,
     module: &swc_ecma_ast::Module,
     import_sources: &HashMap<String, String>,
-) -> Result<SelectorFactStore> {
+) -> SelectorFactStore {
     let mut store = SelectorFactStore::default();
     let binding_owner = structural_binding_owner(structural);
     let statement_by_owner: HashMap<OwnerId, &analysis::facts::StructuralStatementFacts> =
@@ -332,17 +331,6 @@ fn selector_fact_store_for_chunk(
         }
     }
 
-    if selector_program_needs_ast_edb(program) {
-        let ast_facts = chunk_facts::extract_facts(module).map_err(|unsupported| {
-            anyhow!(
-                "chunk {:?}: selector AST fact extraction failed at {}; global selector solving \
-                 needs a complete AST EDB for this selector program",
-                chunk_id,
-                unsupported.context,
-            )
-        })?;
-        store.extend_chunk_facts(chunk_id, &ast_facts);
-    }
     if selector_program_needs_member_reads(program) {
         for (ordinal, reads) in chunk_facts::member_reads_by_ordinal(module) {
             for read in reads {
@@ -397,7 +385,7 @@ fn selector_fact_store_for_chunk(
             });
         }
     }
-    Ok(store)
+    store
 }
 
 fn structural_binding_owner(
@@ -433,30 +421,6 @@ fn push_structural_selector_reference(
         binding: binding.0.as_str().to_string(),
         edge_kind: edge_kind.to_string(),
     });
-}
-
-fn selector_program_needs_ast_edb(program: &SelectorProgram) -> bool {
-    program.atoms.iter().any(|atom| {
-        matches!(
-            atom,
-            SelectorAtom::OwnerTopLevelRoot { .. }
-                | SelectorAtom::AstKind { .. }
-                | SelectorAtom::AstChild { .. }
-                | SelectorAtom::AstChildListPattern { .. }
-                | SelectorAtom::AstSuperClass { .. }
-                | SelectorAtom::AstChildCount { .. }
-                | SelectorAtom::AstStringLiteral { .. }
-                | SelectorAtom::AstStringLiteralMatchingRegex { .. }
-                | SelectorAtom::AstNumberLiteral { .. }
-                | SelectorAtom::AstBoolLiteral { .. }
-                | SelectorAtom::AstIdentifierName { .. }
-                | SelectorAtom::AstPropertyName { .. }
-                | SelectorAtom::AstBareProperty { .. }
-                | SelectorAtom::AstOperator { .. }
-                | SelectorAtom::AstRegexLiteral { .. }
-                | SelectorAtom::AstTopLevel { .. }
-        )
-    })
 }
 
 fn selector_program_needs_member_reads(program: &SelectorProgram) -> bool {
@@ -2084,7 +2048,7 @@ impl ChunkPlanBuilder {
             structural,
             module,
             import_sources,
-        )?;
+        );
         let fact_coverage = selector_fact_coverage(&facts);
         for (index, member_index) in deferred_targets.values().copied() {
             let request = &explicit_requests[index];
