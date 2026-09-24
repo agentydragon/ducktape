@@ -233,10 +233,10 @@ selector at a time and never need it.
 `owner` is the matched statement's index in the chunk body.
 
 `validate` also lists, under `templates`, what each free identifier of every
-matched `source_match` template means (<../SPEC.md> § Matching): a
-`reference` with its `entity`, a `global`, an `ambiguous` name with the
-`modules` exporting it, or a `wildcard`. The text output counts them, then
-prints one line per reference and ambiguous name:
+matched template (member, `source_matches[]` entry or anonymous statement)
+means (<../SPEC.md> § Matching): a `reference` with its `entity`, a `global`,
+an `ambiguous` name with the `modules` exporting it, or a `wildcard`. The text
+output counts them, then prints one line per reference and ambiguous name:
 
 ```text
 2 matched template(s) with free identifiers: global=1, reference=1, wildcard=3

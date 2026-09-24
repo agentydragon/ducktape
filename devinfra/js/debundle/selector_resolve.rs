@@ -167,7 +167,7 @@ impl MemberSelector {
 #[derive(Debug, Clone, Default)]
 pub struct Resolution {
     pub outcomes: Vec<EntityOutcome>,
-    /// What each matched `source_match` template's free identifiers mean,
+    /// What each matched template's free identifiers mean,
     /// for templates that have any.
     pub templates: Vec<TemplateIdentifiers>,
 }
@@ -241,25 +241,6 @@ struct Reference {
     values: Vec<String>,
 }
 
-impl Projected {
-    /// An entity that references nothing, without repeated rows: the matcher
-    /// lists a place once per way the template aligns with it.
-    fn unreferenced(targets: Vec<SelectorTargetId>, rows: Vec<Vec<Place>>) -> Self {
-        let mut distinct = Vec::with_capacity(rows.len());
-        for row in rows {
-            if !distinct.contains(&row) {
-                distinct.push(row);
-            }
-        }
-        Self {
-            targets,
-            unreferenced_rows: distinct.len(),
-            rows: distinct,
-            references: Vec::new(),
-        }
-    }
-}
-
 /// A `source_match` entity's candidates, collected before any target is
 /// declared so that templates can name entities projected after them.
 struct Collected {
@@ -273,6 +254,8 @@ struct Collected {
 enum CollectedShape {
     Member(usize),
     Group(Group),
+    /// An anonymous statement, by its position in the module's list.
+    Anonymous(usize),
 }
 
 impl Collected {
@@ -287,6 +270,7 @@ impl Collected {
                 ]
             }
             CollectedShape::Group(group) => group.exports_by_target.values().cloned().collect(),
+            CollectedShape::Anonymous(_) => Vec::new(),
         }
     }
 
@@ -294,6 +278,21 @@ impl Collected {
         match &self.shape {
             CollectedShape::Member(member_index) => vec![*member_index],
             CollectedShape::Group(group) => group.members_by_target.values().copied().collect(),
+            CollectedShape::Anonymous(_) => Vec::new(),
+        }
+    }
+
+    /// The entities it places, as outcomes name them.
+    fn entities(&self, modules: &[SpecModule]) -> Vec<Entity> {
+        match &self.shape {
+            CollectedShape::Anonymous(position) => vec![Entity::AnonymousStatement(
+                modules[self.module_index].anonymous_statements[*position].index,
+            )],
+            _ => self
+                .export_names(modules)
+                .into_iter()
+                .map(Entity::Export)
+                .collect(),
         }
     }
 }
@@ -301,7 +300,9 @@ impl Collected {
 /// One candidate: a place per target, and what each free identifier bound.
 #[derive(Clone)]
 struct CollectedRow {
-    places: Vec<(OwnerId, String)>,
+    /// One per target; a member's names its binding, an anonymous
+    /// statement's none.
+    places: Vec<Place>,
     free_bindings: BTreeMap<String, String>,
 }
 
@@ -870,12 +871,17 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 }
             }
         }
+        let mut collected = Vec::new();
         for (module_index, module) in modules.iter().enumerate() {
             for position in 0..module.anonymous_statements.len() {
-                self.project_anonymous_statement(module_index, position);
+                match self.collect_anonymous(module_index, position) {
+                    Ok(entity) => collected.push(entity),
+                    Err(rejected) => {
+                        self.push_anonymous(module_index, position, rejected.outcome());
+                    }
+                }
             }
         }
-        let mut collected = Vec::new();
         for (module_index, group) in groups {
             let members = group
                 .members_by_target
@@ -948,62 +954,49 @@ impl<'c, 'm> Resolve<'c, 'm> {
         ));
     }
 
-    fn project_anonymous_statement(&mut self, module_index: usize, position: usize) {
+    fn collect_anonymous(
+        &self,
+        module_index: usize,
+        position: usize,
+    ) -> Result<Collected, Rejection> {
         let statement = &self.modules[module_index].anonymous_statements[position];
-        let logical_module = self.ids[module_index].clone();
         let places = self.chunk.places();
-        let rows = self
-            .chunk
-            .matcher()
-            .anonymous_group_candidates_parsed(&logical_module, &statement.selector)
-            .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))
-            .and_then(|candidates| {
-                candidates
-                    .into_iter()
-                    .map(|group| {
-                        let [body_idx] = group.body_indices.as_slice() else {
-                            bail!(
-                                "anonymous source_match candidate group has {} statements; \
-                                 projected lowering currently supports one statement per \
-                                 anonymous claim",
-                                group.body_indices.len()
-                            );
-                        };
-                        places.owner_by_body.get(body_idx).copied().with_context(|| {
-                            format!(
-                                "anonymous source_match candidate at body index {body_idx} does \
-                                 not map to an owner-graph node",
-                            )
-                        })
+        let rows =
+            self.chunk
+                .matcher()
+                .anonymous_group_candidates_parsed(&self.ids[module_index], &statement.selector)
+                .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
+                .into_iter()
+                .map(|group| {
+                    let [body_idx] = group.body_indices.as_slice() else {
+                        bail!(
+                            "anonymous source_match candidate group has {} statements; projected \
+                         lowering currently supports one statement per anonymous claim",
+                            group.body_indices.len()
+                        );
+                    };
+                    let owner = places.owner_by_body.get(body_idx).copied().with_context(|| {
+                    format!(
+                        "anonymous source_match candidate at body index {body_idx} does not \
+                         map to an owner-graph node",
+                    )
+                })?;
+                    Ok(CollectedRow {
+                        places: vec![Place {
+                            owner,
+                            binding: None,
+                        }],
+                        free_bindings: group.free_bindings,
                     })
-                    .collect::<Result<Vec<_>>>()
-                    .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))
-            })
-            .and_then(Rejection::check_count);
-        match rows {
-            Ok(rows) => {
-                let target = self
-                    .builder
-                    .declare_projected_anonymous_statement_target_in_module(
-                        &logical_module,
-                        statement.index,
-                        rows.clone(),
-                    );
-                self.anonymous.push((target, module_index, position));
-                self.projected.push(Projected::unreferenced(
-                    vec![target],
-                    rows.into_iter()
-                        .map(|owner| {
-                            vec![Place {
-                                owner,
-                                binding: None,
-                            }]
-                        })
-                        .collect(),
-                ));
-            }
-            Err(rejected) => self.push_anonymous(module_index, position, rejected.outcome()),
-        }
+                })
+                .collect::<Result<Vec<_>>>()
+                .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))?;
+        Ok(Collected {
+            module_index,
+            free: template_free_identifiers(&statement.selector),
+            shape: CollectedShape::Anonymous(position),
+            rows,
+        })
     }
 
     fn collect_group(&self, module_index: usize, group: Group) -> Result<Collected, Rejection> {
@@ -1144,7 +1137,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 self.templates.push(TemplateIdentifiers {
                     chunk: self.chunk.name.clone(),
                     logical_module: modules[entity.module_index].path.clone(),
-                    exports: entity.export_names(modules),
+                    entities: entity.entities(modules),
                     identifiers,
                 });
             }
@@ -1165,6 +1158,13 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     targets_by_collected.insert(index, self.declare_collected(entity)?);
                 }
                 Err(rejection) => {
+                    if let CollectedShape::Anonymous(position) = entity.shape {
+                        self.push_anonymous(
+                            entity.module_index,
+                            position,
+                            rejection.clone().outcome(),
+                        );
+                    }
                     for member_index in entity.member_indices() {
                         self.push_member(
                             entity.module_index,
@@ -1247,19 +1247,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             }
             self.projected.push(Projected {
                 targets,
-                rows: distinct
-                    .iter()
-                    .map(|at| {
-                        rows[*at]
-                            .places
-                            .iter()
-                            .map(|(owner, binding)| Place {
-                                owner: *owner,
-                                binding: Some(binding.clone()),
-                            })
-                            .collect()
-                    })
-                    .collect(),
+                rows: distinct.iter().map(|at| rows[*at].places.clone()).collect(),
                 references: referenced
                     .into_iter()
                     .map(|(name, module_index, target)| Reference {
@@ -1295,7 +1283,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         &columns,
                         table
                             .into_iter()
-                            .map(|(mut places, referenced)| (places.remove(0), referenced))
+                            .map(|(places, referenced)| (bound(&places[0]), referenced))
                             .collect(),
                     );
                 }
@@ -1304,7 +1292,23 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         &logical_module,
                         &group.exports_by_target,
                         &columns,
-                        table,
+                        table
+                            .into_iter()
+                            .map(|(places, referenced)| {
+                                (places.iter().map(bound).collect(), referenced)
+                            })
+                            .collect(),
+                    );
+                }
+                CollectedShape::Anonymous(position) => {
+                    self.builder.lower_projected_anonymous_statement_candidates(
+                        &logical_module,
+                        modules[entity.module_index].anonymous_statements[*position].index,
+                        &columns,
+                        table
+                            .into_iter()
+                            .map(|(places, referenced)| (places[0].owner, referenced))
+                            .collect(),
                     );
                 }
             }
@@ -1344,6 +1348,17 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         .insert(target, (entity.module_index, *member_index));
                     targets.push(target);
                 }
+            }
+            CollectedShape::Anonymous(position) => {
+                let target = self
+                    .builder
+                    .declare_projected_anonymous_statement_target_in_module(
+                        &logical_module,
+                        module.anonymous_statements[*position].index,
+                    );
+                self.anonymous
+                    .push((target, entity.module_index, *position));
+                targets.push(target);
             }
         }
         Ok(targets)
@@ -1822,10 +1837,10 @@ fn settle_references(
                 let bindings = narrowed
                     .rows
                     .iter()
-                    .map(|row| &row.places[position].1)
+                    .map(|row| &row.places[position].binding)
                     .collect::<BTreeSet<_>>();
-                if let [binding] = bindings.into_iter().collect::<Vec<_>>().as_slice() {
-                    settled.insert((index, export_name), (*binding).clone());
+                if let [Some(binding)] = bindings.into_iter().collect::<Vec<_>>().as_slice() {
+                    settled.insert((index, export_name), binding.clone());
                 }
             }
         }
@@ -1879,10 +1894,18 @@ fn reference_entity(modules: &[SpecModule], name: &str, module_index: usize) -> 
     }
 }
 
-fn member_place(
-    places: &Places,
-    matched: &source_match::MemberBindingMatch,
-) -> Result<(OwnerId, String)> {
+/// A member place as the lowering takes it: its owner and binding.
+fn bound(place: &Place) -> (OwnerId, String) {
+    (
+        place.owner,
+        place
+            .binding
+            .clone()
+            .expect("a member's place names the binding it claims"),
+    )
+}
+
+fn member_place(places: &Places, matched: &source_match::MemberBindingMatch) -> Result<Place> {
     let binding = matched.binding.binding_name.clone();
     let owner = places
         .owner_by_body_and_binding
@@ -1895,7 +1918,10 @@ fn member_place(
                 matched.body_idx
             )
         })?;
-    Ok((owner, binding))
+    Ok(Place {
+        owner,
+        binding: Some(binding),
+    })
 }
 
 /// A module's `source_match` members grouped by shared template: members

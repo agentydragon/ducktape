@@ -305,9 +305,9 @@ claims the instance of that class, not of any class. An entity unique only
 this way is `resolved_by: own_references`; one whose matches all construct
 another class is `conflict` with `Widget`.
 
-References work in `source_match` members and `source_matches[]`, not yet in
-anonymous statements; a reference to an entity pinned by a relational selector
-still alpha-renames.
+References work in every template: `source_match` members, `source_matches[]`
+and anonymous statements. A reference to an entity pinned by a relational
+selector still alpha-renames.
 
 ## Binding claims and context windows
 

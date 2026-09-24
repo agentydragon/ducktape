@@ -9,9 +9,8 @@ the tooling it enables.
 
 What <../SPEC.md> does not state yet:
 
-- **References everywhere.** Anonymous-statement templates take references and
-  globals like `source_match` members, and a reference to an entity pinned by a
-  relational selector constrains through that entity's variables instead of
+- **Relational referents.** A reference to an entity pinned by a relational
+  selector constrains through that entity's variables instead of
   alpha-renaming.
 
 ## Steps
@@ -22,8 +21,8 @@ code it tests is deleted. Consumer specs migrate in lockstep, gated by their
 generated-output diff tests. Each step moves the part of the goal it achieves
 into <../SPEC.md>.
 
-1. **Template references.** Anonymous statements take references and globals;
-   references to relational entities constrain through their variables.
+1. **Template references.** References to relational entities constrain
+   through their variables.
 2. **Pinning by use site.** Depends on step 1. An entity with no distinctive
    shape (a helper copy) is pinned through a template that mentions it.
    Acceptance: one of several identical decorate-helper copies is pinned
