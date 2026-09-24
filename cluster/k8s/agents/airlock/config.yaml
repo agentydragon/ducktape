@@ -45,10 +45,6 @@ oauth:
         - https://www.googleapis.com/auth/spreadsheets.readonly
         - https://www.googleapis.com/auth/presentations.readonly
         - https://www.googleapis.com/auth/youtube.readonly
-      # TODO(shared-callback): migrate to the shared /oauth/callback — register
-      # https://airlock.allegedly.works/oauth/callback on this Google OAuth client, then
-      # drop this line.
-      redirect_uri: https://airlock.allegedly.works/oauth/callback/google
       refresh_secret:
         name: google-tokens
       access_secret:
@@ -82,7 +78,6 @@ oauth:
         - https://www.googleapis.com/auth/gmail.compose
         - https://www.googleapis.com/auth/gmail.settings.basic
         - https://www.googleapis.com/auth/calendar.events
-      redirect_uri: https://airlock.allegedly.works/oauth/callback/google-write
       refresh_secret:
         name: google-write-tokens
       access_secret:
