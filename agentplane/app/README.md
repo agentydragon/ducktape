@@ -131,8 +131,8 @@ are hints and the database cursor remains authoritative.
 `/#/threads/{id}` loads metadata and the thread's tail independently of runner discovery. The
 browser follows one Electric shape over the thread's rows and one per payload field it shows, each
 pinned by `/threads/{id}/sync/*` to the thread and its projection epoch, and loads its window as
-subset snapshots of them: the latest 30 positions, the page before the oldest row it holds each
-time the reader scrolls up, the view state, pending commands, and the commands this browser sent,
+subset snapshots of them: the latest 30 positions, the page before the oldest row it holds whenever
+the top of what it holds is in view, the view state, pending commands, and the commands this browser sent,
 by ID, so an outcome stays visible however far the thread has moved on. Every later change to a
 held row arrives on the shape's live log, which the browser follows over SSE. Text and tool
 arguments render as far as their references' chunk counts, while reasoning, tool output and
