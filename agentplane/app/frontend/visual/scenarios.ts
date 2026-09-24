@@ -493,7 +493,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "mixed",
     commandAdmissionTimedOut: true,
-    readySelectors: ["::-p-text(runner did not admit the command)", '[data-thread-anchor="19"]'],
+    readySelectors: ["::-p-text(runner did not admit the command)", '[data-thread-anchor="16"]'],
     captureViewport: true,
   },
   session_pending_controls: {
