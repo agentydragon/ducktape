@@ -330,6 +330,7 @@ fn one_place<'o, 's>(
             Outcome::Ambiguous {
                 candidates,
                 truncated: more,
+                ..
             } => {
                 truncated |= more;
                 places.extend(

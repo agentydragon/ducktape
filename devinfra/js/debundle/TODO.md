@@ -42,8 +42,7 @@ evaluation of `debundle_stabilize` built on it, is step 1c of
 <plans/selector_engine.md>. Every flow is held to the interactive budget in
 <docs/selector_resolution.md> § Interactive budget.
 
-1. **Selector diagnostics.** A smallest-differentiator diagnostic for
-   `ambiguous` outcomes, and sharper first-mismatch reasons for `no_match`'s
+1. **Selector diagnostics.** Sharper first-mismatch reasons for `no_match`'s
    `nearest_unclaimed`: the first unmatched item of a multi-declaration range,
    the first incompatible identifier binding or sub-expression, a
    parameter-pattern mismatch, and list-hole binding spans; and near misses

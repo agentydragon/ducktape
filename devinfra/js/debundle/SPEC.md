@@ -83,12 +83,18 @@ Every entity gets exactly one outcome, in one record format shared by `run`,
 | `resolved`, `resolved_by: own_references` | several places match its selector; only one agrees with the places of the `references` it names                                                                                            | ok       |
 | `resolved`, `resolved_by: elimination`    | unique only because the named `claimers` took its other places                                                                                                                             | warning  |
 | `no_match`                                | no place satisfies its selector and constraints; a one-statement template may list up to 3 `nearest_unclaimed` statements (no entity claims them), closest first, with where each diverges | error    |
-| `ambiguous`                               | several assignments exist; at most 5 of its places are listed, with `truncated` when more exist                                                                                            | error    |
+| `ambiguous`                               | several assignments exist; at most 5 of its places are listed, with `truncated` when more exist, else with `differentiators` (below)                                                       | error    |
 | `conflict`                                | no assignment exists; `with` names the entities of an unsatisfiable set (not necessarily minimal)                                                                                          | error    |
 | `too_broad`                               | its selector matches more than 100 places                                                                                                                                                  | error    |
 | `duplicate_claim`                         | resolved to a binding another entity already claims                                                                                                                                        | error    |
 | `invalid`                                 | its selector does not parse, uses an unsupported construct, or its matches do not map to places                                                                                            | error    |
 | `undecided`                               | the solver stopped before deciding it                                                                                                                                                      | error    |
+
+An `ambiguous` outcome's `differentiators` give each listed place that has one
+a stable anchor the other listed places lack: a literal, object key, class
+member, member-path call, declaration kind or arity, in the place's own
+statement or else in the statement adjacent to it. A place with none is not
+listed there, and the report says when no place has one.
 
 A contradiction affects only the entities in it: the others still resolve.
 

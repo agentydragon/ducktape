@@ -234,13 +234,13 @@ For a selector that does not match anything:
    expand the statement window, use literal/regex anchors, or group bindings.
 4. Emit a candidate patch only if the repaired selector is unique.
 
-For an ambiguous selector:
+For an ambiguous selector, `differentiators` (<../SPEC.md> § Outcomes) already
+names each listed candidate's differentiating anchor when the list is not
+truncated, and says when none exists. Open:
 
-1. List candidate source identities and the anchors they share.
-2. Suggest the smallest differentiating stable anchor: literal, key, class
-   member, call shape, adjacent statement, or declaration kind.
-3. If no stable differentiator exists, report that the selector must remain
-   intentionally more specific or use a different ownership boundary.
+1. List the anchors the candidates share.
+2. Differentiate a truncated list, against every candidate rather than the
+   listed ones.
 
 For duplicate claims:
 
@@ -341,8 +341,8 @@ Patch planning and application should be deterministic:
 
 ### Milestone 3: Repair Reports and Patch Plans
 
-- Nearest-candidate and smallest-differentiator diagnostics for `no_match` and
-  `ambiguous` outcomes.
+- Nearest-candidate diagnostics for `no_match` outcomes, and the open
+  `ambiguous` diagnostics above.
 - `plan repair` consumes the `spec validate --format json` report and emits or
   applies patch plans for mechanically proven cases.
 

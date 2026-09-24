@@ -790,6 +790,23 @@ impl ShapeIndex {
         })
     }
 
+    /// The best-ranked feature only `body_idx` exhibits that a template can
+    /// state: a value anchor, declaration kind or arity, never a shape skeleton
+    /// (it names no token) or a volatile literal. Over an index of a few
+    /// competing statements, it is what sets `body_idx` apart from the others.
+    pub fn distinguishing_feature(&self, body_idx: usize) -> Option<SelectorFeature> {
+        self.scored_features(body_idx)
+            .into_iter()
+            .find_map(|scored| match scored.feature {
+                ShapeFeature::Selector(feature)
+                    if scored.selectivity == 1 && scored.stability != Stability::Volatile =>
+                {
+                    Some(feature)
+                }
+                _ => None,
+            })
+    }
+
     /// Every individually-discriminating value anchor of `body_idx`, each as a
     /// single-anchor [`AnchorSet`], ranked best-first by the same
     /// `selective x stable x class x cost` key [`minimal_anchor_set`] uses.

@@ -414,6 +414,10 @@ sideEffect("shared");
             "kind": "ambiguous",
             "candidates": [{"owner": 0}, {"owner": 1}],
             "truncated": false,
+            "differentiators": [
+                {"owner": 0, "statement": 1, "anchor": "string literal \"shared\""},
+                {"owner": 1, "statement": 0, "anchor": "string literal \"shared\""},
+            ],
         })
     );
 }

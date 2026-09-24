@@ -1188,6 +1188,7 @@ rust_library(
         ":selector_ir_lowering",
         ":selector_outcome",
         ":selector_runtime",
+        ":shape_index",
         ":source_match",
         ":spec",
         "@crates//:anyhow",

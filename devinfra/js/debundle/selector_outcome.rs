@@ -14,6 +14,7 @@
 //! `alpha_all` readable names that are free references rather than local
 //! binders.
 
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
@@ -151,6 +152,29 @@ impl NearMiss {
     }
 }
 
+/// What sets one [`Outcome::Ambiguous`] candidate apart from the others it is
+/// listed with.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Differentiator {
+    /// The candidate's statement.
+    pub owner: usize,
+    /// The statement the anchor is in: `owner`, or the one just before or
+    /// after it when `owner` has none.
+    pub statement: usize,
+    pub anchor: String,
+}
+
+impl Differentiator {
+    fn render(&self) -> String {
+        let site = match self.statement.cmp(&self.owner) {
+            Ordering::Equal => String::new(),
+            Ordering::Less => format!(" in the preceding body[{}]", self.statement),
+            Ordering::Greater => format!(" in the following body[{}]", self.statement),
+        };
+        format!("body[{}] by its {}{site}", self.owner, self.anchor)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Outcome {
@@ -170,6 +194,11 @@ pub enum Outcome {
         candidates: Vec<Candidate>,
         /// More candidates exist than are listed.
         truncated: bool,
+        /// Each listed candidate some anchor sets apart from the other listed
+        /// ones, with that anchor. Empty when `truncated`: an unlisted
+        /// candidate may share it.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        differentiators: Vec<Differentiator>,
     },
     /// In an unsatisfiable core of the joint solve with `with`; the set need
     /// not be minimal.
@@ -301,6 +330,7 @@ impl Outcome {
         Self::Ambiguous {
             candidates,
             truncated,
+            differentiators: Vec::new(),
         }
     }
 
@@ -376,16 +406,31 @@ impl Outcome {
             Self::Ambiguous {
                 candidates,
                 truncated,
-            } => format!(
-                "is ambiguous -- matched {}{} {places}s: {}",
-                if *truncated { "at least " } else { "" },
-                candidates.len(),
-                candidates
-                    .iter()
-                    .map(render_candidate)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+                differentiators,
+            } => {
+                let differentiated = match (truncated, differentiators.as_slice()) {
+                    (true, _) => String::new(),
+                    (false, []) => "; no candidate has an anchor the others lack".to_string(),
+                    (false, differentiators) => format!(
+                        "; set apart {}",
+                        differentiators
+                            .iter()
+                            .map(Differentiator::render)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                };
+                format!(
+                    "is ambiguous -- matched {}{} {places}s: {}{differentiated}",
+                    if *truncated { "at least " } else { "" },
+                    candidates.len(),
+                    candidates
+                        .iter()
+                        .map(render_candidate)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
             Self::Conflict { with } => format!(
                 "conflicts with {}: these selectors admit no joint assignment (the listed set \
                  need not be minimal)",
