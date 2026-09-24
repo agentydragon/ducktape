@@ -714,10 +714,15 @@ function VirtualizedHistory({
     const bottom = element.scrollHeight - element.clientHeight;
     if (!recentBottoms.current.includes(bottom)) recentBottoms.current.push(bottom);
   };
+  // Restoring to a row that is not mounted scrolls to its estimated offset. When the rows above it
+  // measure shorter than estimated, that offset lies past the end and the browser clamps it: the
+  // restoration's own scroll lands on the bottom, which is not the reader returning there.
+  const restoringScroll = () => restorationFrame.current !== null;
   const followPreviousBottom = (element: HTMLDivElement) => {
     // A programmatic return to the old bottom can be delivered after a card grows. Preserve
-    // it before restoring a stale reader anchor, while an explicit user gesture owns its scroll.
-    if (captureNextScroll.current) return false;
+    // it before restoring a stale reader anchor, while an explicit user gesture owns its scroll,
+    // as does a restoration still settling.
+    if (captureNextScroll.current || restoringScroll()) return false;
     if (!recentBottoms.current.some((bottom) => Math.abs(element.scrollTop - bottom) <= 2)) return false;
     atBottom.current = true;
     cancelRestoration();
@@ -867,9 +872,10 @@ function VirtualizedHistory({
     return () => {
       observer.disconnect();
       mutations.disconnect();
-      cancelRestoration();
     };
   }, [rows, virtualizer]);
+  // The observers above re-subscribe on every render's rows; a restoration in flight outlives that.
+  useLayoutEffect(() => cancelRestoration, []);
   useLayoutEffect(() => {
     const element = viewport.current;
     if (!element) return;
@@ -946,7 +952,7 @@ function VirtualizedHistory({
           previousScrollTop.current = element.scrollTop;
           return;
         }
-        if (element.scrollHeight - element.scrollTop - element.clientHeight < 24) {
+        if (!restoringScroll() && element.scrollHeight - element.scrollTop - element.clientHeight < 24) {
           atBottom.current = true;
           cancelRestoration();
         } else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
