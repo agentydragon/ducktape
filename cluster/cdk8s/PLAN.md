@@ -101,6 +101,73 @@ left is moving each remaining directory once nothing hand-written is left in it:
   review losing the rendered diff. Default: stay committed; revisit only with a
   concrete cost.
 
+## Open decisions: hand-written files in mixed directories
+
+Undecided on purpose: the options below are what has been considered so far, not a
+shortlist, and one not listed yet may beat them all. As of 2026-09-24, 76 of the 92
+Kustomizations still in `cluster/k8s` are mixed; the hand-written files holding them there
+are a `kustomization.yaml` (75), SOPS files (44, the only blocker for 20), config inputs
+(40, which now convert one at a time: #7802, #7807) and `image-pins/` Components (31).
+
+Every Kustomization already reads an `ExternalArtifact` built by a source-watcher
+`ArtifactGenerator` whose `copy` list selects paths from the `ducktape` source, which
+several options below lean on.
+
+### SOPS files
+
+SOPS files stay hand-written: only a key holder can produce the ciphertext. The question
+is where they sit relative to the generated manifests.
+
+- **Own Kustomization per app's secrets** (`cluster/k8s/<app>-secrets/`, the app node
+  `dependsOn` it). Plain Flux, but about 44 new graph nodes, and every Secret changes
+  owning Kustomization (the ownership-safe move procedure, or a prune and recreate).
+- **Exempt `*.sops.yaml` from the closed-world rule** and let them live in
+  `cluster/generated/<app>/`. Smallest change; `cluster/generated` stops being purely
+  generator-written, and the files there get hand-edited.
+- **Cross-root reference:** the generated `kustomization.yaml` lists
+  `../../k8s/<app>/x.sops.yaml`. Both roots stay pure and the graph unchanged. Unverified:
+  whether kustomize-controller's load restrictor permits a file outside the root.
+- **Compose in the artifact:** the node's `ArtifactGenerator` copies
+  `cluster/generated/<app>/**` and the hand-written `cluster/k8s/<app>/*.sops.yaml` into
+  one artifact, where they sit side by side again. Both roots stay pure, no graph change,
+  no load-restrictor question. Unverified: `copy` merging two sources into one directory,
+  and the generated `kustomization.yaml` naming a file only the artifact holds (a
+  `kustomize build` of the checkout alone would then fail, which the render tooling
+  would have to follow).
+- **Generator copies the ciphertext through** from a hand-written source path into
+  `cluster/generated/<app>/`. The closed-world rule stays literally true; the source of
+  truth is elsewhere, and a SOPS re-encrypt needs a regeneration.
+- **Secrets out of Git:** replace SOPS with ESO against an external store (the
+  external-creds `ClusterSecretStore` exists), so the generator emits `ExternalSecret`s
+  and nothing hand-written is left. Cleanest end state, a migration of its own, and it
+  moves where secrets are authored.
+
+### Image pins
+
+Flux image automation commits tags into `$imagepolicy`-marked YAML; the 31 `image-pins/`
+Components hold those markers, and a file the bot writes cannot be one the generator
+owns. Constraint (operator, 2026-09-24): images built in this repo keep Flux image
+automation as their bumper, not Renovate.
+
+- **Keep the Components hand-written**, in place (the directory never moves) or in a
+  hand-written tree the generated `kustomization.yaml` or `ArtifactGenerator` reaches
+  (the SOPS reference and artifact questions above). No deploy-path change.
+- **Tags in one bot-owned data file the generator reads.** Every bump then needs the
+  generator rerun before it applies, and nothing in the deploy path does that today:
+  it would be new infrastructure (CI regenerating after each bot commit, two commits per
+  bump, lag).
+- **Flux `postBuild.substituteFrom`:** generated manifests carry
+  `image: …:${<app>_tag}`, a bot-owned ConfigMap holds the marked tags, and
+  kustomize-controller substitutes at apply time, so bumps land on the next reconcile as
+  now, with no regeneration. Costs: every consumer `dependsOn` the ConfigMap's node;
+  literal `${…}` in substituted manifests must be escaped (`$${…}`), checkable at synth;
+  one shared ConfigMap widens a bad bot commit's blast radius (per-app ConfigMaps narrow
+  it). Unverified: image automation's setters updating a value inside ConfigMap `data`.
+- **Content-addressed digests from Bazel:** the generator embeds the image digest Bazel
+  computes (`rules_oci`), CI pushes on merge, and a change to an image's inputs
+  regenerates the manifests in the same PR. No bot, no mutable tags; every image-input
+  change carries a manifest diff and the generator depends on image builds.
+
 ## Wave 3: skip Kustomize where nothing is kustomized
 
 Single-resource directories carry no `kustomization.yaml` any more; kustomize-controller
@@ -116,10 +183,7 @@ generates one (<../docs/cdk8s.md> § Shapes of a directory). Still wrapping one 
   `flux/ducktape-flux`): Kustomize needs the file there. Folding the resource into its
   referrer removes it.
 
-**Pause after Wave 3.** Image pinning. The 31 `image-pins/` Components exist because
-Flux image automation commits tags into a file the generator would otherwise own.
-Options: keep the Component and a `kustomization.yaml` in those directories
-indefinitely; or tags move into Python with CI regenerating after the bot commits.
+**Pause after Wave 3.** Image pinning: § Open decisions.
 
 ## Wave 4: close the graph
 
