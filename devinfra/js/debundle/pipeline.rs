@@ -44,6 +44,10 @@ pub struct TransformRunOptions {
     /// Used by `debundle spec validate` to capture the keep-going
     /// selector diagnostics regardless of how the spec configures reporting.
     pub report_dir_override: Option<PathBuf>,
+    /// Add what each matched template's free identifiers mean to every
+    /// chunk's selector report, and write the report even when every
+    /// selector resolved. For `debundle spec validate`.
+    pub list_template_identifiers: bool,
 }
 
 impl Default for TransformRunOptions {
@@ -52,6 +56,7 @@ impl Default for TransformRunOptions {
             dry_run: false,
             keep_going: true,
             report_dir_override: None,
+            list_template_identifiers: false,
         }
     }
 }
@@ -269,6 +274,7 @@ pub fn run_transform_cli_with_options(
                     config: spec.materialize_logical_modules.clone(),
                     chunk_ids: materialise_chunk_ids,
                     keep_going: options.keep_going,
+                    list_template_identifiers: options.list_template_identifiers,
                     // Dry-run keeps the no-output contract on the
                     // accept path but still materializes rejection
                     // evidence (owner graph + cycles/conflicts) at the
@@ -1025,6 +1031,7 @@ unassigned_mode:
                     dry_run: true,
                     keep_going: false,
                     report_dir_override: None,
+                    list_template_identifiers: false,
                 },
             )?;
 

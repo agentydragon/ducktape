@@ -28,9 +28,9 @@ a second priority queue.
 
 Every command resolves selectors through one resolve over one program across
 chunks, with the semantics of <SPEC.md>. What remains in
-<plans/selector_engine.md> is the rest of template references (the `validate`
-listing, anonymous statements, relational referents), then pinning by use site,
-then bump tooling. Its steps are the dispatch order.
+<plans/selector_engine.md> is the rest of template references (anonymous
+statements, relational referents), then pinning by use site, then bump
+tooling. Its steps are the dispatch order.
 
 Selector-language work (<plans/relational_selectors.md>) lands on top of the
 same engine.

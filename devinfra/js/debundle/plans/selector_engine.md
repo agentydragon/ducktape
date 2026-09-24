@@ -22,10 +22,8 @@ code it tests is deleted. Consumer specs migrate in lockstep, gated by their
 generated-output diff tests. Each step moves the part of the goal it achieves
 into <../SPEC.md>.
 
-1. **Template references.** `validate` lists each template's free identifiers
-   by kind (hole, reference with its entity, global, wildcard). Anonymous
-   statements take references and globals; references to relational entities
-   constrain through their variables.
+1. **Template references.** Anonymous statements take references and globals;
+   references to relational entities constrain through their variables.
 2. **Pinning by use site.** Depends on step 1. An entity with no distinctive
    shape (a helper copy) is pinned through a template that mentions it.
    Acceptance: one of several identical decorate-helper copies is pinned

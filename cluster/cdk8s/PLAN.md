@@ -277,12 +277,8 @@ automation as their bumper, not Renovate.
 
 ## Wave 3: skip Kustomize where nothing is kustomized
 
-Single-resource directories carry no `kustomization.yaml` any more; kustomize-controller
-generates one (<../docs/cdk8s.md> § Shapes of a directory). Still wrapping one resource:
-
-- **Another kustomization lists the directory as a resource**
-  (`agents/public-coder-agent/namespace`): Kustomize needs the file there. Folding the
-  resource into its referrer removes it.
+Done: no directory wraps a single resource in a `kustomization.yaml` any more;
+kustomize-controller generates one (<../docs/cdk8s.md> § Shapes of a directory).
 
 **Pause after Wave 3.** Image pinning: § Open decisions.
 

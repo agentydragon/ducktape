@@ -1430,7 +1430,6 @@ def generate_manifests(root: Path) -> None:
     public_coder_agent_app_artifact = artifact(
         "public-coder-agent-app",
         f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app",
-        public_coder_devbox.NAMESPACE_OUTPUT_DIR,
         public_coder_proxy.OUTPUT_DIR,
         public_coder_sshpiper.OUTPUT_DIR,
     )
