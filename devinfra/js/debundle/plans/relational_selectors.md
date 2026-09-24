@@ -6,26 +6,11 @@ distinctive body. When it does not — a bare delegator, one of twelve
 byte-identical helper copies, a re-export alias — the only surviving identity is
 a **relation** to something else in the program.
 
-The engine that resolves relations already exists and is described in
-<../docs/selector_resolution.md>: every selector kind compiles into one IR
-program over every chunk, solved jointly (one CP-SAT request per group of
-interacting entities), with `all_different` across
-claimed targets. This plan is the remaining **language** work: which relations
-the selector surface can express.
+Relational selectors resolve in the one joint solve described in
+<../docs/selector_resolution.md>; this plan is the remaining **language** work:
+which relations the selector surface can express.
 
 Notation: `@Name` means "the entity another spec member pins as `Name`".
-
-## Shipped
-
-These relational selector kinds lower natively into IR atoms over `chunk_facts`
-and participate in the joint solve:
-
-`cross_ref` (`references` / `aliases`), `reads_member`, `member_of_module`,
-`passed_to_call`, `makes_decorate_call`, `intrinsic_alias`.
-
-`all_different` over claimed targets is selector semantics, not a post-hoc
-duplicate check: a broad selector can be forced unique because more specific
-selectors consumed the other candidates.
 
 ## Remaining work
 
@@ -45,20 +30,16 @@ member is pinned by shape or by a relation, never by both. "Emits this literal
 **and** is imported by `@settingsModule`" needs conjunction across the two
 families.
 
-**R5 — `@Name` inside a shape.** A `source_match` that mentions a name another
-selector pinned treats it as an alpha wildcard: `const x = new Widget(ANYTHING);`
-matches any `new C(…)`, so it is ambiguous or, when only another class is
-constructed, silently wrong (<../SELECTOR_BUGS.md>). This is the
-template-references step of <selector_engine.md>: an entity name in a template
-becomes a table constraint in the joint solve.
+**R5 — `@Name` inside a shape.** The template-references step of
+<selector_engine.md>.
 
 ## Landing a new relation
 
 1. Add the fact to `chunk_facts` if it is not derivable from what is there.
    Extraction stays fail-closed.
-2. Lower it to a table over candidate ids in the resolve engine
-   (<selector_engine.md>), with a compiled encoding in
-   `selector_constraint_model_builder`.
+2. Lower it to a table over candidate ids in the resolve
+   (`selector_resolve.rs`, <../docs/selector_resolution.md>), with a compiled
+   encoding in `selector_constraint_model_builder`.
 3. Prove it through `debundle run` on a fixture whose chunk also exports and
    uses the anchor, as <../e2e/cross_ref_lowering_test.rs> does: real graphs
    model `export { … }` and side-effect statements as owners that reference
@@ -70,8 +51,8 @@ becomes a table constraint in the joint solve.
 
 - **Build/test gate**: `bbr test //devinfra/js/debundle/...` green.
 - **Faithful or unsupported**: each construct compiles to constraints provably
-  faithful to `source_match` semantics, or reports `unsupported`. No silent
-  fallback, no under-constrained lowering.
+  faithful to the relation's documented meaning, or reports `unsupported`. No
+  silent fallback, no under-constrained lowering.
 - **Real-spec conversion gate**: after converting a downstream selector from a
   name pin to a structural or relational selector, generated output stays
   byte-identical and the converted selector resolves to the same binding the

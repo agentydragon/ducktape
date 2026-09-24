@@ -2899,6 +2899,15 @@ re-exporter (a consumer that wants a different local name
 aliases at its own import site instead of authoring a separate
 re-export module).
 
+### Rejected: one partition-optional chunk IR
+
+Folding `ChunkFactorization` into `ChunkAnalysis` as one IR with optional
+partition state looks like it removes a layer, but the two-layer shape is
+already in place: `ChunkAnalysis` is the partition-free IR, `ChunkFactorization`
+adds the applied partition, and `validate()` derives `FactorizationReport` from
+it. Removing the `Arc<ChunkAnalysis>` boundary touches the whole
+materializer/emitter path for no behavior change, so the layers stay.
+
 ### Identifiers are typed, not stringly-typed
 
 Strings that identify a thing of a known kind get a newtype.
