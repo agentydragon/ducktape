@@ -186,9 +186,8 @@ now, not declarations.
   property unrepresentable or checkable over constructs rather than parsed output:
   `test_crd_layering` (a Kustomization applying an operator's kinds depends on that
   operator's Kustomization; what roster it still needs is decided then),
-  `test_dependencies` (with `test_cluster_integration.test_no_dependency_errors`, whose
-  cycle check construction order already makes moot for in-chart edges; the one literal
-  edge left is `artifact-generators -> flux-system`), `test_health_checks`,
+  `test_dependencies` (with `test_cluster_integration.test_no_dependency_errors`),
+  `test_health_checks`,
   `test_generator_namespace`. Others may follow; the remaining list is what is left, not
   a target.
 

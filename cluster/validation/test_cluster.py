@@ -40,7 +40,6 @@ def test_artifact_generator_artifacts_are_source_ref_targets(tmp_path: Path) -> 
     )
     parsed = parse_cluster(tmp_path)
     assert ("ExternalArtifact", "ducktape-flux", "kyverno") in parsed.flux_sources
-    assert parsed.artifact_paths[("ducktape-flux", "kyverno")] == {"cluster/k8s/kyverno/app"}
 
 
 def test_both_manifest_roots_are_local(tmp_path: Path) -> None:

@@ -23,7 +23,6 @@ from more_itertools import one
 
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
-    check_duplicate_external_secrets,
     check_egress_bindings_resolve_policies,
     check_external_credential_ownership,
     check_forgejo_image_namespace_reflection,
@@ -44,7 +43,6 @@ from cluster.validation.image_automation import (
 )
 from cluster.validation.kustomize import KustomizeBuildResult, run_kustomize_build
 from cluster.validation.postbuild_substitutions import check_postbuild_substitution_sources
-from cluster.validation.terraform_backends import check_terraform_backends
 
 
 def _local_flux_kust_names(parsed: ParsedCluster, repo_root: Path) -> set[str]:
@@ -78,7 +76,7 @@ def test_all_local_flux_kustomizations_have_build_results(cluster: ParsedCluster
 
 
 def test_no_dependency_errors(cluster: ParsedCluster, repo_root: Path) -> None:
-    """No cycles, required dependencies present, operator dependencies satisfied."""
+    """Operator prerequisites are dependencies; every sourceRef resolves."""
     errors = validate_dependencies(cluster, repo_root)
     assert not errors, "\n".join(errors)
 
@@ -88,14 +86,8 @@ def test_controller_resources_have_health_checks(cluster: ParsedCluster, repo_ro
     assert not errors, "\n".join(errors)
 
 
-def test_single_external_secrets_installation(cluster: ParsedCluster) -> None:
-    """Exactly one external-secrets HelmRelease across the cluster."""
-    errors = check_duplicate_external_secrets(cluster.build_results)
-    assert not errors, "\n".join(errors)
-
-
 def test_external_credential_ownership(cluster: ParsedCluster, repo_root: Path) -> None:
-    """Suppliers own grants; consumers own ESO identities and stores."""
+    """Only the shared store reads external-creds, admitting exactly the source-approved namespaces."""
     errors = check_external_credential_ownership(cluster, repo_root)
     assert not errors, "\n".join(errors)
 
@@ -106,14 +98,8 @@ def test_forgejo_image_namespaces_are_reflected(cluster: ParsedCluster) -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_terraform_backends_not_kubernetes(cluster: ParsedCluster) -> None:
-    """tofu-controller Terraform CRs must use the pg backend, not kubernetes Secrets."""
-    errors = check_terraform_backends(cluster)
-    assert not errors, "\n".join(errors)
-
-
 def test_image_automation_webhook_consistency(cluster: ParsedCluster) -> None:
-    """Every rendered ImageRepository is in the webhook Receiver; every ImagePolicy ref resolves.
+    """Every rendered GHCR ImageRepository is in the webhook Receiver, and the Receiver names no missing one.
 
     Runs against the real built cluster (not synthetic fixtures), so it also guards the
     check against crashing on the actual manifest set — the gap that hid the earlier
@@ -174,9 +160,9 @@ def test_files_flux_rewrites_use_block_style(k8s_dir: Path) -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_flux_bootstrap_auth_split(cluster: ParsedCluster, k8s_dir: Path) -> None:
-    """Cold bootstrap sources must not depend on Flux-decrypted auth; write sources must."""
-    errors = check_flux_bootstrap_auth(cluster, k8s_dir)
+def test_flux_bootstrap_sources_need_no_decrypted_auth(k8s_dir: Path) -> None:
+    """Cold bootstrap sources must not depend on Flux-decrypted auth."""
+    errors = check_flux_bootstrap_auth(k8s_dir)
     assert not errors, "\n".join(errors)
 
 

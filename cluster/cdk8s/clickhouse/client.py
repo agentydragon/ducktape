@@ -31,7 +31,9 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-HOST = "clickhouse.clickhouse.svc.cluster.local"
+NAME = "clickhouse"  # the ClickHouseInstallation and the Service clients connect through
+NAMESPACE = "clickhouse"
+HOST = f"{NAME}.{NAMESPACE}.svc.cluster.local"
 NATIVE_PORT = 9000
 HTTP_PORT = 8123
 SCHEMA_FILE = "schema.sql"  # the key of every schema ConfigMap, and the hand-written file it is generated from
