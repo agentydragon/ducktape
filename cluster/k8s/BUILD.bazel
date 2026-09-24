@@ -107,7 +107,6 @@ filegroup(
         "haku/workspaces/image/haku-sandbox-setup.sh",
         "kustomization.yaml",
         "//cluster:generated/agents/shared-rbac/agent-shared-rbac.k8s.yaml",
-        "//cluster:generated/haku/rbac/haku-rbac.k8s.yaml",
         "//cluster:generated/keda/keda.k8s.yaml",
     ],
     visibility = ["//cluster/validation:__pkg__"],
@@ -140,10 +139,7 @@ filegroup(
 
 filegroup(
     name = "ntfy_manifest_contract_files",
-    srcs = [
-        "ntfy/ntfy.k8s.yaml",
-        "//cluster:generated/flux-webhook/flux-webhook.k8s.yaml",
-    ],
+    srcs = ["//cluster:generated/flux-webhook/flux-webhook.k8s.yaml"],
     visibility = ["//cluster/validation:__pkg__"],
 )
 

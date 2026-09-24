@@ -147,8 +147,7 @@ py_test(
     ],
 )
 
-# Not per-policy: a contract every proxy-injection policy must satisfy,
-# parameterized over them so a new one is covered without editing the test.
+# Not per-policy: behaviour every proxy-injection policy shares, parameterized over them.
 py_test(
     name = "test_proxy_injection",
     srcs = ["test_proxy_injection.py"],
@@ -163,6 +162,5 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
