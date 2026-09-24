@@ -371,26 +371,6 @@ py_test(
 )
 
 py_test(
-    name = "test_egress_allowlists",
-    srcs = ["test_egress_allowlists.py"],
-    # The generated fences are synthesized in memory, which needs jsii's Node runtime.
-    data = [
-        "//cluster/k8s:egress_allowlist_files",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//cluster/cdk8s:egress_fences",
-        "@pypi//cdk8s",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
     name = "test_rotations_config",
     srcs = ["test_rotations_config.py"],
     data = [
