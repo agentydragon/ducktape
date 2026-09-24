@@ -41,6 +41,7 @@ from external_secrets_crds.io.external_secrets import (
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAction
 from cluster.cdk8s import external_creds
+from cluster.cdk8s.agentplane import testing
 from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
     COINBASE_POLICY,
@@ -72,6 +73,7 @@ _GROCY_SF_READS_SET = "grocy-sf-reads"
 # The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
+_AGENTPLANE_TESTING_POLICY = "agentplane-testing"
 
 
 def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: ActionPolicySetSpec) -> None:
@@ -427,6 +429,15 @@ def add_staging_action_policies(scope: Construct) -> None:
             rules=[EgressPolicySpecRules(hosts=["api.coinbase.com"], methods=[EgressPolicySpecRulesMethods.GET])]
         ),
     )
+    # The testing deployment's app, for the acceptance suite's harness scenarios run from a box
+    # (agentplane/acceptance/README.md). Nothing is substituted: the suite presents the app token
+    # it mints in agentplane-testing (rbac.AcceptanceToken), so any method may pass.
+    EgressPolicy(
+        scope,
+        "egresspolicy-agentplane-testing",
+        metadata=ApiObjectMetadata(name=_AGENTPLANE_TESTING_POLICY, namespace=_NAMESPACE),
+        spec=EgressPolicySpec(rules=[EgressPolicySpecRules(hosts=[testing.ENV.app.hostname])]),
+    )
 
     # What a sandbox of claude-ai's may reach. The binding is on the account rather than on each
     # box because that is what the account is entitled to: the proxy authenticates the Pod's
@@ -444,6 +455,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # service account with no Grocy permissions, as HTTP Basic, on GETs to Grocy's own REST API (see
     # that module's `grocy-sf-readonly` EgressPolicy for why that's Grocy's API rather than the
     # grocy-mcp-sf MCP server). `coinbase` presents nothing: the sandbox signs with the key above.
+    # `agentplane-testing` presents nothing either: the acceptance suite brings its own app token.
     #
     # TODO(github-egress): consider binding `github-public` here too. The asymmetry today is that
     # the ActionPolicyBinding below auto-approves GitHub *reads through the Action Service*, while
@@ -472,6 +484,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 GROCY_SF_READONLY_POLICY,
                 HOME_ASSISTANT_READONLY_POLICY,
                 COINBASE_POLICY,
+                _AGENTPLANE_TESTING_POLICY,
             ],
         ),
     )
