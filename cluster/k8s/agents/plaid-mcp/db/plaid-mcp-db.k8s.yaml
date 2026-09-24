@@ -33,12 +33,82 @@ spec:
         password: "{{ .password }}"
         port: "5432"
         username: plaid_ro
-      metadata:
-        annotations:
-          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: augur,haku-sandbox
-          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: augur,haku-sandbox
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plaid-mcp-db-readonly-reader
+  namespace: haku-sandbox
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: haku-sandbox-plaid-mcp-db-readonly-reader
+  namespace: plaid-mcp
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-mcp-db-readonly
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: haku-sandbox-plaid-mcp-db-readonly-reader
+  namespace: plaid-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: haku-sandbox-plaid-mcp-db-readonly-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: plaid-mcp-db-readonly-reader
+    namespace: haku-sandbox
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-haku-sandbox-plaid-mcp-db-readonly-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - haku-sandbox
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: plaid-mcp-db-readonly-reader
+      remoteNamespace: plaid-mcp
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-mcp-db-readonly
+  namespace: haku-sandbox
+spec:
+  dataFrom:
+    - extract:
+        key: plaid-mcp-db-readonly
+  refreshInterval: 10m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-haku-sandbox-plaid-mcp-db-readonly-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: plaid-mcp-db-readonly
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
@@ -61,7 +131,7 @@ spec:
   instances: 2
   managed:
     roles:
-      - comment: Read-only SQL access for the Plaid Postgres MCP facade; the secret is reflected to the augur and haku-sandbox namespaces.
+      - comment: Read-only SQL access for the Plaid Postgres MCP facade; ESO copies the secret into the haku-sandbox namespace.
         ensure: present
         login: true
         name: plaid_ro
