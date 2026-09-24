@@ -996,6 +996,7 @@ py_library(
         "//cluster/cdk8s/crd_bindings/flux:helmrelease",
         "//cluster/cdk8s/crd_bindings/flux:helmrepository",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/haku_ci:runner",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
