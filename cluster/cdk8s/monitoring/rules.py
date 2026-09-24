@@ -477,7 +477,7 @@ _MCP_AUTH = [
     # (invalid_grant is terminal); now transient failures answer 503, but
     # each one still means claude.ai saw an error and the connector may
     # need a manual Reconnect. RCA:
-    # debug/2026_06_claude_ai_connector_deauth.md
+    # cluster/debug/2026_06_claude_ai_connector_deauth.md
     PrometheusRuleSpecGroupsRules(
         alert="McpUpstreamTokenRefreshFailed",
         expr=PrometheusRuleSpecGroupsRulesExpr.from_string(

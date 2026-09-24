@@ -9,7 +9,7 @@ py_library(
     srcs = ["config.py"],
     visibility = [
         "//cluster/cdk8s/litellm:__pkg__",
-        "//debug/litellm_probe:__pkg__",
+        "//cluster/debug/litellm_probe:__pkg__",
     ],
     deps = ["//cluster/cdk8s:model_rosters"],
 )

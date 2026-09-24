@@ -151,7 +151,7 @@ def _values() -> dict[str, object]:
             "startupProbe": {"failureThreshold": 120, "periodSeconds": 10},
             # /-/health/live/ returns 500 whenever PostgreSQL is unreachable, so the default
             # threshold turned every seconds-long DB blip into a ~90s reboot and 503s
-            # (debug/2026_06_claude_ai_connector_deauth.md). Ride out ~2min; readiness stays
+            # (cluster/debug/2026_06_claude_ai_connector_deauth.md). Ride out ~2min; readiness stays
             # fast so the pod leaves the Service at once. Outpost API calls regularly take 1s+,
             # hence the 10s timeouts.
             "livenessProbe": {"timeoutSeconds": 10, "periodSeconds": 15, "failureThreshold": 8},

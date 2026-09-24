@@ -24,7 +24,7 @@ need environment variables: it has compiled-in defaults under
 directory exists in the image. A dockerTools image built that way now runs
 `bazel test //...` at 25/26 (the Haku sandbox image — see
 <../../../../cluster/k8s/haku/workspaces/image/README.md>; mechanism in
-<../../../../debug/nixos*bazel_bash/README.md> "Issue 4"). Whether that also revives \_this*
+<../../../devinfra/debug/nixos_bazel_bash/README.md> "Issue 4"). Whether that also revives \_this*
 image under Firecracker is untested — goinit's pivot-root is a separate question from the
 loader — but the stated blocker for the dockerTools variant no longer holds as written.
 

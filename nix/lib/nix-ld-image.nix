@@ -3,7 +3,7 @@
 # distro keeps them. rules_python's hermetic CPython, the agent harness CLIs and every toolchain
 # Bazel downloads are such binaries. The rule behind this file (port FILESYSTEM defaults, not
 # environment variables) and every measured dead end are recorded once, in
-# <../../debug/nixos_bazel_bash/README.md> "Two substrates" and "Issue 4".
+# <../../devinfra/debug/nixos_bazel_bash/README.md> "Two substrates" and "Issue 4".
 #
 # An image puts `nixLdLibraries` in its `buildEnv` (with `/share` among `pathsToLink`), runs
 # `fakeRootCommands` in its own once `/bin` exists, and appends `env` to `config.Env`.

@@ -260,7 +260,7 @@ sparse attention, native 1M context, open-weight. External evals: SWE-bench Veri
   (1) `--n-cpu-moe N` sweep to fill VRAM with experts; (2) `ik_llama.cpp` / CUDA-backend
   runtime bake-off; (3) MTP speculative decoding (support unverified — check the GGUF).
   **Blocked on wyrm2 GPU stability:** the sweep session hit the intermittent VFIO 5090
-  FULLCHIP_RESET lockup (<../../../debug/atlas/wyrm_gpu_lockup.md>). Recovering the GPUs
+  FULLCHIP_RESET lockup (<../../../cluster/debug/atlas/wyrm_gpu_lockup.md>). Recovering the GPUs
   and preventing the lockups is the real prerequisite for this whole thread.
 - **RAM sensitivity and `atlas` safety.** Test offload configurations inside the
   current 96 GiB first, via systemd memory caps (80/88/96 GiB). A 104 GiB

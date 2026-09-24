@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: rook-ceph-trial-loop-devices
+  namespace: flux-system
+spec:
+  suspend: true # rook-ceph storage trial complete (2026-07-17); winding down, see cluster/debug/git_storage_latency_and_ha.md
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./cluster/k8s/rook-ceph-trial/loop-devices
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+  dependsOn:
+    - name: rook-ceph-trial-namespace
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: DaemonSet
+      name: rook-ceph-trial-loop-device-ssd
+      namespace: rook-ceph

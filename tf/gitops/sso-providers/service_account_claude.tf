@@ -25,7 +25,7 @@ resource "authentik_user" "claude_service_account" {
 # are unrouted, so every call returns 405) fail at apply time. The blueprint
 # reconciles permissions onto the role via Authentik's internal Python APIs,
 # bypassing the broken REST endpoint. See
-# debug/authentik_rbac_permission_role/README.md for the full diagnosis.
+# cluster/debug/authentik_rbac_permission_role/README.md for the full diagnosis.
 
 resource "authentik_token" "claude_api" {
   identifier   = "claude-diagnostics-api-token"

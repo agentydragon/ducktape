@@ -105,7 +105,7 @@
     # renders + NVENC-encodes on a passed-through RTX 5090. Not in Debian,
     # and upstream's Cloudsmith apt repo ships no amd64 builds (Raspberry Pi
     # arches only) — Flathub is the supported x86_64 path.
-    # See debug/atlas/gpu-strategy.md.
+    # See cluster/debug/atlas/gpu-strategy.md.
     - name: Install flatpak
       ansible.builtin.apt:
         name: flatpak
@@ -268,7 +268,7 @@
     # pcie_aspm=off: Disable PCIe Active State Power Management to prevent
     # passed-through GPUs from entering low-power states that VFIO can't
     # recover from, causing "RC watchdog: GPU is probably locked!" errors.
-    # See debug/atlas/wyrm_gpu_lockup.md for details.
+    # See cluster/debug/atlas/wyrm_gpu_lockup.md for details.
     #
     # ahci.mobile_lpm_policy=1: Force max_performance SATA link power management.
     # Kernel 6.17 defaults to min_power (lpm-pol 3) which enables DIPM — drives
@@ -276,7 +276,7 @@
     # AMD 800 Series chipset PCIe fabric (ata7 errors → chipset-wide lockup).
     # Kernel 6.8 did not default to min_power and ran 12+ days stable.
     # =0 (keep_firmware_settings) also disables DIPM on this board's firmware,
-    # but =1 (max_performance) is explicit. See debug/atlas/black_screen_lockup.md.
+    # but =1 (max_performance) is explicit. See cluster/debug/atlas/black_screen_lockup.md.
     #
     # Reserve 96 x 1 GiB hugepages for wyrm2. The VM owns nearly all of Atlas's
     # interactive workload, so its RAM should not sit on the normal LRU where
@@ -287,7 +287,7 @@
         # clearcpuid=510: Disable AMD Idle HLT Intercept (X86_FEATURE_IDLE_HLT,
         # CPUID 0x8000000A_EDX[30]). This feature (merged kernel 6.15) causes
         # guest vCPU stalls and spurious NMIs on AMD Zen 5. See
-        # debug/kernel-6.18-amd-kvm-stall.md.
+        # cluster/debug/kernel-6.18-amd-kvm-stall.md.
         # CLEANUP(added 2026-03-31): Remove once a pve-kernel containing the
         # RHBZ#2448303 fix (AMD Idle HLT Intercept) ships and atlas runs it.
         content: >-
@@ -340,7 +340,7 @@
     # RTX 5090 (Blackwell) has a known VFIO bug where the GPU can't wake
     # from D3cold after VM shutdown, causing FLR timeouts and host soft
     # lockups. Prevent vfio-pci from putting GPUs into D3 when idle.
-    # See debug/atlas/black_screen_lockup.md for details.
+    # See cluster/debug/atlas/black_screen_lockup.md for details.
     - name: Prevent VFIO D3 idle on GPUs (RTX 5090 Blackwell workaround)
       ansible.builtin.copy:
         dest: /etc/modprobe.d/vfio-pci.conf
@@ -354,7 +354,7 @@
     # pv_native_safe_halt when halt polling is enabled. halt_poll_ns=0
     # fixes idle stalls but does NOT fully fix stalls under load — there
     # are likely multiple bug paths. Still worth applying as a partial
-    # mitigation. See debug/kernel-6.18-amd-kvm-stall.md.
+    # mitigation. See cluster/debug/kernel-6.18-amd-kvm-stall.md.
     # CLEANUP(added 2026-03-30): Remove once a pve-kernel containing the
     # RHBZ#2448303 fix (AMD Idle HLT Intercept) ships and atlas runs it.
     - name: Disable KVM halt polling (kernel 6.18 AMD stall workaround)
@@ -411,7 +411,7 @@
     # pcie_aspm=off and BIOS "Disabled" (BIOS-controlled) are both insufficient —
     # BIOS 2102 still enables L1 on 27+ devices. Belt-and-suspenders with setpci.
     # Also disable D3cold and runtime PM on all PCIe bridges.
-    # See debug/atlas/black_screen_lockup.md.
+    # See cluster/debug/atlas/black_screen_lockup.md.
     - name: Disable ASPM on all PCI devices and D3cold on bridges
       ansible.builtin.copy:
         src: files/99-disable-chipset-aspm.rules
@@ -432,7 +432,7 @@
     # out pages via the zvol, but ZFS needs memory to perform that I/O, causing
     # a priority inversion that freezes the host. zram compresses pages in RAM
     # (no disk I/O) and avoids the deadlock entirely.
-    # See debug/atlas/black_screen_lockup.md, incident 16.
+    # See cluster/debug/atlas/black_screen_lockup.md, incident 16.
     - name: Install zram-tools
       ansible.builtin.apt:
         name: zram-tools
@@ -477,7 +477,7 @@
     # 2025, known open issues like openzfs/zfs#16695), or actual hardware
     # corruption that DIO verify is correctly catching. Disabling DIO as a
     # trial to see if the problem goes away.
-    # See debug/wyrm2-io-error-2026-04-08/README.md for investigation.
+    # See cluster/debug/wyrm2-io-error-2026-04-08/README.md for investigation.
     - name: Disable ZFS Direct I/O on VM image dataset
       community.general.zfs:
         name: rpool/var-lib-vz
@@ -503,7 +503,7 @@
     # Disable all sleep states — atlas is a server running VMs with VFIO GPU
     # passthrough. Host suspend kills VFIO-passed GPUs (GSP-RM firmware doesn't
     # survive S3) and causes cascading watchdog timeouts in guests.
-    # See debug/atlas/wyrm_gpu_lockup.md.
+    # See cluster/debug/atlas/wyrm_gpu_lockup.md.
     - name: Mask all sleep/suspend/hibernate targets
       ansible.builtin.systemd:
         name: "{{ item }}"

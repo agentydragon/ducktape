@@ -25,7 +25,7 @@ variable "talos_machine_secrets_version" {
 
 # CLEANUP(added 2026-03-26): Remove once a Talos release ships a kernel with the
 #   RHBZ#2448303 fix (AMD Idle HLT Intercept; kernel 6.18 stalls AMD KVM guests).
-#   See debug/kernel-6.18-amd-kvm-stall.md.
+#   See cluster/debug/kernel-6.18-amd-kvm-stall.md.
 variable "proxmox_talos_version" {
   description = "Talos version for Proxmox nodes (downgraded due to kernel 6.18 AMD KVM bug)"
   type        = string
