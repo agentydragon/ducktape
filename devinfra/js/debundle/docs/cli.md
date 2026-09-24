@@ -21,7 +21,7 @@ as the rest of ducktape.
 - Read-only queries: `bindings list`, `modules {list,propose}`,
   `spec {stats,selector-debt,match-selector,validate}`, `atoms`, `coverage`,
   `graph-summary`, `describe <id>`, `show-source <id>`, `scc`,
-  `cluster <sym>`, `gate {list,describe,cut}`, `selector-solve`
+  `cluster <sym>`, `gate {list,describe,cut}`
 
 ## Common arguments and env vars
 
