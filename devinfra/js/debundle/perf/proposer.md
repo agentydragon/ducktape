@@ -201,7 +201,7 @@ A 2026-06-14 downstream old-spec dry-run replay of a large private web
 corpus still showed material member-form `source_match` cost after the
 literal-initializer fast path (#2201) and selector aggregation
 (#2200/#2203). The replay used an optimized debundler, direct
-`debundle run --dry-run --keep-going`, the now-removed per-selector
+`debundle run --dry-run` in keep-going mode, the now-removed per-selector
 stderr timer set to a 50 ms threshold, preview disabled, and:
 
 ```bash

@@ -19,7 +19,7 @@ key below is now consumed only by the main LiteLLM pod (ESO-mirrored into `litel
 
 - available flagship: `gpt-6-astra`
 - main: `gpt-6-astra`
-- background/Haiku tier: `gpt-5.6-luna` (the small 5.6 — `sol` is overkill for titles etc.)
+- background/Haiku tier: `gpt-6-luna` (the small 6 — `sol` is overkill for titles etc.)
 
 Reasoning effort is driven by Claude Code's `effortLevel` setting and forwarded to Codex
 `reasoning.effort` (not a model-slug suffix).

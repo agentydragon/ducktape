@@ -63,6 +63,8 @@ data:
         - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
       HARNESS_CODEX:
         - chatgpt/oai-responses/gpt-6-astra
+        - chatgpt/oai-responses/gpt-6-sol
+        - chatgpt/oai-responses/gpt-6-luna
         - chatgpt/oai-responses/gpt-5.4
         - chatgpt/oai-responses/gpt-5.5
         - chatgpt/oai-responses/gpt-5.6-sol
@@ -74,7 +76,7 @@ data:
       public-coder-codex:
         title: Public coder / Codex
         harness: HARNESS_CODEX
-        model: chatgpt/oai-responses/gpt-5.6-luna
+        model: chatgpt/oai-responses/gpt-6-luna
         cwd: /state/workspaces/{session_id}
         reasoning_effort: medium
         instructions: Work as a public-repository coding agent. Keep private cluster data out of the workspace and outputs.
@@ -3614,10 +3616,42 @@ spec:
           - search_nodes
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Grocy SF MCP backend's catalog; every write, open_product_stock included, stays on the human path.
+  name: grocy-sf-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        grocy_sf:
+          - entities_get
+          - entities_list
+          - file_get
+          - get_below_minimum_stock
+          - get_current_user
+          - get_db_changed_time
+          - get_expired_stock
+          - get_expiring_stock
+          - get_product_stock
+          - get_system_info
+          - list_volatile_stock
+          - locations_list
+          - product_groups_list
+          - products_list
+          - quantity_units_list
+          - shopping_list_get
+          - shopping_lists_list
+          - stock_entries_list
+          - stock_get
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicyBinding
 metadata:
   annotations:
-    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
+    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
   name: claude-ai-reads
   namespace: agentplane-staging
 spec:
@@ -3632,6 +3666,7 @@ spec:
     - gmail-reads
     - google-calendar-reads
     - tana-reads
+    - grocy-sf-reads
 ---
 apiVersion: v1
 kind: Namespace

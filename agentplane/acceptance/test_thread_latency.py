@@ -4,7 +4,10 @@
 asked to say PING. Opening a session starts the harness and completes its handshake before the app
 answers, so the turn runs on a started harness. Timed on the test's clock: from the app answering
 the input as admitted (runner admission plus archival, `Turn.admitted`) to the turn's
-`TurnCompleted` arriving on the thread's event stream.
+`TurnCompleted` arriving on the thread's event stream. The harness reports the same turn on its own
+clock in the frame that ends it: Claude's `result` `duration_ms`, Codex's `turn/completed`
+`turn.durationMs`. That span holds the model call and the proxies on its path. The ceiling is on the
+difference, the runner's and the app's share, since the model's leg alone varies by seconds.
 
 **The open.** The reads `thread_store.tsx` makes before it can show that answer, through the app's
 sync proxy (`agentplane/app/electric.py`), each stage timed from sending its first request to
@@ -27,6 +30,7 @@ connections its concurrent subsets open.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
@@ -37,6 +41,7 @@ from uuid import UUID
 
 import httpx
 import pytest_bazel
+from more_itertools import one
 from pydantic import BaseModel, Field
 
 from agentplane.acceptance.agent import Agent
@@ -46,6 +51,8 @@ from agentplane.app.client import REQUEST_SECONDS, Client
 from agentplane.app.electric import SUBSET_ROW_LIMIT, SubsetRequest, ThreadScopeResponse
 from agentplane.app.inventory import SandboxView
 from agentplane.app.presets import Harness
+from agentplane.native.claude import wire as claude_wire  # Both harnesses name their frame module `wire`.
+from agentplane.native.codex import wire as codex_wire
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -58,8 +65,9 @@ Sandboxes = Callable[..., Awaitable[SandboxView]]
 Row = dict[str, Any]
 
 PING = "Say exactly the word PING and nothing else. Do not use any tool."
-# The target for that answer, set conservatively: admission to TurnCompleted.
-PING_SECONDS = 3.0
+# The target for what agentplane adds to the harness's own turn: the runner's journal, the app's
+# ingest and stream, and the trip to the test's host. A small fixed cost, whatever the turn's length.
+ADDED_SECONDS = 0.5
 
 
 class Stage(StrEnum):
@@ -94,6 +102,7 @@ class Timings(BaseModel):
     model: str
     thread_id: UUID
     turn_seconds: float = Field(description="From the app admitting the PING input to its TurnCompleted arriving.")
+    harness_seconds: float = Field(description="The same turn as the harness reports it on its own clock.")
     cold: dict[Stage, float] = Field(description="Each stage of the thread's first open.")
     warm: dict[Stage, float] = Field(description="Each stage of the same open, repeated at once.")
 
@@ -130,6 +139,29 @@ def _timed(seconds: dict[Stage, float], stage: Stage) -> Iterator[None]:
     started = time.monotonic()
     yield
     seconds[stage] = time.monotonic() - started
+
+
+def _harness_seconds(harness: protocol_pb2.Harness, native: list[str]) -> float:
+    """The turn's duration as the harness reports it in the frame that ends the turn."""
+    frames = [json.loads(line) for line in native]
+    milliseconds: int | None
+    match harness:
+        case protocol_pb2.HARNESS_CLAUDE:
+            milliseconds = one(
+                frame.duration_ms
+                for frame in map(claude_wire.parse_frame, frames)
+                if isinstance(frame, claude_wire.ResultFrame)
+            )
+        case protocol_pb2.HARNESS_CODEX:
+            milliseconds = one(
+                frame.params.turn.duration_ms
+                for frame in map(codex_wire.parse_frame, frames)
+                if isinstance(frame, codex_wire.TurnCompleted)
+            )
+        case _:
+            raise AssertionError(f"no reported turn duration for {harness=}")
+    assert milliseconds is not None, "the harness completed the turn without reporting its duration"
+    return milliseconds / 1000
 
 
 def _answers(tail: list[Row]) -> list[ThreadPayloadReference]:
@@ -197,6 +229,7 @@ async def test_a_one_word_turn_answers_and_its_thread_opens_in_time(
     turn = await agent.run(PING)
     turn_seconds = time.monotonic() - turn.admitted
     assert "PING" in turn.answer, turn.transcript
+    harness_seconds = _harness_seconds(harness, turn.native)
 
     async with httpx.AsyncClient(
         base_url=base_url, headers={"Authorization": f"Bearer {token}"}, timeout=REQUEST_SECONDS
@@ -209,6 +242,7 @@ async def test_a_one_word_turn_answers_and_its_thread_opens_in_time(
         model=model,
         thread_id=agent.thread_id,
         turn_seconds=turn_seconds,
+        harness_seconds=harness_seconds,
         cold=cold.seconds,
         warm=warm.seconds,
     )
@@ -217,7 +251,12 @@ async def test_a_one_word_turn_answers_and_its_thread_opens_in_time(
     # Each open read the answer back, so no stage was fast by returning nothing.
     for opened in (cold, warm):
         assert any("PING" in answer for answer in opened.answers), opened.answers
-    breaches = [f"turn {turn_seconds:.3f}s, ceiling {PING_SECONDS}s"] if turn_seconds >= PING_SECONDS else []
+    added = turn_seconds - harness_seconds
+    breaches = (
+        [f"turn {turn_seconds:.3f}s, harness {harness_seconds:.3f}s: added {added:.3f}s, ceiling {ADDED_SECONDS}s"]
+        if added >= ADDED_SECONDS
+        else []
+    )
     breaches += [
         f"{label} {stage} {seconds:.3f}s, ceiling {ceilings[stage]}s"
         for label, opened, ceilings in (("cold", cold, COLD_CEILINGS), ("warm", warm, WARM_CEILINGS))

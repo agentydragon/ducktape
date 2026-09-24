@@ -182,6 +182,28 @@ data:
           max_input_tokens: 872000
           max_output_tokens: 128000
           max_tokens: 128000
+      - model_name: chatgpt/ant-messages/gpt-6-sol
+        litellm_params:
+          model: anthropic/gpt-6-sol
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+          max_input_tokens: 372000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: chatgpt/ant-messages/gpt-6-luna
+        litellm_params:
+          model: anthropic/gpt-6-luna
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+          max_input_tokens: 372000
+          max_output_tokens: 128000
+          max_tokens: 128000
       - model_name: chatgpt/ant-messages/gpt-5.4
         litellm_params:
           model: anthropic/gpt-5.4
@@ -240,6 +262,28 @@ data:
           mode: responses
           supports_function_calling: true
           max_input_tokens: 872000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: chatgpt/oai-responses/gpt-6-sol
+        litellm_params:
+          model: openai/gpt-6-sol
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: responses
+          supports_function_calling: true
+          max_input_tokens: 372000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: chatgpt/oai-responses/gpt-6-luna
+        litellm_params:
+          model: openai/gpt-6-luna
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: responses
+          supports_function_calling: true
+          max_input_tokens: 372000
           max_output_tokens: 128000
           max_tokens: 128000
       - model_name: chatgpt/oai-responses/gpt-5.4

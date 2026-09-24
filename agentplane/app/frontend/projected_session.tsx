@@ -45,6 +45,7 @@ import {
   models,
   type EvidencePage,
   type NativeFramePage,
+  type SandboxView,
   type ThreadView,
 } from "./client";
 import {
@@ -57,7 +58,7 @@ import {
 } from "./thread_sync";
 import { historyRows, rowKey, summarizeRun, type HistoryRow } from "./history_rows";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
-import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
+import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 import { HighlightedText, JsonView } from "./json_view";
 import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
@@ -840,7 +841,9 @@ function VirtualizedHistory({
     };
     const correction = correctFromDom();
     if (correction === null) virtualizer.scrollToIndex(index, { align: "start" });
-    if (awaitMeasurement && (correction === null || Math.abs(correction) <= 2)) {
+    // Waiting for measurement assumes the row is mounted and in place. One scrolled to by its
+    // estimate needs the frames, whose pending state keeps a clamped scroll from reading as the bottom.
+    if (awaitMeasurement && correction !== null && Math.abs(correction) <= 2) {
       restorationSize.current = virtualizer.getTotalSize();
       return;
     }
@@ -1385,17 +1388,27 @@ function SyncedThread({
   );
 }
 
+/** Why the thread's sandbox cannot take commands, as the inventory last reported it; the composer's
+ * dot says only "Sandbox unavailable". An absence reads as a deletion only from a current inventory:
+ * a stale or dropped stream may not have seen the sandbox since. */
+function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean): string | null {
+  if (sandbox === undefined) {
+    return inventoryFresh
+      ? "Sandbox no longer exists. Showing archived Thread history; controls are disabled."
+      : "Sandbox absent from last inventory snapshot. Current availability unknown; controls are disabled.";
+  }
+  if (sandbox.state === "running") return null;
+  return `Last observed Sandbox state: ${sandbox.state}. Showing retained Thread history; controls are disabled.`;
+}
+
 export function ProjectedSession({ threadId, onBack }: { threadId: string; onBack: () => void }): JSX.Element {
   const sync = useThreadSync();
   const [thread, setThread] = useState<ThreadView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl());
-  const sandboxAvailable =
-    environment.connection === "connected" &&
-    environment.health?.fresh === true &&
-    environment.snapshot?.sandboxes.some(
-      (sandbox) => sandbox.name === thread?.sandbox && sandbox.state === "running"
-    ) === true;
+  const inventoryFresh = environment.connection === "connected" && environment.health?.fresh === true;
+  const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
+  const notice = thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
   useEffect(() => {
     void getThread(threadId).then(setThread, (reason: unknown) => setError(displayableError(reason)));
   }, [threadId]);
@@ -1409,6 +1422,9 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
           <ChronologicalDebugLink />
           <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
         </Group>
+        {/* The controls wait on this stream's word that the sandbox runs, so a dropped or stale one
+            disables them as surely as a stopped sandbox; this says which it is. */}
+        <LiveStatus live={environment} />
         {error && (
           <Text role="alert" c="red">
             {error}
@@ -1424,16 +1440,18 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
             Thread archived. Showing retained thread history; controls are disabled.
           </Text>
         )}
-        {thread &&
-          environment.snapshot &&
-          !environment.snapshot.sandboxes.some((sandbox) => sandbox.name === thread.sandbox) && (
-            <Text role="status" c="dimmed">
-              Sandbox no longer exists. Showing archived Thread history; controls are disabled.
-            </Text>
-          )}
+        {notice && (
+          <Text role="status" c="dimmed">
+            {notice}
+          </Text>
+        )}
         {thread && (
           <sync.Thread key={threadId} threadId={threadId}>
-            <SyncedThread threadId={threadId} thread={thread} available={sandboxAvailable} />
+            <SyncedThread
+              threadId={threadId}
+              thread={thread}
+              available={inventoryFresh && sandbox?.state === "running"}
+            />
           </sync.Thread>
         )}
       </Stack>

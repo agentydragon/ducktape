@@ -23,9 +23,10 @@ refusals and other server failures are not startup readiness signals.
 
 ## Thread latency
 
-`test_thread_latency` times a one-word turn at low reasoning effort against a three-second target,
-then the browser's reads to open that thread, per stage, cold and warm, against regression
-ceilings; its module docstring defines each interval. Each run writes its timings to
+`test_thread_latency` times a one-word turn at low reasoning effort and holds what agentplane adds
+to the harness's own reported turn to half a second, then times the browser's reads to open that
+thread, per stage, cold and warm, against regression ceilings; its module docstring defines each
+interval. Each run writes its timings to
 `bazel-testlogs/agentplane/acceptance/test_thread_latency/test.outputs/`.
 
 ## MCP integration
