@@ -17,7 +17,7 @@ from haku.console.notifications.console_events import (
     ConnectionStatus,
     ConsoleEventHub,
     ConsoleHelloEvent,
-    McpOperatorAuthChangedEvent,
+    OperatorConnectionChangedEvent,
     ToolCallsChangedEvent,
 )
 
@@ -203,7 +203,7 @@ async def test_event_hub_publish_timeout_is_lossy_not_a_request_failure(monkeypa
     monkeypatch.setattr(ConsoleEventHub, "_PUBLISH_TIMEOUT_SECONDS", 0.02)
 
     await hub.broadcast(
-        OPERATOR_A, [McpOperatorAuthChangedEvent(server_id="grocy-sf", status=ConnectionStatus.CONNECTED)]
+        OPERATOR_A, [OperatorConnectionChangedEvent(connection="google_mail", status=ConnectionStatus.CONNECTED)]
     )
 
     assert publisher.closed
@@ -220,11 +220,11 @@ async def test_stuck_websocket_does_not_block_other_operator_tabs(monkeypatch: p
     await hub.connect(cast(WebSocket, healthy), OPERATOR_A)
 
     await hub.deliver_locally(
-        OPERATOR_A, McpOperatorAuthChangedEvent(server_id="grocy-sf", status=ConnectionStatus.CONNECTED)
+        OPERATOR_A, OperatorConnectionChangedEvent(connection="google_mail", status=ConnectionStatus.CONNECTED)
     )
 
     assert healthy.messages == [
-        {"event_type": "mcp_operator_auth_changed", "server_id": "grocy-sf", "status": "connected"}
+        {"event_type": "operator_connection_changed", "connection": "google_mail", "status": "connected"}
     ]
     assert stuck.closed
     assert cast(WebSocket, stuck) not in hub._connections
@@ -240,7 +240,7 @@ async def test_disabled_operator_socket_is_closed_before_event_delivery() -> Non
     await hub.connect(cast(WebSocket, websocket), OPERATOR_A)
 
     await hub.deliver_locally(
-        OPERATOR_A, McpOperatorAuthChangedEvent(server_id="grocy-sf", status=ConnectionStatus.CONNECTED)
+        OPERATOR_A, OperatorConnectionChangedEvent(connection="google_mail", status=ConnectionStatus.CONNECTED)
     )
 
     assert websocket.messages == []
@@ -249,10 +249,10 @@ async def test_disabled_operator_socket_is_closed_before_event_delivery() -> Non
     await hub.aclose()
 
 
-def test_operator_auth_event_is_pydantic_validated() -> None:
+def test_operator_connection_event_is_pydantic_validated() -> None:
     with pytest.raises(ValidationError):
-        McpOperatorAuthChangedEvent.model_validate(
-            {"event_type": "mcp_operator_auth_changed", "server_id": "grocy-sf", "status": "unknown"}
+        OperatorConnectionChangedEvent.model_validate(
+            {"event_type": "operator_connection_changed", "connection": "google_mail", "status": "unknown"}
         )
 
 
@@ -260,16 +260,16 @@ def test_a_field_a_later_release_adds_does_not_cost_the_previous_one_the_event()
     """These envelopes cross replicas, which during a roll run different releases. Refusing an
     unknown field would make the release that adds one drop every invalidation the previous image
     is owed — including on the kinds it does understand."""
-    event = McpOperatorAuthChangedEvent.model_validate(
+    event = OperatorConnectionChangedEvent.model_validate(
         {
-            "event_type": "mcp_operator_auth_changed",
-            "server_id": "grocy-sf",
+            "event_type": "operator_connection_changed",
+            "connection": "google_mail",
             "status": "connected",
             "reauthorized_at": "2026-08-18T00:00:00Z",
         }
     )
 
-    assert (event.server_id, event.status) == ("grocy-sf", "connected")
+    assert (event.connection, event.status) == ("google_mail", "connected")
 
 
 def test_console_hello_event_is_a_pydantic_shape() -> None:

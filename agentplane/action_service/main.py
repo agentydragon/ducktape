@@ -27,6 +27,12 @@ from agentplane.action_service.catalog import ActionCatalog, ActionGroup, Key
 from agentplane.action_service.connections import ConnectionAuthority
 from agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
 from agentplane.action_service.enrollments import EnrollmentAuthority
+from agentplane.action_service.github_policy.visibility import (
+    API_BASE_URL,
+    CACHE_TTL_SECONDS,
+    REQUEST_TIMEOUT_SECONDS,
+    RepositoryVisibilityService,
+)
 from agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpOAuthServer
 from agentplane.action_service.oauth import OAuthSettings, running_oauth
 from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
@@ -39,12 +45,6 @@ from agentplane.action_service.updates import ActionUpdates
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.sandbox_actions.inventory import SandboxClients
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
-from github_policy.visibility import (
-    API_BASE_URL,
-    CACHE_TTL_SECONDS,
-    REQUEST_TIMEOUT_SECONDS,
-    RepositoryVisibilityService,
-)
 from mcp_infra.exec.kubernetes import KubernetesWebSocketExecRunner
 from util.kubernetes import CustomObjectsClient
 

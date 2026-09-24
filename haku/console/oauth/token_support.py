@@ -1,8 +1,8 @@
 """Shared token helpers for the console's OAuth connection flows.
 
 Token expiry, freshness against a refresh skew, public-base-URL normalization, and
-token-endpoint response parsing, extracted from ``mcp/operator_oauth`` so every console OAuth
-flow shares one implementation and the stores cannot drift.
+token-endpoint response parsing, shared so every console OAuth flow has one implementation and the
+stores cannot drift.
 """
 
 from __future__ import annotations
@@ -47,15 +47,6 @@ def token_is_fresh(expires_at: datetime.datetime | None, now: datetime.datetime)
 
 def public_base_url(settings: Settings) -> str:
     return settings.public_base_url.rstrip("/")
-
-
-def token_request_error_message(*, label: str, request_error: httpx2.RequestError, timeout_seconds: float) -> str:
-    """Describe token-endpoint transport failures even when httpx's message is empty."""
-    if isinstance(request_error, httpx2.TimeoutException):
-        return f"{label} timed out after {timeout_seconds:g} seconds"
-    detail = str(request_error).strip()
-    suffix = f": {detail}" if detail else ""
-    return f"{label} request failed: {type(request_error).__name__}{suffix}"
 
 
 def token_request_headers(headers: Mapping[str, str] | None = None) -> dict[str, str]:

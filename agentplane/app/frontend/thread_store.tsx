@@ -347,6 +347,7 @@ interface WindowState {
   /** The tail, view state and pending commands have loaded, and reach the scope's cursor. */
   caughtUp: boolean;
   olderAvailable: boolean;
+  loadingOlder: boolean;
   error: string | null;
 }
 
@@ -365,11 +366,13 @@ class EpochWindow extends Listeners {
   #lowest: bigint | null = null;
   #exhausted = false;
   #loadingOlder = false;
+  // The epoch is gone: the window that replaces this one loads what it would have.
+  #gone = false;
   #ready = false;
   // Rows seen since a refetch began; what it did not see was deleted while the log was rebuilt.
   #refreshed: Set<string> | null = null;
   #closed = false;
-  #state: WindowState = { rows: [], caughtUp: false, olderAvailable: false, error: null };
+  #state: WindowState = { rows: [], caughtUp: false, olderAvailable: false, loadingOlder: false, error: null };
 
   constructor(threadId: string, scope: ThreadScope, onGone: () => void) {
     super();
@@ -395,8 +398,12 @@ class EpochWindow extends Listeners {
   getState = (): WindowState => this.#state;
 
   loadOlder = (): void => {
-    if (this.#loadingOlder || this.#exhausted || this.#lowest === null) return;
+    // A stopped or retired window loads nothing more, or a view asking whenever the reader is at the
+    // top would repeat a failed page for as long as they stay there.
+    if (this.#loadingOlder || this.#exhausted || this.#lowest === null || this.#gone || this.#state.error !== null)
+      return;
     this.#loadingOlder = true;
+    this.#publish();
     void this.#guard(() => this.#serial(() => this.#page(PAGE))).finally(() => {
       this.#loadingOlder = false;
       this.#publish();
@@ -498,7 +505,7 @@ class EpochWindow extends Listeners {
       } else if (message.headers.control === "must-refetch") void this.#refetch();
     }
     if (changed) this.#publish();
-    if (retired && !this.#closed) this.#onGone();
+    if (retired && !this.#closed) this.#retire();
   }
 
   async #guard(load: () => Promise<unknown>): Promise<void> {
@@ -512,8 +519,13 @@ class EpochWindow extends Listeners {
   #fail(error: unknown): void {
     if (this.#closed) return;
     // The fold was rebuilt under a new epoch: the reader resolves the thread's scope again.
-    if (error instanceof FetchError && error.status === 410) this.#onGone();
+    if (error instanceof FetchError && error.status === 410) this.#retire();
     else this.#publish(displayableError(error));
+  }
+
+  #retire(): void {
+    this.#gone = true;
+    this.#onGone();
   }
 
   #publish(error: string | null = this.#state.error): void {
@@ -524,6 +536,7 @@ class EpochWindow extends Listeners {
       caughtUp:
         this.#ready && view !== undefined && decimalBigInt(view.revisionCursor) >= BigInt(this.scope.through_cursor),
       olderAvailable: this.#lowest !== null && !this.#exhausted,
+      loadingOlder: this.#loadingOlder,
       error,
     };
     this.notify();
@@ -604,7 +617,7 @@ class ThreadEpochs extends Listeners {
 }
 
 const NO_SYNC: SyncState = { window: null, error: null };
-const NO_WINDOW: WindowState = { rows: [], caughtUp: false, olderAvailable: false, error: null };
+const NO_WINDOW: WindowState = { rows: [], caughtUp: false, olderAvailable: false, loadingOlder: false, error: null };
 const noSubscription = (): (() => void) => () => undefined;
 
 const ThreadContext = createContext<ThreadEpochs | null>(null);
@@ -647,6 +660,7 @@ function useThread(): ThreadState {
             rows: state.rows.filter(threadRow),
             caughtUp: state.caughtUp,
             olderAvailable: state.olderAvailable,
+            loadingOlder: state.loadingOlder,
             loadOlder: shown.loadOlder,
             error: state.error,
             refresh: thread.refresh,
