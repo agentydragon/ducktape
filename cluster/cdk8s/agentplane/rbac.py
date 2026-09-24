@@ -212,3 +212,22 @@ class AgentRbac(Construct):
             ServiceAccount.from_service_account_name(self, "haku-sandbox-sa", "haku", namespace_name="haku-sandbox"),
             Group.from_name(self, "kubectl-sandbox-users-group", "oidc-ksbx-groups:kubectl-sandbox-users"),
         )
+
+
+class AcceptanceToken(Construct):
+    """Lets `agentplane-staging`'s `claude-ai` mint this namespace's app token, so its sandboxes
+    can run the acceptance suite's harness scenarios (`agentplane/acceptance/README.md`), which
+    ask the API server for nothing else. None of `AgentRbac`'s Sandbox lifecycle, exec or
+    ActionPolicy writes: the token is an identity for the app, as `_TOKEN_RULE` says.
+    """
+
+    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+        super().__init__(scope, id)
+        role = Role(self, "role", metadata=metadata("agentplane-acceptance-token", env.namespace), rules=[_TOKEN_RULE])
+        RoleBinding(
+            self, "rolebinding", metadata=metadata("claude-ai-acceptance-token", env.namespace), role=role
+        ).add_subjects(
+            ServiceAccount.from_service_account_name(
+                self, "claude-ai-sa", "claude-ai", namespace_name="agentplane-staging"
+            )
+        )
