@@ -227,6 +227,7 @@ py_test(
         "//:conftest",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:protocol_pb2",
+        "//agentplane/runner/testing:unanswering_runner",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
