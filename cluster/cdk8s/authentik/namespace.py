@@ -18,4 +18,11 @@ def write_manifests(root: Path) -> None:
             "goldilocks.fairwinds.com/vpa-update-mode": "initial",
             "rbac.ducktape.io/agent-readable-logs": "true",
         },
+        # The Kyverno default-vpa-requests-only policy matches only auto-mode namespaces; in
+        # initial mode VPA would otherwise scale the declared limits with its requests.
+        annotations={
+            "goldilocks.fairwinds.com/vpa-resource-policy": (
+                '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
+            )
+        },
     )
