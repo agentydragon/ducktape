@@ -203,9 +203,10 @@ enum SpecNsCommand {
     /// run it via the Bazel `:debundle` target, not the standalone
     /// binary. `--fail-fast` stops at the first problem. The source-only
     /// preflight mode (`--modules` plus `--source-file` or
-    /// `--source-root --chunk`) instead resolves module source selectors
-    /// against one chunk in-process — a fast preflight for sharding
-    /// selector repairs, without the global selector-assignment backend.
+    /// `--source-root --chunk`) instead resolves the module files jointly
+    /// against one chunk, with the same resolve as `run` (and its CP-SAT
+    /// sidecar), but without the pipeline build — a fast preflight for
+    /// sharding selector repairs.
     Validate(ValidateArgs),
 }
 
