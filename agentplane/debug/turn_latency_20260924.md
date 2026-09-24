@@ -9,6 +9,10 @@ ceiling it measured **7.51 s** on Claude (`claude-haiku-4-5`) and **5.22 s** on 
 one after another, at about 90 ms each. The harness finishes and its output waits in the stdout
 pipe while the runner works through it: 5.9 s of the Claude turn and 1.1 s of the Codex turn.
 
+**The proxies we own on the model path add about 0.1 s.** Those are the egress proxy, llm-ingress
+and LiteLLM. Codex's model leg is mostly CLIProxyAPI and the ChatGPT backend behind it: the same
+tiny request took 1.8 s and 3.1 s in two runs (§ The model path).
+
 App `devel-20260923231228-b867c67`, llm-ingress `devel-20260920014010-89ebdd6`, Electric 1.8.1 on
 the emptyDir it moved to that night. Threads `d9372034-4c33-4761-a92d-2818c68289d6` (Claude) and
 `89c598af-43a4-46a9-a3fa-6fe6c6f1083a` (Codex).
@@ -20,12 +24,15 @@ the emptyDir it moved to that night. Threads `d9372034-4c33-4761-a92d-2818c68289
 - **Codex `emittedAtMs`** on its native frames: the harness's own emit time.
 - **Claude's `result` frame**: `request_sent_wall_ms`, `time_to_request_ms`, `ttft_stream_ms`,
   `duration_api_ms` and `duration_ms`.
+- **The egress proxy's log** (`agentplane-egress`, mitmproxy): the harness connecting, the policy
+  decision, the connection to llm-ingress, response headers, and the stream closing.
 - **llm-ingress's log**: httpx logs a line when LiteLLM's response headers arrive.
+- **CLIProxyAPI's log** (`cli-proxy-api`): each request's total duration, logged when it ends.
 - **The test's clock**: `Turn.admitted`, when the app answers the input, and when `TurnCompleted`
   arrives.
 
-The runner and the harness share a container clock. llm-ingress runs on another node. Comparing its
-log with the sandbox's timestamps assumes the two node clocks agree to well under 0.1 s; nobody
+The runner and the harness share a container clock. The proxies run on other nodes. Comparing
+their logs with the sandbox's timestamps assumes the node clocks agree to well under 0.1 s; nobody
 checked that.
 
 ## Claude: 7.51 s
@@ -36,13 +43,16 @@ t = 0 is `CommandAdmitted.at`, 00:10:26.614.
 | --- | ----------------------------------------------------------------------------------------- | ------------- | ------ | ------- |
 | 1   | Commit `CommandAdmitted`, `TurnStarted` and the outbound user frame, then write the frame | 0.000 → 0.368 | 0.37 s | runner  |
 | 2   | Harness builds and sends the model request (`time_to_request_ms`)                         | 0.368 → 0.403 | 0.04 s | harness |
-| 3   | llm-ingress → LiteLLM → Anthropic, to response headers                                    | 0.403 → 1.291 | 0.89 s | model   |
-| 4   | Stream to end of turn: 56 output tokens, 49 of them thinking                              | 1.291 → 1.624 | 0.33 s | model   |
-| 5   | Runner works through the buffered output, up to `TurnCompleted.at`                        | 1.624 → 7.522 | 5.90 s | runner  |
+| 3   | Egress proxy: accept the connection, decide, connect to llm-ingress                       | 0.403 → 0.472 | 0.07 s | egress  |
+| 4   | llm-ingress → LiteLLM → Anthropic, to response headers                                    | 0.472 → 1.291 | 0.82 s | model   |
+| 5   | Stream to end of turn: 56 output tokens, 49 of them thinking                              | 1.291 → 1.624 | 0.33 s | model   |
+| 6   | Runner works through the buffered output, up to `TurnCompleted.at`                        | 1.624 → 7.522 | 5.90 s | runner  |
 
-The harness's own `duration_ms` is 1.256 s: stages 2–4. The runner accounts for 6.27 s. A
-one-word answer produced 62 Events, 42 of them native frames. Every thinking delta arrives as a
-`stream_event` plus a `thinking_tokens` estimate, and the adapter adds a `TextDelta` for it.
+Stage 4 includes llm-ingress's TokenReview and LiteLLM's routing. The Codex samples below put
+those at about 50–65 ms. The harness's own `duration_ms` is 1.256 s: stages 2–5. The runner
+accounts for 6.27 s. A one-word answer produced 62 Events, 42 of them native frames. Every
+thinking delta arrives as a `stream_event` plus a `thinking_tokens` estimate, and the adapter adds
+a `TextDelta` for it.
 
 ## Codex: 5.22 s
 
@@ -51,15 +61,17 @@ t = 0 is `CommandAdmitted.at`, 00:10:58.477.
 | #   | Stage                                                                 | t (s)         | Took   | Whose   |
 | --- | --------------------------------------------------------------------- | ------------- | ------ | ------- |
 | 1   | Commit `CommandAdmitted` and the outbound `turn/start`, then write it | 0.000 → 0.34  | 0.34 s | runner  |
-| 2   | Harness starts the turn, up to the user message item completing       | 0.34 → 0.882  | 0.54 s | harness |
-| 3   | Model request to response headers                                     | 0.882 → 1.970 | 1.09 s | model   |
-| 4   | Headers to first output item: 5 output tokens, no reasoning tokens    | 1.970 → 3.984 | 2.01 s | model   |
-| 5   | Output to the harness's `turn/completed`                              | 3.984 → 4.152 | 0.17 s | harness |
-| 6   | Runner works through the buffered output, up to `TurnCompleted.at`    | 4.152 → 5.283 | 1.13 s | runner  |
+| 2   | Harness starts the turn and connects to the egress proxy              | 0.34 → 0.906  | 0.57 s | harness |
+| 3   | Egress proxy: decide (33 ms), connect to llm-ingress                  | 0.906 → 0.949 | 0.04 s | egress  |
+| 4   | llm-ingress (TokenReview) and LiteLLM, until CLIProxyAPI has it       | 0.949 → 1.013 | 0.06 s | ingress |
+| 5   | CLIProxyAPI and the ChatGPT backend, to response headers              | 1.013 → 1.970 | 0.96 s | ChatGPT |
+| 6   | Headers to first output item: 5 output tokens, no reasoning tokens    | 1.970 → 3.984 | 2.01 s | ChatGPT |
+| 7   | Output to the stream closing and the harness's `turn/completed`       | 3.984 → 4.152 | 0.17 s | harness |
+| 8   | Runner works through the buffered output, up to `TurnCompleted.at`    | 4.152 → 5.283 | 1.13 s | runner  |
 
-Stage 1 ends when the harness first reacts: it emits a `warning` at t = 0.343. Codex does not report
-when it sent the request, so stage 3 starts at the user item's `emittedAtMs`. The harness's own
-`durationMs` is 3.823 s: stages 2–5. The runner accounts for 1.47 s.
+Stage 1 ends when the harness first reacts: it emits a `warning` at t = 0.343. Stage 4 ends
+CLIProxyAPI's logged 3.137 s before the stream closed at the egress proxy, at t = 4.150. The
+harness's own `durationMs` is 3.823 s: stages 2–7. The runner accounts for 1.47 s.
 
 The runner's lag behind the harness grows through the turn, one commit per line:
 
@@ -119,9 +131,36 @@ These are candidates, not measured fixes:
 The outbound write-ahead in `send` is one commit per frame sent, 1–3 per turn. It stays on the
 critical path by design, and costs little once each commit is cheap.
 
-Left with the harness and the model: Codex's 0.54 s before its request, and 1.09 s to headers plus
-2.01 s to a first token with no reasoning tokens. LiteLLM's access log carries no timings, so this
-run cannot split LiteLLM from the ChatGPT backend.
+## The model path
+
+```text
+harness ─▶ agentplane-egress ─▶ agentplane-llm-ingress ─▶ LiteLLM ─┬─▶ api.anthropic.com
+           (mitmproxy: policy,   (TokenReview, swaps in              └─▶ cli-proxy-api ─▶ chatgpt.com/backend-api/codex
+            workload token)       LiteLLM's key)                           (CLIProxyAPI, own OAuth session)
+```
+
+`chatgpt/oai-responses/*` routes to CLIProxyAPI (<../../cluster/k8s/litellm/app/litellm.k8s.yaml>),
+which calls the ChatGPT Codex backend, not the OpenAI platform API
+(<../../cluster/k8s/cli-proxy-api/README.md>). Every hop streams: the egress proxy logs "Streaming
+response", and llm-ingress forwards raw chunks. Two Codex PING requests, from the harness
+connecting to the stream closing:
+
+| Request          | Egress: connect, decide, connect | llm-ingress + LiteLLM | CLIProxyAPI + ChatGPT | …of which to headers |
+| ---------------- | -------------------------------- | --------------------- | --------------------- | -------------------- |
+| 00:10:59 (above) | 43 ms                            | ~64 ms                | 3.14 s                | 0.96 s               |
+| 23:53:37         | 14 ms                            | ~49 ms                | 1.77 s                | 1.33 s               |
+
+The hops we own cost about 0.1 s per request. The egress proxy takes a new connection and a policy
+decision on every request, and llm-ingress makes a TokenReview on every request by design
+(<../workload_auth/principal.py>).
+
+Not split: CLIProxyAPI's own processing from the ChatGPT backend's. CLIProxyAPI's log gives only
+totals. Splitting them needs its request log turned on (`debug`/`request-log` in
+<../../cluster/k8s/cli-proxy-api/cli-proxy-api.k8s.yaml>), or LiteLLM's Langfuse traces. Across the
+last day, CLIProxyAPI's 14 model requests took 1.8–7.2 s, at a median of 3.8 s, over mixed request
+sizes.
+
+Also left with the harness: Codex's 0.57 s between receiving `turn/start` and sending its request.
 
 ## Opening the thread, same run
 
