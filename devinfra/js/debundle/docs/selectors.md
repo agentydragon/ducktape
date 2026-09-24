@@ -265,9 +265,8 @@ source_matches:
 ```
 
 When a dry run spends too long resolving selectors, profile the debundler with
-`perf`, Callgrind, or another sampling profiler. The selector diagnostics report
-keeps selector previews and stable hashes for repair workflows, but production
-resolution no longer has per-selector stderr timing hooks.
+`perf`, Callgrind, or another sampling profiler. Each outcome in the selector
+diagnostics report carries a `selector_preview` for repair workflows.
 
 `source_matches[].match` treats binding/value identifiers in the selector as
 alpha-renamable placeholders while keeping literals, operators, member
@@ -622,8 +621,9 @@ Either way the match is ordered — it is _not_ an unordered "contains these
 somewhere" match, and pinning `close` before `open` would not match a class
 that defines `open` first. When more than one alignment is possible the
 leftmost is used; that interior choice never changes _which_ declaration
-matched, and a selector that matches more than one top-level declaration is
-still a hard error.
+matched. A selector that matches more than one top-level declaration is
+`ambiguous` unless other entities' claims eliminate the rest, which resolves it
+with `resolved_by: elimination` and a warning (<../SPEC.md> § Outcomes).
 
 For class fingerprints, keep method bodies as loose as the selector permits.
 If a stable method name and order are the real anchors, put `STMT_LIST;` in the

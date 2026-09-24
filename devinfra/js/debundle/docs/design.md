@@ -2288,8 +2288,8 @@ they semantically belong with the class.
 
 The spec addresses these statements with an
 `anonymous_statements: [...]` list on the same `LogicalModule` as
-the named members, where each entry carries the JS source of the
-target statement verbatim:
+the named members, where each entry carries a `source_match` template
+of the target statement:
 
 ```yaml
 workspace/invite/state:
@@ -2331,56 +2331,31 @@ residual deps + unambiguous active target) is what makes the promotion
 safe: the extension can be applied without leaving a downstream
 residual dependency.
 
-### Different from binding selectors
+### Resolution
 
-Binding selectors (<selectors.md>) are
-**narrowing predicates** that may admit 0, 1, or many candidate
-bindings; the resolver disambiguates by elimination across all
-spec entries. Anonymous-statement selectors are **unique-by-design
-shape matchers**: each `match` source is parsed as a single SWC
-`Stmt` and compared structurally (`EqIgnoreSpan`) against the
-chunk's top-level statements. The contract is "exactly one
-match." Zero matches is a spec error (the upstream statement was
-likely renamed or removed; the diagnostic points at top-level
-statements with similar shape). Multiple matches is a spec error
-(refine the selector or — if the chunk really contains two
-identical statements — accept that they're indistinguishable
-without context). There is no narrowing across selectors and no
-bipartite forcing: the resolver runs per-entry, independent of
-other anon entries.
+An anonymous-statement entry is an entity of the joint selector program
+(<../SPEC.md>). Its `source_match.match` is a shape-matcher template — holes
+and alpha-renaming as in any `source_match`; a bare `match:`, as above, keeps
+identifiers exact — and the entry takes exactly one of the top-level
+statements it matches, jointly with every other entity: `all_different` keeps
+two entries, from any modules or trees, off one statement. No place is `no_match`; several assignments are `ambiguous`, never
+settled by source order. Authoring: <selectors.md> § Anonymous side-effect
+statements.
 
-This asymmetry is intentional. Bindings have a stable identity
-(the declaration site) that survives mid-statement edits, so
-narrowing makes sense — a candidate set of 3 collapses to 1 when
-the other two get claimed. Anonymous statements have no comparable
-identity; their only handle is the AST shape itself. A loose
-"narrowing" matcher would silently accept an unintended statement
-when an upstream change drops the originally-targeted one — the
-spec would still type-check, the materializer would still emit a
-module, but the wrong code would move. The strict-equality
-contract pushes those failures to spec-validation time with a
-loud diagnostic, mirroring the validator's "cycle = reject"
-philosophy.
+The exactly-one contract is what keeps these entries safe. An anonymous
+statement has no declaration-site identity, only its shape, so a selector that
+silently accepted a different statement after an upstream change would move the
+wrong code while the spec still validated. Holes widen what a template matches,
+but an unintended match must still be the only one to be taken; otherwise it
+surfaces as `ambiguous` at validation time.
 
 ### Constraints on the selector source
 
-- The `match` source must parse as JS and contain **exactly one
-  top-level statement**. The resolver feeds it through the same
-  parser the chunk used (`js_ast::parse_js_module_ast`); the
-  parsed module's body must have length 1.
-- Comparison is `EqIgnoreSpan` over `ModuleItem`, evaluated inside
-  SWC's `SyntaxContext::within_ignored_ctxt` scope because selector
-  source and runtime chunks are parsed in separate resolver passes.
-  Whitespace, comments, spans, and syntax-context marks are ignored;
-  identifier names and string literals are not. Identifier names match
-  the chunk's pre-readability-rename form (the same form binding
-  selectors use as `selector.binding.name`).
-- Each anonymous statement may belong to at most one logical
-  module. A duplicate claim across two modules is a spec error;
-  the validator names both modules and the offending statement
-  ordinal.
+- The `match` source must parse as JS through the same parser the chunk used.
+- An entry claims exactly one top-level statement; a template whose match
+  covers several statements is `invalid`.
 
-### Why exact source rather than line/column
+### Why shape rather than line/column
 
 The target application's bundle is delivered minified and prettified for analysis;
 neither line nor column is stable across re-prettifies or
@@ -3164,17 +3139,13 @@ exploration before crossing the relevant phase.
    M_a reads `X` (owned by M_b); stmt#107 in M_b reads `Y`
    (owned by M_a). Resolution: colocate X and Y in one module"
    is the goal.
-6. **Pattern selectors for `anonymous_statements`.** Today the
-   `match` is exact AST equality. Wildcard placeholders
-   (`Ww([?], $g.prototype, ?, ?);` to match every decorator
-   application on `$g.prototype` regardless of the decorator
-   factory or property name) would let one selector entry claim a
-   whole regular cluster — the 6 `Ww(...)` decorator applications
-   in `WorkspaceInviteState` could collapse to a single
-   selector. But this loses the strict-equality-or-loud-failure
-   property and reintroduces narrowing, so the model would need
-   to either bipartite-force across pattern selectors or ban
-   ambiguity. Deferred until a real spec demands it.
+6. **Claim-all selectors for `anonymous_statements`.** An entry claims
+   exactly one statement, holes or not. Letting one entry claim every match of
+   a pattern (`Ww([ANYTHING], $g.prototype, ANYTHING, ANYTHING);` for every
+   decorator application on `$g.prototype`) would collapse the 6 `Ww(...)`
+   decorator applications in `WorkspaceInviteState` into one entry, but gives
+   up the exactly-one contract that makes an unintended match loud. Deferred
+   until a real spec demands it.
 7. **Factorize soundness audit.** `factorize` must be brought fully
    into line with [Factorization proposals](#factorization-proposals).
    The audit should pin tests for the invariant: every emitted

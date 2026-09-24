@@ -382,7 +382,8 @@ Typical debundle outputs:
   `rename_queue.json`, `vendor_swaps.json` when those outputs are
   configured
 - per-chunk reports under `reports/tree/<chunk-id>/`: `chunk.json`,
-  `modules.json`, `owner_graph.json`, plus `cycles.json` /
+  `modules.json`, `owner_graph.json`, `selector_diagnostics.json` when any
+  selector did not resolve or resolved with a warning, plus `cycles.json` /
   `atomic_unit_conflicts.json` only when validation rejects
 - mirrored per-directory and per-file dependency reports under
   `reports/tree/**/index.json` and `reports/tree/**/*.js.json`
@@ -426,7 +427,6 @@ authoring `comment:` fields". The CLI surface is `bindings comment` /
 
 ## See also
 
-- `AGENTS.md` — generic operator workflows that compose these commands.
 - `design.md` — the realizability theorem the gate enforces; § "Layered
   mental model" + § "Factor assembly inside `debundle run`" for the
   factorization algorithm `modules propose` draws from.
