@@ -94,12 +94,16 @@ Server-side `runtime` from the Authentik server log:
   second (a DB-backed read), 17:14–17:30Z.
   - In rounds: p50 75 ms, p90 237 ms, p99 648 ms, max 820 ms (n=162).
   - Outside rounds: p50 61 ms, p90 91 ms, p99 169 ms, max 388 ms (n=633).
+  - After #7855 (17:37–18:01Z), in rounds: p50 68 ms, p90 278 ms, p99 617 ms, max
+    798 ms (n=219).
+  - After #7855, outside rounds: p50 62 ms, p90 93 ms, p99 170 ms, max 315 ms (n=679).
 - **Agentplane token exchanges** (`POST /application/o/token/`, `python-httpx2`),
   14:14–17:30Z: 23 requests, none during a round. p50 154 ms, p90 410 ms, max 809 ms.
 
 No approval landed inside a round, so approval latency during a round is still
-unobserved. During rounds the probe's p90 is 2.6× higher and its p99 3.8× higher, but it
-stays under 1 s.
+unobserved. During rounds the probe's p90 is 2.6–3× higher and its p99 3.6–3.8× higher,
+but it stays under 1 s. #7855 did not change that. Rounds are frequent: 11 ran in
+17:37–18:01Z, covering about a fifth of the wall time.
 
 ## Cause, as far as the evidence reaches
 
@@ -113,24 +117,43 @@ stays under 1 s.
 
 ## Options
 
-| Option                                                                                                                                                                                                                                   | Expected effect                                                                                                                                                                                                | Cost                                                                                                                                                                                                                            |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #7855 (merged): stop the perpetual drift                                                                                                                                                                                                 | Verified from 17:26Z: every run logs `found drift: false`, with no PUTs, no `model_updated` Events and no second pass. A round is now one refresh (185 requests). The DB still peaks at 2–3.6 cores per round. | None                                                                                                                                                                                                                            |
-| Measure query-level cost: `log_min_duration_statement` (reload only; readable with `kubectl logs`), or `pg_stat_statements` with `track_planning` (CNPG adds the preload, which means a restart/switchover), plus `pods/exec` for `psql` | Names the queries. Settles whether the application retrieve's plan or execution is the cost.                                                                                                                   | GitOps change to the Cluster; a restart for `pg_stat_statements`                                                                                                                                                                |
-| Longer interval for these four objects (e.g. `1h`)                                                                                                                                                                                       | 4× fewer interval rounds. Source-revision rounds unchanged.                                                                                                                                                    | Out-of-band Authentik edits are reverted within 1 h, not 15 min                                                                                                                                                                 |
-| Stop `devel` commits outside `tf/gitops/` from re-running the modules                                                                                                                                                                    | Removes most rounds: 9 of them ran in 17:26–17:43Z                                                                                                                                                             | A larger change. tofu-controller v0.16.5's `sourceRef` takes only a `GitRepository`, `Bucket` or `OCIRepository`, so it needs one whose revision changes only when `tf/gitops/` does (e.g. an `OCIRepository` pushed on change) |
-| Stagger the four objects                                                                                                                                                                                                                 | Lower peak concurrency                                                                                                                                                                                         | Not holdable in config: every source-revision round re-aligns them                                                                                                                                                              |
-| Give the DB `resources.requests.cpu` (it is `BestEffort`)                                                                                                                                                                                | Fair CPU share when `ovh-ns104952` is contended (peaked at 5.6 of 8 cores)                                                                                                                                     | Scheduler reservation. Does not reduce DB CPU                                                                                                                                                                                   |
-| Cache the agentplane token exchange                                                                                                                                                                                                      | Approval latency becomes independent of Authentik load                                                                                                                                                         | A design change: the exchange is uncached on purpose                                                                                                                                                                            |
+- **#7855 (merged): stop the perpetual drift.** Verified from 17:26Z: every run logs
+  `found drift: false`, with no PUTs, no `model_updated` Events and no second pass. A
+  round is now one refresh (185 requests). The DB still peaks at 2–3.6 cores per round.
+- **Measure the query-level cost.**
+  - Tools:
+    - `log_min_duration_statement`: reload only, readable with `kubectl logs`.
+    - `pg_stat_statements` with `track_planning`: CNPG adds the preload, which means a
+      restart/switchover.
+    - `pods/exec` for `psql`.
+  - Effect: names the queries, and settles whether the application retrieve's plan or its
+    execution is the cost.
+  - Cost: a GitOps change to the Cluster.
+- **Stop `devel` commits outside `tf/gitops/` from re-running the modules.**
+  - Effect: removes most rounds (11 ran in 17:37–18:01Z).
+  - Cost: a larger change. tofu-controller v0.16.5's `sourceRef` takes only a
+    `GitRepository`, `Bucket` or `OCIRepository`. It would need one whose revision changes
+    only when `tf/gitops/` does, e.g. an `OCIRepository` pushed on change.
+- **Longer interval for these four objects** (e.g. `1h`).
+  - Effect: 4× fewer interval rounds; source-revision rounds are unchanged.
+  - Cost: out-of-band Authentik edits are reverted within 1 h instead of 15 min.
+- **Stagger the four objects.** Would lower peak concurrency, but config cannot hold it:
+  every source-revision round re-aligns them.
+- **Give the DB `resources.requests.cpu`** (it is `BestEffort`).
+  - Effect: a fair CPU share when `ovh-ns104952` is contended. It peaked at 5.6 of 8
+    cores.
+  - Cost: a scheduler reservation, and it does not reduce DB CPU.
+- **Cache the agentplane token exchange.** Approval latency would become independent of
+  Authentik load. It is a design change: the exchange is uncached on purpose.
 
 ## Not observed
 
 - **Per-query DB cost.** `pg_stat_statements` is not loaded, and `pods/exec` in
   `authentik` is denied to the agent identity (a grant request was left pending).
 - **Mimir history.** `services/proxy` in `monitoring` is denied, so all CPU figures come
-  from live kubelet samples taken 16:49–17:30Z.
+  from live kubelet samples taken 16:49–17:52Z.
 - **Plan diffs.** `storeReadablePlan` was `none`, so the drift fix was verified from its
-  effect, not from the diff.
+  effect, not from the diff. #7872 stores readable plans for the three objects.
 - **An approval during a round.**
 - **Incidental:** the CNPG exporter's default queries fail on this cluster every scrape
   (`database "app" does not exist`, about 400 per hour), so the CNPG `PodMonitor` series
