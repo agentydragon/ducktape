@@ -38,15 +38,16 @@ Design and milestones: <plans/automated_spec_workflows.md> — patch-plan bulk
 codemods that explain every skipped candidate and prove through the one
 resolve, repair from the keep-going report, the inventory/plan/apply/validate
 CLI model, and new-app bootstrap. Version porting, and a two-version held-out
-evaluation of `debundle_stabilize` built on it, is step 1d of
+evaluation of `debundle_stabilize` built on it, is step 1c of
 <plans/selector_engine.md>. Every flow is held to the interactive budget in
 <docs/selector_resolution.md> § Interactive budget.
 
-1. **Selector diagnostics.** Nearest-candidate and smallest-differentiator
-   diagnostics for `no_match` and `ambiguous` outcomes, reporting the first
-   mismatch: the first unmatched item of a multi-declaration range, the first
-   incompatible identifier binding or sub-expression, a parameter-pattern
-   mismatch, and list-hole binding spans.
+1. **Selector diagnostics.** A smallest-differentiator diagnostic for
+   `ambiguous` outcomes, and sharper first-mismatch reasons for `no_match`'s
+   `nearest_unclaimed`: the first unmatched item of a multi-declaration range,
+   the first incompatible identifier binding or sub-expression, a
+   parameter-pattern mismatch, and list-hole binding spans; and near misses
+   for multi-statement templates.
 2. **Selector-debt ranking improvements.** Extend `debundle spec selector-debt`
    with source-aware ranking for multi-statement windows, repeated selector
    bodies that can become binding groups, and "stable literal by value"

@@ -218,7 +218,7 @@ hand-authored module-by-module edits.
 
 ## Flow 3: Port Version 1 Spec to Version 2 Chunks
 
-Porting is step 1d of <selector_engine.md>. The retrieval design in "Repair
+Porting is step 1c of <selector_engine.md>. The retrieval design in "Repair
 and porting search" below applies to it.
 
 ## Repair Workflow
@@ -348,7 +348,7 @@ Patch planning and application should be deterministic:
 
 ### Milestone 4: Version-Port Workflow
 
-Step 1d of <selector_engine.md>.
+Step 1c of <selector_engine.md>.
 
 ### Milestone 5: New-App Bootstrap
 

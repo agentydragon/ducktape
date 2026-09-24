@@ -232,6 +232,16 @@ selector at a time and never need it.
 
 `owner` is the matched statement's index in the chunk body.
 
+A `no_match` of a one-statement template also lists `nearest_unclaimed`: the
+statements no entity claimed that it comes closest to, each with its body
+index (`owner`), the `bindings` it declares, a `score` (higher is closer) and
+the first place it diverges. After an upstream bump, the first entry is
+usually the code the selector should now match:
+
+```text
+[no_match] app.js::widgets/widget as `Widget` (source_matches[].bindings[`Widget`]): did not match any top-level declaration; nearest unclaimed: body[0] declaring `a` (score 70): selector class pinned member `shut` was not found in the candidate class body in order; body[1] declaring `b` (score 70): selector class pinned member `open` was not found in the candidate class body in order -- selector: class Widget { open() { STMT_LIST; } shut() { STMT_LIST; } }
+```
+
 `validate` also lists, under `templates`, what each free identifier of every
 matched template (member, `source_matches[]` entry or anonymous statement)
 means (<../SPEC.md> § Matching): a `reference` with its `entity`, a `global`,

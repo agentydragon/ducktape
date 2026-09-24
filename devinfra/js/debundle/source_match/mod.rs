@@ -82,7 +82,7 @@ pub use resolver::SelectorResolver;
 pub use binding_resolution::{
     source_match_claim_member_selectors, source_match_declared_binding_names,
 };
-pub use fact_near_miss::fact_source_match_body_debt;
+pub use fact_near_miss::{fact_near_misses, fact_source_match_body_debt};
 pub use free_identifiers::free_identifiers;
 pub use parse_validate::parse_selector_module_with_capability_check;
 pub use preview::source_match_preview;

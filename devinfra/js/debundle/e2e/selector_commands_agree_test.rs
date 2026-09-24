@@ -333,10 +333,7 @@ export { actual };
 "#,
         ..VAR_HOISTED_OUT_OF_BLOCK
     };
-    assert_eq!(
-        assert_all_commands_agree(&case),
-        json!({"kind": "no_match"})
-    );
+    assert_no_match_nearest_actual(&assert_all_commands_agree(&case));
 }
 
 const VAR_HOISTED_OUT_OF_CATCH: Case = Case {
@@ -447,6 +444,16 @@ fn arrow_param_shadows_outer_binding() {
 
 /// Alpha renaming covers identifiers, never property names: `.id` in the
 /// template does not match `.key` in the chunk, in any command.
+/// A near miss names the one unclaimed declaration, `actual`, as closest.
+fn assert_no_match_nearest_actual(outcome: &Value) {
+    assert_eq!(outcome["kind"], "no_match", "{outcome:#}");
+    assert_eq!(
+        outcome["nearest_unclaimed"][0]["bindings"],
+        json!(["actual"]),
+        "{outcome:#}"
+    );
+}
+
 #[test]
 fn property_names_stay_exact_under_alpha() {
     let case = Case {
@@ -457,10 +464,7 @@ export { actual };
 "#,
         ..ARROW_PARAM_SHADOWS_OUTER
     };
-    assert_eq!(
-        assert_all_commands_agree(&case),
-        json!({"kind": "no_match"})
-    );
+    assert_no_match_nearest_actual(&assert_all_commands_agree(&case));
 }
 
 /// A selector matching two declarations names both, in every command.
