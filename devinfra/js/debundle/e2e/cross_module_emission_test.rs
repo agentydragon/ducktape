@@ -382,7 +382,8 @@ export { RuntimeCatalog };
     expect_rejection_containing_all(
         opts,
         &[
-            "valid global selector assignment",
+            "conflicts with `DuplicateCatalog`",
+            "conflicts with `PrimaryCatalog`",
             "catalog/primary",
             "as `PrimaryCatalog`",
             "source_matches[].bindings[`K`]",
@@ -435,7 +436,8 @@ export { RuntimeCatalog };
     let stderr = rejected.stderr;
     for required in [
         "Source-match selector diagnostic report: 2 unresolved selector(s) found",
-        "valid global selector assignment",
+        "conflicts with `DuplicateCatalog`",
+        "conflicts with `PrimaryCatalog`",
         "catalog/primary",
         "catalog/duplicate",
     ] {
@@ -477,7 +479,8 @@ export { RuntimeCatalog };
     let stderr = rejected.stderr;
     for required in [
         "Source-match selector diagnostic report: 2 unresolved selector(s) found",
-        "valid global selector assignment",
+        "conflicts with `DuplicateCatalog`",
+        "conflicts with `PrimaryCatalog`",
         "export `PrimaryCatalog`",
         "source_matches[].bindings[`K`]",
         "export `DuplicateCatalog`",

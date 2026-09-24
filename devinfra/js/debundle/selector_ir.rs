@@ -1322,6 +1322,12 @@ pub enum ClaimOutcome {
         owner: OwnerId,
         conflicting_targets: Vec<SelectorTargetId>,
     },
+    /// The target is in an unsatisfiable core: it cannot resolve together
+    /// with `with`, the other targets of that core. The core need not be
+    /// minimal.
+    Conflict {
+        with: Vec<SelectorTargetId>,
+    },
     Unsupported {
         message: String,
     },

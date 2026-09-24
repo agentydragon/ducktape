@@ -61,9 +61,6 @@ tests.
    `anonymous_resolution.rs` (edit gate, `peel`) and `validate --source-file`
    call the shared resolve.
 6. **Truthful outcomes.**
-   - Localize contradictions with one assumption literal per selector, so an
-     unsatisfiable program names the conflicting selectors instead of marking
-     every target `NoMatch`.
    - Cap candidates per entity (after already-fixed references narrow them);
      over the cap is `too_broad`, rejected without a solve.
    - `resolved_by: elimination` warning: after the solve, filter the entity's
@@ -102,8 +99,7 @@ a later sweep.
     decision record citing
     `debug/perf/2026_09_17_matcher_vs_native_lowering.md`.
 - **Step 6 (truthful outcomes):**
-  - the decoder mapping an unsatisfiable or unknown solve to an outcome for
-    every target;
+  - the decoder mapping an unknown solve to an outcome for every target;
   - the deprecated no-op `--keep-going` flag.
 - **Step 7 (one program across chunks):**
   - per-chunk CP-SAT request and summary files, the `selector_problem` output

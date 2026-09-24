@@ -41,8 +41,7 @@ shared `@Name` variables genuinely need a solver.
 So `ChunkResolver` acts as a **specialized propagator** for the shape subproblem
 and hands the solver a domain of a few rows; the solver does the joint
 assignment. A selector the matcher places nowhere never reaches the solver: it
-is reported unmatched, since an empty candidate table would make the chunk's
-whole program unsatisfiable.
+is reported unmatched without a solve.
 
 ### Rejected: let the solver consume AST facts natively instead of candidate rows
 
@@ -98,6 +97,49 @@ diagnostic — never a guess.
 faithfully is `Unsupported` rather than approximated. Rejecting input debundle
 cannot handle is correct behavior; silently resolving it to the wrong binding is
 not.
+
+## Unsatisfiable programs
+
+One contradiction must not hide every other result in the chunk, so an
+unsatisfiable program is localized to the targets that cause it
+(`selector_backend_solver::solve_localizing_conflicts`).
+
+The first compile presolves across targets
+(`PresolveScope::AcrossTargets`): `all_different` propagates fixed values and a
+relation table narrows both of its variables. That is what keeps requests small,
+but a contradiction then surfaces as an empty domain wherever propagation met
+it, not where it started. When that compile or its solve is unsatisfiable, the
+program is recompiled within targets (`PresolveScope::WithinTargets`) and solved
+again with every constraint attributed:
+
+- **Ownership.** A target owns its owner variable and its binding variable. A
+  constraint is attributed to every target owning one of its variables: a
+  candidate table to its own target, a relation table to its owner and anchor,
+  a `source_matches[]` group table to every target in the group, and each
+  `all_different` entry to the target(s) owning that variable.
+- **Hard constraints.** A constraint over variables no target owns carries no
+  attribution and stays hard.
+- **Presolve within targets** narrows a variable only from constraints attributed
+  solely to targets owning it, and `all_different` propagates nothing. A target
+  whose own constraints empty its domain gets an empty table instead of an empty
+  domain.
+
+The sidecar gives each target an assumption literal and enforces a constraint
+only while every target it is attributed to is enabled; a disabled
+`all_different` entry takes a value no other entry can. It takes CP-SAT's
+sufficient assumptions for infeasibility as one conflict set, disables those
+targets, and repeats until the rest is feasible, then solves the rest with the
+conflicting targets disabled. CP-SAT's cores are not necessarily minimal, so a
+conflict set may name a target that is not strictly needed for the
+contradiction.
+
+Each target in a conflict set of two or more comes out `Conflict { with }`,
+naming the others (`conflicting_selector` in keep-going diagnostics); a set of
+one is that target's own constraints failing and comes out `NoMatch`. Every
+other target resolves as usual. A target that depends on a conflicting one, such
+as a relation anchored on it, loses that relation with it and may come out
+ambiguous. Only when the hard constraints alone are unsatisfiable does every
+target come out `NoMatch`, with a global diagnostic.
 
 ## `selector-solve`
 

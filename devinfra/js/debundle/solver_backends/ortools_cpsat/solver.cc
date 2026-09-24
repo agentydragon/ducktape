@@ -26,6 +26,7 @@ namespace {
 
 namespace sat = ::operations_research::sat;
 using VariableMap = std::map<uint32_t, sat::IntVar>;
+using DomainMap = std::map<uint32_t, ::operations_research::Domain>;
 using AllowedRowSetMap = std::map<uint32_t, const AllowedRowSet*>;
 using SharedSparseDomainMap = std::map<uint32_t, const SharedSparseDomain*>;
 
@@ -45,6 +46,14 @@ struct ProjectionRow {
 struct ProjectionVariable {
   uint32_t id;
   sat::IntVar variable;
+};
+
+// One assumption literal per projected target, plus the literal enabling each
+// distinct multi-target attribution (true iff all its targets are enabled).
+struct TargetLiterals {
+  std::map<uint32_t, sat::BoolVar> by_target;
+  std::map<std::vector<uint32_t>, sat::BoolVar> by_target_set;
+  std::map<int, uint32_t> target_by_literal_index;
 };
 
 SelectorCpSatResponse InvalidResponse(const absl::Status& status) {
@@ -205,8 +214,8 @@ absl::StatusOr<::operations_research::Domain> DomainForVariable(
 }
 
 absl::Status AddVariables(const SelectorCpSatRequest& request,
-                          sat::CpModelBuilder* model,
-                          VariableMap* variables) {
+                          sat::CpModelBuilder* model, VariableMap* variables,
+                          DomainMap* domains) {
   absl::StatusOr<SharedSparseDomainMap> shared_domains =
       BuildSharedSparseDomainMap(request);
   if (!shared_domains.ok()) {
@@ -227,6 +236,7 @@ absl::Status AddVariables(const SelectorCpSatRequest& request,
     sat::IntVar int_var =
         model->NewIntVar(*domain).WithName(variable.debug_name());
     variables->emplace(variable.id(), int_var);
+    domains->emplace(variable.id(), *std::move(domain));
   }
   return absl::OkStatus();
 }
@@ -301,8 +311,70 @@ absl::Status AddAllowedRowSet(uint32_t table_id, size_t expected_arity,
   return absl::OkStatus();
 }
 
+absl::StatusOr<TargetLiterals> NewTargetLiterals(
+    const SelectorCpSatRequest& request, sat::CpModelBuilder* model) {
+  TargetLiterals literals;
+  for (const TargetProjection& projection : request.target_projections()) {
+    if (literals.by_target.count(projection.target_id()) != 0) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "duplicate target projection for target id ",
+          projection.target_id()));
+    }
+    const sat::BoolVar literal = model->NewBoolVar().WithName(
+        absl::StrCat("target_enabled_", projection.target_id()));
+    literals.by_target.emplace(projection.target_id(), literal);
+    literals.target_by_literal_index.emplace(literal.index(),
+                                             projection.target_id());
+  }
+  return literals;
+}
+
+// Returns the literal enforcing a constraint attributed to `target_ids`, or
+// nullopt when the constraint is hard: it has no attribution, or the model is
+// the plain one (`literals == nullptr`).
+absl::StatusOr<std::optional<sat::BoolVar>> EnableLiteral(
+    const google::protobuf::RepeatedField<uint32_t>& target_ids,
+    TargetLiterals* literals, sat::CpModelBuilder* model) {
+  if (literals == nullptr || target_ids.empty()) {
+    return std::nullopt;
+  }
+  std::vector<uint32_t> targets(target_ids.begin(), target_ids.end());
+  std::sort(targets.begin(), targets.end());
+  targets.erase(std::unique(targets.begin(), targets.end()), targets.end());
+  std::vector<sat::BoolVar> target_literals;
+  target_literals.reserve(targets.size());
+  for (uint32_t target : targets) {
+    const auto literal = literals->by_target.find(target);
+    if (literal == literals->by_target.end()) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "constraint attributed to target id ", target,
+          ", which has no target projection"));
+    }
+    target_literals.push_back(literal->second);
+  }
+  if (target_literals.size() == 1) {
+    return target_literals.front();
+  }
+  const auto cached = literals->by_target_set.find(targets);
+  if (cached != literals->by_target_set.end()) {
+    return cached->second;
+  }
+  const sat::BoolVar enabled = model->NewBoolVar();
+  model->AddBoolAnd(target_literals).OnlyEnforceIf(enabled);
+  std::vector<sat::BoolVar> clause;
+  clause.reserve(target_literals.size() + 1);
+  for (const sat::BoolVar& literal : target_literals) {
+    clause.push_back(literal.Not());
+  }
+  clause.push_back(enabled);
+  model->AddBoolOr(clause);
+  literals->by_target_set.emplace(std::move(targets), enabled);
+  return enabled;
+}
+
 absl::Status AddAllowedTables(const SelectorCpSatRequest& request,
                               const VariableMap& variables,
+                              TargetLiterals* literals,
                               sat::CpModelBuilder* model) {
   absl::StatusOr<AllowedRowSetMap> allowed_row_sets =
       BuildAllowedRowSetMap(request);
@@ -320,8 +392,16 @@ absl::Status AddAllowedTables(const SelectorCpSatRequest& request,
           absl::StrCat("table constraint ", table.id(), " has no variables"));
     }
 
+    absl::StatusOr<std::optional<sat::BoolVar>> enabled =
+        EnableLiteral(table.target_ids(), literals, model);
+    if (!enabled.ok()) {
+      return enabled.status();
+    }
     sat::TableConstraint allowed =
         model->AddAllowedAssignments(*table_variables);
+    if (enabled->has_value()) {
+      allowed.OnlyEnforceIf(**enabled);
+    }
     if (table.has_row_set_id()) {
       const auto row_set = allowed_row_sets->find(table.row_set_id());
       if (row_set == allowed_row_sets->end()) {
@@ -347,9 +427,17 @@ absl::Status AddAllowedTables(const SelectorCpSatRequest& request,
   return absl::OkStatus();
 }
 
+// An attributed entry takes part through a proxy that equals the variable while
+// the entry is enabled and otherwise a value no other entry can take, so a
+// disabled entry leaves the constraint without weakening it for the others.
 absl::Status AddAllDifferentConstraints(const SelectorCpSatRequest& request,
                                         const VariableMap& variables,
+                                        const DomainMap& domains,
+                                        TargetLiterals* literals,
                                         sat::CpModelBuilder* model) {
+  // Request values are non-negative, so negative values are free to mark
+  // disabled entries.
+  int64_t next_disabled_value = -1;
   for (const AllDifferent& all_different : request.all_different()) {
     absl::StatusOr<std::vector<sat::IntVar>> all_different_variables =
         LookupVariables(variables, all_different.variable_ids());
@@ -361,15 +449,54 @@ absl::Status AddAllDifferentConstraints(const SelectorCpSatRequest& request,
           "all_different constraint ", all_different.id(),
           " has fewer than two variables"));
     }
-    model->AddAllDifferent(*all_different_variables);
+    if (!all_different.entry_targets().empty() &&
+        all_different.entry_targets_size() !=
+            all_different.variable_ids_size()) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "all_different constraint ", all_different.id(), " has ",
+          all_different.entry_targets_size(), " entry_targets for ",
+          all_different.variable_ids_size(), " variables"));
+    }
+    std::vector<sat::IntVar> entries;
+    entries.reserve(all_different_variables->size());
+    for (int index = 0; index < all_different.variable_ids_size(); ++index) {
+      const sat::IntVar variable = (*all_different_variables)[index];
+      if (all_different.entry_targets().empty()) {
+        entries.push_back(variable);
+        continue;
+      }
+      absl::StatusOr<std::optional<sat::BoolVar>> enabled = EnableLiteral(
+          all_different.entry_targets(index).target_ids(), literals, model);
+      if (!enabled.ok()) {
+        return enabled.status();
+      }
+      if (!enabled->has_value()) {
+        entries.push_back(variable);
+        continue;
+      }
+      const int64_t disabled_value = next_disabled_value--;
+      const sat::IntVar proxy = model->NewIntVar(
+          domains.at(all_different.variable_ids(index))
+              .UnionWith(::operations_research::Domain(disabled_value)));
+      model->AddEquality(proxy, variable).OnlyEnforceIf(**enabled);
+      model->AddEquality(proxy, disabled_value)
+          .OnlyEnforceIf((*enabled)->Not());
+      entries.push_back(proxy);
+    }
+    model->AddAllDifferent(entries);
   }
   return absl::OkStatus();
 }
 
+// The variables projected by `targets`, or by every target when nullopt.
 absl::StatusOr<std::vector<ProjectionVariable>> ProjectionVariables(
-    const SelectorCpSatRequest& request, const VariableMap& variables) {
+    const SelectorCpSatRequest& request, const VariableMap& variables,
+    const std::optional<std::set<uint32_t>>& targets) {
   std::set<uint32_t> ids;
   for (const TargetProjection& projection : request.target_projections()) {
+    if (targets.has_value() && targets->count(projection.target_id()) == 0) {
+      continue;
+    }
     ids.insert(projection.owner_variable_id());
     if (projection.has_binding_variable_id()) {
       ids.insert(projection.binding_variable_id());
@@ -571,23 +698,142 @@ class SupportSearch {
   std::optional<SelectorCpSatResponse> stopped_;
 };
 
+// With `literals`, attributed constraints hold only while their targets'
+// literals do; without, every constraint is hard.
 absl::Status BuildCpModel(const SelectorCpSatRequest& request,
-                          sat::CpModelBuilder* model,
-                          VariableMap* variables) {
-  if (const absl::Status status = AddVariables(request, model, variables);
-      !status.ok()) {
-    return status;
-  }
-  if (const absl::Status status = AddAllowedTables(request, *variables, model);
+                          sat::CpModelBuilder* model, VariableMap* variables,
+                          TargetLiterals* literals) {
+  DomainMap domains;
+  if (const absl::Status status =
+          AddVariables(request, model, variables, &domains);
       !status.ok()) {
     return status;
   }
   if (const absl::Status status =
-          AddAllDifferentConstraints(request, *variables, model);
+          AddAllowedTables(request, *variables, literals, model);
+      !status.ok()) {
+    return status;
+  }
+  if (const absl::Status status = AddAllDifferentConstraints(
+          request, *variables, domains, literals, model);
       !status.ok()) {
     return status;
   }
   return absl::OkStatus();
+}
+
+constexpr char kHardInfeasibleDiagnostic[] =
+    "constraints attributed to no target are unsatisfiable on their own";
+
+// Runs once the plain model is infeasible. Solves with one assumption per
+// target and takes CP-SAT's sufficient assumptions as a conflict set, disables
+// those targets and repeats until the rest is feasible, then runs the support
+// search over the remaining targets with the conflicting targets disabled.
+SelectorCpSatResponse LocalizeConflicts(const SelectorCpSatRequest& request,
+                                        const sat::SatParameters& parameters) {
+  sat::CpModelBuilder model;
+  VariableMap variables;
+  absl::StatusOr<TargetLiterals> literals = NewTargetLiterals(request, &model);
+  if (!literals.ok()) {
+    return InvalidResponse(literals.status());
+  }
+  if (const absl::Status status =
+          BuildCpModel(request, &model, &variables, &*literals);
+      !status.ok()) {
+    return InvalidResponse(status);
+  }
+
+  // CP-SAT reports sufficient assumptions from a single-worker solve.
+  sat::SatParameters core_parameters = parameters;
+  core_parameters.set_num_search_workers(1);
+
+  std::set<uint32_t> enabled;
+  for (const auto& [target, _literal] : literals->by_target) {
+    enabled.insert(target);
+  }
+  std::vector<std::vector<uint32_t>> conflicts;
+  while (!enabled.empty()) {
+    std::vector<sat::BoolVar> assumptions;
+    assumptions.reserve(enabled.size());
+    for (uint32_t target : enabled) {
+      assumptions.push_back(literals->by_target.at(target));
+    }
+    model.ClearAssumptions();
+    model.AddAssumptions(assumptions);
+
+    sat::Model solver_model;
+    solver_model.Add(sat::NewSatParameters(core_parameters));
+    const sat::CpModelProto& model_proto = model.Build();
+    const sat::CpSolverResponse solver_response =
+        sat::SolveCpModel(model_proto, &solver_model);
+    if (solver_response.status() == sat::CpSolverStatus::OPTIMAL ||
+        solver_response.status() == sat::CpSolverStatus::FEASIBLE) {
+      break;
+    }
+    if (solver_response.status() == sat::CpSolverStatus::MODEL_INVALID) {
+      return InvalidModelResponse(solver_response, model_proto);
+    }
+    if (solver_response.status() != sat::CpSolverStatus::INFEASIBLE) {
+      SelectorCpSatResponse response;
+      response.set_status(SOLVER_STATUS_UNKNOWN);
+      response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
+      response.set_solver_response_stats(
+          sat::CpSolverResponseStats(solver_response));
+      response.set_diagnostic(
+          "CP-SAT returned UNKNOWN while localizing an infeasible program");
+      return response;
+    }
+    std::vector<uint32_t> conflict;
+    for (int literal_index :
+         solver_response.sufficient_assumptions_for_infeasibility()) {
+      const auto target = literals->target_by_literal_index.find(literal_index);
+      if (target == literals->target_by_literal_index.end()) {
+        return InvalidResponse(absl::InternalError(absl::StrCat(
+            "CP-SAT reported literal ", literal_index,
+            " as a sufficient assumption, but it is not a target literal")));
+      }
+      conflict.push_back(target->second);
+    }
+    if (conflict.empty()) {
+      SelectorCpSatResponse response;
+      response.set_status(SOLVER_STATUS_UNSATISFIABLE);
+      response.set_assignment_coverage(
+          ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE);
+      response.set_solver_response_stats(
+          sat::CpSolverResponseStats(solver_response));
+      response.set_diagnostic(kHardInfeasibleDiagnostic);
+      return response;
+    }
+    std::sort(conflict.begin(), conflict.end());
+    for (uint32_t target : conflict) {
+      enabled.erase(target);
+    }
+    conflicts.push_back(std::move(conflict));
+  }
+
+  model.ClearAssumptions();
+  for (const auto& [target, literal] : literals->by_target) {
+    model.AddBoolAnd({enabled.count(target) != 0 ? literal : literal.Not()});
+  }
+  absl::StatusOr<std::vector<ProjectionVariable>> projection_variables =
+      ProjectionVariables(request, variables, enabled);
+  if (!projection_variables.ok()) {
+    return InvalidResponse(projection_variables.status());
+  }
+  SelectorCpSatResponse response =
+      SupportSearch(model, *projection_variables, parameters)
+          .Run(request.max_alternatives_per_variable());
+  if (response.status() == SOLVER_STATUS_UNSATISFIABLE) {
+    // Still infeasible with every conflict set disabled, so the hard
+    // constraints alone are, and the cores above explain nothing.
+    response.set_diagnostic(kHardInfeasibleDiagnostic);
+    return response;
+  }
+  for (const std::vector<uint32_t>& conflict : conflicts) {
+    response.add_conflicts()->mutable_target_ids()->Add(conflict.begin(),
+                                                        conflict.end());
+  }
+  return response;
 }
 
 }  // namespace
@@ -600,13 +846,13 @@ SelectorCpSatResponse SolveSelectorCpSat(const SelectorCpSatRequest& request) {
   sat::CpModelBuilder model;
   VariableMap variables;
   const absl::Status build_status =
-      BuildCpModel(request, &model, &variables);
+      BuildCpModel(request, &model, &variables, /*literals=*/nullptr);
   if (!build_status.ok()) {
     return InvalidResponse(build_status);
   }
 
   absl::StatusOr<std::vector<ProjectionVariable>> projection_variables =
-      ProjectionVariables(request, variables);
+      ProjectionVariables(request, variables, /*targets=*/std::nullopt);
   if (!projection_variables.ok()) {
     return InvalidResponse(projection_variables.status());
   }
@@ -615,8 +861,13 @@ SelectorCpSatResponse SolveSelectorCpSat(const SelectorCpSatRequest& request) {
     return InvalidResponse(parameters.status());
   }
 
-  return SupportSearch(model, *projection_variables, *parameters)
-      .Run(request.max_alternatives_per_variable());
+  SelectorCpSatResponse response =
+      SupportSearch(model, *projection_variables, *parameters)
+          .Run(request.max_alternatives_per_variable());
+  if (response.status() != SOLVER_STATUS_UNSATISFIABLE) {
+    return response;
+  }
+  return LocalizeConflicts(request, *parameters);
 }
 
 }  // namespace ducktape::debundle::solver_backends::ortools_cpsat
