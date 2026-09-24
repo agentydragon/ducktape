@@ -15,7 +15,6 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
@@ -27,12 +26,12 @@ import {
   type KeyboardEvent,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
+import { Virtuoso, type ContextProp, type ScrollerProps, type VirtuosoHandle } from "react-virtuoso";
 
 import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
@@ -680,312 +679,35 @@ function commandOutcomeLabel(operation: string, outcome: string): string {
   return `${subject} ${outcome === "failed" ? "failed" : outcome === "noop" ? "not applied" : "applied"}`;
 }
 
-// How close the top of the loaded rows comes to the viewport's before the page before them loads.
-const LOAD_OLDER_WITHIN = 80;
+// Any absolute index older rows can never count down past: Virtuoso's `firstItemIndex` only decreases.
+const FIRST_ITEM_INDEX = 1_000_000_000;
 
-function VirtualizedHistory({
-  threadId,
-  rows,
-  running,
-  activeTurn,
-  history,
-}: {
-  threadId: string;
-  rows: HistoryRow[];
-  running: boolean;
-  activeTurn: string | null;
-  history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
-}): JSX.Element {
-  const viewport = useRef<HTMLDivElement>(null);
-  const contents = useRef<HTMLDivElement>(null);
-  const atBottom = useRef(true);
-  const previousScrollTop = useRef(0);
-  // Every bottom the viewport has had since the last scroll event or content resize was handled.
-  // A return to the bottom lands on whichever one was current when it ran; a card can grow in
-  // that task or an earlier one before the browser dispatches the scroll event.
-  const recentBottoms = useRef<number[]>([]);
-  const pointerScrolling = useRef(false);
-  const captureNextScroll = useRef(false);
-  const scrolledSinceInput = useRef(false);
-  const touchY = useRef<number | null>(null);
-  const restorationFrame = useRef<number | null>(null);
-  const restoringAnchor = useRef<string | null>(null);
-  const restorationSize = useRef<number | null>(null);
-  const previousCount = useRef(rows.length);
-  const previousFirstKey = useRef<string | null>(null);
-  const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
-  // The row holding the entity a reading anchor was taken at. A run keeps its key while steps
-  // stream into it, but gains a new first step when older history loads into it.
-  const anchorIndex = (key: string): number =>
-    rows.findIndex((row) => row.entities.some((entity) => `${entity.entityKind}:${entity.entityId}` === key));
-  const anchorElement = (key: string): HTMLElement | null => {
-    const index = anchorIndex(key);
-    if (index < 0) return null;
-    return (
-      viewport.current?.querySelector<HTMLElement>(`[data-thread-anchor="${rows[index].entities[0].cursor}"]`) ?? null
-    );
-  };
-  const cancelRestoration = () => {
-    if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
-    restorationFrame.current = null;
-    restorationSize.current = null;
-    restoringAnchor.current = null;
-  };
-  const recordBottom = (element: HTMLDivElement) => {
-    const bottom = element.scrollHeight - element.clientHeight;
-    if (!recentBottoms.current.includes(bottom)) recentBottoms.current.push(bottom);
-  };
-  // Restoring to a row that is not mounted scrolls to its estimated offset. When the rows above it
-  // measure shorter than estimated, that offset lies past the end and the browser clamps it: the
-  // restoration's own scroll lands on the bottom, which is not the reader returning there.
-  const restoringScroll = () => restorationFrame.current !== null;
-  const followPreviousBottom = (element: HTMLDivElement) => {
-    // A programmatic return to the old bottom can be delivered after a card grows. Preserve
-    // it before restoring a stale reader anchor, while an explicit user gesture owns its scroll,
-    // as does a restoration still settling.
-    if (captureNextScroll.current || restoringScroll()) return false;
-    if (!recentBottoms.current.some((bottom) => Math.abs(element.scrollTop - bottom) <= 2)) return false;
-    atBottom.current = true;
-    cancelRestoration();
-    element.scrollTop = element.scrollHeight;
-    return true;
-  };
-  function correctRestoration(): number | null {
-    const anchor = readingAnchor.current;
-    const element = viewport.current;
-    if (!anchor || !element || restoringAnchor.current !== anchor.key) return null;
-    const row = anchorElement(anchor.key);
-    if (!row) return null;
-    const correction = row.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
-    element.scrollTop += correction;
-    return correction;
-  }
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => viewport.current,
-    estimateSize: () => 180,
-    getItemKey: (index) => rowKey(rows[index]),
-    measureElement: (element) => element.getBoundingClientRect().height,
-    overscan: 5,
-    onChange: (instance, sync) => {
-      // A card can resize before virtual-core applies its measured transform. Wait for
-      // that measurement rather than guessing how many animation frames it requires.
-      if (viewport.current && followPreviousBottom(viewport.current)) return;
-      if (atBottom.current) {
-        restorationSize.current = null;
-        restoringAnchor.current = null;
-        return;
-      }
-      if (sync || restorationSize.current === null || instance.getTotalSize() === restorationSize.current) return;
-      restorationSize.current = null;
-      if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
-      restorationFrame.current = requestAnimationFrame(() => {
-        restorationFrame.current = null;
-        if (viewport.current && followPreviousBottom(viewport.current)) return;
-        if (correctRestoration() !== null) {
-          restoringAnchor.current = null;
-        }
-      });
-    },
-  });
-  // ResizeObserver below preserves the first visible row explicitly. This is an
-  // instance hook in the pinned virtual-core version, rather than an option.
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
-  const expectUserScroll = () => {
-    if (captureNextScroll.current) return;
-    captureNextScroll.current = true;
-    scrolledSinceInput.current = false;
-  };
-  // A gesture asks for the page before the oldest row as its scroll events reach the top. This asks
-  // where no scroll event will: rows too few to scroll, a gesture that ended at the top, a page that
-  // landed with the reader still there. A gesture or restoration in progress has not settled where
-  // the reader is, and until the tail shows there is no top to reach.
-  const loadOlderAtTop = () => {
-    const element = viewport.current;
-    if (
-      element &&
-      rows.length > 0 &&
-      history.olderAvailable &&
-      !captureNextScroll.current &&
-      restoringAnchor.current === null &&
-      element.scrollTop < LOAD_OLDER_WITHIN
-    )
-      history.loadOlder();
-  };
-  const captureReadingAnchor = (element: HTMLDivElement) => {
-    const viewportTop = element.getBoundingClientRect().top;
-    const first = [...element.querySelectorAll<HTMLElement>("[data-thread-anchor]")].find(
-      (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
-    );
-    const firstRow = first
-      ? rows.find((row) => row.entities[0].cursor.toString() === first.dataset.threadAnchor)
-      : undefined;
-    if (first && firstRow) {
-      readingAnchor.current = { key: rowKey(firstRow), offset: first.getBoundingClientRect().top - viewportTop };
-    }
-  };
-  const restoreAnchor = (anchor: { key: string; offset: number }, awaitMeasurement = false) => {
-    const index = anchorIndex(anchor.key);
-    if (index < 0) return;
-    cancelRestoration();
-    restoringAnchor.current = anchor.key;
-    const correctFromDom = (): number | null => {
-      const element = viewport.current;
-      const row = anchorElement(anchor.key);
-      if (!element || !row) return null;
-      const currentOffset = row.getBoundingClientRect().top - element.getBoundingClientRect().top;
-      const correction = currentOffset - anchor.offset;
-      element.scrollTop += correction;
-      return correction;
-    };
-    const correction = correctFromDom();
-    if (correction === null) virtualizer.scrollToIndex(index, { align: "start" });
-    if (awaitMeasurement && (correction === null || Math.abs(correction) <= 2)) {
-      restorationSize.current = virtualizer.getTotalSize();
-      return;
-    }
-    restorationFrame.current = requestAnimationFrame(() => {
-      if (restoringAnchor.current === anchor.key) correctFromDom();
-      restorationFrame.current = requestAnimationFrame(() => {
-        if (restoringAnchor.current === anchor.key) restoringAnchor.current = null;
-        restorationFrame.current = null;
-      });
-    });
-  };
-  useLayoutEffect(() => {
-    const element = viewport.current;
-    const firstKey = rows[0] ? rowKey(rows[0]) : null;
-    if (element && atBottom.current && rows.length > previousCount.current) element.scrollTop = element.scrollHeight;
-    if (
-      element &&
-      !atBottom.current &&
-      rows.length > 0 &&
-      readingAnchor.current &&
-      (previousCount.current === 0 || previousFirstKey.current !== firstKey)
-    ) {
-      restoreAnchor(readingAnchor.current);
-    }
-    previousCount.current = rows.length;
-    previousFirstKey.current = firstKey;
-  }, [rows, virtualizer]);
-  useLayoutEffect(() => {
-    const element = viewport.current;
-    const content = contents.current;
-    if (!element || !content) return;
-    recordBottom(element);
-    const observer = new ResizeObserver(() => {
-      // A scrollbar drag or programmatic equivalent can reach the old bottom in the same task
-      // that grows the last card, before the browser dispatches its scroll event. Preserve that
-      // user choice across the resize without interpreting arbitrary layout movement as intent.
-      if (followPreviousBottom(element) || atBottom.current) element.scrollTop = element.scrollHeight;
-      // Content can resize while a wheel, touch, or key scroll is still settling. Its
-      // measured rows do not describe the reader's final position yet; scrollend will
-      // capture that position before a later resize restoration is eligible.
-      else if (!captureNextScroll.current && readingAnchor.current) restoreAnchor(readingAnchor.current, true);
-      recentBottoms.current = [element.scrollHeight - element.clientHeight];
-    });
-    observer.observe(content);
-    // A body arriving for a remounted or streaming card is a DOM mutation, and the scroll event
-    // of a return to the bottom that follows it in the same frame precedes the ResizeObserver
-    // delivery for it. The mutation callback runs before any later task, so record its bottom.
-    const mutations = new MutationObserver(() => recordBottom(element));
-    mutations.observe(content, { subtree: true, childList: true, characterData: true, attributes: true });
-    return () => {
-      observer.disconnect();
-      mutations.disconnect();
-    };
-  }, [rows, virtualizer]);
-  // The observers above re-subscribe on every render's rows; a restoration in flight outlives that.
-  useLayoutEffect(() => cancelRestoration, []);
-  useLayoutEffect(() => {
-    const element = viewport.current;
-    if (!element) return;
-    const onScrollEnd = () => {
-      if (restoringAnchor.current !== null || !captureNextScroll.current) return;
-      captureReadingAnchor(element);
-      captureNextScroll.current = false;
-      loadOlderAtTop();
-    };
-    element.addEventListener("scrollend", onScrollEnd);
-    return () => element.removeEventListener("scrollend", onScrollEnd);
-  }, [rows]);
-  useEffect(loadOlderAtTop);
+function entityKey(entity: ThreadEntity): string {
+  return `${entity.entityKind}:${entity.entityId}`;
+}
+
+/** Virtuoso keeps the reader's row in place across a prepend only when a row keeps its absolute
+ * index. Older rows land before the row holding the previous first row's first entity: a run gains
+ * steps at its head when older history loads into it, so that row need not keep its key. */
+function useFirstItemIndex(rows: HistoryRow[]): number {
+  const previous = useRef<{ first: string | null; index: number }>({ first: null, index: FIRST_ITEM_INDEX });
+  const { first, index } = previous.current;
+  const prepended =
+    first === null ? -1 : rows.findIndex((row) => row.entities.some((entity) => entityKey(entity) === first));
+  const next = index - Math.max(prepended, 0);
+  previous.current = { first: rows[0] ? entityKey(rows[0].entities[0]) : null, index: next };
+  return next;
+}
+
+interface HistoryContext {
+  loadingOlder: boolean;
+}
+
+/** The region the tests and screen readers address is Virtuoso's scroller itself. */
+function HistoryScroller({ children, context, ...props }: ScrollerProps & ContextProp<HistoryContext>): JSX.Element {
   return (
-    <div
-      ref={viewport}
-      role="region"
-      aria-label="Thread history"
-      tabIndex={0}
-      style={{ overflowY: "auto", overflowAnchor: "none", flex: 1, minHeight: 0 }}
-      onWheel={(event) => {
-        cancelRestoration();
-        const element = event.currentTarget;
-        const canScroll =
-          (event.deltaY < 0 && element.scrollTop > 0) ||
-          (event.deltaY > 0 && element.scrollTop < element.scrollHeight - element.clientHeight);
-        if (canScroll) {
-          expectUserScroll();
-          if (event.deltaY < 0) atBottom.current = false;
-        } else if (!scrolledSinceInput.current) {
-          captureNextScroll.current = false;
-        }
-      }}
-      onKeyDown={(event) => {
-        cancelRestoration();
-        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) expectUserScroll();
-        if (["ArrowUp", "PageUp", "Home"].includes(event.key)) atBottom.current = false;
-      }}
-      onKeyUp={() => {
-        if (!scrolledSinceInput.current) captureNextScroll.current = false;
-      }}
-      onPointerDown={() => {
-        cancelRestoration();
-        pointerScrolling.current = true;
-        expectUserScroll();
-      }}
-      onPointerUp={() => {
-        pointerScrolling.current = false;
-        if (!scrolledSinceInput.current) captureNextScroll.current = false;
-      }}
-      onPointerCancel={() => {
-        pointerScrolling.current = false;
-        if (!scrolledSinceInput.current) captureNextScroll.current = false;
-      }}
-      onTouchStart={(event) => {
-        cancelRestoration();
-        touchY.current = event.touches[0]?.clientY ?? null;
-      }}
-      onTouchMove={(event) => {
-        const next = event.touches[0]?.clientY;
-        expectUserScroll();
-        if (next !== undefined && touchY.current !== null && next > touchY.current) atBottom.current = false;
-        touchY.current = next ?? null;
-      }}
-      onTouchEnd={() => {
-        touchY.current = null;
-        if (!scrolledSinceInput.current) captureNextScroll.current = false;
-      }}
-      onScroll={(event) => {
-        const element = event.currentTarget;
-        const followed = followPreviousBottom(element);
-        recentBottoms.current = [element.scrollHeight - element.clientHeight];
-        if (followed) {
-          previousScrollTop.current = element.scrollTop;
-          return;
-        }
-        if (!restoringScroll() && element.scrollHeight - element.scrollTop - element.clientHeight < 24) {
-          atBottom.current = true;
-          cancelRestoration();
-        } else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
-        previousScrollTop.current = element.scrollTop;
-        if (restoringAnchor.current !== null) return;
-        if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
-        captureNextScroll.current = true;
-        scrolledSinceInput.current = true;
-        if (element.scrollTop < LOAD_OLDER_WITHIN) history.loadOlder();
-      }}
-    >
-      {history.loadingOlder && (
+    <div {...props}>
+      {context.loadingOlder && (
         // No height of its own: it floats over the rows without moving any of them.
         <div
           style={{
@@ -1006,34 +728,101 @@ function VirtualizedHistory({
           </Paper>
         </div>
       )}
-      <div ref={contents} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-        {virtualizer.getVirtualItems().map((item) => {
-          const row = rows[item.index];
-          return row ? (
-            <div
-              key={item.key}
-              data-index={item.index}
-              data-thread-anchor={row.entities[0].cursor.toString()}
-              ref={virtualizer.measureElement}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${item.start}px)`,
-                paddingBottom: 8,
-              }}
-            >
-              <HistoryRowView
-                threadId={threadId}
-                row={row}
-                live={(entity) => running && entity.turnId === activeTurn}
-              />
-            </div>
-          ) : null;
-        })}
-      </div>
+      {children}
     </div>
+  );
+}
+
+const HISTORY_COMPONENTS = { Scroller: HistoryScroller };
+
+function VirtualizedHistory({
+  threadId,
+  rows,
+  running,
+  activeTurn,
+  history,
+}: {
+  threadId: string;
+  rows: HistoryRow[];
+  running: boolean;
+  activeTurn: string | null;
+  history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
+}): JSX.Element {
+  const list = useRef<VirtuosoHandle>(null);
+  // Whether new output keeps the tail in view. Virtuoso's at-bottom is geometry: a card growing past
+  // the viewport is not at the bottom to it, which is not the reader leaving. Reaching the bottom
+  // sets this; a gesture towards older rows clears it.
+  const following = useRef(true);
+  const pointerScrollTop = useRef<number | null>(null);
+  const touchY = useRef<number | null>(null);
+  const leave = (element: HTMLElement) => {
+    if (element.scrollTop > 0) following.current = false;
+  };
+  const firstItemIndex = useFirstItemIndex(rows);
+  // The absolute index of the first row once it last rendered, within the viewport or its overscan.
+  const [startReached, setStartReached] = useState<number | null>(null);
+  useEffect(() => {
+    if (startReached === firstItemIndex && history.olderAvailable && !history.loadingOlder) history.loadOlder();
+  });
+  return (
+    <Virtuoso<HistoryRow, HistoryContext>
+      ref={list}
+      role="region"
+      aria-label="Thread history"
+      style={{ flex: 1, minHeight: 0 }}
+      data={rows}
+      context={{ loadingOlder: history.loadingOlder }}
+      components={HISTORY_COMPONENTS}
+      firstItemIndex={firstItemIndex}
+      initialTopMostItemIndex={{ index: "LAST", align: "end" }}
+      computeItemKey={(_, row) => rowKey(row)}
+      minOverscanItemCount={5}
+      followOutput={() => (following.current ? "auto" : false)}
+      atBottomStateChange={(atBottom) => {
+        if (atBottom) following.current = true;
+      }}
+      totalListHeightChanged={() => {
+        if (following.current) list.current?.scrollToIndex({ index: "LAST", align: "end" });
+      }}
+      startReached={setStartReached}
+      onWheel={(event) => {
+        if (event.deltaY < 0) leave(event.currentTarget);
+      }}
+      onKeyDown={(event) => {
+        if (["ArrowUp", "PageUp", "Home"].includes(event.key)) leave(event.currentTarget);
+      }}
+      onPointerDown={(event) => {
+        pointerScrollTop.current = event.currentTarget.scrollTop;
+      }}
+      onPointerUp={() => {
+        pointerScrollTop.current = null;
+      }}
+      onPointerCancel={() => {
+        pointerScrollTop.current = null;
+      }}
+      onScroll={(event) => {
+        const element = event.currentTarget;
+        if (pointerScrollTop.current === null) return;
+        if (element.scrollTop < pointerScrollTop.current) leave(element);
+        pointerScrollTop.current = element.scrollTop;
+      }}
+      onTouchStart={(event) => {
+        touchY.current = event.touches[0]?.clientY ?? null;
+      }}
+      onTouchMove={(event) => {
+        const next = event.touches[0]?.clientY;
+        if (next !== undefined && touchY.current !== null && next > touchY.current) leave(event.currentTarget);
+        touchY.current = next ?? null;
+      }}
+      onTouchEnd={() => {
+        touchY.current = null;
+      }}
+      itemContent={(_, row) => (
+        <div data-thread-anchor={row.entities[0].cursor.toString()} style={{ paddingBottom: 8 }}>
+          <HistoryRowView threadId={threadId} row={row} live={(entity) => running && entity.turnId === activeTurn} />
+        </div>
+      )}
+    />
   );
 }
 
