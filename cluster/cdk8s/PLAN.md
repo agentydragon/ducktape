@@ -133,7 +133,7 @@ them (<TODO.md> § Reachable since the one-to-one conversion).
 - **The public-coder-agent constellation** with `agent-rbac-base`; retires
   `test_haku_public_coder_contract.py` and
   `test_public_coder_clickhouse_reader_contract.py`.
-- **`agentplane-index` and `aiquota-api`** rendered from their Settings.
+- **`aiquota-api`** rendered from its Settings.
 - Then the rest of <TODO.md>, in whatever order the neighbourhoods complete.
 
 **Pause during Wave 4, after the first two derivations.** Check what crosses the
