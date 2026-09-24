@@ -10,10 +10,10 @@ history holds the original full design rationale. The **actionable build checkli
 ## Not yet built
 
 - **More sources behind read-only facades.** Three proven ways to make an upstream MCP
-  server safe for Haku, cheapest first: (1) **console-side auto-approval** — when
-  haku-console already reaches the upstream's full-tool server (a `remote_mcp` backend),
-  allowlist the specific safe tools in the console's `auto_approval_policies`
-  instead of standing up a second Deployment or a dedicated credential; (2)
+  server safe for Haku, cheapest first: (1) **action-policy filtering** — wire the upstream's
+  full-tool server as an agentplane ActionGroup and allowlist the specific safe tools in an
+  action policy set (`TODO.md` → _Mutating-tool sources behind agentplane_) instead of
+  standing up a second Deployment or a dedicated credential; (2)
   **credential-scoping** — no facade at all, when the upstream itself enforces per-user
   permissions and Haku only ever needs read access with no path to writes-with-approval:
   cheaper than (1), but a dead end if write access is ever wanted, since the credential's

@@ -63,14 +63,7 @@ def _service(tmp_path: Path, *, repository: AsyncMock, authorization: AsyncMock)
             "default_access_profile_id": "public-coder",
             "mcp": {
                 "servers": {
-                    "kubernetes": {
-                        "id": _SERVER_ID,
-                        "backend": {
-                            "kind": "remote_mcp",
-                            "url": "https://kubectl-passthrough.test/mcp",
-                            "auth": {"kind": "none"},
-                        },
-                    }
+                    "kubernetes": {"id": _SERVER_ID, "backend": {"kind": "in_process", "credential": {"kind": "none"}}}
                 }
             },
         },
@@ -80,7 +73,6 @@ def _service(tmp_path: Path, *, repository: AsyncMock, authorization: AsyncMock)
         repository=repository,
         invalidation_publisher=AsyncMock(),
         executor=AsyncMock(),
-        oauth_store=AsyncMock(),
         in_process_servers={},
         provider_store=AsyncMock(),
         authentik_token_store=AsyncMock(),

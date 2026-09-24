@@ -1,8 +1,8 @@
 """Application service for Haku's actor-scoped tool-call lifecycle.
 
 FastAPI and FastMCP are transport adapters. They resolve one request actor and delegate here;
-Postgres, backend MCP execution, operator OAuth, and event delivery implement the narrow ports
-below. Keeping orchestration independent of those adapters makes this the one place where actor
+Postgres, backend MCP execution, operator-linked credentials, and event delivery implement the
+narrow ports below. Keeping orchestration independent of those adapters makes this the one place where actor
 scope is carried through policy, persistence, execution, publication, and waiting.
 """
 
@@ -27,13 +27,11 @@ from haku.console.mcp.execution import (
     OperatorMcpExecutionCaller,
 )
 from haku.console.mcp_config import (
-    InProcessBackend,
     InProcessServers,
     McpServerEntry,
     NoCredential,
     OperatorConnectionCredential,
     OperatorLoginIdentityCredential,
-    RemoteServerOAuthAuth,
     _server_entry,
 )
 from haku.console.settings import Settings
@@ -186,10 +184,6 @@ class PendingApprovalNotifier(Protocol):
     async def tool_call_resolved(self, *, operator_id: UUID, record: ToolCallRecord) -> None: ...
 
 
-class OperatorOAuthTokenStore(Protocol):
-    async def access_token_for(self, *, server: McpServerEntry, operator_id: UUID) -> str | None: ...
-
-
 class ProviderConnectionTokenStore(Protocol):
     async def access_token_for(self, *, connection: str, operator_id: UUID) -> str | None: ...
 
@@ -230,7 +224,7 @@ class ToolCallStateConflictError(RuntimeError):
 
 
 async def _require_operator_linked_token(token: Awaitable[str | None], server_id: str) -> str:
-    """Await an operator-linked token (provider connection or operator OAuth), or fail loud."""
+    """Await an operator-linked token (provider connection or login identity), or fail loud."""
     resolved = await token
     if not resolved:
         raise BackendAccountNotConnectedError(server_id)
@@ -241,28 +235,21 @@ async def backend_auth_for_operator(
     *,
     server: McpServerEntry,
     operator_id: UUID,
-    oauth_store: OperatorOAuthTokenStore,
     provider_store: ProviderConnectionTokenStore,
     authentik_store: AuthentikOperatorTokenStore,
 ) -> str | None:
-    """Resolve the server's backend credential for the acting operator, per its ``auth`` variant.
+    """Resolve the server's backend credential for the acting operator, per its credential variant.
 
     - ``OperatorConnectionCredential``: the operator's configured external-account token (Google).
-    - ``RemoteServerOAuthAuth``: the operator's OAuth token at the remote MCP server itself.
     - ``OperatorLoginIdentityCredential``: the operator's own Authentik login token (captured via
       offline_access), which the server exchanges for a per-host token (hostexec); missing ⇒ the
       operator has not logged in with offline_access yet.
     - ``NoCredential``: none — the server carries its own credential.
     """
-    credential = server.backend.credential if isinstance(server.backend, InProcessBackend) else server.backend.auth
-    match credential:
+    match server.backend.credential:
         case OperatorConnectionCredential(connection=connection):
             return await _require_operator_linked_token(
                 provider_store.access_token_for(connection=connection, operator_id=operator_id), server.id
-            )
-        case RemoteServerOAuthAuth():
-            return await _require_operator_linked_token(
-                oauth_store.access_token_for(server=server, operator_id=operator_id), server.id
             )
         case OperatorLoginIdentityCredential():
             return await _require_operator_linked_token(
@@ -282,7 +269,6 @@ class ToolCallApplicationService:
         repository: ToolCallRepository,
         invalidation_publisher: ToolCallInvalidationPublisher,
         executor: ToolExecutor,
-        oauth_store: OperatorOAuthTokenStore,
         in_process_servers: InProcessServers,
         provider_store: ProviderConnectionTokenStore,
         authentik_token_store: AuthentikOperatorTokenStore,
@@ -295,7 +281,6 @@ class ToolCallApplicationService:
         self._invalidation_publisher = invalidation_publisher
         self._approval_notifier = approval_notifier
         self._executor = executor
-        self._oauth_store = oauth_store
         self._in_process_servers = in_process_servers
         self._provider_store = provider_store
         self._authentik_token_store = authentik_token_store
@@ -312,7 +297,6 @@ class ToolCallApplicationService:
         return await backend_auth_for_operator(
             server=server,
             operator_id=operator_id,
-            oauth_store=self._oauth_store,
             provider_store=self._provider_store,
             authentik_store=self._authentik_token_store,
         )
@@ -374,7 +358,7 @@ class ToolCallApplicationService:
             return record
         auto_approval_policy_id, auto_approval_evaluation = decision
 
-        # A missing operator OAuth association must fail before a RUNNING row is durable. Once
+        # A missing operator-linked account must fail before a RUNNING row is durable. Once
         # persisted, every RUNNING call has all authorization needed to attempt execution.
         auth_token = None
         if auto_approval_policy_id is not None:

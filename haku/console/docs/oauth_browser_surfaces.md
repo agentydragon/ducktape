@@ -6,7 +6,7 @@ authority for an action, not whether the Agent being enrolled has connected yet.
 
 | Surface                                                     | Target renderer       | Reason                                                                                                                                                           |
 | ----------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Provider and MCP account-link results                       | Console SPA           | These flows start in an authenticated console, benefit from the shared design system, and can update the original tab through the existing console event stream. |
+| Provider account-link results                               | Console SPA           | These flows start in an authenticated console, benefit from the shared design system, and can update the original tab through the existing console event stream. |
 | Agent enrollment, continuation, denial, and terminal errors | Console SPA, Settings | Haku Console owns Agent authority and the Operator session. Enrollment does not depend on the future Agent connection.                                           |
 | Operator-login failure                                      | Backend HTML          | A working authenticated Operator session cannot be assumed when establishing that session failed.                                                                |
 | Authentik login and consent                                 | Authentik theme       | Authentik owns these documents; Haku templates cannot render them.                                                                                               |
@@ -14,12 +14,9 @@ authority for an action, not whether the Agent being enrolled has connected yet.
 
 ## Account-link result handoff
 
-Provider and MCP callbacks still terminate on the backend: only the backend validates OAuth state,
+Provider callbacks still terminate on the backend: only the backend validates OAuth state,
 exchanges the authorization code, and persists credentials. After that work, the callback stores a
-short-lived result in Postgres. Provider callbacks redirect to
-`/_console/oauth-result/<opaque-result-id>`. MCP callbacks return directly to
-`/_console/settings?oauth_result=<opaque-result-id>`; the SPA consumes the result, removes the
-parameter immediately, and announces success or failure while showing the affected settings.
+short-lived result in Postgres and redirects to `/_console/oauth-result/<opaque-result-id>`.
 
 The result:
 

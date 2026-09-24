@@ -9,10 +9,8 @@ py_library(
         ":provider_connection",
         ":token_support",
         "//haku/console:database_schema",
-        "//haku/console:mcp_config",
         "//haku/console/identity:authentik_operator_token",
         "//haku/console/identity:operator_identity",
-        "//haku/console/mcp:operator_oauth",
         "@pypi//sqlalchemy",
     ],
 )
@@ -108,7 +106,6 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console:database_schema",
-        "//haku/console:mcp_config",
         "@pypi//pytest_bazel",
     ],
 )
