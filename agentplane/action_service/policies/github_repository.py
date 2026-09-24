@@ -1,6 +1,6 @@
 """`github_repository`: a listed GitHub MCP Action matches when the one repository it targets is the
 configured `owner`/`repository`. The target and its search-qualifier boundaries are the
-`github_policy.repository` rules."""
+`agentplane.action_service.github_policy.repository` rules."""
 
 from __future__ import annotations
 
@@ -10,9 +10,13 @@ from typing import Literal
 from pydantic import Field, JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
+from agentplane.action_service.github_policy.repository import (
+    RepositoryMatch,
+    RepositoryMismatch,
+    evaluate_fixed_repository,
+)
 from agentplane.action_service.models import MatchedRepository, PolicyKind
 from agentplane.action_service.policies.kind import Kind, Matched, NotMatched
-from github_policy.repository import RepositoryMatch, RepositoryMismatch, evaluate_fixed_repository
 
 
 class GitHubRepository(Kind):

@@ -29,6 +29,7 @@ from agentplane.action_service.db import (
     ExternalGrantNotAuthorizedError,
     make_sessionmaker,
 )
+from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,
@@ -48,7 +49,6 @@ from agentplane.action_service.providers import DecisionContext
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, admitted_callers, in_sync_index
 from agentplane.subjects import ServiceAccountRef
-from github_policy.visibility import RepositoryVisibilityService
 
 ISSUER = "https://actions.example.test"
 OPERATOR = OperatorPrincipal(issuer="operator", subject="single")

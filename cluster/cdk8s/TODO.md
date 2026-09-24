@@ -140,8 +140,6 @@ retiring a test means deriving both sides from one value.
   `kustomization.yaml` is still hand-written, so a generated one listing the glob would
   close it. The outpost/provider referential-integrity half walks Authentik's blueprint
   DSL (`!Find`/`!KeyOf`) and stays an external-format check.
-- **`haku/mailbox`** — `test_mailbox_plan.py`'s init/prod image equality and
-  configMapGenerator-name-vs-mount-name checks, now against `haku/mailbox.py`.
 
 ## Parked — lower priority
 

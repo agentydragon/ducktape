@@ -341,7 +341,7 @@ ENV = Environment(
             # GitHub MCP discovery advertises github.com as its OAuth authorization server.
             cilium.egress_to_fqdns("api.githubcopilot.com", "github.com"),
             # `github_public_repository` policies confirm a repository is public with an
-            # unauthenticated GitHub REST call (github_policy/visibility.py); no credential
+            # unauthenticated GitHub REST call (agentplane/action_service/github_policy/visibility.py); no credential
             # rides this path.
             cilium.egress_to_fqdns("api.github.com"),
             # The Kubernetes MCP server uses the public Gateway/remote-node path.

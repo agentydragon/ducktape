@@ -6,14 +6,14 @@ import httpx
 import pytest
 import pytest_bazel
 
-from github_policy.repository import (
+from agentplane.action_service.github_policy.repository import (
     RepositoryMatch,
     RepositoryMismatch,
     TargetRepository,
     evaluate_fixed_repository,
     evaluate_public_repository,
 )
-from github_policy.visibility import RepositoryVisibilityService
+from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 
 OWNER = "test-owner"
 REPOSITORY = "test-repo"

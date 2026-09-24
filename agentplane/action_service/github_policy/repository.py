@@ -14,7 +14,10 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from github_policy.visibility import RepositoryVisibilityService, RepositoryVisibilityUnavailableError
+from agentplane.action_service.github_policy.visibility import (
+    RepositoryVisibilityService,
+    RepositoryVisibilityUnavailableError,
+)
 
 logger = logging.getLogger(__name__)
 
