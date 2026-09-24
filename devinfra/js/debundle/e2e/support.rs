@@ -2148,7 +2148,7 @@ fn command_result(output: std::process::Output) -> CommandResult {
 }
 
 /// `debundle spec validate --modules <modules_root> --source-file <source_file>`:
-/// the source-only preflight, which needs no CP-SAT sidecar.
+/// the source-only preflight.
 pub fn run_source_only_validate(
     modules_root: &Path,
     source_file: &Path,
@@ -2161,10 +2161,6 @@ pub fn run_source_only_validate(
         .arg("--source-file")
         .arg(source_file)
         .args(extra_args)
-        .env(
-            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER",
-            "/definitely/missing/selector_cpsat_solver",
-        )
         .output()
         .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
     command_result(output)

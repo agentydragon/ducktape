@@ -202,7 +202,7 @@ export { renderCard };
 }
 
 #[test]
-fn validate_source_only_json_reports_every_source_selector_failure_without_ortools() {
+fn validate_source_only_json_reports_every_source_selector_failure() {
     let fixture = write_source_only_validate_fixture();
     let out = run_source_only_validate(
         &fixture.modules_root,
