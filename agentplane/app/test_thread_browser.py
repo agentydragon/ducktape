@@ -257,10 +257,11 @@ async def test_switching_threads_starts_at_each_threads_tail(
         await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
         await expect(page.locator('[data-thread-anchor="161"]')).to_be_visible()
         await expect(page.get_by_text("Thread 0 message 79", exact=True)).to_be_visible()
+        await page.get_by_role("region", name="Thread history", exact=True).hover()
         async with page.expect_request(
             lambda request: request.method == "POST" and "entity_index < $1" in (request.post_data or "")
         ):
-            await page.get_by_role("button", name="Load 30 earlier", exact=True).click()
+            await page.mouse.wheel(0, -10_000)
         for number in (1, 0):
             async with page.expect_request(f"**/threads/{threads[number]}/sync/scope"):
                 await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()

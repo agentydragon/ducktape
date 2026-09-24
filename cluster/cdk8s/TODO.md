@@ -20,10 +20,10 @@ Entries are removed once landed — this is a burn-down, not a changelog.
 
 ## Follow-ups from the agentplane conversion
 
-- **A light `settings.py` per agentplane service.** Synth imports each service's
-  `main` for its `Settings`, pulling mitmproxy/fastapi in; the synth tests sit at
-  `size = "medium"` for that alone. Moving `Settings` and the sub-models it needs
-  into a `settings.py` the constructs import returns them to `small`.
+- **A light `settings.py` per agentplane service and aiquota.** Synth imports each
+  service's `main` (aiquota's `api`) for its `Settings`, pulling mitmproxy/fastapi in;
+  the synth tests sit at `size = "medium"` for that alone. Moving `Settings` and the
+  sub-models it needs into a `settings.py` the constructs import returns them to `small`.
 - **`Chart(namespace=...)`** once cluster-scoped objects (ClusterRole/Binding, the
   trust-manager Bundle) move to their own chart; then `metadata(name, namespace)`
   drops out of every namespaced object.
