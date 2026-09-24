@@ -12,7 +12,7 @@
 //! - the producer ([`crate::lowering::materialize::plan_builder`]) builds a
 //!   report from its internal diagnostic state and serializes it to
 //!   `selector_diagnostics.json` per chunk;
-//! - the `debundle spec validate --keep-going` CLI verb
+//! - the `debundle spec validate` CLI verb
 //!   ([`crate::cli::validate`]) runs the keep-going dry-run pass, reads those
 //!   per-chunk reports back, and re-emits a combined report on stdout in the
 //!   shared `--format text|json|ndjson` convention.
@@ -30,11 +30,17 @@
 //!   joint solve: it cannot resolve together with the selectors its message
 //!   names (the named set need not be minimal). Selectors outside every core
 //!   still resolve;
+//! - `too_broad_selector` — the shape matcher placed the selector at more than
+//!   `MAX_CANDIDATES_PER_SELECTOR` places; it is rejected without a solve;
 //! - `duplicate_claim` — two selectors resolved to the same declaration
-//!   identity in the same chunk.
+//!   identity in the same chunk;
+//! - `resolved_by_elimination` ([`Severity::Warning`]) — the selector resolved,
+//!   but only because other selectors' solved claims took its alternatives.
+//!   The message names those claimers. It does not fail the run.
 //!
-//! All but `duplicate_claim` cover both source-backed binding selectors and
-//! `anonymous_statements[].match` selectors;
+//! Every other category is [`Severity::Error`]. All but `duplicate_claim`
+//! cover both source-backed binding selectors and `anonymous_statements[].match`
+//! selectors;
 //! [`SelectorDiagnosticEntry::selector_kind`] distinguishes them
 //! (`source_matches` / `members.source_match` /
 //! `anonymous_statements.source_match`). `members.source_match` appears only for
@@ -70,6 +76,7 @@ pub struct SelectorDiagnosticsReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelectorDiagnosticEntry {
     pub category: String,
+    pub severity: Severity,
     pub module_id: String,
     pub module_path: Option<String>,
     pub export_name: Option<String>,
@@ -84,6 +91,15 @@ pub struct SelectorDiagnosticEntry {
     pub duplicate_claim: Option<DuplicateClaimReport>,
     pub message: String,
     pub recommended_next_action: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Severity {
+    /// The selector did not resolve; the run fails.
+    Error,
+    /// The selector resolved; the entry flags fragility and the run continues.
+    Warning,
 }
 
 /// Two selectors resolving to the same declaration identity in one chunk.
