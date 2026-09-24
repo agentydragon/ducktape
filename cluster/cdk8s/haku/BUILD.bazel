@@ -276,3 +276,31 @@ py_library(
         "@pypi//cdk8s_plus_34",
     ],
 )
+
+py_test(
+    name = "test_mailbox",
+    srcs = ["test_mailbox.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":mailbox",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_workspaces",
+    srcs = ["test_workspaces.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":workspaces",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -9,7 +9,7 @@ unlike LiteLLM's `/v1/messages` bridge (BerriAI/litellm#25429) and claude-code-r
 
 The `codex-claude` wrapper points Claude Code at the main LiteLLM proxy
 (`litellm.allegedly.works`), which fronts CLIProxyAPI as its `codex-*` upstream
-(see `cluster/k8s/litellm/app/test_litellm_config.py`). The laptop/agent-box/codex-pod
+(see `cluster/cdk8s/litellm/test_config.py`). The laptop/agent-box/codex-pod
 consumers authenticate to LiteLLM with a scoped `codex-clients` virtual key; the client
 key below is now consumed only by the main LiteLLM pod (ESO-mirrored into `litellm`).
 

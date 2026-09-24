@@ -117,11 +117,12 @@ Each side the test compares is now a construct, except the hand-written inputs n
 retiring a test means deriving both sides from one value.
 
 - **`agents/public-coder-agent/{app,proxy,devbox}`, `agent-rbac-base` and
-  `clickhouse/cluster`** — `test_haku_public_coder_contract.py` and
-  `test_public_coder_clickhouse_reader_contract.py` check subject, selector and port
-  agreement across RBAC, NetworkPolicies and the proxy. Still hand-written: the Iron
-  transform configs (`proxy/iron.yaml`) and the app's `agent-kubeconfig.yaml`, both
-  `configMapGenerator` inputs.
+  `clickhouse/cluster`** — `test_public_coder_{agent_config,proxy}.py` check subject,
+  selector and port agreement across RBAC, NetworkPolicies and the proxy over the
+  synthesized charts; `test_haku_public_coder_contract.py` and
+  `test_public_coder_clickhouse_reader_contract.py` check the same against the still
+  hand-written Iron transform configs (`proxy/iron.yaml`) and the app's
+  `agent-kubeconfig.yaml`, both `configMapGenerator` inputs.
 - **`agents/haku-egress-proxy` script contract** — `test_haku_sandbox_contract.py`
   regex-extracts required env vars and a clone host:port from `haku-sandbox-setup.sh`
   (an image build input) and checks the generated SandboxTemplate
@@ -150,7 +151,7 @@ retiring a test means deriving both sides from one value.
 Confirmed via the same audit and intentionally _not_ listed above:
 GENUINE-BOUNDARY tests that exercise a real external tool or a different deployable
 (all of `cluster/validation/kyverno/`, `test_flux_build.py`, `test_helm_templates.py`,
-`test_github_proxy_rules.py`, `test_github_quota_rules.py`,
+`github_api_proxy/test_proxy.py`, `monitoring/test_rules.py`,
 `test_cluster_integration.py`'s `kustomize build` core,
 `agentplane/acceptance/test_egress.py`, `cluster/cdk8s/crd_bindings/flux/test_kustomization_import.py`);
 and pure unit/schema tests with no

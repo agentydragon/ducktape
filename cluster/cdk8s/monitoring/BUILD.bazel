@@ -15,7 +15,7 @@
 # gazelle:resolve py seaweed_s3credentials_crds //cluster/cdk8s/crd_bindings/seaweedfs:s3credentials
 # gazelle:resolve py seaweed_s3identity_crds //cluster/cdk8s/crd_bindings/seaweedfs:s3identity
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "flux_kustomizations",
@@ -143,10 +143,7 @@ py_library(
 py_library(
     name = "loki",
     srcs = ["loki.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/validation:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":grafana_helmrepository",
         "//cluster/cdk8s:flux",
@@ -231,5 +228,45 @@ py_library(
         "//cluster/cdk8s/crd_bindings/prometheus_operator:prometheusrule",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
+    ],
+)
+
+py_test(
+    name = "test_roaming_daemonset_capacity",
+    srcs = ["test_roaming_daemonset_capacity.py"],
+    data = [
+        "//:nebula-mesh.json",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":loki",
+        "//:conftest",
+        "//cluster/cdk8s:node_feature_discovery",
+        "//cluster/scripts:nebula_mesh",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_rules",
+    srcs = ["test_rules.py"],
+    data = [
+        "testdata/github_quota_rules.yaml",
+        "@multitool//tools/promtool",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":rules",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )

@@ -52,7 +52,7 @@ join/leave the cluster frequently. `rugged` has taint
 require persistent availability on roaming nodes.
 
 Changing how many roaming nodes exist also requires raising `maxUnavailable` on
-the DaemonSets that schedule onto them — `//cluster/validation:test_roaming_daemonset_capacity`
+the DaemonSets that schedule onto them — `//cluster/cdk8s/monitoring:test_roaming_daemonset_capacity`
 fails with the details when it doesn't. See <docs/mesh_membership.md> § Roaming
 k8s nodes.
 
