@@ -41,6 +41,8 @@ export interface Scenario extends ScenarioOptions {
   openDebug?: "latest" | "stderr";
   /** Open a projected reasoning payload after the semantic row has mounted. */
   openReasoning?: boolean;
+  /** Open a projected tool call's Arguments and Output after the semantic row has mounted. */
+  openToolPayloads?: boolean;
   pendingCommands?: "mixed" | "controls" | "outcomes";
   failedTurn?: "before-content" | "after-content";
 }
@@ -364,6 +366,25 @@ export const SCENARIOS: Record<string, Scenario> = {
     outputName: "session-reasoning-phone",
     openReasoning: true,
     readySelectors: ["details[open]"],
+  },
+  // JSON arguments highlighted, and a non-JSON output in the same code block, uninterpreted. The
+  // history follows its bottom, so the viewports are tall enough to keep the tool call, and the
+  // user's input above it, on screen.
+  session_tool_payloads: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 1300 },
+    outputName: "session-tool-payloads",
+    openToolPayloads: true,
+    readySelectors: [".agentplane-hljs .hljs-attr", "details[open] + details[open] .agentplane-hljs"],
+  },
+  session_tool_payloads_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { ...PHONE, height: 1500 },
+    outputName: "session-tool-payloads-phone",
+    openToolPayloads: true,
+    readySelectors: [".agentplane-hljs .hljs-attr", "details[open] + details[open] .agentplane-hljs"],
   },
   // Native observations are inspected through the chronological drawer. The projected view has
   // no raw-event URL mode: its semantic entities stay identical while the drawer shows archive rows.

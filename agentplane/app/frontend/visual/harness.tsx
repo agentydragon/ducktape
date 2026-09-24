@@ -1415,6 +1415,17 @@ if (scenario.openReasoning) {
   openReasoning.observe(document, { childList: true, subtree: true });
 }
 
+if (scenario.openToolPayloads) {
+  const unopened = new Set(["Arguments", "Output"]);
+  const openToolPayloads = new MutationObserver(() => {
+    for (const summary of document.querySelectorAll("summary")) {
+      if (unopened.delete(summary.textContent ?? "")) summary.click();
+    }
+    if (unopened.size === 0) openToolPayloads.disconnect();
+  });
+  openToolPayloads.observe(document, { childList: true, subtree: true });
+}
+
 if (scenario.preselectReconnect) {
   const selectExisting = new MutationObserver(() => {
     const connection = document.querySelector<HTMLSelectElement>('select[name="connection"]');
