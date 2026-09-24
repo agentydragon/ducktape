@@ -590,6 +590,8 @@ py_library(
     srcs = ["haku_egress_proxy.py"],
     deps = [
         ":cilium",
+        ":config_format",
+        ":egress_fences",
         ":external_creds",
         ":forgejo_images",
         ":generation",

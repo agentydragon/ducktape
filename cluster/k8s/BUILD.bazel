@@ -95,17 +95,6 @@ filegroup(
     visibility = ["//cluster/validation:__pkg__"],
 )
 
-# The hand-written egress allowlists //cluster/validation:test_egress_allowlists checks
-# alongside the generated fences (cluster/cdk8s/egress_fences.py).
-filegroup(
-    name = "egress_allowlist_files",
-    srcs = [
-        "agents/haku-egress-proxy/openclaw-spike-iron.yaml",
-        "kustomization.yaml",
-    ],
-    visibility = ["//cluster/validation:__pkg__"],
-)
-
 filegroup(
     name = "authentik_blueprint_contract_files",
     srcs = [
