@@ -43,8 +43,6 @@ py_test(
         ":runner",
         "//:conftest",
         "//util/bazel:runfiles",
-        "@pypi//cdk8s",
-        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
