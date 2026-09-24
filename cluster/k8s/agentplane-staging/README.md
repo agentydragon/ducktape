@@ -59,7 +59,7 @@ Kubernetes uses the public `kubectl-passthrough-mcp` client. Its exact callback 
 is managed in `tf/gitops/agent-machine-access/kubectl-common.tf`; that Terraform change
 must reconcile before linking Kubernetes through this origin.
 
-GitHub uses the existing GitHub App credentials reflected from
+GitHub uses the existing GitHub App credentials, which ESO copies from
 `haku-console/haku-console-github-mcp-client-credentials`. The App registration is managed
 outside this repository. Its owner must include
 `https://agentplane-staging.allegedly.works/mcp-linkage/callback` among the user-authorization

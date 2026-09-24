@@ -3140,6 +3140,81 @@ spec:
     deletionPolicy: Retain
     name: ha-mcp-client-bearer
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-github-mcp-client-reader
+  namespace: haku-console
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-console-github-mcp-client-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-github-mcp-client-reader
+  namespace: haku-console
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-github-mcp-client-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-github-mcp-client-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: haku-console
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-console-github-mcp-client-credentials
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: haku-console-github-mcp-client-credentials
+        property: client_id
+      secretKey: client_id
+    - remoteRef:
+        key: haku-console-github-mcp-client-credentials
+        property: client_secret
+      secretKey: client_secret
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-github-mcp-client-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: haku-console-github-mcp-client-credentials
+---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:

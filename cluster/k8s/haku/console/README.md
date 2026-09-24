@@ -104,8 +104,9 @@ must restore the catalog, access-profile grants, and maintenance workers as one 
 ## `haku-console-github-mcp-client-credentials` belongs to agentplane-staging
 
 The console reads nothing from this SOPS Secret, the pre-registered OAuth client of the GitHub App
-behind GitHub's hosted MCP. It stays in this directory because its Reflector annotations copy it
-into `agentplane-staging`, whose Action Service links GitHub with it
+behind GitHub's hosted MCP. `agentplane-staging` copies it with ESO, through a store that reaches
+only this Secret, and its Action Service links GitHub with it
 (<../../agentplane-staging/README.md> § MCP OAuth callbacks); deleting it here breaks that linkage.
 Moving it there means re-encrypting it under that namespace, which needs the cluster decryption
-identity (the SOPS MAC covers `metadata.namespace`).
+identity (the SOPS MAC covers `metadata.namespace`). The same identity is needed to drop the file's
+leftover Reflector annotations.
