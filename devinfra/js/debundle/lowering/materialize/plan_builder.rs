@@ -488,10 +488,10 @@ impl ChunkPlanBuilder {
                         chunk_id,
                         declaration_by_name,
                     )?;
-                    if matches!(resolved_by, ResolvedBy::Elimination { .. }) {
-                        eliminated.push(outcome);
-                    }
                 }
+            }
+            if matches!(resolved_by, ResolvedBy::Elimination { .. }) {
+                eliminated.push(outcome);
             }
         }
         eliminated

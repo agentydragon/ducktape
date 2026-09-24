@@ -96,7 +96,7 @@ conflict set found before the stop still stands.
 
 `all_different` can make a selector unique that is ambiguous on its own: its
 other candidates are claimed by other selectors. After a solve, each unique
-`source_match` entity's candidate rows are filtered by dropping every row whose
+`source_match` or anonymous-statement entity's candidate rows are filtered by dropping every row whose
 owner or binding another `all_different` target's solved value holds. When it
 had several rows and one survives, its outcome is `resolved` with
 `resolved_by: elimination` naming the claimers. Such a selector silently moves
