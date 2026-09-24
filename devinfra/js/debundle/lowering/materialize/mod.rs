@@ -192,6 +192,7 @@ pub(super) fn prepare_logical_chunk(
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
     let explicit_request_ctx = ExplicitRequestContext {
+        body: &runtime_ast.module.body,
         declaration_by_name: &ast_analysis.declaration_by_name,
         chunk_top_level_mark,
         target_dir,
@@ -339,6 +340,7 @@ pub(super) fn finish_logical_chunk(
         resolution,
         chunk_top_level_mark,
         chunk_id,
+        &runtime_ast.module.body,
         &declaration_by_name,
     )?;
     let structural_analysis = selectors.into_structural();

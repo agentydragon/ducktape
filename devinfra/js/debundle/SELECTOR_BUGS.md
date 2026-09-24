@@ -16,13 +16,3 @@ hole vocabulary and run by an older pinned debundler reports `no_match` or
 
 Desired behavior: a selector naming a hole keyword the binary does not support
 is `invalid` with "unsupported selector hole", on every command.
-
-## Duplicate-Claim Outcomes Lack Declaration Detail
-
-Status: open (checked 2026-09-24 against `selector_outcome.rs`). The
-`duplicate_claim` outcome carries only `binding` (the minified spelling) and
-`claimed_by`. With short minified names reused across chunks, it is hard to
-tell which declaration was claimed twice.
-
-Desired behavior: include the declaration kind and source location of the
-claimed binding in the outcome.

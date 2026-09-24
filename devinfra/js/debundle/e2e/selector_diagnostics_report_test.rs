@@ -105,6 +105,18 @@ export { renderCard, decoratePrimary, decorateSecondary };
         .find(|record| record["outcome"]["kind"] == "duplicate_claim")
         .expect("duplicate claim outcome");
     assert_eq!(duplicate["outcome"]["binding"], "renderCard");
+    assert_eq!(
+        duplicate["outcome"]["declaration"],
+        json!({"owner": 0, "kind": "function"}),
+        "{duplicate:#}"
+    );
+    assert!(
+        rejected
+            .stderr
+            .contains("binding \"renderCard\" (`function` at body[0]) is already claimed by"),
+        "{}",
+        rejected.stderr
+    );
     let mut sites = [
         duplicate["placement"]["logical_module"].as_str().unwrap(),
         duplicate["outcome"]["claimed_by"]["logical_module"]

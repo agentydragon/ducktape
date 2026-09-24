@@ -278,7 +278,7 @@ export { runtimeProcessor };
         opts,
         &[
             "[duplicate_claim]",
-            "\"runtimeProcessor\"",
+            "\"runtimeProcessor\" (`class` at body[0])",
             "mod_a",
             "as `RuntimeProcessor`",
             "is already claimed by mod_a as `RuntimeProcessor`",
@@ -317,12 +317,12 @@ export { runtimeService, runtimeCache };
     let stderr = rejected.stderr;
     for required in [
         "2 selector outcome(s): duplicate_claim=2",
-        "\"runtimeService\"",
+        "\"runtimeService\" (`const` at body[0])",
         "owners/service",
         "as `service`",
         "duplicates/service",
         "as `serviceAgain`",
-        "\"runtimeCache\"",
+        "\"runtimeCache\" (`const` at body[1])",
         "owners/cache",
         "as `cache`",
         "duplicates/cache",
@@ -872,7 +872,7 @@ export { a };
         opts,
         &[
             "[duplicate_claim]",
-            "\"a\"",
+            "\"a\" (`import` at body[0])",
             "mod_jsx_runtime",
             "mod_dunder_jsx",
         ],
