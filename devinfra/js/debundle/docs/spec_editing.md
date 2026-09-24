@@ -359,8 +359,7 @@ concise matcher, leave `annotations.<export_name>.note` recording the concrete
 matcher/tooling blocker and the desired future feature instead of silently
 keeping minified binding debt. Use `note:`, **not** `comment:`: `note:` is inert
 (YAML-only, never emitted to generated JS), so it annotates the debt without
-changing byte-identical output, and the keep-going selector report surfaces
-noted name-pins as `annotated_debt` for a repair flow to route:
+changing byte-identical output:
 
 ```yaml
 annotations:

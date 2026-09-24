@@ -98,19 +98,11 @@ of re-deriving the fact in another stage.
 
 ## Selector resolution
 
-How a spec's selectors become outcomes — one resolve every command calls,
-`ChunkResolver` generating candidates for shape (`source_match`) selectors and
-one program over every chunk, each group of interacting entities one CP-SAT
-request — is <docs/selector_resolution.md>. Read it
-before touching `selector_resolve.rs`, `source_match/`, `selector_ir_lowering`,
-or `selector_constraint_model_builder`. A command never decides exactly-one
-itself: it resolves, and one that needs a selector unique on its own resolves
-it alone and checks `resolved_by: own_selector`.
-
-That doc records a measured rejection: encoding tree-shape matching as
-finite-domain constraints over AST nodes, so `source_match` lowers natively
-instead of through the matcher. Do not reopen it without a measurement that
-beats <debug/perf/2026_09_17_matcher_vs_native_lowering.md>.
+Read <docs/selector_resolution.md> before touching `selector_resolve.rs`,
+`source_match/`, `selector_ir_lowering` or `selector_constraint_model_builder`.
+A command never decides exactly-one itself; it calls `selector_resolve`. Its
+§ "Rejected: tree matching as solver constraints" is a measured dead end: do not
+reopen it without a new measurement.
 
 ## Soundness over completeness
 
@@ -166,13 +158,9 @@ inputs and author decisions only — analysis provenance (`evidence`, `confidenc
 
 ## Spec `note:` field — STYLE.md exemption
 
-**Deviation** from STYLE.md ("every field needs a reader"; authoring provenance
-belongs in inert `#` comments, not `note:` schema fields): the spec's optional
-`note:` field on `LogicalModule` / `Member` / `AnonymousStatement`, plus
-per-binding annotation notes, is a ratified exemption — the rewriters drop `#`
-comments, so a round-tripped `note:` is the only debt-rationale annotation that
-survives a rewrite, and its reader is the human spec author. Semantics:
-<README.md> → "Comments".
+**Deviation** from STYLE.md ("every field needs a reader"; provenance belongs in
+`#` comments): the spec's `note:` fields are a ratified exemption, because the
+rewriters drop `#` comments (<README.md> → "Comments").
 
 ## Spec structure
 

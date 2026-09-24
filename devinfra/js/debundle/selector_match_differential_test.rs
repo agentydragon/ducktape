@@ -547,8 +547,7 @@ fn key_value_hole_value_matches_any() {
 // node and are matchable as anchors. Pins: the construct matches; a `=> ({…})`
 // needle must NOT match a block-bodied arrow (`=> { return … }`) — the two are
 // different shapes; alpha bindings flow from the params into the object body;
-// and an object-property run hole works inside the returned object. Closes the
-// SELECTOR_BUGS.md "arrow whose body is a parenthesized object literal" gap.
+// and an object-property run hole works inside the returned object.
 #[test]
 fn arrow_returning_object_literal_matches_on_its_object_anchors() {
     js_ast::with_swc_globals(|| {
@@ -625,8 +624,7 @@ fn arrow_returning_object_literal_matches_on_its_object_anchors() {
 // grouping, the structure is kept), so these bodies match structurally — the
 // inner lazy-init assignment is a real anchor, not lost. Pins: the construct
 // matches (exact + alpha); a near-miss that drops the lazy-init assignment
-// fails; sequence arity is significant. Closes the SELECTOR_BUGS.md
-// "parenthesized sequence or assignment expression body" gap.
+// fails; sequence arity is significant.
 #[test]
 fn parenthesized_sequence_body_matches_on_its_inner_assignment() {
     js_ast::with_swc_globals(|| {
@@ -700,8 +698,7 @@ fn parenthesized_sequence_body_matches_on_its_inner_assignment() {
 // arrays): a bare identifier element absorbing a run of array elements, so a long
 // array initializer can be anchored on its few stable elements without spelling
 // the rest. It is matched as an ordered subsequence with gaps, exactly like the
-// other run holes (the carriers partition the needle into fixed segments). Closes
-// the SELECTOR_BUGS.md "no array-element-run hole" gap.
+// other run holes (the carriers partition the needle into fixed segments).
 #[test]
 fn array_elements_run_hole_anchors_a_few_stable_elements() {
     js_ast::with_swc_globals(|| {
@@ -812,8 +809,7 @@ fn fail_closed_on_misplaced_array_elements_hole() {
 // against each declarator of an owner (it synthesizes a single-declarator subject
 // per declarator), so these subjects are exactly what the needle is matched
 // against here: a needle pinning the nested `"POST"` matches only the POST
-// sibling, not the same-shape `"GET"` one. Closes the SELECTOR_BUGS.md
-// "comma-list sibling disambiguation by nested body" gap.
+// sibling, not the same-shape `"GET"` one.
 #[test]
 fn comma_list_siblings_disambiguated_by_nested_value() {
     js_ast::with_swc_globals(|| {

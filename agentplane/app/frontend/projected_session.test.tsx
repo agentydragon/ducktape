@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
 import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
-import { command, getThread, models, type ThreadView } from "./client";
+import { api, command, getThread, models, type ThreadView } from "./client";
 import { historyRows, rowKey } from "./history_rows";
 import { LocalCommands } from "./local_commands";
 import { EntityCard, HistoryRowView, ProjectedSession, pruneCommandErrors } from "./projected_session";
@@ -47,31 +47,45 @@ const THREAD: ThreadView = {
   harness_state: "HARNESS_STATE_RUNNING",
 };
 
-// What the sandbox inventory stream reports. By default the thread's sandbox is running, so its
+// What the sandbox inventory stream reports -- nothing at all while `sandboxes` is null -- and
+// whether it then drops. By default the thread's sandbox is running on a current inventory, so its
 // controls are live.
-let sandboxes: Array<{ name: string; state: string }> = [];
+type Inventory = Array<{ name: string; state: string }> | null;
+let sandboxes: Inventory = [];
+let inventoryFresh = true;
+let inventoryDrops = false;
 
 beforeEach(() => {
   localStorage.clear();
   sandboxes = [{ name: THREAD.sandbox, state: "running" }];
+  inventoryFresh = true;
+  inventoryDrops = false;
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({ HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] });
   vi.mocked(command).mockReturnValue(new Promise(() => {}));
+  // A dropped stream probes the session once; the probe's answer is not what these tests are about.
+  vi.spyOn(api, "GET").mockReturnValue(new Promise<never>(() => {}));
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
       constructor() {
         super();
-        queueMicrotask(() =>
+        queueMicrotask(() => {
+          if (sandboxes === null) return;
           this.dispatchEvent(
             new MessageEvent("snapshot", {
               data: JSON.stringify({
                 sandboxes,
-                watch: { fresh: true, stale_after_seconds: 90, refreshed_seconds_ago: { sandboxes: 0 } },
+                watch: {
+                  fresh: inventoryFresh,
+                  stale_after_seconds: 90,
+                  refreshed_seconds_ago: { sandboxes: inventoryFresh ? 0 : 2400 },
+                },
               }),
             })
-          )
-        );
+          );
+          if (inventoryDrops) this.dispatchEvent(new Event("error"));
+        });
       }
       close(): void {}
     }
@@ -310,6 +324,35 @@ it.each([
   );
   expect(dot?.getAttribute("aria-label")).toBe(label);
   expect(dot?.getAttribute("style")).toContain("--mantine-color-gray-6");
+});
+
+const RUNNING = { name: THREAD.sandbox, state: "running" };
+const SUSPENDED = { name: THREAD.sandbox, state: "suspended" };
+const STALE = "sandboxes last updated 40 minutes ago";
+const DROPPED = "Not connected to the live stream";
+const ABSENT = "Sandbox absent from last inventory snapshot. Current availability unknown";
+
+// Each of these but the first disables the controls, which the composer's dot reports only as
+// "Sandbox unavailable"; the header says why: the state the inventory last reported, or that the
+// stream behind it has dropped or stalled.
+it.each<[string, Inventory, { fresh?: boolean; drops?: boolean }, string | null, string | null]>([
+  ["a running sandbox", [RUNNING], {}, null, null],
+  ["an inventory not yet heard from", null, {}, null, null],
+  ["a suspended sandbox", [SUSPENDED], {}, "Last observed Sandbox state: suspended.", null],
+  ["a deleted sandbox", [], {}, "Sandbox no longer exists.", null],
+  ["a running sandbox on a stale inventory", [RUNNING], { fresh: false }, null, STALE],
+  ["an absence from a stale inventory", [], { fresh: false }, ABSENT, STALE],
+  ["a running sandbox on a dropped stream", [RUNNING], { drops: true }, null, DROPPED],
+  ["an absence from a dropped stream", [], { drops: true }, ABSENT, DROPPED],
+  ["a suspended sandbox on a dropped stream", [SUSPENDED], { drops: true }, "state: suspended.", DROPPED],
+])("explains %s in the header", async (_, inventory, { fresh = true, drops = false }, status, alert) => {
+  sandboxes = inventory;
+  inventoryFresh = fresh;
+  inventoryDrops = drops;
+  const container = await render();
+  const texts = (role: string) => [...container.querySelectorAll(`[role="${role}"]`)].map((node) => node.textContent);
+  expect(texts("status")).toEqual(status === null ? [] : [expect.stringContaining(status)]);
+  expect(texts("alert")).toEqual(alert === null ? [] : [expect.stringContaining(alert)]);
 });
 
 it.each([

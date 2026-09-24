@@ -1,8 +1,7 @@
 # Automated Debundle Spec Workflows
 
-Status: **active design**. This is the north-star design for the spec automation
-product flows. Use <../TODO.md> for dispatch order; this document keeps the
-workflow contract, CLI shape, and milestone breakdown.
+Open product flows for spec automation: workflow contract, CLI shape and
+milestones. Dispatch order is <../TODO.md>.
 
 ## Goal
 
@@ -83,24 +82,9 @@ the edit model is clear.
 
 ### Source Inventory
 
-Build a reusable per-chunk index from the parsed SWC module:
-
-- top-level statement identity: body index, span, declaration kind, exported
-  bindings, anonymous-statement eligibility;
-- binding identity: current minified name, declaration span, declarator span,
-  initializer shape, literal values, class/function metadata;
-- canonical AST fingerprints for statements, declarations, declarators,
-  object properties, call expressions, class members, and statement lists;
-- inverted indexes for stable anchors: string/number/boolean/null literals,
-  property keys, object keys, member names, operators, callee/member shapes,
-  declaration kind, arity, and statement/declarator count;
-- source slices and byte ranges needed for YAML selector emission;
-- cheap candidate-count queries for "would this relaxed selector still be
-  unique?"
-
-This index should be shared by `selector-debt`, `selector-codemod`, selector
-resolution diagnostics, spec repair, and version-port tooling. Avoid separate
-per-command AST walks that drift semantically.
+The shared per-chunk index is `shape_index.rs` (over
+`selector_candidate_index.rs`). Repair, port and bulk-planning tooling query it
+rather than adding per-command AST walks that drift semantically.
 
 ### Selector Candidates
 
@@ -131,12 +115,9 @@ context window that distinguishes otherwise ambiguous candidates.
 ### Minimizer
 
 "Produce the loosest readable selector that uniquely selects this entity" is a
-first-class operation. The landed implementation is the read-off AST-shape index
-plus greedy set-cover over a `selective x stable` feature ranking, with the
-production matcher as the prove-gate. Current minimizer polish lives in
-<../TODO.md>.
+first-class operation; open minimizer polish lives in <../TODO.md>.
 
-The product-vision intent this doc still owns: "simplest" means
+"Simplest" means
 lowest-cost-forward-compatible, not shortest or exact-source — prefer low-cost
 stable anchors that cut the candidate set sharply, assign high cost to long exact
 function/object/class bodies, statement runs, and nested expressions, and
@@ -185,17 +166,14 @@ orthogonal:
 - `debundle spec plan stabilize --modules ... --source-root ...`
   emits a patch plan for eligible fragile selectors across an existing spec.
 - `debundle spec plan repair --diagnostics <report.json> --source-root ...`
-  emits a patch plan for unresolved, ambiguous, duplicate-claim, or unsupported
-  selector failures.
+  emits a patch plan for the unresolved, ambiguous, duplicate-claim, or invalid
+  outcomes of `spec validate --format json`.
 - `debundle spec plan port --from-modules ... --from-source-root ... --to-source-root ...`
   emits a patch plan carrying a spec across bundle versions plus residual
   semantic tasks.
 - `debundle spec apply-plan --plan <plan.json> --modules ...`
   applies a reviewed plan, preserving comments/order where the edit type
   supports it and refusing stale plans whose inputs no longer match.
-- `debundle spec validate --format json`
-  reports all selector/spec failures in one pass with enough source identity to
-  feed `plan repair`.
 - Existing focused commands such as `selector-debt` and `selector-codemod` can
   remain as aliases or transitional frontends, but new work should converge on
   the inventory/plan/apply/validate model.
@@ -240,20 +218,8 @@ hand-authored module-by-module edits.
 
 ## Flow 3: Port Version 1 Spec to Version 2 Chunks
 
-The port flow should treat v1 selectors as evidence, not as immutable text:
-
-1. Resolve v1 spec against v1 chunks and store source identities and canonical
-   fingerprints for every selected binding/group/anonymous statement.
-2. Resolve the same selectors against v2 chunks in keep-going mode.
-3. For failures, search v2 source inventory for candidates with matching
-   fingerprints, stable literals, property keys, call/class shape, and nearby
-   context.
-4. Synthesize minimized replacement selectors for confident matches.
-5. Surface residual cases as repair tasks: zero match, ambiguous match, moved
-   module boundary, changed API shape, or missing selector feature.
-
-The command should make it obvious which changes are mechanical and which need
-human or reverse-engineering review.
+Porting is step 3d of <selector_engine.md>. The retrieval design in "Repair
+and porting search" below applies to it.
 
 ## Repair Workflow
 
@@ -284,41 +250,25 @@ For duplicate claims:
 
 ## Performance Plan
 
-Large specs should not require pairwise scans of every selector against every
-statement. Prioritize:
-
-- parse each chunk once per command invocation;
-- prepare each distinct selector body once;
-- cache canonical AST fingerprints and hole-normalized forms;
-- use inverted indexes to retrieve candidate statements by stable anchors
-  before full structural matching;
-- memoize selector-body resolution keyed by chunk hash, normalized selector,
-  target binding/statement, and Ducktape version;
-- keep timing reports grouped by selector key and body key so slow families
-  point to one fix.
-
-Actual stack-sample profiles should continue to update `perf/` notes before
-major matcher rewrites.
+The resolve already parses each chunk once, prepares each selector once and
+prunes candidates through an index (<../docs/selector_resolution.md>). Open:
+memoize selector resolution across invocations, keyed by chunk hash, normalized
+selector, target and Ducktape version. Update `perf/` notes from real profiles
+before major matcher rewrites.
 
 ### Scale Model
 
 Use these symbols when designing and reviewing algorithms:
 
-- `C`: chunks in the spec run;
 - `N`: top-level statements in a chunk;
 - `B`: top-level declared bindings/declarators in a chunk;
-- `A`: stable anchors in a chunk, such as literals, keys, member names, call
-  shapes, declaration kinds, and arities;
-- `E`: AST nodes in a chunk;
 - `S`: selectors or selector targets being processed;
 - `L`: average selector AST size;
 - `K`: candidate statements after indexed filtering.
 
-The downstream-scale target is thousands of YAML modules and thousands of selectors;
-the current migration has roughly 8.5k fragile selector bindings before broad
-peels. Agent-facing workflows should be designed for warmed runs under 10s and
-must treat sustained runs over 60s as blocking performance bugs unless the mode
-is explicitly offline/profile-oriented.
+The downstream-scale target is thousands of YAML modules and thousands of
+selectors. The interactive budget (under 10s warmed, over 60s blocking unless
+explicitly offline) is <../docs/selector_resolution.md> § Interactive budget.
 
 Expected warmed runtime budgets on downstream-scale inputs:
 
@@ -334,83 +284,6 @@ Expected warmed runtime budgets on downstream-scale inputs:
 
 If a command cannot meet the interactive budget, it should stream progress,
 write resumable intermediate plans, and label itself as offline/profile mode.
-
-### Source Inventory Data Structures
-
-Build one dense per-chunk inventory:
-
-- `Vec<StatementRecord>` indexed by top-level body index. Each record stores
-  span, declaration kind, export wrapper kind, declared binding ids, anonymous
-  owner identity, cheap structural fingerprints, and stable anchor ids.
-- `Vec<BindingRecord>` indexed by dense binding id. Each record stores current
-  minified name, declaration/declarator statement id, declarator index, kind,
-  initializer summary, exported spec names, and source slice ranges.
-- `HashMap<Atom, AnchorId>` or an intern table for stable anchors. Anchor atoms
-  should use compact owned forms such as `Wtf8Atom`/interned strings for string
-  literals and property names; avoid allocating normalized strings per query.
-- Inverted postings from `AnchorId` to dense candidate sets. For downstream-scale
-  chunks, a sorted `Vec<StatementId>` is usually compact; for high-frequency
-  anchors, promote to a dense `Vec<u64>` bitset. The query interface should hide
-  the representation and expose cheap intersection/count/iterate operations.
-- Direct maps for exact lookups: binding name -> binding ids, literal
-  initializer -> declarator ids, normalized selector body -> prepared selector,
-  source fingerprint -> statement ids.
-
-Index construction should be `O(E + A)` per chunk with memory linear in AST
-size plus postings. It should parse source once and avoid command-specific AST
-walks. For a single large chunk, the expected warmed inventory build should be
-low single-digit seconds in optimized Rust; if it is not, profile construction
-before adding consumers.
-
-### Indexed Matching
-
-Selector resolution should be two-stage:
-
-1. Compile the selector once into a `PreparedSelector` containing its AST,
-   hole descriptors, required declaration kind, required binding count,
-   required stable anchors, literal predicates, and normalized cache key.
-2. Use the inventory to obtain a candidate set by intersecting the most
-   selective required anchors before running the full structural matcher.
-
-Expected query cost:
-
-- prepare selector: `O(L)`, once per distinct normalized selector body;
-- candidate retrieval: `O(p * W)` for bitset intersections or
-  `O(sum postings)` for sparse lists, where `p` is required anchor count and
-  `W = ceil(N / 64)`;
-- full matcher: `O(K * L)` in the common case, with `K` intended to be small.
-
-The implementation should refuse accidental `O(S * N * L)` behavior in bulk
-commands. A diagnostic fallback may scan all `N` statements only when the
-indexed candidate set is empty and the command is explicitly trying to explain
-a failure; that fallback must be timed and reported.
-
-### Minimal Selector Synthesis
-
-For one target entity:
-
-1. Start with an exact source slice and verify it selects the target.
-2. Build a relaxation graph where each edge replaces one low-signal subtree or
-   list region with a hole, shrinks a context window, or changes a literal to a
-   constrained literal/regex form.
-3. Score candidates by stability and readability:
-   - low cost: stable literals, object keys, property names, declaration kind,
-     arity, grouped exports;
-   - high cost: generated identifiers, long copied function bodies, unrelated
-     arguments, large object property lists, broad statement windows;
-   - invalid: non-unique selectors, selectors that target the wrong binding, or
-     selectors whose proof depends only on minified spelling.
-4. Use indexed candidate counts as the inner loop. Only run the full matcher on
-   candidates whose indexed count is nonzero and below a configurable cap.
-5. Stop when no relaxation lowers cost while preserving uniqueness, or use
-   best-first/branch-and-bound when greedy choices are too local.
-
-A greedy first implementation can be `O(R * (indexed_count + K * L))`, where
-`R` is the number of relaxations tried. Keep `R` bounded by generating
-coarse-grained relaxations first: whole argument list, whole object-property
-suffix, whole class-rest, whole statement-list window, then finer child holes
-only when needed. For bulk synthesis, group targets by exact source context so
-one relaxation search can emit one `source_matches[]` selector for many exports.
 
 ### Bulk Stabilization
 
@@ -466,25 +339,16 @@ Patch planning and application should be deterministic:
 
 ## Implementation Milestones
 
-Milestones 0-2 (consolidate `selector-codemod`, shared source inventory +
-structural selector synthesis, hole-based minimization) are largely landed: the
-shared per-chunk index (`selector_candidate_index.rs` -> `shape_index.rs`), the
-read-off minimizer, the list-hole renderer, and resolver-verified emission are
-the concrete realization. Open minimizer polish lives in <../TODO.md>. The
-remaining milestones below are the not-yet-started product flows.
-
 ### Milestone 3: Repair Reports and Patch Plans
 
-- Add keep-going JSON validation with structured selector failures.
-- Implement nearest-candidate and smallest-differentiator diagnostics.
-- Let `repair` consume diagnostics and emit/apply patch plans for mechanically
-  proven cases.
+- Nearest-candidate and smallest-differentiator diagnostics for `no_match` and
+  `ambiguous` outcomes.
+- `plan repair` consumes the `spec validate --format json` report and emits or
+  applies patch plans for mechanically proven cases.
 
 ### Milestone 4: Version-Port Workflow
 
-- Persist or recompute v1 source identities and fingerprints.
-- Match v1-selected entities into v2 chunks using source inventory search.
-- Apply confident selector repairs and emit residual tasks for semantic drift.
+Step 3d of <selector_engine.md>.
 
 ### Milestone 5: New-App Bootstrap
 

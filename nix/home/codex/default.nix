@@ -60,7 +60,7 @@ let
   # localModelSettings (opt-in via ducktape.codex.localModels);
   # the writable-roots sandbox block is appended only under workspace-write.
   baseSettings = {
-    model = "gpt-5.6-sol";
+    model = "gpt-6-astra";
     # To exceed a model's default, set `model_context_window = <tokens>;` here;
     # Codex clamps it to that model's catalogued maximum (Astra: 872000).
     model_reasoning_effort = "medium";

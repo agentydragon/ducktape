@@ -12,7 +12,7 @@
 //!
 //! Not yet recorded as outcomes: name-pin debt annotated with `note:`, and
 //! `alpha_all` readable names that are free references rather than local
-//! binders (`TODO.md` P1.5).
+//! binders.
 
 use std::collections::BTreeMap;
 use std::fmt::Write;

@@ -32,6 +32,9 @@ export interface Scenario extends ScenarioOptions {
   openMobileSidebar?: boolean;
   threadlessSandbox?: boolean;
   sidebarSource?: "disconnected" | "database-disconnected";
+  /** Drop the sandbox inventory stream after its first snapshot, leaving the sidebar's own stream
+   * up: the thread header's banner is the page saying so. */
+  inventoryDropped?: boolean;
   /** Exercise the production scope and Electric shape synchronization boundary. `unavailable`
    * is a persistent initial service failure, unlike a retired epoch, whose 410 triggers a refresh. */
   sessionReplay?: "catching-up" | "unavailable";
@@ -64,6 +67,9 @@ const SESSION_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000001";
 // render folded, which is the point here: a run's summary is where its streaming and failed
 // indicators show. The run's first step, at cursor 16, is its anchor.
 const SESSION_STATES_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000002";
+// Threads on the fixture's suspended sandbox, and on one the inventory does not list.
+const SUSPENDED_SANDBOX_SESSION_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000004";
+const DELETED_SANDBOX_SESSION_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000005";
 export const SCENARIOS: Record<string, Scenario> = {
   session_error: {
     element: "#app",
@@ -342,23 +348,65 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
   session_deleted_sandbox: {
     element: "#app",
-    route: "/threads/5f1c4a2e-0000-4000-8000-000000000005",
+    route: DELETED_SANDBOX_SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
     readySelectors: ['[role="status"]'],
     captureViewport: true,
   },
   session_deleted_sandbox_phone: {
     element: "#app",
-    route: "/threads/5f1c4a2e-0000-4000-8000-000000000005",
+    route: DELETED_SANDBOX_SESSION_ROUTE,
     viewport: PHONE,
     readySelectors: ['[role="status"]'],
     captureViewport: true,
   },
   session_suspended_sandbox: {
     element: "#app",
-    route: "/threads/5f1c4a2e-0000-4000-8000-000000000004",
+    route: SUSPENDED_SANDBOX_SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
-    readySelectors: ["textarea:disabled"],
+    readySelectors: ["::-p-text(Last observed Sandbox state)", '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_suspended_sandbox_phone: {
+    element: "#app",
+    route: SUSPENDED_SANDBOX_SESSION_ROUTE,
+    viewport: PHONE,
+    readySelectors: ["::-p-text(Last observed Sandbox state)", '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  // The sandbox inventory the controls wait on has stopped moving, on a running sandbox: the header's
+  // banner, beside the sidebar's for the same watch, is all that says why the composer is off.
+  session_inventory_stale: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    wedgedWatch: true,
+    readySelectors: ["::-p-text(so this page is not being updated)", '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  // A stale inventory that lacks the thread's sandbox cannot say it was deleted.
+  session_inventory_stale_phone: {
+    element: "#app",
+    route: DELETED_SANDBOX_SESSION_ROUTE,
+    viewport: PHONE,
+    wedgedWatch: true,
+    readySelectors: ["::-p-text(Current availability unknown)", '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_inventory_dropped: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    inventoryDropped: true,
+    readySelectors: ["::-p-text(Not connected to the live stream)", '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_inventory_dropped_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    inventoryDropped: true,
+    readySelectors: ["::-p-text(Not connected to the live stream)", '[data-thread-anchor="34"]'],
     captureViewport: true,
   },
   session_phone: {

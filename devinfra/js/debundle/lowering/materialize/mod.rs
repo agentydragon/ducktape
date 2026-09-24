@@ -586,10 +586,6 @@ pub(super) fn finish_logical_chunk(
 /// index — so it lives in the `analysis` crate; this thin composer
 /// owns the application of those decisions to the builder's
 /// `ModulePlan` list.
-///
-/// See `ARCHITECTURE_BACKLOG.md` § "`compute_chunk_analysis` —
-/// only rebind-folding still leaks into the materializer" for the
-/// original separation rationale.
 fn apply_rebind_folds_from_chunk_analysis(
     builder: &mut ChunkPlanBuilder,
     precomputed: &OwnerGraphAndUnits,

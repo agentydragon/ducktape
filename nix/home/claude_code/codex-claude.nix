@@ -13,7 +13,7 @@ import ./gateway.nix { inherit pkgs lib; } "codex-claude" {
   baseUrl = "https://litellm.allegedly.works";
   authTokenFile = config.sops.secrets.litellm_codex_key.path;
   model = "chatgpt/ant-messages/gpt-6-astra";
-  haikuModel = "chatgpt/ant-messages/gpt-5.6-luna";
+  haikuModel = "chatgpt/ant-messages/gpt-6-luna";
   gatewayDiscovery = true;
   # Codex 0.153.4 permits Astra's context window up to 872k (SSOT:
   # model_rosters.py). Claude Code does not discover it, so set it explicitly.

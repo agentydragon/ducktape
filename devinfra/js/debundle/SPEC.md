@@ -26,7 +26,9 @@ template matches a place when their syntax trees are equal up to:
 - **alpha-renaming** — binding and value identifiers match any identifier,
   consistently within their lexical scope.
 
-Literals, operators, member property names, object keys and tree structure are
+An anonymous statement written with a bare `match:` rather than `source_match:`
+skips alpha-renaming: its identifiers must equal the chunk's. Literals,
+operators, member property names, object keys and tree structure are
 significant. Relational selectors (`cross_ref`, `reads_member`, …) match through
 facts derived from the chunk, not through templates.
 
@@ -54,7 +56,7 @@ Every entity gets exactly one outcome, in one record format shared by `run`,
 | --------------------------------------- | ------------------------------------------------------------------------------------------------- | -------- |
 | `resolved`, `resolved_by: own_selector` | its selector alone matches one place                                                              | ok       |
 | `resolved`, `resolved_by: elimination`  | unique only because the named `claimers` took its other places                                    | warning  |
-| `no_match`                              | its selector matches nowhere                                                                      | error    |
+| `no_match`                              | no place satisfies its selector and constraints                                                   | error    |
 | `ambiguous`                             | several assignments exist; at most 5 of its places are listed, with `truncated` when more exist   | error    |
 | `conflict`                              | no assignment exists; `with` names the entities of an unsatisfiable set (not necessarily minimal) | error    |
 | `too_broad`                             | its selector matches more than 100 places                                                         | error    |

@@ -79,7 +79,7 @@ EMBEDDING_CLIENT_MODELS = [
 CHEAP_EXPERIMENTS_CLAUDE_MODEL = exposed_name(
     Provider.ANTHROPIC_API, ApiShape.ANT_MESSAGES, "claude-haiku-4-5-20251001"
 )
-_CHEAP_EXPERIMENTS_CODEX = "gpt-5.6-luna"
+_CHEAP_EXPERIMENTS_CODEX = "gpt-6-luna"
 CHEAP_EXPERIMENTS_CODEX_MODEL = codex_responses_name(_CHEAP_EXPERIMENTS_CODEX)
 # The cheap-experiments key, shared with agents only through an expiring Haku Console
 # Kubernetes grant and standing on the agentplane testing LLM ingress. Intentionally an

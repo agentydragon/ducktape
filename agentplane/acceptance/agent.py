@@ -72,6 +72,8 @@ class Turn:
     admitted: float
     tool_outputs: list[str] = field(default_factory=list)
     text: list[str] = field(default_factory=list)
+    # Every line the harness wrote during the turn, as the runner recorded it.
+    native: list[str] = field(default_factory=list)
     status: event_pb2.TurnStatus | None = None
 
     @property
@@ -154,6 +156,8 @@ class Agent:
             match event.WhichOneof("observation"):
                 case "item_completed":
                     _completed(event.item_completed, turn)
+                case "native" if event.native.direction == event_pb2.DIRECTION_FROM_HARNESS:
+                    turn.native.append(event.native.line)
                 case "turn_completed":
                     completed = event.turn_completed
                     turn.status = completed.status

@@ -279,7 +279,7 @@ resource "litellm_team" "codex_clients" {
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["chatgpt/ant-messages/gpt-5.6-luna"]
+        fallback_models = ["chatgpt/ant-messages/gpt-6-luna"]
       }
     ]
   }
