@@ -83,7 +83,7 @@ in
   # NPU service disabled 2026-09-17: real-hardware test found the NPU driver
   # fails to initialize (silent CPU fallback) and the service has no
   # --ctx-size cap, which combined to swap-thrash the whole machine into a
-  # ~4min apparent hang. See debug/rugged/hw/llm_npu.md "Real-hardware status"
+  # ~4min apparent hang. See nix/debug/rugged/hw/llm_npu.md "Real-hardware status"
   # before re-enabling.
   ducktape.localLlm.npu.enable = false;
 
@@ -114,7 +114,7 @@ in
 
   # High-volume IIO debugging is useful only during an active auto-rotate
   # investigation. Leaving it enabled during normal use flooded journald and
-  # caused periodic desktop stalls. See debug/rugged/stalls/report.md.
+  # caused periodic desktop stalls. See nix/debug/rugged/stalls/report.md.
   ducktape.iioDebug.enable = false;
 
   # The Intel RAPL counters exist but are root-only on this Lunar Lake host.
@@ -133,7 +133,7 @@ in
 
   # Add Plasma as a parallel Wayland session for tablet/OSK testing while
   # keeping the existing GNOME session and GDM display manager intact.
-  # See debug/rugged/osk_window_avoidance/report.md for the OSK investigation
+  # See nix/debug/rugged/osk_window_avoidance/report.md for the OSK investigation
   # that motivates this temporary KDE probe.
   services.desktopManager.plasma6.enable = true;
   services.displayManager.defaultSession = "gnome";

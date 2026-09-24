@@ -261,7 +261,7 @@ Authentik route work; these tighten them (operator-approved as follow-ups):
 Motivation: Alloy/promtail scrape pod logs only, so kernel/service messages — including
 the RTX 5090 `Xid 79 "GPU has fallen off the bus"` events — never leave a node's local
 journal, leaving no cluster-side history to quantify GPU fall-off frequency. Broader
-detect/quantify plan: <../../debug/atlas/gpu_lockup_20260718_followups.md>.
+detect/quantify plan: <../../cluster/debug/atlas/gpu_lockup_20260718_followups.md>.
 
 - [ ] **Unblock clean full OpenTofu plans.** Targeted Talos plans converge, but a
       no-target `tofu plan` still stalls during provider refresh even after regenerating the

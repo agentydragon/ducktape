@@ -44,6 +44,6 @@ unreliable for this device.
 
 ## Related
 
-- `debug/atlas/ethernet_recurring/README.md` — separate investigation, but documents the
+- `cluster/debug/atlas/ethernet_recurring/README.md` — separate investigation, but documents the
   same `wolf-gateway` topology (dumb switch → gateway Port 2) and its "Wired Client
   Disconnected" event stream.

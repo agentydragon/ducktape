@@ -5,7 +5,7 @@
 # Kernel GPU errors (NVRM, Xid) are already in the journal via dmesg.
 #
 # Purpose: provide pre-failure telemetry for guest-side GPU lockups that
-# currently have zero visibility. See debug/atlas/gpu_lockup_20260417/README.md.
+# currently have zero visibility. See cluster/debug/atlas/gpu_lockup_20260417/README.md.
 {
   config,
   pkgs,

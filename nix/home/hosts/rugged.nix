@@ -125,7 +125,7 @@
   # gnome-connections, which crashes on xrdp's drive-redirection channels — a
   # gtk-frdp bug). terminal=true so xfreerdp can prompt for the PAM password; the
   # RDP window opens after. wyrm2 is reached over Nebula (firewall-restricted to the
-  # nebula1 interface). See debug/atlas/remote-desktop-wyrm2.md.
+  # nebula1 interface). See nix/debug/wyrm2/remote_desktop_wyrm2.md.
   xdg.desktopEntries."wyrm2-rdp" = {
     name = "wyrm2 (RDP)";
     exec = "xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu /dynamic-resolution";

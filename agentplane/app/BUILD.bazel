@@ -15,7 +15,7 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 # No test here is small, and none of that is about the tests being slow: on the CI executor image
 # they are killed at a small target's 60s with the budget spent fetching inputs rather than running
 # -- 70s of `fileDownloadDurationUsec` against 12KB actually fetched and, for two of them, no CPU
-# burned at all. <debug/2026_08_rbe_small_test_timeouts.md> is the class.
+# burned at all. <devinfra/debug/2026_08_rbe_small_test_timeouts.md> is the class.
 
 py_binary(
     name = "main_bin",

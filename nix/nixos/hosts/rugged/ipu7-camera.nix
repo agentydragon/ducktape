@@ -10,7 +10,7 @@
 # Camera access paths:
 # - PipeWire-native apps (Chrome with WebRtcPipeWireCamera, GNOME Snapshot):
 #   use the libcamera PipeWire source directly via the camera portal.
-# - V4L2-only apps (Zoom): need v4l2loopback bridge. See debug/rugged/hw/webcam.md.
+# - V4L2-only apps (Zoom): need v4l2loopback bridge. See nix/debug/rugged/hw/webcam.md.
 {
   config,
   lib,
@@ -34,7 +34,7 @@ in
     #   >= 6.17   IPU7 camera driver mainlined in 6.17.
     #   >= 7.1.8  drm/xe TTM `beneficial_order` fix `ba7fd1634228`; without it this
     #             host hits a kswapd/Xe-shrinker swap storm. Confirmed present in
-    #             7.1.8 by reverse-patch test (<../../../../debug/rugged/stalls/report.md>).
+    #             7.1.8 by reverse-patch test (<../../../../nix/debug/rugged/stalls/report.md>).
     #
     # TODO(added 2026-09-16): kernel `b1f7f67b74c2` (first in 7.2-rc1) hardens the
     #   verifier, so cilium/ebpf's FnSetRetval probe gets EINVAL and cilium-agent

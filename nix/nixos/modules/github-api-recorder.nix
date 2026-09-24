@@ -3,7 +3,7 @@
 # without producing another connection event. Neither source measures GraphQL cost.
 # Logs stay on the host because they include every peer; the journal ships to Loki.
 #
-# See <debug/github_graphql_exhaustion/README.md>.
+# See <devinfra/github_proxy/debug/github_graphql_exhaustion/README.md>.
 #
 # CLEANUP(added 2026-09-04): remove this module and its host opt-ins once GitHub
 # issue #5213 identifies the consumer and the attribution investigation is closed.

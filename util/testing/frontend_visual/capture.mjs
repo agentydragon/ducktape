@@ -25,7 +25,7 @@ import { frozenClockScript, FROZEN_NOW_MS } from "./launcher.mjs";
  * the slowest navigation to networkidle0 was 1.9s and the slowest mount after it 79ms, so this is
  * ~380x the slowest healthy mount seen under the load that produces flakes. That headroom is the
  * whole point — the 5s literal this replaces was already 60x the healthy mount and a starved RBE
- * worker still outran it (debug/2026_08_rbe_small_test_timeouts.md).
+ * worker still outran it (devinfra/debug/2026_08_rbe_small_test_timeouts.md).
  *
  * It is not larger because a bound only helps while it is the thing that reports the failure: the
  * smallest scenario using it is a `small` (60s) target, which must fail here — naming the selector

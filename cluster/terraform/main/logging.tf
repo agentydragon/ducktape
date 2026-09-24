@@ -8,7 +8,7 @@
 #
 # machine.logging and machine.nodeLabels are non-reboot fields, applied live. Land the
 # DaemonSet before applying this so the endpoint has a listener (see
-# debug/atlas/gpu_lockup_20260718_followups.md and the plan deploy order).
+# cluster/debug/atlas/gpu_lockup_20260718_followups.md and the plan deploy order).
 #
 # Merged (RFC 7386) into every Talos node's config_patches, so node-vendor is added to the
 # per-node nodeLabels map rather than replacing it.

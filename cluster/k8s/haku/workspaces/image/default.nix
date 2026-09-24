@@ -26,7 +26,7 @@
 #
 # The general rule behind the last two (Bazel renders actions as `exec env - …`, so port
 # FILESYSTEM defaults, not environment variables) and every measured dead end are recorded
-# once, in <../../../../../debug/nixos_bazel_bash/README.md> "Issue 4". Don't restate them
+# once, in <../../../../../devinfra/debug/nixos_bazel_bash/README.md> "Issue 4". Don't restate them
 # here.
 #
 # Build:  nix build .#haku-sandbox-image

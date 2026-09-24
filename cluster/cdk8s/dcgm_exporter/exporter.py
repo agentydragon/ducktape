@@ -5,7 +5,7 @@ forwarded to Mimir (365 d). The
 motivation is getting DCGM_FI_DEV_XID_ERRORS (the `Xid 79 "GPU has fallen off the bus"`
 signal), PCIe replay counters, and power/temp into Mimir to characterize the recurring RTX 5090
 fall-off events; this replaces the local-CSV nix/nixos/modules/gpu-monitor.nix poller.
-Context: debug/atlas/gpu_lockup_20260718_followups.md, cluster/docs/plan.md.
+Context: cluster/debug/atlas/gpu_lockup_20260718_followups.md, cluster/docs/plan.md.
 """
 
 from __future__ import annotations

@@ -83,7 +83,7 @@ locals {
     # Keep read_buffer/write_buffer above the small kernel default as harmless headroom,
     # but do not treat this as the single-stream fix. Follow-up measurements showed the
     # direct OVH public path is already slow/lossy/asymmetric, so the main bottleneck is
-    # below Nebula. See debug/nebula_inter_node_perf and issue #2917.
+    # below Nebula. See cluster/debug/nebula_inter_node_perf and issue #2917.
     listen = { host = "0.0.0.0", port = 4242, read_buffer = 10485760, write_buffer = 10485760 }
     # 2 UDP-processing routines (nebula default is 1 = single-threaded). Nodes are
     # 4-core/8-thread (Xeon E3-1270 v6 / i7-7700K); 2 doubles packet parallelism while

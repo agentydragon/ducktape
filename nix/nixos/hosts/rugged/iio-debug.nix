@@ -5,7 +5,7 @@
 # output for the relevant code paths. Does NOT auto-recover — the wedge
 # must remain observable for the next forensic capture.
 #
-# See debug/rugged/auto_rotate.md "Investigation log" for the components,
+# See nix/debug/rugged/auto_rotate.md "Investigation log" for the components,
 # hypotheses, and instrumentation menu this module is implementing.
 #
 # Output locations:
