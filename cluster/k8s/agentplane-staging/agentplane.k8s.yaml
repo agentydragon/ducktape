@@ -17,8 +17,8 @@ metadata:
   namespace: agentplane-staging
 spec:
   hard:
-    limits.cpu: "12"
-    limits.memory: 24Gi
+    limits.cpu: "18"
+    limits.memory: 28Gi
     requests.cpu: "4"
     requests.memory: 8Gi
     requests.storage: 80Gi

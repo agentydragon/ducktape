@@ -1506,7 +1506,7 @@ spec:
     - name: gateway
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/proxmox-proxy
+  path: ./cluster/generated/proxmox-proxy
   prune: true
   retryInterval: 1m
   sourceRef:

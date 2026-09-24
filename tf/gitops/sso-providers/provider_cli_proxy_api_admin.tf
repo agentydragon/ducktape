@@ -26,8 +26,9 @@ resource "authentik_provider_oauth2" "cli_proxy_api_admin" {
   ]
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://cli-proxy-api-admin.allegedly.works/v0/management/callback"
+      matching_mode     = "strict"
+      url               = "https://cli-proxy-api-admin.allegedly.works/v0/management/callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }

@@ -415,7 +415,7 @@ def generate_manifests(root: Path) -> None:
     local_path_provisioner.write_manifests(root)
     goldilocks.write_manifests(root)
     headlamp.write_manifests(root)
-    proxmox_proxy.write_manifests(root)
+    proxmox_proxy.write_manifests(root, mesh)
     volsync.write_manifests(root)
     reloader.write_manifests(root)
     vpa.write_manifests(root)

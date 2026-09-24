@@ -26,8 +26,9 @@ resource "authentik_provider_oauth2" "agentplane_staging" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://agentplane-staging.allegedly.works/auth/callback"
+      matching_mode     = "strict"
+      url               = "https://agentplane-staging.allegedly.works/auth/callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }

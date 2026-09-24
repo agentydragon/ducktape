@@ -69,8 +69,9 @@ resource "authentik_provider_oauth2" "grocy_mcp_sf" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://grocy-mcp-sf.allegedly.works/auth/callback"
+      matching_mode     = "strict"
+      url               = "https://grocy-mcp-sf.allegedly.works/auth/callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }

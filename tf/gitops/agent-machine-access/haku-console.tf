@@ -45,8 +45,9 @@ resource "authentik_provider_oauth2" "haku_console_mcp" {
   # FastMCP's OIDCProxy callback under the /mcp mount.
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://haku.allegedly.works/mcp/auth/callback"
+      matching_mode     = "strict"
+      url               = "https://haku.allegedly.works/mcp/auth/callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }
@@ -93,8 +94,9 @@ resource "authentik_provider_oauth2" "haku_console_operator" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://haku.allegedly.works/auth/callback"
+      matching_mode     = "strict"
+      url               = "https://haku.allegedly.works/auth/callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }
