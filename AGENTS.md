@@ -328,7 +328,8 @@ worktree with `cd <worktree> &&`, and never end a chain with a `cd` elsewhere.
 
 ## Conventions
 
-- **`debug/`**: write investigation notes here, not in code comments or PR descriptions.
+- **Investigation notes**: use the owning project's `debug/`, not root `debug/` by
+  default, code comments, or PR descriptions. Placement and lifecycle: <README.md#debug>.
 - **`SPEC.md`**: update when the component's high-level contract changes. No
   implementation details — those go in README.md or code. Example:
   <devinfra/claude/claude_hook/SPEC.md>.

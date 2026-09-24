@@ -129,11 +129,17 @@ statement outlives the work.
 
 ### `debug/`
 
-`<dir>/debug/<topic>.md` holds an active investigation, RCA work in progress, or a reproducible
-diagnostic procedure. Delete it when resolved, or promote its durable lesson to the current docs.
-The `cluster/` subproject uses `cluster/docs/lessons_learned/` instead. A `debug/` note is held
-to the same prose standard as everything else (<STYLE.md> § Documentation) — being an
-investigation is not a licence for padding or after-the-fact justification.
+`<project>/debug/<topic>.md` holds an active investigation, RCA work in progress, or a
+reproducible diagnostic procedure. Place it under the project that owns the investigated
+behavior: Agentplane reports in `agentplane/debug/`, cluster infrastructure reports in
+`cluster/debug/`, build tooling reports in `devinfra/debug/`. Root `debug/` is only for
+repo-wide or cross-project investigations with no single owning project, not a default
+inbox. Keep one canonical report and link to it from other affected projects.
+
+Delete a resolved note after promoting any durable lesson to the owning project's current
+docs (`cluster/docs/lessons_learned/` for cluster lessons). A `debug/` note follows the same
+prose standard as everything else (<STYLE.md> § Documentation) — being an investigation
+is not a licence for padding or after-the-fact justification.
 
 ### `archive/`
 
