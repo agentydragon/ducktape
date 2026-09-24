@@ -100,7 +100,12 @@ def _spread(component: str) -> dict[str, object]:
     }
 
 
-_RESOURCES = {"requests": {"cpu": "100m", "memory": "512Mi"}, "limits": {"cpu": "500m", "memory": "1Gi"}}
+# No CPU limits (cluster/docs/decisions.md § CPU limits policy): tofu-controller's
+# Authentik-provider refreshes held the server at a 500m limit, and operator token exchanges
+# queued behind them into their 10s timeout. CPU requests are about the goldilocks VPA
+# targets; the namespace keeps VPA to requests only.
+_SERVER_RESOURCES = {"requests": {"cpu": "300m", "memory": "512Mi"}, "limits": {"memory": "1536Mi"}}
+_WORKER_RESOURCES = {"requests": {"cpu": "300m", "memory": "512Mi"}, "limits": {"memory": "1Gi"}}
 
 
 def _values() -> dict[str, object]:
@@ -144,7 +149,7 @@ def _values() -> dict[str, object]:
             "service": {"enabled": True, "type": "ClusterIP", "port": 80},
             # Routed by the HTTPRoute below.
             "ingress": {"enabled": False},
-            "resources": _RESOURCES,
+            "resources": _SERVER_RESOURCES,
         },
         "worker": {
             "name": "worker",
@@ -153,7 +158,7 @@ def _values() -> dict[str, object]:
             "nodeSelector": {"topology.kubernetes.io/region": "hil"},
             **_spread("worker"),
             **_pod_env(),
-            "resources": _RESOURCES,
+            "resources": _WORKER_RESOURCES,
         },
         # The external CNPG cluster in `db.py`.
         "postgresql": {"enabled": False},
