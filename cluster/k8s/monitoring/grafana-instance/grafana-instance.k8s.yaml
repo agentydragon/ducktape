@@ -9,6 +9,12 @@ spec:
       topology.kubernetes.io/zone: hil-ovh
     podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: grafana
+      owner: grafana
+      secret:
+        name: grafana-db-app
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
   instances: 2
   monitoring:
