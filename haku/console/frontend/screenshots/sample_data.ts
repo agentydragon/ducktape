@@ -210,46 +210,13 @@ export function sampleRecentToolCalls(nowMs: number): RecentToolCall[] {
 
 export const SAMPLE_MCP_SERVERS: McpServerConnection[] = [
   {
-    server_id: "grocy-sf",
-    backend: {
-      kind: "remote_mcp",
-      url: "https://grocy-sf.example.test/mcp",
-      auth: { kind: "remote_server_oauth", client_registration: { kind: "dynamic", client_name: "Haku Console" } },
-    },
-    connection: {
-      server_id: "grocy-sf",
-      username: "agentydragon",
-      state: {
-        status: "degraded",
-        connected_at: "2026-07-01T09:00:00Z",
-        token_expires_at: "2026-07-17T10:00:00Z",
-        scope: "read write",
-        refresh_failure: {
-          started_at: "2026-07-17T09:59:00Z",
-          initial: {
-            at: "2026-07-17T09:59:00Z",
-            kind: "outcome_unknown",
-            message: "MCP OAuth token refresh timed out after 30 seconds",
-          },
-          latest: {
-            at: "2026-07-17T09:59:00Z",
-            kind: "outcome_unknown",
-            message: "MCP OAuth token refresh timed out after 30 seconds",
-          },
-          attempts: 1,
-          resolution: "Reconnect the account before retrying.",
-          next_retry_at: null,
-        },
-      },
-    },
+    server_id: "sandbox",
+    backend: { kind: "in_process", credential: { kind: "none" } },
+    connection: null,
   },
   {
-    server_id: "tana",
-    backend: {
-      kind: "remote_mcp",
-      url: "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp",
-      auth: { kind: "none" },
-    },
+    server_id: "grants",
+    backend: { kind: "in_process", credential: { kind: "none" } },
     connection: null,
   },
   {
@@ -290,32 +257,22 @@ export const SAMPLE_MCP_PROBES: Record<string, McpServerProbe> = Object.fromEntr
     {
       connection,
       server:
-        connection.server_id === "grocy-sf"
+        connection.connection?.status === "unprovisioned"
           ? {
               server_id: connection.server_id,
               title: connection.server_id,
               state: {
                 status: "degraded" as const,
                 failure_stage: "credential_resolution" as const,
-                degraded_reason: "MCP OAuth token refresh failed: 401",
+                degraded_reason:
+                  "OAuth client for google_calendar is not provisioned on this console; see the console deployment README.",
               },
             }
-          : connection.connection?.status === "unprovisioned"
-            ? {
-                server_id: connection.server_id,
-                title: connection.server_id,
-                state: {
-                  status: "degraded" as const,
-                  failure_stage: "credential_resolution" as const,
-                  degraded_reason:
-                    "OAuth client for google_calendar is not provisioned on this console; see the console deployment README.",
-                },
-              }
-            : {
-                server_id: connection.server_id,
-                title: connection.server_id,
-                state: { status: "alive" as const, tools: [] },
-              },
+          : {
+              server_id: connection.server_id,
+              title: connection.server_id,
+              state: { status: "alive" as const, tools: [] },
+            },
     },
   ])
 );

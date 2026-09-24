@@ -696,61 +696,6 @@ class OAuthTokenState(Base):
     refresh_retry_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-class McpOperatorOAuthAssociation(Base):
-    __tablename__ = "mcp_operator_oauth_associations"
-
-    server_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    operator_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
-    association_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), default=uuid4, nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    token_state_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
-    token_state: Mapped[OAuthTokenState] = relationship(
-        cascade="all, delete-orphan", single_parent=True, lazy="selectin"
-    )
-    client_id: Mapped[str] = mapped_column(Text, nullable=False)
-    client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
-    client_secret_expires_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    token_endpoint_auth_method: Mapped[str | None] = mapped_column(Text, nullable=True)
-    token_endpoint: Mapped[str] = mapped_column(Text, nullable=False)
-    resource: Mapped[str | None] = mapped_column(Text, nullable=True)
-    __table_args__ = (
-        UniqueConstraint("association_id", name="uq_mcp_operator_oauth_associations_association_id"),
-        UniqueConstraint("token_state_id", name="uq_mcp_operator_oauth_associations_token_state_id"),
-        ForeignKeyConstraint(
-            ["token_state_id", "operator_id"],
-            ["oauth_token_states.token_state_id", "oauth_token_states.operator_id"],
-            name="fk_mcp_operator_oauth_associations_token_state",
-            ondelete="CASCADE",
-        ),
-        Index("idx_mcp_operator_oauth_associations_operator", "operator_id"),
-    )
-
-
-class McpOperatorOAuthFlow(Base):
-    __tablename__ = "mcp_operator_oauth_flows"
-    __table_args__ = (
-        Index("idx_mcp_operator_oauth_flows_server_operator", "server_id", "operator_id"),
-        Index("idx_mcp_operator_oauth_flows_expires_at", "expires_at"),
-    )
-
-    state: Mapped[str] = mapped_column(Text, primary_key=True)
-    server_id: Mapped[str] = mapped_column(Text, nullable=False)
-    operator_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
-    )
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    redirect_uri: Mapped[str] = mapped_column(Text, nullable=False)
-    code_verifier: Mapped[str] = mapped_column(Text, nullable=False)
-    client_id: Mapped[str] = mapped_column(Text, nullable=False)
-    client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
-    client_secret_expires_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    token_endpoint_auth_method: Mapped[str | None] = mapped_column(Text, nullable=True)
-    token_endpoint: Mapped[str] = mapped_column(Text, nullable=False)
-    resource: Mapped[str | None] = mapped_column(Text, nullable=True)
-    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-
 class ProviderConnection(Base):
     """One Operator's linked account for a well-known OAuth provider (Google today).
 

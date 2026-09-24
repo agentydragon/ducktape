@@ -134,7 +134,6 @@ them (<TODO.md> § Reachable since the one-to-one conversion).
   retires `test_haku_public_coder_contract.py` and the iron half of
   `test_public_coder_clickhouse_reader_contract.py`. It is not an identity (the ConfigMap
   loses its generator name hash), so it waits for the operator's decision.
-- **`agentplane-index`** rendered from its Settings.
 - Then the rest of <TODO.md>, in whatever order the neighbourhoods complete.
 
 **Pause during Wave 4, after the first two derivations.** Check what crosses the

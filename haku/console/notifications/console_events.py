@@ -46,12 +46,6 @@ class ConnectionStatus(StrEnum):
     DISCONNECTED = "disconnected"
 
 
-class McpOperatorAuthChangedEvent(BaseModel):
-    event_type: Literal["mcp_operator_auth_changed"] = "mcp_operator_auth_changed"
-    server_id: str
-    status: ConnectionStatus
-
-
 class OperatorConnectionChangedEvent(BaseModel):
     event_type: Literal["operator_connection_changed"] = "operator_connection_changed"
     connection: str
@@ -67,7 +61,7 @@ class ToolCallsChangedEvent(BaseModel):
     tool_call_id: str
 
 
-type ConsoleEvent = ToolCallsChangedEvent | McpOperatorAuthChangedEvent | OperatorConnectionChangedEvent
+type ConsoleEvent = ToolCallsChangedEvent | OperatorConnectionChangedEvent
 type ConsoleEventListener = Callable[[UUID, ConsoleEvent], None]
 
 

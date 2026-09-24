@@ -312,7 +312,7 @@ class ConsoleProcessConfig(BaseModel):
     aiquota_bearer_token: SecretStr | None = None
 
     # Shared haku-console Postgres database. Required: it holds the MCP approval audit/result
-    # ledger and the operator OAuth token store — the console does not run without them. Both
+    # ledger and the operator OAuth token stores — the console does not run without them. Both
     # stores are always constructed; migrations are applied once at startup (see app.main).
     database_url: SecretStr
 
@@ -320,22 +320,14 @@ class ConsoleProcessConfig(BaseModel):
     # Unset → the console never sends push notifications and the subscribe endpoints return 503.
     web_push: WebPushConfig | None = None
 
-    # Outbound token endpoint budget for remote MCP operator OAuth. Refresh endpoints may
-    # legitimately queue behind an authorization server's control-plane work; keep this larger
-    # than httpx's historical 10-second default while retaining a bounded deployment knob.
-    mcp_operator_oauth_token_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
-
     # Maximum synchronous wait an Agent may request for an approval-gated MCP call. Required
     # deployment wiring: it must leave margin below the deployment's own request timeout.
     max_wait_for_result_ms: int = Field(ge=5_000)
 
-    # Default interval for the background reconciler and reflection cache. Individual MCP servers
-    # may override it with catalog_refresh_interval_seconds when their catalog is expensive.
     # The background reconciler refreshes every Operator's configured MCP catalogs this often.
-    # `tools/list` itself reads only the already-published in-memory generation, so an upstream
-    # connect, OAuth refresh, or large tool schema can never extend the client startup path.
-    # This is also the dispatcher's successful-reflection reuse window and therefore the maximum
-    # routine staleness budget for an upstream adding or removing a tool.
+    # `tools/list` itself reads only the already-published in-memory generation, so reflection
+    # can never extend the client startup path. This is also the dispatcher's successful-reflection
+    # reuse window.
     mcp_catalog_refresh_interval_seconds: float = Field(default=60.0, ge=5.0, le=900.0)
 
     # Required when the config file lists the `haku_index` server, and unused otherwise: the
