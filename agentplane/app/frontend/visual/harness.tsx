@@ -1492,6 +1492,7 @@ class HarnessEventSource extends EventTarget {
     if (url.pathname === "/live/sandboxes") {
       const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
+      if (scenario.inventoryDropped) this.dispatchEvent(new Event("error"));
       return;
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
