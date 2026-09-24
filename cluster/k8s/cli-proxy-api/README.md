@@ -71,9 +71,8 @@ The normal server process watches that directory and then owns future refreshes.
 Verify the new account appears in the management UI's auth-file list. The packaged
 image is distroless, so shell commands such as `sh` and `find` are unavailable.
 
-The existing SOPS-managed Claude setup token and its egress proxy remain in
-place for the existing Haku Claude runner. AIQuota has no fallback token path;
-this keeps the quota service from maintaining two Claude credential owners.
+AIQuota has no fallback token path; this keeps the quota service from
+maintaining two Claude credential owners.
 
 AIQuota uses the management API's opaque `auth_index` only because the current
 `/api-call` contract requires it for `$TOKEN$` substitution. It never reads or

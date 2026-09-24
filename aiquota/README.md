@@ -151,9 +151,7 @@ appropriate where another process is the declared sole refresh owner.
 
 The API has one Claude credential path: CLIProxyAPI's authenticated management
 integration. AIQuota does not receive the Claude setup token, mount the
-CLIProxyAPI PVC, or connect to the legacy Claude credential-substitution proxy.
-The SOPS-managed setup token remains owned by Haku's existing Claude runner
-while that separate route is still in use.
+CLIProxyAPI PVC.
 
 ### CLIProxyAPI integration
 
