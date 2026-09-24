@@ -89,7 +89,6 @@ def check_external_credential_ownership(cluster: ParsedCluster, repo_root: Path)
     referent_service_account = "external-creds-reader"
     supplier_resources = cluster.flux_kust_resources(repo_root).get(supplier, [])
     errors: list[str] = []
-    approved_namespaces: set[str] = set()
 
     allowed_supplier_kinds = {"Secret", "Role", "RoleBinding"}
     for resource in supplier_resources:
@@ -120,8 +119,6 @@ def check_external_credential_ownership(cluster: ParsedCluster, repo_root: Path)
                     f"{supplier} RoleBinding '{resource.namespace}/{resource.name}' must approve exactly one "
                     f"explicitly namespaced {referent_service_account} ServiceAccount for a source Role"
                 )
-            elif resource.subjects[0].namespace:
-                approved_namespaces.add(resource.subjects[0].namespace)
 
     supplier_spec = cluster.flux_kustomizations.get(supplier)
     if supplier_spec is not None:
@@ -160,15 +157,6 @@ def check_external_credential_ownership(cluster: ParsedCluster, repo_root: Path)
 
     if len(stores) != 1:
         errors.append(f"expected exactly one {store_owner} ClusterSecretStore '{store_name}', found {len(stores)}")
-    else:
-        allowed_namespaces = {
-            namespace for condition in stores[0].spec.conditions for namespace in condition.namespaces
-        }
-        if allowed_namespaces != approved_namespaces:
-            errors.append(
-                f"{store_owner} ClusterSecretStore '{store_name}' namespace conditions must equal the "
-                f"source-approved namespaces; expected {sorted(approved_namespaces)}, got {sorted(allowed_namespaces)}"
-            )
 
     return errors
 

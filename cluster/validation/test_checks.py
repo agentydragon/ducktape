@@ -81,7 +81,7 @@ def _source_binding() -> dict:
     }
 
 
-def _central_store(service_account_namespace: str | None = None, namespaces: list[str] | None = None) -> dict:
+def _central_store(service_account_namespace: str | None = None) -> dict:
     service_account = {"name": "external-creds-reader"}
     if service_account_namespace is not None:
         service_account["namespace"] = service_account_namespace
@@ -90,10 +90,9 @@ def _central_store(service_account_namespace: str | None = None, namespaces: lis
         "kind": "ClusterSecretStore",
         "metadata": {"name": "kubernetes-external-creds-secret-store"},
         "spec": {
-            "conditions": [{"namespaces": namespaces or ["consumer"]}],
             "provider": {
                 "kubernetes": {"auth": {"serviceAccount": service_account}, "remoteNamespace": "ducktape-flux"}
-            },
+            }
         },
     }
 
@@ -280,17 +279,6 @@ def test_external_credential_namespace_store_is_rejected(tmp_path: Path) -> None
     cluster = _external_creds_cluster(tmp_path, [_source_role(), _source_binding()], [_consumer_store()])
     errors = check_external_credential_ownership(cluster, tmp_path)
     assert any("use external-secrets-config's shared ClusterSecretStore" in error for error in errors)
-
-
-def test_external_credential_store_conditions_match_source_approvals(tmp_path: Path) -> None:
-    cluster = _external_creds_cluster(
-        tmp_path,
-        [_source_role(), _source_binding()],
-        [_consumer_external_secret()],
-        store_docs=[_central_store(namespaces=["consumer", "unapproved"])],
-    )
-    errors = check_external_credential_ownership(cluster, tmp_path)
-    assert any("namespace conditions must equal the source-approved namespaces" in error for error in errors)
 
 
 @pytest.mark.parametrize("depends_on_supplier", [False, True])

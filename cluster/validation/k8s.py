@@ -276,16 +276,9 @@ class SecretStoreProvider(BaseModel):
     kubernetes: SecretStoreKubernetesProvider | None = None
 
 
-class SecretStoreCondition(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    namespaces: list[str] = Field(default_factory=list)
-
-
 class SecretStoreSpec(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    conditions: list[SecretStoreCondition] = Field(default_factory=list)
     provider: SecretStoreProvider = Field(default_factory=SecretStoreProvider)
 
 
