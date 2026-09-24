@@ -1,289 +1,184 @@
-# Wyrm2 agent-LLM capability map and experiment plan
+# Wyrm2 capability-first inference plan (WIP)
 
-This is the active program for evaluating agent-capable inference configurations
-on `wyrm2`. Durable measurements live in <results.md>; immutable run details live
-under `runs/`.
+Updated: 2026-09-24. Research and read-only inspection; no workloads changed or weights downloaded.
 
-## Goal
+## Objective and decision
 
-Map the LLM configurations that `wyrm2` can run usefully for coding-agent work.
-The result should answer three questions with measurements rather than model-card
-claims:
+User priority, verbatim: "The strongest model this machine can run, even if slow".
+Also refresh releases since the last substantive inference experiments, July 17–18.
+September Git edits mostly maintain paths and deployment wiring; they are not September model evaluations.
 
-1. How much context can the configuration allocate and use effectively?
-2. How capable and reliable is it on coding and tool-use tasks?
-3. What latency and resource cost does that capability require?
+Choose a model, quantization, runtime, reasoning setting, and usable context together.
+Optimize task success and independence from human rescue first; retain latency measurements to expose the cost.
+No blanket tokens/s cutoff. A slow model earns its place by solving tasks the faster ones cannot.
 
-The minimum interesting total context window is 128K tokens. A usable 1M-token
-configuration is the ideal outcome, but not a prerequisite for a useful result.
-There is no hard latency cutoff: retain slow configurations when they occupy a
-meaningful quality/context/latency Pareto frontier.
+## Current machine: directly observed
 
-Conventional GPU-resident serving and exotic feasibility paths are peer scopes.
-The latter explicitly includes Colibri and other SSD-streamed-expert runtimes,
-CPU/RAM offload, KTransformers, `llama.cpp` layer or tensor splitting, mixed
-weight/activation/KV dtypes, and reallocating some RAM from `atlas` to `wyrm2`.
-Apply the same measurement discipline to both lanes; do not discard an approach
-solely because it is unconventional.
+- Two RTX 5090s, 32,607 MiB each; driver 595.71.05. GPU0 used 2,460 MiB; GPU1 5 MiB.
+- GPU P2P read support: `NS`; topology `PHB`. Do not assume two GPUs behave as one unified 64 GB allocation.
+- Ryzen 9 9950X3D exposed through KVM, 32 vCPUs, AVX-512 available.
+- `free -h`: 94 GiB total, 70 GiB available, no swap. This is a shared workstation and cluster node.
+- Root filesystem after the operator ran `nix-collect-garbage`: 492G total, 425G used, 48G available, 90% used.
+- `/var/lib/colibri`: 492G total, 447G used, 20G available, 96% used.
+- At the post-GC recheck, node `Ready=True`, `DiskPressure=True`; `node.kubernetes.io/disk-pressure:NoSchedule` taint.
+- Ollama Deployment `0/1`; replacement pod Pending/Unschedulable. Model PVC still Bound, 200Gi HDD class.
+- No pods in `llm-bench`. Both GPUs respond; queried seven-day kernel log returned no matching Xid/reset entries.
+  This does not establish stability under sustained inference or cover unavailable historical logs.
+- Existing GLM-5.2 Colibri and DeepSeek-V4 IQ2 directories remain on disk; completeness not revalidated.
 
-## Posture: hobbyist scale, not reproducible science
+Reproduce with `nvidia-smi`, `nvidia-smi topo -m`, `nvidia-smi topo -p2p r`, `free -h`,
+`df -h / /var/lib/colibri`, `kubectl get node wyrm2 -o json`, and `kubectl -n ollama get pods,deploy,pvc`.
 
-This is one person with two RTX 5090s deciding what to serve, not a research
-paper. There is no typed schema registry, no `manifest.json`/`summary.json`
-interface layer, no generated reports, no formal immutability or comparability
-machinery. The deliverable per experiment is:
+## Existing evidence and its limits
 
-- the launch configuration that actually ran — k8s manifests (preferred) or
-  scripts, checked into the run directory;
-- a run `README.md` with the numbers that matter (context reached, TTFT, decode
-  tokens/s, VRAM/RAM footprint, tool-call reliability, anomalies, verdict);
-- a row in <results.md>, the hand-maintained comparison table.
+Run paths below are relative to this directory. The July run records are historical evidence;
+no new model performance has been measured in this refresh.
 
-Two honesty rules replace the heavier apparatus:
+| Evidence                                                  | Finding                                                                                                                              | Limitation                                                                                                                                        |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <runs/2026-07-17_e1_qwen3coder_awq/README.md>             | Qwen3-Coder-30B-A3B AWQ/vLLM TP2: 262K allocation, multi-depth needle passes, tool smoke passes; reported ~199 tok/s at nominal 128K | Coding task quality was external; warm-prefix and cold-prefill differ substantially                                                               |
+| <runs/2026-07-17_e5_devstral_24b/README.md>               | Devstral Small 2: 128K allocation/needle passes; all three tool probes pass; ~90–96 tok/s at 8K/32K                                  | 128K latency request failed; summary table incorrectly locates its decode result at 128K                                                          |
+| <runs/2026-07-17_e6_qwen36_35b/README.md>                 | Qwen3.6: 262K needle passes; tool probe fails                                                                                        | Hermes parser and limited reasoning budget confound conclusions about underlying model capability                                                 |
+| <runs/2026-07-17_e7_gptoss120b/README.md>                 | gpt-oss-120b: ~12 tok/s with vLLM CPU offload; 16K configured; single/multiturn tools pass                                           | Not a 128K deployment or quality comparison; placement was not exhaustively optimized                                                             |
+| <runs/2026-07-18_e9_deepseek_v4_flash_llamacpp/README.md> | DeepSeek-V4-Flash IQ2: 1.1 CPU / 2.9 Vulkan tok/s, 4K context configuration                                                          | GPU held attention while all experts stayed on CPU; expert placement sweep stopped at GPU lockup; no agent-quality result                         |
+| <runs/2026-07-17_glm52_colibri_deepening/README.md>       | GLM-5.2 Colibri: ~0.15–0.16 tok/s warm in longer follow-up                                                                           | 64K allocation used a short prompt; not a filled-context result. Framework overhead was substantial, so storage alone is not an established cause |
+| <runs/2026-04-29_swebench_n100_shuffled_gpt20/README.md>  | SWE-bench attempts aborted                                                                                                           | No usable N=100 capability result                                                                                                                 |
 
-- **Don't rewrite history in place.** Don't edit numbers in an accepted run
-  README; add a new run directory and repoint the <results.md> row.
-- **Every number cites its source and its trust.** Each <results.md> row links
-  its run (or names the external source) and carries a trust mark.
+Other hubs: `x/local_llm/`, `x/benchmark_ollama/`, `props/docs/local_llm_evaluation/`,
+and `cluster/docs/inference/model_comparison/`. Props local measurements were CPU-only in an older web environment,
+not measurements of the two 5090s. Existing inference `PLAN.md` already favors lightweight run records over a new framework.
 
-## Quality evidence policy
+Audit cautions:
 
-Default to **published evals** for quality: model cards, official leaderboards
-(LiveCodeBench, BFCL, SWE-bench Verified), and credible community results at the
-same or a similar quantization. Re-running a full SWE-bench campaign on a 2-GPU
-box mostly reproduces numbers other people already computed more carefully.
+- E2's 1,000–1,500 tok/s gpt-oss numbers need remeasurement. The harness divides total reported completion tokens
+  by time after first visible delta; unstreamed reasoning or buffered chunks could inflate that rate. This is a risk,
+  not a proven explanation. Its nominal 128K input was actually 109,277 tokens, with null reasoning counts.
+- E5 says it was the only parallel-tool success, but E1 also passed. A single weather probe is only a smoke test.
+- A model card's full-precision quality score does not establish the quality of an IQ2 local deployment.
+- A theoretical memory-bandwidth ceiling does not promise a corresponding attainable speedup.
 
-Run quality workloads ourselves only when:
+## Refreshed candidates
 
-- no external number exists for the model at a comparable quant/runtime;
-- our deployment is weird enough to plausibly change results (aggressive KV
-  quantization, SSD-streamed experts, approximate routing, unusual context
-  extension); or
-- observed behavior contradicts the external number (tool-call parse failures,
-  obviously degraded output, refusals).
+All file sizes below are decimal GB, summed from quantizer file metadata, not peak RAM/VRAM requirements.
+Runtime buffers, non-expert tensors, KV, page cache, the desktop, and temporary loading copies require headroom.
 
-What we **always** measure locally, because it depends on our deployment and not
-the checkpoint: context capacity, latency/throughput, resource footprint, and
-tool-calling round-trip reliability through our actual served API path.
+| Candidate              | Initial configuration to investigate                                                     | Why                                                                                                                       |
+| ---------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| GLM-5.3-Flash          | CUDA llama.cpp compatible branch; UD-IQ3_XXS 120.37 GB; IQ2_XXS 101.84 GB fallback       | New 320B/18B-active candidate for the capability ceiling with GPU/RAM offload                                             |
+| Qwen3.8-Flash-Next     | CUDA llama.cpp; UD-Q4_K_XL 111.33 GB, IQ4_XS 93.68 GB fallback                           | New model with 125B backbone plus 51B lookup embeddings and 4B MTP; investigate embedding offload separately from experts |
+| DeepSeek-V4-Flash-0731 | CUDA llama.cpp; IQ2_M 90.93 GB, Q3_K_M 128.08 GB quality comparison if placement permits | New post-training relative to July preview, official agentic gains; closest continuation of E9                            |
+| Qwen3.8-27B            | FP8 across the GPUs or a suitable GGUF                                                   | New resident quality/control point; compare a less compressed small model against aggressively compressed larger ones     |
+| DeepSeek-V4.1-Flash    | JigSawPT `dsv41-porte` streaming fork with matching 502 GB checkpoint                    | Highest-priority ambitious feasibility track; new implementation makes a much larger model testable in principle          |
+| MiniMax-M3             | IQ2_M 134.21 GB                                                                          | Already on old backlog; still untested. Bare 2-bit parameter arithmetic understated actual artifact size                  |
 
-Trust marks used in <results.md>:
+GLM-5.3-Flash upstream llama.cpp PR #27754 was OPEN/unmerged at inspection; pin a compatible implementation,
+including its tool-template and long-context fixes. Qwen3.8's reported Blackwell SOFT_MAX issue #28403 was closed;
+the reporter resolved that instance by rebuilding with a consistent CUDA toolchain. Neither fact proves a local run.
 
-- `ext` — external number at similar quant/config; no reason to doubt.
-- `ext?` — external number, but quant/runtime differs enough that it may not
-  transfer; flagged for possible future local deepening.
-- `local` — measured here; run link required.
-- `local~` — quick local probe (e.g. needle checks standing in for a full
-  long-context eval); indicative, not definitive.
+Primary sources:
 
-## Where workloads run
+- [GLM card](https://huggingface.co/zai-org/GLM-5.3-Flash),
+  [quant files](https://huggingface.co/unsloth/GLM-5.3-Flash-GGUF/tree/main/UD-IQ3_XXS),
+  [runtime PR](https://github.com/ggml-org/llama.cpp/pull/27754).
+- [Qwen Flash card](https://huggingface.co/Qwen/Qwen3.8-Flash-Next),
+  [quant files](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/tree/main/UD-Q4_K_XL),
+  [runtime guide](https://unsloth.ai/docs/models/qwen3.8-next),
+  [resolved report](https://github.com/ggml-org/llama.cpp/issues/28403).
+- [DeepSeek 0731 card](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731),
+  [quant files](https://huggingface.co/unsloth/DeepSeek-V4-Flash-0731-GGUF/tree/main/UD-IQ2_M).
+- [Qwen dense card](https://huggingface.co/Qwen/Qwen3.8-27B).
+- [DeepSeek V4.1 card](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash),
+  [matching streaming checkpoint](https://huggingface.co/JigSawPT/DeepSeek-V4.1-Flash-GGUF),
+  [runtime author's report](https://github.com/JigSawPT/deepseek-v41-flash-on-5090).
+- [MiniMax card](https://huggingface.co/MiniMaxAI/MiniMax-M3),
+  [quantizer inventory](https://huggingface.co/unsloth/MiniMax-M3-GGUF/tree/main).
 
-**Kubernetes-first.** `wyrm2` is a cluster node with both GPUs exposed
-(`runtimeClassName: nvidia`, `nvidia.com/gpu: 2`; the working pattern is
-<../../cdk8s/ollama/app.py>). Serve each candidate as an ad-hoc
-Deployment (or bare Pod) plus a bench Job, applied straight with `kubectl apply
--f runs/<run-id>/` — **not** wired into Flux. Only a configuration we decide to
-keep gets promoted into a Flux-managed directory under `cluster/k8s/` and
-registered in LiteLLM.
+The V4.1 author reports ~5.1 tok/s on new content and ~21 on repeated content with one 5090,
+125.7 GiB RAM and PCIe 5 NVMe. A September 23 direct-I/O update reports ~8.9–10.0 tok/s on first-pass prompts.
+These are short-prompt, short-output external measurements. Wyrm2 has less RAM and a virtualized storage path;
+two-GPU scaling, reasoning quality, sustained changing expert working sets, and long-context behavior are unknown.
+Expand the existing VM model disk to accommodate the 502 GB checkpoint and working headroom.
+The current 500 GiB virtual allocation is not a physical capacity ceiling; Atlas pool capacity still needs inspection.
+Keep every expert; caching changes placement, whereas dropping experts changes the model.
 
-Host-level runs are the exception, used when the runtime needs host control the
-cluster can't easily give it (Colibri's SSD-streaming path, KTransformers
-experiments, systemd memory-capped RAM trials). Those keep their scripts in the
-run directory, as the existing GLM-5.2 Colibri run already does.
+## Ranked execution plan
 
-Model weights reuse the existing model PVC/hostPath pattern from the Ollama
-deployment; a download Job lives alongside the serving manifest in the run dir.
+1. **Prepare capacity for experiments.** Recheck root disk pressure after the operator's garbage collection;
+   if it persists, inspect kubelet eviction signals and remaining consumers before more cleanup. Account for
+   Ollama's two-GPU reservation before trials. Expand the existing model disk after checking Atlas pool capacity:
+   `virtio8`, currently `size = 500`, in <../../terraform/main/proxmox-vms.tf>. Its `/var/lib/colibri`
+   ext4 mount in <../../../nix/nixos/hosts/wyrm2/default.nix> already has `autoResize = true`.
+   Size the expansion for retained checkpoints, the 502 GB V4.1 target, a 120–130 GB comparison, and free-space
+   headroom. Review the Terraform plan for an in-place disk grow; verify guest block-device and filesystem sizes
+   after applying through the normal bootstrap path. Enlarging this disk does not enlarge the separate root disk
+   or Ollama PVC. No resize is included in this documentation PR.
+   Run a bounded GPU workload with failure monitoring; current idle health is insufficient proof.
+2. **Repair the small measurement harness.** Tokenize exact inputs, reserve output, record termination reason,
+   complete reasoning/content/tool output, server timings and wall time. Separate genuinely new prompts, cached prefixes,
+   and exact repeated generations. Preserve historical runs; write new dated results.
+3. **Probe the strongest plausible candidates.** First GLM-5.3-Flash IQ3, Qwen3.8-Flash-Next Q4, and DeepSeek 0731.
+   Start at 8K to establish correct inference/tool use, then filled 32K and 128K. Sweep GPU expert placement,
+   keeping asymmetric desktop headroom; measure RSS, VRAM, disk reads and page faults. Qwen3.8-27B is the resident control.
+   A failing parser gets a bounded investigation before a model is rejected.
+4. **Pursue V4.1 feasibility without waiting for every comparison.** Inspect/build the matching fork and validate its
+   fixtures first. Use the expanded model disk after the recipe passes inspection. Start on GPU1 with a conservative
+   host cache, then test two-GPU placement if supported. Compare direct/buffered I/O with real changing prompts.
+   Do not copy the author's 72 GiB pinned cache into a workstation with only ~70 GiB currently available.
+5. **Measure coding capability on one shared scaffold.** Start with roughly 10–20 matched tasks as an operational
+   screening budget (not a powered benchmark): bounded fixes, multi-file changes, debugging, test construction, review.
+   Use existing evaluators/Props where appropriate. Score actual held-out tests and review correctness, not self-reports.
+   Give slow models enough wall time; separately report equal-output-budget and overnight-budget results.
+   Track success, truncations, tool/parser failures, loops, human rescues, total reasoning/output, task wall time,
+   and energy if available. Expand only close comparisons; don't infer tiny percentage differences from this sample.
+6. **Tune the winner.** Increase precision before sacrificing quality for speed. Compare reasoning settings and context.
+   Try MTP/speculation only after a non-speculative baseline: Colibri already showed that acceptance can look good
+   while extra expert traffic erases the speed benefit. Promote a kept configuration through the actual gateway/agent path.
 
-## Repository structure
+Concrete useful deployments to evaluate: overnight issue-to-patch worker, independent review/debugging second opinion,
+and long-context repository analysis. Capability remains the selection criterion; these tasks make long waits tolerable.
 
-```text
-cluster/docs/inference/
-  README.md                 dashboard and navigation
-  PLAN.md                   this program
-  results.md                hand-maintained comparison table (the numbers)
-  TODO.md                   prioritized next experiments
-  benchmarks.md             historical evidence (frozen)
-  runs/<run-id>/
-    README.md               numbers, anomalies, verdict
-    *.yaml / *.sh           the manifests / scripts that ran
-  archive/                  superseded plans and historical research
-```
+## Uncertainty register and competing outcomes
 
-Superseded docs (`vllm_container_plan.md`, `model_download_history.md`, dated
-model-selection research) move to `archive/` once their durable conclusions are
-reflected in the current docs. Large eval logs stay out of git — link them from
-the run README or just summarize the headline number.
+| Question                                                 | Current state                                                          | Discriminating action                           |
+| -------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------- |
+| Does GLM IQ3 retain an advantage over Qwen Q4/dense FP8? | Unknown; model cards cannot settle quantized local quality             | Matched coding tasks                            |
+| Does V4.1 remain useful with a smaller host cache?       | Plausible external evidence, unmeasured here                           | Cache sweep under current RAM allocation        |
+| Is GPU instability resolved?                             | Both responsive, no errors in queried log; sustained stability unknown | Bounded load plus kernel monitoring             |
+| Can 128K context support productive multi-turn work?     | Historical needle results only for some models                         | Filled-context tool trajectories                |
+| Will changing expert demand erase warm-cache speed?      | Known risk for streaming                                               | Diverse sequential tasks, not repeated prompts  |
+| Which runtime best uses two non-P2P GPUs?                | Unknown for new candidates                                             | Same checkpoint, matched placement and workload |
 
-## Measurement conventions
+Possible outcomes: large offloaded model wins on difficult tasks; resident dense model beats degraded large quants;
+new streaming implementation raises the ceiling; integration failures dominate; no candidate is reliable without frequent rescue.
+No numerical probabilities or future speed estimates are justified by this review.
 
-Kept deliberately small, so two runs a month apart stay roughly comparable.
+## Decision branches and stopping criteria
 
-- **Context.** For a target total window `C`, submit about `C − 4096` input
-  tokens, reserving 4,096 for output. Record three values:
-  - **advertised** — model/runtime claim (not a measurement);
-  - **allocated** — largest `C` that loads and completes one request without
-    OOM/overflow/timeout;
-  - **effective** — largest `C` passing a quick needle probe (a few needles at
-    several insertion depths, exact match). The needle probe is `local~`: it
-    catches gross long-context breakage, not subtle degradation — lean on
-    external RULER-style results for the latter where they exist.
-- **Latency.** Single concurrent request, temperature 0, 256-token generation.
-  Report TTFT and decode tokens/s at 8K, 32K, 128K input, and at each larger
-  allocated context. A handful of repetitions is enough; note warm vs cold. For
-  offload/SSD runtimes, report cold-start and warmed-steady-state separately —
-  the steady-state number never replaces the cold one.
-- **Resources.** Peak per-GPU VRAM (`nvidia-smi`); for offload runs also RSS,
-  page cache, and SSD read throughput while decoding.
-- **Tool calling.** Through the served OpenAI-compatible API: one single-call,
-  one parallel-call, and one multi-turn round trip with fixed schemas. Record
-  parse failures and whether reasoning/tool state survives the round trip. This
-  is the cheapest local check that predicts real agent usability.
-- **Failures.** Say what actually failed — startup OOM, allocation OOM, parser,
-  timeout, garbage output — not just "failed".
+- If a model cannot pass encoding/tool fixtures, resolve that before expensive agent runs.
+- If placement fits but task quality degrades, compare a higher quant or a smaller higher-precision model.
+- If V4.1 works but faults excessively, distinguish RAM-cache scarcity, disk latency, and implementation overhead before
+  considering RAM/storage changes. Do not repeat the unsafe historical 112 GiB VM allocation at the host's expense.
+- Retain slow configurations that solve additional tasks without disproportionate human intervention.
+- Stop a tuning branch when changes do not improve task quality, usable context, or completion time.
+- Completion means one reviewed local configuration finishes representative coding jobs through the intended agent client,
+  plus a measured frontier and documented failures. Loading a checkpoint or passing a weather call is insufficient.
 
-## Configuration space
+## Planning assumptions
 
-Avoid an exhaustive Cartesian product. Screen a credible configuration for each
-architecture/runtime family, then vary one axis at a time for the models that
-show useful capability. Never compare two differently quantized checkpoints and
-attribute the difference to the runtime alone.
+Candidate ordering and the 10–20-task screen are judgment calls, to be revised after first results.
+No promised tokens/s for new models; no claimed IQ2/IQ3 capability retention; no hardware-purchase recommendation yet.
+Illustrative decode-only arithmetic: 10,000 output tokens take ~56 minutes at 3 tok/s or ~17 minutes at 10 tok/s,
+before prefill, tools, retries, and additional turns. Actual agent jobs can generate far more tokens.
 
-### Runtime families
+## Experiment records and deployment
 
-| Family               | Initial role                                                                                                                          |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| vLLM                 | First GPU-resident runtime for supported FP8, MXFP4, and AWQ models; tensor parallel across both GPUs.                                |
-| SGLang               | Same-model comparison when prefix caching, tool parsing, or vLLM latency is limiting.                                                 |
-| `llama.cpp` / Ollama | GGUF, CPU/GPU layer splitting, memory mapping, host-RAM-heavy configs. Use `llama.cpp` directly when Ollama hides a required control. |
-| KTransformers        | Large MoE expert offload and heterogeneous CPU/GPU placement.                                                                         |
-| Colibri              | SSD-streamed experts and deliberately storage-bound models such as GLM-5.2.                                                           |
+Keep one dated `runs/<run-id>/` directory per experiment, with its exact launch configuration,
+measurements, anomalies, and verdict. Pin the runtime commit or image digest and checkpoint revision.
+Add a source-linked row to <results.md>; preserve accepted historical measurements. Use `local` for
+measured results, `local~` for smoke probes, `ext` for comparable external evidence, and `ext?` when
+precision, runtime, or task protocol differs. Avoid a new evaluation framework or generated report pipeline.
 
-### Model candidates
-
-Run the resident and exotic/offload lanes concurrently. "Initial order" is order
-within a lane, not an instruction to postpone the exotic lane.
-
-#### GPU-resident or near-resident lane
-
-| Initial order | Candidate                                                                                              | First configuration                          | Question                                                                                           |
-| ------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| 1             | [NVIDIA Nemotron 3 Nano 30B-A3B FP8](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8) | vLLM, FP8 KV                                 | Can its hybrid architecture deliver an effective 1M context within current VRAM?                   |
-| 2             | [Qwen3.5-35B-A3B FP8](https://huggingface.co/Qwen/Qwen3.5-35B-A3B)                                     | vLLM, FP8 KV                                 | How much of its native 262K and extended ~1M context is usable on two 5090s?                       |
-| 3             | [Qwen3-Coder-Next GGUF](https://huggingface.co/Qwen/Qwen3-Coder-Next-GGUF)                             | `llama.cpp`, Q4_K_M                          | Does coding specialization outweigh the latency and quantization cost of its larger total weights? |
-| 4             | [Devstral Small 2 24B](https://huggingface.co/mistralai/Devstral-Small-2-24B-Instruct-2512)            | vLLM, FP8                                    | Establish a dense coding-agent quality and latency baseline around 256K.                           |
-| Baseline      | Qwen3-Coder-30B-A3B AWQ                                                                                | Known vLLM TP2 profile, FP8 KV               | Reproduce the known 262K configuration, now in k8s.                                                |
-| Baseline      | gpt-oss-20B                                                                                            | vLLM native MXFP4 vs the existing Ollama one | Establish the fast 128K-class floor and isolate runtime effects.                                   |
-| Secondary     | [GLM-4.7-Flash](https://huggingface.co/zai-org/GLM-4.7-Flash)                                          | Supported 4-bit runtime                      | Test another coding-oriented small-active-parameter MoE around 200K.                               |
-
-Defer dense Qwen3.5-27B and models below 128K unless an observed result makes
-them answer a specific question this set does not.
-
-#### Exotic/offload lane
-
-| Initial order | Candidate or mechanism                                                                  | First configuration                                                                        | Question                                                                                                                                                                                                     |
-| ------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1             | GLM-5.2                                                                                 | Existing Colibri INT4-expert/INT8-MTP run, then lower activation/KV precision if supported | How do context, page cache, SSD throughput, and drafting interact in a disk-streamed expert model?                                                                                                           |
-| 2 (E10)       | [MiniMax-M3](https://huggingface.co/MiniMaxAI/MiniMax-M3) (428B / ~23B active, MSA, 1M) | `llama.cpp` mainline IQ2 GGUF, `--cpu-moe` offload (E9 wiring)                             | Does its +1.5 SWE over DSV4-Flash (80.5 vs 79.0) survive ~2× active params (23B vs 13B → slower) and a larger footprint — i.e. does it _extend_ the offload coding frontier or just shift DSV4's point left? |
-| 3             | [Devstral 2 123B](https://huggingface.co/mistralai/Devstral-2-123B-Instruct-2512)       | Q4 GGUF or another supported CPU/GPU split                                                 | What is the quality ceiling for a dense model spanning both VRAM and host RAM?                                                                                                                               |
-| 4             | Best large GGUF candidate from the resident screen                                      | `llama.cpp` tensor/layer split with `mmap`                                                 | Where is the practical frontier between resident KV, offloaded weights, and page cache?                                                                                                                      |
-| Mechanism     | More `wyrm2` RAM                                                                        | 104 GiB controlled trial after in-allocation sensitivity tests                             | Does another 8 GiB cross a fit/cache boundary, or merely move an already poor result slightly?                                                                                                               |
-
-Add newly released runtimes and architectures when they plausibly change the
-frontier. Being unsupported by vLLM is not a reason to exclude a model; it is a
-reason to test the runtime that exposes its intended memory hierarchy.
-
-### Refinement axes
-
-For the best configurations in either lane, vary one axis at a time, in this
-order, re-running the context probe and the 8K/128K latency workload:
-
-1. Weight precision or quantization supported by the same runtime.
-2. KV dtype at fixed weights and context.
-3. Runtime at fixed checkpoint and prompt protocol.
-4. Expert/layer residency, CPU/GPU split, memory mapping, and storage cache.
-5. Context allocation and concurrency.
-
-## Baseline results
-
-The initial resident-runtime screen is complete. Each experiment has an
-immutable run directory and a row in <results.md>; do not turn this section back
-into a second, competing results table.
-
-- **E1 — Qwen3-Coder-30B-A3B, vLLM TP2:** 262K allocated context and passing
-  tool-call smoke; this is the resident baseline. See
-  <runs/2026-07-17_e1_qwen3coder_awq/README.md>.
-- **E2 — gpt-oss-20B, vLLM versus Ollama:** both runtimes work for the normal
-  request paths, but neither passed the parallel tool-call probe. See
-  <runs/2026-07-17_e2_gptoss_vllm_vs_ollama/README.md>.
-- **E3 — Qwen2.5-7B 1M attempt:** allocation was blocked by the missing
-  Blackwell-compatible long-context kernel, not by model memory. See
-  <runs/2026-07-17_e3_qwen25_7b_1m/README.md>.
-- **E4 — Qwen3.5-35B-A3B, vLLM TP2:** 262K allocated context, but the Hermes
-  parser did not pass the tool-call probe. See
-  <runs/2026-07-17_e4_qwen35_35b/README.md>.
-- **E5 — Devstral Small 2 24B, vLLM TP2:** the dense baseline passed the
-  single, parallel, and multi-turn tool-call probes at 128K. See
-  <runs/2026-07-17_e5_devstral_24b/README.md>.
-
-The follow-on screen is also recorded in <results.md>: E6 (Qwen3.6), E7
-(gpt-oss-120B offload), and E8/E9 (DeepSeek-V4-Flash). The exotic lane is
-independent of the resident baseline and remains a separate experiment track.
-
-### E10 — MiniMax M3: can it extend the offload coding frontier over DSV4-Flash?
-
-The only recently-released open weight that is a genuine Pareto _candidate_ above
-DeepSeek-V4-Flash (E9) on coding: **MiniMax M3**, 428B total / ~23B active MoE, MSA
-sparse attention, native 1M context, open-weight. External evals: SWE-bench Verified
-80.5, GPQA Diamond 92.9 (HLE numbers are protocol-split — do not cite until pinned).
-
-- **Runtime:** reuse the E9 wiring verbatim — mainline `ggml-org/llama.cpp`, an IQ2 GGUF
-  (~107 GB at 2 bpw), `--cpu-moe` expert offload, Vulkan (`-ngl 999 -c 4096`), NVIDIA
-  ICD. First confirm an IQ2/IQ1 GGUF exists (unsloth) that targets mainline; the MSA
-  attention must be merged in llama.cpp (verify, as with DSV4's HCA tensors).
-- **Measure:** decode tok/s (CPU floor + Vulkan) — the key number, since ~23B active vs
-  DSV4's 13B predicts roughly half the decode rate; largest allocated context; coherence
-  - tool-call smoke; peak VRAM/RAM and how much of the 107 GB page-caches in 96 GB.
-- **Question:** does +1.5 SWE over DSV4-Flash (80.5 vs 79.0) survive being ~2× slower and
-  ~16 GB larger — i.e. does M3 add a new point _above_ DSV4 on the speed×SWE frontier, or
-  is it strictly dominated (slower for negligible quality)? A dominated result is still a
-  finding: it says DSV4-Flash is the offload coding sweet spot and bigger MoEs don't help
-  at this memory budget.
-- **Explicitly NOT queued: Inkling** (Thinking Machines, 975B / 41B active). At ~244 GB
-  IQ2 it exceeds 96 GB RAM + practical SSD streaming, and 41B active would crawl at
-  GLM-5.2 tier (~0.1–0.3 tok/s). Too big to run usefully on `wyrm2`; revisit only with a
-  much smaller quant or more RAM.
-
-## Next work
-
-- **Make DeepSeek-V4-Flash faster (E9 follow-up).** E9 runs at
-  2.9 tok/s but that is ~10× under the RAM-bandwidth ceiling, so there is large headroom.
-  Ranked next steps (physics + how-to in <runs/2026-07-18_e9_deepseek_v4_flash_llamacpp/README.md>):
-  (1) `--n-cpu-moe N` sweep to fill VRAM with experts; (2) `ik_llama.cpp` / CUDA-backend
-  runtime bake-off; (3) MTP speculative decoding (support unverified — check the GGUF).
-  **Blocked on wyrm2 GPU stability:** the sweep session hit the intermittent VFIO 5090
-  FULLCHIP_RESET lockup (<../../../debug/atlas/wyrm_gpu_lockup.md>). Recovering the GPUs
-  and preventing the lockups is the real prerequisite for this whole thread.
-- **RAM sensitivity and `atlas` safety.** Test offload configurations inside the
-  current 96 GiB first, via systemd memory caps (80/88/96 GiB). A 104 GiB
-  host-allocation trial is a separate declarative Terraform change, made only if
-  another 8 GiB would cross a demonstrated fit boundary or predict ≥20%
-  wall-time/storage-traffic reduction; watch `atlas` memory pressure and revert
-  unless a kept configuration depends on it. Do not use the former 112 GiB
-  allocation — the existing Terraform record says it left ~8 GiB for host + ZFS
-  and caused stalls.
-- **LiteLLM integration.** A kept configuration gets promoted to a Flux-managed
-  deployment, added to cluster LiteLLM, and re-smoked through the gateway
-  (API/tool round trip, a 128K request, a Haku-style tool job). Record gateway
-  overhead separately from backend latency.
-- **Deepening `ext?` numbers.** Any external number that starts driving a real
-  decision (e.g. picking the default coding model) becomes a candidate for a
-  local eval run; <TODO.md> tracks these individually.
-- **Intelligence-ceiling axis: bigger/smarter models at the edge of runnable.**
-  The E1–E5 set is deliberately mid-size (fast, resident). A worthwhile separate
-  axis is "how much more capability can we get if we accept it's slow / barely
-  fits" — e.g. **gpt-oss-120b** (MXFP4 ≈ 63 GB, right at the 64 GB aggregate-VRAM
-  edge; likely needs a little CPU/RAM offload or aggressive KV/context limits),
-  and similarly large MoEs. This overlaps the exotic/offload lane's premise —
-  the GLM-5.2-on-Colibri appeal is "full frontier-class quality, just slow" —
-  but framed as its own knob: trade latency/fit for raw model intelligence and
-  measure the capability-per-slowdown. Worth a dedicated run once E1–E5 map the
-  fast tier.
+Use ad-hoc Kubernetes workloads where the runtime fits that environment; use host runs for experiments
+requiring direct storage/cache control. Promote only a selected configuration to Flux and LiteLLM, then
+verify tool calls and a representative coding task through the intended agent client. This PR records
+research and planned experiments only; it changes no deployment, storage allocation, or benchmark code.

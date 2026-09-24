@@ -57,10 +57,10 @@ with their dated run records.
 
 ## Current state
 
-Cluster inference runs on **Ollama / GGUF on wyrm2** (no tensor parallel; see
-<../../cdk8s/ollama/app.py>). Host experiments (`x/local_llm/` on wyrm2,
-incl. vLLM AWQ scripts never moved to k8s) and the full, dated backend matrix
-live in <backend_comparison.md>.
+The declared cluster service is **Ollama / GGUF on wyrm2** (see
+<../../cdk8s/ollama/app.py>); verify live readiness before using it. The July
+`runs/` records include Kubernetes vLLM experiments, while host launchers live
+in `x/local_llm/`. The dated backend matrix is in <backend_comparison.md>.
 
 ## Tracking
 
@@ -69,8 +69,9 @@ incident or migration, write a focused doc and link it from this README.
 
 ## Next work
 
-Follow <PLAN.md> for the experiment order (E1–E5 first) and the measurement
-conventions. Each run is a `runs/<run-id>/` directory (manifests/scripts + a
+The active program prioritizes coding capability, including GPU/RAM offload and
+SSD-streamed models. Keep model-card quality separate from local quantized
+agent results; E1–E5 are completed historical baselines. Each run is a `runs/<run-id>/` directory (manifests/scripts + a
 README with the numbers); current comparisons land in <results.md>. Persistent
 individual tasks remain in <TODO.md>.
 
