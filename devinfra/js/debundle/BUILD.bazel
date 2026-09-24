@@ -827,7 +827,6 @@ rust_library(
         "lowering/materialize/plan_builder.rs",
         "lowering/mod.rs",
         "lowering/naturalize.rs",
-        "lowering/ordinal.rs",
         "lowering/plan_references.rs",
         "lowering/plans.rs",
         "lowering/rename_ledger.rs",
@@ -845,17 +844,12 @@ rust_library(
         ":analysis",
         ":artifact",
         ":binding_targets",
-        ":chunk_facts",
         ":gate",
         ":js_ast",
         ":output_layout",
         ":program_analysis",
-        ":selector_backend_solver",
-        ":selector_ir",
-        ":selector_ir_lowering",
-        ":selector_ortools_cpsat_backend",
         ":selector_outcome",
-        ":selector_runtime",
+        ":selector_resolve",
         ":source_match",
         ":spec",
         ":stage_one",
@@ -1177,6 +1171,27 @@ rust_library(
         ":selector_ir",
         ":selector_ortools_cpsat_backend",
         "@crates//:anyhow",
+    ],
+)
+
+# The one selector resolve every command calls: spec entities and a parsed
+# chunk in, one outcome per entity out.
+rust_library(
+    name = "selector_resolve",
+    srcs = ["selector_resolve.rs"],
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":chunk_facts",
+        ":js_ast",
+        ":selector_ir",
+        ":selector_ir_lowering",
+        ":selector_outcome",
+        ":selector_runtime",
+        ":source_match",
+        ":spec",
+        "@crates//:anyhow",
+        "@crates//:swc_ecma_ast",
     ],
 )
 

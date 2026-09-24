@@ -4,105 +4,14 @@
 //! `binding_assignment`) lives behind the builder's encapsulation rather than
 //! being open-coded per phase.
 
-use super::super::ordinal::body_index_for_statement_ordinal;
 use super::outcome_sink::OutcomeSink;
 use super::*;
-use crate::plans::{AnonymousStatementRequest, RelationalSelector};
-use analysis::{DepKind, OwnerId, StatementOrdinal};
-
-#[derive(Debug, Clone)]
-struct AnonymousStatementTargetInfo {
-    target: SelectorTargetId,
-    request_index: usize,
-    statement_index: usize,
-    statement: AnonymousStatementRequest,
-}
-
-/// A `source_match` selector projected into the solve: its targets (one, or
-/// every binding of a `source_matches[]` group) and its candidate rows, each
-/// row the `(owner, binding)` places it would claim.
-struct ProjectedEntity {
-    targets: Vec<SelectorTargetId>,
-    rows: Vec<Vec<(OwnerId, Option<String>)>>,
-    subject: ProjectedEntitySubject,
-}
-
-enum ProjectedEntitySubject {
-    Member {
-        request_index: usize,
-        member_index: usize,
-    },
-    Group {
-        request_index: usize,
-        group: SourceMatchGroupAssignment,
-    },
-}
-
-/// The targets whose solved claims made `entity` unique: `Some` when it had
-/// several candidate rows and exactly one survives dropping every row whose
-/// owner or binding another exclusive target's solved value holds. `exclusive`
-/// are the targets the solve keeps on distinct owners; a claim by any other
-/// target never took a row away.
-fn elimination_claimers(
-    entity: &ProjectedEntity,
-    result: &selector_ir::SolverResult,
-    exclusive: &BTreeSet<SelectorTargetId>,
-) -> Option<BTreeSet<SelectorTargetId>> {
-    if entity.rows.len() < 2
-        || !entity.targets.iter().all(|target| {
-            matches!(
-                result.outcome_for(*target),
-                Some(ClaimOutcome::Unique { .. })
-            )
-        })
-    {
-        return None;
-    }
-    let other_claims = exclusive
-        .iter()
-        .filter(|target| !entity.targets.contains(target))
-        .filter_map(|target| match result.outcome_for(*target) {
-            Some(ClaimOutcome::Unique { claim }) => Some((*target, claim)),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let mut survivors = 0;
-    let mut claimers = BTreeSet::new();
-    for row in &entity.rows {
-        let takers = other_claims
-            .iter()
-            .filter(|(_, claim)| {
-                row.iter().any(|(owner, binding)| {
-                    *owner == claim.owner || (binding.is_some() && *binding == claim.binding)
-                })
-            })
-            .map(|(target, _)| *target)
-            .collect::<Vec<_>>();
-        if takers.is_empty() {
-            survivors += 1;
-        }
-        claimers.extend(takers);
-    }
-    (survivors == 1).then_some(claimers)
-}
-
-struct SelectorFactCoverage<'a> {
-    owner_kind_by_owner: BTreeMap<OwnerId, &'a str>,
-    owners_by_binding: BTreeMap<&'a str, BTreeSet<OwnerId>>,
-}
-
-use selector_ir::{
-    ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
-    SelectorSourceMatchProjectionEvent, SelectorSourceMatchProjectionOutcome, SelectorTargetId,
-};
-use selector_ir_lowering::{
-    MemberSelectorLoweringContext, MemberSelectorProgramBuilder, MemberSelectorSpecRef,
-};
+use analysis::OwnerId;
+use js_ast::body_index_for_statement_ordinal;
 use selector_outcome::{
-    Candidate, Entity, EntityRef, MAX_CANDIDATES_PER_SELECTOR, Outcome, Placement, ResolvedBy,
-    SelectorKind, SelectorOutcome, SelectorOutcomeReport, Severity,
+    Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
 };
-use selector_runtime::solve_global_selector_program;
+use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector};
 
 /// The module path of a `<chunk>::<path>` logical module id.
 fn logical_module_path(request_id: &str) -> String {
@@ -112,803 +21,19 @@ fn logical_module_path(request_id: &str) -> String {
         .unwrap_or_else(|| panic!("logical module id {request_id:?} is not `<chunk>::<path>`"))
 }
 
-/// Names a solver target the way its own outcome names it.
-fn target_entity_ref(target: &selector_ir::SelectorTarget) -> EntityRef {
-    EntityRef {
-        logical_module: logical_module_path(&target.logical_module),
-        entity: match (&target.claim, &target.origin) {
-            (
-                selector_ir::ClaimKind::Binding {
-                    export_name: Some(export_name),
-                },
-                _,
-            )
-            | (selector_ir::ClaimKind::BindingGroupMember { export_name, .. }, _) => {
-                Some(Entity::Export(export_name.clone()))
-            }
-            (_, selector_ir::ClaimOrigin::AnonymousStatement { index }) => {
-                Some(Entity::AnonymousStatement(*index))
-            }
-            _ => None,
-        },
-    }
-}
-
-fn target_entity_refs<'a>(
-    program: &SelectorProgram,
-    targets: impl IntoIterator<Item = &'a SelectorTargetId>,
-) -> Vec<EntityRef> {
-    targets
-        .into_iter()
-        .map(|target| target_entity_ref(&program.targets[target.0]))
-        .collect()
-}
-
 fn member_outcome(
     chunk_id: &str,
     request: &LogicalRequest,
     member: &MemberRequest,
     outcome: Outcome,
 ) -> SelectorOutcome {
-    SelectorOutcome {
-        chunk: chunk_id.to_string(),
-        placement: Some(Placement {
-            logical_module: request.target_path.clone(),
-            entity: Some(Entity::Export(member.export_name.clone())),
-            selector_kind: member_selector_kind(member),
-        }),
-        target_binding: member
-            .source_match
-            .as_ref()
-            .and_then(|selector| selector.target_binding.clone()),
-        selector_preview: match (
-            &member.source_match,
-            &member.relational,
-            &member.binding_selector,
-        ) {
-            (Some(selector), _, _) => {
-                Some(source_match::source_match_preview(&selector.match_source))
-            }
-            (None, Some(relational), _) => Some(format!("{relational:?}")),
-            (None, None, Some(binding)) => Some(format!("{binding:?}")),
-            (None, None, None) => None,
-        },
-        outcome,
-    }
-}
-
-fn anonymous_statement_outcome(
-    chunk_id: &str,
-    request: &LogicalRequest,
-    statement_index: usize,
-    statement: &AnonymousStatementRequest,
-    outcome: Outcome,
-) -> SelectorOutcome {
-    SelectorOutcome {
-        chunk: chunk_id.to_string(),
-        placement: Some(Placement {
-            logical_module: request.target_path.clone(),
-            entity: Some(Entity::AnonymousStatement(statement_index)),
-            selector_kind: SelectorKind::AnonymousStatement,
-        }),
-        target_binding: None,
-        selector_preview: Some(source_match::source_match_preview(
-            &statement.selector.match_source,
-        )),
-        outcome,
-    }
-}
-
-/// A solver claim as a candidate place: its source body index and binding.
-fn claim_candidate(module: &swc_ecma_ast::Module, claim: &ResolvedClaim) -> Result<Candidate> {
-    Ok(Candidate {
-        owner: body_index_for_statement_ordinal(&module.body, claim.statement_ordinal.0)
-            .with_context(|| {
-                format!(
-                    "global selector solver claimed post-split ordinal {} which has no source \
-                     body item",
-                    claim.statement_ordinal.0
-                )
-            })?,
-        binding: claim.binding.clone(),
-    })
-}
-
-fn ambiguous_outcome(
-    module: &swc_ecma_ast::Module,
-    candidates: &[ResolvedClaim],
-    truncated: bool,
-) -> Result<Outcome> {
-    Ok(Outcome::ambiguous(
-        candidates
-            .iter()
-            .map(|claim| claim_candidate(module, claim))
-            .collect::<Result<_>>()?,
-        truncated,
-    ))
-}
-
-/// The outcome of a selector the candidate projection rejected before the
-/// solve, from its projection-event `reason_category`.
-fn unprojected_outcome(
-    reason_category: &str,
-    reason: &str,
-    projected_row_count: Option<usize>,
-) -> Outcome {
-    match (reason_category, projected_row_count) {
-        ("shape_matcher_no_candidates", _) => Outcome::NoMatch,
-        ("too_broad", Some(row_count)) => Outcome::too_broad(row_count),
-        _ => Outcome::Invalid {
-            error: reason.to_string(),
-        },
-    }
-}
-
-fn too_broad_reason(row_count: usize) -> String {
-    format!("{row_count} candidate rows exceed the cap of {MAX_CANDIDATES_PER_SELECTOR}")
-}
-
-fn member_selector_ref_for_global_solver(
-    member: &MemberRequest,
-) -> Option<MemberSelectorSpecRef<'_>> {
-    if let Some(binding) = &member.binding_selector
-        && !member.is_import_specifier
-    {
-        return Some(MemberSelectorSpecRef::Binding(binding));
-    }
-
-    if let Some(selector) = &member.source_match {
-        return Some(MemberSelectorSpecRef::SourceMatch(selector));
-    }
-
-    if let Some(relational) = &member.relational {
-        return Some(match relational {
-            RelationalSelector::CrossRef(target) => MemberSelectorSpecRef::CrossRef(target),
-            RelationalSelector::ReadsMember(target) => MemberSelectorSpecRef::ReadsMember(target),
-            RelationalSelector::MemberOfModule(target) => {
-                MemberSelectorSpecRef::MemberOfModule(target)
-            }
-            RelationalSelector::PassedToCall(target) => MemberSelectorSpecRef::PassedToCall(target),
-            RelationalSelector::MakesDecorateCall(target) => {
-                MemberSelectorSpecRef::MakesDecorateCall(target)
-            }
-            RelationalSelector::IntrinsicAlias(target) => {
-                MemberSelectorSpecRef::IntrinsicAlias(target)
-            }
-        });
-    }
-
-    if member.resolves_after_chunk_analysis() || member.is_import_specifier {
-        return None;
-    }
-    member
-        .binding_selector
-        .as_ref()
-        .map(MemberSelectorSpecRef::Binding)
-}
-
-fn selector_fact_coverage(facts: &SelectorFactStore) -> SelectorFactCoverage<'_> {
-    let mut owner_kind_by_owner = BTreeMap::new();
-    let mut owners_by_binding = BTreeMap::<&str, BTreeSet<OwnerId>>::new();
-    for fact in &facts.facts {
-        match fact {
-            SelectorFact::Owner {
-                owner,
-                statement_kind,
-                ..
-            } => {
-                owner_kind_by_owner.insert(*owner, statement_kind.as_str());
-            }
-            SelectorFact::DeclaredBinding { owner, binding, .. } => {
-                owners_by_binding
-                    .entry(binding.as_str())
-                    .or_default()
-                    .insert(*owner);
-            }
-            _ => {}
-        }
-    }
-    SelectorFactCoverage {
-        owner_kind_by_owner,
-        owners_by_binding,
-    }
-}
-
-fn binding_source_kind_statement_kind(kind: spec::BindingSourceKind) -> &'static str {
-    match kind {
-        spec::BindingSourceKind::ImportSpecifier => "import",
-        spec::BindingSourceKind::VariableDeclarator => "var_decl",
-        spec::BindingSourceKind::FunctionDeclaration => "fn_decl",
-        spec::BindingSourceKind::ClassDeclaration => "class_decl",
-    }
-}
-
-fn binding_selector_has_fact_candidate(
-    coverage: &SelectorFactCoverage<'_>,
-    member: &MemberRequest,
-) -> bool {
-    let Some(selector) = &member.binding_selector else {
-        return true;
-    };
-    if member.is_import_specifier {
-        return true;
-    }
-    let Some(owners) = coverage.owners_by_binding.get(selector.name.as_str()) else {
-        return false;
-    };
-    let Some(kind) = selector.kind else {
-        return !owners.is_empty();
-    };
-    let expected = binding_source_kind_statement_kind(kind);
-    owners.iter().any(|owner| {
-        coverage
-            .owner_kind_by_owner
-            .get(owner)
-            .is_some_and(|actual| *actual == expected)
-    })
-}
-
-fn selector_fact_store_for_chunk(
-    program: &SelectorProgram,
-    chunk_id: ChunkId,
-    structural: &analysis::facts::StructuralChunkAnalysis<'_>,
-    module: &swc_ecma_ast::Module,
-    import_sources: &HashMap<String, String>,
-) -> SelectorFactStore {
-    let mut store = SelectorFactStore::default();
-    let binding_owner = structural_binding_owner(structural);
-    let statement_by_owner: HashMap<OwnerId, &analysis::facts::StructuralStatementFacts> =
-        structural
-            .per_statement
-            .iter()
-            .map(|statement| (OwnerId(statement.ordinal.0), statement))
-            .collect();
-    let target_is_hoisted = |id: &swc_ecma_ast::Id| -> bool {
-        binding_owner
-            .get(id)
-            .and_then(|owner| statement_by_owner.get(owner))
-            .is_some_and(|statement| statement.kind == analysis::StatementKind::FnDecl)
-    };
-
-    for statement in &structural.per_statement {
-        let owner = OwnerId(statement.ordinal.0);
-        store.push(SelectorFact::Owner {
-            chunk_id,
-            owner,
-            statement_ordinal: statement.ordinal,
-            statement_kind: statement.kind.to_string(),
-        });
-        for binding in &statement.declared {
-            store.push(SelectorFact::DeclaredBinding {
-                chunk_id,
-                owner,
-                binding: binding.0.as_str().to_string(),
-                export_name: None,
-            });
-        }
-    }
-
-    for statement in &structural.per_statement {
-        let owner = OwnerId(statement.ordinal.0);
-        for binding in &statement.reads.eager {
-            if !target_is_hoisted(binding) {
-                push_structural_selector_reference(
-                    &mut store,
-                    chunk_id,
-                    owner,
-                    binding,
-                    DepKind::EagerUse,
-                    &binding_owner,
-                );
-            }
-        }
-        for binding in &statement.reads.lazy {
-            push_structural_selector_reference(
-                &mut store,
-                chunk_id,
-                owner,
-                binding,
-                DepKind::LazyUse,
-                &binding_owner,
-            );
-        }
-        for binding in &statement.rebinds.eager {
-            push_structural_selector_reference(
-                &mut store,
-                chunk_id,
-                owner,
-                binding,
-                DepKind::EagerRebind,
-                &binding_owner,
-            );
-        }
-        for binding in &statement.rebinds.first_order_lazy {
-            push_structural_selector_reference(
-                &mut store,
-                chunk_id,
-                owner,
-                binding,
-                DepKind::LazyRebind,
-                &binding_owner,
-            );
-        }
-        for binding in &statement.rebinds.lazy {
-            if statement.rebinds.first_order_lazy.contains(binding) {
-                continue;
-            }
-            push_structural_selector_reference(
-                &mut store,
-                chunk_id,
-                owner,
-                binding,
-                DepKind::DeferredRebind,
-                &binding_owner,
-            );
-        }
-    }
-
-    if selector_program_needs_member_reads(program) {
-        for (ordinal, reads) in chunk_facts::member_reads_by_ordinal(module) {
-            for read in reads {
-                store.push(SelectorFact::MemberRead {
-                    chunk_id,
-                    statement_ordinal: StatementOrdinal(ordinal),
-                    object: read.object,
-                    member: read.member,
-                });
-            }
-        }
-    }
-    if selector_program_needs_module_member_uses(program) {
-        for (ordinal, uses) in chunk_facts::module_member_uses_by_ordinal(module, import_sources) {
-            for use_site in uses {
-                store.push(SelectorFact::ModuleMemberUse {
-                    chunk_id,
-                    statement_ordinal: StatementOrdinal(ordinal),
-                    module: use_site.module,
-                    member: use_site.member,
-                });
-            }
-        }
-    }
-    if selector_program_needs_call_argument_uses(program) {
-        for call in chunk_facts::call_argument_uses(module) {
-            store.push(SelectorFact::CallArgumentUse {
-                chunk_id,
-                argument: call.argument,
-                callee_object: call.callee_object,
-                callee_member: call.callee_member,
-                arg_index: call.arg_index,
-            });
-        }
-    }
-    if selector_program_needs_decorate_call_uses(program) {
-        for call in chunk_facts::decorate_call_uses(module) {
-            store.push(SelectorFact::DecorateCallUse {
-                chunk_id,
-                callee: call.callee,
-                class_anchor: call.class_anchor,
-                member: call.member,
-            });
-        }
-    }
-    if selector_program_needs_intrinsic_alias_uses(program) {
-        for alias in chunk_facts::intrinsic_alias_uses(module) {
-            store.push(SelectorFact::IntrinsicAliasUse {
-                chunk_id,
-                binding: alias.binding,
-                property: alias.property,
-            });
-        }
-    }
-    store
-}
-
-fn structural_binding_owner(
-    structural: &analysis::facts::StructuralChunkAnalysis<'_>,
-) -> HashMap<swc_ecma_ast::Id, OwnerId> {
-    let mut binding_owner = HashMap::new();
-    for statement in &structural.per_statement {
-        let owner = OwnerId(statement.ordinal.0);
-        for binding in &statement.declared {
-            binding_owner.insert(binding.clone(), owner);
-        }
-    }
-    binding_owner
-}
-
-fn push_structural_selector_reference(
-    store: &mut SelectorFactStore,
-    chunk_id: ChunkId,
-    owner: OwnerId,
-    binding: &swc_ecma_ast::Id,
-    edge_kind: DepKind,
-    binding_owner: &HashMap<swc_ecma_ast::Id, OwnerId>,
-) {
-    let Some(target_owner) = binding_owner.get(binding) else {
-        return;
-    };
-    if owner == *target_owner {
-        return;
-    }
-    store.push(SelectorFact::OwnerReferencesBinding {
+    selector_resolve::member_outcome(
         chunk_id,
-        owner,
-        binding: binding.0.as_str().to_string(),
-        edge_kind: edge_kind.to_string(),
-    });
-}
-
-fn selector_program_needs_member_reads(program: &SelectorProgram) -> bool {
-    program.atoms.iter().any(|atom| {
-        matches!(
-            atom,
-            SelectorAtom::ReadsMember { .. } | SelectorAtom::ReadsMemberOfOwner { .. }
-        )
-    })
-}
-
-fn selector_program_needs_module_member_uses(program: &SelectorProgram) -> bool {
-    program
-        .atoms
-        .iter()
-        .any(|atom| matches!(atom, SelectorAtom::ConsumesModuleMember { .. }))
-}
-
-fn selector_program_needs_call_argument_uses(program: &SelectorProgram) -> bool {
-    program.atoms.iter().any(|atom| {
-        matches!(
-            atom,
-            SelectorAtom::PassedToCall { .. } | SelectorAtom::PassedToCallOfOwner { .. }
-        )
-    })
-}
-
-fn selector_program_needs_decorate_call_uses(program: &SelectorProgram) -> bool {
-    program.atoms.iter().any(|atom| {
-        matches!(
-            atom,
-            SelectorAtom::MakesDecorateCall { .. } | SelectorAtom::MakesDecorateCallForOwner { .. }
-        )
-    })
-}
-
-fn selector_program_needs_intrinsic_alias_uses(program: &SelectorProgram) -> bool {
-    program
-        .atoms
-        .iter()
-        .any(|atom| matches!(atom, SelectorAtom::IntrinsicAlias { .. }))
-}
-
-fn solver_claim_is_import_specifier(facts: &SelectorFactStore, claim: &ResolvedClaim) -> bool {
-    facts.facts.iter().any(|fact| {
-        matches!(
-            fact,
-            SelectorFact::Owner {
-                owner,
-                statement_ordinal,
-                statement_kind,
-                ..
-            } if *owner == claim.owner
-                && *statement_ordinal == claim.statement_ordinal
-                && statement_kind == "import"
-        )
-    })
-}
-
-fn source_match_projection_kind(claim_origin: &str) -> &'static str {
-    if claim_origin.starts_with("source_matches[]") {
-        "source_matches"
-    } else {
-        "members.source_match"
-    }
-}
-
-fn member_selector_kind(member: &MemberRequest) -> SelectorKind {
-    if member.source_match.is_some() {
-        return if member.claim_origin.starts_with("source_matches[]") {
-            SelectorKind::SourceMatches
-        } else {
-            SelectorKind::MemberSourceMatch
-        };
-    }
-    match &member.relational {
-        Some(RelationalSelector::CrossRef(_)) => SelectorKind::CrossRef,
-        Some(RelationalSelector::ReadsMember(_)) => SelectorKind::ReadsMember,
-        Some(RelationalSelector::MemberOfModule(_)) => SelectorKind::MemberOfModule,
-        Some(RelationalSelector::PassedToCall(_)) => SelectorKind::PassedToCall,
-        Some(RelationalSelector::MakesDecorateCall(_)) => SelectorKind::MakesDecorateCall,
-        Some(RelationalSelector::IntrinsicAlias(_)) => SelectorKind::IntrinsicAlias,
-        None => SelectorKind::Binding,
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct SourceMatchGroupCacheKey {
-    selector: spec::AnonymousStatementSelector,
-    target_bindings: Vec<String>,
-}
-
-impl SourceMatchGroupCacheKey {
-    fn new(
-        selector: spec::AnonymousStatementSelector,
-        exports_by_target: &BTreeMap<String, String>,
-    ) -> Self {
-        let target_bindings = exports_by_target.keys().cloned().collect();
-        Self {
-            selector,
-            target_bindings,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct SourceMatchGroupAssignment {
-    selector: spec::AnonymousStatementSelector,
-    parsed_selector: source_match::ParsedSourceMatchSelector,
-    exports_by_target: BTreeMap<String, String>,
-    members_by_target: BTreeMap<String, usize>,
-    selector_kind: &'static str,
-}
-
-fn source_match_group_assignments(
-    request: &LogicalRequest,
-) -> BTreeMap<usize, SourceMatchGroupAssignment> {
-    let mut grouped_by_selector: BTreeMap<spec::AnonymousStatementSelector, Vec<usize>> =
-        BTreeMap::new();
-    for (idx, member) in request.members.iter().enumerate() {
-        let Some(selector) = &member.source_match else {
-            continue;
-        };
-        if selector.target_binding.is_none() {
-            continue;
-        }
-        let mut group_selector = selector.clone();
-        group_selector.target_binding = None;
-        grouped_by_selector
-            .entry(group_selector)
-            .or_default()
-            .push(idx);
-    }
-
-    let mut assignments = BTreeMap::new();
-    for (selector, member_indices) in grouped_by_selector {
-        if member_indices.len() < 2 {
-            continue;
-        }
-        let mut exports_by_target = BTreeMap::new();
-        let mut members_by_target = BTreeMap::new();
-        let mut selector_kind = None;
-        let mut has_duplicate_target = false;
-        for idx in &member_indices {
-            let member = &request.members[*idx];
-            selector_kind.get_or_insert_with(|| source_match_projection_kind(&member.claim_origin));
-            let target_binding = member
-                .source_match
-                .as_ref()
-                .and_then(|selector| selector.target_binding.clone())
-                .expect("grouped selectors always have target_binding");
-            if exports_by_target
-                .insert(target_binding.clone(), member.export_name.clone())
-                .is_some()
-                || members_by_target.insert(target_binding, *idx).is_some()
-            {
-                has_duplicate_target = true;
-            }
-        }
-        if has_duplicate_target {
-            continue;
-        }
-        let parsed_selector = request.members[member_indices[0]]
-            .source_match_parsed
-            .as_ref()
-            .expect("grouped source_match member should carry parsed selector")
-            .with_target_binding(None);
-        let assignment = SourceMatchGroupAssignment {
-            selector,
-            parsed_selector,
-            exports_by_target,
-            members_by_target,
-            selector_kind: selector_kind.unwrap_or("members.source_match"),
-        };
-        for idx in member_indices {
-            assignments.insert(idx, assignment.clone());
-        }
-    }
-    assignments
-}
-
-fn declare_source_match_group_targets(
-    builder: &mut MemberSelectorProgramBuilder,
-    request_index: usize,
-    request: &LogicalRequest,
-    group: &SourceMatchGroupAssignment,
-    deferred_targets: &mut BTreeMap<SelectorTargetId, (usize, usize)>,
-) -> Result<Vec<SelectorTargetId>> {
-    let mut targets = Vec::new();
-    for (target_binding, member_index) in &group.members_by_target {
-        let member = &request.members[*member_index];
-        let selector = member_selector_ref_for_global_solver(member)
-            .expect("binding group member should still have a selector");
-        let target = builder.declare_binding_group_member_target_in_module_ref(
-            &request.id,
-            &member.export_name,
-            target_binding,
-            selector,
-        )?;
-        if member.resolves_after_chunk_analysis() {
-            deferred_targets.insert(target, (request_index, *member_index));
-        }
-        targets.push(target);
-    }
-    Ok(targets)
-}
-
-/// One outcome per binding of a `source_matches[]` group that failed as a whole.
-fn group_member_outcomes(
-    chunk_id: &str,
-    request: &LogicalRequest,
-    group: &SourceMatchGroupAssignment,
-    outcome: &Outcome,
-) -> Vec<SelectorOutcome> {
-    group
-        .members_by_target
-        .values()
-        .map(|member_index| {
-            member_outcome(
-                chunk_id,
-                request,
-                &request.members[*member_index],
-                outcome.clone(),
-            )
-        })
-        .collect()
-}
-
-fn owner_by_body_index_and_binding(
-    structural: &analysis::facts::StructuralChunkAnalysis<'_>,
-    module: &swc_ecma_ast::Module,
-) -> BTreeMap<(usize, String), OwnerId> {
-    let mut owners = BTreeMap::new();
-    for statement in &structural.per_statement {
-        let Some(body_idx) = body_index_for_statement_ordinal(&module.body, statement.ordinal.0)
-        else {
-            continue;
-        };
-        for binding in &statement.declared {
-            owners.insert(
-                (body_idx, binding.0.as_str().to_string()),
-                OwnerId(statement.ordinal.0),
-            );
-        }
-    }
-    owners
-}
-
-fn anonymous_owner_by_body_index(
-    structural: &analysis::facts::StructuralChunkAnalysis<'_>,
-    module: &swc_ecma_ast::Module,
-) -> BTreeMap<usize, OwnerId> {
-    let mut owners = BTreeMap::new();
-    for statement in &structural.per_statement {
-        let Some(body_idx) = body_index_for_statement_ordinal(&module.body, statement.ordinal.0)
-        else {
-            continue;
-        };
-        owners.insert(body_idx, OwnerId(statement.ordinal.0));
-    }
-    owners
-}
-
-fn projected_source_match_candidate(
-    owner_by_binding: &BTreeMap<(usize, String), OwnerId>,
-    candidate: &source_match::MemberBindingMatch,
-) -> Result<(OwnerId, String)> {
-    let binding = candidate.binding.binding_name.clone();
-    let owner = owner_by_binding
-        .get(&(candidate.body_idx, binding.clone()))
-        .copied()
-        .with_context(|| {
-            format!(
-                "source_match candidate at body index {} binding `{}` \
-                 does not map to an owner-graph node",
-                candidate.body_idx, binding
-            )
-        })?;
-    Ok((owner, binding))
-}
-
-fn projected_source_match_candidate_rows(
-    owner_by_binding: &BTreeMap<(usize, String), OwnerId>,
-    candidates: Vec<source_match::MemberBindingMatch>,
-) -> Result<Vec<(OwnerId, String)>> {
-    candidates
-        .iter()
-        .map(|candidate| projected_source_match_candidate(owner_by_binding, candidate))
-        .collect()
-}
-
-fn projected_anonymous_statement_candidate_rows(
-    owner_by_body_index: &BTreeMap<usize, OwnerId>,
-    candidate_groups: Vec<Vec<usize>>,
-) -> Result<Vec<OwnerId>> {
-    candidate_groups
-        .into_iter()
-        .map(|group| {
-            let [body_idx] = group.as_slice() else {
-                anyhow::bail!(
-                    "anonymous source_match candidate group has {} statements; projected lowering \
-                     currently supports one statement per anonymous claim",
-                    group.len()
-                );
-            };
-            owner_by_body_index.get(body_idx).copied().with_context(|| {
-                format!(
-                    "anonymous source_match candidate at body index {body_idx} does not map \
-                         to an owner-graph node",
-                )
-            })
-        })
-        .collect()
-}
-
-fn projected_source_match_group_candidate_rows(
-    owner_by_binding: &BTreeMap<(usize, String), OwnerId>,
-    candidates: Vec<source_match::MemberBindingGroupMatch>,
-) -> Result<Vec<BTreeMap<String, (OwnerId, String)>>> {
-    candidates
-        .into_iter()
-        .map(|candidate| {
-            candidate
-                .bindings
-                .iter()
-                .map(|(target_binding, binding_match)| {
-                    projected_source_match_candidate(owner_by_binding, binding_match)
-                        .map(|row| (target_binding.clone(), row))
-                })
-                .collect()
-        })
-        .collect()
-}
-
-#[allow(clippy::too_many_arguments)]
-fn source_match_projection_event(
-    logical_module: &str,
-    selector_kind: &str,
-    export_name: Option<&str>,
-    exports_by_target: BTreeMap<String, String>,
-    selector: &spec::AnonymousStatementSelector,
-    outcome: SelectorSourceMatchProjectionOutcome,
-    reason_category: &str,
-    reason: String,
-    candidate_count: Option<usize>,
-    projected_row_count: Option<usize>,
-) -> SelectorSourceMatchProjectionEvent {
-    SelectorSourceMatchProjectionEvent {
-        selector_kind: selector_kind.to_string(),
-        logical_module: logical_module.to_string(),
-        export_name: export_name.map(ToString::to_string),
-        target_binding: selector.target_binding.clone(),
-        exports_by_target,
+        &request.target_path,
+        &member.export_name,
+        &member.selector,
         outcome,
-        reason_category: reason_category.to_string(),
-        reason,
-        candidate_count,
-        projected_row_count,
-        selector_preview: source_match::source_match_preview(&selector.match_source),
-        selector_hash: source_match::selector_key(selector),
-        selector_body_hash: source_match::selector_body_key(selector),
-    }
-}
-
-fn source_match_projection_error_reason(category: &str, error: &anyhow::Error) -> String {
-    let message = error.to_string();
-    let first_line = message
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or(&message);
-    format!("{category}: {first_line}")
+    )
 }
 
 /// Output of `ChunkPlanBuilder::finalize`: everything downstream
@@ -999,7 +124,6 @@ pub(super) struct ChunkPlanBuilder {
     outcomes: OutcomeSink,
 }
 
-#[allow(dead_code)]
 impl ChunkPlanBuilder {
     pub(super) fn new(fail_fast: bool) -> Self {
         Self {
@@ -1076,7 +200,7 @@ impl ChunkPlanBuilder {
                 }
             }
             if member.resolves_after_chunk_analysis() {
-                if member.binding_selector.is_some() && !member.is_import_specifier {
+                if matches!(member.selector, MemberSelector::Binding(_)) {
                     let binding_id = top_level_id(&member.binding, ctx.chunk_top_level_mark);
                     if !ctx.declaration_by_name.contains_key(&binding_id) {
                         self.unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
@@ -1100,7 +224,7 @@ impl ChunkPlanBuilder {
                 }
                 continue;
             }
-            if member.is_import_specifier {
+            if member.selector.is_import_specifier() {
                 let (imported_name, imported_from) = resolve_imported_binding(
                     imported_binding_resolver,
                     ctx.runtime_import_facts,
@@ -1229,618 +353,132 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
-    fn claim_anonymous_statement_from_solver(
-        &mut self,
-        module: &swc_ecma_ast::Module,
-        module_index: usize,
-        request_id: &str,
-        statement: &AnonymousStatementRequest,
-        claim: &ResolvedClaim,
-    ) -> Result<()> {
-        let body_index = body_index_for_statement_ordinal(&module.body, claim.statement_ordinal.0)
-            .with_context(|| {
-                format!(
-                    "logical_module {request_id}: global selector solver resolved anonymous \
-                     statement to post-split ordinal {} which has no source body item",
-                    claim.statement_ordinal.0,
-                )
-            })?;
-        self.claim_anonymous_statement(
-            module_index,
-            request_id,
-            &ResolvedAnonymousStatement {
-                ordinal: body_index,
-                comment: statement.comment.clone(),
-            },
-        )
-    }
-
     fn record(&mut self, outcome: SelectorOutcome) -> Result<()> {
         self.outcomes.record(outcome)
     }
 
-    fn record_all(&mut self, outcomes: Vec<SelectorOutcome>) -> Result<()> {
-        outcomes
-            .into_iter()
-            .try_for_each(|outcome| self.record(outcome))
-    }
-
-    fn has_recorded_anonymous_statement_failure(&self, request: &LogicalRequest) -> bool {
-        self.outcomes.outcomes().iter().any(|outcome| {
-            outcome.severity() == Severity::Error
-                && matches!(
-                    &outcome.placement,
-                    Some(Placement {
-                        logical_module,
-                        entity: Some(Entity::AnonymousStatement(_)),
-                        ..
-                    }) if *logical_module == request.target_path
-                )
-        })
-    }
-
+    /// Resolve every solver-resolved member and anonymous statement of the
+    /// explicit requests in one [`selector_resolve::Chunk::resolve`] and claim
+    /// what resolved. A name pin whose binding no top-level declaration carries
+    /// was already recorded as an unmatched claim, and a duplicate claim as its
+    /// outcome, so neither is resolved.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn resolve_and_claim_global_selectors(
         &mut self,
         explicit_requests: &[LogicalRequest],
-        structural: &analysis::facts::StructuralChunkAnalysis<'_>,
+        chunk: &selector_resolve::Chunk<'_>,
         module: &swc_ecma_ast::Module,
-        import_sources: &HashMap<String, String>,
         runtime_import_facts: &RuntimeImportFacts,
         imported_binding_resolver: &mut ArtifactSourceImportResolutionCache<'_>,
         imported_from_by_src: &mut BTreeMap<String, String>,
         chunk_top_level_mark: swc_common::Mark,
         chunk_id: &str,
         target_file: &str,
-        chunk_id_interned: ChunkId,
         declaration_by_name: &HashMap<Id, usize>,
     ) -> Result<()> {
-        let has_deferred_members = explicit_requests
+        // Per request, the index in `request.members` of each resolved member.
+        let mut resolved_members = Vec::with_capacity(explicit_requests.len());
+        let modules = explicit_requests
             .iter()
-            .flat_map(|request| &request.members)
-            .any(MemberRequest::resolves_after_chunk_analysis);
-        let has_anonymous_statements = explicit_requests
+            .map(|request| {
+                let (indices, members): (Vec<usize>, Vec<selector_resolve::Member>) = request
+                    .members
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, member)| {
+                        member.resolves_after_chunk_analysis()
+                            && !self
+                                .duplicate_deferred_binding_names
+                                .contains(&member.binding)
+                            && (!matches!(member.selector, MemberSelector::Binding(_))
+                                || declaration_by_name.contains_key(&top_level_id(
+                                    &member.binding,
+                                    chunk_top_level_mark,
+                                )))
+                    })
+                    .map(|(index, member)| {
+                        (
+                            index,
+                            selector_resolve::Member {
+                                export_name: member.export_name.clone(),
+                                selector: member.selector.clone(),
+                            },
+                        )
+                    })
+                    .unzip();
+                resolved_members.push(indices);
+                selector_resolve::SpecModule {
+                    path: request.target_path.clone(),
+                    members,
+                    anonymous_statements: request
+                        .anonymous_statements
+                        .iter()
+                        .enumerate()
+                        .map(|(index, statement)| selector_resolve::AnonymousStatement {
+                            index,
+                            selector: statement.parsed_selector.clone(),
+                        })
+                        .collect(),
+                }
+            })
+            .collect::<Vec<_>>();
+        if modules
             .iter()
-            .any(|request| !request.anonymous_statements.is_empty());
-        if !has_deferred_members && !has_anonymous_statements {
+            .all(|module| module.members.is_empty() && module.anonymous_statements.is_empty())
+        {
             return Ok(());
         }
-
-        let mut builder = MemberSelectorProgramBuilder::new(MemberSelectorLoweringContext::new(
-            chunk_id_interned,
-            chunk_id,
-        ));
-        let mut deferred_targets = BTreeMap::<SelectorTargetId, (usize, usize)>::new();
-        let mut anonymous_statement_targets = Vec::<AnonymousStatementTargetInfo>::new();
-        let mut pending_constraints = Vec::<(usize, usize)>::new();
-        let mut pending_source_match_members = Vec::<(usize, usize)>::new();
-        let mut pending_source_match_groups = Vec::<(usize, SourceMatchGroupAssignment)>::new();
-        let mut pending_source_match_group_keys =
-            BTreeSet::<(String, SourceMatchGroupCacheKey)>::new();
-        let mut projected_entities = Vec::<ProjectedEntity>::new();
-        if has_deferred_members {
-            for (index, request) in explicit_requests.iter().enumerate() {
-                let group_assignments = source_match_group_assignments(request);
-                for (member_index, member) in request.members.iter().enumerate() {
-                    if member.resolves_after_chunk_analysis()
-                        && !member.binding.is_empty()
-                        && self
-                            .duplicate_deferred_binding_names
-                            .contains(&member.binding)
-                    {
-                        continue;
-                    }
-                    if member.binding_selector.is_some() && !member.is_import_specifier {
-                        let binding_id = top_level_id(&member.binding, chunk_top_level_mark);
-                        if !declaration_by_name.contains_key(&binding_id) {
-                            continue;
-                        }
-                    }
-                    let group_assignment = group_assignments.get(&member_index).cloned();
-                    if let Some(group) = &group_assignment {
-                        let key = (
-                            request.id.clone(),
-                            SourceMatchGroupCacheKey::new(
-                                group.selector.clone(),
-                                &group.exports_by_target,
-                            ),
-                        );
-                        if pending_source_match_group_keys.insert(key) {
-                            pending_source_match_groups.push((index, group.clone()));
-                        }
-                        continue;
-                    }
-                    if member.source_match_parsed.is_some() {
-                        pending_source_match_members.push((index, member_index));
-                        continue;
-                    }
-                    let Some(selector) = member_selector_ref_for_global_solver(member) else {
-                        continue;
-                    };
-                    let target = builder.declare_member_target_in_module_ref(
-                        &request.id,
-                        &member.export_name,
-                        selector,
-                    )?;
-                    pending_constraints.push((index, member_index));
-                    if member.resolves_after_chunk_analysis() {
-                        deferred_targets.insert(target, (index, member_index));
-                    }
-                }
-            }
-        }
-        let has_pending_source_match =
-            !pending_source_match_groups.is_empty() || !pending_source_match_members.is_empty();
-        // Shape (`source_match`) selectors resolve in two stages: `ChunkResolver`
-        // enumerates the top-level statements each JS-template-with-holes matches,
-        // and those candidates are projected into the selector IR as a small
-        // `ProjectedAllowedTuples` domain per target. The global solve then picks
-        // one target per selector under `all_different`. A selector the matcher
-        // places nowhere never reaches the solver: an empty candidate table would
-        // make the whole chunk's program unsatisfiable. It is reported unmatched
-        // here instead.
-        let source_match_projection =
-            (has_pending_source_match || has_anonymous_statements).then(|| {
-                (
-                    source_match::chunk_resolver::ChunkResolver::new(module),
-                    owner_by_body_index_and_binding(structural, module),
-                    anonymous_owner_by_body_index(structural, module),
-                )
-            });
-        for (request_index, request) in explicit_requests.iter().enumerate() {
-            for (statement_index, statement) in request.anonymous_statements.iter().enumerate() {
-                let mut projected = false;
-                let mut candidate_count = None;
-                let mut projected_row_count = None;
-                let mut reason_category = "projection_not_attempted";
-                let mut reason = "anonymous source_match projection was not attempted".to_string();
-                if let Some((resolver, _, owner_by_body_index)) = &source_match_projection {
-                    match resolver
-                        .anonymous_group_candidates_parsed(&request.id, &statement.parsed_selector)
-                    {
-                        Ok(candidates) => {
-                            candidate_count = Some(candidates.len());
-                            match projected_anonymous_statement_candidate_rows(
-                                owner_by_body_index,
-                                candidates,
-                            ) {
-                                Ok(candidate_rows)
-                                    if candidate_rows.len() > MAX_CANDIDATES_PER_SELECTOR =>
-                                {
-                                    projected_row_count = Some(candidate_rows.len());
-                                    reason_category = "too_broad";
-                                    reason = too_broad_reason(candidate_rows.len());
-                                }
-                                Ok(candidate_rows) if !candidate_rows.is_empty() => {
-                                    projected_row_count = Some(candidate_rows.len());
-                                    builder.record_source_match_projection_event(
-                                        source_match_projection_event(
-                                            &request.id,
-                                            "anonymous_statements.source_match",
-                                            None,
-                                            BTreeMap::new(),
-                                            &statement.selector,
-                                            SelectorSourceMatchProjectionOutcome::Projected,
-                                            "projected_candidates",
-                                            "projected anonymous statement candidates into owner rows"
-                                                .to_string(),
-                                            candidate_count,
-                                            projected_row_count,
-                                        ),
-                                    );
-                                    let target = builder
-                                        .declare_projected_anonymous_statement_target_in_module(
-                                            &request.id,
-                                            statement_index,
-                                            candidate_rows,
-                                        );
-                                    anonymous_statement_targets.push(
-                                        AnonymousStatementTargetInfo {
-                                            target,
-                                            request_index,
-                                            statement_index,
-                                            statement: statement.clone(),
-                                        },
-                                    );
-                                    projected = true;
-                                }
-                                Ok(_) => {
-                                    projected_row_count = Some(0);
-                                    reason_category = "shape_matcher_no_candidates";
-                                    reason = "shape matcher returned no anonymous candidates"
-                                        .to_string();
-                                }
-                                Err(error) => {
-                                    reason_category = "projection_owner_mapping_error";
-                                    reason = source_match_projection_error_reason(
-                                        reason_category,
-                                        &error,
-                                    );
-                                }
-                            }
-                        }
-                        Err(error) => {
-                            reason_category = "shape_matcher_error";
-                            reason = source_match_projection_error_reason(reason_category, &error);
-                        }
-                    }
-                }
-                if projected {
-                    continue;
-                }
-                builder.record_source_match_projection_event(source_match_projection_event(
-                    &request.id,
-                    "anonymous_statements.source_match",
-                    None,
-                    BTreeMap::new(),
-                    &statement.selector,
-                    SelectorSourceMatchProjectionOutcome::NotProjected,
-                    reason_category,
-                    reason.clone(),
-                    candidate_count,
-                    projected_row_count,
-                ));
-                self.record(anonymous_statement_outcome(
-                    chunk_id,
-                    request,
-                    statement_index,
-                    statement,
-                    unprojected_outcome(reason_category, &reason, projected_row_count),
-                ))?;
-            }
-        }
-        for (request_index, group) in pending_source_match_groups {
-            let request = &explicit_requests[request_index];
-            let logical_module = &request.id;
-            let Some((resolver, owner_by_binding, _)) = &source_match_projection else {
-                continue;
-            };
-            let mut candidate_count = None;
-            let mut projected_row_count = None;
-            let reason_category;
-            let reason;
-            match resolver.member_group_candidates_parsed(
-                logical_module,
-                &group.parsed_selector,
-                &group.exports_by_target,
-            ) {
-                Ok(candidates) => {
-                    let candidate_len = candidates.len();
-                    candidate_count = Some(candidate_len);
-                    match projected_source_match_group_candidate_rows(owner_by_binding, candidates)
-                    {
-                        Ok(rows) if rows.len() > MAX_CANDIDATES_PER_SELECTOR => {
-                            projected_row_count = Some(rows.len());
-                            reason_category = "too_broad";
-                            reason = too_broad_reason(rows.len());
-                        }
-                        Ok(rows) => {
-                            projected_row_count = Some(rows.len());
-                            if !rows.is_empty() {
-                                let targets = declare_source_match_group_targets(
-                                    &mut builder,
-                                    request_index,
-                                    request,
-                                    &group,
-                                    &mut deferred_targets,
-                                )?;
-                                builder.record_source_match_projection_event(
-                                    source_match_projection_event(
-                                        logical_module,
-                                        group.selector_kind,
-                                        None,
-                                        group.exports_by_target.clone(),
-                                        &group.selector,
-                                        SelectorSourceMatchProjectionOutcome::Projected,
-                                        "projected_candidates",
-                                        format!(
-                                            "projected {} shape-matcher candidate group(s) to {} \
-                                             owner/binding row(s)",
-                                            candidate_len,
-                                            rows.len()
-                                        ),
-                                        candidate_count,
-                                        projected_row_count,
-                                    ),
-                                );
-                                projected_entities.push(ProjectedEntity {
-                                    targets,
-                                    rows: rows
-                                        .iter()
-                                        .map(|row| {
-                                            row.values()
-                                                .map(|(owner, binding)| {
-                                                    (*owner, Some(binding.clone()))
-                                                })
-                                                .collect()
-                                        })
-                                        .collect(),
-                                    subject: ProjectedEntitySubject::Group {
-                                        request_index,
-                                        group: group.clone(),
-                                    },
-                                });
-                                builder.lower_projected_source_match_group_candidates(
-                                    logical_module,
-                                    &group.exports_by_target,
-                                    rows,
-                                );
-                                continue;
-                            }
-                            reason_category = "shape_matcher_no_candidates";
-                            reason = "shape matcher returned no candidate groups".to_string();
-                        }
-                        Err(error) => {
-                            reason_category = "projection_owner_mapping_error";
-                            reason = source_match_projection_error_reason(reason_category, &error);
-                        }
-                    }
-                }
-                Err(error) => {
-                    reason_category = "shape_matcher_error";
-                    reason = source_match_projection_error_reason(reason_category, &error);
-                }
-            }
-            builder.record_source_match_projection_event(source_match_projection_event(
-                logical_module,
-                group.selector_kind,
-                None,
-                group.exports_by_target.clone(),
-                &group.selector,
-                SelectorSourceMatchProjectionOutcome::NotProjected,
-                reason_category,
-                reason.clone(),
-                candidate_count,
-                projected_row_count,
-            ));
-            self.record_all(group_member_outcomes(
-                chunk_id,
-                request,
-                &group,
-                &unprojected_outcome(reason_category, &reason, projected_row_count),
-            ))?;
-        }
-        for (request_index, member_index) in pending_source_match_members {
-            let request = &explicit_requests[request_index];
-            let member = &request.members[member_index];
-            let (Some(parsed_selector), Some((resolver, owner_by_binding, _))) =
-                (&member.source_match_parsed, &source_match_projection)
-            else {
-                unreachable!("pending source_match members have a parsed selector and a resolver");
-            };
-            let (reason_category, reason, candidate_count, projected_row_count) = match resolver
-                .member_candidates_parsed(&request.id, parsed_selector)
-            {
-                Ok(candidates) => {
-                    let candidate_len = candidates.len();
-                    match projected_source_match_candidate_rows(owner_by_binding, candidates) {
-                        Ok(rows) if rows.len() > MAX_CANDIDATES_PER_SELECTOR => (
-                            "too_broad",
-                            too_broad_reason(rows.len()),
-                            Some(candidate_len),
-                            rows.len(),
-                        ),
-                        Ok(rows) if !rows.is_empty() => {
-                            builder.record_source_match_projection_event(
-                                source_match_projection_event(
-                                    &request.id,
-                                    source_match_projection_kind(&member.claim_origin),
-                                    Some(&member.export_name),
-                                    BTreeMap::new(),
-                                    parsed_selector.selector(),
-                                    SelectorSourceMatchProjectionOutcome::Projected,
-                                    "projected_candidates",
-                                    format!(
-                                        "projected {} shape-matcher candidate(s) to {} \
-                                             owner/binding row(s)",
-                                        candidate_len,
-                                        rows.len()
-                                    ),
-                                    Some(candidate_len),
-                                    Some(rows.len()),
-                                ),
-                            );
-                            let target = builder.declare_member_target_in_module_ref(
-                                &request.id,
-                                &member.export_name,
-                                member_selector_ref_for_global_solver(member)
-                                    .expect("a source_match member has a solver selector"),
-                            )?;
-                            projected_entities.push(ProjectedEntity {
-                                targets: vec![target],
-                                rows: rows
-                                    .iter()
-                                    .map(|(owner, binding)| vec![(*owner, Some(binding.clone()))])
-                                    .collect(),
-                                subject: ProjectedEntitySubject::Member {
-                                    request_index,
-                                    member_index,
-                                },
-                            });
-                            builder.lower_projected_source_match_candidates(
-                                &request.id,
-                                &member.export_name,
-                                rows,
-                            );
-                            deferred_targets.insert(target, (request_index, member_index));
-                            continue;
-                        }
-                        Ok(_) => (
-                            "shape_matcher_no_candidates",
-                            "shape matcher returned no candidates".to_string(),
-                            Some(candidate_len),
-                            0,
-                        ),
-                        Err(error) => (
-                            "projection_owner_mapping_error",
-                            source_match_projection_error_reason(
-                                "projection_owner_mapping_error",
-                                &error,
-                            ),
-                            Some(candidate_len),
-                            0,
-                        ),
-                    }
-                }
-                Err(error) => (
-                    "shape_matcher_error",
-                    source_match_projection_error_reason("shape_matcher_error", &error),
-                    None,
-                    0,
-                ),
-            };
-            builder.record_source_match_projection_event(source_match_projection_event(
-                &request.id,
-                source_match_projection_kind(&member.claim_origin),
-                Some(&member.export_name),
-                BTreeMap::new(),
-                parsed_selector.selector(),
-                SelectorSourceMatchProjectionOutcome::NotProjected,
-                reason_category,
-                reason.clone(),
-                candidate_count,
-                Some(projected_row_count),
-            ));
-            self.record(member_outcome(
-                chunk_id,
-                request,
-                member,
-                unprojected_outcome(reason_category, &reason, Some(projected_row_count)),
-            ))?;
-        }
-        for (request_index, member_index) in pending_constraints {
-            let request = &explicit_requests[request_index];
-            let member = &request.members[member_index];
-            let selector = member_selector_ref_for_global_solver(member)
-                .expect("pending selector constraint should still be lowerable");
-            builder.lower_member_constraints_in_module_ref(
-                &request.id,
-                &member.export_name,
-                selector,
-            )?;
-        }
-        let program = builder.into_program()?;
-        if program.targets.is_empty() {
-            return Ok(());
-        }
-        let facts = selector_fact_store_for_chunk(
-            &program,
-            chunk_id_interned,
-            structural,
-            module,
-            import_sources,
-        );
-        let fact_coverage = selector_fact_coverage(&facts);
-        let mut presolve_no_match = BTreeSet::new();
-        for (target, (index, member_index)) in &deferred_targets {
-            let request = &explicit_requests[*index];
-            if !request.anonymous_statements.is_empty() {
-                continue;
-            }
-            let member = &request.members[*member_index];
-            if !binding_selector_has_fact_candidate(&fact_coverage, member) {
-                self.record(member_outcome(chunk_id, request, member, Outcome::NoMatch))?;
-                presolve_no_match.insert(*target);
-            }
-        }
-        let result = solve_global_selector_program(&program, &facts)?;
-
-        for info in anonymous_statement_targets {
-            let request = &explicit_requests[info.request_index];
-            match result.outcome_for(info.target) {
-                Some(ClaimOutcome::Unique { claim }) => {
-                    self.claim_anonymous_statement_from_solver(
-                        module,
-                        info.request_index,
-                        &request.id,
-                        &info.statement,
-                        claim,
-                    )?;
-                }
-                Some(ClaimOutcome::NoMatch) => {
-                    self.record(anonymous_statement_outcome(
-                        chunk_id,
-                        request,
-                        info.statement_index,
-                        &info.statement,
-                        Outcome::NoMatch,
-                    ))?;
-                }
-                Some(ClaimOutcome::Conflict { with }) => {
-                    self.record(anonymous_statement_outcome(
-                        chunk_id,
-                        request,
-                        info.statement_index,
-                        &info.statement,
-                        Outcome::Conflict {
-                            with: target_entity_refs(&program, with),
-                        },
-                    ))?;
-                }
-                Some(ClaimOutcome::Ambiguous {
-                    candidates,
-                    candidates_truncated,
-                }) => {
-                    self.record(anonymous_statement_outcome(
-                        chunk_id,
-                        request,
-                        info.statement_index,
-                        &info.statement,
-                        ambiguous_outcome(module, candidates, *candidates_truncated)?,
-                    ))?;
-                }
-                Some(ClaimOutcome::Duplicate {
-                    owner,
-                    conflicting_targets,
-                }) => {
-                    bail!(
-                        "logical_module {}: global selector solver assigned anonymous statement \
-                         to duplicate owner {:?} shared by targets {:?}",
-                        request.id,
-                        owner,
-                        conflicting_targets,
-                    );
-                }
-                Some(ClaimOutcome::Undecided { reason }) => {
-                    self.record(anonymous_statement_outcome(
-                        chunk_id,
-                        request,
-                        info.statement_index,
-                        &info.statement,
-                        Outcome::Undecided {
-                            reason: reason.clone(),
-                        },
-                    ))?;
-                }
-                None => {
-                    bail!(
-                        "logical_module {}: global selector solver returned no outcome for \
-                         anonymous statement selector",
-                        request.id,
-                    );
-                }
-            }
-        }
-
-        for (target, (index, member_index)) in deferred_targets {
+        let resolution = chunk.resolve(&modules)?;
+        // Recorded last, once every claim is in.
+        let mut eliminated = Vec::new();
+        for EntityOutcome {
+            module: index,
+            entity,
+            outcome,
+        } in resolution.outcomes
+        {
             let request = &explicit_requests[index];
-            let member = &request.members[member_index];
-            match result.outcome_for(target) {
-                Some(ClaimOutcome::Unique { claim }) => {
-                    let binding = claim.binding.as_deref().with_context(|| {
+            let Outcome::Resolved {
+                owner,
+                binding,
+                resolved_by,
+            } = outcome.outcome.clone()
+            else {
+                self.record(outcome)?;
+                continue;
+            };
+            match entity {
+                EntityIndex::AnonymousStatement(statement_index) => {
+                    self.claim_anonymous_statement(
+                        index,
+                        &request.id,
+                        &ResolvedAnonymousStatement {
+                            ordinal: owner,
+                            comment: request.anonymous_statements[statement_index]
+                                .comment
+                                .clone(),
+                        },
+                    )?;
+                }
+                EntityIndex::Member(member_index) => {
+                    let member = &request.members[resolved_members[index][member_index]];
+                    let binding = binding.with_context(|| {
                         format!(
                             "logical_module {}: global selector solver resolved member `{}` to \
-                             owner {:?} without a single declared binding",
-                            request.id, member.export_name, claim.owner,
+                             body item {owner} without a single declared binding",
+                            request.id, member.export_name,
                         )
                     })?;
-                    let selects_import = member.source_match.is_some()
-                        && solver_claim_is_import_specifier(&facts, claim);
+                    let selects_import = matches!(member.selector, MemberSelector::SourceMatch(_))
+                        && matches!(
+                            module.body[owner],
+                            ModuleItem::ModuleDecl(ModuleDecl::Import(_))
+                        );
                     if selects_import {
                         self.claim_imported_binding_after_chunk_analysis(
                             request,
                             member,
-                            binding,
+                            &binding,
                             index,
                             chunk_top_level_mark,
                             chunk_id,
@@ -1849,159 +487,26 @@ impl ChunkPlanBuilder {
                             imported_binding_resolver,
                             imported_from_by_src,
                         )?;
-                        continue;
+                    } else {
+                        self.claim_binding_after_chunk_analysis(
+                            request,
+                            member,
+                            &binding,
+                            index,
+                            chunk_top_level_mark,
+                            chunk_id,
+                            declaration_by_name,
+                        )?;
                     }
-                    self.claim_binding_after_chunk_analysis(
-                        request,
-                        member,
-                        binding,
-                        index,
-                        chunk_top_level_mark,
-                        chunk_id,
-                        declaration_by_name,
-                    )?;
-                }
-                Some(ClaimOutcome::NoMatch) => {
-                    if presolve_no_match.contains(&target)
-                        || (member.binding_selector.is_some()
-                            && member.source_match.is_none()
-                            && member.relational.is_none()
-                            && self.has_recorded_anonymous_statement_failure(request))
-                    {
-                        continue;
+                    if matches!(resolved_by, ResolvedBy::Elimination { .. }) {
+                        eliminated.push(outcome);
                     }
-                    self.record(member_outcome(chunk_id, request, member, Outcome::NoMatch))?;
-                }
-                Some(ClaimOutcome::Conflict { with }) => {
-                    self.record(member_outcome(
-                        chunk_id,
-                        request,
-                        member,
-                        Outcome::Conflict {
-                            with: target_entity_refs(&program, with),
-                        },
-                    ))?;
-                }
-                Some(ClaimOutcome::Ambiguous {
-                    candidates,
-                    candidates_truncated,
-                }) => {
-                    self.record(member_outcome(
-                        chunk_id,
-                        request,
-                        member,
-                        ambiguous_outcome(module, candidates, *candidates_truncated)?,
-                    ))?;
-                }
-                Some(ClaimOutcome::Duplicate {
-                    owner,
-                    conflicting_targets,
-                }) => {
-                    bail!(
-                        "logical_module {}: global selector solver assigned selector member `{}` \
-                         to duplicate owner {:?} shared by targets {:?}",
-                        request.id,
-                        member.export_name,
-                        owner,
-                        conflicting_targets,
-                    );
-                }
-                Some(ClaimOutcome::Undecided { reason }) => {
-                    self.record(member_outcome(
-                        chunk_id,
-                        request,
-                        member,
-                        Outcome::Undecided {
-                            reason: reason.clone(),
-                        },
-                    ))?;
-                }
-                None => {
-                    bail!(
-                        "logical_module {}: global selector solver returned no outcome for \
-                         selector member `{}` ({})",
-                        request.id,
-                        member.export_name,
-                        member.claim_origin,
-                    );
                 }
             }
         }
-        self.record_elimination_warnings(
-            explicit_requests,
-            module,
-            chunk_id,
-            &program,
-            &result,
-            &projected_entities,
-        )
-    }
-
-    fn record_elimination_warnings(
-        &mut self,
-        explicit_requests: &[LogicalRequest],
-        module: &swc_ecma_ast::Module,
-        chunk_id: &str,
-        program: &SelectorProgram,
-        result: &selector_ir::SolverResult,
-        projected_entities: &[ProjectedEntity],
-    ) -> Result<()> {
-        let mut exclusive = program
-            .all_different
-            .iter()
-            .flatten()
-            .copied()
-            .collect::<BTreeSet<_>>();
-        // `all_different` names one representative per `source_matches[]`
-        // group; the group's other bindings are claimed with it.
-        for entity in projected_entities {
-            if entity
-                .targets
-                .iter()
-                .any(|target| exclusive.contains(target))
-            {
-                exclusive.extend(entity.targets.iter().copied());
-            }
-        }
-        for entity in projected_entities {
-            let Some(claimers) = elimination_claimers(entity, result, &exclusive) else {
-                continue;
-            };
-            let claimers = target_entity_refs(program, &claimers);
-            let (request, member_indices) = match &entity.subject {
-                ProjectedEntitySubject::Member {
-                    request_index,
-                    member_index,
-                } => (&explicit_requests[*request_index], vec![*member_index]),
-                ProjectedEntitySubject::Group {
-                    request_index,
-                    group,
-                } => (
-                    &explicit_requests[*request_index],
-                    group.members_by_target.values().copied().collect(),
-                ),
-            };
-            // A group's targets are declared in `members_by_target` order.
-            for (target, member_index) in entity.targets.iter().zip(member_indices) {
-                let Some(ClaimOutcome::Unique { claim }) = result.outcome_for(*target) else {
-                    unreachable!("an entity resolved by elimination has a unique claim per target");
-                };
-                let Candidate { owner, binding } = claim_candidate(module, claim)?;
-                self.record(member_outcome(
-                    chunk_id,
-                    request,
-                    &request.members[member_index],
-                    Outcome::Resolved {
-                        owner,
-                        binding,
-                        resolved_by: ResolvedBy::Elimination {
-                            claimers: claimers.clone(),
-                        },
-                    },
-                ))?;
-            }
-        }
-        Ok(())
+        eliminated
+            .into_iter()
+            .try_for_each(|outcome| self.record(outcome))
     }
 
     /// The outcome of `member` resolving to `binding`, which `existing_kind`
@@ -2098,7 +603,7 @@ impl ChunkPlanBuilder {
         request: &LogicalRequest,
         member: &MemberRequest,
     ) -> Option<String> {
-        member.source_match.as_ref()?;
+        member.selector.source_match()?;
         let BindingKind::Owned {
             module: ModuleId(LogicalModuleIndex(owner_index)),
         } = existing_kind

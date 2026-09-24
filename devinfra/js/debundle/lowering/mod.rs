@@ -29,9 +29,9 @@ use artifact::{
 };
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
 use output_layout::MODULES_REPORT;
+use selector_resolve::MemberSelector;
 use spec::{
-    BindingSourceKind, ChunkExportPurity, ChunkRenames, LogicalModule, MemberEffect, MemberPurity,
-    UnassignedMode,
+    ChunkExportPurity, ChunkRenames, LogicalModule, MemberEffect, MemberPurity, UnassignedMode,
 };
 
 mod anonymous;
@@ -47,7 +47,6 @@ mod io;
 mod lower;
 mod materialize;
 mod naturalize;
-mod ordinal;
 mod plan_references;
 mod plans;
 pub mod rename_ledger;

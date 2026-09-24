@@ -23,7 +23,6 @@ pub(super) struct LogicalRequest {
 
 #[derive(Debug, Clone)]
 pub(super) struct AnonymousStatementRequest {
-    pub(super) selector: spec::AnonymousStatementSelector,
     pub(super) parsed_selector: source_match::ParsedSourceMatchSelector,
     /// Optional `comment:` text from the anonymous statement spec
     /// entry. `note:` is not emitted; it remains YAML scratch
@@ -31,57 +30,13 @@ pub(super) struct AnonymousStatementRequest {
     pub(super) comment: Option<String>,
 }
 
-/// A relational member selector: pins a member's target by a re-minify-invariant
-/// relation to a separately-identified entity, not by the target's own minified
-/// name. At most one relation can apply to a member, so the variants are mutually
-/// exclusive (an enum, not sibling `Option`s). Each is resolved after the chunk's
-/// owner graph is built — the relational facts live there / are derived from the
-/// chunk AST and joined to it — by the global selector solver. A member carrying
-/// one has an empty `binding` and `None` `source_match` until the solver resolves
-/// the target into the plan.
-#[derive(Debug, Clone)]
-pub(super) enum RelationalSelector {
-    /// `@Name` cross-reference: a relational edge to a separately-identified
-    /// anchor member, resolved against the anchor's solver assignment.
-    CrossRef(spec::CrossRefTarget),
-    /// The member it reads (`obj.X`), resolved against the owner-graph
-    /// `reads_member` EDB.
-    ReadsMember(spec::ReadsMemberTarget),
-    /// **Use-site** consumption (`mod.X`, `mod` an imported binding → its source
-    /// module), resolved against the owner-graph `member_of_module` EDB joined to
-    /// the import table.
-    MemberOfModule(spec::MemberOfModuleTarget),
-    /// The `resolves_to`-of-argument primitive: passed as an argument to a call of a
-    /// known callee (`registry.register(Target)`).
-    PassedToCall(spec::PassedToCallTarget),
-    /// The inverse-direction sibling of `PassedToCall`: the **callee** of an esbuild
-    /// `__decorate`-style application on a pinned class (`H([d], @Class.prototype,
-    /// "m")`).
-    MakesDecorateCall(spec::MakesDecorateCallTarget),
-    /// The follow-on companion of `MakesDecorateCall`: an `Object.<property>`
-    /// intrinsic alias (`var X = Object.defineProperty`) referenced by a known
-    /// helper (`referenced_by: @<decorateHelper>`), with the referencer edge riding
-    /// the owner graph's own `references` edge.
-    IntrinsicAlias(spec::IntrinsicAliasTarget),
-}
-
 #[derive(Debug, Clone)]
 pub(super) struct MemberRequest {
     pub(super) binding: String,
     pub(super) export_name: String,
-    pub(super) binding_selector: Option<spec::BindingSelector>,
-    pub(super) source_match: Option<spec::AnonymousStatementSelector>,
-    pub(super) source_match_parsed: Option<source_match::ParsedSourceMatchSelector>,
-    /// The relational selector pinning this member's target, if any. Mutually
-    /// exclusive with `binding`/`source_match`: a member carrying one has an empty
-    /// `binding` until the global selector solver resolves the target. See
-    /// [`RelationalSelector`].
-    pub(super) relational: Option<RelationalSelector>,
-    /// When `true`, the member's source is an import specifier in the
-    /// source chunk (not a top-level decl). The materializer looks up
-    /// the import statement by `binding` in the chunk body and rewrites
-    /// it to a re-import in the destination module.
-    pub(super) is_import_specifier: bool,
+    /// How the member names its declaration. Every selector but an import
+    /// specifier name pin resolves through the global selector solver.
+    pub(super) selector: MemberSelector,
     /// Spec-level purity annotation. `Pure` asserts that calls to the
     /// bound function have no observable side effects — the validator
     /// trusts the annotation and drops S edges for `<binding>(...)`
@@ -122,14 +77,10 @@ impl MemberRequest {
     /// Whether this member's ownership is intentionally unknown until chunk
     /// analysis facts are available and the global selector solver runs.
     ///
-    /// Source-match, relational, and non-import binding selectors resolve
-    /// through the global solver. Plain binding selectors keep their binding
-    /// spelling for hints and duplicate diagnostics, but ownership is read back
-    /// from the solver.
+    /// Plain binding selectors keep their binding spelling for hints and
+    /// duplicate diagnostics, but ownership is read back from the solver.
     pub(super) fn resolves_after_chunk_analysis(&self) -> bool {
-        self.source_match.is_some()
-            || self.relational.is_some()
-            || (self.binding_selector.is_some() && !self.is_import_specifier)
+        !self.selector.is_import_specifier()
     }
 
     /// Extend `hints` with this member's spec-level trust assertions
@@ -250,7 +201,6 @@ pub(super) fn logical_requests_for_chunk(
                         "source_match",
                     )?;
                     Ok(AnonymousStatementRequest {
-                        selector,
                         parsed_selector,
                         comment: stmt.comment.clone(),
                     })
@@ -313,115 +263,17 @@ pub(super) fn build_members(
                     )
                 })
             };
-            let (
-                binding,
-                export_name,
-                binding_selector,
-                source_match,
-                relational,
-                is_import_specifier,
-            ) = match selected.clone() {
-                spec::MemberSelectorSpec::Binding(binding) => {
-                    let export_name = m.name.clone().unwrap_or_else(|| binding.name.clone());
-                    let is_import_specifier =
-                        matches!(binding.kind, Some(BindingSourceKind::ImportSpecifier));
-                    (
-                        binding.name.clone(),
-                        export_name,
-                        Some(binding),
-                        None,
-                        None,
-                        is_import_specifier,
-                    )
-                }
-                spec::MemberSelectorSpec::SourceMatch(selector) => (
-                    String::new(),
-                    require_name()?,
-                    None,
-                    Some(selector),
-                    None,
-                    false,
-                ),
-                spec::MemberSelectorSpec::CrossRef(target) => {
-                    let relational = RelationalSelector::CrossRef(target);
-                    (
-                        String::new(),
-                        require_name()?,
-                        None,
-                        None,
-                        Some(relational),
-                        false,
-                    )
-                }
-                spec::MemberSelectorSpec::ReadsMember(target) => {
-                    let relational = RelationalSelector::ReadsMember(target);
-                    (
-                        String::new(),
-                        require_name()?,
-                        None,
-                        None,
-                        Some(relational),
-                        false,
-                    )
-                }
-                spec::MemberSelectorSpec::MemberOfModule(target) => {
-                    let relational = RelationalSelector::MemberOfModule(target);
-                    (
-                        String::new(),
-                        require_name()?,
-                        None,
-                        None,
-                        Some(relational),
-                        false,
-                    )
-                }
-                spec::MemberSelectorSpec::PassedToCall(target) => {
-                    let relational = RelationalSelector::PassedToCall(target);
-                    (
-                        String::new(),
-                        require_name()?,
-                        None,
-                        None,
-                        Some(relational),
-                        false,
-                    )
-                }
-                spec::MemberSelectorSpec::MakesDecorateCall(target) => {
-                    let relational = RelationalSelector::MakesDecorateCall(target);
-                    (
-                        String::new(),
-                        require_name()?,
-                        None,
-                        None,
-                        Some(relational),
-                        false,
-                    )
-                }
-                spec::MemberSelectorSpec::IntrinsicAlias(target) => {
-                    let relational = RelationalSelector::IntrinsicAlias(target);
-                    (
-                        String::new(),
-                        require_name()?,
-                        None,
-                        None,
-                        Some(relational),
-                        false,
-                    )
-                }
+            let binding = match &selected {
+                spec::MemberSelectorSpec::Binding(binding) => binding.name.clone(),
+                _ => String::new(),
             };
-            let source_match_parsed = source_match
-                .as_ref()
-                .map(|selector| {
-                    source_match::ParsedSourceMatchSelector::parse(
-                        request_id,
-                        "source_match",
-                        format!("<source_match selector in {request_id}>"),
-                        selector,
-                        "source_match",
-                    )
-                })
-                .transpose()?;
-            let claim_origin = match selected {
+            let export_name = match &selected {
+                spec::MemberSelectorSpec::Binding(binding) => {
+                    m.name.clone().unwrap_or_else(|| binding.name.clone())
+                }
+                _ => require_name()?,
+            };
+            let claim_origin = match &selected {
                 spec::MemberSelectorSpec::Binding(_) => {
                     format!(
                         "members[].selector.binding as `{}`",
@@ -448,11 +300,7 @@ pub(super) fn build_members(
             Ok(MemberRequest {
                 binding,
                 export_name,
-                binding_selector,
-                source_match,
-                source_match_parsed,
-                relational,
-                is_import_specifier,
+                selector: MemberSelector::from_spec(request_id, selected)?,
                 purity: MemberPurity::Default,
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),
@@ -477,11 +325,7 @@ pub(super) fn build_members(
             requests.push(MemberRequest {
                 binding: String::new(),
                 export_name,
-                binding_selector: None,
-                source_match: Some(selector),
-                source_match_parsed: Some(parsed_selector),
-                relational: None,
-                is_import_specifier: false,
+                selector: MemberSelector::SourceMatch(parsed_selector),
                 purity: MemberPurity::Default,
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),
