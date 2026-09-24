@@ -1308,6 +1308,7 @@ rust_test(
         ":chunk_facts",
         ":js_ast",
         ":selector_match",
+        ":source_match",
         "@crates//:swc_ecma_ast",
     ],
 )
