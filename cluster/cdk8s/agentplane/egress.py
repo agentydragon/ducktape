@@ -262,8 +262,10 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 #
                 # Deliberately absent: `codeload.github.com` and the `objects`/`release-assets`
                 # githubusercontent hosts, which are where an `http_archive` of a GitHub tag
-                # actually downloads from. They belong to the GitHub question below, so a Bazel
-                # fetch from a GitHub URL still fails until that is decided.
+                # actually downloads from. They belong with the GitHub policy below, whose rule
+                # substitutes a PAT on the same hosts; claude-ai's boxes, which are not bound to
+                # it, get them without a credential from `github-downloads`
+                # (actions_staging_policies.py).
                 EgressPolicySpecRules(
                     hosts=[
                         "pypi.org",
