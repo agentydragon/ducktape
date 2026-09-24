@@ -228,34 +228,6 @@ impl MemberSelectorProgramBuilder {
         ))
     }
 
-    pub fn declare_native_anonymous_statement_target_in_module(
-        &mut self,
-        logical_module: impl Into<String>,
-        statement_index: usize,
-        selector: &AnonymousStatementSelector,
-    ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
-        let logical_module = logical_module.into();
-        let debug_label = format!("anonymous_statement.{statement_index}.source_match");
-        let parsed = js_ast::with_swc_globals(|| {
-            source_match::ParsedSourceMatchSelector::parse(
-                &logical_module,
-                "source_match",
-                format!("<selector ir source_match in {logical_module}>"),
-                selector,
-                "source_match",
-            )
-        })
-        .map_err(|error| SelectorIrLoweringError::UnsupportedSourceMatch {
-            selector_kind: "source_match",
-            reason: format!("logical_module {logical_module} {debug_label}: {error}"),
-        })?;
-        self.declare_native_anonymous_statement_target_in_module_parsed(
-            logical_module,
-            statement_index,
-            &parsed,
-        )
-    }
-
     pub fn declare_native_anonymous_statement_target_in_module_parsed(
         &mut self,
         logical_module: impl Into<String>,
