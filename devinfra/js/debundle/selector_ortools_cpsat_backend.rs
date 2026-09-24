@@ -22,7 +22,8 @@ use selector_constraint_backend::{
     BackendAssignment, BackendAssignmentCoverage, BackendSolveResult, BackendSolveStatus,
     BackendValueId, BackendVariableAssignment, CompiledAllDifferentConstraint,
     CompiledAllowedTupleConstraint, CompiledSelectorProblem, CompiledVariable,
-    CompiledVariableDomain, SelectorProblemBackend, TargetProjection,
+    CompiledVariableDomain, MAX_ALTERNATIVES_PER_VARIABLE, SelectorProblemBackend,
+    TargetProjection,
 };
 use selector_cp_sat_proto::ducktape::debundle::solver_backends::ortools_cpsat as wire;
 use selector_ir::VariableDomain;
@@ -889,6 +890,7 @@ fn request_from_problem(
             .iter()
             .map(target_projection_from_backend)
             .collect::<Result<Vec<_>, _>>()?,
+        max_alternatives_per_variable: MAX_ALTERNATIVES_PER_VARIABLE,
     })
 }
 
@@ -1038,6 +1040,9 @@ fn response_into_backend_result(
         wire::AssignmentCoverage::TargetSupportComplete => {
             BackendAssignmentCoverage::TargetSupportComplete
         }
+        wire::AssignmentCoverage::TargetSupportCapped => {
+            BackendAssignmentCoverage::TargetSupportCapped
+        }
     };
     Ok(BackendSolveResult {
         status,
@@ -1077,6 +1082,7 @@ fn u32_id(field: &'static str, value: usize) -> Result<u32, OrToolsCpSatBackendE
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::path::{Path, PathBuf};
 
     use analysis::{ChunkId, OwnerId, StatementOrdinal};
@@ -1371,6 +1377,80 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn cpsat_sidecar_lists_ambiguous_candidates_next_to_unique_target() {
+        let mut program = SelectorProgram::default();
+        let binding_target = |program: &mut SelectorProgram, binding: &str| {
+            let owner = program.add_variable(VariableDomain::Owner, Some(binding.to_string()));
+            program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+                owner: OwnerTerm::Var { id: owner },
+                binding: StringTerm::Const {
+                    value: binding.to_string(),
+                },
+            });
+            program.add_target(
+                ChunkId(0),
+                owner,
+                "module",
+                ClaimKind::Binding {
+                    export_name: Some(binding.to_string()),
+                },
+                ClaimOrigin::Synthetic,
+            )
+        };
+        let pair_target = binding_target(&mut program, "pair");
+        let solo_target = binding_target(&mut program, "solo");
+        let many_target = binding_target(&mut program, "many");
+
+        let mut facts = SelectorFactStore::default();
+        for (owner, binding) in [(10, "pair"), (20, "pair"), (30, "solo")]
+            .into_iter()
+            .chain((40..47).map(|owner| (owner, "many")))
+        {
+            facts.push(owner_fact(owner, owner, "var"));
+            facts.push(declared_binding(owner, binding));
+        }
+
+        let backend = OrToolsCpSatBackend::new(sidecar_path());
+        let result = solve_with_backend(&program, &facts, &backend).unwrap();
+
+        assert_eq!(
+            result.outcome_for(solo_target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(30),
+                    statement_ordinal: StatementOrdinal(30),
+                    binding: Some("solo".to_string()),
+                    provenance: Vec::new(),
+                }
+            })
+        );
+        match result.outcome_for(pair_target) {
+            Some(ClaimOutcome::Ambiguous {
+                candidates,
+                candidates_truncated: false,
+            }) => {
+                let owners = candidates
+                    .iter()
+                    .map(|candidate| candidate.owner)
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(owners, BTreeSet::from([OwnerId(10), OwnerId(20)]));
+            }
+            other => panic!("expected complete ambiguous pair target, got {other:?}"),
+        }
+        // Seven owners declare `many`; the solver stops listing them at the cap.
+        match result.outcome_for(many_target) {
+            Some(ClaimOutcome::Ambiguous {
+                candidates,
+                candidates_truncated: true,
+            }) => {
+                assert_eq!(candidates.len(), MAX_ALTERNATIVES_PER_VARIABLE as usize);
+            }
+            other => panic!("expected truncated ambiguous many target, got {other:?}"),
+        }
     }
 
     #[test]

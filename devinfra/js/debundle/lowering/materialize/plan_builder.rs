@@ -673,10 +673,21 @@ fn source_match_no_match_message(
     ))
 }
 
+/// Renders an ambiguous candidate count; `truncated` means the solver stopped listing
+/// candidates, so the count is a lower bound.
+fn candidate_count(candidates: &[ResolvedClaim], truncated: bool) -> String {
+    if truncated {
+        format!("at least {}", candidates.len())
+    } else {
+        candidates.len().to_string()
+    }
+}
+
 fn source_match_ambiguous_message(
     request: &LogicalRequest,
     member: &MemberRequest,
     candidates: &[ResolvedClaim],
+    candidates_truncated: bool,
 ) -> Option<String> {
     let selector = member.source_match.as_ref()?;
     Some(format!(
@@ -686,7 +697,7 @@ fn source_match_ambiguous_message(
         request.id,
         member.claim_origin,
         member.export_name,
-        candidates.len(),
+        candidate_count(candidates, candidates_truncated),
         candidates
             .iter()
             .map(|candidate| candidate.statement_ordinal.0)
@@ -1197,7 +1208,7 @@ fn anonymous_statement_no_match_message(
 fn anonymous_statement_ambiguous_message(
     request: &LogicalRequest,
     statement: &AnonymousStatementRequest,
-    candidate_count: usize,
+    candidate_count: String,
     body_indices: &[usize],
 ) -> String {
     format!(
@@ -2098,7 +2109,10 @@ impl ChunkPlanBuilder {
                     )?;
                     continue;
                 }
-                Some(ClaimOutcome::Ambiguous { candidates }) => {
+                Some(ClaimOutcome::Ambiguous {
+                    candidates,
+                    candidates_truncated,
+                }) => {
                     let body_indices = candidates
                         .iter()
                         .filter_map(|candidate| {
@@ -2114,7 +2128,7 @@ impl ChunkPlanBuilder {
                         anonymous_statement_ambiguous_message(
                             request,
                             &info.statement,
-                            candidates.len(),
+                            candidate_count(candidates, *candidates_truncated),
                             &body_indices,
                         ),
                         None,
@@ -2232,8 +2246,16 @@ impl ChunkPlanBuilder {
                     }
                     bail!("{message}");
                 }
-                Some(ClaimOutcome::Ambiguous { candidates }) => {
-                    let message = source_match_ambiguous_message(request, member, candidates);
+                Some(ClaimOutcome::Ambiguous {
+                    candidates,
+                    candidates_truncated,
+                }) => {
+                    let message = source_match_ambiguous_message(
+                        request,
+                        member,
+                        candidates,
+                        *candidates_truncated,
+                    );
                     if let Some(message) = message {
                         if self.keep_going {
                             let body_indices = candidates
@@ -2256,7 +2278,7 @@ impl ChunkPlanBuilder {
                         "logical_module {}: global selector solver found {} candidates for \
                          selector member `{}` ({}): {:?}",
                         request.id,
-                        candidates.len(),
+                        candidate_count(candidates, *candidates_truncated),
                         member.export_name,
                         member.claim_origin,
                         member.relational,
