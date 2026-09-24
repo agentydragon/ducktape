@@ -123,11 +123,14 @@ retiring a test means deriving both sides from one value.
   `test_public_coder_clickhouse_reader_contract.py` check the same against the still
   hand-written Iron transform configs (`proxy/iron.yaml`) and the app's
   `agent-kubeconfig.yaml`, both `configMapGenerator` inputs.
-- **`agents/haku-egress-proxy` script contract** — `test_haku_sandbox_contract.py`
-  regex-extracts required env vars and a clone host:port from `haku-sandbox-setup.sh`
-  (an image build input) and checks the generated SandboxTemplate
-  (`haku/workspaces.py`) and egress policy cover them. Closing it fully needs the script
-  to declare its requirements in a checkable form.
+- **`haku/workspaces` setup-script contract** — `test_haku_sandbox_setup.py`
+  regex-extracts the variables `haku-sandbox-setup.sh` (an image build input) requires
+  and its default clone host:port, and checks the synthesized SandboxTemplate
+  (`haku/workspaces.py`) and agent-runner egress policy (`haku_egress_proxy.py`) cover
+  them. No `Settings` reads this env: `haku/runtime/agent/config.py` shares the
+  `HAKU_GIT_*` names but configures another, undeployed binary. Closing it needs the
+  script's requirements in a form the generator reads (a Python bootstrap with its own
+  `Settings`, or a declaration in the script), a design for the operator.
 - **`authentik/app`** — `test_authentik_blueprint_contracts.py`'s
   `configMapGenerator.files` list vs. a glob of `blueprints/*.yaml`: the
   `kustomization.yaml` is still hand-written, so a generated one listing the glob would

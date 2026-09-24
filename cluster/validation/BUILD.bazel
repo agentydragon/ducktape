@@ -372,21 +372,6 @@ py_test(
 )
 
 py_test(
-    name = "test_haku_sandbox_contract",
-    srcs = ["test_haku_sandbox_contract.py"],
-    data = [
-        "//cluster/k8s:haku_manifest_contract_files",
-    ],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
     name = "test_haku_public_coder_contract",
     # Synth imports the console's Settings, and with it the console runtime.
     size = "medium",

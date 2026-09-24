@@ -580,6 +580,26 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_haku_sandbox_setup",
+    srcs = ["test_haku_sandbox_setup.py"],
+    data = [
+        "//cluster/k8s:haku/workspaces/image/haku-sandbox-setup.sh",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":haku_egress_proxy",
+        "//:conftest",
+        "//cluster/cdk8s/haku:workspaces",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "google_mcp",
     srcs = ["google_mcp.py"],
