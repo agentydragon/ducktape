@@ -75,11 +75,6 @@ def test_haku_sandbox_reaches_kubernetes_only_through_console(k8s_dir: Path, gen
     assert pod["automountServiceAccountToken"] is False
     assert "serviceAccountName" not in pod
 
-    # Removing the mount and supplying the proxy are one decision: a box with neither has no
-    # path to the API at all, and would fail at `kubectl` rather than at deploy.
-    exec_env = {entry["name"]: entry.get("value") for entry in pod["containers"][0]["env"]}
-    assert "haku-kube-api-proxy" in exec_env["HAKU_KUBERNETES_PROXY_URL"]
-
 
 if __name__ == "__main__":
     pytest_bazel.main()

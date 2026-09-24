@@ -63,6 +63,7 @@ _TLS_SECRET = "haku-kube-api-proxy-tls"
 _TLS_DIR = "/etc/haku-kube-api-proxy-tls"
 LABELS = {"app.kubernetes.io/name": NAME}
 _SERVICE_FQDN = f"{NAME}.{console.NAMESPACE}.svc.cluster.local"
+URL = f"https://{_SERVICE_FQDN}:{_TLS_PORT}"
 
 
 class KubeApiProxy(Construct):
