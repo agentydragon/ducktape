@@ -167,12 +167,15 @@ class Session:
             resumed = self.record.native_session_id is not None
             try:
                 native_session_id = await adapter.handshake()
-            except BaseException:  # cleanup, then the failure reaches Open
+            except BaseException as error:  # cleanup, then the failure reaches Open
                 self._stopping = True
                 await process.stop()
                 await asyncio.gather(*self._tasks, return_exceptions=True)
                 self.process, self.adapter = None, None
-                raise
+                if not isinstance(error, Exception):
+                    raise
+                # A harness that died mid-handshake surfaces here as a broken pipe; its exit says why.
+                raise RuntimeError(f"harness handshake failed: {error!r}; {process.describe_exit()}") from error
             if self.record.native_session_id != native_session_id:
                 self.record.native_session_id = native_session_id
                 self.store.write(self.session_id, self.record)
@@ -434,6 +437,10 @@ class Session:
             return await asyncio.wait_for(request.reply, timeout=timeout_s)
         finally:
             self._waiters = [waiting for waiting in self._waiters if waiting is not request]
+            # When the send fails on a dead harness's pipe, nothing awaits the HarnessGoneError the
+            # stdout reader then sets; HarnessExited reports that exit either way.
+            if request.reply.done() and not request.reply.cancelled():
+                request.reply.exception()
 
     @asynccontextmanager
     async def ordered_reply(self) -> AsyncIterator[None]:

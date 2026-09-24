@@ -33,7 +33,8 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 - `Open` with an unknown id creates the session from `spec`; with a known id it attaches, and a
   supplied `spec` must equal the stored one. Open with a spec starts the harness when it is not running,
   resuming the native conversation when the session has one, and creates `spec.cwd`, which must
-  be absolute, when it does not exist yet.
+  be absolute, when it does not exist yet. A harness that does not survive its launch and
+  handshake ends the stream with an error naming its exit status and the end of its stderr.
 - `Open` without a spec observes an existing session without starting its harness. A stopped
   session replays its log and ends the stream; resuming requires an explicit spec.
 - `spec.instructions` are the session's standing instructions: what the session is for, and the

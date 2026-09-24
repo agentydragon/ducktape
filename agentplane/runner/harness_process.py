@@ -16,6 +16,8 @@ _LINE_LIMIT = 64 * 1024 * 1024
 _READ_BYTES = 64 * 1024
 # Beside this module in the Bazel runfiles tree and in the installed runner wheel alike.
 _SUPERVISOR = Path(__file__).with_name("harness_supervisor")
+# How much of the end of its stderr `describe_exit` reports; the supervisor's own failure is one line.
+_STDERR_TAIL_BYTES = 4096
 
 
 class HarnessProcess:
@@ -29,6 +31,7 @@ class HarnessProcess:
         self._process: asyncio.subprocess.Process | None = None
         self._native_pid = 0
         self._stdin_lock = asyncio.Lock()
+        self._stderr_tail = b""
 
     async def start(self) -> None:
         report_reader, report_writer = os.pipe()
@@ -63,8 +66,13 @@ class HarnessProcess:
         try:
             self._native_pid = int(reported)
         except ValueError as error:
+            # No reader is attached before the pid; this one keeps the supervisor's account of why.
+            async for _ in self.stderr_chunks():
+                pass
             await self._process.wait()
-            raise RuntimeError(f"harness supervisor did not report a native pid: {reported!r}") from error
+            raise RuntimeError(
+                f"harness supervisor did not report a native pid: {reported!r}; {self.describe_exit()}"
+            ) from error
 
     @property
     def process(self) -> asyncio.subprocess.Process:
@@ -112,7 +120,13 @@ class HarnessProcess:
         stderr = self.process.stderr
         assert stderr is not None
         while chunk := await stderr.read(65536):
+            self._stderr_tail = (self._stderr_tail + chunk)[-_STDERR_TAIL_BYTES:]
             yield chunk.decode(errors="replace")
+
+    def describe_exit(self) -> str:
+        """The exit status and the end of stderr, which say why a harness did not survive its launch."""
+        exit_code, stderr_tail = self.process.returncode, self._stderr_tail.decode(errors="replace")
+        return f"{exit_code=}, {stderr_tail=}"
 
     async def wait(self) -> int:
         return await self.process.wait()

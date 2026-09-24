@@ -707,6 +707,7 @@ py_test(
     name = "test_service",
     srcs = ["test_service.py"],
     deps = [
+        ":client",
         ":config",
         ":conftest",
         ":service",
