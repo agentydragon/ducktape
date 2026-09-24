@@ -210,6 +210,23 @@ it("sends the draft on Enter and clears it", async () => {
   expect(field.value).toBe("");
 });
 
+it("submits once for two Enters before the cleared draft renders, then takes the next draft", async () => {
+  const field = composer(await render());
+  await type(field, "hello");
+  await act(async () => {
+    const enter = () => field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    enter();
+    enter();
+  });
+  expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
+  await type(field, "second");
+  await press(field, {});
+  expect(sentOperations()).toMatchObject([
+    { case: "submitInput", value: { text: "hello" } },
+    { case: "submitInput", value: { text: "second" } },
+  ]);
+});
+
 it("sends the draft from the Send button, which an empty draft disables", async () => {
   const container = await render();
   expect(button(container, "Send").disabled).toBe(true);

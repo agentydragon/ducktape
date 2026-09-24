@@ -906,13 +906,22 @@ function ProjectedSessionBody({
   const hasPendingCommands = projectedCommands.length > 0;
   const selectedCommandIds = commands.local.commands.slice(0, 128);
 
+  // Two Enters before the cleared draft renders would otherwise submit the same text twice, under
+  // two command ids. Guards one render, not the lifetime of any HTTP request or command.
+  const submitting = useRef(false);
+  useEffect(() => {
+    submitting.current = false;
+  }, [draft]);
+
   function submit(): void {
-    if (!draft.trim() || !running) return;
+    if (!draft.trim() || !running || submitting.current) return;
+    submitting.current = true;
     const value = create(CommandSchema, {
       commandId: crypto.randomUUID(),
       operation: { case: "submitInput", value: { text: draft } },
     });
     if (commands.submit(value)) setDraft("");
+    else submitting.current = false;
   }
 
   function composerKey(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -1028,7 +1037,7 @@ function ProjectedSessionBody({
             {/* Opens upward: the composer sits at the bottom of the viewport. */}
             <Menu position="top-end" withArrow shadow="md">
               <Menu.Target>
-                <ActionIcon variant="light" aria-label="More">
+                <ActionIcon size="lg" variant="light" aria-label="More">
                   <IconDotsVertical size={16} />
                 </ActionIcon>
               </Menu.Target>
