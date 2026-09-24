@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MODEL=${1:-${COLIBRI_MODEL:-/var/lib/colibri/glm-5.2-colibri-int4-with-int8-mtp}}
+MODEL=${1:-${COLIBRI_MODEL:-/var/lib/llm-models-ssd/glm-5.2-colibri-int4-with-int8-mtp}}
 EXPECTED_FILES=150
 EXPECTED_SAFETENSORS=144
 EXPECTED_BYTES=383760077466

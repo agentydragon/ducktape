@@ -230,11 +230,11 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     interface    = "virtio8"
     iothread     = true
     discard      = "on"
-    size         = 500
+    size         = 1024
     backup       = false
     replicate    = false
     file_format  = "raw"
-  } # Colibri disk-streamed model storage (/var/lib/colibri) — SSD
+  } # SSD model storage (/var/lib/llm-models-ssd)
 
   network_device {
     bridge = "vmbr0"

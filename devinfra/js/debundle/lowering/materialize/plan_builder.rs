@@ -505,7 +505,10 @@ impl ChunkPlanBuilder {
                     )?;
                 }
             }
-            if matches!(resolved_by, ResolvedBy::Elimination { .. }) {
+            if matches!(
+                resolved_by,
+                ResolvedBy::Elimination { .. } | ResolvedBy::ReferencedBy { .. }
+            ) {
                 eliminated.push(outcome);
             }
         }

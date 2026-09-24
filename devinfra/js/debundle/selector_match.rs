@@ -1,7 +1,7 @@
-//! P2 (matching over the facts): a structural homomorphism from a selector
+//! The shape matcher's kernel: a structural homomorphism from a selector
 //! needle's `chunk_facts` projection onto a candidate's, anchored at the
-//! top-level statement. This is the Datalog-side matcher the resolver will use;
-//! it operates over the AST-facts EDB, never by re-walking ASTs.
+//! top-level statement. It operates over the facts, never by re-walking ASTs;
+//! `source_match::chunk_resolver` runs it per candidate.
 //!
 //! Faithful subset: exact- and alpha-identifier structure with
 //! **expression-position single-node holes** (`ANYTHING` / `EXPR` / `STMT`
@@ -18,15 +18,9 @@
 //! semantics across identifier modes, holes, and declarator alignment are pinned
 //! by `selector_match_differential_test`.
 //!
-//! This per-`(needle, subject)` homomorphism is the **kernel match relation**,
-//! not a rival "N separate solves" design: the one global evaluation (the plan's
-//! P4) composes it, and for a cross-ref-free selector set the global solve
-//! decomposes by connected components into exactly these independent matches.
-//! The run-hole placement is
-//! realized here as a direct (greedy + backtracking) search; the equivalent
-//! relational chain-join — the form that folds into the global fixpoint, with
-//! cross-gap alpha-binding coupling fail-closed — is the P3/P4 native-lowering
-//! shape recorded in the plan.
+//! Run-hole placement is a direct greedy-plus-backtracking search. Why matching
+//! is not encoded as solver constraints: <docs/selector_resolution.md>
+//! § Rejected: tree matching as solver constraints.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 

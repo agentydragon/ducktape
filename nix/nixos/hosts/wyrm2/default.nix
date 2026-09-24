@@ -448,8 +448,8 @@ in
       "x-systemd.device-timeout=10s"
     ];
   };
-  fileSystems."/var/lib/colibri" = {
-    device = "/dev/vdi"; # 500G SSD (local-zfs) — disk-streamed model storage
+  fileSystems."/var/lib/llm-models-ssd" = {
+    device = "/dev/vdi"; # 1 TiB SSD (local-zfs) — model storage
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
@@ -541,9 +541,8 @@ in
     # Steam library mount (/dev/vdb) must be user-writable; the fresh ext4 root
     # is created root:root, so chown it after the mount lands.
     "d /games 0755 agentydragon users -"
-    # The Colibri host experiment runs as agentydragon and stores only
-    # reproducible model artifacts on this dedicated SSD.
-    "d /var/lib/colibri 0755 agentydragon users -"
+    # Host inference experiments store reproducible model artifacts here.
+    "d /var/lib/llm-models-ssd 0755 agentydragon users -"
     # gnome-remote-desktop system daemon reads $XDG_DATA_HOME/gnome-remote-desktop/grd.conf
     # (= /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop/grd.conf); symlink
     # grdConf there so it enables RDP at startup. tmpfiles runs before graphical.target,
