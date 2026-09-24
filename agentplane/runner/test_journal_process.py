@@ -1,4 +1,5 @@
-"""A killed journal writer and a fresh process agree on published Events and command outcomes.
+"""A killed journal writer and a fresh process agree on published Events and command outcomes, and
+nothing of a batch the writer had not committed survives.
 
 This is a process-restart check, not a power-loss test: killing a process leaves the kernel
 write cache intact. SQLite EXTRA synchronization supplies the storage durability fence.
@@ -53,8 +54,13 @@ async def _publish_async(root: Path, connection: Connection) -> None:
         )
         await journal.append(event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"text":"output"}'))
         await journal.append(event_pb2.TextDelta(item_id="test-item", text="output"))
-        connection.send_bytes(b"\\n".join(entry.SerializeToString() for entry in (await journal.since(0, limit=128))))
-        await asyncio.to_thread(connection.recv_bytes)  # Parent kills this process without cleanup.
+        published = b"\\n".join(entry.SerializeToString() for entry in (await journal.since(0, limit=128)))
+        # The kill lands inside a batch that has written but not committed.
+        async with journal.batch():
+            await journal.append(event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"text":"more"}'))
+            await journal.append(event_pb2.TextDelta(item_id="test-item", text="more"))
+            connection.send_bytes(published)
+            await asyncio.to_thread(connection.recv_bytes)  # Parent kills this process without cleanup.
 
 
 def _recover(root: Path, connection: Connection) -> None:

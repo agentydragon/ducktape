@@ -36,7 +36,8 @@ class HarnessAdapter(abc.ABC):
     async def on_frame(self, frame: dict[str, Any], source_sequence: int) -> None:
         """Translate one parsed stdout frame into session events, answering the harness if it asked.
 
-        ``source_sequence`` is the durable Native Event which carried ``frame``. An adapter may
-        wait for a small native cohort before emitting one observation, so it must retain the
-        source rather than relying on the Session's ambient translating frame.
+        ``source_sequence`` is the Native Event which carried ``frame``. It commits no later than
+        the Events derived from it, and before any frame sent in answer. An adapter may wait for a
+        small native cohort before emitting one observation, so it must retain the source rather
+        than relying on the Session's ambient translating frame.
         """

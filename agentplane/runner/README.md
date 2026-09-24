@@ -49,10 +49,12 @@ entrypoint.
 
 `test_journal.py` gates real SQLite commits and injects failure/cancellation before or after commit,
 checking transaction visibility, atomic coalesced receipts, immutable ids, and replay without cursor
-reuse. `test_journal_process.py` kills a real writer and replays its exact published prefix from a
-new process; `test_restart.py` also exercises the real runner and both native harnesses. These are
-not physical power-loss tests. `test_store.py` retains a separate fsync-boundary storage image for
-session metadata and directory discovery.
+reuse. `test_session.py` drives the stdout reader with a scripted process: a burst commits once, a
+lone line does not wait for more, and nothing is written to the harness or handed to a request
+before the frames it follows commit. `test_journal_process.py` kills a real writer and replays its
+exact published prefix from a new process; `test_restart.py` also exercises the real runner and
+both native harnesses. These are not physical power-loss tests. `test_store.py` retains a separate
+fsync-boundary storage image for session metadata and directory discovery.
 
 ## SQLite storage
 
@@ -69,6 +71,14 @@ supervisor terminates and reaps the native harness process group while retaining
 the replacement cannot start until native work is fenced. A child that remains in the group keeps
 the inherited lock even after its harness leader exits. See <SPEC.md#durability-and-restart> for
 the supported-storage and escaped-process boundary.
+
+The stdout reader commits in groups (`Journal.batch`): the lines one pipe read delivered and the
+Events derived from them share a transaction, so a burst of output costs one commit rather than one
+per Event. It commits early before writing to the harness, so the record precedes the write, and
+before waiting on the session lock. A request's native reply reaches it only after the reply
+commits. A requester that derives Events from its reply (Codex's `turn/start`, Claude's
+`set_model`) takes it in `Session.ordered_reply`, and the reader translates no later frame until
+that block ends.
 
 Keep `journal.sqlite` and any recovery journal together on the surviving state volume. The checked-in
 staging/testing templates mount `/state` from `local-path-ovh-hdd` PVCs. Network filesystems
