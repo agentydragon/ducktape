@@ -51,7 +51,8 @@ limited: limits.cpu=12
 
 Two `claude-ai` sandboxes left idle for 13–14 hours held 5 of the 12 cores, and only disposing
 them freed the quota. Nothing expires these boxes: `agentplane/sandbox_actions/inventory.py`
-stamps every Sandbox `shutdownPolicy: Retain` with no `shutdownTime`, the integration app's
+stamps every Sandbox `shutdownPolicy: Retain` with no `shutdownTime` (its `TODO(sandbox-lifetime)`
+records the fix below), the integration app's
 Sandboxes carry no expiry either (`agentplane/app/inventory.py`), and nothing in
 `agentplane-staging` sweeps them. haku-console's sandbox claims carry `shutdownPolicy: Delete` and
 a `shutdownTime` each `exec` pushes forward (`haku/sandbox/kubernetes_client.py`; 8 h, then at
@@ -82,9 +83,10 @@ the box has already spent failing, up to ~17 minutes. This is read from upstream
 `controllers/sandbox_controller.go` and controller-runtime v0.24.1; the late retry itself was not
 observed.
 
-**Recommendation:** say so in `sandbox_actions.md`: a quota `ReconcilerError` clears only at the
-controller's next backoff retry, up to ~17 minutes after the quota frees, while `dispose` +
-`create` reconciles at once.
+**Recommendation:** `sandbox_actions.md` now names the exceeded-quota `ReconcilerError` and says
+`create` does not wait, but "queued behind a quota" reads as if the box starts once quota frees.
+Say instead that it clears only at the controller's next backoff retry, up to ~17 minutes after
+the quota frees, while `dispose` + `create` reconciles at once.
 
 ### 3. The only environment is the runner image, and its description promises Python
 
@@ -99,9 +101,14 @@ image's Debian packages are `curl`, `git` and `ripgrep` (`trixie_agentplane_runn
 (`cluster/k8s/haku/workspaces/image/Dockerfile`) bakes what `haku-state`'s tooling calls:
 `python3`, `kubectl`, `tea`, `jq`, `gh`, `ruff`, bazelisk with a JDK, and `build-essential`.
 
-**Recommendation:** make the environment's description say what a command can use (`git`,
-`curl`, `ripgrep`; no Python), and if this path is to carry Haku work, offer an exec environment
-with the tools above rather than the harness image.
+A Nix sandbox image now builds and publishes (`agentplane/sandbox_image/default.nix`, pushed by
+`.github/workflows/agentplane-sandbox-image.yml`) with a full `python3`, `kubectl`, `jq`,
+`openssl` and a `runner` passwd entry, but no `SandboxTemplate` uses it, so `runner` is still the
+only environment (as of 2026-09-24). It still lacks `tea`, `gh`, `ruff`, bazelisk and a compiler.
+
+**Recommendation:** make the `runner` description say what a command can use (`git`, `curl`,
+`ripgrep`; no Python), and offer the sandbox image as the default environment, through its own
+`SandboxTemplate` with the egress sidecar, CA and proxy environment.
 
 ### 4. `claude-ai`'s reach still falls short of Haku's
 
@@ -109,26 +116,26 @@ Haku's perimeter, as `cluster/k8s/agents/agent-rbac-base/README.md` and `haku-st
 `memory/credentials.md` describe it: full CRUD in `haku-sandbox` and the Secrets there (Plaid
 Postgres, ActivityWatch, the haku mailbox JWT, the haku-console MCP token), cluster-wide
 diagnostics, metadata and logs in agent-readable namespaces, and what haku-console still fronts
-(`github`, `ssh`, `kubectl_passthrough_mcp`, its `sandbox` and `grants`) under `haku_v1`. What
-`claude-ai` lacks of it on `devel`, as of 2026-09-23:
+(its `sandbox` and `grants`) under `haku_v1`. What `claude-ai` lacks of it on `devel`, as of
+2026-09-24:
 
 - **Kubernetes:** it holds `cluster-diagnostics-reader`, the metadata and log readers of the
   `agent-readable-*` namespaces, and `get` on the one Secret
   `agentplane-staging/coinbase-api-credentials` (`agent-rbac-base/README.md` section 6). No role
   in `haku-sandbox`, so no Plaid query Pod and none of its Secrets.
 - **Egress:** Forgejo as `haku`, the Kubernetes API, the package mirrors, Google's read APIs
-  (`google-readonly`), Grocy SF reads (`grocy-sf-readonly`) and Coinbase are bound. GitHub is not
-  (`TODO(github-egress)` in `cluster/cdk8s/agentplane/actions_staging_policies.py`), and nothing
-  reaches Plaid, ActivityWatch, the mailbox or haku-console.
+  (`google-readonly`), Grocy SF reads (`grocy-sf-readonly`), Home Assistant's state and history
+  reads (`home-assistant-readonly`) and Coinbase are bound. GitHub is not (`TODO(github-egress)`
+  in `cluster/cdk8s/agentplane/actions_staging_policies.py`), and nothing reaches Plaid,
+  ActivityWatch, the mailbox or haku-console.
 - **Actions:** `cluster/cdk8s/agentplane/staging.py` configures a group for every server that left
-  haku-console, plus `github`, `kubernetes` and `ssh`; `grants` has no Action Service counterpart.
-  `claude-ai-reads` auto-approves the GitHub, Home Assistant, Gmail, Calendar and Tana reads and the
-  sandbox set; every write waits for a human. Live at 17:04Z, `grocy_sf`, `gmail` and
-  `google_calendar` listed no Actions: `grocy_sf` waits for the operator's account link, and the
-  Google groups for the `google-write` consent in Airlock.
+  haku-console (`kubectl_passthrough_mcp` as `kubernetes_admin`); `grants` has no Action Service
+  counterpart. `claude-ai-reads` auto-approves the GitHub, Home Assistant, Gmail, Calendar, Tana
+  and Grocy SF reads and the sandbox set; every write waits for a human. Live on 2026-09-24,
+  `grocy_sf`, `gmail` and `google_calendar` list their Actions as available.
 
 **Recommendation:** the scope is now written down, in `haku/runtime/claude_web_env/run.md` and
 `haku-state`'s `sources/` guides, and a run sweeps agentplane requests as it did console tool calls
 (`haku-state` `memory/procedures/tool_calls.md`). What is left is deliberate: Plaid, ActivityWatch
-and the mailbox have no route, `grants` waits on `ELEVATE` (`agentplane/plans/task_dag.md`), and the
-exec environment is finding 3.
+and the mailbox have no route, `grants` waits on the Action Service gaining expiring grants, and
+the exec environment is finding 3.
