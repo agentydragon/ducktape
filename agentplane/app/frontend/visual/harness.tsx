@@ -36,7 +36,7 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
-import { electricLive, electricShape, electricSubset, routes } from "./network";
+import { electricLive, electricShape, electricSubset, routes, UNANSWERED } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
 
@@ -728,6 +728,7 @@ function item(
     tool?: string;
     arguments?: string;
     output?: string;
+    failed?: boolean;
     complete?: boolean;
     turn?: string;
     threadId?: string;
@@ -740,8 +741,8 @@ function item(
     {
       kind,
       tool_name: extra.tool ?? "",
-      completion: extra.complete === false ? null : text,
-      tool_succeeded: extra.output === undefined ? null : true,
+      completion: extra.complete === false ? null : kind === ItemKind.TOOL_CALL ? "tool" : "text",
+      tool_succeeded: extra.output === undefined ? null : !extra.failed,
     },
     {
       thread_id: extra.threadId,
@@ -907,6 +908,7 @@ function statesRows(threadId: string): Record<string, unknown>[] {
       tool: "Bash",
       arguments: '{"command":"git branch -d stale"}',
       output: "fatal: branch 'stale' not found.",
+      failed: true,
     }),
     item(10, "m-0", ItemKind.ASSISTANT_TEXT, "That branch does not exist.", { threadId, turn: "t1" }),
     item(16, "r-0", ItemKind.REASONING, "Running the suite twice exposes flaky failures.", {
@@ -982,7 +984,8 @@ if (scenario.pendingCommands === "outcomes") {
 }
 
 // One MCP server per row state the MCP servers page draws: linked and connected, a link whose token
-// lapsed, never linked, and bearer-only backends that are up or unreachable.
+// lapsed while its refresh keeps failing, a refresh the provider refused, never linked, and
+// bearer-only backends that are up or unreachable.
 const MCP_LINKAGES: McpLinkageView[] = [
   {
     server_id: "example_docs",
@@ -1003,6 +1006,28 @@ const MCP_LINKAGES: McpLinkageView[] = [
     expires_at: ago(2 * HOUR),
     linked_at: ago(9 * 24 * HOUR),
     linked_by: null,
+    refresh_failure: {
+      action: "retrying",
+      error: "the token endpoint answered HTTP 503 Service Unavailable",
+      attempts: 6,
+      retry_at: new Date(NOW + 4 * 60_000).toISOString(),
+    },
+  },
+  {
+    server_id: "example_calendar",
+    server_url: "https://calendar-mcp.example.test/mcp",
+    status: "degraded",
+    revision: 5,
+    scopes: ["openid", "offline_access"],
+    expires_at: ago(HOUR),
+    linked_at: ago(40 * 24 * HOUR),
+    linked_by: null,
+    refresh_failure: {
+      action: "reconnect",
+      error: "the OAuth provider refused the token request: invalid_grant: Token is not active",
+      attempts: 1,
+      retry_at: null,
+    },
   },
   {
     server_id: "example_pantry",
@@ -1047,6 +1072,14 @@ const MCP_GROUPS: ActionGroupView[] = [
     last_discovery_at: ago(3 * HOUR),
     retry_at: new Date(NOW + 20_000).toISOString(),
     failures: 12,
+  }),
+  mcpGroup("example_calendar", "Linked operator account.", {
+    state: "disconnected",
+    reason: "linkage_unavailable",
+    detail: "refreshing the token failed in a way retrying cannot fix; link the account again",
+    last_discovery_at: ago(HOUR),
+    retry_at: new Date(NOW + 20_000).toISOString(),
+    failures: 9,
   }),
   mcpGroup("example_pantry", "Linked operator account.", {
     state: "disconnected",
@@ -1384,6 +1417,15 @@ routes.push(
       next_after_sequence: null,
     }),
   ],
+  // No runner here admits a command, so one the page delivers on load stays unadmitted.
+  [
+    "POST",
+    /^\/threads\/([0-9a-f-]+)\/commands$/,
+    () =>
+      scenario.commandAdmissionTimedOut
+        ? Response.json({ detail: "runner did not admit the command within 15 seconds" }, { status: 504 })
+        : UNANSWERED,
+  ],
   ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],
   [
     "GET",
@@ -1499,14 +1541,28 @@ if (scenario.openDebug) {
   openDebug.observe(document, { childList: true, subtree: true });
 }
 
+/** Opens the folded tool-call run, whose steps mount only once it is open. */
+function openRun(summaries: HTMLElement[]): void {
+  summaries
+    .find(
+      (candidate) =>
+        candidate.textContent?.includes("tool call") &&
+        candidate.parentElement instanceof HTMLDetailsElement &&
+        !candidate.parentElement.open
+    )
+    ?.click();
+}
+
 if (scenario.openReasoning) {
   const openReasoning = new MutationObserver(() => {
-    const summary = [...document.querySelectorAll("summary")].find(
-      (candidate) => candidate.textContent === "Reasoning"
-    );
-    if (!(summary instanceof HTMLElement)) return;
+    const summaries = [...document.querySelectorAll("summary")];
+    const step = summaries.find((candidate) => candidate.textContent === "Reasoning");
+    if (!step) {
+      openRun(summaries);
+      return;
+    }
     openReasoning.disconnect();
-    summary.click();
+    step.click();
   });
   openReasoning.observe(document, { childList: true, subtree: true });
 }
@@ -1514,7 +1570,9 @@ if (scenario.openReasoning) {
 if (scenario.openToolPayloads) {
   const unopened = new Set(["Arguments", "Output"]);
   const openToolPayloads = new MutationObserver(() => {
-    for (const summary of document.querySelectorAll("summary")) {
+    const summaries = [...document.querySelectorAll("summary")];
+    openRun(summaries);
+    for (const summary of summaries) {
       if (unopened.delete(summary.textContent ?? "")) summary.click();
     }
     if (unopened.size === 0) openToolPayloads.disconnect();

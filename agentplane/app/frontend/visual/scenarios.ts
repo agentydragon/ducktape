@@ -39,14 +39,17 @@ export interface Scenario extends ScenarioOptions {
   interleavedEvents?: boolean;
   /** Open the chronological archive drawer, the native-frame inspection surface. */
   openDebug?: "latest" | "stderr";
-  /** Open a projected reasoning payload after the semantic row has mounted. */
+  /** Open the tool-call run once it mounts, then the reasoning step folded inside it. */
   openReasoning?: boolean;
-  /** Open a projected tool call's Arguments and Output after the semantic row has mounted. */
+  /** Open the tool-call run once it mounts, then the tool call's Arguments and Output inside it. */
   openToolPayloads?: boolean;
   /** Click the Evidence icon of the row at this thread anchor once it mounts: which rows show
    * their evidence is not in the URL. */
   openEvidence?: string;
   pendingCommands?: "mixed" | "controls" | "outcomes";
+  /** Answer a command POST as the app does when a runner misses its admission deadline. Without
+   * this it stays unanswered, like one queued behind the browser's connection limit. */
+  commandAdmissionTimedOut?: boolean;
   failedTurn?: "before-content" | "after-content";
 }
 
@@ -56,11 +59,10 @@ const PHONE = { width: 412, height: 915, deviceScaleFactor: 2.625 };
 const CONSENT_ROUTE = "/connection-enrollments/test-only-opaque-handle";
 const SANDBOX_ROUTE = "/sandboxes/demo-a1b2";
 const SESSION_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000001";
-// A standalone failed tool call, a run whose reasoning is still streaming beside a tool call that
-// already failed, and a message queued mid-turn -- every status the session view's badge-to-dot
-// restyle touches that the main `session` fixture doesn't produce on its own. The run's own
-// open/closed state isn't URL-synced (unlike a reasoning block's), so it renders folded, which is
-// fine here: its summary is exactly where the streaming/failed dots these scenarios exist for show.
+// A standalone failed tool call, a run whose reasoning is still streaming beside a tool call, and
+// queued commands -- statuses the main `session` fixture doesn't produce on its own. Both runs
+// render folded, which is the point here: a run's summary is where its streaming and failed
+// indicators show. The run's first step, at cursor 16, is its anchor.
 const SESSION_STATES_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000002";
 export const SCENARIOS: Record<string, Scenario> = {
   session_error: {
@@ -255,13 +257,13 @@ export const SCENARIOS: Record<string, Scenario> = {
   mcp_servers: {
     element: "#app",
     route: "/mcp-servers",
-    viewport: { width: 1200, height: 1100 },
+    viewport: { width: 1200, height: 1400 },
     readySelectors: ["[data-mcp-server]"],
   },
   mcp_servers_phone: {
     element: "#app",
     route: "/mcp-servers",
-    viewport: { width: 390, height: 1450 },
+    viewport: { width: 390, height: 1950 },
     readySelectors: ["[data-mcp-server]"],
   },
 
@@ -388,7 +390,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 900 },
     outputName: "session-reasoning",
     openReasoning: true,
-    readySelectors: ["details[open]"],
+    readySelectors: ["details[open] details[open] .agentplane-markdown"],
   },
   session_reasoning_phone: {
     element: "#app",
@@ -396,7 +398,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     outputName: "session-reasoning-phone",
     openReasoning: true,
-    readySelectors: ["details[open]"],
+    readySelectors: ["details[open] details[open] .agentplane-markdown"],
   },
   // JSON arguments highlighted, and a non-JSON output in the same code block, uninterpreted. The
   // history follows its bottom, so the viewports are tall enough to keep the tool call, and the
@@ -457,7 +459,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 900 },
     outputName: "session-states",
-    readySelectors: ['[data-thread-anchor="19"]'],
+    readySelectors: ['[data-thread-anchor="16"]'],
     captureViewport: true,
   },
   session_pending: {
@@ -465,7 +467,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "mixed",
-    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="19"]'],
+    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="16"]'],
     captureViewport: true,
   },
   session_pending_phone: {
@@ -473,7 +475,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
     pendingCommands: "mixed",
-    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="19"]'],
+    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="16"]'],
     captureViewport: true,
   },
   session_pending_raw: {
@@ -482,7 +484,16 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "mixed",
     openDebug: "latest",
-    readySelectors: ['[aria-label="Chronological observations"]', '[data-thread-anchor="19"]'],
+    readySelectors: ['[aria-label="Chronological observations"]', '[data-thread-anchor="16"]'],
+    captureViewport: true,
+  },
+  session_pending_failed: {
+    element: "#app",
+    route: SESSION_STATES_ROUTE,
+    viewport: { width: 1200, height: 1100 },
+    pendingCommands: "mixed",
+    commandAdmissionTimedOut: true,
+    readySelectors: ["::-p-text(runner did not admit the command)", '[data-thread-anchor="16"]'],
     captureViewport: true,
   },
   session_pending_controls: {
@@ -490,7 +501,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "controls",
-    readySelectors: ['[data-command-id="queued-interrupt"]', '[data-thread-anchor="19"]'],
+    readySelectors: ['[data-command-id="queued-interrupt"]', '[data-thread-anchor="16"]'],
     captureViewport: true,
   },
   session_command_outcomes_phone: {
@@ -498,7 +509,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
     pendingCommands: "outcomes",
-    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="19"]'],
+    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="16"]'],
     captureViewport: true,
   },
   session_catching_up: {
@@ -524,7 +535,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
     outputName: "session-states-phone",
-    readySelectors: ['[data-thread-anchor="19"]'],
+    readySelectors: ['[data-thread-anchor="16"]'],
     captureViewport: true,
   },
 };

@@ -50,10 +50,9 @@ OAI_LANE_MODELS = [codex_responses_name(model) for model in CLIPROXY_MODELS]
 # (laptop codex-claude, agent-box, codex-pod).
 CODEX_CLIENT_MODELS = [codex_messages_name(model) for model in CLIPROXY_MODELS]
 # Claude-subscription models on the Anthropic Messages surface, fronted through
-# CLIProxyAPI's Claude OAuth session -- the Console-launched Claude runner, the laptop
-# litellm-claude wrapper, and the agentplane staging session form. A different
-# upstream session on the same pod as the Codex lanes; distinct from the direct-API
-# anthropic-api/ant-messages/* entries.
+# CLIProxyAPI's Claude OAuth session -- the laptop litellm-claude wrapper and the
+# agentplane staging session form. A different upstream session on the same pod as the
+# Codex lanes; distinct from the direct-API anthropic-api/ant-messages/* entries.
 CLAUDE_CLIENT_MODELS = [
     exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, model) for model in ANTHROPIC_MODELS
 ]

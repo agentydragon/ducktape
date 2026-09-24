@@ -1,15 +1,20 @@
 // @vitest-environment happy-dom
 
-import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import { create, equals, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CommandSchema, type Command } from "../../protocol/command_pb";
+import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
 import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
 import { command, getThread, models, type ThreadView } from "./client";
-import { EntityCard, ProjectedSession, pruneCommandErrors } from "./projected_session";
+import { historyRows, rowKey } from "./history_rows";
+import { LocalCommands } from "./local_commands";
+import { EntityCard, HistoryRowView, ProjectedSession, pruneCommandErrors } from "./projected_session";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
+import { testItem } from "./thread_entity_fixture";
 import {
   ThreadSyncContext,
   type PayloadRef,
@@ -317,6 +322,102 @@ it.each([
   expect(picker?.placeholder).toBe(placeholder);
 });
 
+function message(commandId: string): Command {
+  return create(CommandSchema, {
+    commandId,
+    operation: { case: "submitInput", value: { text: `Test input ${commandId}` } },
+  });
+}
+
+function admission(value: Command): EventEntry {
+  return create(EventEntrySchema, {
+    cursor: 7n,
+    origin: { sourceId: "test-runner", sequence: 7n },
+    event: { observation: { case: "commandAdmitted", value: { command: value } } },
+  });
+}
+
+async function admit(_threadId: string, value: Command): Promise<EventEntry> {
+  return admission(value);
+}
+
+function sentIds(): string[] {
+  return vi.mocked(command).mock.calls.map(([, value]) => value.commandId);
+}
+
+function pendingRow(container: HTMLDivElement, commandId: string): HTMLElement {
+  const row = container.querySelector<HTMLElement>(`[data-command-id="${commandId}"]`);
+  if (!row) throw new Error(`Missing pending command ${commandId}`);
+  return row;
+}
+
+function retry(container: HTMLDivElement, commandId: string): HTMLButtonElement {
+  const found = [...pendingRow(container, commandId).querySelectorAll("button")].find(
+    (candidate) => candidate.textContent === "Retry"
+  );
+  if (!found) throw new Error(`Missing Retry for ${commandId}`);
+  return found;
+}
+
+it("delivers a command an earlier page retained without the operator acting, and keeps its admission", async () => {
+  new LocalCommands(THREAD.id).remember(message("retained-unadmitted"));
+  vi.mocked(command).mockImplementation(admit);
+  const container = await render();
+  expect(sentIds()).toEqual(["retained-unadmitted"]);
+  expect(pendingRow(container, "retained-unadmitted").textContent).toContain("Saved · awaiting effect");
+  const [retained] = new LocalCommands(THREAD.id).getSnapshot().commands;
+  expect(equals(EventEntrySchema, retained.admission!, admission(message("retained-unadmitted")))).toBe(true);
+});
+
+it("does not send a retained command whose admission it already holds", async () => {
+  const store = new LocalCommands(THREAD.id);
+  store.remember(message("retained-admitted"));
+  store.acknowledge(message("retained-admitted"), admission(message("retained-admitted")));
+  // Its unadmitted sibling being sent shows the mount's delivery ran.
+  store.remember(message("retained-unadmitted"));
+  vi.mocked(command).mockImplementation(admit);
+  const container = await render();
+  expect(sentIds()).toEqual(["retained-unadmitted"]);
+  expect(pendingRow(container, "retained-admitted").textContent).toContain("Saved · awaiting effect");
+});
+
+it("shows a delivery that outlives its deadline as a failed attempt the operator can retry", async () => {
+  new LocalCommands(THREAD.id).remember(message("hung"));
+  let expire!: (reason: unknown) => void;
+  vi.mocked(command)
+    .mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        expire = reject;
+      })
+    )
+    .mockImplementationOnce(admit);
+  const container = await render();
+  expect(pendingRow(container, "hung").textContent).toContain("Saved locally · awaiting admission");
+
+  await act(async () => expire(new DOMException("signal timed out", "TimeoutError")));
+  expect(pendingRow(container, "hung").textContent).toContain("signal timed out");
+  expect(sentIds()).toEqual(["hung"]);
+
+  await act(async () => retry(container, "hung").click());
+  expect(sentIds()).toEqual(["hung", "hung"]);
+  expect(pendingRow(container, "hung").textContent).toContain("Saved · awaiting effect");
+  expect(pendingRow(container, "hung").textContent).not.toContain("signal timed out");
+});
+
+it("delivers a failed command again when the browser comes back online", async () => {
+  new LocalCommands(THREAD.id).remember(message("offline"));
+  vi.mocked(command)
+    .mockRejectedValueOnce(new Error("the sandbox's runner is not answering"))
+    .mockImplementationOnce(admit);
+  const container = await render();
+  expect(pendingRow(container, "offline").textContent).toContain("the sandbox's runner is not answering");
+  expect(sentIds()).toEqual(["offline"]);
+
+  await act(async () => window.dispatchEvent(new Event("online")));
+  expect(sentIds()).toEqual(["offline", "offline"]);
+  expect(pendingRow(container, "offline").textContent).toContain("Saved · awaiting effect");
+});
+
 function reference(ownerId: string, field: PayloadRef["field"]): PayloadRef {
   return {
     projection_epoch: "test-epoch",
@@ -380,7 +481,10 @@ async function renderCard(card: ThreadEntity, bodies: Record<string, string>): P
       <MantineProvider env="test">
         <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)))}>
           <RetainedDisclosureProvider>
-            <EntityCard threadId="test-thread" entity={card} live={false} />
+            {/* The history's row carries the anchor; a card renders inside it. */}
+            <div data-thread-anchor={card.cursor.toString()}>
+              <EntityCard threadId="test-thread" entity={card} live={false} />
+            </div>
           </RetainedDisclosureProvider>
         </ThreadSyncContext.Provider>
       </MantineProvider>
@@ -406,6 +510,90 @@ async function disclose(container: HTMLElement, summary: string): Promise<HTMLDe
   });
   return details;
 }
+
+/** One element per history row, each holding what the thread view renders for it. */
+async function renderHistory(
+  segments: ThreadEntity[],
+  live: boolean,
+  bodies: Record<string, string> = {}
+): Promise<HTMLElement[]> {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  mounted.push({ root, container });
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)))}>
+          <RetainedDisclosureProvider>
+            {historyRows(segments).map((row) => (
+              <section key={rowKey(row)}>
+                <HistoryRowView threadId="test-thread" row={row} live={() => live} />
+              </section>
+            ))}
+          </RetainedDisclosureProvider>
+        </ThreadSyncContext.Provider>
+      </MantineProvider>
+    )
+  );
+  return [...container.querySelectorAll("section")];
+}
+
+function summaries(element: Element): (string | null)[] {
+  return [...element.querySelectorAll("summary")].map((summary) => summary.textContent);
+}
+
+async function toggle(summary: Element): Promise<void> {
+  const details = summary.parentElement as HTMLDetailsElement;
+  await act(async () => {
+    details.open = !details.open;
+    details.dispatchEvent(new Event("toggle"));
+  });
+}
+
+it("folds a run of tool calls and reasoning behind its summary until it is opened", async () => {
+  const [run] = await renderHistory(
+    [
+      testItem(1, ItemKind.TOOL_CALL, { tool_name: "test-read", completion: "tool", tool_succeeded: true }),
+      testItem(2, ItemKind.REASONING, {}, { textRef: reference("test-entity-2", "text") }),
+      testItem(3, ItemKind.TOOL_CALL, { tool_name: "test-shell", completion: "tool", tool_succeeded: false }),
+    ],
+    false
+  );
+  const summary = run.querySelector("summary")!;
+  expect(summary.textContent).toContain("2 tool calls, 1 reasoning step");
+  expect(summary.querySelector('[role="img"][aria-label="Failed"]')).not.toBeNull();
+  expect(run.textContent).not.toContain("test-read");
+
+  await toggle(summary);
+  expect(run.textContent).toContain("test-read");
+  expect(run.textContent).toContain("test-shell");
+  expect(summaries(run)).toContain("Reasoning");
+  // Each step keeps its own evidence; the run is not an entity and has none.
+  expect(run.querySelectorAll('button[aria-label="Evidence"]')).toHaveLength(3);
+});
+
+it("marks an unfinished run as streaming in the live turn, and as incomplete once that is over", async () => {
+  const segments = [testItem(1, ItemKind.REASONING, { completion: null }), testItem(2, ItemKind.TOOL_CALL)];
+  const [live] = await renderHistory(segments, true);
+  expect(live.querySelector('summary [role="img"]')?.getAttribute("aria-label")).toBe("Streaming");
+  const [retained] = await renderHistory(segments, false);
+  expect(retained.querySelector('summary [role="img"]')?.getAttribute("aria-label")).toBe("Incomplete");
+});
+
+it("shows a lone reasoning step as its own reasoning block, and assistant text without a role label", async () => {
+  const [reasoning, answer] = await renderHistory(
+    [
+      testItem(1, ItemKind.REASONING, {}, { textRef: reference("test-entity-1", "text") }),
+      testItem(2, ItemKind.ASSISTANT_TEXT, {}, { textRef: reference("test-entity-2", "text") }),
+    ],
+    false,
+    { "test-entity-2:text": "Test body of test-entity-2" }
+  );
+  expect(summaries(reasoning)).toEqual(["Reasoning"]);
+  expect(answer.textContent).toContain("Test body of test-entity-2");
+  for (const row of [reasoning, answer]) expect(row.textContent).not.toMatch(/assistant/i);
+});
 
 const PROSE = "Run **every** test\n- first";
 
@@ -491,7 +679,7 @@ describe("EntityCard", () => {
         case: "turnCompleted",
         value: { turnId: "test-failed-turn", status: TurnStatus.FAILED, error },
       });
-      const alert = container.querySelector('[role="alert"][data-thread-anchor="1"]')!;
+      const alert = container.querySelector('[data-thread-anchor="1"] [role="alert"]')!;
       expect(alert.textContent).toBe(`Turn failed${error || "The harness reported no error details."}`);
       expect(alert.querySelector("img")).toBeNull();
     }
@@ -525,6 +713,6 @@ describe("EntityCard", () => {
     ["Harness lost", "harness_lost", { case: "harnessLost", value: {} }],
   ])("keeps an abnormal ending prominent: %s", async (text, observation, event) => {
     const container = await renderLifecycle(observation, event);
-    expect(container.querySelector('[role="alert"][data-thread-anchor="1"]')?.textContent).toBe(text);
+    expect(container.querySelector('[data-thread-anchor="1"] [role="alert"]')?.textContent).toBe(text);
   });
 });

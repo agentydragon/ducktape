@@ -321,9 +321,8 @@ def _container() -> k8s.Container:
         name="iron-proxy",
         # Bootstrap on upstream 0.49.0. Once CI publishes the commit-pinned Forgejo image, Flux
         # replaces this reference through the image-pins policy.
-        # TODO(public-coder-agent): Return to the first official release containing
-        # https://github.com/ironsh/iron-proxy/commit/c90f4fe31607552ed05675fc7ad239d94b431af2
-        # and remove the temporary image build after verifying ALPN still negotiates h2.
+        # v0.50.0 is the first official release with HTTP/2 MITM; returning to the official
+        # image is the pinning decision in plans/personal_agents/TODO.md.
         image=_IMAGE,
         args=["-config", f"{_CONFIG_DIR}/{_CONFIG_FILE}"],
         env=[

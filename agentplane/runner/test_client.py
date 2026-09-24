@@ -1,7 +1,8 @@
-"""Attachment ownership: graceful scope exit and deliberately abrupt cancellation."""
+"""Attachment ownership: graceful scope exit, deliberately abrupt cancellation, and a bounded Open."""
 
 from __future__ import annotations
 
+import asyncio
 from typing import cast
 
 import grpc
@@ -10,7 +11,8 @@ import pytest_bazel
 
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import Attachment
+from agentplane.runner.client import Attachment, OpenTimeoutError, RunnerClient
+from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -93,6 +95,29 @@ async def test_cursor_is_independent_of_opt_in_history_capture() -> None:
         assert len(attached.seen) == (4 if capture else 0)
         attached.seen.clear()
         assert attached.cursor == 44
+
+
+@pytest.mark.parametrize(
+    ("spec", "bound"),
+    [(None, "OBSERVE_ANSWER_S"), (protocol_pb2.SessionSpec(model="test-model"), "LAUNCH_ANSWER_S")],
+    ids=["observe", "launch"],
+)
+async def test_an_unanswered_open_fails_on_its_bound_and_cancels_the_call(
+    monkeypatch: pytest.MonkeyPatch, spec: protocol_pb2.SessionSpec | None, bound: str
+) -> None:
+    # The other bound is past the outer deadline, so an Open that took it fails this test.
+    for name in ("OBSERVE_ANSWER_S", "LAUNCH_ANSWER_S"):
+        monkeypatch.setattr(f"agentplane.runner.client.{name}", 1 if name == bound else 3600)
+    wedged = UnansweringRunner()
+    async with wedged.serve() as port:
+        client = RunnerClient(f"127.0.0.1:{port}")
+        try:
+            async with asyncio.timeout(10):
+                with pytest.raises(OpenTimeoutError, match="'test-unanswered'"):
+                    await client.attach("test-unanswered", spec=spec)
+                assert await wedged.cancelled.get() == "test-unanswered"
+        finally:
+            await client.close()
 
 
 if __name__ == "__main__":
