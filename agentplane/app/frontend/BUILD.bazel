@@ -554,11 +554,22 @@ ts_library(
     ],
 )
 
+# markdown.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "markdown_css",
+    srcs = ["markdown.css"],
+)
+
 ts_library(
     name = "markdown",
-    srcs = ["markdown.tsx"],
+    srcs = [
+        "markdown.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
+        ":markdown_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/dompurify",
         "//:node_modules/@types/react",
@@ -575,8 +586,7 @@ js_library(
     srcs = ["json_view.css"],
 )
 
-# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site
-# (actions.tsx, actions_history.tsx, sandbox_page.tsx) and by frame.tsx's raw view.
+# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site.
 ts_library(
     name = "json_view",
     srcs = [
@@ -781,6 +791,7 @@ ts_library(
         ":chronological_debug",
         ":client",
         ":history_rows",
+        ":json_view",
         ":live",
         ":local_commands",
         ":markdown",
@@ -849,6 +860,7 @@ ts_library(
         ":retained_disclosures",
         ":thread_entity_fixture",
         ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",

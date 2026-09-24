@@ -41,6 +41,11 @@ MTU: 1420
 gatewayAPI:
   enabled: true
   enableAppProtocol: true
+  # Offer HTTP/2 to clients. Over HTTP/1.1 a browser holds at most six connections
+  # per host across all tabs, and agentplane's live streams alone can fill them,
+  # queueing ordinary requests behind long polls. Upstreams stay HTTP/1.1 unless a
+  # Service's appProtocol says otherwise.
+  enableAlpn: true
   hostNetwork:
     enabled: true
     nodes:

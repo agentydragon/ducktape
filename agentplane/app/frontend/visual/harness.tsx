@@ -1405,26 +1405,43 @@ if (scenario.openDebug) {
   openDebug.observe(document, { childList: true, subtree: true });
 }
 
+/** Opens the folded tool-call run, whose steps mount only once it is open. */
+function openRun(summaries: HTMLElement[]): void {
+  summaries
+    .find(
+      (candidate) =>
+        candidate.textContent?.includes("tool call") &&
+        candidate.parentElement instanceof HTMLDetailsElement &&
+        !candidate.parentElement.open
+    )
+    ?.click();
+}
+
 if (scenario.openReasoning) {
-  // The reasoning step is folded inside its run: open the run, then the step once it mounts.
   const openReasoning = new MutationObserver(() => {
     const summaries = [...document.querySelectorAll("summary")];
     const step = summaries.find((candidate) => candidate.textContent === "Reasoning");
-    if (step) {
-      openReasoning.disconnect();
-      step.click();
+    if (!step) {
+      openRun(summaries);
       return;
     }
-    summaries
-      .find(
-        (candidate) =>
-          candidate.textContent?.includes("reasoning step") &&
-          candidate.parentElement instanceof HTMLDetailsElement &&
-          !candidate.parentElement.open
-      )
-      ?.click();
+    openReasoning.disconnect();
+    step.click();
   });
   openReasoning.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openToolPayloads) {
+  const unopened = new Set(["Arguments", "Output"]);
+  const openToolPayloads = new MutationObserver(() => {
+    const summaries = [...document.querySelectorAll("summary")];
+    openRun(summaries);
+    for (const summary of summaries) {
+      if (unopened.delete(summary.textContent ?? "")) summary.click();
+    }
+    if (unopened.size === 0) openToolPayloads.disconnect();
+  });
+  openToolPayloads.observe(document, { childList: true, subtree: true });
 }
 
 if (scenario.openEvidence) {

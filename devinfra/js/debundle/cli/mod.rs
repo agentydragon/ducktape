@@ -1607,7 +1607,6 @@ mod tests {
         js_ast::with_swc_globals(|| {
             let args = parsed_run_args(&["debundle", "run", "--spec", "spec.yaml", "--fail-fast"]);
             assert!(args.fail_fast);
-            assert!(!args.keep_going);
         });
     }
 

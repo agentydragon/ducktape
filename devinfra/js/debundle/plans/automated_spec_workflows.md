@@ -193,7 +193,7 @@ orthogonal:
 - `debundle spec apply-plan --plan <plan.json> --modules ...`
   applies a reviewed plan, preserving comments/order where the edit type
   supports it and refusing stale plans whose inputs no longer match.
-- `debundle spec validate --keep-going --format json`
+- `debundle spec validate --format json`
   reports all selector/spec failures in one pass with enough source identity to
   feed `plan repair`.
 - Existing focused commands such as `selector-debt` and `selector-codemod` can
