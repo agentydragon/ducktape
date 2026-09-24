@@ -670,7 +670,8 @@ def generate_manifests(root: Path) -> None:
     proxmox_proxy.proxmox_proxy(flux_chart, proxmox_proxy_artifact, gateway_kustomization)
     kube_system_artifact = artifact("kube-system", kube_system.OUTPUT_DIR)
     kube_system.kube_system(flux_chart, kube_system_artifact, goldilocks_kustomization)
-    mitmproxy.agents_mitmproxy(flux_chart, root, cert_manager_trust_kustomization)
+    agents_mitmproxy_artifact = artifact("agents-mitmproxy", mitmproxy.OUTPUT_DIR)
+    mitmproxy.agents_mitmproxy(flux_chart, agents_mitmproxy_artifact, root, cert_manager_trust_kustomization)
     docker_ci_artifact = artifact("docker-ci", f"{HAND_WRITTEN_ROOT}/parked/docker-ci")
     parked_flux_kustomizations.docker_ci(
         flux_chart, docker_ci_artifact, cert_manager_environment_kustomization, claude_rbac_kustomization
@@ -1611,6 +1612,7 @@ def generate_manifests(root: Path) -> None:
             matrix_app_artifact,
             matrix_user_provisioner_artifact,
             metrics_server_artifact,
+            agents_mitmproxy_artifact,
             monitoring_alloy_artifact,
             monitoring_alloy_otlp_bearer_token_tf_artifact,
             monitoring_cilium_artifact,

@@ -1549,9 +1549,9 @@ spec:
   path: ./cluster/k8s/agents/mitmproxy
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
+    kind: ExternalArtifact
+    name: agents-mitmproxy
+    namespace: ducktape-flux
   timeout: 5m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
