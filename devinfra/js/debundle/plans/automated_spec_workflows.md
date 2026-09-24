@@ -244,8 +244,7 @@ For an ambiguous selector:
 3. If no stable differentiator exists, report that the selector must remain
    intentionally more specific or use a different ownership boundary.
 
-For duplicate claims (declaration detail: <../SELECTOR_BUGS.md>), identify
-whether the right rewrite is binding-group collapse, cross-module-group support,
+For duplicate claims, identify whether the right rewrite is binding-group collapse, cross-module-group support,
 or a real ownership conflict.
 
 ## Performance Plan
