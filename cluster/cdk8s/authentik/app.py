@@ -79,7 +79,7 @@ def _pod_env() -> dict[str, object]:
         "env": [
             {
                 "name": "AUTHENTIK_POSTGRESQL__PASSWORD",
-                "valueFrom": {"secretKeyRef": {"name": "authentik-db-app", "key": "password"}},
+                "valueFrom": {"secretKeyRef": {"name": db.CREDENTIALS_SECRET, "key": "password"}},
             }
         ],
     }
@@ -123,7 +123,7 @@ def _values() -> dict[str, object]:
     return {
         "global": {
             "deploymentAnnotations": {
-                "secret.reloader.stakater.com/reload": "authentik-db-app,authentik-user-password",
+                "secret.reloader.stakater.com/reload": f"{db.CREDENTIALS_SECRET},authentik-user-password",
                 "configmap.reloader.stakater.com/reload": _BLUEPRINTS_CONFIG_MAP,
             }
         },
@@ -133,7 +133,7 @@ def _values() -> dict[str, object]:
             # The empty secrets below arrive via envFrom (`_pod_env`) instead.
             "secret_key": "",
             "error_reporting": {"enabled": False},
-            "postgresql": {"host": f"{db.NAME}-rw", "name": "authentik", "user": "authentik", "password": ""},
+            "postgresql": {"host": f"{db.NAME}-rw", "name": db.DATABASE, "user": db.DATABASE, "password": ""},
             "redis": {"host": ""},
             "bootstrap": {"password": "", "token": ""},
         },

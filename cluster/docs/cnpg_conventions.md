@@ -71,6 +71,16 @@ An app using a CNPG cluster must have its pods pinned to the same region
 (`topology.kubernetes.io/region`) as the database. No floating apps with
 pinned DBs or vice versa. This prevents cross-site write latency.
 
+### R6: A cloned cluster still names its application database
+
+A Cluster created by `pg_basebackup` or `recovery` keeps declaring `bootstrap.initdb`
+with the cloned `database`, `owner` and credentials `secret` after promotion, as
+`cluster/cdk8s/forgejo/db.py` does. Without a `bootstrap`, CNPG defaults to `initdb`
+database and owner `app` and keeps using them after creation: the metrics exporter runs
+its default queries against that database, and the primary's instance reconcile sets that
+owner's password from the secret. When the role does not exist, that reconcile fails and
+skips every later step.
+
 ## Current Compliance
 
 No roster here — it drifts. The SSOT is the `Cluster` manifests themselves;

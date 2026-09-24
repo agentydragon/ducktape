@@ -208,6 +208,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/cnpg:cluster",
         "//cluster/cdk8s/crd_bindings/gateway_api:httproute",
         "//cluster/cdk8s/crd_bindings/grafana_operator:grafana",
         "//cluster/cdk8s/crd_bindings/grafana_operator:grafanadashboard",
