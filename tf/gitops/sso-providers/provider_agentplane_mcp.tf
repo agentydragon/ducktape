@@ -16,8 +16,9 @@ resource "authentik_provider_oauth2" "agentplane_mcp" {
     data.authentik_property_mapping_provider_scope.offline_access.id,
   ]
   allowed_redirect_uris = [{
-    matching_mode = "strict"
-    url           = "${local.agentplane_mcp_origin}/auth/callback"
+    matching_mode     = "strict"
+    url               = "${local.agentplane_mcp_origin}/auth/callback"
+    redirect_uri_type = "authorization"
   }]
 }
 

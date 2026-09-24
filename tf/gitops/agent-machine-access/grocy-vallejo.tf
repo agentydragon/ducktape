@@ -65,8 +65,9 @@ resource "authentik_provider_oauth2" "grocy_mcp_vallejo" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://grocy-mcp-vallejo.allegedly.works/auth/callback"
+      matching_mode     = "strict"
+      url               = "https://grocy-mcp-vallejo.allegedly.works/auth/callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }

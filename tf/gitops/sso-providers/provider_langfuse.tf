@@ -27,8 +27,9 @@ resource "authentik_provider_oauth2" "langfuse" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://langfuse.allegedly.works/api/auth/callback/custom"
+      matching_mode     = "strict"
+      url               = "https://langfuse.allegedly.works/api/auth/callback/custom"
+      redirect_uri_type = "authorization"
     },
   ]
 }

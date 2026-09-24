@@ -23,8 +23,9 @@ resource "authentik_provider_oauth2" "airlock" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://airlock.allegedly.works/auth/callback"
+      matching_mode     = "strict"
+      url               = "https://airlock.allegedly.works/auth/callback"
+      redirect_uri_type = "authorization"
     }
   ]
 }
