@@ -51,8 +51,8 @@ spec:
       name: cert-manager
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/cert-manager/environment/**"
-          to: "@artifact/cluster/k8s/cert-manager/environment/"
+        - from: "@repo/cluster/generated/cert-manager/environment/**"
+          to: "@artifact/cluster/generated/cert-manager/environment/"
       name: cert-manager-environment
       originRevision: "@repo"
     - copy:

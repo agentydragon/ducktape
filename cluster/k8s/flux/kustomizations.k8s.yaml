@@ -1383,7 +1383,7 @@ spec:
     - name: external-secrets-config
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/cert-manager/environment
+  path: ./cluster/generated/cert-manager/environment
   postBuild:
     substituteFrom:
       - kind: ConfigMap
