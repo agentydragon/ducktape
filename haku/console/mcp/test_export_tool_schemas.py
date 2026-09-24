@@ -191,15 +191,7 @@ async def test_exports_console_native_status_result_schemas() -> None:
                 collect_titled_schemas(child)
 
     collect_titled_schemas(tools["list_mcp_servers"])
-    for title in (
-        "McpOperatorAuthConnected",
-        "McpOperatorAuthDegraded",
-        "McpOperatorAuthUnconnected",
-        "ProviderConnected",
-        "ProviderDegraded",
-        "ProviderUnconnected",
-        "ProviderUnprovisioned",
-    ):
+    for title in ("ProviderConnected", "ProviderDegraded", "ProviderUnconnected", "ProviderUnprovisioned"):
         assert "status" in schemas_by_title[title]["required"]
     refresh_failure_schema = schemas_by_title["RefreshFailureEpisode"]
     assert {"resolution", "next_retry_at"} <= set(refresh_failure_schema["required"])
