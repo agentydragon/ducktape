@@ -140,6 +140,7 @@ py_test(
         "HOME",
         "KUBECONFIG",
         "OLLAMA_SMOKE_CASE",
+        "OLLAMA_SMOKE_HOLD_SECONDS",
     ],
     tags = [
         "manual",

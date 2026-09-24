@@ -93,6 +93,9 @@ async def test_ollama_tool_call(client: Client, sandbox: Sandboxes, harness: pro
         raise
     finally:
         (undeclared_outputs_dir() / f"ollama-smoke-{case_id}.json").write_text(json.dumps(evidence, indent=2))
+        hold_seconds = min(max(int(os.environ.get("OLLAMA_SMOKE_HOLD_SECONDS", "0")), 0), 30)
+        if hold_seconds:
+            await asyncio.sleep(hold_seconds)
 
 
 if __name__ == "__main__":

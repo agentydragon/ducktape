@@ -131,6 +131,9 @@ its pytest id, for example
 `harness_codex-ollama-oai-chat-gpt-oss-20b-128k`. Each cell writes a small JSON
 result under the target's `test.outputs/` directory. A Bazel rerun of this target
 replaces local test outputs, so save any evidence needed across runs first.
+For transient sidecar diagnosis, `--test_env=OLLAMA_SMOKE_HOLD_SECONDS=30` retains
+the isolated Sandbox for at most 30 seconds after the turn result is written, before
+normal fixture cleanup.
 
 By default it tests `https://agentplane-testing.allegedly.works` and mints its own bearer token with
 `kubectl -n agentplane-testing create token agentplane-agent --audience=agentplane`. That call needs
