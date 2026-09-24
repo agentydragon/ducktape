@@ -76,17 +76,15 @@ and relational selectors, then `source_matches[]` groups, then single
 `run` records outcomes in two passes over the chunks, each in chunk-id order:
 first the claims it makes itself (duplicate claims, in request order), then,
 once every chunk has resolved, each chunk's resolution outcomes followed by
-its elimination warnings. Under `--fail-fast` the first error in that order
-stops the run; in keep-going mode every chunk finishes and the first failing
-chunk in chunk-id order fails the run.
+its elimination warnings. That is the order `--fail-fast` stops in
+(<../SPEC.md> § Modes).
 
 ## Outcomes
 
-Each entity comes out `resolved` (by its own selector, or by elimination),
-`no_match`, `ambiguous` (at most `MAX_LISTED_CANDIDATES`, 5, candidates — the
-bound the solver enumerates to), `conflict`, `too_broad`, `invalid` or
-`undecided`; `run` adds `duplicate_claim` when it claims. Severity follows the
-kind: elimination is a `warning`, every non-resolved kind an `error`.
+The kinds and their severities are <../SPEC.md> § Outcomes; the record and
+its constants live in `selector_outcome.rs`. `MAX_LISTED_CANDIDATES` also bounds
+the solver's alternative search (`MAX_ALTERNATIVES_PER_VARIABLE`), so an
+`ambiguous` target lists what the solver found, not every place.
 
 `undecided` means the sidecar stopped (its
 `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS` limit, per request) before

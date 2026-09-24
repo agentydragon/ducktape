@@ -176,6 +176,12 @@ For broad old-spec conversion passes, use an automation-first loop:
 
    Module groups are computed after `--min-score` filtering and before
    `--limit`, so they are suitable for choosing high-yield, reviewable peels.
+   The report ranks name-only selectors by how minified the bound name looks,
+   groups `source_match` bodies copied verbatim across claims (the copies a
+   contextual selector should replace), and with
+   `--against <prior-spec-modules>` flags members whose readable `name:` held
+   while their `selector.binding.name` drifted between two spec versions. It reads only the
+   modules tree, so it is a cheap pre-pass.
 
 2. Pick a large but coherent bucket: usually one module, a module-prefix family,
    or an explicit item list produced from the debt JSON. Prefer hundreds of
