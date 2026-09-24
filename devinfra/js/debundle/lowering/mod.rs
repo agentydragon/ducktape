@@ -238,6 +238,8 @@ pub struct MaterializeLogicalModulesOptions {
     pub config: spec::MaterializeLogicalModulesConfig,
     pub chunk_ids: Vec<String>,
     pub keep_going: bool,
+    /// See `pipeline::TransformRunOptions::list_template_identifiers`.
+    pub list_template_identifiers: bool,
     pub report_emission: ReportEmission,
 }
 
@@ -339,6 +341,7 @@ pub fn materialize_logical_modules(
                                 file: options.config.file.as_deref(),
                                 target_dir: &target_dir,
                                 keep_going: options.keep_going,
+                                list_template_identifiers: options.list_template_identifiers,
                                 report_emission: &options.report_emission,
                                 cross_module_purities: &cross_module_purities,
                                 vendor_import_oracle: vendor_import_oracle.as_ref(),

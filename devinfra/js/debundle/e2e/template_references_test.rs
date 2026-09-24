@@ -7,8 +7,8 @@
 
 use debundle_e2e_support::{
     Fixture, FixtureOpts, Member, assert_module_source, find_outcome, logical_module,
-    read_selector_outcomes, run_dry_run_rejection_fixture, run_fixture, run_spec_validate,
-    write_validate_fixture_spec,
+    read_selector_outcomes, run_dry_run_rejection_fixture, run_fixture, run_source_only_validate,
+    run_spec_validate, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -298,6 +298,108 @@ fn assert_no_outcomes(fixture: &Fixture) {
         "{}",
         std::fs::read_to_string(&report).unwrap()
     );
+}
+
+const KINDS_CHUNK: &str = r#"class a {}
+const b = { x: 1 };
+const e = { y: 2 };
+const c = new a(Object.keys(b).length);
+const d = e;
+console.log(c, d);
+"#;
+
+const MADE: &str = "const made = new Widget(Object.keys(helper).length);";
+const ALIAS: &str = "const alias = Shared;";
+
+fn kinds_fixture() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        KINDS_CHUNK,
+        vec![
+            logical_module("kinds/widget", &[Member::renamed("Widget", "a")]),
+            logical_module("kinds/x", &[Member::renamed("Shared", "b")]),
+            logical_module("kinds/y", &[Member::renamed("Shared", "e")]),
+            logical_module("kinds/made", &[Member::source_alpha("made", MADE)]),
+            logical_module("kinds/alias", &[Member::source_alpha("alias", ALIAS)]),
+        ],
+    )
+}
+
+/// `validate` says what each free identifier of a matched template means: a
+/// reference with its entity, a global, an ambiguous name with its exporters,
+/// or a wildcard. Both modes agree; the text output counts them and lists
+/// references and ambiguous names.
+#[test]
+fn validate_lists_free_identifiers_by_kind() {
+    let expected = json!([
+        {
+            "logical_module": "kinds/alias",
+            "exports": ["alias"],
+            "identifiers": [{"name": "Shared", "kind": "ambiguous", "modules": ["kinds/x", "kinds/y"]}],
+        },
+        {
+            "logical_module": "kinds/made",
+            "exports": ["made"],
+            "identifiers": [
+                {"name": "Object", "kind": "global"},
+                {
+                    "name": "Widget",
+                    "kind": "reference",
+                    "entity": {"logical_module": "kinds/widget", "entity": {"export": "Widget"}},
+                },
+                {"name": "helper", "kind": "wildcard"},
+            ],
+        },
+    ]);
+    let without_chunk = |report: &Value| {
+        let mut templates = report["templates"].clone();
+        for template in templates.as_array_mut().unwrap() {
+            template.as_object_mut().unwrap().remove("chunk");
+        }
+        templates
+    };
+
+    let spec = validate_json(kinds_fixture());
+    assert_eq!(without_chunk(&spec), expected, "{spec:#}");
+    assert_eq!(spec["templates"][0]["chunk"], "static/app", "{spec:#}");
+
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("chunk.js");
+    std::fs::write(&source, KINDS_CHUNK).unwrap();
+    let modules = dir.path().join("modules");
+    let module = |path: &str, body: String| {
+        let file = modules.join(format!("{path}.yaml"));
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, body).unwrap();
+    };
+    let pin = |name: &str, binding: &str| {
+        format!("members:\n  - name: {name}\n    selector: {{ binding: {{ name: {binding} }} }}\n")
+    };
+    let claim = |template: &str, local: &str| {
+        format!("source_matches:\n  - match: '{template}'\n    bindings:\n      - {local}\n")
+    };
+    module("kinds/widget", pin("Widget", "a"));
+    module("kinds/x", pin("Shared", "b"));
+    module("kinds/y", pin("Shared", "e"));
+    module("kinds/made", claim(MADE, "made"));
+    module("kinds/alias", claim(ALIAS, "alias"));
+    let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
+    assert!(out.status.success(), "stderr={}", out.stderr);
+    let source_only: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(without_chunk(&source_only), expected, "{source_only:#}");
+
+    let fixture = write_validate_fixture_spec(kinds_fixture());
+    let text = run_spec_validate(&fixture.spec_path, &["--format", "text"]);
+    assert!(text.status.success(), "stderr={}", text.stderr);
+    for line in [
+        "  - static/app::kinds/alias `alias`: `Shared` is ambiguous: exported by kinds/x, kinds/y",
+        "2 matched template(s) with free identifiers: ambiguous=1, global=1, reference=1, \
+         wildcard=1",
+        "  - static/app::kinds/made `made`: `Widget` references `Widget` in kinds/widget",
+    ] {
+        assert!(text.stdout.contains(line), "{line}\n{}", text.stdout);
+    }
+    assert!(!text.stdout.contains("`helper`"), "{}", text.stdout);
+    assert!(!text.stdout.contains("`Object`"), "{}", text.stdout);
 }
 
 fn validate_json(opts: FixtureOpts<'_>) -> Value {

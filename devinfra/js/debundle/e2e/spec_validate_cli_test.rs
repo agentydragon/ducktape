@@ -258,22 +258,32 @@ fn validate_source_only_ndjson_is_one_line_per_queue_item_plus_summary() {
     );
     assert!(out.status.success(), "stderr={}", out.stderr);
 
-    let lines: Vec<&str> = out.stdout.trim_end().split('\n').collect();
-    assert_eq!(lines.len(), 3, "stdout:\n{}", out.stdout);
-    let parsed: Vec<Value> = lines
-        .iter()
+    let parsed: Vec<Value> = out
+        .stdout
+        .trim_end()
+        .split('\n')
         .map(|line| serde_json::from_str(line).expect("ndjson line is valid json"))
         .collect();
-    for line in &parsed[..2] {
-        assert_eq!(line["section"], "outcome");
+    let (summary, records) = parsed.split_last().expect("a summary line");
+    assert_eq!(summary["section"], "summary");
+    assert_eq!(summary["counts"], json!({"no_match": 1, "ambiguous": 1}));
+    // Outcomes first, then the matched templates' identifiers.
+    let outcomes = records
+        .iter()
+        .take_while(|line| line["section"] == "outcome")
+        .collect::<Vec<_>>();
+    assert_eq!(outcomes.len(), 2, "stdout:\n{}", out.stdout);
+    for line in outcomes {
         assert!(line["placement"]["logical_module"].is_string(), "{line:#}");
         assert!(
             line["placement"]["entity"]["export"].is_string(),
             "{line:#}"
         );
     }
-    assert_eq!(parsed[2]["section"], "summary");
-    assert_eq!(parsed[2]["counts"], json!({"no_match": 1, "ambiguous": 1}));
+    for line in &records[2..] {
+        assert_eq!(line["section"], "template", "{line:#}");
+        assert!(line["identifiers"].is_array(), "{line:#}");
+    }
 }
 
 #[test]

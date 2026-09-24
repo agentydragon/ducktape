@@ -1,5 +1,6 @@
 //! `debundle spec validate` — keep-going selector validation that reports every
-//! selector that did not resolve, as a [`SelectorOutcomeReport`].
+//! selector that did not resolve, and what each matched template's free
+//! identifiers mean, as a [`SelectorOutcomeReport`].
 //!
 //! The spec mode is a thin frontend over the materialize pass: it runs the
 //! dry-run keep-going pipeline with reports forced into a capture directory,
@@ -24,6 +25,7 @@ use peel::{OutputFormat, print_report};
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli_with_options};
 use selector_outcome::{
     Entity, Outcome, Placement, SelectorKind, SelectorOutcome, SelectorOutcomeReport, Severity,
+    TemplateIdentifiers,
 };
 use selector_resolve::{AnonymousStatement, Member, MemberSelector, SpecModule};
 use serde::Serialize;
@@ -97,6 +99,7 @@ fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
             dry_run: true,
             keep_going,
             report_dir_override: Some(capture.path().to_path_buf()),
+            list_template_identifiers: true,
         },
     );
 
@@ -107,12 +110,14 @@ fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
     {
         return Err(error).context("running keep-going validation pass");
     }
-    let mut outcomes = chunks
-        .into_iter()
-        .flat_map(|chunk| chunk.outcomes)
-        .collect::<Vec<_>>();
-    outcomes.sort();
-    Ok(SelectorOutcomeReport { outcomes })
+    let mut report = SelectorOutcomeReport::default();
+    for chunk in chunks {
+        report.outcomes.extend(chunk.outcomes);
+        report.templates.extend(chunk.templates);
+    }
+    report.outcomes.sort();
+    report.templates.sort();
+    Ok(report)
 }
 
 impl ValidateArgs {
@@ -317,16 +322,21 @@ fn validate_modules_against_source(
             anonymous_statements,
         });
     }
+    let resolution = selector_resolve::Chunk::analyze(chunk, &parsed.module).resolve(&modules)?;
     outcomes.extend(
-        selector_resolve::Chunk::analyze(chunk, &parsed.module)
-            .resolve(&modules)?
+        resolution
             .outcomes
             .into_iter()
             .map(|resolved| resolved.outcome)
             .filter(|outcome| outcome.severity() != Severity::Ok),
     );
     outcomes.sort();
-    Ok(SelectorOutcomeReport { outcomes })
+    let mut templates = resolution.templates;
+    templates.sort();
+    Ok(SelectorOutcomeReport {
+        outcomes,
+        templates,
+    })
 }
 
 /// Recursively gather every `selector_diagnostics.json` under the capture
@@ -359,14 +369,21 @@ fn collect_chunk_reports(dir: &Path, reports: &mut Vec<SelectorOutcomeReport>) -
     Ok(())
 }
 
-/// One JSON object per outcome, then a final `summary` line with the counts —
-/// the streaming shape `jq -c` consumers dispatch on.
+/// One JSON object per outcome, one per listed template, then a final
+/// `summary` line with the counts — the streaming shape `jq -c` consumers
+/// dispatch on.
 fn emit_validate_ndjson(report: &SelectorOutcomeReport) -> Result<()> {
     #[derive(Serialize)]
     struct OutcomeLine<'a> {
         section: &'static str,
         #[serde(flatten)]
         outcome: &'a SelectorOutcome,
+    }
+    #[derive(Serialize)]
+    struct TemplateLine<'a> {
+        section: &'static str,
+        #[serde(flatten)]
+        template: &'a TemplateIdentifiers,
     }
     #[derive(Serialize)]
     struct SummaryLine<T: Serialize> {
@@ -379,6 +396,15 @@ fn emit_validate_ndjson(report: &SelectorOutcomeReport) -> Result<()> {
             serde_json::to_string(&OutcomeLine {
                 section: "outcome",
                 outcome,
+            })?
+        );
+    }
+    for template in &report.templates {
+        println!(
+            "{}",
+            serde_json::to_string(&TemplateLine {
+                section: "template",
+                template,
             })?
         );
     }
