@@ -94,9 +94,9 @@ conflict set found before the stop still stands.
 
 ## Template references
 
-Every `source_match` row carries `free_bindings`: the chunk identifier each free
-template name bound throughout that match (a name that bound two identifiers is
-absent). Before the solve, the resolve classifies each free name
+Every template row, member or anonymous statement, carries `free_bindings`: the
+chunk identifier each free template name bound throughout that match (a name
+that bound two identifiers is absent). Before the solve, the resolve classifies each free name
 (<../SPEC.md> § Matching) and narrows the entity's rows: a global must have
 bound itself, a name-pin reference the pinned name, and a reference to a
 projected `source_match` entity must be present at all.

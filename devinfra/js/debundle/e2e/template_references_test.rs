@@ -1,14 +1,14 @@
-//! A free identifier in a `source_match` template that names a spec entity is
-//! a reference: the template matches only where that identifier is the
-//! entity's own binding. A name exported by the template's own module wins,
-//! one exported by several other modules is `invalid`, and an unshadowed
-//! runtime global must keep its spelling. Any other free name stays a
-//! wildcard.
+//! A free identifier in a `source_match` or anonymous-statement template that
+//! names a spec entity is a reference: the template matches only where that
+//! identifier is the entity's own binding. A name exported by the template's
+//! own module wins, one exported by several other modules is `invalid`, and an
+//! unshadowed runtime global must keep its spelling. Any other free name stays
+//! a wildcard.
 
 use debundle_e2e_support::{
     Fixture, FixtureOpts, Member, assert_module_source, find_outcome, logical_module,
-    read_selector_outcomes, run_dry_run_rejection_fixture, run_fixture, run_source_only_validate,
-    run_spec_validate, write_validate_fixture_spec,
+    logical_module_with_anon_alpha, read_selector_outcomes, run_dry_run_rejection_fixture,
+    run_fixture, run_source_only_validate, run_spec_validate, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -130,6 +130,52 @@ g();
         "static/app/modules/logging/use.js",
         &["logger.log(\"x\")"],
         &[],
+    );
+}
+
+const TWO_LOGGERS: &str = r#"const L = { log(m) { console.log("L" + m); } };
+const M = { log(m) { console.log("M" + m); } };
+L.log("x");
+M.log("x");
+"#;
+
+fn logger_boot_fixture() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        TWO_LOGGERS,
+        vec![
+            logical_module("logging/logger", &[Member::renamed("logger", "L")]),
+            logical_module_with_anon_alpha("logging/boot", &[], "logger.log(\"x\");"),
+        ],
+    )
+}
+
+/// Anonymous statements take references like members: of the two
+/// `<object>.log("x");` statements, only `L`'s is the pinned `logger`'s.
+#[test]
+fn anonymous_statement_reference_picks_the_agreeing_statement() {
+    let fixture = run_fixture(logger_boot_fixture());
+    assert_no_outcomes(&fixture);
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/logging/boot.js",
+        &["logger.log(\"x\")"],
+        &["M.log"],
+    );
+
+    let validate = validate_json(logger_boot_fixture());
+    assert_eq!(
+        validate["templates"],
+        json!([{
+            "chunk": "static/app",
+            "logical_module": "logging/boot",
+            "entities": [{"anonymous_statement": 0}],
+            "identifiers": [{
+                "name": "logger",
+                "kind": "reference",
+                "entity": {"logical_module": "logging/logger", "entity": {"export": "logger"}},
+            }],
+        }]),
+        "{validate:#}"
     );
 }
 
@@ -333,12 +379,12 @@ fn validate_lists_free_identifiers_by_kind() {
     let expected = json!([
         {
             "logical_module": "kinds/alias",
-            "exports": ["alias"],
+            "entities": [{"export": "alias"}],
             "identifiers": [{"name": "Shared", "kind": "ambiguous", "modules": ["kinds/x", "kinds/y"]}],
         },
         {
             "logical_module": "kinds/made",
-            "exports": ["made"],
+            "entities": [{"export": "made"}],
             "identifiers": [
                 {"name": "Object", "kind": "global"},
                 {

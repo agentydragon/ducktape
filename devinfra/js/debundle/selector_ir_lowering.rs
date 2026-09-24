@@ -65,6 +65,9 @@ pub struct MemberSelectorProgramBuilder {
     /// The binding each projected `source_match` export declares, by
     /// (logical module, export name).
     projected_bindings: BTreeMap<(String, String), SelectorVariableId>,
+    /// Each projected anonymous statement's owner variable, by logical module
+    /// and statement index.
+    projected_anonymous_owners: BTreeMap<(String, usize), SelectorVariableId>,
     global_owner_by_export: BTreeMap<String, Option<SelectorVariableId>>,
     targeted_owners: BTreeMap<SelectorVariableId, String>,
     injective_targeted_owners: BTreeSet<SelectorVariableId>,
@@ -111,6 +114,7 @@ impl MemberSelectorProgramBuilder {
             program: SelectorProgram::default(),
             owners_by_export: BTreeMap::new(),
             projected_bindings: BTreeMap::new(),
+            projected_anonymous_owners: BTreeMap::new(),
             global_owner_by_export: BTreeMap::new(),
             targeted_owners: BTreeMap::new(),
             injective_targeted_owners: BTreeSet::new(),
@@ -226,7 +230,6 @@ impl MemberSelectorProgramBuilder {
         &mut self,
         logical_module: impl Into<String>,
         statement_index: usize,
-        candidate_owners: Vec<analysis::OwnerId>,
     ) -> SelectorTargetId {
         let logical_module = logical_module.into();
         let owner = self.program.add_variable(
@@ -235,16 +238,8 @@ impl MemberSelectorProgramBuilder {
                 "{logical_module}::anonymous_statement.projected.{statement_index}"
             )),
         );
-        self.program.add_atom(SelectorAtom::ProjectedAllowedTuples {
-            variables: vec![owner],
-            rows: candidate_owners
-                .into_iter()
-                .map(|owner| vec![SelectorProjectedValue::Owner(owner)])
-                .collect(),
-            reason: format!(
-                "{logical_module}::anonymous_statement.source_match.projected.{statement_index}"
-            ),
-        });
+        self.projected_anonymous_owners
+            .insert((logical_module.clone(), statement_index), owner);
         self.injective_targeted_owners.insert(owner);
         self.program.add_target(
             self.context.chunk_id,
@@ -255,6 +250,37 @@ impl MemberSelectorProgramBuilder {
                 index: statement_index,
             },
         )
+    }
+
+    /// The candidate owners of an anonymous statement declared with
+    /// [`Self::declare_projected_anonymous_statement_target_in_module`], each
+    /// with the value of every `references` variable in that row.
+    pub fn lower_projected_anonymous_statement_candidates(
+        &mut self,
+        logical_module: &str,
+        statement_index: usize,
+        references: &[SelectorVariableId],
+        candidate_rows: Vec<(analysis::OwnerId, Vec<String>)>,
+    ) {
+        let owner = self.projected_anonymous_owners[&(logical_module.to_string(), statement_index)];
+        self.program.add_atom(SelectorAtom::ProjectedAllowedTuples {
+            variables: [owner]
+                .into_iter()
+                .chain(references.iter().copied())
+                .collect(),
+            rows: candidate_rows
+                .into_iter()
+                .map(|(owner, referenced)| {
+                    [SelectorProjectedValue::Owner(owner)]
+                        .into_iter()
+                        .chain(referenced.into_iter().map(SelectorProjectedValue::String))
+                        .collect()
+                })
+                .collect(),
+            reason: format!(
+                "{logical_module}::anonymous_statement.source_match.projected.{statement_index}"
+            ),
+        });
     }
 
     pub fn lower_member_constraints_in_module(

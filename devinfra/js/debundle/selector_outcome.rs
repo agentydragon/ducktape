@@ -502,19 +502,22 @@ pub struct FreeIdentifier {
 pub struct TemplateIdentifiers {
     pub chunk: String,
     pub logical_module: String,
-    /// The entities the template places: its member, or every binding of its
-    /// `source_matches[]` entry.
-    pub exports: Vec<String>,
+    /// The entities the template places: its member or anonymous statement,
+    /// or every binding of its `source_matches[]` entry.
+    pub entities: Vec<Entity>,
     pub identifiers: Vec<FreeIdentifier>,
 }
 
 impl TemplateIdentifiers {
     /// One line per reference and ambiguous name.
     fn render_lines(&self, out: &mut String) {
-        let exports = self
-            .exports
+        let entities = self
+            .entities
             .iter()
-            .map(|export| format!("`{export}`"))
+            .map(|entity| match entity {
+                Entity::Export(name) => format!("`{name}`"),
+                Entity::AnonymousStatement(index) => format!("anonymous_statements[{index}]"),
+            })
             .collect::<Vec<_>>()
             .join(", ");
         for identifier in &self.identifiers {
@@ -529,7 +532,7 @@ impl TemplateIdentifiers {
             };
             let _ = writeln!(
                 out,
-                "  - {}::{} {exports}: `{}` {meaning}",
+                "  - {}::{} {entities}: `{}` {meaning}",
                 self.chunk, self.logical_module, identifier.name
             );
         }
