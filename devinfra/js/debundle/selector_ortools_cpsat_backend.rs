@@ -1171,7 +1171,6 @@ mod tests {
             chunk_id: ChunkId(0),
             owner: OwnerId(owner),
             binding: binding.to_string(),
-            export_name: None,
         }
     }
 

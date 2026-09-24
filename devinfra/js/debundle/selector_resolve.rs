@@ -1406,7 +1406,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
                 chunk_id,
                 owner,
                 binding: binding.0.as_str().to_string(),
-                export_name: None,
             });
         }
     }
@@ -1515,12 +1514,11 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
             });
         }
     }
-    if program.atoms.iter().any(|atom| {
-        matches!(
-            atom,
-            SelectorAtom::MakesDecorateCall { .. } | SelectorAtom::MakesDecorateCallForOwner { .. }
-        )
-    }) {
+    if program
+        .atoms
+        .iter()
+        .any(|atom| matches!(atom, SelectorAtom::MakesDecorateCallForOwner { .. }))
+    {
         for call in chunk_facts::decorate_call_uses(module) {
             store.push(SelectorFact::DecorateCallUse {
                 chunk_id,

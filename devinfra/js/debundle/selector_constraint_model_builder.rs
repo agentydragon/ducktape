@@ -12,7 +12,7 @@ use selector_constraint_backend::{
     ConstraintVariableId, PresolveScope, SharedVariableDomainId, TargetBindingProjection,
 };
 use selector_ir::{
-    ClaimKind, OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
+    OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
     SelectorProgramError, SelectorProjectedValue, SelectorVariableId, StringTerm, VariableDomain,
 };
 
@@ -267,36 +267,6 @@ fn lower_atom_constraint(
             rows,
             reason: _,
         } => add_projected_allowed_tuples(model, variables, projected_variables, rows),
-        SelectorAtom::OwnerExportName { owner, export_name } => {
-            add_cached_owner_string_indexed_allowed_tuples(
-                model,
-                variables,
-                owner,
-                export_name,
-                &domains.export_names_index,
-                "export_name",
-                support_cache,
-            )
-        }
-        SelectorAtom::OwnerReferencesBinding {
-            owner,
-            binding,
-            edge_kind,
-        } => {
-            let edge_kind = optional_string_term_const(edge_kind)?;
-            let facts = domains
-                .relation_supports
-                .owner_references_binding(edge_kind.as_deref());
-            add_cached_owner_string_allowed_tuples(
-                model,
-                variables,
-                owner,
-                binding,
-                facts,
-                format!("owner_references_binding:{edge_kind:?}"),
-                support_cache,
-            )
-        }
         SelectorAtom::OwnerReferencesOwner { owner, referenced } => {
             add_cached_owner_owner_allowed_tuples(
                 model,
@@ -319,11 +289,7 @@ fn lower_atom_constraint(
                 support_cache,
             )
         }
-        SelectorAtom::ReadsMember {
-            owner,
-            object: None,
-            member,
-        } => add_cached_owner_string_allowed_tuples(
+        SelectorAtom::ReadsMember { owner, member } => add_cached_owner_string_allowed_tuples(
             model,
             variables,
             owner,
@@ -332,23 +298,6 @@ fn lower_atom_constraint(
             "member_reads".to_string(),
             support_cache,
         ),
-        SelectorAtom::ReadsMember {
-            owner,
-            object: Some(object),
-            member,
-        } => {
-            let object = required_string_term_const(object, "reads_member.object")?;
-            let facts = domains.relation_supports.member_reads_from_binding(&object);
-            add_cached_owner_string_allowed_tuples(
-                model,
-                variables,
-                owner,
-                member,
-                facts,
-                format!("member_reads_from_binding:{object}"),
-                support_cache,
-            )
-        }
         SelectorAtom::ReadsMemberOfOwner {
             owner,
             object,
@@ -387,7 +336,6 @@ fn lower_atom_constraint(
         }
         SelectorAtom::PassedToCall {
             owner,
-            callee_object: None,
             callee_member,
             arg_index,
         } => {
@@ -402,32 +350,6 @@ fn lower_atom_constraint(
                 owner,
                 facts,
                 format!("call_arguments:{callee_member}:{arg_index:?}"),
-                support_cache,
-            )
-        }
-        SelectorAtom::PassedToCall {
-            owner,
-            callee_object: Some(callee_object),
-            callee_member,
-            arg_index,
-        } => {
-            let callee_object =
-                required_string_term_const(callee_object, "passed_to_call.callee_object")?;
-            let callee_member =
-                required_string_term_const(callee_member, "passed_to_call.callee_member")?;
-            let facts = domains.relation_supports.call_arguments_from_binding(
-                &callee_object,
-                &callee_member,
-                *arg_index,
-            );
-            add_cached_owner_allowed_tuples(
-                model,
-                variables,
-                owner,
-                facts,
-                format!(
-                    "call_arguments_from_binding:{callee_object}:{callee_member}:{arg_index:?}"
-                ),
                 support_cache,
             )
         }
@@ -449,26 +371,6 @@ fn lower_atom_constraint(
                 callee_object,
                 facts,
                 format!("call_arguments_from_owner:{callee_member}:{arg_index:?}"),
-                support_cache,
-            )
-        }
-        SelectorAtom::MakesDecorateCall {
-            owner,
-            class_anchor,
-            member,
-        } => {
-            let class_anchor =
-                required_string_term_const(class_anchor, "makes_decorate_call.class_anchor")?;
-            let member = optional_string_term_const(member)?;
-            let facts = domains
-                .relation_supports
-                .makes_decorate_call_for_binding(&class_anchor, member.as_deref());
-            add_cached_owner_allowed_tuples(
-                model,
-                variables,
-                owner,
-                facts,
-                format!("makes_decorate_call_for_binding:{class_anchor}:{member:?}"),
                 support_cache,
             )
         }
@@ -1136,25 +1038,14 @@ impl OwnerStringIndex {
 #[derive(Debug, Default)]
 struct RelationSupportCache {
     empty_owner_support: BTreeSet<OwnerId>,
-    empty_owner_string_support: BTreeSet<(OwnerId, String)>,
     empty_owner_owner_support: BTreeSet<(OwnerId, OwnerId)>,
-    owner_references_binding_all: BTreeSet<(OwnerId, String)>,
-    owner_references_binding_by_edge_kind: BTreeMap<String, BTreeSet<(OwnerId, String)>>,
     module_member_uses_by_module_member: BTreeMap<(String, String), BTreeSet<OwnerId>>,
-    member_reads_from_binding_by_object: BTreeMap<String, BTreeSet<(OwnerId, String)>>,
     reads_member_of_owner_by_member: BTreeMap<String, BTreeSet<(OwnerId, OwnerId)>>,
     call_arguments_by_member: BTreeMap<String, BTreeSet<OwnerId>>,
     call_arguments_by_member_arg_index: BTreeMap<String, BTreeMap<usize, BTreeSet<OwnerId>>>,
-    call_arguments_from_binding_by_object_member:
-        BTreeMap<String, BTreeMap<String, BTreeSet<OwnerId>>>,
-    call_arguments_from_binding_by_object_member_arg_index:
-        BTreeMap<String, BTreeMap<String, BTreeMap<usize, BTreeSet<OwnerId>>>>,
     call_arguments_from_owner_by_member: BTreeMap<String, BTreeSet<(OwnerId, OwnerId)>>,
     call_arguments_from_owner_by_member_arg_index:
         BTreeMap<String, BTreeMap<usize, BTreeSet<(OwnerId, OwnerId)>>>,
-    makes_decorate_call_for_binding_by_class_anchor: BTreeMap<String, BTreeSet<OwnerId>>,
-    makes_decorate_call_for_binding_by_class_anchor_member:
-        BTreeMap<String, BTreeMap<String, BTreeSet<OwnerId>>>,
     makes_decorate_call_for_owner_all: BTreeSet<(OwnerId, OwnerId)>,
     makes_decorate_call_for_owner_by_member: BTreeMap<String, BTreeSet<(OwnerId, OwnerId)>>,
     intrinsic_alias_referenced_by_property: BTreeMap<String, BTreeSet<(OwnerId, OwnerId)>>,
@@ -1163,24 +1054,6 @@ struct RelationSupportCache {
 impl RelationSupportCache {
     fn from_domains(domains: &FactDomains) -> Self {
         let mut cache = Self::default();
-
-        for (owner, binding, edge_kind) in &domains.owner_references_binding {
-            let support = (*owner, binding.clone());
-            cache.owner_references_binding_all.insert(support.clone());
-            cache
-                .owner_references_binding_by_edge_kind
-                .entry(edge_kind.clone())
-                .or_default()
-                .insert(support);
-        }
-
-        for (owner, object, member) in &domains.member_reads_from_binding {
-            cache
-                .member_reads_from_binding_by_object
-                .entry(object.clone())
-                .or_default()
-                .insert((*owner, member.clone()));
-        }
 
         for (owner, module, member) in &domains.module_member_uses {
             cache
@@ -1213,26 +1086,6 @@ impl RelationSupportCache {
                 .insert(*owner);
         }
 
-        for (owner, callee_object, callee_member, arg_index) in &domains.call_arguments_from_binding
-        {
-            cache
-                .call_arguments_from_binding_by_object_member
-                .entry(callee_object.clone())
-                .or_default()
-                .entry(callee_member.clone())
-                .or_default()
-                .insert(*owner);
-            cache
-                .call_arguments_from_binding_by_object_member_arg_index
-                .entry(callee_object.clone())
-                .or_default()
-                .entry(callee_member.clone())
-                .or_default()
-                .entry(*arg_index)
-                .or_default()
-                .insert(*owner);
-        }
-
         for (owner, callee_object, callee_member, arg_index) in &domains.call_arguments_from_owner {
             let support = (*owner, *callee_object);
             cache
@@ -1247,23 +1100,6 @@ impl RelationSupportCache {
                 .entry(*arg_index)
                 .or_default()
                 .insert(support);
-        }
-
-        for (owner, class_anchor, member) in &domains.makes_decorate_call_for_binding {
-            cache
-                .makes_decorate_call_for_binding_by_class_anchor
-                .entry(class_anchor.clone())
-                .or_default()
-                .insert(*owner);
-            if let Some(member) = member {
-                cache
-                    .makes_decorate_call_for_binding_by_class_anchor_member
-                    .entry(class_anchor.clone())
-                    .or_default()
-                    .entry(member.clone())
-                    .or_default()
-                    .insert(*owner);
-            }
         }
 
         for (owner, class_anchor, member) in &domains.makes_decorate_call_for_owner {
@@ -1287,22 +1123,6 @@ impl RelationSupportCache {
         }
 
         cache
-    }
-
-    fn owner_references_binding(&self, edge_kind: Option<&str>) -> &BTreeSet<(OwnerId, String)> {
-        match edge_kind {
-            Some(edge_kind) => self
-                .owner_references_binding_by_edge_kind
-                .get(edge_kind)
-                .unwrap_or(&self.empty_owner_string_support),
-            None => &self.owner_references_binding_all,
-        }
-    }
-
-    fn member_reads_from_binding(&self, object: &str) -> &BTreeSet<(OwnerId, String)> {
-        self.member_reads_from_binding_by_object
-            .get(object)
-            .unwrap_or(&self.empty_owner_string_support)
     }
 
     fn module_member_uses(&self, module: &str, member: &str) -> &BTreeSet<OwnerId> {
@@ -1335,31 +1155,6 @@ impl RelationSupportCache {
         }
     }
 
-    fn call_arguments_from_binding(
-        &self,
-        callee_object: &str,
-        callee_member: &str,
-        arg_index: Option<u32>,
-    ) -> &BTreeSet<OwnerId> {
-        match arg_index {
-            Some(arg_index) => self
-                .call_arguments_from_binding_by_object_member_arg_index
-                .get(callee_object)
-                .and_then(|by_member| by_member.get(callee_member))
-                .and_then(|by_arg_index| {
-                    usize::try_from(arg_index)
-                        .ok()
-                        .and_then(|arg_index| by_arg_index.get(&arg_index))
-                })
-                .unwrap_or(&self.empty_owner_support),
-            None => self
-                .call_arguments_from_binding_by_object_member
-                .get(callee_object)
-                .and_then(|by_member| by_member.get(callee_member))
-                .unwrap_or(&self.empty_owner_support),
-        }
-    }
-
     fn call_arguments_from_owner(
         &self,
         callee_member: &str,
@@ -1382,24 +1177,6 @@ impl RelationSupportCache {
         }
     }
 
-    fn makes_decorate_call_for_binding(
-        &self,
-        class_anchor: &str,
-        member: Option<&str>,
-    ) -> &BTreeSet<OwnerId> {
-        match member {
-            Some(member) => self
-                .makes_decorate_call_for_binding_by_class_anchor_member
-                .get(class_anchor)
-                .and_then(|by_member| by_member.get(member))
-                .unwrap_or(&self.empty_owner_support),
-            None => self
-                .makes_decorate_call_for_binding_by_class_anchor
-                .get(class_anchor)
-                .unwrap_or(&self.empty_owner_support),
-        }
-    }
-
     fn makes_decorate_call_for_owner(&self, member: Option<&str>) -> &BTreeSet<(OwnerId, OwnerId)> {
         match member {
             Some(member) => self
@@ -1419,17 +1196,13 @@ impl RelationSupportCache {
 
 #[derive(Debug, Default)]
 struct DerivedFactRequirements {
-    owner_references_binding: bool,
     references_owner: bool,
     aliases_owner: bool,
     member_reads: bool,
-    member_reads_from_binding: bool,
     reads_member_of_owner: bool,
     module_member_uses: bool,
     call_arguments: bool,
-    call_arguments_from_binding: bool,
     call_arguments_from_owner: bool,
-    makes_decorate_call_for_binding: bool,
     makes_decorate_call_for_owner: bool,
     intrinsic_alias_referenced_by: bool,
 }
@@ -1439,47 +1212,26 @@ impl DerivedFactRequirements {
         let mut requirements = Self::default();
         for atom in &program.atoms {
             match atom {
-                SelectorAtom::OwnerReferencesBinding { .. } => {
-                    requirements.owner_references_binding = true;
-                }
                 SelectorAtom::OwnerReferencesOwner { .. } => {
                     requirements.references_owner = true;
                 }
                 SelectorAtom::OwnerAliasesOwner { .. } => {
                     requirements.aliases_owner = true;
                 }
-                SelectorAtom::ReadsMember { object: None, .. } => {
+                SelectorAtom::ReadsMember { .. } => {
                     requirements.member_reads = true;
                 }
-                SelectorAtom::ReadsMember {
-                    object: Some(_), ..
-                } => {
-                    requirements.member_reads_from_binding = true;
-                }
                 SelectorAtom::ReadsMemberOfOwner { .. } => {
-                    requirements.member_reads_from_binding = true;
                     requirements.reads_member_of_owner = true;
                 }
                 SelectorAtom::ConsumesModuleMember { .. } => {
                     requirements.module_member_uses = true;
                 }
-                SelectorAtom::PassedToCall {
-                    callee_object: None,
-                    ..
-                } => {
+                SelectorAtom::PassedToCall { .. } => {
                     requirements.call_arguments = true;
-                }
-                SelectorAtom::PassedToCall {
-                    callee_object: Some(_),
-                    ..
-                } => {
-                    requirements.call_arguments_from_binding = true;
                 }
                 SelectorAtom::PassedToCallOfOwner { .. } => {
                     requirements.call_arguments_from_owner = true;
-                }
-                SelectorAtom::MakesDecorateCall { .. } => {
-                    requirements.makes_decorate_call_for_binding = true;
                 }
                 SelectorAtom::MakesDecorateCallForOwner { .. } => {
                     requirements.makes_decorate_call_for_owner = true;
@@ -1489,8 +1241,7 @@ impl DerivedFactRequirements {
                 }
                 SelectorAtom::OwnerKind { .. }
                 | SelectorAtom::OwnerDeclaresBinding { .. }
-                | SelectorAtom::ProjectedAllowedTuples { .. }
-                | SelectorAtom::OwnerExportName { .. } => {}
+                | SelectorAtom::ProjectedAllowedTuples { .. } => {}
             }
         }
         requirements
@@ -1504,29 +1255,23 @@ struct FactDomains {
     owner_kinds: BTreeSet<(OwnerId, String)>,
     owner_statement_ordinals: BTreeSet<(OwnerId, StatementOrdinal)>,
     declared_bindings: BTreeSet<(OwnerId, String)>,
-    export_names: BTreeSet<(OwnerId, String)>,
     raw_owner_references_binding: BTreeSet<(OwnerId, String, String)>,
-    owner_references_binding: BTreeSet<(OwnerId, String, String)>,
     references_owner: BTreeSet<(OwnerId, OwnerId)>,
     aliases_owner: BTreeSet<(OwnerId, OwnerId)>,
     raw_member_reads: BTreeSet<(StatementOrdinal, Option<String>, String)>,
     member_reads: BTreeSet<(OwnerId, String)>,
-    member_reads_from_binding: BTreeSet<(OwnerId, String, String)>,
     reads_member_of_owner: BTreeSet<(OwnerId, OwnerId, String)>,
     raw_module_member_uses: BTreeSet<(StatementOrdinal, String, String)>,
     module_member_uses: BTreeSet<(OwnerId, String, String)>,
     raw_call_arguments: BTreeSet<(String, Option<String>, String, usize)>,
     call_arguments: BTreeSet<(OwnerId, String, usize)>,
-    call_arguments_from_binding: BTreeSet<(OwnerId, String, String, usize)>,
     call_arguments_from_owner: BTreeSet<(OwnerId, OwnerId, String, usize)>,
     decorate_calls: BTreeSet<(String, String, Option<String>)>,
-    makes_decorate_call_for_binding: BTreeSet<(OwnerId, String, Option<String>)>,
     makes_decorate_call_for_owner: BTreeSet<(OwnerId, OwnerId, Option<String>)>,
     intrinsic_aliases: BTreeSet<(String, String)>,
     intrinsic_alias_referenced_by: BTreeSet<(OwnerId, String, OwnerId)>,
     owner_kinds_index: OwnerStringIndex,
     declared_bindings_index: OwnerStringIndex,
-    export_names_index: OwnerStringIndex,
     relation_supports: RelationSupportCache,
 }
 
@@ -1554,41 +1299,24 @@ impl FactDomains {
                     self.owner_statement_ordinals.len(),
                 ),
                 ("declared_binding", self.declared_bindings.len()),
-                ("export_name", self.export_names.len()),
                 (
                     "raw_owner_references_binding",
                     self.raw_owner_references_binding.len(),
-                ),
-                (
-                    "owner_references_binding",
-                    self.owner_references_binding.len(),
                 ),
                 ("references_owner", self.references_owner.len()),
                 ("aliases_owner", self.aliases_owner.len()),
                 ("raw_member_read", self.raw_member_reads.len()),
                 ("member_read", self.member_reads.len()),
-                (
-                    "member_read_from_binding",
-                    self.member_reads_from_binding.len(),
-                ),
                 ("reads_member_of_owner", self.reads_member_of_owner.len()),
                 ("raw_module_member_use", self.raw_module_member_uses.len()),
                 ("module_member_use", self.module_member_uses.len()),
                 ("raw_call_argument", self.raw_call_arguments.len()),
                 ("call_argument", self.call_arguments.len()),
                 (
-                    "call_argument_from_binding",
-                    self.call_arguments_from_binding.len(),
-                ),
-                (
                     "call_argument_from_owner",
                     self.call_arguments_from_owner.len(),
                 ),
                 ("decorate_call", self.decorate_calls.len()),
-                (
-                    "makes_decorate_call_for_binding",
-                    self.makes_decorate_call_for_binding.len(),
-                ),
                 (
                     "makes_decorate_call_for_owner",
                     self.makes_decorate_call_for_owner.len(),
@@ -1600,31 +1328,15 @@ impl FactDomains {
                 ),
             ]),
             derived_relation_counts: BTreeMap::from([
-                (
-                    "owner_references_binding",
-                    self.owner_references_binding.len(),
-                ),
                 ("references_owner", self.references_owner.len()),
                 ("aliases_owner", self.aliases_owner.len()),
                 ("member_read", self.member_reads.len()),
-                (
-                    "member_read_from_binding",
-                    self.member_reads_from_binding.len(),
-                ),
                 ("reads_member_of_owner", self.reads_member_of_owner.len()),
                 ("module_member_use", self.module_member_uses.len()),
                 ("call_argument", self.call_arguments.len()),
                 (
-                    "call_argument_from_binding",
-                    self.call_arguments_from_binding.len(),
-                ),
-                (
                     "call_argument_from_owner",
                     self.call_arguments_from_owner.len(),
-                ),
-                (
-                    "makes_decorate_call_for_binding",
-                    self.makes_decorate_call_for_binding.len(),
                 ),
                 (
                     "makes_decorate_call_for_owner",
@@ -1671,19 +1383,10 @@ impl FactDomains {
                     self.owner_statement_ordinals
                         .insert((*owner, *statement_ordinal));
                 }
-                SelectorFact::DeclaredBinding {
-                    owner,
-                    binding,
-                    export_name,
-                    ..
-                } => {
+                SelectorFact::DeclaredBinding { owner, binding, .. } => {
                     self.add_owner(*owner);
                     self.add_string(binding);
                     self.declared_bindings.insert((*owner, binding.clone()));
-                    if let Some(export_name) = export_name {
-                        self.add_string(export_name);
-                        self.export_names.insert((*owner, export_name.clone()));
-                    }
                 }
                 SelectorFact::OwnerReferencesBinding {
                     owner,
@@ -1781,7 +1484,6 @@ impl FactDomains {
     fn build_lookup_indexes(&mut self) {
         self.owner_kinds_index = OwnerStringIndex::from_facts(&self.owner_kinds);
         self.declared_bindings_index = OwnerStringIndex::from_facts(&self.declared_bindings);
-        self.export_names_index = OwnerStringIndex::from_facts(&self.export_names);
         self.relation_supports = RelationSupportCache::from_domains(self);
     }
 
@@ -1808,18 +1510,6 @@ impl FactDomains {
                 .entry(binding.clone())
                 .or_default()
                 .insert(*owner);
-        }
-
-        if requirements.owner_references_binding {
-            for (owner, binding, edge_kind) in &self.raw_owner_references_binding {
-                if owners_with_declarations.contains(owner) {
-                    self.owner_references_binding.insert((
-                        *owner,
-                        binding.clone(),
-                        edge_kind.clone(),
-                    ));
-                }
-            }
         }
 
         if requirements.references_owner {
@@ -1858,7 +1548,6 @@ impl FactDomains {
         }
 
         let needs_owner_by_ordinal = requirements.member_reads
-            || requirements.member_reads_from_binding
             || requirements.reads_member_of_owner
             || requirements.module_member_uses;
         let owner_by_ordinal = needs_owner_by_ordinal.then(|| {
@@ -1868,10 +1557,10 @@ impl FactDomains {
                 .collect::<BTreeMap<_, _>>()
         });
 
-        if requirements.member_reads
-            || requirements.member_reads_from_binding
-            || requirements.reads_member_of_owner
-        {
+        // Reads of `object.member` by a declaring owner, which
+        // `reads_member_of_owner` joins to the owners declaring `object`.
+        let mut member_reads_from_binding = BTreeSet::new();
+        if requirements.member_reads || requirements.reads_member_of_owner {
             let owner_by_ordinal = owner_by_ordinal
                 .as_ref()
                 .expect("owner ordinal index should be built for member reads");
@@ -1885,17 +1574,16 @@ impl FactDomains {
                 if requirements.member_reads {
                     self.member_reads.insert((*owner, member.clone()));
                 }
-                if (requirements.member_reads_from_binding || requirements.reads_member_of_owner)
+                if requirements.reads_member_of_owner
                     && let Some(object) = object
                 {
-                    self.member_reads_from_binding
-                        .insert((*owner, object.clone(), member.clone()));
+                    member_reads_from_binding.insert((*owner, object.clone(), member.clone()));
                 }
             }
         }
 
         if requirements.reads_member_of_owner {
-            for (owner, object_binding, member) in &self.member_reads_from_binding {
+            for (owner, object_binding, member) in &member_reads_from_binding {
                 if let Some(object_owners) = owners_by_binding.get(object_binding) {
                     self.reads_member_of_owner.extend(
                         object_owners
@@ -1922,10 +1610,7 @@ impl FactDomains {
             }
         }
 
-        if requirements.call_arguments
-            || requirements.call_arguments_from_binding
-            || requirements.call_arguments_from_owner
-        {
+        if requirements.call_arguments || requirements.call_arguments_from_owner {
             for (argument, callee_object, callee_member, arg_index) in &self.raw_call_arguments {
                 let Some(argument_owners) = owners_by_binding.get(argument) else {
                     continue;
@@ -1935,51 +1620,31 @@ impl FactDomains {
                         self.call_arguments
                             .insert((*owner, callee_member.clone(), *arg_index));
                     }
-                    if let Some(callee_object) = callee_object {
-                        if requirements.call_arguments_from_binding {
-                            self.call_arguments_from_binding.insert((
-                                *owner,
-                                callee_object.clone(),
-                                callee_member.clone(),
-                                *arg_index,
-                            ));
-                        }
-                        if requirements.call_arguments_from_owner
-                            && let Some(callee_object_owners) = owners_by_binding.get(callee_object)
-                        {
-                            self.call_arguments_from_owner
-                                .extend(callee_object_owners.iter().map(|callee_object_owner| {
-                                    (
-                                        *owner,
-                                        *callee_object_owner,
-                                        callee_member.clone(),
-                                        *arg_index,
-                                    )
-                                }));
-                        }
+                    if requirements.call_arguments_from_owner
+                        && let Some(callee_object) = callee_object
+                        && let Some(callee_object_owners) = owners_by_binding.get(callee_object)
+                    {
+                        self.call_arguments_from_owner
+                            .extend(callee_object_owners.iter().map(|callee_object_owner| {
+                                (
+                                    *owner,
+                                    *callee_object_owner,
+                                    callee_member.clone(),
+                                    *arg_index,
+                                )
+                            }));
                     }
                 }
             }
         }
 
-        if requirements.makes_decorate_call_for_binding
-            || requirements.makes_decorate_call_for_owner
-        {
+        if requirements.makes_decorate_call_for_owner {
             for (callee, class_anchor, member) in &self.decorate_calls {
                 let Some(callee_owners) = owners_by_binding.get(callee) else {
                     continue;
                 };
                 for owner in callee_owners {
-                    if requirements.makes_decorate_call_for_binding {
-                        self.makes_decorate_call_for_binding.insert((
-                            *owner,
-                            class_anchor.clone(),
-                            member.clone(),
-                        ));
-                    }
-                    if requirements.makes_decorate_call_for_owner
-                        && let Some(class_owners) = owners_by_binding.get(class_anchor)
-                    {
+                    if let Some(class_owners) = owners_by_binding.get(class_anchor) {
                         self.makes_decorate_call_for_owner.extend(
                             class_owners
                                 .iter()
@@ -2015,16 +1680,6 @@ impl FactDomains {
     }
 
     fn add_program_constants(&mut self, program: &SelectorProgram) {
-        for target in &program.targets {
-            match &target.claim {
-                ClaimKind::Binding {
-                    export_name: Some(export_name),
-                }
-                | ClaimKind::BindingGroupMember { export_name, .. } => self.add_string(export_name),
-                ClaimKind::Binding { export_name: None } | ClaimKind::AnonymousStatement => {}
-            }
-        }
-
         for atom in &program.atoms {
             self.add_atom_constants(atom);
         }
@@ -2054,21 +1709,6 @@ impl FactDomains {
                     }
                 }
             }
-            SelectorAtom::OwnerExportName { owner, export_name } => {
-                self.add_owner_term(owner);
-                self.add_string_term(export_name);
-            }
-            SelectorAtom::OwnerReferencesBinding {
-                owner,
-                binding,
-                edge_kind,
-            } => {
-                self.add_owner_term(owner);
-                self.add_string_term(binding);
-                if let Some(edge_kind) = edge_kind {
-                    self.add_string_term(edge_kind);
-                }
-            }
             SelectorAtom::OwnerReferencesOwner { owner, referenced }
             | SelectorAtom::OwnerAliasesOwner {
                 owner,
@@ -2077,15 +1717,8 @@ impl FactDomains {
                 self.add_owner_term(owner);
                 self.add_owner_term(referenced);
             }
-            SelectorAtom::ReadsMember {
-                owner,
-                object,
-                member,
-            } => {
+            SelectorAtom::ReadsMember { owner, member } => {
                 self.add_owner_term(owner);
-                if let Some(object) = object {
-                    self.add_string_term(object);
-                }
                 self.add_string_term(member);
             }
             SelectorAtom::ReadsMemberOfOwner {
@@ -2108,14 +1741,10 @@ impl FactDomains {
             }
             SelectorAtom::PassedToCall {
                 owner,
-                callee_object,
                 callee_member,
                 ..
             } => {
                 self.add_owner_term(owner);
-                if let Some(callee_object) = callee_object {
-                    self.add_string_term(callee_object);
-                }
                 self.add_string_term(callee_member);
             }
             SelectorAtom::PassedToCallOfOwner {
@@ -2127,17 +1756,6 @@ impl FactDomains {
                 self.add_owner_term(owner);
                 self.add_owner_term(callee_object);
                 self.add_string_term(callee_member);
-            }
-            SelectorAtom::MakesDecorateCall {
-                owner,
-                class_anchor,
-                member,
-            } => {
-                self.add_owner_term(owner);
-                self.add_string_term(class_anchor);
-                if let Some(member) = member {
-                    self.add_string_term(member);
-                }
             }
             SelectorAtom::MakesDecorateCallForOwner {
                 owner,
@@ -2198,7 +1816,7 @@ mod tests {
         AllowedTupleConstraintId, BackendValueId,
         CompiledAllDifferentConstraint as AllDifferentConstraint, ConstraintValue,
     };
-    use selector_ir::ClaimOrigin;
+    use selector_ir::{ClaimKind, ClaimOrigin};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct AllowedTupleConstraint {
@@ -2235,7 +1853,6 @@ mod tests {
             chunk_id: ChunkId(0),
             owner: OwnerId(owner),
             binding: binding.to_string(),
-            export_name: None,
         }
     }
 
@@ -2705,8 +2322,6 @@ mod tests {
     #[test]
     fn relational_atoms_lower_to_allowed_tuple_constraints() {
         let mut program = SelectorProgram::default();
-        let reference_owner =
-            program.add_variable(VariableDomain::Owner, Some("reference_owner".to_string()));
         let referenced_owner =
             program.add_variable(VariableDomain::Owner, Some("referenced_owner".to_string()));
         let aliased_owner =
@@ -2715,38 +2330,17 @@ mod tests {
             program.add_variable(VariableDomain::Owner, Some("reader_owner".to_string()));
         let object_owner =
             program.add_variable(VariableDomain::Owner, Some("object_owner".to_string()));
-        let decorator_owner =
-            program.add_variable(VariableDomain::Owner, Some("decorator_owner".to_string()));
         let class_owner =
             program.add_variable(VariableDomain::Owner, Some("class_owner".to_string()));
         let intrinsic_referencer = program.add_variable(
             VariableDomain::Owner,
             Some("intrinsic_referencer".to_string()),
         );
-        let referenced_binding = program.add_variable(
-            VariableDomain::String,
-            Some("referenced_binding".to_string()),
-        );
         let read_member =
             program.add_variable(VariableDomain::String, Some("read_member".to_string()));
-        let object_read_member = program.add_variable(
-            VariableDomain::String,
-            Some("object_read_member".to_string()),
-        );
         let module_consumer =
             program.add_variable(VariableDomain::Owner, Some("module_consumer".to_string()));
 
-        program.add_atom(SelectorAtom::OwnerReferencesBinding {
-            owner: OwnerTerm::Var {
-                id: reference_owner,
-            },
-            binding: StringTerm::Var {
-                id: referenced_binding,
-            },
-            edge_kind: Some(StringTerm::Const {
-                value: "read".to_string(),
-            }),
-        });
         program.add_atom(SelectorAtom::OwnerReferencesOwner {
             owner: OwnerTerm::Const { owner: OwnerId(20) },
             referenced: OwnerTerm::Var {
@@ -2759,17 +2353,7 @@ mod tests {
         });
         program.add_atom(SelectorAtom::ReadsMember {
             owner: OwnerTerm::Var { id: reader_owner },
-            object: None,
             member: StringTerm::Var { id: read_member },
-        });
-        program.add_atom(SelectorAtom::ReadsMember {
-            owner: OwnerTerm::Const { owner: OwnerId(40) },
-            object: Some(StringTerm::Const {
-                value: "objectBinding".to_string(),
-            }),
-            member: StringTerm::Var {
-                id: object_read_member,
-            },
         });
         program.add_atom(SelectorAtom::ReadsMemberOfOwner {
             owner: OwnerTerm::Const { owner: OwnerId(40) },
@@ -2788,17 +2372,6 @@ mod tests {
             member: StringTerm::Const {
                 value: "Widget".to_string(),
             },
-        });
-        program.add_atom(SelectorAtom::MakesDecorateCall {
-            owner: OwnerTerm::Var {
-                id: decorator_owner,
-            },
-            class_anchor: StringTerm::Const {
-                value: "Class".to_string(),
-            },
-            member: Some(StringTerm::Const {
-                value: "field".to_string(),
-            }),
         });
         program.add_atom(SelectorAtom::MakesDecorateCallForOwner {
             owner: OwnerTerm::Const { owner: OwnerId(60) },
@@ -2855,49 +2428,34 @@ mod tests {
             compile_selector_problem(&program, &facts, PresolveScope::AcrossTargets).unwrap();
 
         assert_eq!(
-            satisfying_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(8)]),
-            vec![
-                vec![owner(20), string("target")],
-                vec![owner(90), string("define")],
-            ]
+            decoded_variable_domain(&model, ConstraintVariableId(0)),
+            vec![owner(10)]
         );
         assert_eq!(
             decoded_variable_domain(&model, ConstraintVariableId(1)),
             vec![owner(10)]
         );
         assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(2)),
-            vec![owner(10)]
-        );
-        assert_eq!(
-            satisfying_tuples_for(&model, &[ConstraintVariableId(3), ConstraintVariableId(9)]),
+            satisfying_tuples_for(&model, &[ConstraintVariableId(2), ConstraintVariableId(6)]),
             vec![
                 vec![owner(40), string("size")],
                 vec![owner(40), string("value")],
             ]
         );
         assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(10)),
-            vec![string("value")]
-        );
-        assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(4)),
+            decoded_variable_domain(&model, ConstraintVariableId(3)),
             vec![owner(50)]
         );
         assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(5)),
-            vec![owner(60)]
-        );
-        assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(6)),
+            decoded_variable_domain(&model, ConstraintVariableId(4)),
             vec![owner(70)]
         );
         assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(7)),
+            decoded_variable_domain(&model, ConstraintVariableId(5)),
             vec![owner(90)]
         );
         assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(11)),
+            decoded_variable_domain(&model, ConstraintVariableId(7)),
             vec![owner(65)]
         );
     }
@@ -2907,8 +2465,6 @@ mod tests {
         let mut program = SelectorProgram::default();
         let bare_argument_owner =
             program.add_variable(VariableDomain::Owner, Some("bare_argument".to_string()));
-        let object_argument_owner =
-            program.add_variable(VariableDomain::Owner, Some("object_argument".to_string()));
         let object_owner =
             program.add_variable(VariableDomain::Owner, Some("object_owner".to_string()));
         let owner_constrained_argument = program.add_variable(
@@ -2924,23 +2480,10 @@ mod tests {
             owner: OwnerTerm::Var {
                 id: bare_argument_owner,
             },
-            callee_object: None,
             callee_member: StringTerm::Const {
                 value: "register".to_string(),
             },
             arg_index: Some(0),
-        });
-        program.add_atom(SelectorAtom::PassedToCall {
-            owner: OwnerTerm::Var {
-                id: object_argument_owner,
-            },
-            callee_object: Some(StringTerm::Const {
-                value: "registry".to_string(),
-            }),
-            callee_member: StringTerm::Const {
-                value: "register".to_string(),
-            },
-            arg_index: None,
         });
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: object_owner },
@@ -2986,14 +2529,10 @@ mod tests {
         );
         assert_eq!(
             decoded_variable_domain(&model, ConstraintVariableId(1)),
-            vec![owner(20)]
-        );
-        assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(2)),
             vec![owner(30)]
         );
         assert_eq!(
-            allowed_tuples_for(&model, &[ConstraintVariableId(3), ConstraintVariableId(4)]).tuples,
+            allowed_tuples_for(&model, &[ConstraintVariableId(2), ConstraintVariableId(3)]).tuples,
             vec![vec![owner(20), owner(30)], vec![owner(40), owner(50)],]
         );
     }
@@ -3005,7 +2544,6 @@ mod tests {
         let member_var = program.add_variable(VariableDomain::String, Some("member".to_string()));
         program.add_atom(SelectorAtom::PassedToCall {
             owner: OwnerTerm::Var { id: owner_var },
-            callee_object: None,
             callee_member: StringTerm::Var { id: member_var },
             arg_index: None,
         });
