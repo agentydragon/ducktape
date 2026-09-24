@@ -49,6 +49,8 @@ pub struct Chunk<'m> {
 struct Places {
     owner_by_body: BTreeMap<usize, OwnerId>,
     owner_by_body_and_binding: BTreeMap<(usize, String), OwnerId>,
+    /// Each top-level binding name's declaring statements, with their kind.
+    declarations: BTreeMap<String, Vec<(OwnerId, StatementKind)>>,
 }
 
 /// One logical module's entities.
@@ -482,8 +484,16 @@ impl<'m> Chunk<'m> {
             let mut places = Places {
                 owner_by_body: BTreeMap::new(),
                 owner_by_body_and_binding: BTreeMap::new(),
+                declarations: BTreeMap::new(),
             };
             for statement in &self.structural.per_statement {
+                for binding in &statement.declared {
+                    places
+                        .declarations
+                        .entry(binding.0.as_str().to_string())
+                        .or_default()
+                        .push((OwnerId(statement.ordinal.0), statement.kind));
+                }
                 let Some(body_idx) =
                     body_index_for_statement_ordinal(&self.module.body, statement.ordinal.0)
                 else {
@@ -1004,35 +1014,107 @@ impl<'c, 'm> Resolve<'c, 'm> {
     }
 
     fn collect_group(&self, module_index: usize, group: Group) -> Result<Collected, Rejection> {
-        let places = self.chunk.places();
-        let rows = self
-            .chunk
-            .matcher()
-            .member_group_candidates_parsed(
-                &self.ids[module_index],
-                &group.parsed,
-                &group.exports_by_target,
-            )
-            .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
-            .into_iter()
-            .map(|candidate| {
-                Ok(CollectedRow {
-                    places: candidate
-                        .bindings
-                        .values()
-                        .map(|matched| member_place(places, matched))
-                        .collect::<Result<Vec<_>>>()?,
-                    free_bindings: candidate.free_bindings,
-                })
-            })
-            .collect::<Result<Vec<_>>>()
-            .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))?;
+        let (rows, free) =
+            self.collect_rows(module_index, &group.parsed, &group.exports_by_target)?;
         Ok(Collected {
             module_index,
-            free: template_free_identifiers(&group.parsed),
+            free,
             shape: CollectedShape::Group(group),
             rows,
         })
+    }
+
+    /// The candidate rows of `template` (without a target binding) claiming
+    /// the locals of `exports_by_target`, one place per local in key order,
+    /// and the template's free identifiers that are not claimed. A declared
+    /// local's place comes from the matcher. A free local pins by use site:
+    /// its place is the top-level declaration its identifier binds to in
+    /// that match, one row per declaring statement, and no row when it binds
+    /// nothing declared at top level or different identifiers in different
+    /// scopes.
+    fn collect_rows(
+        &self,
+        module_index: usize,
+        template: &ParsedSourceMatchSelector,
+        exports_by_target: &BTreeMap<String, String>,
+    ) -> Result<(Vec<CollectedRow>, BTreeSet<String>), Rejection> {
+        let places = self.chunk.places();
+        let matcher = self.chunk.matcher();
+        let logical_module = &self.ids[module_index];
+        let declared_names = template
+            .declared_binding_names()
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let (declared, used): (BTreeMap<_, _>, BTreeMap<_, _>) = exports_by_target
+            .iter()
+            .map(|(local, export)| (local.clone(), export.clone()))
+            .partition(|(local, _)| declared_names.contains(local));
+        let matched = if declared.is_empty() {
+            matcher
+                .anonymous_group_candidates_parsed(logical_module, template)
+                .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
+                .into_iter()
+                .map(|group| Ok((BTreeMap::new(), group.free_bindings)))
+                .collect::<Result<Vec<_>>>()
+        } else {
+            matcher
+                .member_group_candidates_parsed(logical_module, template, &declared)
+                .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
+                .into_iter()
+                .map(|candidate| {
+                    Ok((
+                        candidate
+                            .bindings
+                            .iter()
+                            .map(|(local, matched)| {
+                                Ok((local.clone(), member_place(places, matched)?))
+                            })
+                            .collect::<Result<BTreeMap<_, _>>>()?,
+                        candidate.free_bindings,
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()
+        }
+        .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))?;
+        let mut rows = Vec::new();
+        for (declared_places, free_bindings) in matched {
+            let mut partial = vec![declared_places];
+            for local in used.keys() {
+                let owners = free_bindings
+                    .get(local)
+                    .and_then(|name| places.declarations.get(name).map(|owners| (name, owners)))
+                    .into_iter()
+                    .flat_map(|(name, owners)| {
+                        owners
+                            .iter()
+                            .filter(|(_, kind)| *kind != StatementKind::Import)
+                            .map(move |(owner, _)| Place {
+                                owner: *owner,
+                                binding: Some(name.clone()),
+                            })
+                    })
+                    .collect::<Vec<_>>();
+                partial = partial
+                    .into_iter()
+                    .flat_map(|row| {
+                        owners.iter().map(move |place| {
+                            let mut row = row.clone();
+                            row.insert(local.clone(), place.clone());
+                            row
+                        })
+                    })
+                    .collect();
+            }
+            rows.extend(partial.into_iter().map(|row| CollectedRow {
+                places: row.into_values().collect(),
+                free_bindings: free_bindings.clone(),
+            }));
+        }
+        let free = template_free_identifiers(template)
+            .into_iter()
+            .filter(|name| !used.contains_key(name))
+            .collect();
+        Ok((rows, free))
     }
 
     fn collect_member(
@@ -1040,11 +1122,26 @@ impl<'c, 'm> Resolve<'c, 'm> {
         module_index: usize,
         member_index: usize,
     ) -> Result<Collected, Rejection> {
-        let MemberSelector::SourceMatch(parsed) =
-            &self.modules[module_index].members[member_index].selector
-        else {
+        let member = &self.modules[module_index].members[member_index];
+        let MemberSelector::SourceMatch(parsed) = &member.selector else {
             unreachable!("only source_match members are collected");
         };
+        if let Some(local) = &parsed.selector().target_binding {
+            let template = parsed.with_target_binding(None);
+            if !template.declared_binding_names().contains(local) {
+                let (rows, free) = self.collect_rows(
+                    module_index,
+                    &template,
+                    &BTreeMap::from([(local.clone(), member.export_name.clone())]),
+                )?;
+                return Ok(Collected {
+                    module_index,
+                    free,
+                    shape: CollectedShape::Member(member_index),
+                    rows,
+                });
+            }
+        }
         let places = self.chunk.places();
         let rows = self
             .chunk
@@ -1388,15 +1485,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
     /// Each name pin's places: the top-level statements declaring its name,
     /// of its kind when it names one.
     fn pin_places(&self) -> BTreeMap<SelectorTargetId, BTreeSet<Place>> {
-        let mut declarations = BTreeMap::<&str, Vec<(OwnerId, StatementKind)>>::new();
-        for statement in &self.chunk.structural.per_statement {
-            for binding in &statement.declared {
-                declarations
-                    .entry(binding.0.as_str())
-                    .or_default()
-                    .push((OwnerId(statement.ordinal.0), statement.kind));
-            }
-        }
+        let declarations = &self.chunk.places().declarations;
         self.members
             .iter()
             .filter_map(|(target, (module_index, member_index))| {

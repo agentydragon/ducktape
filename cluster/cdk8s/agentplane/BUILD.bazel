@@ -261,6 +261,7 @@ py_library(
     deps = [
         ":app_settings",
         ":staging_config",
+        ":testing",
         "//agentplane/action_service:sandbox_executor",
         "//agentplane/action_service/policies:resources",
         "//agentplane/crds:actionpolicybinding",
