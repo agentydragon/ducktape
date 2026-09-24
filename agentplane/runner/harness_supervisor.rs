@@ -83,7 +83,12 @@ fn supervise(mut report: File, program: &OsString, args: &[OsString]) -> Result<
     }
     let mut child = command.spawn().context("start native harness")?;
     let outcome = (|| {
-        writeln!(report, "{}", child.id()).context("report harness pid")?;
+        // One write, never `writeln!`: that writes the digits and the newline separately, and
+        // the runner closes its end after a single read, so the second write fails with EPIPE.
+        // A pipe write this short is atomic; that one read sees the whole line.
+        report
+            .write_all(format!("{}\n", child.id()).as_bytes())
+            .context("report harness pid")?;
         drop(report);
         wait_for_harness(&mut child, &signals)
     })();

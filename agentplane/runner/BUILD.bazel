@@ -733,3 +733,15 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_harness_supervisor",
+    srcs = ["test_harness_supervisor.py"],
+    data = [":harness_supervisor"],  # keep: the binary under test, reached through runfiles
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
