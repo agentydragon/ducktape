@@ -64,6 +64,7 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.haku import console_config
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
@@ -621,7 +622,7 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
             k8s.Subject(kind="Group", name="oidc-ksbx-groups:haku", api_group=rbac_group),
             k8s.Subject(kind="Group", name="haku:access-profile:haku", api_group=rbac_group),
             k8s.Subject(kind="ServiceAccount", name="haku", namespace="haku-sandbox"),
-            k8s.Subject(kind="Group", name="haku:access-profile:public-coder", api_group=rbac_group),
+            k8s.Subject(kind="Group", name=console_config.PUBLIC_CODER_GROUP, api_group=rbac_group),
         ],
     )
     return chart

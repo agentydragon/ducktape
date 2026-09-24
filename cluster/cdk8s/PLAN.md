@@ -130,9 +130,10 @@ them (<TODO.md> § Reachable since the one-to-one conversion).
 - **The haku sandbox template's contract** from `haku/runtime/agent/config.py`'s
   Settings; retires `test_haku_sandbox_contract.py`, `test_mailbox_plan.py` and
   `test_haku_ci_keda_contract.py`.
-- **The public-coder-agent constellation** with `agent-rbac-base`; retires
-  `test_haku_public_coder_contract.py` and
-  `test_public_coder_clickhouse_reader_contract.py`.
+- **The public-coder-agent constellation**: `proxy/iron.yaml` rendered from Python
+  retires `test_haku_public_coder_contract.py` and the iron half of
+  `test_public_coder_clickhouse_reader_contract.py`. It is not an identity (the ConfigMap
+  loses its generator name hash), so it waits for the operator's decision.
 - **`agentplane-index`** rendered from its Settings.
 - Then the rest of <TODO.md>, in whatever order the neighbourhoods complete.
 
