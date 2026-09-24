@@ -610,7 +610,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "//cluster/cdk8s:egress_fences",
-        "//cluster/cdk8s:public_coder_proxy",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -658,6 +657,7 @@ py_test(
     data = ["//cluster/k8s:ntfy_manifest_contract_files"],
     deps = [
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

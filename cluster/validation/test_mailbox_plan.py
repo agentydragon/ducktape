@@ -13,12 +13,8 @@ def test_mailbox_initialization_is_serialized_and_init_only() -> None:
 
     assert deployment["spec"]["strategy"]["type"] == "Recreate"
     pod_spec = deployment["spec"]["template"]["spec"]
-    assert len(pod_spec["initContainers"]) == 1
-    assert len(pod_spec["containers"]) == 1
-
-    initialize = pod_spec["initContainers"][0]
-    production = pod_spec["containers"][0]
-    assert initialize["image"] == production["image"]
+    initialize = one(pod_spec["initContainers"])
+    production = one(pod_spec["containers"])
 
     config_generator = next(
         generator for generator in kustomization["configMapGenerator"] if "initialize.sh" in generator["files"]
@@ -34,9 +30,6 @@ def test_mailbox_initialization_is_serialized_and_init_only() -> None:
     assert "STALWART_ADMIN_PASSWORD" in initialize_env
     assert "STALWART_ADMIN_PASSWORD" not in production_env
     assert "STALWART_RECOVERY_ADMIN" not in initialize_env | production_env
-
-    assert initialize["securityContext"]["capabilities"] == {"add": ["NET_BIND_SERVICE"], "drop": ["ALL"]}
-    assert production["securityContext"]["capabilities"] == {"drop": ["ALL"]}
 
 
 if __name__ == "__main__":

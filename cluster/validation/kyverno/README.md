@@ -17,8 +17,8 @@ model of it.
 
 **One target per policy.** A failure names the policy it belongs to, and a
 single policy can be run alone. `test_proxy_injection` is the deliberate
-exception: it asserts a contract every proxy-injection policy must satisfy and
-is parameterized over them, so a new injector is covered without editing it.
+exception: it asserts behaviour every proxy-injection policy shares and is
+parameterized over them.
 
 ## Coverage
 
