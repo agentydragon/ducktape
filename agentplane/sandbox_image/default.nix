@@ -1,6 +1,7 @@
 # agentplane's sandbox image: the command-line tools of a box that runs commands, as one list,
-# on the nix-ld substrate FHS binaries need (<../../nix/lib/nix-ld-image.nix>). Its user is the
-# runner image's (agentplane/runner/BUILD.bazel): uid 1000 `runner`, home /home/runner.
+# on the nix-ld substrate FHS binaries need (<../../nix/lib/nix-ld-image.nix>). Its user is uid
+# 1000 `runner`, home /home/runner. The runner image (<../runner/image.nix>) is this definition
+# plus the runner and both harnesses, so a tool added here reaches both.
 #
 # The egress proxy's CA comes from the pod, not from this image: nothing here sets
 # SSL_CERT_FILE, for the reason the Haku image records beside its own `Env`
@@ -8,12 +9,19 @@
 #
 # Build:  nix build .#agentplane-sandbox-image
 # Load:   docker load < result
-{ pkgs }:
+{
+  pkgs,
+  name ? "agentplane-sandbox",
+  # What an image built on this one adds: packages linked into /bin beside the tools, and image
+  # config such as an entrypoint.
+  extraPaths ? [ ],
+  extraConfig ? { },
+}:
 let
   substrate = import ../../nix/lib/nix-ld-image.nix { inherit pkgs; };
 
   sandboxEnv = pkgs.buildEnv {
-    name = "agentplane-sandbox-env";
+    name = "${name}-env";
     paths = [
       substrate.nixLdLibraries
 
@@ -46,7 +54,8 @@ let
       # scripts. nixpkgs marks it EXTERNALLY-MANAGED, so a run installs packages into a
       # `python3 -m venv`, whose ensurepip brings its own pip.
       pkgs.python3
-    ];
+    ]
+    ++ extraPaths;
     pathsToLink = [
       "/bin"
       "/share"
@@ -55,7 +64,7 @@ let
   };
 in
 pkgs.dockerTools.buildLayeredImage {
-  name = "agentplane-sandbox";
+  inherit name;
   # Content-addressed; CI adds a sortable tag, and consumers pin the digest.
   tag = null;
 
@@ -102,5 +111,6 @@ pkgs.dockerTools.buildLayeredImage {
     ]
     ++ substrate.env;
     Labels."org.opencontainers.image.source" = "https://github.com/agentydragon/ducktape";
-  };
+  }
+  // extraConfig;
 }

@@ -42,10 +42,9 @@ the parametrized `model` fixture is the only place that knows the model API dial
 fixtures live in `testing/`: `scripted_model.py` is the neutral vocabulary (`Text`, `Reasoning`,
 `ShellCall`, and the request markers), `claude_model.py` and `codex_model.py` speak the two
 dialects, and `launches.py` wires the pinned binaries to a scripted upstream. `test_restart.py`
-runs the runner as its own process so a crash takes its harnesses with it. `test_image.py` runs
-the built runner image as a container (Docker, so on RBE) through one scripted turn per harness;
-`test_image_packaging.py` inspects its OCI layout for the harnesses, their tools, and the
-entrypoint.
+runs the runner as its own process so a crash takes its harnesses with it. No test here runs the
+image (<image.nix>), which carries nixpkgs' harnesses rather than these pinned ones; its header
+says what to run after a bump.
 
 `test_journal.py` gates real SQLite commits and injects failure/cancellation before or after commit,
 checking transaction visibility, atomic coalesced receipts, immutable ids, and replay without cursor

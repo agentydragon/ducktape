@@ -200,7 +200,10 @@ _ACTIONS_SETTINGS = {
                         "template": "agentplane-runner",
                         "container": "runner",
                         "default_cwd": "/state",
-                        "description": "The shared runner image: python, git and the agent harnesses.",
+                        "description": (
+                            "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, "
+                            "ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
+                        ),
                     }
                 },
                 "default_environment": "runner",

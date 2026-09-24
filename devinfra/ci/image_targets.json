@@ -210,11 +210,6 @@
       "target": "//cpap:image",
       "registry": "forgejo"
     },
-    "agentplane-runner": {
-      "target": "//agentplane/runner:image",
-      "test": "//agentplane/runner/...",
-      "registry": "forgejo"
-    },
     "agentplane-app": {
       "target": "//agentplane/app:image",
       "test": "//agentplane/app/...",

@@ -1963,11 +1963,11 @@ spec:
             - --listen
             - 0.0.0.0:7000
             - --claude-binary
-            - /usr/local/bin/claude
+            - /bin/claude
             - --anthropic-base-url
             - $(LITELLM_URL)
             - --codex-binary
-            - /opt/codex/bin/codex
+            - /bin/codex
             - --openai-base-url
             - $(LITELLM_URL)/v1
             - --harness-env
@@ -2319,7 +2319,7 @@ data:
               template: agentplane-runner
               container: runner
               default_cwd: /state
-              description: "The shared runner image: python, git and the agent harnesses."
+              description: "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
           default_environment: runner
       ssh:
         title: SSH
