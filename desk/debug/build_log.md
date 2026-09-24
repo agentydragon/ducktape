@@ -579,7 +579,7 @@ switch (probably a non-TB-certified USB-C dock).
 Sunshine → Moonlight (on atlas) over the existing iGPU → TB4 → KVM
 display path at 4K60. No desk rewiring needed; the direct-DP /
 monitor-dual-KVM option is shelved unless >60 Hz or VRR is ever
-wanted. Plan + post-reboot checklist: `cluster/debug/atlas/gpu-strategy.md`.
+wanted. Plan + post-reboot checklist: `debug/atlas/gpu_strategy.md`.
 
 **Note:** The Sunshine decision was superseded the same evening — see
 the next entry.

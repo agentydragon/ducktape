@@ -23,7 +23,7 @@ networking events in the host network namespace are visible to Chrome.
 Two issues compounded to create ~1326 rtnetlink events/hr:
 
 1. **Operator restart cascades**: etcd instability (from pve-cp-0 kernel stalls — see
-   <../../../cluster/debug/kernel-6.18-amd-kvm-stall.md>) caused API timeouts → operator leader election
+   <../../../debug/kernel_6_18_amd_kvm_stall.md>) caused API timeouts → operator leader election
    losses → restart loops across 7+ operators.
 
 2. **Tofu-controller tf-runners**: 7 of 24 Terraform resources stuck on stale Kubernetes
@@ -53,7 +53,7 @@ Moving containerd wouldn't help; moving Cilium would break all pod routing.
 
 ### Cluster-level
 
-1. Fix pve-cp-0 stalls — see <../../../cluster/debug/kernel-6.18-amd-kvm-stall.md>
+1. Fix pve-cp-0 stalls — see <../../../debug/kernel_6_18_amd_kvm_stall.md>
 2. Add `NoSchedule` taints to VPS control plane nodes (prevent OOM cascade; #5361)
 3. Clean up stale VolumeAttachments for `talos-pve-gpu-worker-0`
 
@@ -74,7 +74,7 @@ leader → full cluster outage. Recovered by rebooting + cordoning VPS nodes.
 
 ## Related
 
-- <../../../cluster/debug/kernel-6.18-amd-kvm-stall.md> — the kernel bug causing the pod churn
+- <../../../debug/kernel_6_18_amd_kvm_stall.md> — the kernel bug causing the pod churn
 - <../../../cluster/debug/pve-cp0-notready-2026-03-23/README.md> — original NMI incident investigation
-- <../../../cluster/debug/atlas/ethernet_recurring/README.md> — atlas physical link flaps (different issue)
+- <../../../debug/atlas/ethernet_recurring/README.md> — atlas physical link flaps (different issue)
 - <../wyrm2/wyrm2_freezes.md> — wyrm2 UI freezes (QXL TTM, resolved)

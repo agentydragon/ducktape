@@ -96,9 +96,9 @@ Attempting the `--n-cpu-moe` sweep this session hit a **GPU lockup**: an E9 Vulk
 `llama-cli` wedged (spinning 103% CPU for ~1h45m on a 32-token generation), **GPU1 went to
 NVML "Unknown Error"** while still present on the PCI bus — the FULLCHIP_RESET hang. Full
 forensics from this session (kernel log signature, timeline, recovery) are in
-<../../../../../cluster/debug/atlas/gpu_lockup_20260718/README.md>; background investigation in
-<../../../../../cluster/debug/atlas/wyrm_gpu_lockup.md> and
-<../../../../../cluster/debug/atlas/gpu_lockup_20260417/README.md>. These intermittent VFIO-
+<../../../../../debug/atlas/gpu_lockup_20260718/README.md>; background investigation in
+<../../../../../debug/atlas/wyrm_gpu_lockup.md> and
+<../../../../../debug/atlas/gpu_lockup_20260417/README.md>. These intermittent VFIO-
 passthrough 5090 lockups block the whole optimization thread. **Before resuming: recover
 the GPUs (kill the wedged process; GPU reset or VM reboot per those notes), and ideally
 land a fix for the lockups themselves** — that stability work is the real prerequisite,

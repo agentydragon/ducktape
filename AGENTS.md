@@ -42,7 +42,7 @@ For the Bazel family this is unconditional, with no in-sandbox attempt first: wi
 `WebFetch(domain:...)` permission rule present, the sandbox's `--unshare-net` breaks
 Bazel's gRPC DNS resolution even for allowlisted hosts. <docs/claude_code_sandbox.md> is
 the operational rule; <devinfra/docs/bazel_worktree_cache_sharing.md> covers cache/proxy
-shims and does not override it (<debug/bazel_sandbox_mitigations.md> is historical).
+shims and does not override it (<devinfra/debug/bazel_sandbox_mitigations.md> is historical).
 
 ## Bazel Commands
 

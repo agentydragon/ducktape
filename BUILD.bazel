@@ -9,8 +9,8 @@
 # gazelle:exclude cluster/docs/inference
 # gazelle:exclude cluster/k8s/parked
 # gazelle:exclude devinfra/debug/agent_fleet
-# gazelle:exclude cluster/debug/atlas
-# gazelle:exclude cluster/debug/kernel-6.18-amd-kvm-stall
+# gazelle:exclude debug/atlas
+# gazelle:exclude debug/kernel_6_18_amd_kvm_stall
 # gazelle:exclude cluster/debug/sqlite_storage_bench
 # gazelle:exclude nix/debug/wyrm2
 # gazelle:exclude nix/nixos

@@ -132,9 +132,11 @@ statement outlives the work.
 `<project>/debug/<topic>.md` holds an active investigation, RCA work in progress, or a
 reproducible diagnostic procedure. Place it under the project that owns the investigated
 behavior: Agentplane reports in `agentplane/debug/`, cluster infrastructure reports in
-`cluster/debug/`, build tooling reports in `devinfra/debug/`. Root `debug/` is only for
-repo-wide or cross-project investigations with no single owning project, not a default
-inbox. Keep one canonical report and link to it from other affected projects.
+`cluster/debug/`, build tooling reports in `devinfra/debug/`. Root `debug/` may also hold
+host-level investigations without an owning repo project (for example, `debug/atlas/`;
+Atlas is not cluster-owned), as well as repo-wide or cross-project investigations with no
+single owning project. It is not a default inbox. Keep one canonical report and link to
+it from other affected projects.
 
 Delete a resolved note after promoting any durable lesson to the owning project's current
 docs (`cluster/docs/lessons_learned/` for cluster lessons). A `debug/` note follows the same
