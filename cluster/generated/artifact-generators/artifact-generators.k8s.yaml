@@ -702,8 +702,8 @@ spec:
       name: metrics-server
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/mitmproxy/**"
-          to: "@artifact/cluster/k8s/agents/mitmproxy/"
+        - from: "@repo/cluster/generated/agents/mitmproxy/**"
+          to: "@artifact/cluster/generated/agents/mitmproxy/"
       name: agents-mitmproxy
       originRevision: "@repo"
     - copy:

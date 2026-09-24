@@ -49,12 +49,12 @@ from trust_manager_crds.io.cert_manager.trust import (
 from cluster.cdk8s import cilium, egress_fences
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "mitmproxy"
 NAMESPACE = egress_fences.MITMPROXY_NAMESPACE
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/mitmproxy"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/mitmproxy"
 
 # The namespaces whose external egress is forced through this proxy: the clusterwide policy
 # selects them, the trust bundle lands in them, and the ingress policy admits them. A new one
