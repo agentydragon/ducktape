@@ -70,9 +70,10 @@ def _git_storage(scope: Construct) -> None:
     # On the SeaweedFS SSD tier (seaweedfs-ovh-ssd, KS-GAME NVMe) since the 2026-07
     # git-latency migration; the repos were copied here from the original HDD RWX claim
     # (forgejo-git-rwx on seaweedfs-ovh) via a one-time VolSync rsync-TLS cutover, now
-    # retired. SeaweedFS RWX multi-mount and the cross-node git filesystem semantics it
-    # depends on (immediate write visibility, atomic exclusive-create for *.lock, atomic
-    # rename) were verified on this cluster before the HA cutover.
+    # retired. Gotcha: `weed mount` does not make O_EXCL exclusive across mounts, so git's
+    # *.lock files do not serialize ref updates between replicas on different nodes, and a
+    # collision can leave the ref empty:
+    # cluster/docs/lessons_learned/2026_09_23_forgejo_cross_mount_ref_lock_zeroed_main.md.
     k8s.KubePersistentVolumeClaim(
         scope,
         "git-storage",
@@ -139,8 +140,8 @@ def _values() -> dict[str, object]:
     return {
         "global": {"imageRegistry": ""},
         # HA: two replicas sharing the RWX git PVC. Both pods mount the same SeaweedFS
-        # volume concurrently (RWX multi-mount + cross-node git lock/rename semantics
-        # verified 2026-06-28), so a rolling update is safe — the old RWO Recreate-only
+        # volume concurrently (RWX multi-mount; git ref locks do not hold across the two
+        # mounts, see _git_storage), so a rolling update is safe — the old RWO Recreate-only
         # deadlock (RollingUpdate + RWO = stuck init container) no longer applies. Session
         # and issue search live in Postgres, and cache/queue in the shared valkey
         # (../cache), so neither replica holds per-instance state.
