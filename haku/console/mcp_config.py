@@ -2,9 +2,9 @@
 
 The console's deploy-time YAML names the MCP servers Haku may drive through the approval
 queue; this module models that config, looks entries up by id, and resolves how to reach
-each one — the in-process `FastMCP` transport or remote URL, and the static bearer
-credential where one applies. The tool-call application service, `McpServerDispatcher`
-(`approval`), and operator OAuth linkage (`operator_oauth`) build on this shared substrate.
+each one — the in-process `FastMCP` transport or remote URL. The tool-call application
+service, `McpServerDispatcher` (`approval`), and operator OAuth linkage (`operator_oauth`)
+build on this shared substrate.
 """
 
 from __future__ import annotations
@@ -145,13 +145,6 @@ class OperatorLoginIdentityCredential(BaseModel):
     kind: Literal["operator_login_identity"] = "operator_login_identity"
 
 
-class StaticBearerAuth(BaseModel):
-    """Execute with a fixed, non-operator bearer held directly in typed settings."""
-
-    kind: Literal["static_bearer"] = "static_bearer"
-    token: SecretStr
-
-
 class NoCredential(BaseModel):
     """No backend credential: an in-process server that carries its own (e.g. `haku_routine`, which
     holds the launch-routine secret) or otherwise needs none."""
@@ -162,7 +155,7 @@ class NoCredential(BaseModel):
 # How a server resolves its backend credential for the acting Operator — exactly one variant per
 # server. The discriminated union replaces flag+optional fields that could set several at once;
 # dispatch by `isinstance` (mypy narrows), never a `kind`-string compare.
-type RemoteMcpAuth = Annotated[RemoteServerOAuthAuth | StaticBearerAuth | NoCredential, Field(discriminator="kind")]
+type RemoteMcpAuth = Annotated[RemoteServerOAuthAuth | NoCredential, Field(discriminator="kind")]
 type InProcessCredential = Annotated[
     OperatorConnectionCredential | OperatorLoginIdentityCredential | NoCredential, Field(discriminator="kind")
 ]

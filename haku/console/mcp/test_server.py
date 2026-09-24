@@ -1261,11 +1261,9 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
                         ),
                     },
                     "routine": {"id": "routine", "backend": _in_process_backend({"kind": "none"})},
-                    "static_remote": {
-                        "id": "static-remote",
-                        "backend": _remote_backend(
-                            "https://static.invalid/mcp", {"kind": "static_bearer", "token": "static-remote-token"}
-                        ),
+                    "open_remote": {
+                        "id": "open-remote",
+                        "backend": _remote_backend("https://open.invalid/mcp", {"kind": "none"}),
                     },
                 }
             },
@@ -1394,9 +1392,9 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
         "backend": {"kind": "in_process", "credential": {"kind": "none"}},
         "connection": None,
     }
-    assert statuses["static-remote"].model_dump(mode="json") == {
-        "server_id": "static-remote",
-        "backend": {"kind": "remote_mcp", "url": "https://static.invalid/mcp", "auth": {"kind": "static_bearer"}},
+    assert statuses["open-remote"].model_dump(mode="json") == {
+        "server_id": "open-remote",
+        "backend": {"kind": "remote_mcp", "url": "https://open.invalid/mcp", "auth": {"kind": "none"}},
         "connection": None,
     }
     serialized = response.model_dump_json()
@@ -1405,7 +1403,6 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
     assert '"client_id":' not in serialized
     assert '"client_secret":' not in serialized
     assert "must-not-be-reflected" not in serialized
-    assert "static-remote-token" not in serialized
     oauth_statuses.assert_called_once()
     provider_statuses.assert_called_once()
     refresh_remote.assert_not_awaited()

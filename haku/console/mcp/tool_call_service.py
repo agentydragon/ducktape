@@ -34,7 +34,6 @@ from haku.console.mcp_config import (
     OperatorConnectionCredential,
     OperatorLoginIdentityCredential,
     RemoteServerOAuthAuth,
-    StaticBearerAuth,
     _server_entry,
 )
 from haku.console.settings import Settings
@@ -253,7 +252,6 @@ async def backend_auth_for_operator(
     - ``OperatorLoginIdentityCredential``: the operator's own Authentik login token (captured via
       offline_access), which the server exchanges for a per-host token (hostexec); missing ⇒ the
       operator has not logged in with offline_access yet.
-    - ``StaticBearerAuth``: the console's fixed configured bearer, not operator-scoped.
     - ``NoCredential``: none — the server carries its own credential.
     """
     credential = server.backend.credential if isinstance(server.backend, InProcessBackend) else server.backend.auth
@@ -270,8 +268,6 @@ async def backend_auth_for_operator(
             return await _require_operator_linked_token(
                 authentik_store.access_token_for(operator_id=operator_id), server.id
             )
-        case StaticBearerAuth(token=token):
-            return token.get_secret_value()
         case NoCredential():
             return None
 
