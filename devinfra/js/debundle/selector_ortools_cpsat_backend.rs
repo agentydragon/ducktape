@@ -1108,6 +1108,11 @@ fn response_into_backend_result(
                     .collect()
             })
             .collect(),
+        fixed_variables: response
+            .fixed_variable_ids
+            .into_iter()
+            .map(|variable| ConstraintVariableId(variable as usize))
+            .collect(),
     })
 }
 

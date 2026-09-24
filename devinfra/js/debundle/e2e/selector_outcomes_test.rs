@@ -4,8 +4,9 @@
 //! by elimination, with a warning.
 
 use debundle_e2e_support::{
-    FixtureOpts, Member, find_outcome, logical_module, read_selector_outcomes, run_dry_run_fixture,
-    run_dry_run_rejection_fixture, run_spec_validate, write_validate_fixture_spec,
+    FixtureOpts, Member, assert_fail_fast_stops_at_first_outcome, find_outcome, logical_module,
+    read_selector_outcomes, run_dry_run_fixture, run_dry_run_rejection_fixture, run_spec_validate,
+    write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -75,6 +76,15 @@ fn selector_over_candidate_cap_is_too_broad_and_others_still_resolve() {
 
     let validate = validate_json(too_broad_fixture(&source));
     assert_eq!(validate["counts"]["too_broad"], 1, "{validate:#}");
+}
+
+/// A too-broad selector is rejected before the solve that finds the
+/// duplicate claim, so fail-fast stops at it.
+#[test]
+fn fail_fast_stops_at_too_broad_selector() {
+    let source = too_broad_fixture_source();
+    let line = assert_fail_fast_stops_at_first_outcome(|| too_broad_fixture(&source), "too_broad");
+    assert!(line.contains("as `TooBroad`"), "{line}");
 }
 
 /// `Either` matches both functions; `Other` matches only `second`. `Either`

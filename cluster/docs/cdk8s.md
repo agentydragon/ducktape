@@ -91,11 +91,12 @@ a CNPG app Secret. References supplied by sibling Kustomize resources or other
 Kustomizations are outside that check; the owning `kustomization.yaml` lists sibling
 resources, and `depends_on` orders other Kustomizations.
 
-A `configMapGenerator` input (`clickhouse/schema/schema.sql`, `aiquota/config.toml`)
+A `configMapGenerator` input (`clickhouse/schema/schema.sql`)
 stays hand-written the same way: the generated `kustomization.yaml` carries the
 generator entry (`flux.ConfigMapArgs`), keeping kustomize's content-hash
 name suffix and reference rewriting, and the construct mounting it references the
-entry's `name`.
+entry's `name`. Content rendered in Python goes into the same entry as `literals`
+(aiquota's `config.toml`).
 
 ### `dependsOn` rationale
 

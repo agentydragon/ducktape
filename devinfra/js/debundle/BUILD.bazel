@@ -823,6 +823,7 @@ rust_library(
         "lowering/lower.rs",
         "lowering/materialize/apply.rs",
         "lowering/materialize/mod.rs",
+        "lowering/materialize/outcome_sink.rs",
         "lowering/materialize/plan_builder.rs",
         "lowering/mod.rs",
         "lowering/naturalize.rs",

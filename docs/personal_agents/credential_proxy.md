@@ -3,7 +3,7 @@
 How `public-coder-agent` gets the power of its GitHub token without ever
 possessing it. The shipped design is
 [iron-proxy](https://github.com/ironsh/iron-proxy) in `replace` mode
-(<../../cluster/k8s/agents/public-coder-agent/proxy/iron.yaml>) behind a
+(`iron.yaml` in <../../cluster/cdk8s/public_coder_proxy.py>) behind a
 NetworkPolicy that makes the proxy the pod's only route out. Measurements: F15,
 F16 in [findings/egress_and_tls.md](findings/egress_and_tls.md); F7, F10 in
 [findings/credentials.md](findings/credentials.md).

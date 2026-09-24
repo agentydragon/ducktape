@@ -1286,6 +1286,55 @@ pub fn run_fail_fast_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> Rejecte
     run_rejection_fixture_with_args(opts, &["--dry-run", "--fail-fast"])
 }
 
+/// Runs `fixture` keep-going and with `--fail-fast`, both dry. Keep-going
+/// reports every outcome, at least two; fail-fast fails with exactly one of
+/// those lines, of `kind`, and no other. Returns that line.
+pub fn assert_fail_fast_stops_at_first_outcome<'a>(
+    fixture: impl Fn() -> FixtureOpts<'a>,
+    kind: &str,
+) -> String {
+    let keep_going = run_dry_run_rejection_fixture(fixture());
+    let reported = keep_going
+        .stderr
+        .lines()
+        .filter_map(|line| line.strip_prefix("  - ["))
+        .map(|line| format!("[{line}"))
+        .collect::<Vec<_>>();
+    let recorded = read_selector_outcomes(&keep_going.report_root);
+    assert_eq!(
+        reported.len(),
+        recorded.len(),
+        "keep-going must print every recorded outcome\nstderr:\n{}\nrecorded: {recorded:#?}",
+        keep_going.stderr
+    );
+    assert!(
+        reported.len() >= 2,
+        "the fixture needs outcomes after the first: {reported:#?}"
+    );
+
+    let fail_fast = run_fail_fast_dry_run_rejection_fixture(fixture());
+    let stopped_at = reported
+        .iter()
+        .filter(|line| fail_fast.stderr.contains(line.as_str()))
+        .collect::<Vec<_>>();
+    let [line] = stopped_at[..] else {
+        panic!(
+            "fail-fast must report exactly one outcome, got {stopped_at:#?}\nstderr:\n{}",
+            fail_fast.stderr
+        );
+    };
+    assert!(
+        line.starts_with(&format!("[{kind}] ")),
+        "fail-fast stopped at {line:?}, expected a {kind} outcome"
+    );
+    assert!(
+        !fail_fast.stderr.contains("Selector outcome report"),
+        "fail-fast printed the keep-going report:\n{}",
+        fail_fast.stderr
+    );
+    line.clone()
+}
+
 /// Run `debundle run --dry-run` over `opts` and assert it succeeds. The report
 /// root holds whatever the pass still writes on success, such as selector
 /// warnings in `selector_diagnostics.json`.
