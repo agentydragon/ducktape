@@ -17,10 +17,9 @@ from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on_many,
-    kustomize_kustomization,
 )
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
@@ -148,7 +147,6 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"]))
 
 
 def atuin(
