@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.models import (
     BindingEvidence,
     MatchedPolicy,
@@ -24,7 +25,6 @@ from agentplane.action_service.policies.resources import ActionPolicyBinding, Ac
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.providers import DecisionContext, ResolvedBinding
 from agentplane.subjects import ServiceAccountRef
-from github_policy.visibility import RepositoryVisibilityService
 
 PROVIDER_NAME = "action_policy_set"
 AUTO_APPROVE_REASON = "policy_set_auto_approve"

@@ -19,7 +19,7 @@ from agentplane.action_service.db import make_engine
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState, Executor
 from agentplane.action_service.test_fixtures.lifecycle import wait_available
-from github_policy.visibility import RepositoryVisibilityService
+from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from mcp_infra.testing.remote_server import as_remote_server
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
