@@ -13,18 +13,13 @@ code it tests is deleted. Consumer specs migrate in lockstep, gated by their
 generated-output diff tests. Each step states in <../SPEC.md> the behaviour it
 adds.
 
-1. **Pinning by use site.** An entity with no distinctive
-   shape (a helper copy) is pinned through a template that mentions it.
-   Acceptance: one of several identical decorate-helper copies is pinned
-   through its call site, via a binding whose `local` is a free identifier of
-   the call-site template.
-2. **Bump tooling.**
-   - **2a.** Failing selectors are reported next to the unclaimed code they
+1. **Bump tooling.**
+   - **1a.** Failing selectors are reported next to the unclaimed code they
      would have claimed.
-   - **2b.** A selector that no longer matches in its chunk but matches in
+   - **1b.** A selector that no longer matches in its chunk but matches in
      another gets a hint naming that chunk.
-   - **2c.** A cross-chunk `same_as` relation for mirrored module trees.
-   - **2d.** Evidence from the previous version's spec directory: resolve the
+   - **1c.** A cross-chunk `same_as` relation for mirrored module trees.
+   - **1d.** Evidence from the previous version's spec directory: resolve the
      old spec against the old chunks, keep each entity's source identity, and
      use it to search the new chunks and propose repairs, with a residual
      report for semantic drift. This is the one home for version porting.

@@ -801,9 +801,11 @@ pub struct SourceMatchClaim {
     /// JS source pattern to match against one top-level source statement.
     #[serde(rename = "match")]
     pub match_source: String,
-    /// Selector-local bindings to claim from the matched source pattern.
-    /// String shorthand means `{ local: <name>, name: <name> }`; object entries
-    /// can override the final readable binding name with `name:`.
+    /// Bindings to claim from the matched source pattern: names the pattern
+    /// declares, or free identifiers it uses, which claim the top-level
+    /// declaration they bind to. String shorthand means
+    /// `{ local: <name>, name: <name> }`; object entries can override the final
+    /// readable binding name with `name:`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bindings: Vec<SourceMatchBinding>,
     /// Optional YAML-only note about the selector shape as a whole. Per-binding
