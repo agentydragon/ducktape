@@ -1193,6 +1193,7 @@ rust_library(
         ":source_match",
         ":spec",
         "@crates//:anyhow",
+        "@crates//:rayon",
         "@crates//:swc_ecma_ast",
     ],
 )

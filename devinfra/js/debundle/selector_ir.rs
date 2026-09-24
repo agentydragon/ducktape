@@ -174,7 +174,7 @@ pub enum SelectorAtom {
 }
 
 impl SelectorAtom {
-    fn variable_ids(&self) -> BTreeSet<SelectorVariableId> {
+    pub fn variable_ids(&self) -> BTreeSet<SelectorVariableId> {
         let mut variables = BTreeSet::new();
         match self {
             Self::OwnerKind {

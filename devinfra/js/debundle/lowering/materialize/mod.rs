@@ -10,7 +10,8 @@ mod plan_builder;
 use std::io::Write;
 
 pub(super) use apply::apply_materialized_logical_chunks;
-use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
+use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext, SelectorModules};
+use selector_resolve::Resolution;
 
 use super::io::write_chunk_report_json;
 use super::util::{render_atomic_unit_cause_guidance, target_file_for_request};
@@ -98,9 +99,31 @@ pub(super) struct MaterializedLogicalChunk {
     pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
 }
 
-pub(super) fn materialize_logical_chunk(
+/// A chunk up to the selector resolve, which every chunk shares: its plan
+/// with everything claimed that does not need the resolve, and its selector
+/// entities.
+pub(super) struct PreparedLogicalChunk<'a> {
+    context: ChunkContext<'a>,
+    spec: ChunkSpec<'a>,
+    chunk_unassigned_mode: UnassignedMode,
+    chunk_id_interned: ChunkId,
+    target_file: String,
+    runtime_ast: &'a ParsedJsModule,
+    header_lines: Vec<String>,
+    source_path: String,
+    ast_analysis: ChunkAstAnalysis,
+    requests: Vec<LogicalRequest>,
+    explicit_requests: Vec<LogicalRequest>,
+    builder: ChunkPlanBuilder,
+    selectors: selector_resolve::Chunk<'a>,
+    selector_modules: SelectorModules,
+}
+
+/// Plans `inputs`' chunk up to the selector resolve and projects its
+/// selector entities.
+pub(super) fn prepare_logical_chunk(
     inputs: MaterializeLogicalChunkInputs<'_>,
-) -> Result<MaterializedLogicalChunk> {
+) -> Result<(PreparedLogicalChunk<'_>, selector_resolve::Projection)> {
     let MaterializeLogicalChunkInputs { context, spec } = inputs;
     let ChunkContext {
         artifact,
@@ -109,23 +132,19 @@ pub(super) fn materialize_logical_chunk(
         file,
         target_dir,
         keep_going,
-        report_emission,
-        cross_module_purities,
-        vendor_import_oracle,
+        ..
     } = context;
-    let ChunkSpec {
-        logical_modules,
-        chunk_renames,
-        unassigned_mode,
-        chunk_analysis_options,
-    } = spec;
     // The spec validator (`validate_transform_spec`) enforces that
     // every materialised chunk has an `unassigned_mode` entry, so
     // this lookup must not miss. Missing here is a bug in the
     // validator, not a recoverable spec error.
-    let chunk_unassigned_mode = unassigned_mode.get(chunk_id).cloned().with_context(|| {
-        format!("materialize_logical_modules missing unassigned_mode for chunk: {chunk_id}")
-    })?;
+    let chunk_unassigned_mode = spec
+        .unassigned_mode
+        .get(chunk_id)
+        .cloned()
+        .with_context(|| {
+            format!("materialize_logical_modules missing unassigned_mode for chunk: {chunk_id}")
+        })?;
     let chunk_id_interned = artifact
         .chunk_table
         .get(chunk_id)
@@ -152,19 +171,10 @@ pub(super) fn materialize_logical_chunk(
     // Chunk-wide `top_level_mark` for resolving spec-derived String
     // binding names to hygiene-aware `Id`s via `top_level_id`.
     let chunk_top_level_mark = runtime_ast.top_level_mark;
-    let header_lines = runtime_file.header_lines.clone();
     let source_path = runtime_file.metadata.source_path.clone();
-    let chunk_ast_analysis = analyze_chunk_ast(&runtime_ast.module);
-    let ChunkAstAnalysis {
-        runtime_import_facts,
-        declarations,
-        declaration_by_name,
-        destructure_siblings,
-        pre_existing_entry_exports,
-        pre_existing_public_export_names,
-    } = chunk_ast_analysis;
+    let ast_analysis = analyze_chunk_ast(&runtime_ast.module);
     let requests = logical_requests_for_chunk(
-        logical_modules.get(chunk_id),
+        spec.logical_modules.get(chunk_id),
         &chunk_unassigned_mode,
         chunk_id,
     )?;
@@ -180,12 +190,12 @@ pub(super) fn materialize_logical_chunk(
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
     let explicit_request_ctx = ExplicitRequestContext {
-        declaration_by_name: &declaration_by_name,
+        declaration_by_name: &ast_analysis.declaration_by_name,
         chunk_top_level_mark,
         target_dir,
         chunk_id,
         target_file: &target_file,
-        runtime_import_facts: &runtime_import_facts,
+        runtime_import_facts: &ast_analysis.runtime_import_facts,
     };
     for (index, request) in explicit_requests.iter_mut().enumerate() {
         builder.add_explicit_request(
@@ -197,14 +207,141 @@ pub(super) fn materialize_logical_chunk(
         )?;
     }
     builder.drop_explicit_request_scratch();
-    builder.pull_destructure_siblings(&destructure_siblings, chunk_top_level_mark)?;
+    builder.pull_destructure_siblings(&ast_analysis.destructure_siblings, chunk_top_level_mark)?;
     builder.add_residual_sweep(
         residual_request.as_ref(),
         chunk_unassigned_mode.catchall_file_target(),
-        &declarations,
+        &ast_analysis.declarations,
         target_dir,
     )?;
 
+    // The structural half is hint-free. Selector resolution runs over this
+    // source-level fact layer so semantic annotations can be projected to
+    // concrete bindings before the final, hint-sensitive owner graph is built.
+    emit_debundle_progress(chunk_id, "analyze_chunk_structural", "start");
+    let line_index = runtime_ast.line_index();
+    let structural_analysis = analysis::facts::analyze_chunk_structural(
+        &runtime_ast.module,
+        Some(&source_path),
+        |span| line_index.line_range_for_span(span),
+    );
+    emit_debundle_progress(chunk_id, "analyze_chunk_structural", "end");
+    // `add_explicit_request` left deferred selector members unclaimed; the
+    // resolve every chunk shares assigns them and the anonymous statements
+    // over the hint-free structural facts.
+    let selectors = selector_resolve::Chunk::new(
+        chunk_id,
+        chunk_id_interned,
+        &runtime_ast.module,
+        structural_analysis,
+    );
+    let selector_modules = builder.selector_modules(
+        &explicit_requests,
+        chunk_top_level_mark,
+        &ast_analysis.declaration_by_name,
+    );
+    emit_debundle_progress(chunk_id, "project_selectors", "start");
+    let projection = selectors.project(&selector_modules.modules)?;
+    emit_debundle_progress(chunk_id, "project_selectors", "end");
+    Ok((
+        PreparedLogicalChunk {
+            context,
+            spec,
+            chunk_unassigned_mode,
+            chunk_id_interned,
+            target_file,
+            runtime_ast,
+            header_lines: runtime_file.header_lines.clone(),
+            source_path,
+            ast_analysis,
+            requests,
+            explicit_requests,
+            builder,
+            selectors,
+            selector_modules,
+        },
+        projection,
+    ))
+}
+
+/// Resolves every prepared chunk's selector entities as one program: one
+/// resolution per chunk, in order.
+pub(super) fn resolve_prepared_chunks(
+    chunks: &[PreparedLogicalChunk<'_>],
+    projections: Vec<selector_resolve::Projection>,
+) -> Result<Vec<Resolution>> {
+    selector_resolve::solve(
+        chunks
+            .iter()
+            .zip(projections)
+            .map(|(chunk, projection)| {
+                (
+                    &chunk.selectors,
+                    chunk.selector_modules.modules.as_slice(),
+                    projection,
+                )
+            })
+            .collect(),
+    )
+}
+
+/// Claims what the selector resolve resolved in `prepared`'s chunk, then
+/// analyses, plans and lowers the chunk.
+pub(super) fn finish_logical_chunk(
+    prepared: PreparedLogicalChunk<'_>,
+    resolution: Resolution,
+) -> Result<MaterializedLogicalChunk> {
+    let PreparedLogicalChunk {
+        context,
+        spec,
+        chunk_unassigned_mode,
+        chunk_id_interned,
+        target_file,
+        runtime_ast,
+        header_lines,
+        source_path,
+        ast_analysis,
+        requests,
+        explicit_requests,
+        mut builder,
+        selectors,
+        selector_modules,
+    } = prepared;
+    let ChunkContext {
+        artifact,
+        artifact_indexes,
+        chunk_id,
+        target_dir,
+        report_emission,
+        cross_module_purities,
+        vendor_import_oracle,
+        ..
+    } = context;
+    let ChunkSpec {
+        chunk_renames,
+        chunk_analysis_options,
+        ..
+    } = spec;
+    let ChunkAstAnalysis {
+        runtime_import_facts,
+        declarations,
+        declaration_by_name,
+        destructure_siblings,
+        pre_existing_entry_exports,
+        pre_existing_public_export_names,
+    } = ast_analysis;
+    let chunk_top_level_mark = runtime_ast.top_level_mark;
+    builder.claim_resolution(
+        &explicit_requests,
+        &selector_modules,
+        resolution,
+        chunk_top_level_mark,
+        chunk_id,
+        &declaration_by_name,
+    )?;
+    let structural_analysis = selectors.into_structural();
+    builder.pull_destructure_siblings(&destructure_siblings, chunk_top_level_mark)?;
+    builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
     // Fetched before hints assembly: `local_property_effects` selects
     // the facts pass's local-effect policy, which travels in the hints.
     let owner_graph_options = chunk_analysis_options
@@ -212,16 +349,6 @@ pub(super) fn materialize_logical_chunk(
         .copied()
         .unwrap_or_default();
     let line_index = runtime_ast.line_index();
-    // The structural half is hint-free. Selector resolution runs over this
-    // source-level fact layer so semantic annotations can be projected to
-    // concrete bindings before the final, hint-sensitive owner graph is built.
-    emit_debundle_progress(chunk_id, "analyze_chunk_structural", "start");
-    let structural_analysis = analysis::facts::analyze_chunk_structural(
-        &runtime_ast.module,
-        Some(&source_path),
-        |span| line_index.line_range_for_span(span),
-    );
-    emit_debundle_progress(chunk_id, "analyze_chunk_structural", "end");
     // A3 admission resolver: where does a dynamic-import specifier in
     // this chunk's entry land? Same artifact resolution the specifier
     // rewriter uses; `SameChunk` marks a debundled internal module.
@@ -238,29 +365,6 @@ pub(super) fn materialize_logical_chunk(
         Some(_) => DynamicImportTarget::OtherChunk,
         None => DynamicImportTarget::External,
     };
-    // Global selector resolution: `add_explicit_request` left deferred selector
-    // members unclaimed; one resolve assigns them and the anonymous statements
-    // over the hint-free structural facts.
-    let resolve_chunk = selector_resolve::Chunk::new(
-        chunk_id,
-        chunk_id_interned,
-        &runtime_ast.module,
-        structural_analysis,
-    );
-    emit_debundle_progress(chunk_id, "resolve_global_selector_members", "start");
-    let result = builder.resolve_and_claim_global_selectors(
-        &explicit_requests,
-        &resolve_chunk,
-        chunk_top_level_mark,
-        chunk_id,
-        &declaration_by_name,
-    );
-    emit_debundle_progress(chunk_id, "resolve_global_selector_members", "end");
-    result?;
-    let structural_analysis = resolve_chunk.into_structural();
-    builder.pull_destructure_siblings(&destructure_siblings, chunk_top_level_mark)?;
-    builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
-    drop(imported_binding_resolver);
     let analysis_hints: AnalysisHints = {
         let mut hints =
             collect_analysis_hints(&explicit_requests, &builder, chunk_renames.get(chunk_id))?;
