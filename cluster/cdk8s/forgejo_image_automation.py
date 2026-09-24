@@ -64,6 +64,7 @@ IMAGES = (
     "agentplane-llm-ingress",
     "agentplane-oauth-fixture",
     "agentplane-runner",
+    "agentplane-sandbox",
     "aiquota-api",
     "airlock",
     "attic-jwt-rotation",

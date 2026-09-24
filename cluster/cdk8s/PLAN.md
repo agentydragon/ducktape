@@ -280,14 +280,10 @@ automation as their bumper, not Renovate.
 Single-resource directories carry no `kustomization.yaml` any more; kustomize-controller
 generates one (<../docs/cdk8s.md> § Shapes of a directory). Still wrapping one resource:
 
-- **A subdirectory is its own Flux node** (`atuin` over `user-provisioner/`,
-  `github-secrets-sync` over `secrets/`): a generated kustomization would pull the
-  subdirectory in. Move the subdirectory out first.
 - **Another kustomization lists the directory as a resource** (`authentik/{db,proxy-routes}`,
   `litellm/db`, `grocy/{app-base,mcp-servicemonitor-base}`,
-  `github-api-proxy/identity`, `agents/plaid-mcp/servicemonitor`, `cert-manager/cluster-ca/base`,
-  `flux/ducktape-flux`): Kustomize needs the file there. Folding the resource into its
-  referrer removes it.
+  `github-api-proxy/identity`, `agents/plaid-mcp/servicemonitor`, `cert-manager/cluster-ca/base`):
+  Kustomize needs the file there. Folding the resource into its referrer removes it.
 
 **Pause after Wave 3.** Image pinning: § Open decisions.
 

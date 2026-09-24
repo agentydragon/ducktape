@@ -215,8 +215,8 @@ spec:
       name: clickhouse
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/github-secrets-sync/secrets/**"
-          to: "@artifact/cluster/k8s/github-secrets-sync/secrets/"
+        - from: "@repo/cluster/k8s/github-secrets-sync-secrets/**"
+          to: "@artifact/cluster/k8s/github-secrets-sync-secrets/"
       name: github-secrets-sync-secrets
       originRevision: "@repo"
     - copy:
@@ -423,8 +423,8 @@ spec:
       name: atuin
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/atuin/user-provisioner/**"
-          to: "@artifact/cluster/generated/atuin/user-provisioner/"
+        - from: "@repo/cluster/generated/atuin-user-provisioner/**"
+          to: "@artifact/cluster/generated/atuin-user-provisioner/"
       name: atuin-user-provisioner
       originRevision: "@repo"
     - copy:
