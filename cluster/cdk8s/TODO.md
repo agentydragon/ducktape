@@ -117,7 +117,7 @@ Each side the test compares is now a construct, except the hand-written inputs n
 retiring a test means deriving both sides from one value.
 
 - **`agents/public-coder-agent/{app,proxy,devbox}`, `agent-rbac-base` and
-  `clickhouse/cluster`** — `test_public_coder_{agent_config,proxy}.py` check subject,
+  `clickhouse/cluster`** — `test_public_coder_agent_config.py` checks subject,
   selector and port agreement across RBAC, NetworkPolicies and the proxy over the
   synthesized charts; `test_haku_public_coder_contract.py` and
   `test_public_coder_clickhouse_reader_contract.py` check the same against the still
