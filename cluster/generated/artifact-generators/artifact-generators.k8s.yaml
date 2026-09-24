@@ -425,8 +425,8 @@ spec:
       name: atuin
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/atuin/user-provisioner/**"
-          to: "@artifact/cluster/generated/atuin/user-provisioner/"
+        - from: "@repo/cluster/generated/atuin-user-provisioner/**"
+          to: "@artifact/cluster/generated/atuin-user-provisioner/"
       name: atuin-user-provisioner
       originRevision: "@repo"
     - copy:
