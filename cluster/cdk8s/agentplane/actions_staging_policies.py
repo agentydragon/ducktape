@@ -68,6 +68,7 @@ _HOME_ASSISTANT_READS_SET = "home-assistant-reads"
 _GMAIL_READS_SET = "gmail-reads"
 _GOOGLE_CALENDAR_READS_SET = "google-calendar-reads"
 _TANA_READS_SET = "tana-reads"
+_GROCY_SF_READS_SET = "grocy-sf-reads"
 # The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
@@ -225,6 +226,31 @@ _TANA_READS_ACTIONS = [
     "list_workspaces",
     "read_node",
     "search_nodes",
+]
+
+# Grocy SF's read-only surface, as haku-console's `grocy_reads` policy auto-approved it.
+# Reviewed exclusion: `open_product_stock` marks a product opened. New upstream tools stay manual
+# until reviewed here.
+_GROCY_SF_READS_ACTIONS = [
+    "entities_get",
+    "entities_list",
+    "file_get",
+    "get_below_minimum_stock",
+    "get_current_user",
+    "get_db_changed_time",
+    "get_expired_stock",
+    "get_expiring_stock",
+    "get_product_stock",
+    "get_system_info",
+    "list_volatile_stock",
+    "locations_list",
+    "product_groups_list",
+    "products_list",
+    "quantity_units_list",
+    "shopping_list_get",
+    "shopping_lists_list",
+    "stock_entries_list",
+    "stock_get",
 ]
 
 
@@ -557,10 +583,29 @@ def add_staging_action_policies(scope: Construct) -> None:
             ]
         ),
     )
+    _policy_set(
+        scope,
+        "actionpolicyset-grocy-sf-reads",
+        metadata=ApiObjectMetadata(
+            name=_GROCY_SF_READS_SET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "The reviewed read-only subset of the Grocy SF MCP backend's catalog; every write, open_product_stock included, stays on the human path."
+            },
+        ),
+        spec=ActionPolicySetSpec(
+            auto_approve_if=[
+                ActionPolicySetSpecAutoApproveIf(
+                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
+                    actions={"grocy_sf": _GROCY_SF_READS_ACTIONS},
+                )
+            ]
+        ),
+    )
 
     # The reviewed read sets for GitHub (github-reads and github-identity-reads), Home
-    # Assistant, Gmail, Google Calendar and Tana, plus sandbox use, attached to the Claude.ai
-    # connector's principal.
+    # Assistant, Gmail, Google Calendar, Tana and Grocy SF, plus sandbox use, attached to the
+    # Claude.ai connector's principal.
     # The binding's existence is the grant: deleting it, or the label on the ServiceAccount,
     # puts every one of these Actions back on the human path.
     _binding(
@@ -570,7 +615,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             name="claude-ai-reads",
             namespace=_NAMESPACE,
             annotations={
-                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
+                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
             },
         ),
         spec=ActionPolicyBindingSpec(
@@ -583,6 +628,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 _GMAIL_READS_SET,
                 _GOOGLE_CALENDAR_READS_SET,
                 _TANA_READS_SET,
+                _GROCY_SF_READS_SET,
             ],
         ),
     )
