@@ -419,7 +419,9 @@ the chunk spec picks one of two modes via
   Effect cells are binding-storage cells (rebinds + identifier
   reads) and static-key `<global>.<prop>` cells, where `<global>`
   is any unshadowed global-object alias (`globalThis`, `window`,
-  `self`, `frames`, `top`). The mode is **conditionally correct**
+  `self`, `frames`, `top`), all one object: `window.tag` and
+  `globalThis.tag` are one cell. A chunk-top declaration or import
+  of an alias name disables its global treatment chunk-wide. The mode is **conditionally correct**
   (see "Conditionally-correct optimizations" above):
   statements containing a shape that defeats static cell tracking
   flip `dataflow_summarizable=false` and fall back to a strict
@@ -451,6 +453,12 @@ globalThis`) marks the bindings it flows into (transitively,
     to a fixpoint) as suspects, and every statement reading a
     suspect bails — `g.tag` touches the same cells as
     `globalThis.tag` but the summary only sees `Binding(g)`.
+
+  The bit is `dataflow_summarizable` in `facts/wire.rs`. Only the
+  bailing statements pay the conservative cost, so the mode is safe
+  on chunks mixing audited and unaudited code, but call-heavy
+  top-level code gains little: every statement with an unproven call
+  is chained.
 
   See "Conditionally-correct optimizations" above for the
   user-facing precondition list.
@@ -1223,7 +1231,7 @@ member names`, it projects onto each importing chunk's local binding
   import — keeps conservative classification. The flag's soundness
   precondition (no cross-destination top-level read of an annotated
   binding's properties textually before the write) is documented on the
-  spec field and is the author's audit obligation, like every entry in
+  spec field (`spec::OwnerGraphOptions::local_property_effects`) and is the author's audit obligation, like every entry in
   this section.
 
 - **A11. Intrinsic integrity: the chunk runs with unmodified
