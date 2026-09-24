@@ -28,9 +28,10 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use selector_outcome::{Candidate, Outcome, SelectorOutcome, SelectorOutcomeReport};
+use selector_outcome::{Outcome, SelectorOutcome, SelectorOutcomeReport};
+use selector_resolve::{Member, MemberSelector, SpecModule};
 use serde::Serialize;
-use source_match::chunk_resolver::ChunkResolver;
+use source_match::ParsedSourceMatchSelector;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
     EXPR_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, hole_name_for,
@@ -108,23 +109,31 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
         .with_context(|| format!("reading source file {}", source_file.display()))?;
     let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
         .with_context(|| format!("parsing source file {}", source_file.display()))?;
-    let resolver = ChunkResolver::new(&parsed.module);
+    let chunk = selector_resolve::Chunk::analyze("<match-selector>", &parsed.module);
+    // The probe is a one-entity spec: its outcome is the resolve's.
     let resolve = |match_source: String| -> Result<Outcome> {
         let selector = AnonymousStatementSelector {
             match_source,
             identifiers: SourceMatchIdentifierMode::AlphaAll,
             target_binding: config.target_binding.clone(),
         };
-        Ok(Outcome::from_matches(
-            resolver
-                .member_candidates("<match-selector>", &selector)?
-                .into_iter()
-                .map(|matched| Candidate {
-                    owner: matched.body_idx,
-                    binding: Some(matched.binding.binding_name),
-                })
-                .collect(),
-        ))
+        let probe = SpecModule {
+            path: "<match-selector>".to_string(),
+            members: vec![Member {
+                export_name: "<match-selector>".to_string(),
+                selector: MemberSelector::SourceMatch(ParsedSourceMatchSelector::parse(
+                    "<match-selector>",
+                    "source_match",
+                    "<source_match needle in <match-selector>>".to_string(),
+                    &selector,
+                    "source_match",
+                )?),
+            }],
+            anonymous_statements: Vec::new(),
+        };
+        let [resolved] = <[_; 1]>::try_from(chunk.resolve(&[probe])?.outcomes)
+            .map_err(|outcomes| anyhow::anyhow!("a one-entity resolve returned {outcomes:?}"))?;
+        Ok(resolved.outcome.outcome)
     };
 
     let outcome = resolve(config.match_source.clone())?;

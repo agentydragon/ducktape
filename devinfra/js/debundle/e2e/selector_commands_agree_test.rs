@@ -1,21 +1,26 @@
 //! Every command that resolves a selector gives the same answer for the same
-//! selector and chunk: `debundle run --dry-run`, `spec validate` (`--spec` and
-//! `--source-file`) and `spec match-selector` emit equal outcome records for
-//! it — `no_match`, `ambiguous` with the same candidates, `too_broad` — or all
-//! resolve it. Each resolving case also pins a matching rule the commands must
-//! share: same-spelled locals in sibling blocks, loop heads, `switch` bodies,
-//! named function/class expressions and shadowing arrow params are independent
+//! selector and chunk, because they all call one resolve: `debundle run
+//! --dry-run`, `spec validate` (`--spec` and `--source-file`), `spec
+//! match-selector` and the `synthesize-selectors` proof. They emit equal
+//! outcome records for it — `no_match`, `ambiguous` with the same candidates, `too_broad`,
+//! resolved by elimination — or all resolve it. `match-selector` resolves its
+//! probe alone, so a selector unique only by elimination is ambiguous there.
+//!
+//! Each resolving case also pins a matching rule the commands must share:
+//! same-spelled locals in sibling blocks, loop heads, `switch` bodies, named
+//! function/class expressions and shadowing arrow params are independent
 //! bindings; `var` hoists to the enclosing function out of blocks, `catch` and
 //! `switch`; property names stay exact; and a `const ANYTHING = <init>`
 //! declarator matches its initializer wherever it sits in its statement.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use debundle_e2e_support::{
     BindingGroup, FixtureOpts, Member, assert_module_exports, logical_module,
-    logical_module_with_source_matches, read_selector_outcomes, run_dry_run_rejection_fixture,
-    run_fixture, run_match_selector, run_source_only_validate, run_spec_validate,
+    logical_module_with_source_matches, parse_stdout_json, read_selector_outcomes,
+    run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture, run_match_selector,
+    run_source_only_validate, run_spec_validate, run_synthesize_selectors,
     write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
@@ -167,16 +172,6 @@ fn fixture(case: &Case) -> FixtureOpts<'_> {
     )
 }
 
-/// The case's outcome record in `outcomes`, if one is listed.
-fn target_record(outcomes: &[Value]) -> Option<Value> {
-    let mut records = outcomes
-        .iter()
-        .filter(|record| record["placement"]["entity"]["export"] == EXPORT);
-    let record = records.next().cloned();
-    assert!(records.next().is_none(), "{outcomes:#?}");
-    record
-}
-
 fn outcomes(report: &Value) -> &[Value] {
     report["outcomes"]
         .as_array()
@@ -196,7 +191,7 @@ fn source_only_validate(case: &Case) -> Option<Value> {
     let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
     assert!(out.status.success(), "stderr={}", out.stderr);
     let report: Value = serde_json::from_str(&out.stdout).unwrap();
-    target_record(outcomes(&report))
+    export_record(outcomes(&report), EXPORT)
 }
 
 /// `spec validate --spec`, the keep-going pass: the case's record, if listed.
@@ -205,7 +200,7 @@ fn spec_validate(case: &Case) -> Option<Value> {
     let out = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
     assert!(out.status.success(), "stderr={}", out.stderr);
     let report: Value = serde_json::from_str(&out.stdout).unwrap();
-    target_record(outcomes(&report))
+    export_record(outcomes(&report), EXPORT)
 }
 
 /// `spec match-selector`: the probe's one record.
@@ -262,7 +257,7 @@ fn assert_all_commands_resolve(case: &Case) {
 /// Returns the agreed outcome.
 fn assert_all_commands_agree(case: &Case) -> Value {
     let rejected = run_dry_run_rejection_fixture(fixture(case));
-    let run = target_record(&read_selector_outcomes(&rejected.report_root))
+    let run = export_record(&read_selector_outcomes(&rejected.report_root), EXPORT)
         .unwrap_or_else(|| panic!("run lists no outcome for the target:\n{}", rejected.stderr));
     assert_eq!(run["chunk"], "static/app", "{run:#}");
     assert_eq!(
@@ -490,8 +485,7 @@ export { a, b };
     );
 }
 
-/// One place past the candidate cap is `too_broad` in every command, the
-/// source-only ones included, which never run the joint solve.
+/// One place past the candidate cap is `too_broad` in every command.
 #[test]
 fn selector_over_the_candidate_cap_is_too_broad() {
     let chunk = (0..101)
@@ -566,45 +560,292 @@ fn anything_declarator_floats_among_others() {
     assert_all_commands_resolve(&ANYTHING_DECLARATOR_AMONG_OTHERS);
 }
 
+/// `Either` matches `first` and `second`; `Other` matches only `second`, so
+/// `Either` is unique only because `Other` claimed its alternative.
+const ELIMINATION_CHUNK: &str = r#"function first() {
+  return "shared";
+}
+function second() {
+  return "other";
+}
+function third(value) {
+  return value.trim();
+}
+console.log(first(), second(), third(" ok "));
+"#;
+const EITHER: &str = "function f() {\n  return EXPR;\n}";
+const OTHER: &str = "function g() {\n  return \"other\";\n}";
+
+fn elimination_fixture() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        ELIMINATION_CHUNK,
+        vec![
+            logical_module(
+                "elimination/either",
+                &[Member::source_alpha_target("Either", "f", EITHER)],
+            ),
+            logical_module(
+                "elimination/other",
+                &[Member::source_alpha_target("Other", "g", OTHER)],
+            ),
+            logical_module("elimination/third", &[Member::renamed("Third", "third")]),
+        ],
+    )
+}
+
+/// The modules of [`elimination_fixture`] as module files, beside the chunk
+/// at `root/chunk.js`.
+fn write_elimination_tree(root: &Path) -> (PathBuf, PathBuf) {
+    let source = root.join("chunk.js");
+    write(&source, ELIMINATION_CHUNK);
+    let modules = root.join("modules");
+    for (path, name, local, selector) in [
+        ("elimination/either", "Either", "f", EITHER),
+        ("elimination/other", "Other", "g", OTHER),
+    ] {
+        let indented = selector
+            .lines()
+            .map(|line| format!("      {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        write(
+            &modules.join(format!("{path}.yaml")),
+            &format!(
+                "source_matches:\n  - match: |\n{indented}\n    bindings:\n      - local: {local}\n        name: {name}\n"
+            ),
+        );
+    }
+    write(
+        &modules.join("elimination/third.yaml"),
+        "members:\n  - name: Third\n    selector: { binding: { name: third } }\n",
+    );
+    (source, modules)
+}
+
+/// Every command that resolves a spec resolves `Either` jointly, by
+/// elimination, with the same warning record; `match-selector`, which asks
+/// about one selector on its own, finds it ambiguous.
+#[test]
+fn resolution_by_elimination_is_shared_by_every_spec_command() {
+    let fixture = run_dry_run_fixture(elimination_fixture());
+    let run = export_record(&read_selector_outcomes(&fixture.report_root), "Either")
+        .unwrap_or_else(|| panic!("run lists no outcome for Either:\n{}", fixture.stderr));
+    assert_eq!(
+        run["outcome"],
+        json!({
+            "kind": "resolved",
+            "owner": 0,
+            "binding": "first",
+            "resolved_by": {
+                "by": "elimination",
+                "claimers": [{"logical_module": "elimination/other", "entity": {"export": "Other"}}],
+            },
+        }),
+        "{run:#}"
+    );
+
+    let spec = write_validate_fixture_spec(elimination_fixture());
+    let out = run_spec_validate(&spec.spec_path, &["--format", "json"]);
+    assert!(out.status.success(), "stderr={}", out.stderr);
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(
+        outcomes(&report),
+        std::slice::from_ref(&run),
+        "spec validate --spec"
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let (source, modules) = write_elimination_tree(dir.path());
+    let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
+    assert!(out.status.success(), "stderr={}", out.stderr);
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let [source_only] = outcomes(&report) else {
+        panic!("spec validate --source-file lists one outcome: {report:#}");
+    };
+    assert_eq!(
+        without(source_only, &["chunk"]),
+        without(&run, &["chunk"]),
+        "spec validate --source-file"
+    );
+
+    let probe = run_match_selector(&source, EITHER, &["--target-binding", "f", "--no-slack"]);
+    let [probe] = outcomes(&probe) else {
+        panic!("match-selector reports one outcome: {probe:#}");
+    };
+    assert_eq!(
+        probe["outcome"],
+        json!({
+            "kind": "ambiguous",
+            "candidates": [{"owner": 0, "binding": "first"}, {"owner": 1, "binding": "second"}],
+            "truncated": false,
+        }),
+        "spec match-selector"
+    );
+}
+
+/// The record of the export `export_name` in `outcomes`, if one is listed.
+fn export_record(outcomes: &[Value], export_name: &str) -> Option<Value> {
+    let mut records = outcomes
+        .iter()
+        .filter(|record| record["placement"]["entity"]["export"] == export_name);
+    let record = records.next().cloned();
+    assert!(records.next().is_none(), "{outcomes:#?}");
+    record
+}
+
+/// `synthesize-selectors` proves a selector with the resolve every command
+/// uses: what it writes resolves on its own selector in `match-selector` and
+/// is clean in `spec validate --source-file`.
+#[test]
+fn synthesized_selector_resolves_in_every_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("chunk.js");
+    write(
+        &source,
+        r#"function actual(input) {
+  return input.trim() + "-suffix";
+}
+function other(input) {
+  return input.trim();
+}
+export { actual, other };
+"#,
+    );
+    let modules = dir.path().join("modules");
+    let module_file = modules.join(format!("{MODULE}.yaml"));
+    write(
+        &module_file,
+        &format!("members:\n  - name: {EXPORT}\n    selector: {{ binding: {{ name: actual }} }}\n"),
+    );
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            &format!("{MODULE}:{EXPORT}"),
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let report = parse_stdout_json(&out);
+    assert_eq!(report["summary"]["changed_candidates"], 1, "{report:#}");
+
+    let module: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&module_file).unwrap()).unwrap();
+    let claim = &module["source_matches"][0];
+    let selector = claim["match"].as_str().expect("a synthesized match");
+    // A binding whose local is its name is written as the bare name.
+    let binding = &claim["bindings"][0];
+    let local = binding["local"]
+        .as_str()
+        .or(binding.as_str())
+        .expect("a local");
+
+    let probe = run_match_selector(
+        &source,
+        selector,
+        &["--target-binding", local, "--no-slack"],
+    );
+    let [probe] = outcomes(&probe) else {
+        panic!("match-selector reports one outcome: {probe:#}");
+    };
+    assert_eq!(
+        probe["outcome"],
+        json!({"kind": "resolved", "owner": 0, "binding": "actual", "resolved_by": {"by": "own_selector"}}),
+        "{selector}"
+    );
+
+    let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
+    assert!(out.status.success(), "stderr={}", out.stderr);
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert!(outcomes(&report).is_empty(), "{report:#}");
+}
+
+/// An import specifier declares no top-level owner, so a template matching
+/// one is invalid in every command rather than claiming the import.
+#[test]
+fn import_specifier_match_is_invalid() {
+    let case = Case {
+        chunk: "import { dep } from \"external-pkg\";\nconsole.log(dep);\n",
+        selector: "import { dep } from \"external-pkg\";",
+        local: "dep",
+        subject: "dep",
+    };
+    assert_eq!(
+        assert_all_commands_agree(&case),
+        json!({
+            "kind": "invalid",
+            "error": "projection_owner_mapping_error: source_match candidate at body index 0 \
+                      binding `dep` does not map to an owner-graph node",
+        })
+    );
+}
+
 /// Each binding of a multi-binding `source_matches` entry is its own entity:
 /// both matches of the template share `key`'s declaration, so `anchorKey`
 /// resolves while `reader` is ambiguous between the two functions.
 #[test]
 fn multi_binding_template_decides_each_binding() {
-    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
-        MULTI_BINDING_CHUNK,
-        vec![logical_module_with_source_matches(
-            MODULE,
-            &[],
-            &[BindingGroup::source_alpha(
-                MULTI_BINDING_TEMPLATE,
-                &[("key", "anchorKey"), ("f", "reader")],
-            )],
-        )],
-    ));
-    let run = read_selector_outcomes(&rejected.report_root);
-    let [reader] = run.as_slice() else {
-        panic!("only reader is listed: {run:#?}");
-    };
-    assert_eq!(reader["placement"]["entity"]["export"], "reader");
-    assert_eq!(reader["outcome"], multi_binding_reader_ambiguous());
-}
-
-const MULTI_BINDING_CHUNK: &str = r#"const k = "anchor-key";
+    const CHUNK: &str = r#"const k = "anchor-key";
 function a() { return k + 1; }
 function b() { return k + 1; }
 console.log(a(), b());
 export { a, b };
 "#;
-
-const MULTI_BINDING_TEMPLATE: &str = r#"const key = "anchor-key";
+    const TEMPLATE: &str = r#"const key = "anchor-key";
 STMT_LIST;
 function f() { return key + 1; }"#;
-
-fn multi_binding_reader_ambiguous() -> Value {
-    json!({
+    let reader_ambiguous = json!({
         "kind": "ambiguous",
         "candidates": [{"owner": 1, "binding": "a"}, {"owner": 2, "binding": "b"}],
         "truncated": false,
-    })
+    });
+
+    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
+        CHUNK,
+        vec![logical_module_with_source_matches(
+            MODULE,
+            &[],
+            &[BindingGroup::source_alpha(
+                TEMPLATE,
+                &[("key", "anchorKey"), ("f", "reader")],
+            )],
+        )],
+    ));
+    let run = read_selector_outcomes(&rejected.report_root);
+    assert_eq!(export_record(&run, "anchorKey"), None, "{run:#?}");
+    assert_eq!(
+        export_record(&run, "reader").expect("reader record")["outcome"],
+        reader_ambiguous
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("chunk.js");
+    write(&source, CHUNK);
+    let modules = dir.path().join("modules");
+    let indented = TEMPLATE
+        .lines()
+        .map(|line| format!("      {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    write(
+        &modules.join(format!("{MODULE}.yaml")),
+        &format!(
+            "source_matches:\n  - match: |\n{indented}\n    bindings:\n      - local: key\n        name: anchorKey\n      - local: f\n        name: reader\n"
+        ),
+    );
+    let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
+    assert!(out.status.success(), "stderr={}", out.stderr);
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(
+        export_record(outcomes(&report), "anchorKey"),
+        None,
+        "{report:#}"
+    );
+    assert_eq!(
+        export_record(outcomes(&report), "reader").expect("reader record")["outcome"],
+        reader_ambiguous
+    );
 }

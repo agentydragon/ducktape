@@ -204,15 +204,15 @@ fn slot_minimal_anchors(
             &hole_var_init_padded,
         )
     };
-    // The slot resolves when the single-binding matcher singles out exactly this
-    // declarator: one match, at the target statement, bound to the target slot's
-    // runtime name.
+    // The slot resolves when its single-target view proves.
     let slot_resolves = |kept: &BTreeSet<AnchorSpan>| -> Result<bool> {
-        let matches = match_single_member_selector(index, export, &render_slot(kept)?)?;
-        let [m] = matches.as_slice() else {
-            return Ok(false);
-        };
-        Ok(m.body_idx == decl.body_idx && m.binding.binding_name == runtime)
+        Ok(prove_synthesized_selector(
+            index,
+            decl,
+            std::slice::from_ref(target),
+            &render_slot(kept)?,
+        )
+        .is_ok())
     };
     let mut kept: BTreeSet<AnchorSpan> = seed.clone();
     while !slot_resolves(&kept)? {

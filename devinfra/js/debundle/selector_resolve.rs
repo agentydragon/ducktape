@@ -222,6 +222,21 @@ struct Projected {
     rows: Vec<Vec<Place>>,
 }
 
+impl Projected {
+    /// Without repeated rows: the matcher lists a place once per way the
+    /// template aligns with it.
+    fn deduped(mut self) -> Self {
+        let mut rows = Vec::with_capacity(self.rows.len());
+        for row in self.rows {
+            if !rows.contains(&row) {
+                rows.push(row);
+            }
+        }
+        self.rows = rows;
+        self
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Place {
     owner: OwnerId,
@@ -528,18 +543,21 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         rows.clone(),
                     );
                 self.anonymous.push((target, module_index, position));
-                self.projected.push(Projected {
-                    targets: vec![target],
-                    rows: rows
-                        .into_iter()
-                        .map(|owner| {
-                            vec![Place {
-                                owner,
-                                binding: None,
-                            }]
-                        })
-                        .collect(),
-                });
+                self.projected.push(
+                    Projected {
+                        targets: vec![target],
+                        rows: rows
+                            .into_iter()
+                            .map(|owner| {
+                                vec![Place {
+                                    owner,
+                                    binding: None,
+                                }]
+                            })
+                            .collect(),
+                    }
+                    .deduped(),
+                );
                 return;
             }
             Ok((candidate_count, _)) => Rejection {
@@ -638,20 +656,23 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     ),
                     (Some(candidate_count), Some(rows.len())),
                 ));
-                self.projected.push(Projected {
-                    targets,
-                    rows: rows
-                        .iter()
-                        .map(|row| {
-                            row.values()
-                                .map(|(owner, binding)| Place {
-                                    owner: *owner,
-                                    binding: Some(binding.clone()),
-                                })
-                                .collect()
-                        })
-                        .collect(),
-                });
+                self.projected.push(
+                    Projected {
+                        targets,
+                        rows: rows
+                            .iter()
+                            .map(|row| {
+                                row.values()
+                                    .map(|(owner, binding)| Place {
+                                        owner: *owner,
+                                        binding: Some(binding.clone()),
+                                    })
+                                    .collect()
+                            })
+                            .collect(),
+                    }
+                    .deduped(),
+                );
                 self.builder.lower_projected_source_match_group_candidates(
                     &logical_module,
                     &group.exports_by_target,
@@ -741,18 +762,21 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     &member.export_name,
                     member.selector.spec_ref(),
                 )?;
-                self.projected.push(Projected {
-                    targets: vec![target],
-                    rows: rows
-                        .iter()
-                        .map(|(owner, binding)| {
-                            vec![Place {
-                                owner: *owner,
-                                binding: Some(binding.clone()),
-                            }]
-                        })
-                        .collect(),
-                });
+                self.projected.push(
+                    Projected {
+                        targets: vec![target],
+                        rows: rows
+                            .iter()
+                            .map(|(owner, binding)| {
+                                vec![Place {
+                                    owner: *owner,
+                                    binding: Some(binding.clone()),
+                                }]
+                            })
+                            .collect(),
+                    }
+                    .deduped(),
+                );
                 self.builder.lower_projected_source_match_candidates(
                     &logical_module,
                     &member.export_name,
