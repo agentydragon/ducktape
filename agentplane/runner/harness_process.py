@@ -60,6 +60,7 @@ class HarnessProcess:
         finally:
             os.close(report_writer)
         try:
+            # One read suffices only because the supervisor writes its report in one write.
             reported = await asyncio.to_thread(os.read, report_reader, 32)
         finally:
             os.close(report_reader)
