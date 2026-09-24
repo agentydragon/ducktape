@@ -60,16 +60,16 @@ debundle run \
 ```
 
 By default, every YAML file below `--tree-modules` belongs to the config's
-`main_chunk_id`, preserving the original single-chunk authoring layout. An
-application-level pipeline can author modules for several chunks by mapping each
-chunk ID to a distinct subtree relative to `--tree-modules`:
+`main_chunk_id`. An application-level pipeline can author modules for several
+chunks by mapping subtrees of `--tree-modules` to the chunk each is scoped to:
 
 ```yaml
 main_chunk_id: cli
 module_roots:
-  cli: chunks/cli
-  print: chunks/print
-  structuredIO: chunks/structured_io
+  chunks/cli: cli
+  chunks/print: print
+  chunks/structured_io: structuredIO
+  shared/print_routing: print
 
 inputs:
   root: extracted
@@ -81,10 +81,12 @@ unassigned_mode:
   structuredIO: { kind: inline_in_entry }
 ```
 
-The mapped roots must be normalized relative paths and may not duplicate or
-overlap. Module paths in the compiled flat spec are relative to their individual
-mapped root, while `logical_modules` remains keyed by chunk ID. The existing
-`binding_patches.yaml` stream still applies to `main_chunk_id`.
+The roots must be normalized relative paths and may not overlap. Several trees
+may scope to one chunk: their modules share the chunk, so no two may define the
+same module path, and their selectors resolve jointly (no two entities claim one
+place). Module paths in the compiled flat spec are relative to their tree's root,
+while `logical_modules` is keyed by chunk ID. The existing `binding_patches.yaml`
+stream still applies to `main_chunk_id`.
 
 (For other invocation shapes — flat spec, vendor package roots, etc. —
 see `docs/cli.md`.)
