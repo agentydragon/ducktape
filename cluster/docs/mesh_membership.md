@@ -31,7 +31,7 @@ A `role: "laptop"` entry is also a roaming Kubernetes node, and its count sets
 the floor for `maxUnavailable` on every DaemonSet that schedules there — an
 offline node's pod holds the unavailable budget forever, deadlocking the rollout
 while Helm and Flux report success.
-`//cluster/validation:test_roaming_daemonset_capacity` derives the count from
+`//cluster/cdk8s/monitoring:test_roaming_daemonset_capacity` derives the count from
 this roster and fails with the files to fix; the incident is in
 <lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md>.
 

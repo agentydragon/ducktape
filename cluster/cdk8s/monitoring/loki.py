@@ -69,7 +69,7 @@ _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}
 _TOLERATE_NO_SCHEDULE = [{"effect": "NoSchedule", "operator": "Exists"}]
 # Must exceed the roaming-node count, or an offline laptop's undeletable pod
 # holds the whole unavailable budget and the rollout deadlocks silently.
-# Enforced by //cluster/validation:test_roaming_daemonset_capacity (which
+# Enforced by //cluster/cdk8s/monitoring:test_roaming_daemonset_capacity (which
 # derives the count from nebula-mesh.json); incident write-up in
 # cluster/docs/lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md.
 _ROAMING_SAFE_UPDATE_STRATEGY = {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}}

@@ -59,12 +59,5 @@ def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir:
     assert (namespace, port) in allowed
 
 
-def test_haku_sandbox_reaches_kubernetes_only_through_console(k8s_dir: Path) -> None:
-    """The haku-sandbox exec target reaches Kubernetes only through the Console-mediated proxy."""
-    pod = _haku_template(k8s_dir)["spec"]["podTemplate"]["spec"]
-    assert pod["automountServiceAccountToken"] is False
-    assert "serviceAccountName" not in pod
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

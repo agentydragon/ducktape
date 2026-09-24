@@ -11,12 +11,11 @@ from __future__ import annotations
 from typing import Any
 
 import pytest_bazel
-import yaml
+from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from more_itertools import one
 
 from cluster.cdk8s import stateful_infra
-from util.bazel.runfiles import get_required_path
-
-_SEAWEEDFS_CR = "_main/cluster/k8s/seaweedfs/cluster/seaweedfs.k8s.yaml"
+from cluster.cdk8s.seaweedfs import cluster
 
 
 def _pod_spawning_components(node: Any, path: str = "") -> dict[str, dict[str, Any]]:
@@ -37,9 +36,7 @@ def _pod_spawning_components(node: Any, path: str = "") -> dict[str, dict[str, A
 
 
 def test_seaweedfs_components_carry_the_protected_priority_class() -> None:
-    (seaweed,) = [
-        doc for doc in yaml.safe_load_all(get_required_path(_SEAWEEDFS_CR).read_text()) if doc["kind"] == "Seaweed"
-    ]
+    seaweed = one(doc for doc in Cdk8sTesting.synth(cluster.chart(Cdk8sTesting.app())) if doc["kind"] == "Seaweed")
     components = _pod_spawning_components(seaweed["spec"])
 
     assert components, "found no pod-spawning components in the SeaweedFS CR"

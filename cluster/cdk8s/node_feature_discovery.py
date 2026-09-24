@@ -54,7 +54,7 @@ def chart(app: App) -> Chart:
             "worker": {
                 "tolerations": [{"effect": "NoSchedule", "operator": "Exists"}],
                 # Must exceed the roaming-node count, as for promtail (cluster/cdk8s/monitoring/loki.py);
-                # enforced by //cluster/validation:test_roaming_daemonset_capacity.
+                # enforced by //cluster/cdk8s/monitoring:test_roaming_daemonset_capacity.
                 "updateStrategy": {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}},
                 "config": {"sources": {"pci": {"deviceClassWhitelist": ["02", "03"], "deviceLabelFields": ["vendor"]}}},
             }

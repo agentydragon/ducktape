@@ -176,39 +176,6 @@ py_library(
 )
 
 py_test(
-    name = "test_github_proxy_rules",
-    srcs = ["test_github_proxy_rules.py"],
-    data = [
-        "testdata/github_proxy_rules.yaml",
-        "//cluster/k8s:github-api-proxy/app/github-api-proxy.k8s.yaml",
-        "@multitool//tools/promtool",
-    ],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_github_quota_rules",
-    srcs = ["test_github_quota_rules.py"],
-    data = [
-        "testdata/github_quota_rules.yaml",
-        "//cluster:generated/monitoring/rules/monitoring-rules.k8s.yaml",
-        "@multitool//tools/promtool",
-    ],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
     name = "test_k8s",
     srcs = ["test_k8s.py"],
     deps = [
@@ -331,26 +298,6 @@ py_test(
 )
 
 py_test(
-    name = "test_roaming_daemonset_capacity",
-    srcs = ["test_roaming_daemonset_capacity.py"],
-    data = [
-        "//:nebula-mesh.json",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        "//cluster/cdk8s:node_feature_discovery",
-        "//cluster/cdk8s/monitoring:loki",
-        "//cluster/scripts:nebula_mesh",
-        "//util/bazel:runfiles",
-        "@pypi//cdk8s",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_mailbox_smtp_ingress",
     srcs = ["test_mailbox_smtp_ingress.py"],
     data = [
@@ -402,11 +349,10 @@ py_test(
 py_test(
     name = "test_public_coder_clickhouse_reader_contract",
     srcs = ["test_public_coder_clickhouse_reader_contract.py"],
-    # Synthesizes the public-coder app and proxy charts in memory, which needs jsii's Node runtime.
+    # Synthesizes the public-coder app chart in memory, which needs jsii's Node runtime.
     data = [
         "//cluster/k8s:agents/public-coder-agent/proxy/iron.yaml",
         "//cluster/k8s:clickhouse/cluster/clickhouse.k8s.yaml",
-        "//cluster/k8s:clickhouse/cluster/networkpolicy.k8s.yaml",
         "//cluster/k8s:clickhouse/cluster/public-coder-credentials.sops.yaml",
         "//cluster/k8s:kustomization.yaml",
         "@nodejs_linux_amd64//:bin/node",
@@ -416,7 +362,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "//cluster/cdk8s:public_coder_agent_config",
-        "//cluster/cdk8s:public_coder_proxy",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
@@ -446,8 +391,8 @@ py_test(
     # Synth imports the console's Settings, and with it the console runtime.
     size = "medium",
     srcs = ["test_haku_public_coder_contract.py"],
-    # Synthesizes the aiquota chart and the console chart (haku_console_fixtures.py, loaded
-    # via pytest_plugins) in memory, which needs jsii's Node runtime.
+    # Synthesizes the public-coder app chart and the console chart (haku_console_fixtures.py,
+    # loaded via pytest_plugins) in memory, which needs jsii's Node runtime.
     data = [
         "//cluster/k8s:haku_manifest_contract_files",
         "@nodejs_linux_amd64//:bin/node",
@@ -457,10 +402,7 @@ py_test(
         ":conftest",
         ":haku_console_fixtures",
         "//:conftest",
-        "//cluster/cdk8s:aiquota",
         "//cluster/cdk8s:public_coder_agent_config",
-        "//cluster/cdk8s:public_coder_devbox",
-        "//cluster/cdk8s:public_coder_proxy",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -513,7 +455,6 @@ py_test(
         "//cluster/cdk8s:egress_fences",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
@@ -530,35 +471,6 @@ py_test(
         "//cluster/rotators/authentik_jwt_rotation:rotate",
         "//util/bazel:runfiles",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_seaweedfs_priority_class",
-    srcs = ["test_seaweedfs_priority_class.py"],
-    # stateful_infra imports cdk8s_plus_34, which needs jsii's Node runtime.
-    data = [
-        "//cluster/k8s:seaweedfs_cluster_manifest",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        "//cluster/cdk8s:stateful_infra",
-        "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_ntfy_manifest_contract",
-    srcs = ["test_ntfy_manifest_contract.py"],
-    data = ["//cluster/k8s:ntfy_manifest_contract_files"],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

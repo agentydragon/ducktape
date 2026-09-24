@@ -58,9 +58,9 @@ different from an unobserved or not-yet-created collection.
   change adds no application collector, automatic retention, deletion, or restart.
   Rule evaluation and notification delivery must still be verified after rollout.
 
-[Promtool regression cases](../../cluster/validation/testdata/github_proxy_rules.yaml)
+[Promtool regression cases](../../cluster/cdk8s/github_api_proxy/testdata/github_proxy_rules.yaml)
 exercise the actual deployed expressions through
-`bbr test //cluster/validation:test_github_proxy_rules`, including duplicate
+`bbr test //cluster/cdk8s/github_api_proxy:test_proxy`, including duplicate
 scrapes, replicas, missing inputs, threshold duration and recovery, and total
 collection scrape loss. This note contains only the central storage finding;
 raw captures and private request data are not published.

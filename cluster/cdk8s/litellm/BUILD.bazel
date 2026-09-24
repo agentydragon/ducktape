@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 
@@ -9,7 +9,6 @@ py_library(
     srcs = ["config.py"],
     visibility = [
         "//cluster/cdk8s/litellm:__pkg__",
-        "//cluster/k8s/litellm/app:__pkg__",
         "//debug/litellm_probe:__pkg__",
     ],
     deps = ["//cluster/cdk8s:model_rosters"],
@@ -110,5 +109,32 @@ py_library(
         "//cluster/cdk8s/external_secrets:external_secret",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    deps = [
+        ":config",
+        "//:conftest",
+        "//cluster/cdk8s:model_rosters",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_openclaw_models",
+    srcs = ["test_openclaw_models.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":config",
+        "//:conftest",
+        "//cluster/cdk8s:haku_openclaw_spike_config",
+        "//cluster/cdk8s:model_rosters",
+        "//cluster/cdk8s:public_coder_agent_config",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
     ],
 )
