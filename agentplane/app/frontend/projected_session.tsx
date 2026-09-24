@@ -1,5 +1,6 @@
 import {
   ActionIcon,
+  Alert,
   Badge,
   Box,
   Button,
@@ -68,22 +69,47 @@ export function pruneCommandErrors(errors: Map<string, string>, commandIds: Read
   return new Map(Array.from(errors).filter(([id]) => commandIds.has(id)));
 }
 
-const LIFECYCLE_LABELS: Record<string, string> = {
-  turn_started: "Turn started",
-  turn_completed: "Turn completed",
-  model_changed: "Model changed",
-  harness_started: "Harness started",
-  harness_exited: "Harness exited",
-  harness_lost: "Harness connection lost",
+// An interrupt is usually the operator's own doing, so an interrupted turn reads as ordinary.
+const TURN_OUTCOMES: Record<TurnStatus, { label: string; prominent: boolean }> = {
+  [TurnStatus.UNSPECIFIED]: { label: "Turn ended without a status", prominent: true },
+  [TurnStatus.COMPLETED]: { label: "Turn completed", prominent: false },
+  [TurnStatus.INTERRUPTED]: { label: "Turn interrupted", prominent: false },
+  [TurnStatus.FAILED]: { label: "Turn failed", prominent: true },
+  [TurnStatus.PROCESS_LOST]: { label: "Turn lost", prominent: true },
 };
 
-function lifecyclePresentation(observation: string, event: unknown): { label: string; diagnostic: string | null } {
-  const parsed = event === null || event === undefined ? null : fromJson(EventSchema, event as JsonValue);
-  const completed = parsed?.observation.case === "turnCompleted" ? parsed.observation.value : null;
-  const diagnostic = completed?.error || null;
-  if (completed?.status === TurnStatus.FAILED) return { label: "Turn failed", diagnostic };
-  if (completed?.status === TurnStatus.INTERRUPTED) return { label: "Turn interrupted", diagnostic };
-  return { label: LIFECYCLE_LABELS[observation] ?? observation.replaceAll("_", " "), diagnostic };
+interface LifecyclePresentation {
+  label: string;
+  /** A prominent row is an alert; any other reads as dimmed text. */
+  prominent: boolean;
+  diagnostic: string | null;
+}
+
+function lifecyclePresentation(observation: string, event: unknown): LifecyclePresentation {
+  const parsed = fromJson(EventSchema, event as JsonValue).observation;
+  switch (parsed.case) {
+    case "turnStarted":
+      return { label: "Turn started", prominent: false, diagnostic: null };
+    case "turnCompleted": {
+      const { status, error } = parsed.value;
+      const diagnostic = error || (status === TurnStatus.FAILED ? "The harness reported no error details." : null);
+      return { ...TURN_OUTCOMES[status], diagnostic };
+    }
+    case "modelChanged":
+      return { label: `Model changed to ${parsed.value.model}`, prominent: false, diagnostic: null };
+    case "harnessStarted":
+      return { label: "Harness started", prominent: false, diagnostic: null };
+    case "harnessExited":
+      return {
+        label: parsed.value.exitCode ? `Harness exited with code ${parsed.value.exitCode}` : "Harness exited",
+        prominent: false,
+        diagnostic: null,
+      };
+    case "harnessLost":
+      return { label: "Harness lost", prominent: true, diagnostic: null };
+    default:
+      return { label: observation.replaceAll("_", " "), prominent: false, diagnostic: null };
+  }
 }
 
 /** How a body renders: the agent's prose (assistant text, reasoning) as Markdown, tool arguments and
@@ -351,29 +377,41 @@ export function EntityCard({
       </Group>
     );
   }
-  if (entity.entityKind === "lifecycle") {
-    const observation = "observation" in entity.state ? entity.state.observation : "lifecycle";
-    const event = "event" in entity.state ? entity.state.event : null;
-    const presentation = lifecyclePresentation(observation, event);
+  if (entity.entityKind === "lifecycle" && "observation" in entity.state) {
+    const { label, prominent, diagnostic } = lifecyclePresentation(entity.state.observation, entity.state.event);
+    const wrapped = { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
+    if (!prominent) {
+      return (
+        <Stack gap={0} style={{ position: "relative" }} data-thread-anchor={entity.cursor.toString()}>
+          <Text size="xs" c="dimmed">
+            {label}
+          </Text>
+          <EvidenceToggle entity={entity} style={{ position: "absolute", top: 0, right: 0 }} />
+          {diagnostic && (
+            <Text size="xs" c="dimmed" style={wrapped}>
+              {diagnostic}
+            </Text>
+          )}
+          <EvidencePanel threadId={threadId} entity={entity} />
+        </Stack>
+      );
+    }
     return (
-      <Stack gap="xs" style={{ position: "relative" }} data-thread-anchor={entity.cursor.toString()}>
-        <Text size="xs" c={presentation.diagnostic || observation === "harness_lost" ? "red" : "dimmed"}>
-          {presentation.label}
-        </Text>
-        <EvidenceToggle entity={entity} style={{ position: "absolute", top: 0, right: 0 }} />
-        {presentation.diagnostic && (
-          <Text c="red" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {presentation.diagnostic}
+      <Alert
+        color="red"
+        title={label}
+        role="alert"
+        style={{ position: "relative" }}
+        data-thread-anchor={entity.cursor.toString()}
+      >
+        <EvidenceToggle entity={entity} style={{ position: "absolute", top: 8, right: 8 }} />
+        {diagnostic && (
+          <Text size="sm" style={wrapped}>
+            {diagnostic}
           </Text>
         )}
-        {"event" in entity.state && (
-          <details>
-            <summary>Lifecycle details</summary>
-            <JsonView value={entity.state.event} />
-          </details>
-        )}
         <EvidencePanel threadId={threadId} entity={entity} />
-      </Stack>
+      </Alert>
     );
   }
   if (entity.entityKind === "command" || entity.entityKind === "view_state") return <></>;
