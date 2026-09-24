@@ -4,8 +4,8 @@ around it.
 
 The image tag is the placeholder "unset"; the hand-written
 cluster/k8s/agents/public-coder-agent/app/image-pins/kustomization.yaml overrides it at
-`kustomize build` time via Flux's image-automation marker. The kubeconfig and `ssh devbox`
-ConfigMaps come from the kustomization.yaml's configMapGenerator.
+`kustomize build` time via Flux's image-automation marker. The `ssh devbox` ConfigMap comes
+from the kustomization.yaml's configMapGenerator.
 """
 
 from __future__ import annotations
@@ -24,9 +24,11 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import external_creds, public_coder_proxy, public_coder_sshpiper
-from cluster.cdk8s.config_format import json5_config
+from cluster.cdk8s.clickhouse import client
+from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator, remote_data
 from cluster.cdk8s.generation import config_map_chart, write_charts
+from cluster.cdk8s.haku import console, console_config, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.model_rosters import (
@@ -69,17 +71,16 @@ _GITHUB_TOKEN_NAME = "public-coder-agent-github-token"
 _EGRESS_PROXY = (
     f"http://{public_coder_proxy.NAME}.{public_coder_proxy.NAMESPACE}.svc.cluster.local:{public_coder_proxy.PROXY_PORT}"
 )
-# Rendered by the kustomization.yaml's configMapGenerator.
 _KUBECONFIG_CONFIG_MAP_NAME = "public-coder-agent-kubeconfig"
+# Rendered by the kustomization.yaml's configMapGenerator.
 _SSH_CONFIG_MAP_NAME = "public-coder-agent-ssh"
 _RBAC_GROUP = "rbac.authorization.k8s.io"
-_PUBLIC_CODER_GROUP = "haku:access-profile:public-coder"
 # Every read public-coder gets, Haku gets too: bound to the same roles.
 _HAKU_SUPERSET_SUBJECTS = [
     k8s.Subject(kind="Group", name="oidc-ksbx-groups:haku", api_group=_RBAC_GROUP),
     k8s.Subject(kind="Group", name="haku:access-profile:haku", api_group=_RBAC_GROUP),
     k8s.Subject(kind="ServiceAccount", name="haku", namespace="haku-sandbox"),
-    k8s.Subject(kind="Group", name=_PUBLIC_CODER_GROUP, api_group=_RBAC_GROUP),
+    k8s.Subject(kind="Group", name=console_config.PUBLIC_CODER_GROUP, api_group=_RBAC_GROUP),
 ]
 _READ = ["get", "list", "watch"]
 
@@ -274,6 +275,40 @@ def chart(app: App) -> Chart:
     )
 
 
+def kubeconfig_chart(app: App) -> Chart:
+    """kubectl's config: haku-kube-api-proxy's public route, reached through the egress proxy,
+    with the bearer placeholder the proxy swaps."""
+    chart = Chart(app, _KUBECONFIG_CONFIG_MAP_NAME, disable_resource_name_hashes=True)
+    kubeconfig = {
+        "apiVersion": "v1",
+        "kind": "Config",
+        "clusters": [
+            {
+                "name": "in-cluster",
+                "cluster": {
+                    "server": f"https://{kube_api_proxy.HOSTNAME}",
+                    "proxy-url": _EGRESS_PROXY,
+                    "certificate-authority": _CA_BUNDLE,
+                },
+            }
+        ],
+        "contexts": [
+            {"name": "in-cluster", "context": {"cluster": "in-cluster", "namespace": _NAMESPACE, "user": "haku-agent"}}
+        ],
+        "current-context": "in-cluster",
+        # iron-proxy substitutes the original Haku Agent bearer only for the dedicated Haku
+        # Kubernetes proxy hostname. No Kubernetes credential enters this container.
+        "users": [{"name": "haku-agent", "user": {"token": public_coder_proxy.HAKU_CONSOLE_TOKEN_PLACEHOLDER}}],
+    }
+    k8s.KubeConfigMap(
+        chart,
+        "config",
+        metadata=k8s.ObjectMeta(name=_KUBECONFIG_CONFIG_MAP_NAME, namespace=_NAMESPACE),
+        data={"config": yaml_config(kubeconfig)},
+    )
+    return chart
+
+
 def _env(name: str, value: str) -> k8s.EnvVar:
     return k8s.EnvVar(name=name, value=value)
 
@@ -296,7 +331,6 @@ _SEED_CONFIG_SCRIPT = textwrap.dedent(
 
 
 def _openclaw_container() -> k8s.Container:
-    github_placeholder = "proxy-github-placeholder"
     return k8s.Container(
         name="openclaw",
         image=_IMAGE,
@@ -361,26 +395,25 @@ def _openclaw_container() -> k8s.Container:
             # current local-Gateway path can restore ambient values for native GitHub tooling.
             # The proxy still sees only the placeholder and replaces it in scoped outbound
             # Authorization headers. See F7, F10, F16.
-            _env("GITHUB_TOKEN", github_placeholder),
-            _env("GH_PAT", github_placeholder),
+            _env("GITHUB_TOKEN", public_coder_proxy.GITHUB_TOKEN_PLACEHOLDER),
+            _env("GH_PAT", public_coder_proxy.GITHUB_TOKEN_PLACEHOLDER),
             # Non-secret Haku Console bearer placeholder. The real static-Agent credential exists
             # only in Haku Console and this agent's iron-proxy, which replaces this value only in
             # Authorization headers sent to the exact haku.allegedly.works host.
-            _env("HAKU_CONSOLE_TOKEN", "proxy-haku-console-placeholder"),
+            _env("HAKU_CONSOLE_TOKEN", public_coder_proxy.HAKU_CONSOLE_TOKEN_PLACEHOLDER),
             # Native ClickHouse reader credentials for normalized and raw AIQuota history. This
             # is deliberately a non-secret placeholder: the sibling Iron proxy swaps it only
-            # inside Authorization for the private ClickHouse ClusterIP host. See
-            # ../proxy/iron.yaml.
-            _env("CLICKHOUSE_PUBLIC_CODER_USER", "public_coder_analytics"),
-            _env("CLICKHOUSE_PUBLIC_CODER_PASSWORD", "proxy-clickhouse-public-coder-password"),
+            # inside Authorization for the private ClickHouse ClusterIP host.
+            _env("CLICKHOUSE_PUBLIC_CODER_USER", client.PUBLIC_CODER_USER),
+            _env("CLICKHOUSE_PUBLIC_CODER_PASSWORD", public_coder_proxy.CLICKHOUSE_PASSWORD_PLACEHOLDER),
             # This placeholder grants access only when iron-proxy substitutes it for
             # aiquota.allegedly.works' two read-only API paths. The actual shared bearer is
             # mounted only into the proxy container.
-            _env("AIQUOTA_API_BEARER_TOKEN", "proxy-aiquota-api-bearer-placeholder"),
+            _env("AIQUOTA_API_BEARER_TOKEN", public_coder_proxy.AIQUOTA_BEARER_PLACEHOLDER),
             # This is likewise an inert placeholder. The real Brave Search API key is mounted only
             # in the egress proxy and substituted solely in X-Subscription-Token requests to
             # api.search.brave.com.
-            _env("BRAVE_API_KEY", "proxy-brave-search-api-key-placeholder"),
+            _env("BRAVE_API_KEY", public_coder_proxy.BRAVE_API_KEY_PLACEHOLDER),
             _secret_env("OPENCLAW_LITELLM_API_KEY", "litellm-key-public-coder-agent", "api-key"),
             # Authentik authenticates proxied browser traffic. OpenClaw's subagent completion
             # path calls the local gateway directly and therefore uses the documented
@@ -389,7 +422,7 @@ def _openclaw_container() -> k8s.Container:
             # OpenClaw's password login puts this value in the Matrix JSON body. It is a proxy
             # placeholder: iron-proxy replaces it with the real controller-owned password only
             # on the Matrix login endpoint.
-            _env("MATRIX_PASSWORD", "proxy-matrix-password-placeholder"),
+            _env("MATRIX_PASSWORD", public_coder_proxy.MATRIX_PASSWORD_PLACEHOLDER),
             # Node does not honour proxy environment variables by default.
             _env("NODE_USE_ENV_PROXY", "1"),
             _env("HTTP_PROXY", _EGRESS_PROXY),
@@ -935,7 +968,7 @@ def _rbac(scope: Construct) -> None:
         "agentplane-acceptance-operator-reader-binding",
         metadata=k8s.ObjectMeta(name=acceptance, namespace=_NAMESPACE),
         role_ref=_role_ref("Role", acceptance),
-        subjects=[k8s.Subject(kind="Group", name=_PUBLIC_CODER_GROUP, api_group=_RBAC_GROUP)],
+        subjects=[k8s.Subject(kind="Group", name=console_config.PUBLIC_CODER_GROUP, api_group=_RBAC_GROUP)],
     )
 
     # Cluster-scoped node inventory for scheduling and health diagnostics.
@@ -1011,7 +1044,7 @@ def _rbac(scope: Construct) -> None:
             annotations={"description": "Gives only the Haku authorization proxy a cluster-admin execution ceiling."},
         ),
         role_ref=_role_ref("ClusterRole", "cluster-admin"),
-        subjects=[k8s.Subject(kind="ServiceAccount", name="haku-kube-api-proxy", namespace="haku-console")],
+        subjects=[k8s.Subject(kind="ServiceAccount", name=kube_api_proxy.NAME, namespace=console.NAMESPACE)],
     )
 
 
@@ -1028,4 +1061,4 @@ def app_chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app", chart, app_chart)
+    write_charts(root, f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app", chart, kubeconfig_chart, app_chart)

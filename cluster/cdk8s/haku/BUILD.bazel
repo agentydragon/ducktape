@@ -9,6 +9,7 @@ py_library(
     srcs = ["console_config.py"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/clickhouse:__pkg__",
         "//cluster/cdk8s/haku:__pkg__",
         "//cluster/validation:__pkg__",
     ],
@@ -264,6 +265,7 @@ py_library(
         ":namespace",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",

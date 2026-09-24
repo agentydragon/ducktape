@@ -14,10 +14,12 @@ import { createRoot } from "react-dom/client";
 import App from "../app";
 import { sampleConnection } from "../connections_fixture";
 import type {
+  ActionGroupView,
   ActionPolicyView,
   ActionRequestView,
   BindingView,
   Decision,
+  McpLinkageView,
   PolicyView,
   SandboxView,
   ThreadView,
@@ -979,6 +981,99 @@ if (scenario.pendingCommands === "outcomes") {
   );
 }
 
+// One MCP server per row state the MCP servers page draws: linked and connected, a link whose token
+// lapsed, never linked, and bearer-only backends that are up or unreachable.
+const MCP_LINKAGES: McpLinkageView[] = [
+  {
+    server_id: "example_docs",
+    server_url: "https://docs-mcp.example.test/mcp",
+    status: "linked",
+    revision: 3,
+    scopes: ["openid", "offline_access"],
+    expires_at: new Date(NOW + HOUR).toISOString(),
+    linked_at: ago(30 * 24 * HOUR),
+    linked_by: null,
+  },
+  {
+    server_id: "example_cluster",
+    server_url: "https://cluster-mcp.example.test/mcp",
+    status: "expired",
+    revision: 2,
+    scopes: ["openid", "email", "profile", "offline_access"],
+    expires_at: ago(2 * HOUR),
+    linked_at: ago(9 * 24 * HOUR),
+    linked_by: null,
+  },
+  {
+    server_id: "example_pantry",
+    server_url: "https://pantry-mcp.example.test/mcp",
+    status: "unlinked",
+    revision: 0,
+    scopes: [],
+    expires_at: null,
+    linked_at: null,
+    linked_by: null,
+  },
+];
+
+function mcpGroup(key: string, executorDescription: string, health: ActionGroupView["health"]): ActionGroupView {
+  return {
+    key,
+    title: key,
+    description: `Test MCP backend ${key}.`,
+    executor_kind: "mcp",
+    executor_description: executorDescription,
+    available: health?.state === "available",
+    health,
+    actions: [],
+  };
+}
+
+const MCP_GROUPS: ActionGroupView[] = [
+  mcpGroup("example_docs", "Linked operator account.", {
+    state: "available",
+    reason: null,
+    detail: null,
+    last_discovery_at: ago(60_000),
+    retry_at: null,
+    failures: 0,
+  }),
+  mcpGroup("example_cluster", "Linked operator account.", {
+    state: "disconnected",
+    reason: "linkage_unavailable",
+    detail: `the access token expired at ${ago(2 * HOUR)
+      .replace("T", " ")
+      .slice(0, 19)} UTC and has not been refreshed`,
+    last_discovery_at: ago(3 * HOUR),
+    retry_at: new Date(NOW + 20_000).toISOString(),
+    failures: 12,
+  }),
+  mcpGroup("example_pantry", "Linked operator account.", {
+    state: "disconnected",
+    reason: "linkage_unavailable",
+    detail: "no account is linked",
+    last_discovery_at: null,
+    retry_at: new Date(NOW + 20_000).toISOString(),
+    failures: 4,
+  }),
+  mcpGroup("example_mail", "Test MCP backend behind a static bearer.", {
+    state: "disconnected",
+    reason: "connect_failed",
+    detail: "RuntimeError: Client failed to connect: All connection attempts failed",
+    last_discovery_at: null,
+    retry_at: new Date(NOW + 20_000).toISOString(),
+    failures: 7,
+  }),
+  mcpGroup("example_notes", "Test MCP backend behind a static bearer.", {
+    state: "available",
+    reason: null,
+    detail: null,
+    last_discovery_at: ago(60_000),
+    retry_at: null,
+    failures: 0,
+  }),
+];
+
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
 routes.push(
@@ -1033,9 +1128,10 @@ routes.push(
     ],
   ],
   ["GET", /^\/connection-service-accounts$/, () => [{ namespace: "agentplane-visual", name: "operator-assistant" }]],
-  // The Settings modal mounts all three tabs at once (Mantine keepMounted); MCP servers and
+  // The Settings modal mounts all three tabs at once (Mantine keepMounted), so MCP servers and
   // Notifications fetch on mount even while the OAuth clients tab is the one shown in the shot.
-  ["GET", /^\/mcp-servers$/, () => []],
+  ["GET", /^\/mcp-servers$/, () => MCP_LINKAGES],
+  ["GET", /^\/action-groups$/, () => MCP_GROUPS],
   ["GET", /^\/push\/config$/, () => ({ application_server_key: null })],
   ["GET", /^\/push\/subscriptions$/, () => []],
   [

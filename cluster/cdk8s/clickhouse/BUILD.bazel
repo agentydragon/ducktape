@@ -10,6 +10,7 @@ py_library(
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/clickhouse:__pkg__",
+        "//cluster/validation:__pkg__",
     ],
     deps = [
         "@pypi//cdk8s",
@@ -49,11 +50,13 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:public_coder_proxy",
         "//cluster/cdk8s/crd_bindings/clickhouse:clickhouseinstallation",
         "//cluster/cdk8s/crd_bindings/clickhouse:clickhousekeeperinstallation",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/haku:console_config",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

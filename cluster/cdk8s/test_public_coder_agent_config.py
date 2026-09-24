@@ -1,9 +1,9 @@
 """public-coder's access boundaries, across the charts that grant or carry them.
 
 The profile's RBAC is spread over the rbac-base, Haku console, ClickHouse diagnostics,
-ducktape-flux and public-coder app charts; its traffic over the app, its credential proxy and
-the devbox. The seams with hand-written inputs (the iron config, the agent kubeconfig) stay in
-`//cluster/validation:test_haku_public_coder_contract`.
+ducktape-flux and public-coder app charts; its traffic over the app and its credential proxy.
+The ClickHouse reader's hand-written Secret is checked in
+`//cluster/validation:test_public_coder_clickhouse_reader_contract`.
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-import yaml
 from cdk8s import (
     App,
     Chart,
@@ -27,15 +26,15 @@ from cluster.cdk8s import (
     aiquota,
     ducktape_flux,
     public_coder_agent_config,
-    public_coder_devbox,
     public_coder_proxy,
 )
-from cluster.cdk8s.clickhouse import installation
+from cluster.cdk8s.clickhouse import client, installation
+from cluster.cdk8s.haku import console_config
 from cluster.cdk8s.haku.charts import console_chart
 
 _PUBLIC_CODER_SUBJECT = {
     "kind": "Group",
-    "name": "haku:access-profile:public-coder",
+    "name": console_config.PUBLIC_CODER_GROUP,
     "apiGroup": "rbac.authorization.k8s.io",
 }
 _HAKU_SUBJECTS = {
@@ -74,13 +73,6 @@ def app_objects() -> list[dict[str, Any]]:
 @pytest.fixture(scope="module")
 def proxy_objects() -> list[dict[str, Any]]:
     return _synth(public_coder_proxy.chart)
-
-
-@pytest.fixture(scope="module")
-def devbox_objects() -> list[dict[str, Any]]:
-    chart = Chart(Cdk8sTesting.app(), "devbox")
-    public_coder_devbox.virtual_machine(chart)
-    return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
 
 
 @pytest.fixture(scope="module")
@@ -163,27 +155,21 @@ def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credentia
                 assert source.get("secret", {}).get("name") not in secret_names
 
 
-def test_proxy_admits_every_client(
-    app_objects: list[dict[str, Any]], proxy_objects: list[dict[str, Any]], devbox_objects: list[dict[str, Any]]
-) -> None:
-    """Every actual proxy client's pod carries labels the CNP admits, derived from the clients'
-    own constructs rather than pinned here twice -- a client retired or revived without updating
-    the CNP fails this on its own (see e.g. the devbox retire/revive PRs)."""
+def test_proxy_admits_the_app(app_objects: list[dict[str, Any]], proxy_objects: list[dict[str, Any]]) -> None:
+    """The app's pod carries labels the proxy's ingress admits. The devbox's rule is built from
+    the devbox's own labels; the app's is spelled in public_coder_proxy, which the app imports."""
     ingress_policy = _one(proxy_objects, "CiliumNetworkPolicy", "allow-public-coder-agent-proxy-ingress")
     allowed = {
         frozenset(endpoint["matchLabels"].items())
         for endpoint in one(ingress_policy["spec"]["ingress"])["fromEndpoints"]
     }
-
-    app_pod_labels = _one(app_objects, "Deployment")["spec"]["template"]["metadata"]["labels"]
-    devbox_pod_labels = _one(devbox_objects, "VirtualMachine")["spec"]["template"]["metadata"]["labels"]
-    for client_labels in (app_pod_labels, devbox_pod_labels):
-        # Cilium's matchLabels selects any pod whose labels are a superset of the rule, so a
-        # covering rule is one the client's actual labels satisfy -- not one matching them exactly.
-        actual = frozenset({"k8s:io.kubernetes.pod.namespace": "public-coder-agent"}.items()) | frozenset(
-            (f"k8s:{k}", v) for k, v in client_labels.items()
-        )
-        assert any(rule <= actual for rule in allowed), client_labels
+    app = _one(app_objects, "Deployment")
+    # Cilium's matchLabels selects any pod whose labels are a superset of the rule, so a covering
+    # rule is one the app's actual labels satisfy -- not one matching them exactly.
+    actual = frozenset({"k8s:io.kubernetes.pod.namespace": app["metadata"]["namespace"]}.items()) | frozenset(
+        (f"k8s:{k}", v) for k, v in app["spec"]["template"]["metadata"]["labels"].items()
+    )
+    assert any(rule <= actual for rule in allowed)
 
 
 def test_app_egress_reaches_the_internet_only_through_the_proxy(app_objects: list[dict[str, Any]]) -> None:
@@ -191,6 +177,13 @@ def test_app_egress_reaches_the_internet_only_through_the_proxy(app_objects: lis
     assert all(rule.get("to") for rule in egress)
     assert not any("ipBlock" in peer for rule in egress for peer in rule["to"])
     assert not {port["port"] for rule in egress for port in rule.get("ports", [])} & {443, 6443}
+
+
+def test_app_reaches_clickhouse_only_through_the_proxy(app_objects: list[dict[str, Any]]) -> None:
+    """ClickHouse stays out of NO_PROXY: only the proxy replaces the app's password placeholder."""
+    container = one(_one(app_objects, "Deployment")["spec"]["template"]["spec"]["containers"])
+    no_proxy = one(entry["value"] for entry in container["env"] if entry["name"] == "NO_PROXY").split(",")
+    assert not {client.HOST, client.HOST.removesuffix(".cluster.local")} & set(no_proxy)
 
 
 def test_proxy_aiquota_bearer_is_mirrored_into_its_namespace(proxy_objects: list[dict[str, Any]]) -> None:
@@ -206,27 +199,6 @@ def test_proxy_aiquota_bearer_is_mirrored_into_its_namespace(proxy_objects: list
     proxy_namespace = proxy_deployment["metadata"]["namespace"]
     assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"] == proxy_namespace
     assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"] == proxy_namespace
-
-
-def test_console_authorizes_the_group_and_executes_as_the_ceiling_account(
-    console_objects: list[dict[str, Any]], app_objects: list[dict[str, Any]]
-) -> None:
-    """Console SARs the group the RBAC binds; the proxy executes as its own ServiceAccount, which
-    is the only subject of the cluster-admin ceiling."""
-    console_config = yaml.safe_load(_one(console_objects, "ConfigMap", "haku-console-config")["data"]["config.yaml"])
-    profile = console_config["kubernetes_authorization"]["subjects_by_access_profile"]["public-coder"]
-    assert _PUBLIC_CODER_SUBJECT["name"] in profile["groups"]
-    haku_proxy = _one(console_objects, "Deployment", "haku-kube-api-proxy")
-    execution_name = haku_proxy["spec"]["template"]["spec"]["serviceAccountName"]
-    execution_service_account = _one(console_objects, "ServiceAccount", execution_name)
-    ceiling = _one(app_objects, "ClusterRoleBinding", "haku-kube-api-proxy-cluster-admin-ceiling")
-    assert ceiling["subjects"] == [
-        {
-            "kind": "ServiceAccount",
-            "name": execution_name,
-            "namespace": execution_service_account["metadata"]["namespace"],
-        }
-    ]
 
 
 def test_public_coder_never_exceeds_haku(

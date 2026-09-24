@@ -8,10 +8,10 @@ import pytest
 import pytest_bazel
 
 from agentplane.action_service.catalog import ActionIdentity
+from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.policies.exact_actions import ExactActions
 from agentplane.action_service.policies.kind import Matched, NotMatched
 from agentplane.action_service.policies.registry import evaluate
-from github_policy.visibility import RepositoryVisibilityService
 
 ECHO = ActionIdentity(group="everything", name="echo")
 POLICY = ExactActions.model_validate({"type": "exact_actions", "actions": {"everything": ["echo"]}})

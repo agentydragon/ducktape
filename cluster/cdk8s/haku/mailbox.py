@@ -2,8 +2,7 @@
 (haku@allegedly.works), its Postgres store, STARTTLS certificate, public HTTP route and the
 per-public-node SMTP ingress.
 
-Hand-written beside the output: the SOPS Secrets, the `configMapGenerator` inputs and the
-directory's `kustomization.yaml` (its generator options are not expressible here), and
+Hand-written beside the output: the SOPS Secrets, the `configMapGenerator` inputs and
 `image-pins/kustomization.yaml`, which overrides the Stalwart image's `unset` tag.
 """
 
@@ -34,7 +33,8 @@ from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
@@ -57,7 +57,18 @@ _IMAGE = "git.allegedly.works/ducktape-ci/stalwart:unset"
 _SMTP_PORT = 2525
 _HTTP_PORT = 8080
 _IMAP_PORT = 1143
-_CONFIG_DIR = "/etc/stalwart"  # the provisioning plan ConfigMap: config.json, initialize.sh
+_CONFIG_DIR = "/etc/stalwart"  # where _CONFIG_MAP is mounted
+_INITIALIZE = "initialize.sh"
+_SERVER_CONFIG = "config.json"
+# The provisioning plan: the server's config, the init container's script and the plan it applies.
+_CONFIG_MAP = ConfigMapArgs(
+    name="haku-mailbox-config",
+    namespace=NAMESPACE,
+    # The script and the plan's Sieve carry `${...}` that are theirs, not Flux's.
+    options=GeneratorOptions(annotations={"kustomize.toolkit.fluxcd.io/substitute": "disabled"}),
+    files=[_INITIALIZE, _SERVER_CONFIG, "mailbox-plan.ndjson"],
+)
+_INGRESS_CONFIG_MAP = ConfigMapArgs(name=_INGRESS_NAME, namespace=NAMESPACE, files=["nginx.conf"])
 
 
 def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
@@ -148,7 +159,7 @@ def _add_deployment(chart: Chart) -> None:
                         k8s.Container(
                             name="initialize",
                             image=_IMAGE,
-                            command=["/bin/sh", f"{_CONFIG_DIR}/initialize.sh"],
+                            command=["/bin/sh", f"{_CONFIG_DIR}/{_INITIALIZE}"],
                             termination_message_policy="FallbackToLogsOnError",
                             env=[
                                 _db_password_env(),
@@ -172,7 +183,7 @@ def _add_deployment(chart: Chart) -> None:
                         k8s.Container(
                             name="stalwart",
                             image=_IMAGE,
-                            command=["/usr/local/bin/stalwart", "--config", f"{_CONFIG_DIR}/config.json"],
+                            command=["/usr/local/bin/stalwart", "--config", f"{_CONFIG_DIR}/{_SERVER_CONFIG}"],
                             # Surface crash output in pod status (.lastState.terminated.message):
                             # pods/log in this namespace is RBAC-fenced to the operator, but pod
                             # status is diagnostics-readable -- without this, an initialization
@@ -199,7 +210,7 @@ def _add_deployment(chart: Chart) -> None:
                     volumes=[
                         k8s.Volume(
                             name="config",
-                            config_map=k8s.ConfigMapVolumeSource(name="haku-mailbox-config", default_mode=0o555),
+                            config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP.name, default_mode=0o555),
                         ),
                         k8s.Volume(name="tls", secret=k8s.SecretVolumeSource(secret_name=_TLS_SECRET)),
                         k8s.Volume(name="tmp", empty_dir=k8s.EmptyDirVolumeSource()),
@@ -334,7 +345,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                         )
                     ],
                     volumes=[
-                        k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_INGRESS_NAME)),
+                        k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_INGRESS_CONFIG_MAP.name)),
                         k8s.Volume(
                             name="tmp",
                             empty_dir=k8s.EmptyDirVolumeSource(
@@ -499,3 +510,13 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
+    write_yaml(
+        root / OUTPUT_DIR / "kustomization.yaml",
+        # No namespace transformer: haku-mail-token.sops.yaml targets flux-system (the rotator's
+        # publication point); everything else carries its namespace explicitly.
+        kustomize_kustomization(
+            resources=[f"{NAME}.k8s.yaml", "haku-mailbox-admin.sops.yaml", "haku-mail-token.sops.yaml"],
+            components=["./image-pins"],
+            config_map_generator=[_CONFIG_MAP, _INGRESS_CONFIG_MAP],
+        ),
+    )

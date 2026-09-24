@@ -55,6 +55,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import public_coder_proxy
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
@@ -64,12 +65,12 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.haku import console_config
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
 _KEEPER_NAME = "clickhouse-keeper"
-_LABELS = {"app.kubernetes.io/name": client.NAME, "app.kubernetes.io/instance": client.NAME}
 _KEEPER_LABELS = {"app.kubernetes.io/name": _KEEPER_NAME, "app.kubernetes.io/instance": _KEEPER_NAME}
 _ADMIN_CREDENTIALS = "clickhouse-admin-credentials"  # admin-credentials.sops.yaml
 _METRICS_PORT = 9363
@@ -91,7 +92,7 @@ _TCP = "TCP"
 
 
 def _password(secret: str) -> dict[str, object]:
-    return {"valueFrom": {"secretKeyRef": {"name": secret, "key": "password"}}}
+    return {"valueFrom": {"secretKeyRef": {"name": secret, "key": client.PASSWORD_KEY}}}
 
 
 def _one_per_host(labels: dict[str, str]) -> dict[str, object]:
@@ -180,11 +181,11 @@ def _users() -> dict[str, object]:
         # forwarding to the private ClusterIP service. Keep the account scoped
         # to the AIQuota tenant tables: ClickHouse system metadata remains
         # unavailable to the agent.
-        "public_coder_analytics/password": _password("clickhouse-public-coder-credentials"),
-        "public_coder_analytics/networks/ip": _ANY_ADDRESS,
-        "public_coder_analytics/profile": "readonly",
-        "public_coder_analytics/quota": "readonly",
-        "public_coder_analytics/grants/query": [
+        f"{client.PUBLIC_CODER_USER}/password": _password(client.PUBLIC_CODER_CREDENTIALS),
+        f"{client.PUBLIC_CODER_USER}/networks/ip": _ANY_ADDRESS,
+        f"{client.PUBLIC_CODER_USER}/profile": "readonly",
+        f"{client.PUBLIC_CODER_USER}/quota": "readonly",
+        f"{client.PUBLIC_CODER_USER}/grants/query": [
             "GRANT SELECT ON aiquota.aiquota_windows",
             "GRANT SELECT ON aiquota.raw_http_observations",
         ],
@@ -311,10 +312,10 @@ def clickhouse_chart(app: App) -> Chart:
                 pod_templates=[
                     ClickHouseInstallationSpecTemplatesPodTemplates(
                         name=pod_template,
-                        metadata={"labels": _LABELS},
+                        metadata={"labels": client.LABELS},
                         spec={
                             "nodeSelector": _HDD_NODE_SELECTOR,
-                            "affinity": _one_per_host(_LABELS),
+                            "affinity": _one_per_host(client.LABELS),
                             "terminationGracePeriodSeconds": 120,
                             "securityContext": {"fsGroup": _CLICKHOUSE_UID, "seccompProfile": _RUNTIME_DEFAULT_SECCOMP},
                             "containers": [
@@ -361,7 +362,7 @@ def clickhouse_chart(app: App) -> Chart:
         "podmonitor",
         metadata=metadata(client.NAME, client.NAMESPACE),
         spec=PodMonitorSpec(
-            selector=PodMonitorSpecSelector(match_labels=_LABELS),
+            selector=PodMonitorSpecSelector(match_labels=client.LABELS),
             pod_metrics_endpoints=[
                 PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", scrape_timeout="15s")
             ],
@@ -522,7 +523,7 @@ def networkpolicy_chart(app: App) -> Chart:
         "clickhouse",
         metadata=k8s.ObjectMeta(name="clickhouse-ingress", namespace=client.NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=_LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=client.LABELS),
             policy_types=["Ingress"],
             ingress=[
                 k8s.NetworkPolicyIngressRule(
@@ -540,7 +541,7 @@ def networkpolicy_chart(app: App) -> Chart:
                 # egress proxy is the only cross-namespace client admitted for the native
                 # read-only public_coder_analytics account.
                 k8s.NetworkPolicyIngressRule(
-                    from_=_from_namespace("public-coder-agent", {"app.kubernetes.io/name": "public-coder-agent-proxy"}),
+                    from_=_from_namespace(public_coder_proxy.NAMESPACE, public_coder_proxy.LABELS),
                     ports=_ports(client.HTTP_PORT),
                 ),
                 k8s.NetworkPolicyIngressRule(
@@ -621,7 +622,7 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
             k8s.Subject(kind="Group", name="oidc-ksbx-groups:haku", api_group=rbac_group),
             k8s.Subject(kind="Group", name="haku:access-profile:haku", api_group=rbac_group),
             k8s.Subject(kind="ServiceAccount", name="haku", namespace="haku-sandbox"),
-            k8s.Subject(kind="Group", name="haku:access-profile:public-coder", api_group=rbac_group),
+            k8s.Subject(kind="Group", name=console_config.PUBLIC_CODER_GROUP, api_group=rbac_group),
         ],
     )
     return chart
