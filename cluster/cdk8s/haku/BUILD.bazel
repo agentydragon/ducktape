@@ -9,6 +9,7 @@ py_library(
     srcs = ["console_config.py"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/clickhouse:__pkg__",
         "//cluster/cdk8s/haku:__pkg__",
         "//cluster/validation:__pkg__",
     ],
