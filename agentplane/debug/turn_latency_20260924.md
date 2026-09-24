@@ -9,9 +9,9 @@ ceiling it measured **7.51 s** on Claude (`claude-haiku-4-5`) and **5.22 s** on 
 one after another, at about 90 ms each. The harness finishes and its output waits in the stdout
 pipe while the runner works through it: 5.9 s of the Claude turn and 1.1 s of the Codex turn.
 
-**The proxies we own on the model path add about 0.1 s.** Those are the egress proxy, llm-ingress
-and LiteLLM. Codex's model leg is mostly CLIProxyAPI and the ChatGPT backend behind it: the same
-tiny request took 1.8 s and 3.1 s in two runs (§ The model path).
+**The proxies we own on the model path add about 0.1 s.** Those are the egress proxy, llm-ingress,
+LiteLLM and CLIProxyAPI; CLIProxyAPI's own share is about 2 ms. Codex's model leg is the ChatGPT
+Codex backend behind them: the same tiny request took 1.8–4.3 s in three runs (§ The model path).
 
 App `devel-20260923231228-b867c67`, llm-ingress `devel-20260920014010-89ebdd6`, Electric 1.8.1 on
 the emptyDir it moved to that night. Threads `d9372034-4c33-4761-a92d-2818c68289d6` (Claude) and
@@ -142,23 +142,30 @@ harness ─▶ agentplane-egress ─▶ agentplane-llm-ingress ─▶ LiteLLM �
 `chatgpt/oai-responses/*` routes to CLIProxyAPI (<../../cluster/k8s/litellm/app/litellm.k8s.yaml>),
 which calls the ChatGPT Codex backend, not the OpenAI platform API
 (<../../cluster/k8s/cli-proxy-api/README.md>). Every hop streams: the egress proxy logs "Streaming
-response", and llm-ingress forwards raw chunks. Two Codex PING requests, from the harness
+response", and llm-ingress forwards raw chunks. Three Codex PING requests, from the harness
 connecting to the stream closing:
 
 | Request          | Egress: connect, decide, connect | llm-ingress + LiteLLM | CLIProxyAPI + ChatGPT | …of which to headers |
 | ---------------- | -------------------------------- | --------------------- | --------------------- | -------------------- |
 | 00:10:59 (above) | 43 ms                            | ~64 ms                | 3.14 s                | 0.96 s               |
 | 23:53:37         | 14 ms                            | ~49 ms                | 1.77 s                | 1.33 s               |
+| 02:23:57         | 9 ms                             | ~40 ms                | 4.30 s                | 1.48 s               |
 
 The hops we own cost about 0.1 s per request. The egress proxy takes a new connection and a policy
 decision on every request, and llm-ingress makes a TokenReview on every request by design
 (<../workload_auth/principal.py>).
 
-Not split: CLIProxyAPI's own processing from the ChatGPT backend's. CLIProxyAPI's log gives only
-totals. Splitting them needs its request log turned on (`debug`/`request-log` in
-<../../cluster/k8s/cli-proxy-api/cli-proxy-api.k8s.yaml>), or LiteLLM's Langfuse traces. Across the
-last day, CLIProxyAPI's 14 model requests took 1.8–7.2 s, at a median of 3.8 s, over mixed request
-sizes.
+**CLIProxyAPI's own share is about 2 ms; the rest is the ChatGPT backend.** CLIProxyAPI's access line
+carries the split (<../../third_party/cli_proxy_api/README.md>). For the 02:23:57 request:
+
+```text
+200 | 4.301s | POST "/v1/responses" | upstream attempts=1 sent=1ms headers=1.481s first_chunk=1.505s first_byte=1.506s
+```
+
+It sent the request upstream 1 ms after it arrived and relayed the first chunk 1 ms after it came
+back. The ChatGPT backend took 1.48 s to headers and 1.5 s to its first chunk. The answer's
+`item/started` left the harness at 02:24:01.424, 2.6 s after that chunk and while the upstream
+stream was still open, for 5 output tokens and no reasoning tokens. The stream closed 0.19 s later.
 
 Also left with the harness: Codex's 0.57 s between receiving `turn/start` and sending its request.
 
