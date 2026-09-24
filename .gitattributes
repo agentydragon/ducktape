@@ -162,10 +162,6 @@ haku/x/dispatch/deploy/job-template.yaml cluster-manifest-ignored=true
 haku/x/dispatch/deploy/zones.yaml cluster-manifest-ignored=true
 # per-index haku-indexer chunk config slices, mounted via configMapGenerator — not K8s manifests.
 cluster/k8s/haku/console/indexer-chunk-*-config.yaml cluster-manifest-ignored=true
-# iron-proxy config for Haku's egress proxy, mounted via configMapGenerator — not a K8s
-# manifest.
-cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml cluster-manifest-ignored=true
-
 # Dotfiles/dotdirs follow their own naming conventions
 .* filename-conventions-ignored=true
 .*/** filename-conventions-ignored=true

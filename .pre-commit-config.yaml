@@ -286,7 +286,6 @@ repos:
             cluster/k8s/agents/openshell/openclaw/policy\.yaml|
             # iron-proxy config mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/agents/public-coder-agent/proxy/codex-runner-iron\.yaml|
-            cluster/k8s/agents/haku-egress-proxy/claude-iron\.yaml|
             cluster/k8s/agents/haku-egress-proxy/openclaw-spike-iron\.yaml|
             cluster/k8s/litellm/app/(chatgpt-)?proxy-config\.yaml|
             cluster/k8s/litellm/tana/proxy-config\.yaml|

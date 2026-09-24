@@ -48,34 +48,6 @@ spec:
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
-  name: aiquota-api-bearer-haku-claude
-  namespace: cli-proxy-api
-spec:
-  data:
-    - remoteRef:
-        key: aiquota-api-bearer
-        property: bearer-token
-      secretKey: bearer-token
-  refreshInterval: 1h
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: kubernetes-cli-proxy-api-secret-store
-  target:
-    creationPolicy: Owner
-    deletionPolicy: Retain
-    name: aiquota-api-bearer-haku-claude
-    template:
-      metadata:
-        annotations:
-          description: Shared AIQuota API bearer mirrored only to the haku-claude-oauth-proxy egress proxy.
-          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-egress-proxy
-          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-egress-proxy
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
   name: aiquota-api-bearer-haku-console
   namespace: cli-proxy-api
 spec:
