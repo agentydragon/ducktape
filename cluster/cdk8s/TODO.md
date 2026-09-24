@@ -1,140 +1,93 @@
-# cluster/cdk8s TODO
+# cdk8s contract backlog
 
-Tests under `cluster/validation/` and elsewhere exist, in large part, because two
-pieces of hand-written YAML (or a manifest and application code) have to agree on some
-value and nothing computes one side from the other. The fix in each case below isn't
-"write a test" — it's plumb the value through one Python source so the two sides
-can't drift _by construction_; a future edit that reintroduces two independent
-literals is then a visible, reviewable diff instead of a silent runtime break.
+Priority and overall direction: [PLAN.md](PLAN.md). Remaining hand-written manifests,
+overlays and application payloads: [remainder backlog](../docs/cdk8s_remainder.md).
+Remove entries when their acceptance conditions land; this is not a history of the
+conversion.
 
-This file tracks the candidates found by a full-repo audit (every test that reads a
-cdk8s-generated YAML file, plus every `cluster/validation/` test) that are not closed by
-construction yet. Candidates where both sides were already cdk8s-generated Python were
-fixed directly instead of listed here (see git log — `cluster/cdk8s/litellm/config.py`,
-`model_rosters.py`, `agentplane/staging.py`, `generate_manifests.py`,
-`app.py`, `egress.py`, `dex.py`,
-`ha_mcp.py`, and the validation tests that pinned the now-redundant
-equalities).
+## ESO store/consumer agreement
 
-Entries are removed once landed — this is a burn-down, not a changelog.
+`cluster/validation/checks.py` sees generated and hand-written resources together.
+Resolve each ExternalSecret's store, including ClusterExternalSecret target namespaces;
+check store namespace conditions and the ServiceAccount required by Kubernetes-provider
+referent authentication. Existing checks cover external credential ownership and the
+Forgejo image distribution convention, not this general relationship.
 
-## Follow-ups from the agentplane conversion
+The missing agreement has already caused denied Airlock/Forgejo-image consumers and a
+missing `external-creds-reader` ServiceAccount. Handle namespace selectors as well as
+literal lists where used. Derive paired fields from an explicitly approved grant when
+they have one owner; never grant access just because an ExternalSecret requests it.
 
-- **A light `settings.py` per agentplane service and aiquota.** Synth imports each
-  service's `main` (aiquota's `api`) for its `Settings`, pulling mitmproxy/fastapi in;
-  the synth tests sit at `size = "medium"` for that alone. Moving `Settings` and the
-  sub-models it needs into a `settings.py` the constructs import returns them to `small`.
-- **`Chart(namespace=...)`** once cluster-scoped objects (ClusterRole/Binding, the
-  trust-manager Bundle) move to their own chart; then `metadata(name, namespace)`
-  drops out of every namespaced object.
-- **Cilium peers as constructs.** `cilium.endpoint_labels(namespace, name)`
-  takes strings; the target construct's exported labels would make a renamed workload
-  fail at synth instead of at runtime.
-- **The egress fence as one construct.** A Pod sits behind the central proxy only with
-  all five of: the sidecar container, the projected-token volume, the CA mount, the
-  routing env on its workload container, and the labels `networkpolicy-runner` selects.
-  Those live inline across `_runner_container` and `_add_sandbox_template`, which is fine
-  for one template and a trap for the second — the sandbox Actions' `exec` reached
-  nothing because the routing env was a runner argument rather than container env, and
-  the fence correctly denied everything else. When an exec-target template earns its own
-  image, have one construct take a workload container and return the fenced pod spec,
-  so the five hold together by construction instead of by being copied. Not worth
-  extracting while `agentplane-runner` is the only caller.
+Done: synthetic cases catch denied namespaces and absent referent identities, while
+valid generated and hand-written consumers pass. No duplicate consumer/provider roster.
 
-## After cdk8s-based manifest builds stabilize
+## Fleet validation coverage and references
 
-- **Consider restoring cross-chart Pod Secret/ConfigMap dependency validation.** Once the
-  new cdk8s-based cluster manifest builds are stable, revive it if a build or generation
-  component can see the needed graphs together: chart objects and controller-created
-  outputs, sibling Kustomize resources, and the Flux `dependsOn` graph. A per-chart
-  synth cannot establish relationships across those boundaries. The removed checks were:
-  - Require each Pod Secret/ConfigMap reference not produced in its chart to name a
-    declared external provider.
-  - Require that provider to appear in the consumer's Flux dependency or sibling-resource
-    inventory.
-  - Reject declared providers no Pod reads. These were source-graph consistency checks;
-    they did not query the cluster or prove a live resource existed.
+`fleet_rules.py` is attached explicitly by selected charts. Establish which workload
+charts it covers, which checks apply to the rest, and which exceptions reflect real
+policy. Expanding hardening coverage can change workload behavior and belongs in its
+own reviewed change.
 
-- **Check ESO wiring against each store.** An `ExternalSecret`, or a
-  `ClusterExternalSecret.spec.namespaces` entry, only syncs if the backing
-  `ClusterSecretStore.spec.conditions[].namespaces` admits its namespace, and, for a store
-  with referent auth (`auth.serviceAccount` without a namespace), only if that namespace
-  has the named ServiceAccount. Each is a pair of independently written lists that drift
-  silently: ESO reports `SecretSyncedError` on the live cluster and nothing in CI fails.
-  It has shipped three times: PR #7407 widened `google-access-token`'s
-  `ClusterExternalSecret` to add `agentplane-staging` without widening
-  `kubernetes-airlock-secret-store`'s `conditions`; `kubernetes-forgejo-images-secret-store`
-  never admitted `google-mcp`'s pull secret (#7630); and agentplane-testing's GitHub PAT
-  copy lost its `external-creds-reader` ServiceAccount. `cluster/validation/checks.py`
-  already sees rendered and hand-written resources together (the store checks beside
-  `check_forgejo_image_namespace_reflection`), so resolve every (Cluster)ExternalSecret's
-  store there and fail on either gap. Once every pair is a cdk8s construct, derive both
-  sides from one source instead.
+`resolved_references` is a same-chart kind-mismatch check, not missing-reference
+validation; it currently ignores namespace. Narrow its name/claims or strengthen its
+implementation. Whole-tree resolution must distinguish:
 
-  Specific coverage removed:
-  - Agentplane staging: `agentplane-oidc` and `agentplane-mcp-oauth` from
-    `sso-providers-tf`, `litellm-key-agentplane-staging` from `litellm-keys-tf`,
-    `ssh-mcp-bearer` from `ssh-mcp`, `haku-console-github-mcp-client-credentials` from
-    `haku-console`, and `agentplane-staging-web-push-vapid` from its SOPS sibling.
-    Testing checked `litellm-key-cheap-experiments` from `litellm-credentials/`.
-  - aiquota: `aiquota-api-bearer` from SOPS, `cli-proxy-api-management` from
-    `cli-proxy-api`, `aiquota-oidc` from `agent-machine-access-tf`, and
-    `clickhouse-aiquota-credentials` from `reflector`; the `aiquota-api-config` and
-    `schema.sql` ConfigMaps.
-  - ClickHouse schema: `clickhouse-admin-credentials` from `clickhouse` and the
-    `schema.sql` ConfigMap.
-  - Haku console: Secrets `forgejo-images-creds`, `haku-console-oidc`,
-    `haku-console-public-coder-agent`, `haku-console-agent-api`, `ssh-mcp-bearer`,
-    `aiquota-api-bearer-haku-console`, `haku-routine-launch-token`,
-    `haku-console-web-push-vapid`, and `haku-console-github-mcp-client-credentials`;
-    ConfigMaps from `static-metadata.yaml`, `image-metadata.yaml`, and `indexer-role.sql`.
-  - ha-mcp: `home-assistant-break-glass`, the SOPS `ha-mcp-bearer`, and the
-    Job-created `ha-mcp-home-assistant-token`.
-  - ssh-mcp: `ssh-mcp-keys`, `ssh-mcp-keys-public-coder-devbox`, and `ssh-mcp-keys-atlas`.
-  - LiteLLM: `litellm-master-key`, `litellm-salt-key`, `litellm-anthropic-key`,
-    `litellm-groq-key`, `litellm-gemini-key`, `litellm-mistral-key`,
-    `litellm-cliproxy-key`, `litellm-db-app`, `langfuse-secrets`, and
-    `tana-firebase-refresh-token`.
-  - `ntfy`, `etcd-monitoring`, and Forgejo image automation had empty provided-resource
-    rosters, so any new out-of-chart Pod reference failed validation.
-  - Unit cases covered valid `oidc` → `sso-tf` and `image-tag` → `image-tag.yaml`
-    declarations, unprovided `nobody-makes-this` Secret and `nor-this` ConfigMap,
-    `token` mapped to absent provider `token-maker`, and unused `stale` Secret and
-    `stale-map` ConfigMap entries.
+- Namespaced Secret/ConfigMap objects and controller-created targets (ESO, Certificate,
+  CNPG, trust-manager), with their actual output semantics.
+- SOPS metadata and Kustomize-generated names after composition.
+- Optional references and outputs produced outside the rendered tree (Terraform,
+  runtime token brokers, Jobs and reflector copies).
 
-## Reachable since the one-to-one conversion — the manifests are generated, the tests remain
+Report unresolved external producers as a coverage limit. Do not invent consumer-side
+`provides` records or add readiness edges for every reference. The correct boundary is
+where the necessary inputs already coexist; a global cdk8s App is not a prerequisite.
 
-Each side the test compares is now a construct, except the hand-written inputs named;
-retiring a test means deriving both sides from one value.
+Done: precise coverage and diagnostics, with no false promise that synthesis proves
+live Secret existence or service readiness.
 
-- **`haku/workspaces` setup-script contract** — `test_haku_sandbox_setup.py`
-  regex-extracts the variables `haku-sandbox-setup.sh` (an image build input) requires and
-  checks the synthesized SandboxTemplate (`haku/workspaces.py`) sets them. No `Settings`
-  reads this env: `haku/runtime/agent/config.py` shares the `HAKU_GIT_*` names but
-  configures another, undeployed binary. Closing it needs the script's requirements in a
-  form the generator reads (a Python bootstrap with its own `Settings`, or a declaration in
-  the script), a design for the operator.
+## Lightweight settings imports
 
-## Parked — lower priority
+Agentplane constructs import Settings from `agentplane/{app,egress,llm_ingress,
+action_service}/main.py`; aiquota imports `aiquota/api.py`. Move schema definitions
+and their required submodels into application-owned modules, updating all callers.
+Use the same approach for Airlock/rotators when converting their config.
 
-- **`haku/x/dispatch/` (`test_haku_dispatch_zones_contract.py`)** — `zones.yaml`'s
-  `models:` list duplicates `generate_workers_litellm.py`'s
-  `zai_zone_model_names()` (itself derived from `ZAI_ANTHROPIC_MODELS`). The fix
-  shape is clear (extend that generator to also write `zones.yaml`, same as it
-  already writes the workers-litellm config) but `haku/x/dispatch/` is parked
-  infrastructure — converting it means building new cdk8s for something not
-  currently running. Revisit if/when dispatch is unparked.
+Done: synthesis imports the deployment contract without importing service runtimes.
+Measure before changing Bazel test sizes; removing an import is not timing evidence.
 
-## Not applicable — checked and left alone
+## Cilium peer references
 
-Confirmed via the same audit and intentionally _not_ listed above:
-GENUINE-BOUNDARY tests that exercise a real external tool or a different deployable
-(all of `cluster/validation/kyverno/`, `test_flux_build.py`, `test_helm_templates.py`,
-`github_api_proxy/test_proxy.py`, `monitoring/test_rules.py`,
-`test_cluster_integration.py`'s `kustomize build` core,
-`agentplane/acceptance/test_egress.py`, `cluster/cdk8s/crd_bindings/flux/test_kustomization_import.py`);
-and pure unit/schema tests with no
-second independently-authored source to drift against (`test_checks.py`,
-`test_cluster.py`, `test_crd_layering.py`, `test_dependencies.py`, `test_flux.py`,
-`test_generator_namespace.py`, `test_health_checks.py`, `test_image_automation.py`,
-`test_k8s.py`, `test_sops_decryption.py`).
+Repeated endpoint labels should come from the workload owner. Prefer a concrete
+construct within a resource chart, or exported labels passed explicitly across charts.
+Sharing a label value prevents spelling drift; it does not prove a workload exists or
+that policy permits traffic.
+
+Done per neighborhood: producer and consumers share labels without import cycles or a
+new peer registry.
+
+## Haku setup-script contract
+
+`test_haku_sandbox_setup.py` checks the generated SandboxTemplate's environment against
+the image's `haku-sandbox-setup.sh`. The script has no Settings contract; the similarly
+named `haku/runtime/agent/config.py` configures a different binary.
+
+Choose a small script-owned input contract or a Python bootstrap with Settings before
+retiring this real cross-artifact test. Keep the image/runtime package independent of
+`cluster/`.
+
+## Extract only when another caller needs it
+
+The Agentplane sandbox egress fence combines sidecar, token volume, CA mount, routing
+environment and policy labels. Extract their composition when a second exec-target
+template needs it; do not build a generic workload framework for the existing caller.
+
+A second Haku deployment may justify Environment props. Namespace-default charts may
+help a purely namespaced component, but splitting mixed-scope charts solely to omit
+`metadata(..., namespace)` is not scheduled.
+
+## Parked
+
+`haku/x/dispatch` still duplicates its model roster between `zones.yaml` and its
+workers-LiteLLM generator. Derive both when the package is revived. Other project-owned
+raw deployment packages are listed in the remainder backlog; file presence does not
+establish live deployment.
