@@ -11,9 +11,10 @@ from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPlugins
 from cluster.cdk8s import cnpg
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "authentik-db-ovh"
-OUTPUT_DIR = "cluster/k8s/authentik/db"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/db"
 # The database is on node-local `local-path-ovh` storage and cannot move; Authentik's server
 # selects the same zone to stay beside it.
 NODE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}

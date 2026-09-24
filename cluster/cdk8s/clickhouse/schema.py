@@ -21,11 +21,12 @@ from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import ConfigMapArgs, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 
 NAME = "clickhouse-schema"
-OUTPUT_DIR = "cluster/k8s/clickhouse/schema"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/schema"
 NAMESPACE = "clickhouse"
 SCHEMA_CONFIG_MAP = ConfigMapArgs(name="clickhouse-aiquota-schema", namespace=NAMESPACE, files=[client.SCHEMA_FILE])
 _JOB_NAME = "clickhouse-aiquota-schema-v10"

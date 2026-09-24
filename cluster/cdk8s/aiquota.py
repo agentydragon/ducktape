@@ -67,12 +67,13 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 
 NAME = "aiquota"
-OUTPUT_DIR = "cluster/k8s/aiquota"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/aiquota"
 NAMESPACE = "cli-proxy-api"  # shared with CLIProxyAPI, whose Kustomization creates it
 BEARER_SECRET_NAME = "aiquota-api-bearer"  # the SOPS-managed Secret; every mirror below copies its one key
 CONFIG_CONFIG_MAP = ConfigMapArgs(name="aiquota-api-config", namespace=NAMESPACE, files=["config.toml"])

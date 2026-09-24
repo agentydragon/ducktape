@@ -22,6 +22,7 @@ py_library(
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
         "//cluster/cdk8s/crd_bindings/grafana_operator:grafanadashboard",

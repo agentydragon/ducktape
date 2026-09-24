@@ -26,6 +26,7 @@ import pytest
 import pytest_bazel
 import yaml
 
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT, manifest_files
 from util.bazel.runfiles import get_required_path
 
 _K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
@@ -34,12 +35,12 @@ GENERATOR_FIELDS = ("configMapGenerator", "secretGenerator")
 
 
 @pytest.fixture(scope="session")
-def k8s_dir() -> Path:
-    return get_required_path(_K8S_ROOT_KUSTOMIZATION).parent
+def repo_root() -> Path:
+    return get_required_path(_K8S_ROOT_KUSTOMIZATION).parents[2]
 
 
-def _flux_target_namespaces(k8s_dir: Path) -> dict[str, str | None]:
-    flux = k8s_dir / "flux/kustomizations.k8s.yaml"
+def _flux_target_namespaces(repo_root: Path) -> dict[str, str | None]:
+    flux = repo_root / HAND_WRITTEN_ROOT / "flux/kustomizations.k8s.yaml"
     result = {}
     for doc in yaml.safe_load_all(flux.read_text()):
         if not isinstance(doc, dict) or doc.get("kind") != "Kustomization":
@@ -51,17 +52,17 @@ def _flux_target_namespaces(k8s_dir: Path) -> dict[str, str | None]:
     return result
 
 
-def test_generators_declare_a_namespace(k8s_dir: Path) -> None:
+def test_generators_declare_a_namespace(repo_root: Path) -> None:
     offenders: list[str] = []
-    flux_target_namespaces = _flux_target_namespaces(k8s_dir)
-    for kust in k8s_dir.rglob("kustomization.yaml"):
+    flux_target_namespaces = _flux_target_namespaces(repo_root)
+    for kust in manifest_files(repo_root, "kustomization.yaml"):
         doc = yaml.safe_load(kust.read_text())
         if not isinstance(doc, dict):
             continue
         # Only directories Flux applies directly are checked. Base or overlay
         # fragments have no entry in the central Flux chart and inherit their
         # namespace from whichever parent includes them.
-        flux_path = f"./cluster/k8s/{kust.parent.relative_to(k8s_dir).as_posix()}"
+        flux_path = f"./{kust.parent.relative_to(repo_root).as_posix()}"
         if flux_path not in flux_target_namespaces:
             continue
         # A namespace supplied for the whole kustomization, by either mechanism,
@@ -78,7 +79,7 @@ def test_generators_declare_a_namespace(k8s_dir: Path) -> None:
                     continue
                 if not entry.get("namespace"):
                     offenders.append(
-                        f"{kust.relative_to(k8s_dir)}: {field} entry "
+                        f"{kust.relative_to(repo_root)}: {field} entry "
                         f"{entry.get('name', '<unnamed>')!r} has no `namespace:`"
                     )
 

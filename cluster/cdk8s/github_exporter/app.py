@@ -39,9 +39,10 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from cluster.cdk8s import external_creds, forgejo_images
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-_OUTPUT_DIR = "cluster/k8s/github-exporter"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/github-exporter"
 _NAMESPACE = "monitoring"
 _ACCOUNTS = ("agentydragon", "agentydragon-agent")
 # The external-creds source Secret each account's token is copied from.
@@ -296,4 +297,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart)

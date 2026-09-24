@@ -26,6 +26,7 @@ py_library(
         ":config",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:model_rosters",
         "//cluster/cdk8s:terraform",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
@@ -39,6 +40,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/external_secrets:clustersecretstore",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
@@ -60,6 +62,7 @@ py_library(
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s:pod_spec_patches",
         "//cluster/cdk8s:probes",
@@ -78,6 +81,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
     ],
 )
 
@@ -88,6 +92,7 @@ py_library(
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/crd_bindings/cnpg:cluster",
         "@pypi//cdk8s",
     ],
@@ -99,6 +104,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
         "//cluster/cdk8s/external_secrets:external_secret",

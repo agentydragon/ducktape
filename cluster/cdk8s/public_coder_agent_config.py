@@ -27,6 +27,7 @@ from cluster.cdk8s import external_creds, public_coder_proxy, public_coder_sshpi
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator, remote_data
 from cluster.cdk8s.generation import config_map_chart, write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.model_rosters import (
     GEMINI_CONTEXT_WINDOW,
@@ -1027,4 +1028,4 @@ def app_chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, "cluster/k8s/agents/public-coder-agent/app", chart, app_chart)
+    write_charts(root, f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app", chart, app_chart)

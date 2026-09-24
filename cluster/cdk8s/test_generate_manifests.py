@@ -1,316 +1,70 @@
 """Pinning tests for the cdk8s manifest generators.
 
-`test_generated_manifests_match_committed` is the "LiteLLM config pattern"
-generated-output snapshot (STYLE.md § Testing), generalized from the ConfigMap
-payload to every generated file: the committed files are the source of truth,
-and this test proves regeneration reproduces them exactly.
+The generated-output snapshot (STYLE.md § Testing) over every file the generator writes:
+the committed files are the source of truth, and regeneration must reproduce them exactly.
+`GENERATED_ROOT` is closed in the other direction too, so a hand-added or stale file there
+fails; generated files beside hand-written ones under `HAND_WRITTEN_ROOT` are pinned only
+one way.
 """
 
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
 from cluster.cdk8s.generate_manifests import generate_manifests
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from util.bazel.runfiles import get_required_path
 
-_GENERATED_FILES = (
-    "cluster/k8s/flux/kustomizations.k8s.yaml",
-    "cluster/k8s/artifact-generators/artifact-generators.k8s.yaml",
-    "cluster/k8s/litellm/app/litellm.k8s.yaml",
-    "cluster/k8s/litellm/app/kustomization.yaml",
-    "cluster/k8s/agents/ha-mcp/app/ha-mcp.k8s.yaml",
-    "cluster/k8s/agents/ha-mcp/app/kustomization.yaml",
-    "cluster/k8s/ssh-mcp/ssh-mcp.k8s.yaml",
-    "cluster/k8s/ssh-mcp/kustomization.yaml",
-    "cluster/k8s/agents/public-coder-agent/sshpiper/pipe-devbox.k8s.yaml",
-    "cluster/k8s/agents/public-coder-agent/devbox/public-coder-devbox.k8s.yaml",
-    "cluster/k8s/agents/public-coder-agent/devbox/kustomization.yaml",
-    "cluster/k8s/agents/public-coder-agent/namespace/public-coder-agent.k8s.yaml",
-    "cluster/k8s/agents/public-coder-agent/namespace/kustomization.yaml",
-    "cluster/k8s/clickhouse/schema/clickhouse-schema.k8s.yaml",
-    "cluster/k8s/clickhouse/schema/kustomization.yaml",
-    "cluster/k8s/aiquota/aiquota.k8s.yaml",
-    "cluster/k8s/aiquota/kustomization.yaml",
-    "cluster/k8s/agentplane-testing/agentplane.k8s.yaml",
-    "cluster/k8s/agentplane-testing/litellm-credentials.k8s.yaml",
-    "cluster/k8s/agentplane-staging/agentplane.k8s.yaml",
-    "cluster/k8s/agentplane-staging/kustomization.yaml",
-    "cluster/k8s/haku/console/haku-console.k8s.yaml",
-    "cluster/k8s/haku/console/kustomization.yaml",
-    "cluster/k8s/haku/namespace/haku-namespace.k8s.yaml",
-    "cluster/k8s/haku/rbac/haku-rbac.k8s.yaml",
-    "cluster/k8s/haku/ui-image-webhook/haku-ui-image-webhook.k8s.yaml",
-    "cluster/k8s/haku/workloads/haku-workloads.k8s.yaml",
-    "cluster/k8s/haku/workspaces/app/haku-workspaces.k8s.yaml",
-    "cluster/k8s/haku/workspaces/app/kustomization.yaml",
-    "cluster/k8s/haku/mailbox/haku-mailbox.k8s.yaml",
-    "cluster/k8s/haku-ci/haku-ci.k8s.yaml",
-    "cluster/k8s/agents/agent-rbac-base/agent-rbac-base.k8s.yaml",
-    "cluster/k8s/agents/agent-sandbox/workspaces/agent-workspaces.k8s.yaml",
-    "cluster/k8s/agents/agent-sandbox/workspaces/kustomization.yaml",
-    "cluster/k8s/agents/alloy-otlp-bearer/alloy-otlp-bearer.k8s.yaml",
-    "cluster/k8s/agents/alloy-otlp-bearer/kustomization.yaml",
-    "cluster/k8s/agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
-    "cluster/k8s/agents/haku-openclaw-spike/app/haku-openclaw-spike.k8s.yaml",
-    "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
-    "cluster/k8s/agents/haku-openclaw-spike/backup/haku-openclaw-spike-backup.k8s.yaml",
-    "cluster/k8s/agents/haku-openclaw-spike/backup/kustomization.yaml",
-    "cluster/k8s/agents/public-coder-agent/app/public-coder-agent.k8s.yaml",
-    "cluster/k8s/agents/public-coder-agent/backup/public-coder-agent-backup.k8s.yaml",
-    "cluster/k8s/agents/public-coder-agent/backup/kustomization.yaml",
-    "cluster/k8s/agents/public-coder-agent/proxy/public-coder-agent-proxy.k8s.yaml",
-    "cluster/k8s/agents/public-coder-agent/sshpiper/kustomization.yaml",
-    "cluster/k8s/agents/public-coder-agent/sshpiper/public-coder-agent-sshpiper.k8s.yaml",
-    "cluster/k8s/descheduler/helmrelease.k8s.yaml",
-    "cluster/k8s/descheduler/rbac.k8s.yaml",
-    "cluster/k8s/descheduler/kustomization.yaml",
-    "cluster/k8s/kyverno/app/kyverno.k8s.yaml",
-    "cluster/k8s/kyverno/app/clusterrole-background-controller-rolebindings.k8s.yaml",
-    "cluster/k8s/kyverno/app/kustomization.yaml",
-    "cluster/k8s/kyverno/policies/clusterrole-cleanup-controller-jobs.k8s.yaml",
-    "cluster/k8s/kyverno/policies/clusterrole-cleanup-controller-sandboxes.k8s.yaml",
-    "cluster/k8s/kyverno/policies/clusterrole-cleanup-controller-workloads.k8s.yaml",
-    "cluster/k8s/kyverno/policies/default-disable-service-links.k8s.yaml",
-    "cluster/k8s/kyverno/policies/default-revision-history-limit.k8s.yaml",
-    "cluster/k8s/kyverno/policies/default-vpa-requests-only.k8s.yaml",
-    "cluster/k8s/kyverno/policies/generate-agent-diagnostics-readers.k8s.yaml",
-    "cluster/k8s/kyverno/policies/ignore-cnpg-jobs-for-reloader.k8s.yaml",
-    "cluster/k8s/kyverno/policies/inject-haku-egress-proxy.k8s.yaml",
-    "cluster/k8s/kyverno/policies/inject-mitmproxy.k8s.yaml",
-    "cluster/k8s/kyverno/policies/kustomization.yaml",
-    "cluster/k8s/kyverno/policies/require-gitops.k8s.yaml",
-    "cluster/k8s/kyverno/policies/require-secret-store-conditions.k8s.yaml",
-    "cluster/k8s/kyverno/policies/restrict-agent-gateway-routes.k8s.yaml",
-    "cluster/k8s/kyverno/policies/restrict-agent-kustomization-patch.k8s.yaml",
-    "cluster/k8s/seaweedfs/cluster/priorityclass.k8s.yaml",
-    "cluster/k8s/vm-images-publisher/vm-images-publisher.k8s.yaml",
-    "cluster/k8s/nix-cache/attic.k8s.yaml",
-    "cluster/k8s/seaweedfs/public-s3/public-s3.k8s.yaml",
-    "cluster/k8s/seaweedfs/secrets/s3-config.k8s.yaml",
-    "cluster/k8s/seaweedfs/secrets/kustomization.yaml",
-    "cluster/k8s/seaweedfs/db/seaweedfs-filer-db-ssd.k8s.yaml",
-    "cluster/k8s/seaweedfs/db/kustomization.yaml",
-    "cluster/k8s/seaweedfs/external-credentials/external-credentials.k8s.yaml",
-    "cluster/k8s/seaweedfs/external-credentials/kustomization.yaml",
-    "cluster/k8s/seaweedfs/operator/seaweedfs-operator.k8s.yaml",
-    "cluster/k8s/seaweedfs/pr-visuals-bucket/pr-visuals-bucket.k8s.yaml",
-    "cluster/k8s/seaweedfs/registry-cache-bucket/registry-cache-bucket.k8s.yaml",
-    "cluster/k8s/seaweedfs/public-coder-agent-backups-bucket/public-coder-agent-backups-bucket.k8s.yaml",
-    "cluster/k8s/seaweedfs/forgejo-bucket/forgejo-bucket.k8s.yaml",
-    "cluster/k8s/seaweedfs/monitoring/seaweedfs-monitoring.k8s.yaml",
-    "cluster/k8s/seaweedfs/loom-gym-bucket/loom-gym-bucket.k8s.yaml",
-    "cluster/k8s/seaweedfs/drivefs-artifacts-bucket/drivefs-artifacts-bucket.k8s.yaml",
-    "cluster/k8s/seaweedfs/cluster/seaweedfs.k8s.yaml",
-    "cluster/k8s/seaweedfs/namespace/namespace.k8s.yaml",
-    "cluster/k8s/external-creds/external-creds.k8s.yaml",
-    "cluster/k8s/external-creds/kustomization.yaml",
-    "cluster/k8s/agents/haku-egress-proxy/cnp-haku-cloud-api-egress.k8s.yaml",
-    "cluster/k8s/agents/haku-egress-proxy/cnp-haku-claude-egress.k8s.yaml",
-    "cluster/k8s/agents/haku-egress-proxy/openclaw-spike-cnp-egress.k8s.yaml",
-    "cluster/k8s/agents/mitmproxy/cnp-cloud-api-egress.k8s.yaml",
-    "cluster/k8s/agentplane-index/agentplane-index.k8s.yaml",
-    "cluster/k8s/atuin/atuin.k8s.yaml",
-    "cluster/k8s/atuin/kustomization.yaml",
-    "cluster/k8s/atuin/user-provisioner/atuin-user-provisioner.k8s.yaml",
-    "cluster/k8s/agents/mitmproxy/kustomization.yaml",
-    "cluster/k8s/agents/mitmproxy/mitmproxy.k8s.yaml",
-    "cluster/k8s/dns-automation/dns-records.k8s.yaml",
-    "cluster/k8s/litellm/keys-tf/litellm-keys.k8s.yaml",
-    "cluster/k8s/monitoring/etcd/etcd-monitoring.k8s.yaml",
-    "cluster/k8s/monitoring/etcd/kustomization.yaml",
-    "cluster/k8s/flux-image-automation-forgejo/flux-image-automation-forgejo.k8s.yaml",
-    "cluster/k8s/ntfy/ntfy.k8s.yaml",
-    "cluster/k8s/ntfy/kustomization.yaml",
-    "cluster/k8s/agents/plaid-mcp/namespace.k8s.yaml",
-    "cluster/k8s/tofu-state/namespace.k8s.yaml",
-    "cluster/k8s/tofu-state/kustomization.yaml",
-    "cluster/k8s/tofu-state/db/tofu-state-db-ovh.k8s.yaml",
-    "cluster/k8s/tofu-state/db/kustomization.yaml",
-    "cluster/k8s/agents/haku-egress-proxy/namespace.k8s.yaml",
-    "cluster/k8s/authentik/db/authentik-db-ovh.k8s.yaml",
-    "cluster/k8s/authentik/db/kustomization.yaml",
-    "cluster/k8s/authentik/namespace.k8s.yaml",
-    "cluster/k8s/authentik/app/authentik.k8s.yaml",
-    "cluster/k8s/authentik/proxy-routes/proxy-routes.k8s.yaml",
-    "cluster/k8s/authentik/proxy-routes/kustomization.yaml",
-    "cluster/k8s/authentik/db-backups/db-backups.k8s.yaml",
-    "cluster/k8s/clickhouse/operator/namespace.k8s.yaml",
-    "cluster/k8s/clickhouse/operator/helmrelease.k8s.yaml",
-    "cluster/k8s/clickhouse/cluster/clickhouse.k8s.yaml",
-    "cluster/k8s/clickhouse/cluster/keeper.k8s.yaml",
-    "cluster/k8s/clickhouse/cluster/clickhouse-service.k8s.yaml",
-    "cluster/k8s/clickhouse/cluster/networkpolicy.k8s.yaml",
-    "cluster/k8s/clickhouse/cluster/agent-diagnostics-rbac.k8s.yaml",
-    "cluster/k8s/clickhouse/cluster/kustomization.yaml",
-    "cluster/k8s/kubevirt/app/kubevirt.k8s.yaml",
-    "cluster/k8s/kubevirt/cdi/cdi.k8s.yaml",
-    "cluster/k8s/cpap-sync/cpap-sync.k8s.yaml",
-    "cluster/k8s/cpap-sync/kustomization.yaml",
-    "cluster/k8s/cpap-sync/namespace.k8s.yaml",
-    "cluster/k8s/clickhouse/operator/kustomization.yaml",
-    "cluster/k8s/agents/mitmproxy/namespace.k8s.yaml",
-    "cluster/k8s/litellm/namespace.k8s.yaml",
-    "cluster/k8s/litellm/kustomization.yaml",
-    "cluster/k8s/litellm/db/litellm-db.k8s.yaml",
-    "cluster/k8s/litellm/db/kustomization.yaml",
-    "cluster/k8s/litellm/secrets/litellm-secrets.k8s.yaml",
-    "cluster/k8s/litellm/secrets/kustomization.yaml",
-    "cluster/k8s/litellm/keys-tf/kustomization.yaml",
-    "cluster/k8s/forgejo/namespace.k8s.yaml",
-    "cluster/k8s/forgejo/db/forgejo-db-ssd.k8s.yaml",
-    "cluster/k8s/forgejo/db/kustomization.yaml",
-    "cluster/k8s/forgejo/cache/forgejo-valkey-ovh.k8s.yaml",
-    "cluster/k8s/agents/haku-openclaw-spike/app/namespace.k8s.yaml",
-    "cluster/k8s/home-assistant/namespace.k8s.yaml",
-    "cluster/k8s/github-branch-protection/github-branch-protection.k8s.yaml",
-    "cluster/k8s/agents/machine-access-tf/agent-machine-access.k8s.yaml",
-    "cluster/k8s/forgejo/agentydragon/forgejo-agentydragon.k8s.yaml",
-    "cluster/k8s/forgejo/agentydragon-repos/forgejo-agentydragon-repos.k8s.yaml",
-    "cluster/k8s/forgejo/budget-ledger/budget-ledger.k8s.yaml",
-    "cluster/k8s/forgejo/claude/forgejo-claude.k8s.yaml",
-    "cluster/k8s/forgejo/cpap-data/cpap-data.k8s.yaml",
-    "cluster/k8s/forgejo/haku-state/haku-state.k8s.yaml",
-    "cluster/k8s/forgejo-images/forgejo-images.k8s.yaml",
-    "cluster/k8s/forgejo-images/kustomization.yaml",
-    "cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/alloy-otlp-bearer-token.k8s.yaml",
-    "cluster/k8s/infra-drift/infra-drift.k8s.yaml",
-    "cluster/k8s/github-secrets-sync/github-secrets-sync.k8s.yaml",
-    "cluster/k8s/github-secrets-sync/kustomization.yaml",
-    "cluster/k8s/github-secrets-sync/secrets/github-secrets-sync-secrets.k8s.yaml",
-    "cluster/k8s/github-secrets-sync/secrets/kustomization.yaml",
-    "cluster/k8s/gatus/sso-tf/gatus-sso.k8s.yaml",
-    "cluster/k8s/flux-webhook-token/flux-webhook-token.k8s.yaml",
-    "cluster/k8s/authentik/sso-providers-tf/sso-providers.k8s.yaml",
-    "cluster/k8s/monitoring/namespace/namespace.k8s.yaml",
-    "cluster/k8s/monitoring/grafana-helmrepository/helmrepository.k8s.yaml",
-    "cluster/k8s/flux-grafana-secrets/flux-grafana-secrets.k8s.yaml",
-    "cluster/k8s/monitoring/grafana-operator/grafana-operator.k8s.yaml",
-    "cluster/k8s/monitoring/cilium/cilium-monitoring.k8s.yaml",
-    "cluster/k8s/monitoring/cilium/kustomization.yaml",
-    "cluster/k8s/monitoring/rules/monitoring-rules.k8s.yaml",
-    "cluster/k8s/monitoring/stack/monitoring-stack.k8s.yaml",
-    "cluster/k8s/monitoring/stack/kustomization.yaml",
-    "cluster/k8s/monitoring/alloy/alloy.k8s.yaml",
-    "cluster/k8s/monitoring/loki/loki.k8s.yaml",
-    "cluster/k8s/monitoring/mimir/mimir.k8s.yaml",
-    "cluster/k8s/monitoring/tempo/tempo.k8s.yaml",
-    "cluster/k8s/monitoring/grafana-instance/grafana-instance.k8s.yaml",
-    "cluster/k8s/grafana/clickhouse-grafana.k8s.yaml",
-    "cluster/k8s/github-exporter/github-exporter.k8s.yaml",
-    "cluster/k8s/langfuse/langfuse.k8s.yaml",
-    "cluster/k8s/langfuse/kustomization.yaml",
-    "cluster/k8s/forgejo/app/forgejo.k8s.yaml",
-    "cluster/k8s/forgejo/app/kustomization.yaml",
-    "cluster/k8s/forgejo/budget-namespace/namespace.k8s.yaml",
-    "cluster/k8s/home-assistant/app/home-assistant.k8s.yaml",
-    "cluster/k8s/home-assistant/backup/home-assistant-backups.k8s.yaml",
-    "cluster/k8s/home-assistant/backup/kustomization.yaml",
-    "cluster/k8s/grocy/app-base/grocy.k8s.yaml",
-    "cluster/k8s/grocy/app-base/kustomization.yaml",
-    "cluster/k8s/grocy/mcp-base/grocy-mcp.k8s.yaml",
-    "cluster/k8s/grocy/mcp-base/kustomization.yaml",
-    "cluster/k8s/grocy/mcp-servicemonitor-base/grocy-mcp-servicemonitor.k8s.yaml",
-    "cluster/k8s/grocy/mcp-servicemonitor-base/kustomization.yaml",
-    "cluster/k8s/grocy/sf/app/grocy-sf.k8s.yaml",
-    "cluster/k8s/grocy/vallejo/app/grocy-vallejo.k8s.yaml",
-    "cluster/k8s/grocy/sf/mcp/grocy-mcp-sf.k8s.yaml",
-    "cluster/k8s/grocy/vallejo/mcp/grocy-mcp-vallejo.k8s.yaml",
-    "cluster/k8s/grocy/user-perms-base/grocy-user-perms.k8s.yaml",
-    "cluster/k8s/oci-cache/oci-cache.k8s.yaml",
-    "cluster/k8s/agents/plaid-mcp/app/plaid-mcp.k8s.yaml",
-    "cluster/k8s/agents/plaid-mcp/app/kustomization.yaml",
-    "cluster/k8s/agents/plaid-mcp/db/plaid-mcp-db.k8s.yaml",
-    "cluster/k8s/agents/plaid-mcp/db/kustomization.yaml",
-    "cluster/k8s/agents/plaid-mcp/reader/plaid-db-mcp.k8s.yaml",
-    "cluster/k8s/agents/plaid-mcp/servicemonitor/plaid-db-mcp.k8s.yaml",
-    "cluster/k8s/agents/plaid-mcp/servicemonitor/kustomization.yaml",
-    "cluster/k8s/agents/tana-mcp/tana-mcp.k8s.yaml",
-    "cluster/k8s/agents/shared-rbac/agent-shared-rbac.k8s.yaml",
-    "cluster/k8s/agents/kubectl-passthrough-mcp/app/kubectl-passthrough-mcp.k8s.yaml",
-    "cluster/k8s/agents/claude-sandbox-secrets/claude-sandbox-secrets.k8s.yaml",
-    "cluster/k8s/agents/claude-sandbox-secrets/kustomization.yaml",
-    "cluster/k8s/agents/loki-read-proxy/loki-read-proxy.k8s.yaml",
-    "cluster/k8s/agents/loki-read-proxy/kustomization.yaml",
-    "cluster/k8s/agents/forgejo-token-rotation/forgejo-token-rotation.k8s.yaml",
-    "cluster/k8s/agents/authentik-jwt-rotation/authentik-jwt-rotation.k8s.yaml",
-    "cluster/k8s/agents/airlock/airlock.k8s.yaml",
-    "cluster/k8s/agents/haku-egress-proxy/haku-egress-proxy.k8s.yaml",
-    "cluster/k8s/website/website.k8s.yaml",
-    "cluster/k8s/ollama/ollama.k8s.yaml",
-    "cluster/k8s/gatus/gatus.k8s.yaml",
-    "cluster/k8s/activitywatch/activitywatch.k8s.yaml",
-    "cluster/k8s/cli-proxy-api/cli-proxy-api.k8s.yaml",
-    "cluster/k8s/cli-proxy-api/kustomization.yaml",
-    "cluster/k8s/matrix/matrix.k8s.yaml",
-    "cluster/k8s/matrix/kustomization.yaml",
-    "cluster/k8s/matrix/user-provisioner/matrix-user-provisioner.k8s.yaml",
-    "cluster/k8s/matrix/user-provisioner/kustomization.yaml",
-    "cluster/k8s/study-casino/study-casino.k8s.yaml",
-    "cluster/k8s/github-api-proxy/identity/github-api-proxy-identity.k8s.yaml",
-    "cluster/k8s/github-api-proxy/identity/kustomization.yaml",
-    "cluster/k8s/github-api-proxy/app/github-api-proxy.k8s.yaml",
-    "cluster/k8s/cert-manager/app/cert-manager.k8s.yaml",
-    "cluster/k8s/cert-manager/trust/trust-manager.k8s.yaml",
-    "cluster/k8s/cert-manager/issuer-config/cert-manager-issuer-config.k8s.yaml",
-    "cluster/k8s/cert-manager/environment/environment.k8s.yaml",
-    "cluster/k8s/cert-manager/environment/kustomization.yaml",
-    "cluster/k8s/cert-manager/config/base/letsencrypt-issuers.k8s.yaml",
-    "cluster/k8s/cert-manager/config/base/letsencrypt-root-cas.k8s.yaml",
-    "cluster/k8s/cert-manager/cluster-ca/base/cluster-ca.k8s.yaml",
-    "cluster/k8s/external-secrets/config/external-secrets-config.k8s.yaml",
-    "cluster/k8s/external-secrets/operator/external-secrets-operator.k8s.yaml",
-    "cluster/k8s/flux/ducktape-flux/ducktape-flux.k8s.yaml",
-    "cluster/k8s/flux/sources/git-repositories.k8s.yaml",
-    "cluster/k8s/flux-webhook/flux-webhook.k8s.yaml",
-    "cluster/k8s/gaffer-private-source/gaffer-private-source.k8s.yaml",
-    "cluster/k8s/flux-image-automation-ghcr/image-update-automation.k8s.yaml",
-    "cluster/k8s/flux-image-automation-ghcr/openclaw-image.k8s.yaml",
-    "cluster/k8s/flux-monitoring/flux-monitoring.k8s.yaml",
-    "cluster/k8s/tofu-controller/tofu-controller.k8s.yaml",
-    "cluster/k8s/cnpg/cnpg.k8s.yaml",
-    "cluster/k8s/gateway/gateway-system.k8s.yaml",
-    "cluster/k8s/kube-system/kube-system.k8s.yaml",
-    "cluster/k8s/user-agentydragon/user-agentydragon.k8s.yaml",
-    "cluster/k8s/user-agentydragon/kustomization.yaml",
-    "cluster/k8s/nvidia-runtimeclass/nvidia-runtimeclass.k8s.yaml",
-    "cluster/k8s/hubble-ui/hubble-ui.k8s.yaml",
-    "cluster/k8s/metrics-server/metrics-server.k8s.yaml",
-    "cluster/k8s/reflector/reflector.k8s.yaml",
-    "cluster/k8s/keda/keda.k8s.yaml",
-    "cluster/k8s/valkey/valkey.k8s.yaml",
-    "cluster/k8s/local-path-provisioner/local-path-provisioner.k8s.yaml",
-    "cluster/k8s/goldilocks/goldilocks.k8s.yaml",
-    "cluster/k8s/headlamp/headlamp.k8s.yaml",
-    "cluster/k8s/proxmox-proxy/proxmox-proxy.k8s.yaml",
-    "cluster/k8s/proxmox-proxy/kustomization.yaml",
-    "cluster/k8s/volsync/volsync.k8s.yaml",
-    "cluster/k8s/reloader/reloader.k8s.yaml",
-    "cluster/k8s/vpa/vpa.k8s.yaml",
-    "cluster/k8s/node-feature-discovery/node-feature-discovery.k8s.yaml",
-    "cluster/k8s/nvidia-device-plugin/nvidia-device-plugin.k8s.yaml",
-    "cluster/k8s/talos-cloud-controller-manager/helmrelease.k8s.yaml",
-    "cluster/k8s/talos-cloud-controller-manager/helmrepository.k8s.yaml",
-    "cluster/k8s/talos-cloud-controller-manager/kustomization.yaml",
-    "cluster/k8s/kube-api-proxy/kube-api-proxy.k8s.yaml",
-    "cluster/k8s/vector-talos-logs/vector-talos-logs.k8s.yaml",
-    "cluster/k8s/vector-talos-logs/kustomization.yaml",
-    "cluster/k8s/openebs-lvm/openebs-lvm.k8s.yaml",
-    "cluster/k8s/seaweedfs-csi/seaweedfs-csi.k8s.yaml",
-    "cluster/k8s/dcgm-exporter/dcgm-exporter.k8s.yaml",
-)
+_REGENERATE = "regenerate with `bb run //cluster/cdk8s:generate_manifests` and commit the result"
 
 
-def test_generated_manifests_match_committed(tmp_path: Path) -> None:
-    """Regenerate with `bb run //cluster/cdk8s:generate_manifests` and commit the result if this fails."""
-    generate_manifests(tmp_path)
-    for relative in _GENERATED_FILES:
-        generated = (tmp_path / relative).read_text()
-        committed = get_required_path(f"ducktape/{relative}").read_text()
-        assert generated == committed, f"{relative} is stale"
-        # cdk8s can't emit YAML comments, so this should be unreachable -- but if it
-        # ever did, Flux's image-automation bot would silently fight the generator
-        # for ownership of this file (cluster/docs/cdk8s.md).
-        assert "$imagepolicy" not in generated, f"{relative} must not carry a Flux image-automation marker"
+def _files(root: Path) -> set[str]:
+    return {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
+
+
+@pytest.fixture(scope="module")
+def generated(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    root = tmp_path_factory.mktemp("generated")
+    generate_manifests(root)
+    return root
+
+
+@pytest.fixture(scope="module")
+def checkout() -> Path:
+    """The runfiles tree, which holds each committed file the data deps package at its repo path."""
+    return get_required_path(f"_main/{GENERATED_ROOT}").parents[1]
+
+
+def test_every_generated_file_is_committed(generated: Path, checkout: Path) -> None:
+    missing = sorted(relative for relative in _files(generated) if not (checkout / relative).is_file())
+    assert not missing, f"Generated but not committed ({_REGENERATE}):\n" + "\n".join(missing)
+
+
+def test_generated_files_match_committed(generated: Path, checkout: Path) -> None:
+    stale = sorted(
+        relative
+        for relative in _files(generated)
+        if (checkout / relative).is_file() and (generated / relative).read_text() != (checkout / relative).read_text()
+    )
+    assert not stale, f"Stale ({_REGENERATE}):\n" + "\n".join(stale)
+
+
+def test_generated_root_holds_only_generated_files(generated: Path, checkout: Path) -> None:
+    committed = {f"{GENERATED_ROOT}/{relative}" for relative in _files(checkout / GENERATED_ROOT)}
+    extra = sorted(committed - _files(generated))
+    assert not extra, (
+        f"Committed under {GENERATED_ROOT} but not written by the generator; delete it, or keep a "
+        "directory holding a hand-written file whole under the hand-written root:\n" + "\n".join(extra)
+    )
+
+
+def test_no_image_automation_markers(generated: Path) -> None:
+    # cdk8s can't emit YAML comments, so this should be unreachable -- but if it ever did,
+    # Flux's image-automation bot would silently fight the generator for ownership of the
+    # file (cluster/docs/cdk8s.md).
+    marked = sorted(relative for relative in _files(generated) if "$imagepolicy" in (generated / relative).read_text())
+    assert not marked, "Generated files must not carry a Flux image-automation marker:\n" + "\n".join(marked)
 
 
 if __name__ == "__main__":

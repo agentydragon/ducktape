@@ -13,10 +13,11 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "user-agentydragon"
 NAMESPACE = "agentydragon"
-OUTPUT_DIR = "cluster/k8s/user-agentydragon"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/user-agentydragon"
 
 
 def chart(app: App) -> Chart:

@@ -64,10 +64,11 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "clickhouse"
-OUTPUT_DIR = "cluster/k8s/clickhouse/cluster"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
 _NAME = "clickhouse"
 _KEEPER_NAME = "clickhouse-keeper"
 _LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/instance": _NAME}

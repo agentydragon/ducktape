@@ -22,10 +22,11 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.valkey import valkey_instance
 
-OUTPUT_DIR = "cluster/k8s/oci-cache"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/oci-cache"
 _NAMESPACE = "oci-cache"
 _NAME = "zot"
 _LABELS = {"app.kubernetes.io/name": _NAME}

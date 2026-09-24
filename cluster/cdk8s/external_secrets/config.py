@@ -33,9 +33,10 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "external-secrets-config"
-OUTPUT_DIR = "cluster/k8s/external-secrets/config"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/external-secrets/config"
 _ESO_SERVICE_ACCOUNT = ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(
     name="external-secrets", namespace="external-secrets-system"
 )

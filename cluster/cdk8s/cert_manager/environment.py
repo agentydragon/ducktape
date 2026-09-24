@@ -25,10 +25,11 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "cert-manager-environment"
 NAMESPACE = "cert-manager"
-OUTPUT_DIR = "cluster/k8s/cert-manager/environment"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cert-manager/environment"
 _ROUTE53_SECRET = "aws-route53-credentials"
 _ROUTE53_SOURCE = "aws-route53-cert-manager-credentials"
 

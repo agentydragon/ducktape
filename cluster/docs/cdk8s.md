@@ -1,16 +1,23 @@
 # cdk8s for cluster manifests
 
-Python cdk8s (`cluster/cdk8s/`) generates resources under `cluster/k8s`. The Flux
+Python cdk8s (`cluster/cdk8s/`) generates resources under two roots
+(`cluster/cdk8s/manifest_roots.py`), mirroring one sub-path layout. A Flux Kustomization
+directory every file of which is generated lives under `cluster/generated`, a closed
+world: the parity test fails on any file there the generator does not write. A directory
+holding any hand-written file lives under `cluster/k8s`, its generated files beside the
+hand-written ones. A directory is never split across the roots, and never nested inside
+another Kustomization's path or artifact copy in the other root. The Flux
 Kustomization graph is one generated chart at `cluster/k8s/flux/kustomizations.k8s.yaml`;
 the neighboring `flux/kustomization.yaml` keeps bootstrap and source objects hand-written.
 Flux reads `devel` as it always has. Regenerate with `bb run //cluster/cdk8s:generate_manifests`
 (the binary writes into the checkout, so `bb run`, not `bbr run`);
-`//cluster/cdk8s:test_generate_manifests` regenerates in memory and fails CI on any drift
-from the committed files. Conventions for writing a generator: <../cdk8s/AGENTS.md>.
+`//cluster/cdk8s:test_generate_manifests` regenerates in memory and fails CI when a
+written file differs from, or is missing at, its committed path, or when `cluster/generated`
+holds a file the generator did not write. Conventions for writing a generator: <../cdk8s/AGENTS.md>.
 
 ## Shapes of a directory
 
-Nearly every directory under `cluster/k8s` is generated, rendered identically to the YAML
+Nearly every directory is generated, rendered identically to the YAML
 it replaced (checked with `cluster/cdk8s/render_diff.py`, <../cdk8s/AGENTS.md> § Testing a
 generator).
 
@@ -101,8 +108,8 @@ The root `cluster/k8s/kustomization.yaml` includes `flux/`; the hand-written
 `cluster/k8s/flux/kustomization.yaml` includes the generated central chart and the
 hand-written bootstrap/source resources. `dependsOn` addresses Kustomizations by name;
 `cluster/validation`'s graph checks (`test_dependencies`, `test_crd_layering`,
-`test_flux_build`) run over rendered `kustomize build` output; kubeconform validates
-every `cluster/k8s/**/*.yaml`.
+`test_flux_build`) run over rendered `kustomize build` output of both roots; kubeconform
+validates every `cluster/{k8s,generated}/**/*.yaml`.
 
 ## One writer per byte range
 

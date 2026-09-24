@@ -23,10 +23,11 @@ from cert_manager_clusterissuer_crds.io.cert_manager import (
 )
 
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "letsencrypt-root-cas"
 ISSUERS_NAME = "letsencrypt-issuers"
-OUTPUT_DIR = "cluster/k8s/cert-manager/config/base"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cert-manager/config/base"
 
 # Let's Encrypt Production Root CA (ISRG Root X1). Redundant with system trust stores but
 # included for symmetry with staging.

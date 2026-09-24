@@ -7,8 +7,9 @@ from pathlib import Path
 
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_namespace, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
-OUTPUT_DIR = "cluster/k8s/litellm"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm"
 
 
 def write_manifests(root: Path) -> None:

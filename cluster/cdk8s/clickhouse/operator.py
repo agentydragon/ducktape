@@ -29,11 +29,12 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "clickhouse-operator"
 NAMESPACE = "clickhouse"
-OUTPUT_DIR = "cluster/k8s/clickhouse/operator"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/operator"
 _RESTRICTED_CONTAINER = {
     "allowPrivilegeEscalation": False,
     "capabilities": {"drop": ["ALL"]},

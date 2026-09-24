@@ -13,10 +13,11 @@ from cluster.cdk8s import vpa
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "goldilocks"
 NAMESPACE = "goldilocks"
-OUTPUT_DIR = "cluster/k8s/goldilocks"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/goldilocks"
 
 
 def chart(app: App) -> Chart:

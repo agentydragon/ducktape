@@ -34,9 +34,10 @@ from cluster.cdk8s import cilium, cnpg
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-_OUTPUT_DIR = "cluster/k8s/gatus"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gatus"
 _NAME = "gatus"
 _NAMESPACE = "gatus"
 _LABELS = {"app.kubernetes.io/name": _NAME}
@@ -223,4 +224,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart)

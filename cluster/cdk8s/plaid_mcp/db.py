@@ -29,10 +29,11 @@ from cluster.cdk8s import cilium, cnpg
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
 
-OUTPUT_DIR = "cluster/k8s/agents/plaid-mcp/db"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/db"
 _CLUSTER = "plaid-mcp-db"
 _DATABASE = "plaidmcp"
 _READONLY_ROLE = "plaid_ro"

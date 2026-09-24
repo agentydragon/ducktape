@@ -26,12 +26,13 @@ from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
 from cluster.cdk8s.valkey import valkey_instance
 
-OUTPUT_DIR = "cluster/k8s/agents/plaid-mcp/reader"
-SERVICEMONITOR_DIR = "cluster/k8s/agents/plaid-mcp/servicemonitor"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/reader"
+SERVICEMONITOR_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/servicemonitor"
 _NAME = "plaid-db-mcp"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _CONFIG_MAP = "plaid-db-mcp-config"

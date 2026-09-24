@@ -43,9 +43,10 @@ from volsync_replicationsource_crds.backube.volsync import (
 
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-BASE_DIR = "cluster/k8s/grocy/app-base"
+BASE_DIR = f"{HAND_WRITTEN_ROOT}/grocy/app-base"
 _NAME = "grocy"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "lscr.io/linuxserver/grocy:v4.6.0-ls318"
@@ -377,11 +378,11 @@ def write_manifests(root: Path) -> None:
     write_yaml(root / BASE_DIR / "kustomization.yaml", kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml"]))
     write_charts(
         root,
-        "cluster/k8s/grocy/sf/app",
+        f"{HAND_WRITTEN_ROOT}/grocy/sf/app",
         lambda app: household_chart(app, household="sf", backup_schedule="23 */6 * * *"),
     )
     write_charts(
         root,
-        "cluster/k8s/grocy/vallejo/app",
+        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/app",
         lambda app: household_chart(app, household="vallejo", backup_schedule="29 */6 * * *"),
     )

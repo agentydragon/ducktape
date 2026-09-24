@@ -26,12 +26,13 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "seaweedfs-csi"
 NAMESPACE = "seaweedfs-csi-system"
 RELEASE = "seaweedfs-csi-driver"
-OUTPUT_DIR = "cluster/k8s/seaweedfs-csi"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs-csi"
 _VERSION = "v1.4.30"
 _ZONE = "topology.kubernetes.io/zone"
 _OVH_AFFINITY = {

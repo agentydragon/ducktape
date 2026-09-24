@@ -46,10 +46,11 @@ from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import s3
 
-_OUTPUT_DIR = "cluster/k8s/forgejo/app"
+_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/app"
 _NAME = "forgejo"
 _NAMESPACE = "forgejo"
 _S3_CREDENTIALS_SECRET = "forgejo-s3-credentials"

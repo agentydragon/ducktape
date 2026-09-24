@@ -41,10 +41,11 @@ from cluster.cdk8s.external_secrets.external_secret import add_external_secret, 
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "airlock"
-OUTPUT_DIR = "cluster/k8s/agents/airlock"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/airlock"
 _LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "server"}
 _PORT = 8765
 _SESSION_SECRET = "airlock-session-secret"

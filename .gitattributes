@@ -40,8 +40,9 @@ gotk-sync.yaml linguist-generated=true
 # cluster/docs/cdk8s.md. The `.k8s.yaml` suffix is conventionally cdk8s-only. The
 # central Flux Kustomization chart uses that suffix too; generated `kustomization.yaml`
 # files still need path-scoped lines because that filename is shared with hand-written
-# directories.
+# directories. Every file under cluster/generated is generated.
 cluster/k8s/**/*.k8s.yaml linguist-generated=true
+cluster/generated/** linguist-generated=true
 cluster/k8s/litellm/app/kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/db/kustomization.yaml linguist-generated=true

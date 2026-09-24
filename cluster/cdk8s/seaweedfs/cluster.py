@@ -75,11 +75,12 @@ from seaweed_seaweed_crds.com.seaweedfs.seaweed import (
 
 from cluster.cdk8s import stateful_infra
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import filer_db, namespace, s3_config
 
 NAME = "seaweedfs"
-OUTPUT_DIR = "cluster/k8s/seaweedfs/cluster"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/cluster"
 _ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
 _HOSTNAME = "kubernetes.io/hostname"
 _CONTROL_PLANE = "node-role.kubernetes.io/control-plane"

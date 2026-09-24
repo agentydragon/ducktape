@@ -52,9 +52,10 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
-OUTPUT_DIR = "cluster/k8s/cli-proxy-api"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cli-proxy-api"
 _NAME = "cli-proxy-api"
 _NAMESPACE = "cli-proxy-api"
 _LABELS = {"app.kubernetes.io/name": _NAME}

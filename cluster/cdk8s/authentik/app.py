@@ -42,11 +42,12 @@ from cluster.cdk8s.authentik import db
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "authentik"
 NAMESPACE = "authentik"
-OUTPUT_DIR = "cluster/k8s/authentik/app"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/app"
 _HOST_CONFIG_MAP = "authentik-host"
 _SERVER_LABELS = {"app.kubernetes.io/component": "server", "app.kubernetes.io/name": NAME}
 # Pod ports: 9000 (HTTP), 9443 (HTTPS), 9300 (metrics).

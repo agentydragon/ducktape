@@ -35,10 +35,11 @@ from cluster.cdk8s.haku.console import Console
 from cluster.cdk8s.haku.database import Db
 from cluster.cdk8s.haku.kube_api_proxy import KubeApiProxy
 from cluster.cdk8s.haku.migration import Migration
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = console.NAME
 NAMESPACE = console.NAMESPACE
-PATH = "cluster/k8s/haku/console"
+PATH = f"{HAND_WRITTEN_ROOT}/haku/console"
 # Long enough for the slowest cold path -- CNPG bootstrapping a fresh two-instance Cluster,
 # then the migration and the GRANTs converging on their retries behind it.
 TIMEOUT = "20m"

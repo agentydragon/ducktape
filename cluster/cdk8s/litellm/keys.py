@@ -21,6 +21,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.litellm.config import main_proxy_config
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
     CLIPROXY_MODELS,
@@ -39,7 +40,7 @@ from cluster.cdk8s.model_rosters import (
     ollama_chat_variant,
 )
 
-OUTPUT_DIR = "cluster/k8s/litellm/keys-tf"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
 
 # The Codex-subscription models on LiteLLM's Responses surface, for Codex CLI clients
 # (codex-pod, agent-workspaces-codex, the agentplane staging session form) -- served

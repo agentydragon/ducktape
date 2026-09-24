@@ -22,10 +22,11 @@ from constructs import Construct
 from cluster.cdk8s import cilium
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "public-coder-agent-sshpiper"
-OUTPUT_DIR = "cluster/k8s/agents/public-coder-agent/sshpiper"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/sshpiper"
 _NAMESPACE = "public-coder-agent"
 _LABELS = {"app.kubernetes.io/name": NAME}
 PORT = 2222

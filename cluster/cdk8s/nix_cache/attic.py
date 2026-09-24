@@ -25,12 +25,13 @@ from cluster.cdk8s import cnpg, external_creds, forgejo_images
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "attic"
 NAMESPACE = "nix-cache"
-OUTPUT_DIR = "cluster/k8s/nix-cache"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/nix-cache"
 _PORT = 8080
 _SELECTOR = {"app.kubernetes.io/name": NAME}
 _DB = "attic-db"

@@ -15,10 +15,11 @@ from cdk8s_plus_34 import k8s
 from constructs import Construct
 
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "vm-images-publisher"
-OUTPUT_DIR = "cluster/k8s/vm-images-publisher"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/vm-images-publisher"
 _BUCKET = "vm-images"
 _WRITER = "vm-images-ci-writer"
 _READER = "vm-images-cdi-reader"

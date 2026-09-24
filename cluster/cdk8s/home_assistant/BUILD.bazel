@@ -11,6 +11,7 @@ py_library(
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
         "//cluster/cdk8s/crd_bindings/external_secrets:passwordgenerator",
@@ -37,6 +38,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
         "//cluster/cdk8s/crd_bindings/external_secrets:secretstore",
@@ -64,5 +66,8 @@ py_library(
     name = "namespace",
     srcs = ["namespace.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = ["//cluster/cdk8s:generation"],
+    deps = [
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+    ],
 )

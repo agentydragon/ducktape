@@ -12,6 +12,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from cluster.cdk8s.manifest_roots import MANIFEST_ROOTS
 from cluster.validation.k8s import Condition, SecretRef, parse_k8s_resources
 from cluster.validation.tool_resolve import resolve_tool
 
@@ -97,13 +98,13 @@ class FluxKustomizationSpec(BaseModel):
     decryption: Decryption | None = None
     post_build: PostBuild | None = None
 
-    def local_dir(self, k8s_dir: Path, k8s_subpath: str = "cluster/k8s") -> Path | None:
-        """Resolve spec.path to a local directory under k8s_dir, or None if external."""
+    def local_dir(self, repo_root: Path) -> Path | None:
+        """Resolve spec.path to a directory under one of the manifest roots in `repo_root`, or
+        None if it lies outside them (another repository, or a path read from source)."""
         rel = self.path.removeprefix("./")
-        prefix = k8s_subpath + "/"
-        if not rel.startswith(prefix):
+        if not rel.startswith(tuple(f"{root}/" for root in MANIFEST_ROOTS)):
             return None
-        return (k8s_dir / rel[len(prefix) :]).resolve()
+        return (repo_root / rel).resolve()
 
 
 class InventoryEntry(BaseModel):

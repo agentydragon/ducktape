@@ -57,10 +57,11 @@ from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "haku-egress-proxy"
-OUTPUT_DIR = "cluster/k8s/agents/haku-egress-proxy"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _CA_SECRET = "haku-egress-proxy-ca"
 _IRON_PROXY_IMAGE = "git.allegedly.works/ducktape-ci/iron-proxy:unset"

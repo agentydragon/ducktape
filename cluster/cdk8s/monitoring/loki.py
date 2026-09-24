@@ -37,12 +37,13 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.seaweedfs import namespace, s3
 
 NAME = "loki"
-OUTPUT_DIR = "cluster/k8s/monitoring/loki"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/loki"
 _SEAWEEDFS = "seaweedfs"
 # Written by the old cross-namespace S3Credentials in seaweedfs.
 _LEGACY_CREDENTIALS_SECRET = "loki-s3-credentials"

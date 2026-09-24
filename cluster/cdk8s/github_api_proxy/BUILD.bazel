@@ -24,6 +24,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",

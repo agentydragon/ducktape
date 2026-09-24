@@ -11,10 +11,11 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "registry-cache"
-OUTPUT_DIR = "cluster/k8s/seaweedfs/registry-cache-bucket"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/registry-cache-bucket"
 _CHART = "registry-cache-bucket"
 _TENANT = "oci-cache"
 

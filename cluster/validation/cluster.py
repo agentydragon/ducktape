@@ -8,6 +8,7 @@ from pathlib import Path
 import networkx as nx
 import pygit2
 
+from cluster.cdk8s.manifest_roots import manifest_files
 from cluster.validation.flux import (
     EXTERNAL_ARTIFACT_KIND,
     FLUX_SOURCE_KINDS,
@@ -23,9 +24,7 @@ from cluster.validation.kustomize import (
     parse_kustomize_file,
 )
 
-_K8S_SUBPATH = Path("cluster/k8s")
-
-# Gitattribute that marks a YAML file under cluster/k8s/ as "not a K8s manifest".
+# Gitattribute that marks a YAML file under a manifest root as "not a K8s manifest".
 # Files with this attribute set are skipped from resource parsing and orphan
 # detection. Source of truth is `.gitattributes` at the repo root, so new
 # exclusions land atomically with the file they exclude — no ducktape-git-hooks
@@ -92,14 +91,14 @@ class ParsedCluster:
         """Flux kustomizations that are not suspended."""
         return {name: spec for name, spec in self.flux_kustomizations.items() if not spec.suspend}
 
-    def flux_kust_resources(self, k8s_dir: Path) -> dict[str, list[K8sResource]]:
+    def flux_kust_resources(self, repo_root: Path) -> dict[str, list[K8sResource]]:
         """Map active flux kustomization name -> built resources from build_results."""
         build_by_dir: dict[Path, list[K8sResource]] = {
             r.kustomization_path.parent.resolve(): r.resources for r in self.build_results
         }
         result: dict[str, list[K8sResource]] = {}
         for name, spec in self.active_flux_kustomizations.items():
-            if (kust_dir := spec.local_dir(k8s_dir)) and kust_dir in build_by_dir:
+            if (kust_dir := spec.local_dir(repo_root)) and kust_dir in build_by_dir:
                 result[name] = build_by_dir[kust_dir]
         return result
 
@@ -117,17 +116,17 @@ def _index_source(
         sources.add((resource.kind, resource.namespace, resource.name))
 
 
-def parse_cluster(k8s_dir: Path) -> ParsedCluster:
-    """Parse all files in the cluster directory once."""
+def parse_cluster(repo_root: Path) -> ParsedCluster:
+    """Parse all files under the manifest roots of `repo_root` once."""
     kustomize_files: dict[Path, KustomizeFile] = {}
     flux_kustomizations: dict[str, FluxKustomizationSpec] = {}
     all_yaml_files: set[Path] = set()
     source_resources: dict[Path, list[K8sResource]] = {}
     flux_sources: set[tuple[str, str, str]] = set()
     artifact_paths: dict[tuple[str, str], set[str]] = {}
-    repo = _open_repo(k8s_dir)
+    repo = _open_repo(repo_root)
 
-    for yaml_file in k8s_dir.rglob("*.yaml"):
+    for yaml_file in manifest_files(repo_root):
         # flux-system is auto-generated controllers plus the bootstrap source.
         # Skip it for app-manifest processing (orphan detection, resource graph)
         # but still index its source CRs — the bootstrap GitRepository/flux-system
@@ -166,7 +165,7 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
                     _index_source(r, flux_sources, artifact_paths)
 
     for spec in flux_kustomizations.values():
-        if (directory := spec.local_dir(k8s_dir)) and directory.is_dir() and not has_kustomization_file(directory):
+        if (directory := spec.local_dir(repo_root)) and directory.is_dir() and not has_kustomization_file(directory):
             kust = flux_generated_kustomization(directory)
             kustomize_files[kust.path] = kust
 

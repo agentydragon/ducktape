@@ -61,6 +61,7 @@ from cluster.cdk8s.external_secrets.external_secret import add_external_secret, 
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
@@ -71,7 +72,7 @@ from homeassistant.provisioner.tokens import settings as tokens
 from homeassistant.provisioner.yaml_settings import YamlFileSettings
 from util.settings_contract import env_name, settings_file
 
-_OUTPUT_DIR = "cluster/k8s/home-assistant/app"
+_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant/app"
 _NAME = "home-assistant"
 _NAMESPACE = "home-assistant"
 _HOSTNAME = "home.allegedly.works"

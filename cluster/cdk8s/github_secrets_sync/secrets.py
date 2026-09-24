@@ -30,9 +30,10 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "github-secrets-sync-secrets"
-OUTPUT_DIR = "cluster/k8s/github-secrets-sync/secrets"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/github-secrets-sync/secrets"
 _NAMESPACE = "flux-system"
 _CI_AGE_KEY_FILE = "ci-age-key.sops.yaml"
 

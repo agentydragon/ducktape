@@ -11,6 +11,7 @@ py_library(
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumenvoyconfig",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
@@ -33,6 +34,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
@@ -45,6 +47,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:valkey",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
@@ -59,6 +62,7 @@ py_library(
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/crd_bindings/cnpg:cluster",
         "@pypi//cdk8s",
     ],
@@ -84,6 +88,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:terraform",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "//cluster/cdk8s/crd_bindings/tofu_controller:terraform",
@@ -95,5 +100,8 @@ py_library(
     name = "namespace",
     srcs = ["namespace.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = ["//cluster/cdk8s:generation"],
+    deps = [
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+    ],
 )

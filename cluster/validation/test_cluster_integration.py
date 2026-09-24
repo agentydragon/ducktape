@@ -1,4 +1,4 @@
-"""Integration tests: validate real cluster/k8s/ config via pure analysis.
+"""Integration tests: validate the real manifest trees (cluster/k8s, cluster/generated) via pure analysis.
 
 Tests that parse the cluster kustomization tree and check structural invariants
 (no orphaned files, valid dependencies, health checks on controller resources).
@@ -45,29 +45,21 @@ from cluster.validation.image_automation import (
 from cluster.validation.kustomize import KustomizeBuildResult, run_kustomize_build
 from cluster.validation.postbuild_substitutions import check_postbuild_substitution_sources
 from cluster.validation.terraform_backends import check_terraform_backends
-from util.bazel.runfiles import get_required_path
-
-_K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
 
 
-@pytest.fixture(scope="session")
-def k8s_dir() -> Path:
-    return get_required_path(_K8S_ROOT_KUSTOMIZATION).parent
-
-
-def _local_flux_kust_names(parsed: ParsedCluster, k8s_dir: Path) -> set[str]:
-    """Active flux kustomization names whose spec.path points into the local cluster/k8s tree."""
-    return {name for name, spec in parsed.active_flux_kustomizations.items() if spec.local_dir(k8s_dir)}
+def _local_flux_kust_names(parsed: ParsedCluster, repo_root: Path) -> set[str]:
+    """Active flux kustomization names whose spec.path points into a local manifest root."""
+    return {name for name, spec in parsed.active_flux_kustomizations.items() if spec.local_dir(repo_root)}
 
 
 @pytest.fixture(scope="session")
-def cluster(k8s_dir: Path) -> ParsedCluster:
+def cluster(repo_root: Path) -> ParsedCluster:
     """Parse cluster and build flux-referenced kustomizations (hard failure on any build error)."""
-    parsed = parse_cluster(k8s_dir)
+    parsed = parse_cluster(repo_root)
 
     # Build all local flux-referenced kustomizations (including suspended — kustomize
     # build should still succeed). Only validation checks filter suspended.
-    local_dirs = {d for spec in parsed.flux_kustomizations.values() if (d := spec.local_dir(k8s_dir))}
+    local_dirs = {d for spec in parsed.flux_kustomizations.values() if (d := spec.local_dir(repo_root))}
     kusts = [k for path, k in parsed.kustomize_files.items() if path.parent.resolve() in local_dirs]
 
     async def _build_all() -> list[KustomizeBuildResult]:
@@ -77,22 +69,22 @@ def cluster(k8s_dir: Path) -> ParsedCluster:
     return parsed
 
 
-def test_all_local_flux_kustomizations_have_build_results(cluster: ParsedCluster, k8s_dir: Path) -> None:
+def test_all_local_flux_kustomizations_have_build_results(cluster: ParsedCluster, repo_root: Path) -> None:
     """Every flux kustomization pointing to a local path must have a build result."""
-    covered = set(cluster.flux_kust_resources(k8s_dir))
-    expected = _local_flux_kust_names(cluster, k8s_dir)
+    covered = set(cluster.flux_kust_resources(repo_root))
+    expected = _local_flux_kust_names(cluster, repo_root)
     missing = sorted(expected - covered)
     assert not missing, "Flux kustomizations with no build result:\n" + "\n".join(f"  {m}" for m in missing)
 
 
-def test_no_dependency_errors(cluster: ParsedCluster, k8s_dir: Path) -> None:
+def test_no_dependency_errors(cluster: ParsedCluster, repo_root: Path) -> None:
     """No cycles, required dependencies present, operator dependencies satisfied."""
-    errors = validate_dependencies(cluster, k8s_dir)
+    errors = validate_dependencies(cluster, repo_root)
     assert not errors, "\n".join(errors)
 
 
-def test_controller_resources_have_health_checks(cluster: ParsedCluster, k8s_dir: Path) -> None:
-    errors = check_controller_health_checks(cluster, k8s_dir)
+def test_controller_resources_have_health_checks(cluster: ParsedCluster, repo_root: Path) -> None:
+    errors = check_controller_health_checks(cluster, repo_root)
     assert not errors, "\n".join(errors)
 
 
@@ -102,9 +94,9 @@ def test_single_external_secrets_installation(cluster: ParsedCluster) -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_external_credential_ownership(cluster: ParsedCluster, k8s_dir: Path) -> None:
+def test_external_credential_ownership(cluster: ParsedCluster, repo_root: Path) -> None:
     """Suppliers own grants; consumers own ESO identities and stores."""
-    errors = check_external_credential_ownership(cluster, k8s_dir)
+    errors = check_external_credential_ownership(cluster, repo_root)
     assert not errors, "\n".join(errors)
 
 
@@ -188,9 +180,9 @@ def test_flux_bootstrap_auth_split(cluster: ParsedCluster, k8s_dir: Path) -> Non
     assert not errors, "\n".join(errors)
 
 
-def test_sops_secrets_have_decryption_block(cluster: ParsedCluster, k8s_dir: Path) -> None:
+def test_sops_secrets_have_decryption_block(cluster: ParsedCluster, repo_root: Path) -> None:
     """Active flux kustomizations rendering a SOPS Secret must declare decryption.provider: sops."""
-    errors = check_sops_decryption_blocks(cluster, k8s_dir)
+    errors = check_sops_decryption_blocks(cluster, repo_root)
     assert not errors, "\n".join(errors)
 
 
@@ -204,9 +196,9 @@ def test_retry_policy(cluster: ParsedCluster) -> None:
     check_retry_policy(cluster)
 
 
-def test_no_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> None:
+def test_no_orphaned_files(cluster: ParsedCluster, repo_root: Path) -> None:
     """All active YAML files must be referenced by a kustomization.yaml."""
-    errors = find_orphaned_files(cluster, k8s_dir)
+    errors = find_orphaned_files(cluster, repo_root)
     assert not errors, "\n".join(errors)
 
 

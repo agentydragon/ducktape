@@ -5,12 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from cluster.cdk8s.generation import write_namespace
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 
 def write_manifests(root: Path) -> None:
     write_namespace(
         root,
-        "cluster/k8s/authentik",
+        f"{HAND_WRITTEN_ROOT}/authentik",
         name="authentik",
         labels={
             "goldilocks.fairwinds.com/enabled": "true",

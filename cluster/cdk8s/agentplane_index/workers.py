@@ -31,10 +31,11 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s import cnpg, forgejo_images
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "agentplane-index"
-OUTPUT_DIR = "cluster/k8s/agentplane-index"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agentplane-index"
 _DB_CLUSTER = f"{NAME}-db"
 # CNPG owns this Secret (username/password).
 _DB_APP_SECRET = f"{_DB_CLUSTER}-app"

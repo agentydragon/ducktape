@@ -1,15 +1,7 @@
 # gazelle:ignore
 
-exports_files(
-    [
-        "kustomization.yaml",
-        "cli-proxy-api.k8s.yaml",
-    ],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-)
-
-# Cluster manifests for cluster/validation's flux-build test (the
-# //cluster/k8s:cluster_all_files glob stops at this package boundary).
+# Cluster manifests for cluster/validation's flux-build test and the generator's parity
+# test (the //cluster/k8s:cluster_all_files glob stops at this package boundary).
 filegroup(
     name = "manifests",
     srcs = glob(
@@ -18,5 +10,8 @@ filegroup(
             "BUILD.bazel",
         ],
     ),
-    visibility = ["//cluster/validation:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
 )

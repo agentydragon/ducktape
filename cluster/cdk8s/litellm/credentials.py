@@ -23,6 +23,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 _LITELLM_NAMESPACE = "litellm"
@@ -31,7 +32,7 @@ _KEY_SECRET_NAME = "litellm-key-cheap-experiments"
 _READER_SERVICE_ACCOUNT_NAME = "external-creds-reader"
 _SOURCE_READER_ROLE_NAME = "litellm-cheap-experiments-reader"
 _SECRET_STORE_NAME = "kubernetes-litellm-cheap-experiments-secret-store"
-OUTPUT_DIR = "cluster/k8s/agentplane-testing"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agentplane-testing"
 
 
 class CheapExperimentsCredentials(Construct):

@@ -10,6 +10,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/flux:helmrepository",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
@@ -26,6 +27,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cert_manager:bundle",
         "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
@@ -40,6 +42,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/crd_bindings/cert_manager:clusterissuer",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -54,6 +57,7 @@ py_library(
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
@@ -71,6 +75,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -85,6 +90,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/flux:helmrepository",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",

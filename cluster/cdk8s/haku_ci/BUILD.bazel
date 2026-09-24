@@ -21,6 +21,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumclusterwidenetworkpolicy",
         "//cluster/cdk8s/crd_bindings/keda:scaledjob",

@@ -12,9 +12,10 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "cert-manager-issuer-config"
-OUTPUT_DIR = "cluster/k8s/cert-manager/issuer-config"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cert-manager/issuer-config"
 
 
 def chart(app: App) -> Chart:

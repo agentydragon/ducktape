@@ -35,11 +35,12 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.valkey import valkey_instance
 
-OUTPUT_DIR = "cluster/k8s/langfuse"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/langfuse"
 _NAME = "langfuse"
 _NAMESPACE = "langfuse"
 _ZONE = "hil-ovh"

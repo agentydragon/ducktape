@@ -32,10 +32,11 @@ from trust_manager_crds.io.cert_manager.trust import (
 )
 
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "cluster-ca"
-OUTPUT_DIR = "cluster/k8s/cert-manager/cluster-ca/base"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cert-manager/cluster-ca/base"
 _ROOT_CA_SECRET = "cluster-root-ca-secret"
 
 

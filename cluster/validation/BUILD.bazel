@@ -20,10 +20,12 @@ py_test(
     name = "test_terraform_sources",
     srcs = ["test_terraform_sources.py"],
     data = [
+        "//cluster:generated_manifests",
         "//cluster/k8s:cluster_yaml_files",
         "//cluster/k8s:flux_bootstrap_files",
     ],
     deps = [
+        "//cluster/cdk8s:manifest_roots",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -66,6 +68,7 @@ py_library(
     deps = [
         ":k8s",
         ":tool_resolve",
+        "//cluster/cdk8s:manifest_roots",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -79,6 +82,7 @@ py_library(
         ":flux",
         ":k8s",
         ":kustomize",
+        "//cluster/cdk8s:manifest_roots",
         "@pypi//networkx",
         "@pypi//numpy",
         "@pypi//pygit2",
@@ -420,7 +424,10 @@ py_test(
 py_test(
     name = "test_mailbox_smtp_ingress",
     srcs = ["test_mailbox_smtp_ingress.py"],
-    data = ["//cluster/k8s:cluster_all_files"],
+    data = [
+        "//cluster:generated_manifests",
+        "//cluster/k8s:cluster_all_files",
+    ],
     deps = [
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
@@ -433,6 +440,7 @@ py_test(
     name = "test_cluster_integration",
     srcs = ["test_cluster_integration.py"],
     data = [
+        "//cluster:generated_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_bootstrap_files",
         "//cluster/k8s:flux_system_files",
@@ -447,6 +455,7 @@ py_test(
     deps = [
         ":checks",
         ":cluster",
+        ":conftest",
         ":dependencies",
         ":flux",
         ":flux_bootstrap_auth",
@@ -683,7 +692,10 @@ py_test(
 py_test(
     name = "test_mailbox_plan",
     srcs = ["test_mailbox_plan.py"],
-    data = ["//cluster/k8s:cluster_all_files"],
+    data = [
+        "//cluster:generated_manifests",
+        "//cluster/k8s:cluster_all_files",
+    ],
     deps = [
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
@@ -704,6 +716,7 @@ py_test(
     # sub-packages contribute their manifests via :manifests filegroups. :flux
     # carries the flux CLI as runfiles.
     data = [
+        "//cluster:generated_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_system_files",
         "//cluster/k8s/agents/ha-mcp/app:manifests",
@@ -736,6 +749,7 @@ py_test(
     name = "test_flux_wait_health_checks",
     srcs = ["test_flux_wait_health_checks.py"],
     data = [
+        "//cluster:generated_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_system_files",
     ],
@@ -743,6 +757,7 @@ py_test(
         ":conftest",
         ":flux",
         "//:conftest",
+        "//cluster/cdk8s:manifest_roots",
         "@pypi//pytest_bazel",
     ],
 )
@@ -750,8 +765,12 @@ py_test(
 py_test(
     name = "test_generator_namespace",
     srcs = ["test_generator_namespace.py"],
-    data = ["//cluster/k8s:cluster_all_files"],
+    data = [
+        "//cluster:generated_manifests",
+        "//cluster/k8s:cluster_all_files",
+    ],
     deps = [
+        "//cluster/cdk8s:manifest_roots",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

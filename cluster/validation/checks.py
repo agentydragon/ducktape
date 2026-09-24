@@ -31,14 +31,14 @@ _FORGEJO_IMAGE_WORKLOAD_TYPES = (CronJobResource, PodTemplateWorkloadResource, S
 # (see x/codex_pod_image/deploy/README.md before reactivation).
 _INTENTIONALLY_STORED_ONLY_FILES = frozenset(
     {
-        Path("external-creds/dreo-account.sops.yaml"),
-        Path("parked/codex-pod/codex-bootstrap-identity.sops.yaml"),
-        Path("parked/codex-pod/forgejo-tea.sops.yaml"),
+        Path("cluster/k8s/external-creds/dreo-account.sops.yaml"),
+        Path("cluster/k8s/parked/codex-pod/codex-bootstrap-identity.sops.yaml"),
+        Path("cluster/k8s/parked/codex-pod/forgejo-tea.sops.yaml"),
     }
 )
 
 
-def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
+def find_orphaned_files(cluster: ParsedCluster, repo_root: Path) -> list[str]:
     """Find YAML files not referenced by any kustomization, except stored-only inputs."""
     referenced: set[Path] = set()
     for kust in cluster.kustomize_files.values():
@@ -51,7 +51,7 @@ def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
     for yaml_file in cluster.all_yaml_files:
         if yaml_file.name == "kustomization.yaml":
             continue
-        relative = yaml_file.relative_to(k8s_dir)
+        relative = yaml_file.relative_to(repo_root)
         if relative in _INTENTIONALLY_STORED_ONLY_FILES:
             continue
         if yaml_file not in referenced:
@@ -81,13 +81,13 @@ def check_duplicate_external_secrets(build_results: list[KustomizeBuildResult]) 
     return errors
 
 
-def check_external_credential_ownership(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
+def check_external_credential_ownership(cluster: ParsedCluster, repo_root: Path) -> list[str]:
     """Keep credential approval at the source and consumer machinery with consumers."""
     supplier = "external-creds"
     store_owner = "external-secrets-config"
     store_name = "kubernetes-external-creds-secret-store"
     referent_service_account = "external-creds-reader"
-    supplier_resources = cluster.flux_kust_resources(k8s_dir).get(supplier, [])
+    supplier_resources = cluster.flux_kust_resources(repo_root).get(supplier, [])
     errors: list[str] = []
     approved_namespaces: set[str] = set()
 
@@ -133,7 +133,7 @@ def check_external_credential_ownership(cluster: ParsedCluster, k8s_dir: Path) -
             )
 
     stores: list[SecretStoreResource] = []
-    for kustomization, resources in cluster.flux_kust_resources(k8s_dir).items():
+    for kustomization, resources in cluster.flux_kust_resources(repo_root).items():
         for resource in resources:
             if isinstance(resource, SecretStoreResource):
                 provider = resource.spec.provider.kubernetes
@@ -267,7 +267,7 @@ def check_goldilocks_explicit_decision(cluster: ParsedCluster) -> list[str]:
     return errors
 
 
-def check_sops_decryption_blocks(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
+def check_sops_decryption_blocks(cluster: ParsedCluster, repo_root: Path) -> list[str]:
     """Active Flux Kustomizations that render a SOPS-encrypted Secret must declare
     spec.decryption with provider: sops AND a secretRef.name — otherwise Flux applies
     the ENC[...] ciphertext literally (no provider) or has no age key to decrypt with
@@ -275,7 +275,7 @@ def check_sops_decryption_blocks(cluster: ParsedCluster, k8s_dir: Path) -> list[
     applies, so it neither over-counts SOPS files in sibling/child kustomizations nor
     misses those pulled in via nested kustomize refs."""
     errors: list[str] = []
-    for name, resources in cluster.flux_kust_resources(k8s_dir).items():
+    for name, resources in cluster.flux_kust_resources(repo_root).items():
         if not any(isinstance(r, SecretResource) and r.sops is not None for r in resources):
             continue
         spec = cluster.active_flux_kustomizations[name]

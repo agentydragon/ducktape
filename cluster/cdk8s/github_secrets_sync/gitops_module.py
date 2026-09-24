@@ -16,9 +16,10 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "github-secrets-sync"
-OUTPUT_DIR = f"cluster/k8s/{NAME}"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 
 
 def chart(app: App) -> Chart:

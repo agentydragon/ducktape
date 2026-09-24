@@ -52,7 +52,7 @@ repos:
       - id: check-yaml
         args: ["--allow-multiple-documents"]
         # Skip ansible !vault tags (not parseable without custom YAML constructor), Helm/Flux dirs (Go templating), chart values
-        exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/charts/|props/helm/templates/"
+        exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/generated/|cluster/charts/|props/helm/templates/"
       - id: check-toml
 
       # TODO: enable check-json
@@ -257,14 +257,14 @@ repos:
           -schema-location 'cluster/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           -ignore-missing-schemas
-        files: ^cluster/k8s/.*\.(yaml|yml)$
+        files: ^cluster/(k8s|generated)/.*\.(yaml|yml)$
         exclude: |
           (?x)^(
             cluster/k8s/flux-system/gotk-components\.yaml|
             # kustomize config files (kustomize.config.k8s.io/v1beta1) — not K8s resources
-            cluster/k8s/.*/kustomization\.yaml|
+            cluster/(k8s|generated)/.*/kustomization\.yaml|
             # RedisReplication CRD schema in datreeio catalog is outdated (missing spec.sentinel)
-            cluster/k8s/.*/valkey-instance\.yaml|
+            cluster/(k8s|generated)/.*/valkey-instance\.yaml|
             # Seaweed v1 CRD schema in datreeio catalog is outdated (missing spec.s3,
             # spec.master.defaultReplication, spec.volume.storageClassName — all
             # present in operator v1.0.19's live CRD)
@@ -298,7 +298,7 @@ repos:
             haku/x/dispatch/deploy/job-template\.yaml|
             haku/x/dispatch/deploy/zones\.yaml|
             # Helm values files consumed via configMapGenerator, not K8s manifests
-            cluster/k8s/.*/ccm-values\.yaml|
+            cluster/(k8s|generated)/.*/ccm-values\.yaml|
             # Authelia configuration files consumed via configMapGenerator, not K8s manifests
             cluster/k8s/parked/authelia/(configuration|users)\.yml|
             # rotate.py rotation list, mounted via configMapGenerator, not a K8s manifest

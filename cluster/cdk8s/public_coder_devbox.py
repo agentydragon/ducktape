@@ -60,15 +60,16 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAMESPACE = "public-coder-agent"
-NAMESPACE_OUTPUT_DIR = "cluster/k8s/agents/public-coder-agent/namespace"
+NAMESPACE_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/namespace"
 NAMESPACE_MANIFEST = "public-coder-agent.k8s.yaml"
 SERVICE_NAME = "public-coder-devbox-ssh"
 VM_NAME = "public-coder-devbox"
 SSH_PORT = 22
-OUTPUT_DIR = "cluster/k8s/agents/public-coder-agent/devbox"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/devbox"
 _SERVICE_LABELS = {"app.kubernetes.io/name": VM_NAME}
 _POD_LABELS = {"kubevirt.io/domain": VM_NAME}
 _BAZEL_CACHE_CLAIM = "public-coder-devbox-bazel-cache"

@@ -38,10 +38,11 @@ from cluster.cdk8s.external_secrets.external_secret import add_external_secret, 
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.valkey import valkey_instance
 
-OUTPUT_DIR = "cluster/k8s/agents/tana-mcp"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/tana-mcp"
 _NAMESPACE = "tana-mcp"
 _NAME = "tana-mcp"
 _LABELS = {"app.kubernetes.io/name": _NAME}

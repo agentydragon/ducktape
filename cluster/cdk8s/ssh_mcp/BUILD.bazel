@@ -17,6 +17,7 @@ py_library(
         "//cluster/validation:__pkg__",
     ],
     deps = [
+        "//cluster/cdk8s:manifest_roots",
         "//util/bazel:runfiles",
         "//x/ssh_mcp_server:server",
         "@pypi//cdk8s",
@@ -76,6 +77,7 @@ py_library(
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "//cluster/scripts:nebula_mesh",

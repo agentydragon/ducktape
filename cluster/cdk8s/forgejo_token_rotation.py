@@ -15,9 +15,10 @@ from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "forgejo-token-rotation"
-OUTPUT_DIR = "cluster/k8s/agents/forgejo-token-rotation"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/forgejo-token-rotation"
 _NAMESPACE = "agents-infra"  # owned by authentik-jwt-rotation
 _IMAGE = "git.allegedly.works/ducktape-ci/forgejo-token-rotation:unset"
 # Rendered from tokens.yaml by the hand-written kustomization's configMapGenerator.
