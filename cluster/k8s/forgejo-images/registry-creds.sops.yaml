@@ -4,7 +4,7 @@ metadata:
     name: forgejo-images-creds
     namespace: forgejo-images
     annotations:
-        description: Shared credential for the ducktape-ci Forgejo registry tenant. username/password read by tf/gitops/forgejo-images. Each consuming namespace (including flux-system, for ImageRepository authentication) reads this Secret directly via its own ExternalSecret against the scoped kubernetes-forgejo-images-secret-store ClusterSecretStore (cluster/k8s/external-secrets/config/), rather than a cluster-wide reflector-based fan-out.
+        description: Shared credential for the ducktape-ci Forgejo registry tenant. username/password read by tf/gitops/forgejo-images. Each consuming namespace (including flux-system, for ImageRepository authentication) reads this Secret directly via its own ExternalSecret against the scoped kubernetes-forgejo-images-secret-store ClusterSecretStore (cluster/generated/external-secrets/config/), rather than a cluster-wide reflector-based fan-out.
 type: kubernetes.io/dockerconfigjson
 stringData:
     .dockerconfigjson: ENC[AES256_GCM,data:YMUIE9+iCqTzvTTHxie1D8WTgH85ibJCHpnrwHNUZE41O/Agf+cpSu1N8I0wbmBmJwZH+dkl6214pcNr1j10EF8gV/p/DrU1MdhYWBRdWsAYEVRTKGtlZ1q/q3JGwZRvPH2OXnIV2t2Ku6CHpvcCwYxkeMz0XCGkOJgGHVTchz69RxdkpjzzII+VdVs/UpodwqYWBMVUbxlzBnAHseGQSrQeFIciw/ZsDVDML91+YjRGDdVpaQf5fgBU1YHU5q1O7OqpObQ50RDi8G0HXbuWpH5Q,iv:mbopXU4JKmA1Baebmcfw2FiJYTWO/7DrojV3bSvBwo4=,tag:aBWXFhIJ8ZQ1c3jUerlTnw==,type:str]

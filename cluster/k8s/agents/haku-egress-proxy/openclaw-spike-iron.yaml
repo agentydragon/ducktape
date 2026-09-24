@@ -24,7 +24,7 @@ transforms:
         # apiserver's cluster-CA cert, which this MITM proxy cannot validate
         # on the upstream leg. kubeapi.allegedly.works terminates the public
         # LE wildcard at the Gateway and was added for exactly this class of
-        # caller -- see cluster/k8s/kube-api-proxy/README.md.
+        # caller -- see cluster/cdk8s/kube_api_proxy.md.
         - "kubeapi.allegedly.works"
         - "forgejo-http.forgejo"
         - "pypi.org"
