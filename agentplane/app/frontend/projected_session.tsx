@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Button, Group, Paper, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
+import { ActionIcon, Badge, Button, Group, Paper, Select, Stack, Text, Textarea } from "@mantine/core";
 import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
@@ -13,7 +13,6 @@ import {
   displayableError,
   getThread,
   models,
-  renameThread,
   type EvidencePage,
   type NativeFramePage,
   type ThreadView,
@@ -24,6 +23,7 @@ import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider } from "./retained_disclosures";
 import { ChronologicalDebugLink, ChronologicalDebugProvider } from "./chronological_debug";
+import { ThreadTitle } from "./thread_title";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
 
@@ -1005,7 +1005,6 @@ function SyncedThread({
 export function ProjectedSession({ threadId, onBack }: { threadId: string; onBack: () => void }): JSX.Element {
   const sync = useThreadSync();
   const [thread, setThread] = useState<ThreadView | null>(null);
-  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl());
   const sandboxAvailable =
@@ -1015,13 +1014,7 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
       (sandbox) => sandbox.name === thread?.sandbox && sandbox.state === "running"
     ) === true;
   useEffect(() => {
-    void getThread(threadId).then(
-      (value) => {
-        setThread(value);
-        setName(value.name ?? "");
-      },
-      (reason: unknown) => setError(displayableError(reason))
-    );
+    void getThread(threadId).then(setThread, (reason: unknown) => setError(displayableError(reason)));
   }, [threadId]);
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
@@ -1031,17 +1024,7 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
             ← Threads
           </Button>
           <ChronologicalDebugLink />
-          <TextInput
-            aria-label="Thread name"
-            value={name}
-            placeholder={threadId}
-            onChange={(event) => setName(event.currentTarget.value)}
-            onBlur={() =>
-              void renameThread(threadId, name.trim() || null).then(setThread, (reason: unknown) =>
-                setError(displayableError(reason))
-              )
-            }
-          />
+          <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
         </Group>
         {error && (
           <Text role="alert" c="red">
