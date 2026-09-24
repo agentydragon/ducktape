@@ -853,8 +853,8 @@ mod tests {
                 &config,
                 r#"main_chunk_id: cli
 module_roots:
-  cli: chunks/cli
-  print: chunks/print
+  chunks/cli: cli
+  chunks/print: print
 inputs:
   root: snapshot
   js_list_path: extracted/js-files.txt

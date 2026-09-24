@@ -2197,10 +2197,12 @@ pub fn run_match_selector(source_file: &Path, selector: &str, extra_args: &[&str
 /// The `outcomes` of the `static/app` chunk's `selector_diagnostics.json`
 /// under a `debundle run --dry-run` report root.
 pub fn read_selector_outcomes(report_root: &Path) -> Vec<Value> {
-    let report_path = report_root
-        .join("static")
-        .join("app")
-        .join("selector_diagnostics.json");
+    read_chunk_selector_outcomes(report_root, "static/app")
+}
+
+/// The `outcomes` of `chunk`'s `selector_diagnostics.json` under a report root.
+pub fn read_chunk_selector_outcomes(report_root: &Path, chunk: &str) -> Vec<Value> {
+    let report_path = report_root.join(chunk).join("selector_diagnostics.json");
     let report: Value = serde_json::from_str(
         &fs::read_to_string(&report_path)
             .unwrap_or_else(|error| panic!("read {}: {error}", report_path.display())),
@@ -2279,6 +2281,81 @@ pub fn run_debundler_with_env(
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         status: output.status,
+    }
+}
+
+/// A tree-authored spec over several chunks: `chunks` are `(chunk id,
+/// source)`, `module_roots` are `(tree root, chunk id)`, and `modules` are
+/// `(path below the modules root, module YAML)`. Every chunk is inlined into
+/// its entry when unassigned; the first chunk is `main_chunk_id`.
+pub struct TreeFixture<'a> {
+    pub chunks: &'a [(&'a str, &'a str)],
+    pub module_roots: &'a [(&'a str, &'a str)],
+    pub modules: &'a [(&'a str, &'a str)],
+}
+
+pub struct TreeRun {
+    _root: TempDir,
+    pub out_root: PathBuf,
+    pub report_root: PathBuf,
+    pub result: CommandResult,
+}
+
+/// Writes `fixture` and runs `debundle run` on it in tree form with
+/// `extra_args`, writing the JS tree.
+pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeRun {
+    let root = TempDir::with_prefix(current_test_prefix()).expect("create tempdir");
+    let snapshot = root.path().join("snapshot");
+    let modules = root.path().join("modules");
+    let out_root = root.path().join("out");
+    let mut js_list = String::new();
+    let mut unassigned_mode = String::new();
+    for (chunk, source) in fixture.chunks {
+        write_text_file(&snapshot.join(format!("{chunk}.js")), source);
+        js_list.push_str(&format!("{chunk}.js\n"));
+        unassigned_mode.push_str(&format!("  {chunk}: {{ kind: inline_in_entry }}\n"));
+    }
+    write_text_file(&root.path().join("js-files.txt"), &js_list);
+    let module_roots = fixture
+        .module_roots
+        .iter()
+        .map(|(tree, chunk)| format!("  {tree}: {chunk}\n"))
+        .collect::<String>();
+    for (path, body) in fixture.modules {
+        write_text_file(&modules.join(path), body);
+    }
+    let config = root.path().join("spec_config.yaml");
+    write_text_file(
+        &config,
+        &format!(
+            "main_chunk_id: {}\nmodule_roots:\n{module_roots}inputs:\n  root: snapshot\n  \
+             js_list_path: js-files.txt\nwrite_js_tree: true\nunassigned_mode:\n{unassigned_mode}",
+            fixture.chunks[0].0,
+        ),
+    );
+    let vendor_marks = root.path().join("vendor_marks.yaml");
+    write_text_file(&vendor_marks, "vendor_marks: []\n");
+    let bin = debundler_path();
+    let output = Command::new(&bin)
+        .arg("run")
+        .arg("--tree-config")
+        .arg(&config)
+        .arg("--tree-modules")
+        .arg(&modules)
+        .arg("--tree-vendor-marks")
+        .arg(&vendor_marks)
+        .arg("--tree-source-root")
+        .arg(root.path())
+        .arg("--out-root")
+        .arg(&out_root)
+        .args(extra_args)
+        .output()
+        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
+    TreeRun {
+        report_root: out_root.join("reports").join("tree"),
+        out_root,
+        result: command_result(output),
+        _root: root,
     }
 }
 
