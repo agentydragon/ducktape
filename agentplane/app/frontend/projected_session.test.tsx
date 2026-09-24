@@ -1,14 +1,17 @@
 // @vitest-environment happy-dom
 
-import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import { create, equals, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CommandSchema, type Command } from "../../protocol/command_pb";
+import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
 import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
 import { command, getThread, models, type ThreadView } from "./client";
 import { historyRows, rowKey } from "./history_rows";
+import { LocalCommands } from "./local_commands";
 import { EntityCard, HistoryRowView, ProjectedSession, pruneCommandErrors } from "./projected_session";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { testItem } from "./thread_entity_fixture";
@@ -317,6 +320,102 @@ it.each([
 ])("names why %o shows no model: %s", async (state, placeholder) => {
   const picker = (await render(threadState(state))).querySelector<HTMLInputElement>('input[aria-label="Model"]');
   expect(picker?.placeholder).toBe(placeholder);
+});
+
+function message(commandId: string): Command {
+  return create(CommandSchema, {
+    commandId,
+    operation: { case: "submitInput", value: { text: `Test input ${commandId}` } },
+  });
+}
+
+function admission(value: Command): EventEntry {
+  return create(EventEntrySchema, {
+    cursor: 7n,
+    origin: { sourceId: "test-runner", sequence: 7n },
+    event: { observation: { case: "commandAdmitted", value: { command: value } } },
+  });
+}
+
+async function admit(_threadId: string, value: Command): Promise<EventEntry> {
+  return admission(value);
+}
+
+function sentIds(): string[] {
+  return vi.mocked(command).mock.calls.map(([, value]) => value.commandId);
+}
+
+function pendingRow(container: HTMLDivElement, commandId: string): HTMLElement {
+  const row = container.querySelector<HTMLElement>(`[data-command-id="${commandId}"]`);
+  if (!row) throw new Error(`Missing pending command ${commandId}`);
+  return row;
+}
+
+function retry(container: HTMLDivElement, commandId: string): HTMLButtonElement {
+  const found = [...pendingRow(container, commandId).querySelectorAll("button")].find(
+    (candidate) => candidate.textContent === "Retry"
+  );
+  if (!found) throw new Error(`Missing Retry for ${commandId}`);
+  return found;
+}
+
+it("delivers a command an earlier page retained without the operator acting, and keeps its admission", async () => {
+  new LocalCommands(THREAD.id).remember(message("retained-unadmitted"));
+  vi.mocked(command).mockImplementation(admit);
+  const container = await render();
+  expect(sentIds()).toEqual(["retained-unadmitted"]);
+  expect(pendingRow(container, "retained-unadmitted").textContent).toContain("Saved · awaiting effect");
+  const [retained] = new LocalCommands(THREAD.id).getSnapshot().commands;
+  expect(equals(EventEntrySchema, retained.admission!, admission(message("retained-unadmitted")))).toBe(true);
+});
+
+it("does not send a retained command whose admission it already holds", async () => {
+  const store = new LocalCommands(THREAD.id);
+  store.remember(message("retained-admitted"));
+  store.acknowledge(message("retained-admitted"), admission(message("retained-admitted")));
+  // Its unadmitted sibling being sent shows the mount's delivery ran.
+  store.remember(message("retained-unadmitted"));
+  vi.mocked(command).mockImplementation(admit);
+  const container = await render();
+  expect(sentIds()).toEqual(["retained-unadmitted"]);
+  expect(pendingRow(container, "retained-admitted").textContent).toContain("Saved · awaiting effect");
+});
+
+it("shows a delivery that outlives its deadline as a failed attempt the operator can retry", async () => {
+  new LocalCommands(THREAD.id).remember(message("hung"));
+  let expire!: (reason: unknown) => void;
+  vi.mocked(command)
+    .mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        expire = reject;
+      })
+    )
+    .mockImplementationOnce(admit);
+  const container = await render();
+  expect(pendingRow(container, "hung").textContent).toContain("Saved locally · awaiting admission");
+
+  await act(async () => expire(new DOMException("signal timed out", "TimeoutError")));
+  expect(pendingRow(container, "hung").textContent).toContain("signal timed out");
+  expect(sentIds()).toEqual(["hung"]);
+
+  await act(async () => retry(container, "hung").click());
+  expect(sentIds()).toEqual(["hung", "hung"]);
+  expect(pendingRow(container, "hung").textContent).toContain("Saved · awaiting effect");
+  expect(pendingRow(container, "hung").textContent).not.toContain("signal timed out");
+});
+
+it("delivers a failed command again when the browser comes back online", async () => {
+  new LocalCommands(THREAD.id).remember(message("offline"));
+  vi.mocked(command)
+    .mockRejectedValueOnce(new Error("the sandbox's runner is not answering"))
+    .mockImplementationOnce(admit);
+  const container = await render();
+  expect(pendingRow(container, "offline").textContent).toContain("the sandbox's runner is not answering");
+  expect(sentIds()).toEqual(["offline"]);
+
+  await act(async () => window.dispatchEvent(new Event("online")));
+  expect(sentIds()).toEqual(["offline", "offline"]);
+  expect(pendingRow(container, "offline").textContent).toContain("Saved · awaiting effect");
 });
 
 function reference(ownerId: string, field: PayloadRef["field"]): PayloadRef {

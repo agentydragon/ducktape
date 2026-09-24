@@ -284,3 +284,67 @@ it("excludes a non-mcp (e.g. sandbox-kind) group from the list", async () => {
   expect(container.textContent).not.toContain("sandbox");
   expect(container.textContent).toContain("No MCP servers are configured");
 });
+
+it("shows a refused token refresh with the provider's error and what to do next", async () => {
+  const container = await render(async () => [
+    {
+      server_id: "github",
+      server_url: "https://mcp.example.test",
+      status: "degraded",
+      revision: 2,
+      scopes: [],
+      expires_at: null,
+      linked_at: null,
+      linked_by: null,
+      refresh_failure: {
+        action: "reconnect",
+        error: "the OAuth provider refused the token request: invalid_grant: Token is not active",
+        attempts: 1,
+        retry_at: null,
+      },
+    },
+  ]);
+  expect(container.textContent).toContain(
+    "Token refresh failed once, link the account again:the OAuth provider refused the token request: invalid_grant: Token is not active"
+  );
+});
+
+it("does not repeat a linkage wait under a refresh failure that already explains it", async () => {
+  const container = await render(
+    async () => [
+      {
+        server_id: "github",
+        server_url: "https://mcp.example.test",
+        status: "degraded",
+        revision: 2,
+        scopes: [],
+        expires_at: null,
+        linked_at: null,
+        linked_by: null,
+        refresh_failure: { action: "reconnect", error: "test-only refusal", attempts: 1, retry_at: null },
+      },
+    ],
+    {},
+    async () => [
+      {
+        key: "github",
+        title: "GitHub",
+        description: "Test MCP backend.",
+        executor_kind: "mcp",
+        executor_description: "Linked operator account.",
+        available: false,
+        health: {
+          state: "disconnected",
+          reason: "linkage_unavailable",
+          detail: "test-only linkage wait",
+          last_discovery_at: null,
+          retry_at: null,
+          failures: 1,
+        },
+        actions: [],
+      },
+    ]
+  );
+  expect(container.textContent).toContain("test-only refusal");
+  expect(container.textContent).not.toContain("test-only linkage wait");
+});

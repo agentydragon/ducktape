@@ -46,7 +46,9 @@ ts_library(
     deps = [
         ":client",
         ":operator_login",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
+        "//agentplane/protocol:command_pb",
     ],
 )
 
@@ -877,6 +879,7 @@ ts_library(
     deps = [
         ":client",
         ":history_rows",
+        ":local_commands",
         ":projected_session",
         ":retained_disclosures",
         ":thread_entity_fixture",
@@ -888,6 +891,8 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/protocol:command_pb",
+        "//agentplane/protocol:event_log_pb",
         "//agentplane/protocol:event_pb",
     ],
 )

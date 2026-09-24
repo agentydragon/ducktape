@@ -47,6 +47,9 @@ export interface Scenario extends ScenarioOptions {
    * their evidence is not in the URL. */
   openEvidence?: string;
   pendingCommands?: "mixed" | "controls" | "outcomes";
+  /** Answer a command POST as the app does when a runner misses its admission deadline. Without
+   * this it stays unanswered, like one queued behind the browser's connection limit. */
+  commandAdmissionTimedOut?: boolean;
   failedTurn?: "before-content" | "after-content";
 }
 
@@ -254,13 +257,13 @@ export const SCENARIOS: Record<string, Scenario> = {
   mcp_servers: {
     element: "#app",
     route: "/mcp-servers",
-    viewport: { width: 1200, height: 1100 },
+    viewport: { width: 1200, height: 1400 },
     readySelectors: ["[data-mcp-server]"],
   },
   mcp_servers_phone: {
     element: "#app",
     route: "/mcp-servers",
-    viewport: { width: 390, height: 1450 },
+    viewport: { width: 390, height: 1950 },
     readySelectors: ["[data-mcp-server]"],
   },
 
@@ -482,6 +485,15 @@ export const SCENARIOS: Record<string, Scenario> = {
     pendingCommands: "mixed",
     openDebug: "latest",
     readySelectors: ['[aria-label="Chronological observations"]', '[data-thread-anchor="16"]'],
+    captureViewport: true,
+  },
+  session_pending_failed: {
+    element: "#app",
+    route: SESSION_STATES_ROUTE,
+    viewport: { width: 1200, height: 1100 },
+    pendingCommands: "mixed",
+    commandAdmissionTimedOut: true,
+    readySelectors: ["::-p-text(runner did not admit the command)", '[data-thread-anchor="19"]'],
     captureViewport: true,
   },
   session_pending_controls: {

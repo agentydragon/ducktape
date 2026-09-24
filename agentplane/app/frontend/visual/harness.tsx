@@ -36,7 +36,7 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
-import { electricLive, electricShape, electricSubset, routes } from "./network";
+import { electricLive, electricShape, electricSubset, routes, UNANSWERED } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
 
@@ -984,7 +984,8 @@ if (scenario.pendingCommands === "outcomes") {
 }
 
 // One MCP server per row state the MCP servers page draws: linked and connected, a link whose token
-// lapsed, never linked, and bearer-only backends that are up or unreachable.
+// lapsed while its refresh keeps failing, a refresh the provider refused, never linked, and
+// bearer-only backends that are up or unreachable.
 const MCP_LINKAGES: McpLinkageView[] = [
   {
     server_id: "example_docs",
@@ -1005,6 +1006,28 @@ const MCP_LINKAGES: McpLinkageView[] = [
     expires_at: ago(2 * HOUR),
     linked_at: ago(9 * 24 * HOUR),
     linked_by: null,
+    refresh_failure: {
+      action: "retrying",
+      error: "the token endpoint answered HTTP 503 Service Unavailable",
+      attempts: 6,
+      retry_at: new Date(NOW + 4 * 60_000).toISOString(),
+    },
+  },
+  {
+    server_id: "example_calendar",
+    server_url: "https://calendar-mcp.example.test/mcp",
+    status: "degraded",
+    revision: 5,
+    scopes: ["openid", "offline_access"],
+    expires_at: ago(HOUR),
+    linked_at: ago(40 * 24 * HOUR),
+    linked_by: null,
+    refresh_failure: {
+      action: "reconnect",
+      error: "the OAuth provider refused the token request: invalid_grant: Token is not active",
+      attempts: 1,
+      retry_at: null,
+    },
   },
   {
     server_id: "example_pantry",
@@ -1049,6 +1072,14 @@ const MCP_GROUPS: ActionGroupView[] = [
     last_discovery_at: ago(3 * HOUR),
     retry_at: new Date(NOW + 20_000).toISOString(),
     failures: 12,
+  }),
+  mcpGroup("example_calendar", "Linked operator account.", {
+    state: "disconnected",
+    reason: "linkage_unavailable",
+    detail: "refreshing the token failed in a way retrying cannot fix; link the account again",
+    last_discovery_at: ago(HOUR),
+    retry_at: new Date(NOW + 20_000).toISOString(),
+    failures: 9,
   }),
   mcpGroup("example_pantry", "Linked operator account.", {
     state: "disconnected",
@@ -1385,6 +1416,15 @@ routes.push(
       ],
       next_after_sequence: null,
     }),
+  ],
+  // No runner here admits a command, so one the page delivers on load stays unadmitted.
+  [
+    "POST",
+    /^\/threads\/([0-9a-f-]+)\/commands$/,
+    () =>
+      scenario.commandAdmissionTimedOut
+        ? Response.json({ detail: "runner did not admit the command within 15 seconds" }, { status: 504 })
+        : UNANSWERED,
   ],
   ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],
   [
