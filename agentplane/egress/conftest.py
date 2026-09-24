@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+import asyncio
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from datetime import timedelta
 from typing import Any, cast
 from uuid import uuid4
@@ -19,6 +20,7 @@ from agentplane.egress.decision_store import DecisionStore, make_engine
 from agentplane.egress.informer import Informer
 from agentplane.egress.policy import Index
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
+from agentplane.egress.upstream import PinnedDialEventLoop
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import (
     BINDINGS_PLURAL,
@@ -66,6 +68,13 @@ PROJECTED_AUDIENCE = "https://kubernetes.test.invalid"
 PROJECTED_TOKEN_A = "api-server-token-of-pod-a"
 PROJECTED_TOKEN_B = "api-server-token-of-pod-b"
 GITHUB_POLICY = "github"
+
+
+def pytest_asyncio_loop_factories(
+    config: pytest.Config, item: pytest.Item
+) -> Mapping[str, Callable[[], asyncio.AbstractEventLoop]]:
+    """The loop the proxy runs on in production, which `EgressProxyServer` refuses to start without."""
+    return {"pinned-dial": PinnedDialEventLoop}
 
 
 def seed(fake: FakeApiServer) -> None:

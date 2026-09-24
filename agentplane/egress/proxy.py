@@ -19,6 +19,7 @@ from mitmproxy.master import Master
 from mitmproxy.options import Options
 
 from agentplane.egress.addon import EgressAddon
+from agentplane.egress.upstream import PinnedDialEventLoop
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,9 @@ class EgressProxyServer:
         self._bound_port: int | None = None
 
     async def __aenter__(self) -> Self:
+        if not isinstance(asyncio.get_running_loop(), PinnedDialEventLoop):
+            # On any other loop a dial resolves its host afresh, and could go anywhere.
+            raise RuntimeError("EgressProxyServer runs on PinnedDialEventLoop, whose lookups pin its dials")
         master = Master(
             Options(listen_host=self._listen_host, listen_port=self._listen_port, confdir=str(self._confdir))
         )
