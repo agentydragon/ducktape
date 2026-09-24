@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
 
-from github_policy.visibility import RepositoryVisibilityService
 from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
 from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.principal import RequestPrincipal
@@ -35,7 +34,6 @@ from haku.console.mcp_config import (
     OperatorConnectionCredential,
     OperatorLoginIdentityCredential,
     RemoteServerOAuthAuth,
-    StaticBearerAuth,
     _server_entry,
 )
 from haku.console.settings import Settings
@@ -254,7 +252,6 @@ async def backend_auth_for_operator(
     - ``OperatorLoginIdentityCredential``: the operator's own Authentik login token (captured via
       offline_access), which the server exchanges for a per-host token (hostexec); missing ⇒ the
       operator has not logged in with offline_access yet.
-    - ``StaticBearerAuth``: the console's fixed configured bearer, not operator-scoped.
     - ``NoCredential``: none — the server carries its own credential.
     """
     credential = server.backend.credential if isinstance(server.backend, InProcessBackend) else server.backend.auth
@@ -271,8 +268,6 @@ async def backend_auth_for_operator(
             return await _require_operator_linked_token(
                 authentik_store.access_token_for(operator_id=operator_id), server.id
             )
-        case StaticBearerAuth(token=token):
-            return token.get_secret_value()
         case NoCredential():
             return None
 
@@ -294,7 +289,6 @@ class ToolCallApplicationService:
         approval_notifier: PendingApprovalNotifier,
         gmail_client_provider: GmailClientProvider,
         kubernetes_authorization: KubernetesAuthorizationService | None = None,
-        github_repository_visibility: RepositoryVisibilityService | None = None,
     ) -> None:
         self._settings = settings
         self._repository = repository
@@ -307,11 +301,8 @@ class ToolCallApplicationService:
         self._authentik_token_store = authentik_token_store
         self._gmail_client_provider = gmail_client_provider
         self._kubernetes_authorization = kubernetes_authorization
-        self._github_repository_visibility = github_repository_visibility
         self._auto_approval_policies = AutoApprovalPolicyRegistry(
-            settings,
-            kubernetes_authorization=self._kubernetes_authorization,
-            github_repository_visibility=self._github_repository_visibility,
+            settings, kubernetes_authorization=self._kubernetes_authorization
         )
         # In-flight background execution tasks dispatched by `decide`. Held so they aren't GC'd
         # mid-run, and drained/cancelled at shutdown (`aclose`).

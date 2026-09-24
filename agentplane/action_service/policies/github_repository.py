@@ -1,6 +1,6 @@
 """`github_repository`: a listed GitHub MCP Action matches when the one repository it targets is the
-configured `owner`/`repository`. The target and its search-qualifier boundaries are the shared
-`github_policy.repository` rules, the same the Haku console applies."""
+configured `owner`/`repository`. The target and its search-qualifier boundaries are the
+`github_policy.repository` rules."""
 
 from __future__ import annotations
 

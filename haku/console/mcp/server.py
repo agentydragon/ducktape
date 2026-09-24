@@ -89,7 +89,6 @@ from haku.console.mcp_config import (
     PreregisteredOAuthClient,
     RemoteMcpBackend,
     RemoteServerOAuthAuth,
-    StaticBearerAuth,
     _load_servers,
     server_tool_prefix,
 )
@@ -188,12 +187,6 @@ def _mcp_tool_call_response(record: ToolCallRecord, settings: Settings) -> McpTo
     return response
 
 
-class StaticBearerAuthStatus(BaseModel):
-    """Safe reflection of static-bearer auth: the secret's environment reference is omitted."""
-
-    kind: Literal["static_bearer"] = "static_bearer"
-
-
 class DynamicOAuthClientRegistrationStatus(BaseModel):
     kind: Literal["dynamic"] = "dynamic"
     client_name: str
@@ -217,9 +210,7 @@ class RemoteServerOAuthAuthStatus(BaseModel):
     scopes: list[str] | None = None
 
 
-type RemoteMcpAuthStatus = Annotated[
-    RemoteServerOAuthAuthStatus | StaticBearerAuthStatus | NoCredential, Field(discriminator="kind")
-]
+type RemoteMcpAuthStatus = Annotated[RemoteServerOAuthAuthStatus | NoCredential, Field(discriminator="kind")]
 
 
 class RemoteMcpBackendStatus(BaseModel):
@@ -267,8 +258,6 @@ class McpServerProbeResponse(BaseModel):
 
 def _backend_status(backend: RemoteMcpBackend | InProcessBackend) -> McpBackendStatus:
     match backend:
-        case RemoteMcpBackend(auth=StaticBearerAuth()):
-            return RemoteMcpBackendStatus(url=backend.url, auth=StaticBearerAuthStatus())
         case RemoteMcpBackend(auth=RemoteServerOAuthAuth() as auth):
             match auth.client_registration:
                 case DynamicOAuthClientRegistration() as registration:
@@ -848,9 +837,8 @@ def build_console_mcp(
         or calls a downstream MCP server. OAuth/provider connection objects mirror the console's
         persisted non-secret status structures, including connection and token-expiry times. The
         nested backend object mirrors the safe server configuration shape so callers can distinguish
-        remote MCP transports from in-process implementations; static bearer secret references are
-        omitted. A real
-        discovery or execution attempt may refresh an expired token or prove that reconnect is needed.
+        remote MCP transports from in-process implementations. A real discovery or execution attempt
+        may refresh an expired token or prove that reconnect is needed.
         Cataloged provider accounts whose OAuth client is absent remain visible as ``unprovisioned``.
         """
         return await _passive_server_connection_statuses(context, actor)

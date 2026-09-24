@@ -2,9 +2,9 @@
 
 The console's deploy-time YAML names the MCP servers Haku may drive through the approval
 queue; this module models that config, looks entries up by id, and resolves how to reach
-each one — the in-process `FastMCP` transport or remote URL, and the static bearer
-credential where one applies. The tool-call application service, `McpServerDispatcher`
-(`approval`), and operator OAuth linkage (`operator_oauth`) build on this shared substrate.
+each one — the in-process `FastMCP` transport or remote URL. The tool-call application
+service, `McpServerDispatcher` (`approval`), and operator OAuth linkage (`operator_oauth`)
+build on this shared substrate.
 """
 
 from __future__ import annotations
@@ -145,13 +145,6 @@ class OperatorLoginIdentityCredential(BaseModel):
     kind: Literal["operator_login_identity"] = "operator_login_identity"
 
 
-class StaticBearerAuth(BaseModel):
-    """Execute with a fixed, non-operator bearer held directly in typed settings."""
-
-    kind: Literal["static_bearer"] = "static_bearer"
-    token: SecretStr
-
-
 class NoCredential(BaseModel):
     """No backend credential: an in-process server that carries its own (e.g. `haku_routine`, which
     holds the launch-routine secret) or otherwise needs none."""
@@ -162,7 +155,7 @@ class NoCredential(BaseModel):
 # How a server resolves its backend credential for the acting Operator — exactly one variant per
 # server. The discriminated union replaces flag+optional fields that could set several at once;
 # dispatch by `isinstance` (mypy narrows), never a `kind`-string compare.
-type RemoteMcpAuth = Annotated[RemoteServerOAuthAuth | StaticBearerAuth | NoCredential, Field(discriminator="kind")]
+type RemoteMcpAuth = Annotated[RemoteServerOAuthAuth | NoCredential, Field(discriminator="kind")]
 type InProcessCredential = Annotated[
     OperatorConnectionCredential | OperatorLoginIdentityCredential | NoCredential, Field(discriminator="kind")
 ]
@@ -284,29 +277,6 @@ class HomeAssistantEntityControlAutoApprovalPolicy(AutoApprovalPolicyBase):
         return value
 
 
-class GitHubRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
-    """Conditionally auto-approve reviewed GitHub reads for one repository."""
-
-    type: Literal["github_repository"] = "github_repository"
-    server: str = Field(min_length=1)
-    owner: str = Field(min_length=1)
-    repository: str = Field(min_length=1)
-    tools: set[str] = Field(min_length=1)
-
-
-class GitHubPublicRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
-    """Conditionally auto-approve reviewed GitHub reads for any repository confirmed public.
-
-    Unlike ``GitHubRepositoryAutoApprovalPolicy``, the target repository is not fixed by config —
-    it is derived from the call the same way, then checked live for public visibility rather than
-    compared against a configured pair. See ``github_policy/repository.py``.
-    """
-
-    type: Literal["github_public_repository"] = "github_public_repository"
-    server: str = Field(min_length=1)
-    tools: set[str] = Field(min_length=1)
-
-
 class GrantSelfListAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Conditionally auto-approve an Agent listing its OWN grants (`list_grants(principal='self')`).
 
@@ -343,9 +313,7 @@ class NeverAutoApprovalPolicy(AutoApprovalPolicyBase):
 type AutoApprovalPolicy = Annotated[
     ExactToolsAutoApprovalPolicy
     | GmailLabelNamespaceAutoApprovalPolicy
-    | GitHubRepositoryAutoApprovalPolicy
     | HomeAssistantEntityControlAutoApprovalPolicy
-    | GitHubPublicRepositoryAutoApprovalPolicy
     | GrantSelfListAutoApprovalPolicy
     | KubernetesPassthroughAutoApprovalPolicy
     | AnyOfAutoApprovalPolicy
@@ -530,17 +498,7 @@ class ConsoleConfigFile(BaseModel):
                     raise ValueError(
                         f"auto-approval policy {policy.id!r} references unknown MCP servers {sorted(unknown_servers)!r}"
                     )
-            elif (
-                isinstance(
-                    policy,
-                    (
-                        GmailLabelNamespaceAutoApprovalPolicy,
-                        GitHubRepositoryAutoApprovalPolicy,
-                        GitHubPublicRepositoryAutoApprovalPolicy,
-                    ),
-                )
-                and policy.server not in server_ids
-            ):
+            elif isinstance(policy, GmailLabelNamespaceAutoApprovalPolicy) and policy.server not in server_ids:
                 raise ValueError(f"auto-approval policy {policy.id!r} references unknown MCP server {policy.server!r}")
 
         for policy in policies.values():
