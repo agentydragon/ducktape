@@ -1288,6 +1288,13 @@ routes.push(
       next_after_sequence: null,
     }),
   ],
+  // No runner here admits a command: one the page delivers on load stays unadmitted, answered as
+  // the app answers when a runner misses its admission deadline.
+  [
+    "POST",
+    /^\/threads\/([0-9a-f-]+)\/commands$/,
+    () => Response.json({ detail: "runner did not admit the command within 15 seconds" }, { status: 504 }),
+  ],
   ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],
   [
     "GET",
