@@ -3,7 +3,6 @@ kind: Kustomization
 namespace: grocy-vallejo
 resources:
   - ../../mcp-base
-  - ../../mcp-servicemonitor-base
   # cdk8s-generated (cluster/cdk8s/grocy/mcp.py) -- see cluster/docs/cdk8s.md.
   - grocy-mcp-vallejo.k8s.yaml
 configMapGenerator:

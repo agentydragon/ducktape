@@ -22,10 +22,9 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
@@ -257,6 +256,3 @@ def servicemonitor_chart(app: App) -> Chart:
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
     write_charts(root, SERVICEMONITOR_DIR, servicemonitor_chart)
-    write_yaml(
-        root / SERVICEMONITOR_DIR / "kustomization.yaml", kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml"])
-    )
