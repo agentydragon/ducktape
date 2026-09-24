@@ -10,8 +10,8 @@ plans and evidence live here:
 
 - <docs/selector_resolution.md> — how selectors resolve, and the measured reason
   the architecture is shaped that way.
-- <plans/selector_engine.md> — template references, pinning by use site, then
-  bump tooling.
+- <plans/selector_engine.md> — the rest of template references, pinning by use
+  site, then bump tooling.
 - <plans/relational_selectors.md> — the remaining selector-language work.
 - <plans/automated_spec_workflows.md> — automation-first CLI/workflow design.
 - <SELECTOR_BUGS.md> — matcher/diagnostic bugs with anonymized examples.
@@ -28,7 +28,8 @@ a second priority queue.
 
 Every command resolves selectors through one resolve over one program across
 chunks, with the semantics of <SPEC.md>. What remains in
-<plans/selector_engine.md> is template references, then pinning by use site,
+<plans/selector_engine.md> is the rest of template references (the `validate`
+listing, anonymous statements, relational referents), then pinning by use site,
 then bump tooling. Its steps are the dispatch order.
 
 Selector-language work (<plans/relational_selectors.md>) lands on top of the

@@ -126,6 +126,11 @@ selector-language work.
 - **A single-statement `else`/`if`/`for`/while body takes `STMT`, not `STMT_LIST`**;
   `STMT_LIST` is for a block body.
 - **The declaration keyword must match the source** (`var`/`let`/`const`).
+- **A free chunk spelling can collide with an export name.** A template that
+  keeps a minified name (`cx()`) references whichever entity is exported as
+  `cx`; if that entity binds elsewhere, the template is `conflict` with it.
+  Write the entity's readable name, or declare the name in the template. An
+  `ambiguous_reference` `invalid` means several other modules export the name.
 - **`match-selector` proves only today's single-selector match.** A holed
   skeleton like `function X(ANYTHING){STMT_LIST}` matches 1000+ nodes because
   `X` and the params alpha-rename; uniqueness must come from a kept literal or
@@ -280,6 +285,29 @@ property names, object keys, and AST structure significant. This is useful for
 matching `function(x, y) { return x * z; }` against the same structure after
 minifier parameter names drift. Alpha-equivalent identifier matching is the
 public policy; do not spell an `identifiers` field in YAML.
+
+### Naming other entities
+
+A free identifier (used, never declared in the template) that is another
+entity's export name is a **reference**: the template matches only where that
+identifier is the entity's own binding. A free runtime global the chunk does not
+declare (`Object`, `window`, `console`, …) matches only itself. The full rule is
+<../SPEC.md> § Matching. So once a `Widget` class has a selector,
+
+```yaml
+source_matches:
+  - match: const defaultWidget = new Widget(ANYTHING);
+    bindings:
+      - defaultWidget
+```
+
+claims the instance of that class, not of any class. An entity unique only
+this way is `resolved_by: own_references`; one whose matches all construct
+another class is `conflict` with `Widget`.
+
+References work in `source_match` members and `source_matches[]`, not yet in
+anonymous statements; a reference to an entity pinned by a relational selector
+still alpha-renames.
 
 ## Binding claims and context windows
 
