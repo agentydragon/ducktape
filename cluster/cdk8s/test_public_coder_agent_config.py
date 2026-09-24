@@ -72,7 +72,14 @@ def app_objects() -> list[dict[str, Any]]:
 
 @pytest.fixture(scope="module")
 def proxy_objects() -> list[dict[str, Any]]:
-    return _synth(public_coder_proxy.chart)
+    return _synth(
+        lambda app: public_coder_proxy.chart(
+            app,
+            app_namespace=public_coder_agent_config.NAMESPACE,
+            app_labels=public_coder_agent_config.LABELS,
+            aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key_selector,
+        )
+    )
 
 
 @pytest.fixture(scope="module")
@@ -155,23 +162,6 @@ def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credentia
                 assert source.get("secret", {}).get("name") not in secret_names
 
 
-def test_proxy_admits_the_app(app_objects: list[dict[str, Any]], proxy_objects: list[dict[str, Any]]) -> None:
-    """The app's pod carries labels the proxy's ingress admits. The devbox's rule is built from
-    the devbox's own labels; the app's is spelled in public_coder_proxy, which the app imports."""
-    ingress_policy = _one(proxy_objects, "CiliumNetworkPolicy", "allow-public-coder-agent-proxy-ingress")
-    allowed = {
-        frozenset(endpoint["matchLabels"].items())
-        for endpoint in one(ingress_policy["spec"]["ingress"])["fromEndpoints"]
-    }
-    app = _one(app_objects, "Deployment")
-    # Cilium's matchLabels selects any pod whose labels are a superset of the rule, so a covering
-    # rule is one the app's actual labels satisfy -- not one matching them exactly.
-    actual = frozenset({"k8s:io.kubernetes.pod.namespace": app["metadata"]["namespace"]}.items()) | frozenset(
-        (f"k8s:{k}", v) for k, v in app["spec"]["template"]["metadata"]["labels"].items()
-    )
-    assert any(rule <= actual for rule in allowed)
-
-
 def test_app_egress_reaches_the_internet_only_through_the_proxy(app_objects: list[dict[str, Any]]) -> None:
     egress = _one(app_objects, "NetworkPolicy", "public-coder-agent-egress")["spec"]["egress"]
     assert all(rule.get("to") for rule in egress)
@@ -184,21 +174,6 @@ def test_app_reaches_clickhouse_only_through_the_proxy(app_objects: list[dict[st
     container = one(_one(app_objects, "Deployment")["spec"]["template"]["spec"]["containers"])
     no_proxy = one(entry["value"] for entry in container["env"] if entry["name"] == "NO_PROXY").split(",")
     assert not {client.HOST, client.HOST.removesuffix(".cluster.local")} & set(no_proxy)
-
-
-def test_proxy_aiquota_bearer_is_mirrored_into_its_namespace(proxy_objects: list[dict[str, Any]]) -> None:
-    proxy_deployment = _one(proxy_objects, "Deployment")
-    proxy_env = {
-        entry["name"]: entry for entry in one(proxy_deployment["spec"]["template"]["spec"]["containers"])["env"]
-    }
-    aiquota_ref = proxy_env["AIQUOTA_API_BEARER_TOKEN"]["valueFrom"]["secretKeyRef"]
-    aiquota_mirror = _one(_synth(aiquota.chart), "ExternalSecret", aiquota_ref["name"])
-    assert aiquota_mirror["spec"]["target"]["name"] == aiquota_ref["name"]
-    assert aiquota_ref["key"] in {entry["secretKey"] for entry in aiquota_mirror["spec"]["data"]}
-    annotations = aiquota_mirror["spec"]["target"]["template"]["metadata"]["annotations"]
-    proxy_namespace = proxy_deployment["metadata"]["namespace"]
-    assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"] == proxy_namespace
-    assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"] == proxy_namespace
 
 
 def test_public_coder_never_exceeds_haku(

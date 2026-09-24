@@ -107,12 +107,6 @@ Entries are removed once landed — this is a burn-down, not a changelog.
 Each side the test compares is now a construct, except the hand-written inputs named;
 retiring a test means deriving both sides from one value.
 
-- **`agents/public-coder-agent/{app,proxy}`** — what the tests still compare:
-  - The proxy's and the piper's ingress rules spell the app's labels, because
-    `public_coder_agent_config` imports both modules for their addresses
-    (`test_public_coder_agent_config.py`'s `test_proxy_admits_the_app`).
-  - The `aiquota-api-bearer-public-coder` mirror `aiquota.py` writes for the proxy
-    (`test_proxy_aiquota_bearer_is_mirrored_into_its_namespace`).
 - **`haku/workspaces` setup-script contract** — `test_haku_sandbox_setup.py`
   regex-extracts the variables `haku-sandbox-setup.sh` (an image build input) requires and
   checks the synthesized SandboxTemplate (`haku/workspaces.py`) sets them. No `Settings`
