@@ -55,6 +55,10 @@ py_library(
 py_library(
     name = "main",
     srcs = ["main.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane_index:__pkg__",
+    ],
     deps = [
         ":app",
         ":maintenance",

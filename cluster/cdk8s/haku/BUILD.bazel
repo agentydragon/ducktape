@@ -264,6 +264,7 @@ py_library(
         ":namespace",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",

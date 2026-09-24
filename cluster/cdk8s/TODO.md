@@ -20,10 +20,10 @@ Entries are removed once landed — this is a burn-down, not a changelog.
 
 ## Follow-ups from the agentplane conversion
 
-- **A light `settings.py` per agentplane service.** Synth imports each service's
-  `main` for its `Settings`, pulling mitmproxy/fastapi in; the synth tests sit at
-  `size = "medium"` for that alone. Moving `Settings` and the sub-models it needs
-  into a `settings.py` the constructs import returns them to `small`.
+- **A light `settings.py` per agentplane service and aiquota.** Synth imports each
+  service's `main` (aiquota's `api`) for its `Settings`, pulling mitmproxy/fastapi in;
+  the synth tests sit at `size = "medium"` for that alone. Moving `Settings` and the
+  sub-models it needs into a `settings.py` the constructs import returns them to `small`.
 - **`Chart(namespace=...)`** once cluster-scoped objects (ClusterRole/Binding, the
   trust-manager Bundle) move to their own chart; then `metadata(name, namespace)`
   drops out of every namespaced object.
@@ -117,24 +117,21 @@ Each side the test compares is now a construct, except the hand-written inputs n
 retiring a test means deriving both sides from one value.
 
 - **`agents/public-coder-agent/{app,proxy,devbox}`, `agent-rbac-base` and
-  `clickhouse/cluster`** — `test_public_coder_{agent_config,proxy}.py` check subject,
+  `clickhouse/cluster`** — `test_public_coder_agent_config.py` checks subject,
   selector and port agreement across RBAC, NetworkPolicies and the proxy over the
   synthesized charts; `test_haku_public_coder_contract.py` and
   `test_public_coder_clickhouse_reader_contract.py` check the same against the still
   hand-written Iron transform configs (`proxy/iron.yaml`) and the app's
   `agent-kubeconfig.yaml`, both `configMapGenerator` inputs.
-- **`agents/haku-egress-proxy` script contract** — `test_haku_sandbox_contract.py`
-  regex-extracts required env vars and a clone host:port from `haku-sandbox-setup.sh`
-  (an image build input) and checks the generated SandboxTemplate
-  (`haku/workspaces.py`) and egress policy cover them. Closing it fully needs the script
-  to declare its requirements in a checkable form.
+- **`haku/workspaces` script contract** — `test_haku_sandbox_contract.py`
+  regex-extracts required env vars from `haku-sandbox-setup.sh` (an image build input)
+  and checks the generated SandboxTemplate (`haku/workspaces.py`) covers them. Closing
+  it fully needs the script to declare its requirements in a checkable form.
 - **`authentik/app`** — `test_authentik_blueprint_contracts.py`'s
   `configMapGenerator.files` list vs. a glob of `blueprints/*.yaml`: the
   `kustomization.yaml` is still hand-written, so a generated one listing the glob would
   close it. The outpost/provider referential-integrity half walks Authentik's blueprint
   DSL (`!Find`/`!KeyOf`) and stays an external-format check.
-- **`haku/mailbox`** — `test_mailbox_plan.py`'s init/prod image equality and
-  configMapGenerator-name-vs-mount-name checks, now against `haku/mailbox.py`.
 
 ## Parked — lower priority
 

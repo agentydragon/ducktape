@@ -1181,6 +1181,13 @@ pub struct RejectedFixture {
     _root: TempDir,
 }
 
+pub struct DryRunFixture {
+    pub stderr: String,
+    pub report_root: PathBuf,
+    // Held to keep the tempdir alive for the duration of assertions.
+    _root: TempDir,
+}
+
 pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
     let setup = setup_fixture(&opts);
     let spec_path = setup.root.path().join("transform_spec.yaml");
@@ -1279,10 +1286,26 @@ pub fn run_fail_fast_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> Rejecte
     run_rejection_fixture_with_args(opts, &["--dry-run", "--fail-fast"])
 }
 
-/// Compatibility spelling for tests that need to document the old explicit
-/// flag; keep-going is now the default for broad pipeline runs.
-pub fn run_keep_going_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &["--dry-run", "--keep-going"])
+/// Run `debundle run --dry-run` over `opts` and assert it succeeds. The report
+/// root holds whatever the pass still writes on success, such as selector
+/// warnings in `selector_diagnostics.json`.
+pub fn run_dry_run_fixture(opts: FixtureOpts<'_>) -> DryRunFixture {
+    let setup = setup_fixture(&opts);
+    let spec_path = setup.root.path().join("transform_spec.yaml");
+    write_yaml_file(&spec_path, &build_spec(&opts, &setup));
+    let result = spawn_transform_with_args(&spec_path, &["--dry-run"], &[]);
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+    DryRunFixture {
+        stderr: result.stderr,
+        report_root: setup.report_root,
+        _root: setup.root,
+    }
 }
 
 fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> RejectedFixture {
@@ -2124,6 +2147,35 @@ pub fn run_match_selector(source_file: &Path, selector: &str, extra_args: &[&str
             result.stdout
         )
     })
+}
+
+/// The `outcomes` of the `static/app` chunk's `selector_diagnostics.json`
+/// under a `debundle run --dry-run` report root.
+pub fn read_selector_outcomes(report_root: &Path) -> Vec<Value> {
+    let report_path = report_root
+        .join("static")
+        .join("app")
+        .join("selector_diagnostics.json");
+    let report: Value = serde_json::from_str(
+        &fs::read_to_string(&report_path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", report_path.display())),
+    )
+    .unwrap_or_else(|error| panic!("parse {}: {error}", report_path.display()));
+    report["outcomes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("outcomes must be an array: {report:#}"))
+        .clone()
+}
+
+/// The outcome record of `kind` whose entity is the export `export_name`.
+pub fn find_outcome<'a>(outcomes: &'a [Value], kind: &str, export_name: &str) -> &'a Value {
+    outcomes
+        .iter()
+        .find(|record| {
+            record["outcome"]["kind"] == kind
+                && record["placement"]["entity"]["export"] == export_name
+        })
+        .unwrap_or_else(|| panic!("missing {kind} outcome for export {export_name}: {outcomes:#?}"))
 }
 
 fn spawn_transform(spec_path: &Path) -> CommandResult {

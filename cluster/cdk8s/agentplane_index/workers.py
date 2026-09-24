@@ -1,9 +1,8 @@
 """The Agentplane repository index: its Namespace, CNPG database, read token, and one
 index worker per indexed repository (ducktape, haku-state).
 
-Hand-written beside the generated output: the directory's `kustomization.yaml`, whose
-`configMapGenerator` renders the workers' shared `agentplane-index-config`, and its
-`image-pins/` Component. The image tag here is a placeholder the Component overrides.
+Hand-written beside the generated output: the directory's `image-pins/` Component. The
+image tag here is a placeholder the Component overrides.
 """
 
 from __future__ import annotations
@@ -28,11 +27,14 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
+from agentplane.indexing.main import Settings
 from cluster.cdk8s import cnpg, forgejo_images
 from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from util.settings_contract import env_name
 
 NAME = "agentplane-index"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agentplane-index"
@@ -41,11 +43,32 @@ _DB_CLUSTER = f"{NAME}-db"
 _DB_APP_SECRET = f"{_DB_CLUSTER}-app"
 _DB_OWNER = "indexer"
 _READ_TOKEN = f"{NAME}-read-token"
-# Rendered by the hand-written kustomization.yaml's configMapGenerator.
-_CONFIG_MAP = f"{NAME}-config"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-index:unset"
-_PORT = 8080
+# The worker listens on its Settings default; nothing passes `--port`.
+_PORT = Settings.model_fields["port"].default
 _REPOSITORY_MOUNT = "/var/lib/agentplane-index"
+# The workers' shared settings, rendered by the kustomization.yaml's configMapGenerator.
+_CONFIG_MAP = ConfigMapArgs(
+    name=f"{NAME}-config",
+    namespace=NAME,
+    literals=[
+        f"{env_name(Settings, field)}={value}"
+        for field, value in {
+            "checkout_dir": f"{_REPOSITORY_MOUNT}/repository",
+            # libgit2 does not read SSL_CERT_FILE; the bundle comes from the cacerts image layer.
+            "git_ca_bundle": "/etc/ssl/certs/ca-certificates.crt",
+            "embedding_url": "http://ollama.ollama.svc.cluster.local:11434/v1",
+            "embedding_model": "qwen3-embedding:4b",
+            "embedding_api_key": "ollama",
+            # kustomize strips a literal's surrounding quotes; these keep the trailing space from
+            # the trailing-whitespace hook, which would otherwise trim the rendered block scalar.
+            "query_instruction": (
+                '"Instruct: Given a search query, retrieve relevant passages that answer the query\nQuery: "'
+            ),
+            "embedding_timeout_seconds": "120",
+        }.items()
+    ],
+)
 
 
 def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
@@ -140,21 +163,21 @@ def _worker(chart: Chart, *, instance: str, database: str, url: str, branch: str
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                             ),
-                            env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_CONFIG_MAP))],
+                            env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_CONFIG_MAP.name))],
                             env=[
                                 _secret_env("DB_USERNAME", _DB_APP_SECRET, "username"),
                                 _secret_env("DB_PASSWORD", _DB_APP_SECRET, "password"),
                                 k8s.EnvVar(
-                                    name="AGENTPLANE_INDEX_DATABASE_URL",
+                                    name=env_name(Settings, "database_url"),
                                     value=(
                                         "postgresql+asyncpg://$(DB_USERNAME):$(DB_PASSWORD)"
                                         f"@{_DB_CLUSTER}-rw.{NAME}.svc/{database}"
                                     ),
                                 ),
-                                k8s.EnvVar(name="AGENTPLANE_INDEX_REPOSITORY_URL", value=url),
-                                k8s.EnvVar(name="AGENTPLANE_INDEX_BRANCH", value=branch),
+                                k8s.EnvVar(name=env_name(Settings, "repository_url"), value=url),
+                                k8s.EnvVar(name=env_name(Settings, "branch"), value=branch),
                                 *env,
-                                _secret_env("AGENTPLANE_INDEX_READ_TOKEN", _READ_TOKEN, "token"),
+                                _secret_env(env_name(Settings, "read_token"), _READ_TOKEN, "token"),
                             ],
                             ports=[k8s.ContainerPort(name="http", container_port=_PORT)],
                             volume_mounts=[k8s.VolumeMount(name="repository", mount_path=_REPOSITORY_MOUNT)],
@@ -218,7 +241,7 @@ def chart(app: App) -> Chart:
         branch="devel",
         # gitignore syntax. Specimens duplicate code indexed at its real path; the .gz
         # reference blobs are not text and would only cost the clone read.
-        env=(k8s.EnvVar(name="AGENTPLANE_INDEX_IGNORE", value="props/specimens/\n*.gz\n"),),
+        env=(k8s.EnvVar(name=env_name(Settings, "ignore"), value="props/specimens/\n*.gz\n"),),
     )
     _worker(
         chart,
@@ -227,8 +250,8 @@ def chart(app: App) -> Chart:
         url="http://forgejo-http.forgejo:3000/haku/haku-state.git",
         branch="main",
         env=(
-            _secret_env("AGENTPLANE_INDEX_GIT_USERNAME", "haku-forgejo-git", "username"),
-            _secret_env("AGENTPLANE_INDEX_GIT_PASSWORD", "haku-forgejo-git", "password"),
+            _secret_env(env_name(Settings, "git_username"), "haku-forgejo-git", "username"),
+            _secret_env(env_name(Settings, "git_password"), "haku-forgejo-git", "password"),
         ),
     )
     return chart
@@ -236,3 +259,9 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
+    write_yaml(
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(
+            resources=[f"{NAME}.k8s.yaml"], components=["./image-pins"], config_map_generator=[_CONFIG_MAP]
+        ),
+    )

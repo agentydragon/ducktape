@@ -274,11 +274,7 @@ async def test_backend_auth_resolves_provider_connection() -> None:
         id="gmail", backend=InProcessBackend(credential=OperatorConnectionCredential(connection=GOOGLE_MAIL))
     )
     token = await backend_auth_for_operator(
-        server=server,
-        operator_id=uuid4(),
-        oauth_store=_unconsulted_store(),
-        provider_store=_provider_store("tok"),
-        authentik_store=_unconsulted_store(),
+        server=server, operator_id=uuid4(), provider_store=_provider_store("tok"), authentik_store=_unconsulted_store()
     )
     assert token == "tok"
 
@@ -291,7 +287,6 @@ async def test_backend_auth_raises_when_provider_unconnected() -> None:
         await backend_auth_for_operator(
             server=server,
             operator_id=uuid4(),
-            oauth_store=_unconsulted_store(),
             provider_store=_provider_store(None),
             authentik_store=_unconsulted_store(),
         )

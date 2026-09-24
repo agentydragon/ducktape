@@ -200,14 +200,25 @@ def flux_kustomization_depends_on_many(*dependencies: Kustomization) -> list[Kus
     return [flux_kustomization_depends_on(dependency) for dependency in dependencies]
 
 
+class GeneratorOptions(BaseModel):
+    """A generator entry's `options`, per kustomize.config.k8s.io/v1beta1."""
+
+    annotations: dict[str, str]
+
+
 class ConfigMapArgs(BaseModel):
     """One `configMapGenerator` entry: a ConfigMap kustomize renders from hand-written files
-    beside the `kustomization.yaml`, with its content-hash name suffix and reference rewriting.
-    A construct mounting it references `name` (`ConfigMap.from_config_map_name`)."""
+    beside the `kustomization.yaml` or from literals, with its content-hash name suffix and
+    reference rewriting. A construct mounting it references `name`
+    (`ConfigMap.from_config_map_name`)."""
 
     name: str
     namespace: str
-    files: list[str] = Field(description="File names relative to the directory; each becomes a key of that name.")
+    options: GeneratorOptions | None = None
+    files: list[str] | None = Field(
+        default=None, description="File names relative to the directory; each becomes a key of that name."
+    )
+    literals: list[str] | None = Field(default=None, description="`KEY=value` entries, split at the first `=`.")
 
 
 class _KustomizeKustomization(BaseModel):

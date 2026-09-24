@@ -53,9 +53,10 @@ progress output and a resumable or cacheable plan.
    apply with filters, and explain every skipped candidate. The prove gate
    should be solver categoricity, not an independent selector-matcher path.
 2. **Selector diagnostics — solver-backed replacement.** The keep-going JSON
-   report (`debundle spec validate --keep-going --format text|json|ndjson`)
-   landed (#2302; shared contract in `selector_diagnostics.rs`) and classifies
-   unresolved / ambiguous / duplicate-claim failures with full provenance.
+   report (`debundle spec validate --format text|json|ndjson`)
+   landed (#2302; the outcome record every selector command shares is in
+   `selector_outcome.rs`) and classifies no-match / ambiguous / conflict /
+   too-broad / duplicate-claim failures per entity.
    Treat that as the current user-facing contract, not as architecture to carry
    forward unchanged: the new backend should emit per-target solver
    explanations directly. Fold remaining anonymous-statement failures, blocker

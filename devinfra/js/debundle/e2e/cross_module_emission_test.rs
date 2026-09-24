@@ -277,11 +277,11 @@ export { runtimeProcessor };
     expect_rejection_containing_all(
         opts,
         &[
-            "Duplicate binding claim",
+            "[duplicate_claim]",
             "\"runtimeProcessor\"",
             "mod_a",
             "as `RuntimeProcessor`",
-            "members[].selector.binding as `RuntimeProcessor`",
+            "is already claimed by mod_a as `RuntimeProcessor`",
             "mod_b",
             "as `RuntimeProcessorAlias`",
         ],
@@ -313,10 +313,10 @@ export { runtimeService, runtimeCache };
         ],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
-        "Duplicate binding claim report: 2 duplicate claim(s) found",
+        "2 selector outcome(s): duplicate_claim=2",
         "\"runtimeService\"",
         "owners/service",
         "as `service`",
@@ -432,10 +432,10 @@ export { RuntimeCatalog };
         ],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
-        "Source-match selector diagnostic report: 2 unresolved selector(s) found",
+        "2 selector outcome(s): conflict=2",
         "conflicts with `DuplicateCatalog`",
         "conflicts with `PrimaryCatalog`",
         "catalog/primary",
@@ -475,15 +475,15 @@ export { RuntimeCatalog };
         )],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
-        "Source-match selector diagnostic report: 2 unresolved selector(s) found",
+        "2 selector outcome(s): conflict=2",
         "conflicts with `DuplicateCatalog`",
         "conflicts with `PrimaryCatalog`",
-        "export `PrimaryCatalog`",
+        "as `PrimaryCatalog`",
         "source_matches[].bindings[`K`]",
-        "export `DuplicateCatalog`",
+        "as `DuplicateCatalog`",
         "source_matches[].bindings[`K`]",
     ] {
         assert!(
@@ -525,10 +525,10 @@ export { existingHelper };
         )],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
-        "Source-match selector diagnostic report: 2 unresolved selector(s) found",
+        "2 selector outcome(s): no_match=2",
         "diagnostics/source_match",
         "as `MissingFormatter`",
         "as `MissingParser`",
@@ -590,14 +590,13 @@ fn dry_run_defaults_to_collecting_source_match_failures_and_duplicate_claims_tog
     let rejected = run_dry_run_rejection_fixture(source_match_and_duplicate_claims_fixture());
     let stderr = rejected.stderr;
     for required in [
-        "Source-match selector diagnostic report: 2 unresolved selector(s) found",
+        "3 selector outcome(s): no_match=1, ambiguous=1, duplicate_claim=1",
         "diagnostics/missing",
         "as `MissingFormatter`",
         "did not match any top-level declaration",
         "diagnostics/ambiguous",
         "as `AmbiguousHelper`",
         "is ambiguous",
-        "Duplicate binding claim report: 1 duplicate claim(s) found",
         "\"renderCard\"",
         "owners/card",
         "duplicates/card",
@@ -617,7 +616,7 @@ fn fail_fast_dry_run_stops_before_later_duplicate_claim_diagnostics() {
     let stderr = rejected.stderr;
     for required in [
         "diagnostics/missing",
-        "export `MissingFormatter`",
+        "as `MissingFormatter`",
         "source_matches[].bindings[`selectedFormatter`]",
         "did not match any top-level declaration",
     ] {
@@ -627,8 +626,8 @@ fn fail_fast_dry_run_stops_before_later_duplicate_claim_diagnostics() {
         );
     }
     for absent in [
-        "Source-match selector diagnostic report:",
-        "Duplicate binding claim report:",
+        "Selector outcome report",
+        "[duplicate_claim]",
         "duplicates/card",
         "as `renderCardAgain`",
     ] {
@@ -874,7 +873,7 @@ export { a };
     expect_rejection_containing_all(
         opts,
         &[
-            "Duplicate binding claim",
+            "[duplicate_claim]",
             "\"a\"",
             "mod_jsx_runtime",
             "mod_dunder_jsx",

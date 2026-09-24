@@ -44,8 +44,8 @@ The selector **mechanics** — hole forms (`ANYTHING`, `STMT_LIST`, `CASE_REST`,
 Four debundler subcommands. `selector-debt` and `synthesize-selectors` read the
 chunk + `modules/` tree directly; `match-selector` reads just the chunk and a
 candidate selector. None of those three need a pipeline build or owner graph.
-The fourth (`spec validate`) is the whole-spec gate and needs the full pipeline
-(see Setup). Treat the **minimizer as a first-class instrument**, not a last
+The fourth (`spec validate`) is the whole-spec gate; its full mode needs the
+pipeline (see Setup). Treat the **minimizer as a first-class instrument**, not a last
 resort:
 
 - **`spec selector-debt`** — the census. Ranks fragile name pins; add
@@ -64,10 +64,15 @@ resort:
   in the readable one when it kept an accidental but-unique token — is judgment you
   supply on top of its output (next section); it cannot be read off the AST.
 - **`spec match-selector`** — the prove/probe. Resolves your candidate and reports
-  unique-or-not, the colliding matches, and over-pin slack.
-- **`spec validate`** — the whole-spec keep-going sweep (`no-match` / `ambiguous` /
-  `duplicate-claim`). Unlike the other three this runs the full pipeline (Bazel
-  `:debundle`, package roots), not the standalone binary — see Setup.
+  its outcome (`resolved`, or `no_match` / `ambiguous` with the colliding
+  candidates / `too_broad`) and over-pin slack.
+- **`spec validate`** — the whole-spec keep-going sweep: one outcome per selector
+  that did not resolve (`no_match` / `ambiguous` / `conflict` / `too_broad` over
+  100 places / `duplicate_claim` / `invalid`), plus warnings for selectors
+  resolved only by elimination (below). The full mode runs the pipeline (Bazel
+  `:debundle`, package roots); the source-only preflight (`--modules` plus
+  `--source-file`) needs only the binary and checks each selector on its own —
+  see Setup.
 
 Division of labor: the minimizer makes a selector **compact and unique today** by
 mechanical read-off; judging whether its anchor is _meaningful_ (vs an accidental
@@ -95,9 +100,9 @@ base under `/tmp` to avoid lock contention, exactly as the other debundle
 skills do. In a consuming repo the CLI label is `@ducktape//...`; inside the
 debundler repo, drop the prefix.
 
-The whole-spec gate is the exception. `spec validate` (and `debundle run`) is the
-realizability/cycle pipeline in dry-run, so it needs the full `debundle` **pipeline
-target** — the Bazel `:debundle` target with its package roots and a repo-root
+The whole-spec gate is the exception. Full `spec validate` (and `debundle run`) is
+the joint selector solve plus the realizability/cycle pipeline in dry-run, so it
+needs the full `debundle` **pipeline target** — the Bazel `:debundle` target with its package roots and a repo-root
 source root — not the standalone binary against the snapshot dir. Run it through
 Bazel. On NixOS, `--server_javabase=…` is a **startup** option: it must precede
 `build`, not follow it.
@@ -180,8 +185,9 @@ wrong anchor, so slack only prioritizes; it never decides.
    the binding you mean, and its **slack** — the kept things you could still hole
    without losing uniqueness (i.e. whether you over-pinned). It uses the public
    alpha-equivalent source-match identifier policy. For a whole-spec sweep,
-   `debundle spec validate` (keep-going) resolves every selector
-   and reports `no-match` / `ambiguous` / `duplicate-claim`.
+   `debundle spec validate` (keep-going) resolves every selector jointly and
+   reports each one that did not resolve, plus the resolved-by-elimination
+   warnings, in the same outcome format.
 
 5. **Group** adjacent or cohesive bindings that share a declaration context into
    one `source_matches[]` entry rather than emitting N overlapping selectors.
@@ -232,6 +238,11 @@ Disprefer (implementation / incidental — churned by refactors and rebuilds):
   sequences, nested expression trees: the mechanism, never the identity;
 - positional / structural shape with no kept value (arity, declaration order);
 - uniqueness borrowed from an unrelated **neighbor** declaration;
+- uniqueness that holds only because **other selectors claimed the
+  alternatives** — `spec validate` warns (`resolved` with `resolved_by: elimination`) and names
+  the claimers. Unique only in the joint solve, it breaks as soon as a claimer
+  moves; `match-selector` checks the selector alone, so a candidate it proves
+  unique does not have this problem;
 - bare numbers (`0`, `1`), booleans, ubiquitous literals; a generic object key with
   its value holed (`{ name: ANYTHING }`); minified identifiers (already wildcarded);
 - **content hashes and generated ids** — hashed CSS-module class names

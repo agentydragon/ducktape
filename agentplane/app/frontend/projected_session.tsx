@@ -1,11 +1,29 @@
-import { ActionIcon, Badge, Button, Group, Paper, Select, Stack, Text, Textarea, Tooltip } from "@mantine/core";
+import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Box,
+  Button,
+  Group,
+  Menu,
+  Paper,
+  Select,
+  Stack,
+  Text,
+  Textarea,
+  Tooltip,
+} from "@mantine/core";
 import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
+import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
+import IconSend from "@tabler/icons-react/dist/esm/icons/IconSend.mjs";
 import IconZoomCode from "@tabler/icons-react/dist/esm/icons/IconZoomCode.mjs";
 import {
   type CSSProperties,
   type JSX,
+  type KeyboardEvent,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -27,13 +45,22 @@ import {
   type NativeFramePage,
   type ThreadView,
 } from "./client";
-import { decimalBigInt, useThreadSync, type PayloadRef, type ThreadEntity, type ThreadWindow } from "./thread_sync";
+import {
+  decimalBigInt,
+  useThreadSync,
+  type PayloadRef,
+  type ThreadEntity,
+  type ThreadState,
+  type ThreadWindow,
+} from "./thread_sync";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
+import { HighlightedText, JsonView } from "./json_view";
 import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { ChronologicalDebugLink, ChronologicalDebugProvider } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
+import "./projected_session.css";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
 
@@ -42,30 +69,59 @@ export function pruneCommandErrors(errors: Map<string, string>, commandIds: Read
   return new Map(Array.from(errors).filter(([id]) => commandIds.has(id)));
 }
 
-const LIFECYCLE_LABELS: Record<string, string> = {
-  turn_started: "Turn started",
-  turn_completed: "Turn completed",
-  model_changed: "Model changed",
-  harness_started: "Harness started",
-  harness_exited: "Harness exited",
-  harness_lost: "Harness connection lost",
+// An interrupt is usually the operator's own doing, so an interrupted turn reads as ordinary.
+const TURN_OUTCOMES: Record<TurnStatus, { label: string; prominent: boolean }> = {
+  [TurnStatus.UNSPECIFIED]: { label: "Turn ended without a status", prominent: true },
+  [TurnStatus.COMPLETED]: { label: "Turn completed", prominent: false },
+  [TurnStatus.INTERRUPTED]: { label: "Turn interrupted", prominent: false },
+  [TurnStatus.FAILED]: { label: "Turn failed", prominent: true },
+  [TurnStatus.PROCESS_LOST]: { label: "Turn lost", prominent: true },
 };
 
-function lifecyclePresentation(observation: string, event: unknown): { label: string; diagnostic: string | null } {
-  const parsed = event === null || event === undefined ? null : fromJson(EventSchema, event as JsonValue);
-  const completed = parsed?.observation.case === "turnCompleted" ? parsed.observation.value : null;
-  const diagnostic = completed?.error || null;
-  if (completed?.status === TurnStatus.FAILED) return { label: "Turn failed", diagnostic };
-  if (completed?.status === TurnStatus.INTERRUPTED) return { label: "Turn interrupted", diagnostic };
-  return { label: LIFECYCLE_LABELS[observation] ?? observation.replaceAll("_", " "), diagnostic };
+interface LifecyclePresentation {
+  label: string;
+  /** A prominent row is an alert; any other reads as dimmed text. */
+  prominent: boolean;
+  diagnostic: string | null;
 }
 
-function Body({ reference, plain = false }: { reference: PayloadRef | null; plain?: boolean }): JSX.Element {
+function lifecyclePresentation(observation: string, event: unknown): LifecyclePresentation {
+  const parsed = fromJson(EventSchema, event as JsonValue).observation;
+  switch (parsed.case) {
+    case "turnStarted":
+      return { label: "Turn started", prominent: false, diagnostic: null };
+    case "turnCompleted": {
+      const { status, error } = parsed.value;
+      const diagnostic = error || (status === TurnStatus.FAILED ? "The harness reported no error details." : null);
+      return { ...TURN_OUTCOMES[status], diagnostic };
+    }
+    case "modelChanged":
+      return { label: `Model changed to ${parsed.value.model}`, prominent: false, diagnostic: null };
+    case "harnessStarted":
+      return { label: "Harness started", prominent: false, diagnostic: null };
+    case "harnessExited":
+      return {
+        label: parsed.value.exitCode ? `Harness exited with code ${parsed.value.exitCode}` : "Harness exited",
+        prominent: false,
+        diagnostic: null,
+      };
+    case "harnessLost":
+      return { label: "Harness lost", prominent: true, diagnostic: null };
+    default:
+      return { label: observation.replaceAll("_", " "), prominent: false, diagnostic: null };
+  }
+}
+
+/** How a body renders: the agent's prose (assistant text, reasoning) as Markdown, tool arguments and
+ * output as code (highlighted when it is JSON), and the operator's own input verbatim, as typed. */
+type BodyFormat = "markdown" | "code" | "text";
+
+function Body({ reference, format }: { reference: PayloadRef | null; format: BodyFormat }): JSX.Element {
   if (!reference) return <Text c="dimmed">Body not observed</Text>;
-  return <PayloadText reference={reference} plain={plain} />;
+  return <PayloadText reference={reference} format={format} />;
 }
 
-function PayloadText({ reference, plain }: { reference: PayloadRef; plain: boolean }): JSX.Element {
+function PayloadText({ reference, format }: { reference: PayloadRef; format: BodyFormat }): JSX.Element {
   const { body, error, retry } = useThreadSync().usePayload(reference);
   return (
     <>
@@ -76,18 +132,33 @@ function PayloadText({ reference, plain }: { reference: PayloadRef; plain: boole
       )}
       {body === null ? (
         <Text c="dimmed">Loading complete revision…</Text>
-      ) : plain ? (
-        <Text component="pre" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-          {body}
-        </Text>
       ) : (
-        <Markdown source={body} />
+        <FormattedBody body={body} format={format} />
       )}
     </>
   );
 }
 
-function LazyBody({ label, ...body }: { label: string; reference: PayloadRef; plain?: boolean }): JSX.Element {
+function FormattedBody({ body, format }: { body: string; format: BodyFormat }): JSX.Element {
+  switch (format) {
+    case "markdown":
+      return <Markdown source={body} />;
+    case "code":
+      return <HighlightedText text={body} />;
+    case "text":
+      return <VerbatimText text={body} />;
+  }
+}
+
+function VerbatimText({ text }: { text: string }): JSX.Element {
+  return (
+    <Text className="agentplane-verbatim" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+      {text}
+    </Text>
+  );
+}
+
+function LazyBody({ label, ...body }: { label: string; reference: PayloadRef; format: BodyFormat }): JSX.Element {
   const id = `${body.reference.projection_epoch}:${body.reference.owner_id}:${body.reference.field}`;
   return (
     <RetainedDisclosure id={id} summary={label}>
@@ -144,18 +215,15 @@ function EvidenceFramesPage({
   return (
     <Stack gap="xs">
       {error && <Text c="red">{error}</Text>}
-      {page?.frames.map((frame) => (
-        <Text
-          component="pre"
-          size="xs"
-          key={frame.source_sequence}
-          style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-        >
-          {frame.availability === "present"
-            ? JSON.stringify(frame.entry, null, 2)
-            : `Raw frame ${frame.source_sequence} unavailable`}
-        </Text>
-      ))}
+      {page?.frames.map((frame) =>
+        frame.availability === "present" ? (
+          <JsonView key={frame.source_sequence} value={frame.entry} />
+        ) : (
+          <Text size="xs" key={frame.source_sequence}>
+            Raw frame {frame.source_sequence} unavailable
+          </Text>
+        )
+      )}
       {!page && error && (
         <Button loading={loading} onClick={() => load()}>
           Retry raw frames
@@ -287,7 +355,7 @@ function EvidencePanel({ threadId, entity }: { threadId: string; entity: ThreadE
   return open ? <EvidencePageView key={id} threadId={threadId} entity={entity} /> : <></>;
 }
 
-function EntityCard({
+export function EntityCard({
   threadId,
   entity,
   live,
@@ -302,38 +370,48 @@ function EntityCard({
         {/* The bubble has no header row: beside its top corner, in the width it leaves free, the
             icon neither grows the bubble nor covers its text. */}
         <EvidenceToggle entity={entity} />
-        <Paper className="agentplane-user-bubble" p="sm" withBorder maw="80%">
-          <Body reference={entity.inputRef} />
+        <Paper className="agentplane-user-bubble" p="sm">
+          <Body reference={entity.inputRef} format="text" />
           <EvidencePanel threadId={threadId} entity={entity} />
         </Paper>
       </Group>
     );
   }
-  if (entity.entityKind === "lifecycle") {
-    const observation = "observation" in entity.state ? entity.state.observation : "lifecycle";
-    const event = "event" in entity.state ? entity.state.event : null;
-    const presentation = lifecyclePresentation(observation, event);
+  if (entity.entityKind === "lifecycle" && "observation" in entity.state) {
+    const { label, prominent, diagnostic } = lifecyclePresentation(entity.state.observation, entity.state.event);
+    const wrapped = { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
+    if (!prominent) {
+      return (
+        <Stack gap={0} style={{ position: "relative" }} data-thread-anchor={entity.cursor.toString()}>
+          <Text size="xs" c="dimmed">
+            {label}
+          </Text>
+          <EvidenceToggle entity={entity} style={{ position: "absolute", top: 0, right: 0 }} />
+          {diagnostic && (
+            <Text size="xs" c="dimmed" style={wrapped}>
+              {diagnostic}
+            </Text>
+          )}
+          <EvidencePanel threadId={threadId} entity={entity} />
+        </Stack>
+      );
+    }
     return (
-      <Stack gap="xs" style={{ position: "relative" }} data-thread-anchor={entity.cursor.toString()}>
-        <Text size="xs" c={presentation.diagnostic || observation === "harness_lost" ? "red" : "dimmed"}>
-          {presentation.label}
-        </Text>
-        <EvidenceToggle entity={entity} style={{ position: "absolute", top: 0, right: 0 }} />
-        {presentation.diagnostic && (
-          <Text c="red" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {presentation.diagnostic}
+      <Alert
+        color="red"
+        title={label}
+        role="alert"
+        style={{ position: "relative" }}
+        data-thread-anchor={entity.cursor.toString()}
+      >
+        <EvidenceToggle entity={entity} style={{ position: "absolute", top: 8, right: 8 }} />
+        {diagnostic && (
+          <Text size="sm" style={wrapped}>
+            {diagnostic}
           </Text>
         )}
-        {"event" in entity.state && (
-          <details>
-            <summary>Lifecycle details</summary>
-            <Text component="pre" size="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {JSON.stringify(entity.state.event, null, 2)}
-            </Text>
-          </details>
-        )}
         <EvidencePanel threadId={threadId} entity={entity} />
-      </Stack>
+      </Alert>
     );
   }
   if (entity.entityKind === "command" || entity.entityKind === "view_state") return <></>;
@@ -362,9 +440,13 @@ function EntityCard({
         </Group>
       </Group>
       {entity.textRef &&
-        (reasoning ? <LazyBody label="Reasoning" reference={entity.textRef} /> : <Body reference={entity.textRef} />)}
-      {entity.argumentsRef && <LazyBody label="Arguments" reference={entity.argumentsRef} plain />}
-      {entity.outputRef && <LazyBody label="Output" reference={entity.outputRef} plain />}
+        (reasoning ? (
+          <LazyBody label="Reasoning" reference={entity.textRef} format="markdown" />
+        ) : (
+          <Body reference={entity.textRef} format="markdown" />
+        ))}
+      {entity.argumentsRef && <LazyBody label="Arguments" reference={entity.argumentsRef} format="code" />}
+      {entity.outputRef && <LazyBody label="Output" reference={entity.outputRef} format="code" />}
       <EvidencePanel threadId={threadId} entity={entity} />
     </Paper>
   );
@@ -468,7 +550,7 @@ function SelectedCommandRows({
                   {commandOutcomeLabel(row.state.operation, row.state.outcome)}
                   {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
                 </Text>
-                {row.inputRef && <Body reference={row.inputRef} />}
+                {row.inputRef && <Body reference={row.inputRef} format="text" />}
                 <Button variant="subtle" onClick={() => store.dismiss(row.entityId)}>
                   Dismiss
                 </Button>
@@ -477,7 +559,7 @@ function SelectedCommandRows({
               <>
                 <Text size="sm">{admitted ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}</Text>
                 {value.command.operation.case === "submitInput" && (
-                  <Markdown source={value.command.operation.value.text} />
+                  <VerbatimText text={value.command.operation.value.text} />
                 )}
                 {value.command.operation.case === "changeModel" && (
                   <Text>Change model to {value.command.operation.value.model}</Text>
@@ -510,18 +592,21 @@ function commandOutcomeLabel(operation: string, outcome: string): string {
   return `${subject} ${outcome === "failed" ? "failed" : outcome === "noop" ? "not applied" : "applied"}`;
 }
 
+// How close the top of the loaded rows comes to the viewport's before the page before them loads.
+const LOAD_OLDER_WITHIN = 80;
+
 function VirtualizedHistory({
   threadId,
   segments,
   running,
   activeTurn,
-  onLoadOlder,
+  history,
 }: {
   threadId: string;
   segments: ThreadEntity[];
   running: boolean;
   activeTurn: string | null;
-  onLoadOlder: () => void;
+  history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
 }): JSX.Element {
   const viewport = useRef<HTMLDivElement>(null);
   const contents = useRef<HTMLDivElement>(null);
@@ -606,6 +691,22 @@ function VirtualizedHistory({
     if (captureNextScroll.current) return;
     captureNextScroll.current = true;
     scrolledSinceInput.current = false;
+  };
+  // A gesture asks for the page before the oldest row as its scroll events reach the top. This asks
+  // where no scroll event will: rows too few to scroll, a gesture that ended at the top, a page that
+  // landed with the reader still there. A gesture or restoration in progress has not settled where
+  // the reader is, and until the tail shows there is no top to reach.
+  const loadOlderAtTop = () => {
+    const element = viewport.current;
+    if (
+      element &&
+      segments.length > 0 &&
+      history.olderAvailable &&
+      !captureNextScroll.current &&
+      restoringAnchor.current === null &&
+      element.scrollTop < LOAD_OLDER_WITHIN
+    )
+      history.loadOlder();
   };
   const captureReadingAnchor = (element: HTMLDivElement) => {
     const viewportTop = element.getBoundingClientRect().top;
@@ -706,10 +807,12 @@ function VirtualizedHistory({
       if (restoringAnchor.current !== null || !captureNextScroll.current) return;
       captureReadingAnchor(element);
       captureNextScroll.current = false;
+      loadOlderAtTop();
     };
     element.addEventListener("scrollend", onScrollEnd);
     return () => element.removeEventListener("scrollend", onScrollEnd);
   }, [segments]);
+  useEffect(loadOlderAtTop);
   return (
     <div
       ref={viewport}
@@ -782,9 +885,30 @@ function VirtualizedHistory({
         if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
         captureNextScroll.current = true;
         scrolledSinceInput.current = true;
-        if (element.scrollTop < 80) onLoadOlder();
+        if (element.scrollTop < LOAD_OLDER_WITHIN) history.loadOlder();
       }}
     >
+      {history.loadingOlder && (
+        // No height of its own: it floats over the rows without moving any of them.
+        <div
+          style={{
+            position: "sticky",
+            top: 0,
+            height: 0,
+            zIndex: 1,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "flex-start",
+            pointerEvents: "none",
+          }}
+        >
+          <Paper role="status" shadow="xs" radius="xl" px="sm" py={2} mt="xs" withBorder>
+            <Text size="xs" c="dimmed">
+              Loading earlier…
+            </Text>
+          </Paper>
+        </div>
+      )}
       <div ref={contents} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((item) => {
           const entity = segments[item.index];
@@ -811,6 +935,66 @@ function VirtualizedHistory({
   );
 }
 
+interface ThreadStatus {
+  color: string;
+  label: string;
+  breathing?: boolean;
+}
+
+/** A state shown as a small colored dot rather than a labeled badge: the label is still there for a
+ * screen reader, and for anyone hovering or (on a touch/keyboard device) focusing it. `breathing`
+ * pulses the dot, for a state that is still settling rather than settled. */
+function StatusDot({ color, label, breathing }: ThreadStatus): JSX.Element {
+  return (
+    <Tooltip label={label} events={{ hover: true, focus: true, touch: true }}>
+      <Box
+        component="span"
+        role="img"
+        aria-label={label}
+        title={label}
+        tabIndex={0}
+        className={breathing ? "agentplane-status-dot agentplane-breathing-dot" : "agentplane-status-dot"}
+        style={{ backgroundColor: `var(--mantine-color-${color}-6)` }}
+      />
+    </Tooltip>
+  );
+}
+
+type Operational = Extract<ThreadEntity["state"], { operational: unknown }>["operational"];
+
+/** The browser's sync of the thread, the runner feed into the server (`operational`) and the
+ * harness process are independent state machines; this collapses them into one dot by severity,
+ * worst axis first. While the sync is not current, the rest is not either; and an archived thread
+ * or an unavailable sandbox makes the retained feed and harness state history, not a live claim. */
+function threadStatus({
+  sync,
+  archived,
+  available,
+  operational,
+  harness,
+}: {
+  sync: ThreadState;
+  archived: boolean;
+  available: boolean;
+  operational: Operational | null;
+  harness: string | null;
+}): ThreadStatus {
+  if (sync.window?.error) return { color: "red", label: `Thread sync stopped: ${sync.window.error}` };
+  if (!sync.window) return { color: "yellow", breathing: true, label: "Connecting…" };
+  if (sync.error) return { color: "yellow", breathing: true, label: "Reconnecting…" };
+  if (!sync.window.caughtUp) return { color: "yellow", breathing: true, label: "Catching up…" };
+  if (archived) return { color: "gray", label: "Thread archived" };
+  if (!available) return { color: "gray", label: "Sandbox unavailable" };
+  if (operational?.status === "failed") return { color: "red", label: "Runner feed failed" };
+  if (harness === "lost") return { color: "red", label: "Harness lost" };
+  if (operational?.status === "ended") {
+    return { color: "gray", label: `Runner feed ended · harness ${harness ?? "unknown"}` };
+  }
+  if (harness === null) return { color: "yellow", label: "No harness observed" };
+  if (harness === "stopped") return { color: "gray", label: "Runner feed active · harness stopped" };
+  return { color: "green", label: `Runner feed active · harness ${harness}` };
+}
+
 function ProjectedSessionBody({
   threadId,
   entities,
@@ -821,10 +1005,11 @@ function ProjectedSessionBody({
   threadId: string;
   entities: ThreadEntity[];
   thread: ThreadView;
-  history: Pick<ThreadWindow, "olderAvailable" | "loadOlder">;
+  history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
   available: boolean;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
+  const sync = useThreadSync().useThread();
   const commands = useProjectedCommands(threadId, entities);
   const view = entities.find((row) => row.entityKind === "view_state");
   const controls = view && "controls" in view.state ? view.state.controls : null;
@@ -865,13 +1050,37 @@ function ProjectedSessionBody({
   const hasPendingCommands = projectedCommands.length > 0;
   const selectedCommandIds = commands.local.commands.slice(0, 128);
 
+  // Two Enters before the cleared draft renders would otherwise submit the same text twice, under
+  // two command ids. Guards one render, not the lifetime of any HTTP request or command.
+  const submitting = useRef(false);
+  useEffect(() => {
+    submitting.current = false;
+  }, [draft]);
+
   function submit(): void {
-    if (!draft.trim() || !running) return;
+    if (!draft.trim() || !running || submitting.current) return;
+    submitting.current = true;
     const value = create(CommandSchema, {
       commandId: crypto.randomUUID(),
       operation: { case: "submitInput", value: { text: draft } },
     });
     if (commands.submit(value)) setDraft("");
+    else submitting.current = false;
+  }
+
+  function composerKey(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (!(event.ctrlKey || event.metaKey)) {
+      submit();
+      return;
+    }
+    // Insert the newline by hand: a textarea ignores Ctrl+Enter, and setting a controlled value
+    // leaves the caret at the end, so put it back where the newline went.
+    const field = event.currentTarget;
+    const at = field.selectionStart;
+    setDraft(`${draft.slice(0, at)}\n${draft.slice(field.selectionEnd)}`);
+    requestAnimationFrame(() => field.setSelectionRange(at + 1, at + 1));
   }
 
   return (
@@ -880,15 +1089,12 @@ function ProjectedSessionBody({
         style={{ flex: 1, minHeight: 0 }}
         data-projection-cursor={view ? decimalBigInt(view.revisionCursor).toString() : undefined}
       >
-        <Button variant="subtle" disabled={!history.olderAvailable} onClick={history.loadOlder}>
-          Load 30 earlier
-        </Button>
         <VirtualizedHistory
           threadId={threadId}
           segments={segments}
           running={running}
           activeTurn={activeTurn}
-          onLoadOlder={history.loadOlder}
+          history={history}
         />
         {hasPendingCommands && (
           <Stack role="region" aria-label="Pending commands" gap="xs">
@@ -907,7 +1113,7 @@ function ProjectedSessionBody({
                     : commandOutcomeLabel(row.state.operation, row.state.outcome)}
                   {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
                 </Text>
-                {row.inputRef && <Body reference={row.inputRef} />}
+                {row.inputRef && <Body reference={row.inputRef} format="text" />}
                 <EvidencePanel threadId={threadId} entity={row} />
               </Paper>
             ))}
@@ -942,49 +1148,73 @@ function ProjectedSessionBody({
           value={draft}
           onChange={(event) => setDraft(event.currentTarget.value)}
           placeholder="Enter sends, Ctrl+Enter for a new line"
+          autosize
+          minRows={2}
+          maxRows={12}
           disabled={!running}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
-              event.preventDefault();
-              submit();
-            }
-          }}
+          onKeyDown={composerKey}
         />
-        <Button disabled={!running || !draft.trim()} onClick={submit}>
-          Send
-        </Button>
         <Group justify="space-between" wrap="nowrap">
-          <Select
-            aria-label="Model"
-            data={modelOptions}
-            value={controls?.applied_model ?? null}
-            disabled={!running}
-            onChange={(model) =>
-              model &&
-              commands.submit(
-                create(CommandSchema, {
-                  commandId: crypto.randomUUID(),
-                  operation: { case: "changeModel", value: { model } },
-                })
-              )
-            }
-          />
-          <Group gap="xs">
-            <Button
-              color="red"
-              variant="subtle"
+          <Group gap="xs" wrap="nowrap">
+            <StatusDot
+              {...threadStatus({
+                sync,
+                archived: thread.archived,
+                available,
+                operational,
+                harness: controls?.harness_state ?? null,
+              })}
+            />
+            <Select
+              aria-label="Model"
+              data={modelOptions}
+              value={controls?.applied_model ?? null}
+              placeholder={
+                sync.window?.error || operational?.status === "failed"
+                  ? "Model unavailable"
+                  : !sync.window?.caughtUp
+                    ? "Catching up…"
+                    : "Model"
+              }
               disabled={!running}
-              onClick={() =>
+              w={200}
+              onChange={(model) =>
+                model &&
                 commands.submit(
                   create(CommandSchema, {
                     commandId: crypto.randomUUID(),
-                    operation: { case: "stopRunnerSession", value: {} },
+                    operation: { case: "changeModel", value: { model } },
                   })
                 )
               }
-            >
-              Shut down harness
-            </Button>
+            />
+          </Group>
+          <Group gap="xs" wrap="nowrap">
+            {/* Opens upward: the composer sits at the bottom of the viewport. */}
+            <Menu position="top-end" withArrow shadow="md">
+              <Menu.Target>
+                <ActionIcon size="lg" variant="light" aria-label="More">
+                  <IconDotsVertical size={16} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  color="red"
+                  leftSection={<IconPower size={15} />}
+                  disabled={!running}
+                  onClick={() =>
+                    commands.submit(
+                      create(CommandSchema, {
+                        commandId: crypto.randomUUID(),
+                        operation: { case: "stopRunnerSession", value: {} },
+                      })
+                    )
+                  }
+                >
+                  Shut down harness
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
             <ActionIcon
               size="lg"
               variant="light"
@@ -1002,6 +1232,9 @@ function ProjectedSessionBody({
               }
             >
               <IconPlayerStop size={16} />
+            </ActionIcon>
+            <ActionIcon size="lg" aria-label="Send" disabled={!running || !draft.trim()} onClick={submit}>
+              <IconSend size={16} />
             </ActionIcon>
           </Group>
         </Group>

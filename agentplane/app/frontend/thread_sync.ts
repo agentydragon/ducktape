@@ -38,6 +38,9 @@ export interface ThreadWindow {
   caughtUp: boolean;
   /** Whether rows exist before the oldest held; `loadOlder` loads the next page of them. */
   olderAvailable: boolean;
+  /** Whether that page is loading. `loadOlder` does nothing meanwhile, nor once the window has
+   * stopped or its epoch is gone, so a view may call it whenever the reader nears the oldest row. */
+  loadingOlder: boolean;
   loadOlder: () => void;
   /** Why the window stopped following the thread; `refresh` opens it again. */
   error: string | null;

@@ -6,9 +6,8 @@ PKCE flows, and the console stores and self-refreshes each refresh token indepen
 executing a gmail/google_calendar call; the ``gmail`` and ``google_calendar`` in-process servers
 are built per call from it.
 
-Parallel to ``mcp/operator_oauth`` (per-Operator, Postgres-backed, self-refreshing), but for
-fixed pre-registered clients: no Dynamic Client Registration and no authorization-server
-metadata discovery. The provider catalog and non-secret metadata live in
+The clients are fixed and pre-registered: no Dynamic Client Registration and no
+authorization-server metadata discovery. The provider catalog and non-secret metadata live in
 ``provider_connection_registry``; deploy config associates each connection with a named provider
 instance whose client_id/secret come from typed settings and never enter the database.
 """
