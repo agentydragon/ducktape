@@ -751,6 +751,7 @@ ts_library(
         ":markdown",
         ":retained_disclosures",
         ":thread_sync",
+        ":thread_title",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -759,6 +760,46 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/protocol:command_pb",
         "//agentplane/protocol:event_pb",
+    ],
+)
+
+# thread_title.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "thread_title_css",
+    srcs = ["thread_title.css"],
+)
+
+ts_library(
+    name = "thread_title",
+    srcs = [
+        "thread_title.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":thread_title_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "thread_title_test",
+    testonly = True,
+    srcs = ["thread_title.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":thread_title",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
     ],
 )
 
@@ -898,6 +939,7 @@ vitest_bin.vitest_test(
         ":sidebar_test",
         ":thread_groups_test",
         ":thread_store_test",
+        ":thread_title_test",
         "//:node_modules/happy-dom",
         "//:node_modules/vitest",
     ],
