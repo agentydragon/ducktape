@@ -1253,9 +1253,10 @@ scan, A2 by the TLA scan, A4 at parse). The admission scan is on by
 default for every materialized chunk; for audited corpora a spec can
 disable individual checks per chunk via
 `chunk_analysis_options.<chunk>.admission_overrides`
-(`[a1_eval, a3_dynamic_import, a5_import_meta]`) — every override
-use prints a one-line notice, and overrides that no longer suppress
-anything are reported as redundant. A6, A7, and A11 are relied on by
+(`[a1_eval, a3_dynamic_import, a5_import_meta]`) — every overridden
+violation is named in a notice (one line per check and violation,
+listing the statements it covers), and overrides that no longer
+suppress anything are reported as redundant. A6, A7, and A11 are relied on by
 observation of the target bundles; A8 degrades soundly per its
 bullet; A9 and A10 are satisfied by spec review.
 
