@@ -676,7 +676,8 @@ that defines `open` first. When more than one alignment is possible the
 leftmost is used; that interior choice never changes _which_ declaration
 matched. A selector that matches more than one top-level declaration is
 `ambiguous` unless other entities' claims eliminate the rest, which resolves it
-with `resolved_by: elimination` and a warning (<../SPEC.md> § Outcomes).
+with `resolved_by: elimination` and a warning, or a template naming it picks
+one, `resolved_by: referenced_by` and a warning (<../SPEC.md> § Outcomes).
 
 For class fingerprints, keep method bodies as loose as the selector permits.
 If a stable method name and order are the real anchors, put `STMT_LIST;` in the

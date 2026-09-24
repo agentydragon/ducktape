@@ -123,8 +123,11 @@ other candidates are claimed by other selectors. After a solve, each unique
 `source_match` or anonymous-statement entity's candidate rows are filtered by dropping every row whose
 owner or binding another `all_different` target's solved value holds. When it
 had several rows and one survives, its outcome is `resolved` with
-`resolved_by: elimination` naming the claimers. Such a selector silently moves
-when a claimer is edited, so it should be anchored on its own.
+`resolved_by: elimination` naming the claimers. When several survive and it
+still resolved, a template that references it picked the place:
+`resolved_by: referenced_by` naming those referrers. Either selector silently
+moves when a claimer or referrer is edited, so it should be anchored on its
+own.
 
 ## Unsatisfiable programs
 

@@ -251,8 +251,9 @@ Disprefer (implementation / incidental — churned by refactors and rebuilds):
 - positional / structural shape with no kept value (arity, declaration order);
 - uniqueness borrowed from an unrelated **neighbor** declaration;
 - uniqueness that holds only because **other selectors claimed the
-  alternatives** — `spec validate` warns (`resolved` with `resolved_by: elimination`) and names
-  the claimers. Unique only in the joint solve, it breaks as soon as a claimer
+  alternatives or named it** — `spec validate` warns (`resolved` with
+  `resolved_by: elimination` or `referenced_by`) and names the claimers or
+  referrers. Unique only in the joint solve, it breaks as soon as one of them
   moves; `match-selector` checks the selector alone, so a candidate it proves
   unique does not have this problem;
 - bare numbers (`0`, `1`), booleans, ubiquitous literals; a generic object key with
