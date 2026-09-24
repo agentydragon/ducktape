@@ -271,6 +271,7 @@ py_test(
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
+        "//agentplane/runner/testing:unanswering_runner",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//protobuf",

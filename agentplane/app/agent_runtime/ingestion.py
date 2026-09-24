@@ -156,8 +156,7 @@ class Feed:
     async def run(self) -> None:
         attachment: Attachment | None = None
         try:
-            async with asyncio.timeout(10):
-                attachment = await self.client.attach(self.session_id)
+            attachment = await self.client.attach(self.session_id)
             attached = attachment.attached
             thread_id = await self.event_logs.open(self.lease.sandbox, self.session_id, attached.spec)
             stored = await self.event_logs.last_cursor(thread_id)
@@ -172,10 +171,9 @@ class Feed:
                 return
             if stored:
                 attachment.cancel()
-                async with asyncio.timeout(10):
-                    # Replay the boundary entry too: the same cursor must still identify the
-                    # exact archived Event and source even if the runner has no new entries.
-                    attachment = await self.client.attach(self.session_id, after_cursor=stored - 1)
+                # Replay the boundary entry too: the same cursor must still identify the
+                # exact archived Event and source even if the runner has no new entries.
+                attachment = await self.client.attach(self.session_id, after_cursor=stored - 1)
             await self.ingestion.set_attached(thread_id, attachment.attached, lease=self.lease)
             try:
                 async with contextlib.aclosing(event_batches(attachment.next_entry)) as batches:

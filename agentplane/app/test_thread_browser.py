@@ -457,21 +457,24 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-evidence-reopened.png")
                 await first_card.get_by_role("button", name="Evidence", exact=True).click()
-                tool_card = page.locator(f'[data-thread-anchor="{tool.cursor}"]')
-                await tool_card.locator("summary", has_text="Arguments").click()
-                await expect(tool_card.get_by_text("{", exact=True)).to_be_visible()
+                # The reasoning step and the tool call after it are one folded run, anchored at its first step.
+                run = page.locator(f'[data-thread-anchor="{reasoning.cursor}"]')
+                await expect(page.locator(f'[data-thread-anchor="{tool.cursor}"]')).to_have_count(0)
+                await run.get_by_text("1 tool call, 1 reasoning step", exact=True).click()
+                await run.locator("summary", has_text="Arguments").click()
+                await expect(run.get_by_text("{", exact=True)).to_be_visible()
                 source.append(
                     event_pb2.Event(
                         tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json='"path":')
                     )
                 )
-                await expect(tool_card.get_by_text('{"path":', exact=True)).to_be_visible()
+                await expect(run.get_by_text('{"path":', exact=True)).to_be_visible()
                 source.append(
                     event_pb2.Event(
                         tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json='"value"}')
                     )
                 )
-                await expect(tool_card.get_by_text('{"path":"value"}', exact=True)).to_be_visible()
+                await expect(run.get_by_text('{"path":"value"}', exact=True)).to_be_visible()
                 source.append(
                     event_pb2.Event(
                         item_completed=event_pb2.ItemCompleted(
@@ -479,10 +482,9 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                         )
                     )
                 )
-                await tool_card.locator("summary", has_text="Output").click()
-                await expect(tool_card.get_by_text("On-demand tool output", exact=True)).to_be_visible()
-                reasoning_card = page.locator(f'[data-thread-anchor="{reasoning.cursor}"]')
-                await reasoning_card.locator("summary", has_text="Reasoning").click()
+                await run.locator("summary", has_text="Output").click()
+                await expect(run.get_by_text("On-demand tool output", exact=True)).to_be_visible()
+                await run.get_by_text("Reasoning", exact=True).click()
                 await expect(page.get_by_text("On-demand reasoning", exact=True)).to_be_visible()
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-expanded.png")
 

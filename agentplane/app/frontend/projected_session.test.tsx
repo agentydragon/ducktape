@@ -10,9 +10,11 @@ import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
 import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
 import { command, getThread, models, type ThreadView } from "./client";
+import { historyRows, rowKey } from "./history_rows";
 import { LocalCommands } from "./local_commands";
-import { EntityCard, ProjectedSession, pruneCommandErrors } from "./projected_session";
+import { EntityCard, HistoryRowView, ProjectedSession, pruneCommandErrors } from "./projected_session";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
+import { testItem } from "./thread_entity_fixture";
 import {
   ThreadSyncContext,
   type PayloadRef,
@@ -479,7 +481,10 @@ async function renderCard(card: ThreadEntity, bodies: Record<string, string>): P
       <MantineProvider env="test">
         <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)))}>
           <RetainedDisclosureProvider>
-            <EntityCard threadId="test-thread" entity={card} live={false} />
+            {/* The history's row carries the anchor; a card renders inside it. */}
+            <div data-thread-anchor={card.cursor.toString()}>
+              <EntityCard threadId="test-thread" entity={card} live={false} />
+            </div>
           </RetainedDisclosureProvider>
         </ThreadSyncContext.Provider>
       </MantineProvider>
@@ -505,6 +510,90 @@ async function disclose(container: HTMLElement, summary: string): Promise<HTMLDe
   });
   return details;
 }
+
+/** One element per history row, each holding what the thread view renders for it. */
+async function renderHistory(
+  segments: ThreadEntity[],
+  live: boolean,
+  bodies: Record<string, string> = {}
+): Promise<HTMLElement[]> {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  mounted.push({ root, container });
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)))}>
+          <RetainedDisclosureProvider>
+            {historyRows(segments).map((row) => (
+              <section key={rowKey(row)}>
+                <HistoryRowView threadId="test-thread" row={row} live={() => live} />
+              </section>
+            ))}
+          </RetainedDisclosureProvider>
+        </ThreadSyncContext.Provider>
+      </MantineProvider>
+    )
+  );
+  return [...container.querySelectorAll("section")];
+}
+
+function summaries(element: Element): (string | null)[] {
+  return [...element.querySelectorAll("summary")].map((summary) => summary.textContent);
+}
+
+async function toggle(summary: Element): Promise<void> {
+  const details = summary.parentElement as HTMLDetailsElement;
+  await act(async () => {
+    details.open = !details.open;
+    details.dispatchEvent(new Event("toggle"));
+  });
+}
+
+it("folds a run of tool calls and reasoning behind its summary until it is opened", async () => {
+  const [run] = await renderHistory(
+    [
+      testItem(1, ItemKind.TOOL_CALL, { tool_name: "test-read", completion: "tool", tool_succeeded: true }),
+      testItem(2, ItemKind.REASONING, {}, { textRef: reference("test-entity-2", "text") }),
+      testItem(3, ItemKind.TOOL_CALL, { tool_name: "test-shell", completion: "tool", tool_succeeded: false }),
+    ],
+    false
+  );
+  const summary = run.querySelector("summary")!;
+  expect(summary.textContent).toContain("2 tool calls, 1 reasoning step");
+  expect(summary.querySelector('[role="img"][aria-label="Failed"]')).not.toBeNull();
+  expect(run.textContent).not.toContain("test-read");
+
+  await toggle(summary);
+  expect(run.textContent).toContain("test-read");
+  expect(run.textContent).toContain("test-shell");
+  expect(summaries(run)).toContain("Reasoning");
+  // Each step keeps its own evidence; the run is not an entity and has none.
+  expect(run.querySelectorAll('button[aria-label="Evidence"]')).toHaveLength(3);
+});
+
+it("marks an unfinished run as streaming in the live turn, and as incomplete once that is over", async () => {
+  const segments = [testItem(1, ItemKind.REASONING, { completion: null }), testItem(2, ItemKind.TOOL_CALL)];
+  const [live] = await renderHistory(segments, true);
+  expect(live.querySelector('summary [role="img"]')?.getAttribute("aria-label")).toBe("Streaming");
+  const [retained] = await renderHistory(segments, false);
+  expect(retained.querySelector('summary [role="img"]')?.getAttribute("aria-label")).toBe("Incomplete");
+});
+
+it("shows a lone reasoning step as its own reasoning block, and assistant text without a role label", async () => {
+  const [reasoning, answer] = await renderHistory(
+    [
+      testItem(1, ItemKind.REASONING, {}, { textRef: reference("test-entity-1", "text") }),
+      testItem(2, ItemKind.ASSISTANT_TEXT, {}, { textRef: reference("test-entity-2", "text") }),
+    ],
+    false,
+    { "test-entity-2:text": "Test body of test-entity-2" }
+  );
+  expect(summaries(reasoning)).toEqual(["Reasoning"]);
+  expect(answer.textContent).toContain("Test body of test-entity-2");
+  for (const row of [reasoning, answer]) expect(row.textContent).not.toMatch(/assistant/i);
+});
 
 const PROSE = "Run **every** test\n- first";
 
@@ -590,7 +679,7 @@ describe("EntityCard", () => {
         case: "turnCompleted",
         value: { turnId: "test-failed-turn", status: TurnStatus.FAILED, error },
       });
-      const alert = container.querySelector('[role="alert"][data-thread-anchor="1"]')!;
+      const alert = container.querySelector('[data-thread-anchor="1"] [role="alert"]')!;
       expect(alert.textContent).toBe(`Turn failed${error || "The harness reported no error details."}`);
       expect(alert.querySelector("img")).toBeNull();
     }
@@ -624,6 +713,6 @@ describe("EntityCard", () => {
     ["Harness lost", "harness_lost", { case: "harnessLost", value: {} }],
   ])("keeps an abnormal ending prominent: %s", async (text, observation, event) => {
     const container = await renderLifecycle(observation, event);
-    expect(container.querySelector('[role="alert"][data-thread-anchor="1"]')?.textContent).toBe(text);
+    expect(container.querySelector('[data-thread-anchor="1"] [role="alert"]')?.textContent).toBe(text);
   });
 });

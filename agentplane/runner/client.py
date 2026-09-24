@@ -16,9 +16,20 @@ from agentplane.runner import protocol_pb2, protocol_pb2_grpc
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
+# How long the runner may take to answer Open with Attached. An Open without a spec is answered from
+# the session's journal head, with no native work in between.
+OBSERVE_ANSWER_S = 10
+# One with a spec may first launch the harness. The runner gives each native handshake request 60 s
+# (`Session.request`) and Codex's handshake makes two, so a live runner reports its own failure first.
+LAUNCH_ANSWER_S = 150
+
 
 class RunnerError(Exception):
     """The runner ended the stream with an error."""
+
+
+class OpenTimeoutError(RunnerError):
+    """The runner accepted Attach but did not answer Open in time: wedged, or a half-open connection."""
 
 
 class StreamClosedError(Exception):
@@ -135,14 +146,24 @@ class RunnerClient:
         self, session_id: str, *, spec: protocol_pb2.SessionSpec | None = None, after_cursor: int = 0
     ) -> Attachment:
         call = self._stub.Attach()
-        await call.write(
-            protocol_pb2.ClientMessage(
-                open=protocol_pb2.Open(
-                    session_id=session_id, spec=spec, follow=event_log_pb2.Follow(after_cursor=after_cursor)
+        # Only the handshake is bounded: the same stream then follows the session for as long as
+        # its caller reads, so a deadline on the call itself would cut that off.
+        answer_s = OBSERVE_ANSWER_S if spec is None else LAUNCH_ANSWER_S
+        try:
+            async with asyncio.timeout(answer_s):
+                await call.write(
+                    protocol_pb2.ClientMessage(
+                        open=protocol_pb2.Open(
+                            session_id=session_id, spec=spec, follow=event_log_pb2.Follow(after_cursor=after_cursor)
+                        )
+                    )
                 )
-            )
-        )
-        message = await call.read()
+                message = await call.read()
+        except TimeoutError as error:
+            call.cancel()
+            raise OpenTimeoutError(
+                f"the runner did not answer Open for session {session_id!r} within {answer_s} seconds"
+            ) from error
         if message is grpc.aio.EOF:
             raise RunnerError("the runner ended the stream before answering Open")
         assert isinstance(message, protocol_pb2.ServerMessage)
