@@ -30,6 +30,7 @@ import {
 import { decimalBigInt, useThreadSync, type PayloadRef, type ThreadEntity, type ThreadWindow } from "./thread_sync";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
+import { HighlightedText, JsonView } from "./json_view";
 import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { ChronologicalDebugLink, ChronologicalDebugProvider } from "./chronological_debug";
@@ -60,12 +61,16 @@ function lifecyclePresentation(observation: string, event: unknown): { label: st
   return { label: LIFECYCLE_LABELS[observation] ?? observation.replaceAll("_", " "), diagnostic };
 }
 
-function Body({ reference, plain = false }: { reference: PayloadRef | null; plain?: boolean }): JSX.Element {
+/** How a body renders: the agent's prose (assistant text, reasoning) as Markdown, tool arguments and
+ * output as code (highlighted when it is JSON), and the operator's own input verbatim, as typed. */
+type BodyFormat = "markdown" | "code" | "text";
+
+function Body({ reference, format }: { reference: PayloadRef | null; format: BodyFormat }): JSX.Element {
   if (!reference) return <Text c="dimmed">Body not observed</Text>;
-  return <PayloadText reference={reference} plain={plain} />;
+  return <PayloadText reference={reference} format={format} />;
 }
 
-function PayloadText({ reference, plain }: { reference: PayloadRef; plain: boolean }): JSX.Element {
+function PayloadText({ reference, format }: { reference: PayloadRef; format: BodyFormat }): JSX.Element {
   const { body, error, retry } = useThreadSync().usePayload(reference);
   return (
     <>
@@ -76,18 +81,33 @@ function PayloadText({ reference, plain }: { reference: PayloadRef; plain: boole
       )}
       {body === null ? (
         <Text c="dimmed">Loading complete revision…</Text>
-      ) : plain ? (
-        <Text component="pre" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-          {body}
-        </Text>
       ) : (
-        <Markdown source={body} />
+        <FormattedBody body={body} format={format} />
       )}
     </>
   );
 }
 
-function LazyBody({ label, ...body }: { label: string; reference: PayloadRef; plain?: boolean }): JSX.Element {
+function FormattedBody({ body, format }: { body: string; format: BodyFormat }): JSX.Element {
+  switch (format) {
+    case "markdown":
+      return <Markdown source={body} />;
+    case "code":
+      return <HighlightedText text={body} />;
+    case "text":
+      return <VerbatimText text={body} />;
+  }
+}
+
+function VerbatimText({ text }: { text: string }): JSX.Element {
+  return (
+    <Text className="agentplane-verbatim" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+      {text}
+    </Text>
+  );
+}
+
+function LazyBody({ label, ...body }: { label: string; reference: PayloadRef; format: BodyFormat }): JSX.Element {
   const id = `${body.reference.projection_epoch}:${body.reference.owner_id}:${body.reference.field}`;
   return (
     <RetainedDisclosure id={id} summary={label}>
@@ -144,18 +164,15 @@ function EvidenceFramesPage({
   return (
     <Stack gap="xs">
       {error && <Text c="red">{error}</Text>}
-      {page?.frames.map((frame) => (
-        <Text
-          component="pre"
-          size="xs"
-          key={frame.source_sequence}
-          style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-        >
-          {frame.availability === "present"
-            ? JSON.stringify(frame.entry, null, 2)
-            : `Raw frame ${frame.source_sequence} unavailable`}
-        </Text>
-      ))}
+      {page?.frames.map((frame) =>
+        frame.availability === "present" ? (
+          <JsonView key={frame.source_sequence} value={frame.entry} />
+        ) : (
+          <Text size="xs" key={frame.source_sequence}>
+            Raw frame {frame.source_sequence} unavailable
+          </Text>
+        )
+      )}
       {!page && error && (
         <Button loading={loading} onClick={() => load()}>
           Retry raw frames
@@ -287,7 +304,7 @@ function EvidencePanel({ threadId, entity }: { threadId: string; entity: ThreadE
   return open ? <EvidencePageView key={id} threadId={threadId} entity={entity} /> : <></>;
 }
 
-function EntityCard({
+export function EntityCard({
   threadId,
   entity,
   live,
@@ -303,7 +320,7 @@ function EntityCard({
             icon neither grows the bubble nor covers its text. */}
         <EvidenceToggle entity={entity} />
         <Paper className="agentplane-user-bubble" p="sm" withBorder maw="80%">
-          <Body reference={entity.inputRef} />
+          <Body reference={entity.inputRef} format="text" />
           <EvidencePanel threadId={threadId} entity={entity} />
         </Paper>
       </Group>
@@ -327,9 +344,7 @@ function EntityCard({
         {"event" in entity.state && (
           <details>
             <summary>Lifecycle details</summary>
-            <Text component="pre" size="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {JSON.stringify(entity.state.event, null, 2)}
-            </Text>
+            <JsonView value={entity.state.event} />
           </details>
         )}
         <EvidencePanel threadId={threadId} entity={entity} />
@@ -362,9 +377,13 @@ function EntityCard({
         </Group>
       </Group>
       {entity.textRef &&
-        (reasoning ? <LazyBody label="Reasoning" reference={entity.textRef} /> : <Body reference={entity.textRef} />)}
-      {entity.argumentsRef && <LazyBody label="Arguments" reference={entity.argumentsRef} plain />}
-      {entity.outputRef && <LazyBody label="Output" reference={entity.outputRef} plain />}
+        (reasoning ? (
+          <LazyBody label="Reasoning" reference={entity.textRef} format="markdown" />
+        ) : (
+          <Body reference={entity.textRef} format="markdown" />
+        ))}
+      {entity.argumentsRef && <LazyBody label="Arguments" reference={entity.argumentsRef} format="code" />}
+      {entity.outputRef && <LazyBody label="Output" reference={entity.outputRef} format="code" />}
       <EvidencePanel threadId={threadId} entity={entity} />
     </Paper>
   );
@@ -468,7 +487,7 @@ function SelectedCommandRows({
                   {commandOutcomeLabel(row.state.operation, row.state.outcome)}
                   {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
                 </Text>
-                {row.inputRef && <Body reference={row.inputRef} />}
+                {row.inputRef && <Body reference={row.inputRef} format="text" />}
                 <Button variant="subtle" onClick={() => store.dismiss(row.entityId)}>
                   Dismiss
                 </Button>
@@ -477,7 +496,7 @@ function SelectedCommandRows({
               <>
                 <Text size="sm">{admitted ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}</Text>
                 {value.command.operation.case === "submitInput" && (
-                  <Markdown source={value.command.operation.value.text} />
+                  <VerbatimText text={value.command.operation.value.text} />
                 )}
                 {value.command.operation.case === "changeModel" && (
                   <Text>Change model to {value.command.operation.value.model}</Text>
@@ -907,7 +926,7 @@ function ProjectedSessionBody({
                     : commandOutcomeLabel(row.state.operation, row.state.outcome)}
                   {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
                 </Text>
-                {row.inputRef && <Body reference={row.inputRef} />}
+                {row.inputRef && <Body reference={row.inputRef} format="text" />}
                 <EvidencePanel threadId={threadId} entity={row} />
               </Paper>
             ))}
