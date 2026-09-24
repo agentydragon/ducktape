@@ -375,9 +375,8 @@ as of 2026-08-04 (operator-facing summary: `haku/docs/security.md`):
       `--ignore-hosts` raw TLS passthrough for `api.anthropic.com` (interception breaks
       the Managed Agents HTTP/2 session stream).
 - [ ] Enforce at two layers. The mitmproxy fences confine only via Cilium `toFQDNs` —
-      the container has no allowlist; the iron fences confine only in app config — the
-      spike's policy opens `toEntities: [world, remote-node, host]` on 443 and
-      `claude-iron.yaml` carries no `allowlist` transform.
+      the container has no allowlist; the iron fence confines only in app config — the
+      spike's policy opens `toEntities: [world, remote-node, host]` on 443.
 - [ ] Route cluster-internal traffic through the proxies too. The Kyverno injection
       (`cluster/cdk8s/kyverno/proxy_injection.py`) sets `NO_PROXY` to
       `*.allegedly.works`, `.svc`, `.svc.cluster.local` and `10.0.0.0/8`, so anything

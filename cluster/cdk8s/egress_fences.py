@@ -114,26 +114,6 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
     ("*.ankiweb.net",),
 )
 
-# The hosts for which claude-iron.yaml defines an Authorization substitution, plus the
-# githubusercontent hosts a GitHub clone redirects to. The redirect targets deliberately get
-# no substitution rule: they serve pre-signed URLs, so an Authorization header is unnecessary
-# there and sending the PAT to them would widen where the credential travels for no gain.
-_HAKU_CLAUDE_HOSTS = (
-    "api.anthropic.com",
-    "api.github.com",
-    "codeload.github.com",
-    "github.com",
-    "objects.githubusercontent.com",
-    "raw.githubusercontent.com",
-    "release-assets.githubusercontent.com",
-    # aiquota's read API and the ActivityWatch read API, both substitution-ruled in
-    # claude-iron.yaml with the bearer held here, never in the sandbox. Both resolve to node
-    # IPs, so their toFQDNs entries enforce nothing: the remote-node/host rule admits the
-    # connection and the DNS half fences the name.
-    "aiquota.allegedly.works",
-    "activitywatch-read.allegedly.works",
-)
-
 # openclaw-spike-iron.yaml's `allowlist` transform, which bounds that proxy at L7; the DNS rule
 # built from it is the fence's second layer. //cluster/validation:test_egress_allowlists keeps
 # the two equal until the iron config is generated from here too (cluster/cdk8s/TODO.md).
@@ -240,29 +220,6 @@ def haku_cloud_api(app: App) -> Chart:
     )
 
 
-def haku_claude(app: App) -> Chart:
-    """The credential-holding Claude proxy resolves and connects to exactly `_HAKU_CLAUDE_HOSTS`.
-    It reaches nothing by cluster name, hence no cluster DNS."""
-    return _fence(
-        app,
-        "cnp-haku-claude-egress",
-        name="allow-haku-claude-oauth-proxy-egress",
-        namespace=HAKU_EGRESS_PROXY_NAMESPACE,
-        proxy="haku-claude-oauth-proxy",
-        egress=[
-            *cilium.fqdn_fence(_HAKU_CLAUDE_HOSTS),
-            # aiquota.allegedly.works and activitywatch-read.allegedly.works resolve to the OVH
-            # nodes' ExternalIPs (Envoy binds 443 there in hostNetwork mode), which carry
-            # reserved:remote-node -- or reserved:host when this Pod happens to share a node,
-            # since it has no nodeSelector. A toFQDNs rule cannot reach them: policy-cidr-match-mode
-            # is unset cluster-wide, so its CIDR-derived selectors never match node IPs. The DNS
-            # rule above still bounds which names resolve; this reaches the in-cluster public
-            # gateway the resolved name points at (cluster/docs/cilium_network_policy.md).
-            cilium.egress_to_entities("remote-node", "host", ports=[443]),
-        ],
-    )
-
-
 def haku_openclaw_spike(app: App) -> Chart:
     """The spike's iron proxy. DNS is its only Cilium-side allowlist: the 443 rule below cannot
     be one, and unlike toFQDNs the DNS rule can express haku.allegedly.works, because it
@@ -311,6 +268,4 @@ def mitmproxy_cloud_api(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(
-        root, f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy", haku_cloud_api, haku_claude, haku_openclaw_spike
-    )
+    write_charts(root, f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy", haku_cloud_api, haku_openclaw_spike)
