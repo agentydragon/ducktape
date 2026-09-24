@@ -43,6 +43,24 @@ and hands the solver a domain of a few rows; the solver does the joint
 assignment. A selector the matcher places nowhere never reaches the solver: it
 is reported unmatched without a solve.
 
+A target whose projected candidate rows exceed `MAX_CANDIDATES_PER_SELECTOR`
+(100, `lowering/materialize/plan_builder.rs`) is likewise rejected before the
+solve, as `too_broad_selector`: a selector that loose names no declaration, and
+its rows would only swell the request. This holds for member selectors,
+`source_matches[]` groups and anonymous statements alike.
+
+## Resolved by elimination
+
+`all_different` can make a selector unique that is ambiguous on its own: its
+other candidates are claimed by other selectors. After a successful solve, each
+unique `source_match` target's own candidate rows are filtered by dropping every
+row whose owner or binding another `all_different` target's solved value holds.
+When it had several rows and one survives, it resolved by elimination and gets a
+`resolved_by_elimination` diagnostic naming the claimers. That entry has
+severity `warning`: the run still succeeds, and the entry appears in
+`selector_diagnostics.json` and `spec validate`. Such a selector silently moves
+when a claimer is edited, so it should be anchored on its own.
+
 ### Rejected: let the solver consume AST facts natively instead of candidate rows
 
 Encoding tree-shape matching as finite-domain constraints over AST nodes —

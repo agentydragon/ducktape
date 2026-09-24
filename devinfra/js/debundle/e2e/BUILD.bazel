@@ -680,6 +680,22 @@ rust_test(
 )
 
 rust_test(
+    name = "selector_outcomes_test",
+    size = "small",
+    srcs = ["selector_outcomes_test.rs"],
+    crate_root = "selector_outcomes_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
     name = "sibling_declarator_steal_test",
     size = "small",
     srcs = ["sibling_declarator_steal_test.rs"],
