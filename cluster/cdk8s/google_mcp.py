@@ -198,7 +198,10 @@ class GoogleMcpApp(Construct):
                     cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[_HTTP_PORT]
                 )
             ],
-            egress=[cilium.dns_egress(), cilium.egress_to_fqdns("gmail.googleapis.com", "www.googleapis.com")],
+            egress=[
+                cilium.dns_egress(resolves=["*"]),
+                cilium.egress_to_fqdns("gmail.googleapis.com", "www.googleapis.com"),
+            ],
         )
 
 
