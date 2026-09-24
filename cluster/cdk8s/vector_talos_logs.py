@@ -23,12 +23,12 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import loki
 
 NAME = "vector-talos-logs"
 NAMESPACE = "vector-talos-logs"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/vector-talos-logs"
+OUTPUT_DIR = f"{GENERATED_ROOT}/vector-talos-logs"
 _LABELS = {"app": NAME}
 # Talos has no journald; `machine.logging.destinations` (cluster/terraform/main/logging.tf) streams
 # newline-delimited JSON to this address on each Talos node. Binding host loopback keeps the
