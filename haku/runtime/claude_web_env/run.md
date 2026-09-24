@@ -115,9 +115,12 @@ develop` (per the repo's `AGENTS.md` guidance for a missing devshell):
 This harness also carries the claude.ai account's connectors. **Agentplane staging** is the
 route to your sources and to approval-gated external actions — GitHub, Gmail, Calendar, Drive,
 Tasks, Tana, Grocy, Home Assistant, SSH, Kubernetes, Coinbase and the Forgejo data repos — as
-your state's `sources/agentplane.md` describes. **Haku** is haku-console: the Haku sandbox and
-grants. If a connector errors (some need one-time interactive OAuth), don't retry it — note it
-and move on.
+your state's `sources/agentplane.md` describes. **Haku** is haku-console: the Haku sandbox (the
+only place `haku-state` validation and anything needing your own `haku` identity runs — not a
+source-reading substitute, see `AGENTS.md` → _Where your commands run_) and grants. SSH and
+kubectl passthrough were dropped from haku-console 2026-09-24 (ducktape #7710/#7696); both
+backends are agentplane-staging only now. If a connector errors (some need one-time interactive
+OAuth), don't retry it — note it and move on.
 
 ## First: wait for bootstrap to finish (avoid the false "first run")
 
