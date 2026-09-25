@@ -253,33 +253,33 @@ data:
         config:
           domains:
             - api.anthropic.com
-            - haku.allegedly.works
-            - kubeapi.allegedly.works
-            - forgejo-http.forgejo
-            - pypi.org
-            - files.pythonhosted.org
-            - registry.npmjs.org
-            - cache.nixos.org
-            - nixos.org
-            - channels.nixos.org
-            - releases.bazel.build
-            - bcr.bazel.build
             - api.github.com
-            - github.com
-            - codeload.github.com
-            - objects.githubusercontent.com
-            - release-assets.githubusercontent.com
-            - raw.githubusercontent.com
-            - ftp.gnu.org
-            - static.rust-lang.org
-            - index.crates.io
-            - static.crates.io
-            - nodejs.org
-            - snapshot.debian.org
+            - bcr.bazel.build
+            - cache.nixos.org
+            - channels.nixos.org
             - code.forgejo.org
+            - codeload.github.com
             - data.forgejo.org
+            - files.pythonhosted.org
+            - forgejo-http.forgejo
+            - ftp.gnu.org
             - ghcr.io
+            - github.com
+            - haku.allegedly.works
+            - index.crates.io
+            - kubeapi.allegedly.works
+            - nixos.org
+            - nodejs.org
+            - objects.githubusercontent.com
             - pkg-containers.githubusercontent.com
+            - pypi.org
+            - raw.githubusercontent.com
+            - registry.npmjs.org
+            - release-assets.githubusercontent.com
+            - releases.bazel.build
+            - snapshot.debian.org
+            - static.crates.io
+            - static.rust-lang.org
       - name: secrets
         config:
           secrets:

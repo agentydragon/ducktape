@@ -17,16 +17,16 @@ rules:
   - apiGroups:
       - ""
     resources:
-      - pods
-      - pods/log
-      - pods/exec
-      - pods/attach
-      - pods/portforward
-      - services
       - configmaps
-      - secrets
-      - persistentvolumeclaims
       - events
+      - persistentvolumeclaims
+      - pods
+      - pods/attach
+      - pods/exec
+      - pods/log
+      - pods/portforward
+      - secrets
+      - services
     verbs:
       - "*"
   - apiGroups:

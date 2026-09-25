@@ -1313,24 +1313,24 @@ metadata:
 spec:
   rules:
     - hosts:
-        - pypi.org
-        - files.pythonhosted.org
-        - registry.npmjs.org
-        - nodejs.org
-        - index.crates.io
-        - static.crates.io
-        - static.rust-lang.org
-        - releases.bazel.build
         - bcr.bazel.build
         - cache.nixos.org
-        - nixos.org
         - channels.nixos.org
-        - ftp.gnu.org
-        - snapshot.debian.org
         - code.forgejo.org
         - data.forgejo.org
+        - files.pythonhosted.org
+        - ftp.gnu.org
         - ghcr.io
+        - index.crates.io
+        - nixos.org
+        - nodejs.org
         - pkg-containers.githubusercontent.com
+        - pypi.org
+        - registry.npmjs.org
+        - releases.bazel.build
+        - snapshot.debian.org
+        - static.crates.io
+        - static.rust-lang.org
       methods:
         - GET
         - HEAD

@@ -107,15 +107,17 @@ def _add_sandbox(chart: Chart) -> None:
             k8s.PolicyRule(
                 api_groups=[""],
                 resources=[
-                    "pods",
-                    "pods/log",
-                    "pods/exec",
-                    "pods/attach",
-                    "services",
+                    # keep-sorted start
                     "configmaps",
-                    "secrets",
-                    "persistentvolumeclaims",
                     "events",
+                    "persistentvolumeclaims",
+                    "pods",
+                    "pods/attach",
+                    "pods/exec",
+                    "pods/log",
+                    "secrets",
+                    "services",
+                    # keep-sorted end
                 ],
                 verbs=["*"],
             ),
