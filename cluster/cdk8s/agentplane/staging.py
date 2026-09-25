@@ -202,6 +202,16 @@ _ACTIONS_SETTINGS = {
                             "box's Pod."
                         ),
                     },
+                    "build": {
+                        "template": command_sandbox.BUILD_NAME,
+                        "container": command_sandbox.CONTAINER,
+                        "default_cwd": command_sandbox.HOME,
+                        "description": (
+                            "The sandbox box sized for a build: the same tools, 2 cores and 4Gi, and a home "
+                            "directory that survives the container being killed for running out of memory, "
+                            "though not the box's Pod."
+                        ),
+                    },
                     # The integration app's runner template, for a caller that wants the harnesses
                     # or a state volume that survives its Pod.
                     "runner": {
