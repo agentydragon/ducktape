@@ -6,8 +6,9 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from functools import wraps
-from typing import Annotated, Any, Final, Literal, cast
+from typing import Annotated, Any, Final, cast
 from uuid import UUID
 
 from fastmcp import FastMCP
@@ -17,7 +18,7 @@ from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.dependencies import CurrentAccessToken, get_access_token, get_http_request
 from fastmcp.tools import ToolResult
 from more_itertools import one
-from pydantic import BaseModel, BeforeValidator, Field, JsonValue
+from pydantic import BaseModel, Field, JsonValue
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -44,7 +45,7 @@ from agentplane.action_service.models import (
 from agentplane.action_service.policy_view import SELF, PolicyTarget
 from agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
 from agentplane.action_service.updates import ActionUpdates, UpdatesUnavailableError
-from agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitUntil
+from agentplane.action_service.waits import ActionWaiter, WaitOptions
 from agentplane.subjects import ServiceAccountRef
 
 PageSize = Annotated[int, Field(ge=1, le=100, description="Maximum entries in this page (1-100).")]
@@ -53,65 +54,56 @@ IdempotencyKey = Annotated[
 ]
 
 
-def _parse_request_id(value: UUID | str) -> UUID:
-    """Accept the JSON string form of a UUID before FastMCP's strict model validation. Unlike an
-    enum vocabulary (below), UUID has no Literal-shaped escape since it isn't a closed set of
-    values, so this BeforeValidator is the one wire-boundary workaround that's still needed."""
-    return value if isinstance(value, UUID) else UUID(value)
+class ActionSchemaField(StrEnum):
+    """Optional fields of one Action's own definition/schema; include_fields on list_actions and
+    get_action is a pure allowlist over these."""
+
+    INPUT_SCHEMA = "input_schema"
+    DESCRIPTION = "description"
 
 
-McpRequestId = Annotated[UUID, BeforeValidator(_parse_request_id)]
+class RequestField(StrEnum):
+    """Every top-level Receipt field; include_fields is a pure allowlist over these."""
 
-# FastMCP's strict_input_validation validates enum-typed fields by isinstance, which rejects the
-# plain JSON string every MCP client actually sends. Verified against pydantic 2.12.5: neither
-# Field(strict=False) nor model_config=ConfigDict(strict=False) can override an explicit
-# strict=True passed to validate_python -- the outer call always wins. A Literal has no such
-# problem: its members are the raw JSON scalars, not instances of a custom type, so strict and lax
-# validation agree. These vocabularies exist only at this wire boundary, never as Python-side
-# domain values, so a Literal is the STYLE.md-sanctioned escape ("unless an external API dictates
-# the Literal shape") rather than a StrEnum.
-IncludeField = Literal["input_schema", "description"]
+    ID = "id"
+    STATE = "state"
+    VERSION = "version"
+    CREATED_AT = "created_at"
+    UPDATED_AT = "updated_at"
+    INPUT = "input"
+    ORIGIN = "origin"
+    CORRELATION = "correlation"
+    CALLER = "caller"
+    EXTERNAL_GRANT = "external_grant"
+    DECISION = "decision"
+    EXECUTION = "execution"
 
-RequestField = Literal[
-    "id",
-    "state",
-    "version",
-    "created_at",
-    "updated_at",
-    "input",
-    "origin",
-    "correlation",
-    "caller",
-    "external_grant",
-    "decision",
-    "execution",
+
+DEFAULT_RECEIPT_FIELDS: Final[list[RequestField]] = [
+    RequestField.ID,
+    RequestField.STATE,
+    RequestField.VERSION,
+    RequestField.CREATED_AT,
+    RequestField.UPDATED_AT,
 ]
 
-DEFAULT_RECEIPT_FIELDS: Final[list[RequestField]] = ["id", "state", "version", "created_at", "updated_at"]
 
-PolicyField = Literal["subject", "synced", "bindings", "auto_approve_if", "auto_deny_if", "auto_deny_unless"]
+class PolicyField(StrEnum):
+    """Every top-level get_action_policy field; include_fields is a pure allowlist over these."""
 
-DEFAULT_POLICY_FIELDS: Final[list[PolicyField]] = ["subject", "synced", "bindings"]
+    SUBJECT = "subject"
+    SYNCED = "synced"
+    BINDINGS = "bindings"
+    AUTO_APPROVE_IF = "auto_approve_if"
+    AUTO_DENY_IF = "auto_deny_if"
+    AUTO_DENY_UNLESS = "auto_deny_unless"
 
 
-class WaitInput(BaseModel):
-    """The MCP-facing twin of WaitOptions, wait_until as a Literal for the reason given above."""
-
-    wait_seconds: Annotated[
-        float,
-        Field(
-            ge=0, le=30, allow_inf_nan=False, description="Wait at most this many seconds; zero returns immediately."
-        ),
-    ] = 0
-    wait_until: Literal["decision", "terminal"] = "terminal"
-
-    def options(self) -> WaitOptions:
-        return WaitOptions(wait_seconds=self.wait_seconds, wait_until=WaitUntil(self.wait_until))
-
+DEFAULT_POLICY_FIELDS: Final[list[PolicyField]] = [PolicyField.SUBJECT, PolicyField.SYNCED, PolicyField.BINDINGS]
 
 # FastMCP resolves a parameter by its dependency default and strips it from a tool's input schema;
 # module-level because a call in a default is what ruff's B008 refuses (also below, for CURRENT_ACCESS_TOKEN).
-DEFAULT_WAIT: Final = WaitInput()
+DEFAULT_WAIT: Final = WaitOptions()
 
 
 class ActionSummary(BaseModel):
@@ -252,14 +244,14 @@ def _tool_errors[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitab
     return wrapped
 
 
-def _summary(catalog: ActionCatalog, identity: ActionIdentity, fields: set[IncludeField]) -> ActionSummary:
+def _summary(catalog: ActionCatalog, identity: ActionIdentity, fields: set[ActionSchemaField]) -> ActionSummary:
     group, action = catalog.resolve(identity.group, identity.name)
     return ActionSummary(
         group=identity.group,
         name=identity.name,
         available=group.available,
-        input_schema=action.input_schema if "input_schema" in fields else None,
-        description=action.description if "description" in fields else None,
+        input_schema=action.input_schema if ActionSchemaField.INPUT_SCHEMA in fields else None,
+        description=action.description if ActionSchemaField.DESCRIPTION in fields else None,
     )
 
 
@@ -269,17 +261,17 @@ def _receipt(view: ActionRequestView, fields: set[RequestField]) -> Receipt:
     indistinguishable from one that was never requested -- exclude_none can't tell those apart,
     exclude_unset (below) can, since only explicitly-set fields survive it regardless of value."""
     values: dict[str, Any] = {}
-    if "id" in fields:
+    if RequestField.ID in fields:
         values["id"] = view.id
-    if "state" in fields:
+    if RequestField.STATE in fields:
         values["state"] = view.state
-    if "version" in fields:
+    if RequestField.VERSION in fields:
         values["version"] = view.version
-    if "created_at" in fields:
+    if RequestField.CREATED_AT in fields:
         values["created_at"] = view.created_at
-    if "updated_at" in fields:
+    if RequestField.UPDATED_AT in fields:
         values["updated_at"] = view.updated_at
-    if "input" in fields:
+    if RequestField.INPUT in fields:
         values["input"] = RequestInput(
             idempotency_key=view.idempotency_key,
             action=view.action,
@@ -287,17 +279,17 @@ def _receipt(view: ActionRequestView, fields: set[RequestField]) -> Receipt:
             title=view.title,
             description=view.description,
         )
-    if "origin" in fields:
+    if RequestField.ORIGIN in fields:
         values["origin"] = view.origin
-    if "correlation" in fields:
+    if RequestField.CORRELATION in fields:
         values["correlation"] = view.correlation
-    if "caller" in fields:
+    if RequestField.CALLER in fields:
         values["caller"] = view.caller
-    if "external_grant" in fields:
+    if RequestField.EXTERNAL_GRANT in fields:
         values["external_grant"] = view.external_grant
-    if "decision" in fields:
+    if RequestField.DECISION in fields:
         values["decision"] = view.decision
-    if "execution" in fields:
+    if RequestField.EXECUTION in fields:
         values["execution"] = view.execution
     return Receipt.model_construct(**values)
 
@@ -312,6 +304,18 @@ def create_server(
     service: ActionService, catalog: ActionCatalog, updates: ActionUpdates, verifier: CallerTokenVerifier
 ) -> FastMCP:
     waiter = ActionWaiter(service, updates)
+    # strict_input_validation is left at FastMCP's own default (False): its own tool dispatch
+    # validates arguments via TypeAdapter.validate_python on the already-JSON-decoded arguments
+    # dict, never validate_json on the raw request bytes, and pydantic's "a JSON string coerces to
+    # UUID/Enum" leniency is specifically a validate_json behavior -- verified against pydantic
+    # 2.12.5, validate_python(dict, strict=True) rejects a plain string for a UUID or Enum field
+    # ("Input should be an instance of X") where validate_json(text, strict=True) accepts the
+    # identical value, and no field- or model-level strict override can claw that back once the
+    # outer call passes strict=True. So strict_input_validation=True would reject every UUID- and
+    # enum-shaped argument (request_id, include_fields, wait.wait_until) an ordinary MCP client
+    # sends, for a benefit (rejecting a numeric-looking string like "5" for an int field) that
+    # doesn't apply to them. Lax mode still rejects a value that isn't one of an enum's members --
+    # it relaxes the input's Python type, not the value check.
     server = FastMCP(
         "Agentplane Actions",
         instructions="Discover Action identifiers, fetch details only when needed, then submit each request once under "
@@ -319,7 +323,6 @@ def create_server(
         "lost response with get_action_request(idempotency_key=...), never with a replacement key.",
         auth=verifier,
         mask_error_details=True,
-        strict_input_validation=True,
         tasks=False,
     )
 
@@ -352,7 +355,7 @@ def create_server(
         group: Key | None = None,
         after: ActionIdentity | None = None,
         limit: PageSize = 30,
-        include_fields: list[IncludeField] | None = None,
+        include_fields: list[ActionSchemaField] | None = None,
     ) -> ToolResult:
         """Discover available Action identifiers without loading their full schemas or descriptions.
         Use this before get_action when the group/name is unknown; this never submits an Action.
@@ -382,7 +385,7 @@ def create_server(
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
-    async def get_action(group: Key, name: Key, include_fields: list[IncludeField] | None = None) -> ToolResult:
+    async def get_action(group: Key, name: Key, include_fields: list[ActionSchemaField] | None = None) -> ToolResult:
         """Read one Action definition, not a submitted request or its execution status.
         Provide group/name from list_actions; request input_schema before constructing unfamiliar arguments.
         Full description and input_schema appear only when named in include_fields; defaults are compact.
@@ -419,7 +422,7 @@ def create_server(
     @_tool_errors
     async def request_action(
         request: ActionRequestInput,
-        wait: WaitInput = DEFAULT_WAIT,
+        wait: WaitOptions = DEFAULT_WAIT,
         include_fields: list[RequestField] = DEFAULT_RECEIPT_FIELDS,
         caller: Caller = CALLER,
     ) -> ToolResult:
@@ -432,16 +435,16 @@ def create_server(
         principal = caller.principal
         view = await service.submit(request, principal, external_grant=caller.external_grant)
         if wait.wait_seconds:
-            view = await wait_for_receipt(view.id, principal, wait.options())
+            view = await wait_for_receipt(view.id, principal, wait)
             await revalidate(principal)
         return _result(_receipt(view, set(include_fields)), exclude_unset=True)
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
     async def get_action_request(
-        request_id: McpRequestId | None = None,
+        request_id: UUID | None = None,
         idempotency_key: IdempotencyKey | None = None,
-        wait: WaitInput = DEFAULT_WAIT,
+        wait: WaitOptions = DEFAULT_WAIT,
         include_fields: list[RequestField] = DEFAULT_RECEIPT_FIELDS,
         caller: Caller = CALLER,
     ) -> ToolResult:
@@ -459,7 +462,7 @@ def create_server(
                 await service.list_requests(principal, idempotency_key=idempotency_key),
                 too_short=ActionNotFoundError(idempotency_key),
             ).id
-        view = await wait_for_receipt(request_id, principal, wait.options())
+        view = await wait_for_receipt(request_id, principal, wait)
         if wait.wait_seconds:
             await revalidate(principal)
         return _result(_receipt(view, set(include_fields)), exclude_unset=True)
@@ -467,7 +470,7 @@ def create_server(
     @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
     @_tool_errors
     async def cancel_action_request(
-        request_id: McpRequestId, include_fields: list[RequestField] = DEFAULT_RECEIPT_FIELDS, caller: Caller = CALLER
+        request_id: UUID, include_fields: list[RequestField] = DEFAULT_RECEIPT_FIELDS, caller: Caller = CALLER
     ) -> ToolResult:
         """Withdraw your Action request only before its execution has been claimed for dispatch.
         Provide the durable request ID; no version is required, and another caller's requests are inaccessible.
@@ -483,10 +486,7 @@ def create_server(
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
     async def list_action_request_events(
-        request_id: McpRequestId,
-        after_sequence: Annotated[int, Field(ge=0)] = 0,
-        limit: PageSize = 30,
-        caller: Caller = CALLER,
+        request_id: UUID, after_sequence: Annotated[int, Field(ge=0)] = 0, limit: PageSize = 30, caller: Caller = CALLER
     ) -> ToolResult:
         """Read an ordered page of canonical state transitions for your Action request.
         Start after_sequence at zero or at the last sequence already received; use next_after_sequence for more pages.

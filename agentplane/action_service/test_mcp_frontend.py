@@ -8,7 +8,6 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import get_args
 from unittest.mock import AsyncMock
 from uuid import UUID
 
@@ -57,9 +56,8 @@ AUDIENCE = "test-action-audience"
 NAMESPACE = "test-action-sandboxes"
 OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
 # Passed as include_fields to reconstruct the full wire model where a test needs every field.
-# RequestField/PolicyField are Literal aliases (see mcp_frontend.py), not iterable enum classes.
-ALL_REQUEST_FIELDS = list(get_args(RequestField))
-ALL_POLICY_FIELDS = list(get_args(PolicyField))
+ALL_REQUEST_FIELDS = list(RequestField)
+ALL_POLICY_FIELDS = list(PolicyField)
 
 
 def sandbox(label: str) -> WorkloadPrincipal:
