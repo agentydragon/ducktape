@@ -233,18 +233,35 @@ live workload validation and egress substitution; OAuth does not grant an operat
 | `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                                             |
 | `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                                                  |
 
+Every tool that returns a wide model takes `include_fields` as a **pure allowlist over every
+top-level field of that model** (top-level only, never a dotted path into a nested one), defaulting
+to a curated compact list rather than `None`, so the default is visible directly in the tool's own
+schema instead of living only in prose: the catalog reads (`get_action`/`list_actions`) default to
+neither `input_schema` nor `description`; `get_action_policy` defaults to `subject`/`synced`/
+`bindings`, widened by naming `auto_approve_if`/`auto_deny_if`/`auto_deny_unless`; and
+`request_action`/`get_action_request`/`cancel_action_request` default to `id`/`state`/`version`/
+`created_at`/`updated_at` on the receipt -- `state` alone already distinguishes
+pending/allowed/denied/dispatching/running/succeeded/failed/cancelled without naming `execution` --
+widened by naming `input` (the submitted `idempotency_key`/`action`/`arguments`/`title`/
+`description`, echoed back as one unit), `origin`, `correlation`, `caller`, `external_grant`,
+`decision`, or `execution`. Naming only the wide fields you want **replaces** the default rather
+than adding to it, so keeping the compact fields alongside a widened one means naming both.
+`cancel_action_request`'s nested `request` is gated the same way, under its own `include_fields`.
+An unrecognized name in any `include_fields` fails the call rather than being ignored.
+
 `cancel_action_request(request_id)` explicitly withdraws an own-caller request before dispatch
 claim, without a version parameter. It returns the canonical outcome (`cancelled`,
 `already_cancelled`, `already_finished`, or `too_late`) and receipt; it never interrupts an
 executor. The cancelled receipt stays readable by request ID or submission key. It is independent
 of cancelling or disconnecting a wait.
 
-Both submission and receipt reads accept `wait_seconds` (0–30, default 0) and `wait_until`
-(`decision` or `terminal`, default terminal). Waits use commit notifications rather than periodic
-queries. A deadline returns a receipt, not a cancellation. On an ambiguous response, reuse the
-original request/key; transport or notification failure must not prompt a new Action. Workload
-authorization is revalidated after a bounded wait, before returning data. The generic MCP tool
-schemas never expand the dynamic Action catalog, and no Action output-schema metadata is added.
+Both submission and receipt reads take one shared `wait` object (`wait_seconds`, 0–30 default 0;
+`wait_until`, `decision` or `terminal` default terminal) rather than two flat parameters each.
+Waits use commit notifications rather than periodic queries. A deadline returns a receipt, not a
+cancellation. On an ambiguous response, reuse the original request/key; transport or notification
+failure must not prompt a new Action. Workload authorization is revalidated after a bounded wait,
+before returning data. The generic MCP tool schemas never expand the dynamic Action catalog, and no
+Action output-schema metadata is added.
 
 Workflow: list identifiers, fetch one input schema if needed, submit once, then wait/read the
 request ID or resume events. Discovery/read failures cannot submit anything; a wrong caller sees
@@ -415,8 +432,9 @@ auth: none # or `oauth` with `server_id`, or `static_bearer` with `bearer_file`
 
 HTTP uses the pinned FastMCP `StreamableHttpTransport` and MCP session implementation, including
 JSON/SSE responses and session shutdown. Both transports use the same catalog refresh, live schema
-validation, safe tool-error mapping, and ambiguous-call failure path; a failed `tools/call` transport
-exchange is not retried. HTTP config rejects userinfo, URL queries/fragments, launch fields, and
+validation, result recording, and ambiguous-call failure path; a failed `tools/call` transport
+exchange is not retried. The Execution's `result` is the tool's `CallToolResult` in MCP wire shape
+(`content` blocks of every type, `structuredContent`, `isError`, `_meta`), tool errors included. HTTP config rejects userinfo, URL queries/fragments, launch fields, and
 header settings. `auth: none` sends no credentials. `auth: oauth` names a configured `mcp_servers`
 linkage through `server_id`; `from_group_with_linkage` attaches an `httpx` auth hook that resolves
 that linkage's current access token on every request, and the group stays unavailable until the

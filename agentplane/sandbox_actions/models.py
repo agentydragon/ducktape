@@ -58,7 +58,7 @@ class SandboxInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: SandboxName
-    environment: str = Field(description="The reviewed environment name this box was created from.")
+    template: str = Field(description="The SandboxTemplate this box was created from.")
     conditions: list[SandboxCondition] = Field(
         description=f"The controller's own conditions, verbatim. {READY_CONDITION!r} with "
         'status "True" is what `exec` requires; until then that condition says why, and a '
@@ -102,10 +102,10 @@ class CreateArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: SandboxName
-    environment: str | None = Field(
+    template: str | None = Field(
         default=None,
-        description="Which reviewed environment to create the box from; omit for this deployment's "
-        "default. Only the environments this deployment configured can be named.",
+        description="Which SandboxTemplate to create the box from; omit for this deployment's default. "
+        "Only the templates this deployment offers can be named.",
     )
 
 
@@ -122,7 +122,9 @@ class ExecArgs(BaseModel):
     max_output_bytes: int = Field(
         ge=0, le=1_000_000, description="Maximum bytes retained independently from stdout and stderr."
     )
-    cwd: str | None = Field(default=None, description="Working directory; omit for the environment's default.")
+    cwd: str | None = Field(
+        default=None, description="Working directory; omit to start in the container's own working directory."
+    )
 
 
 class NameArgs(BaseModel):

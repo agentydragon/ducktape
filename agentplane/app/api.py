@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, nullcontext
@@ -443,7 +444,7 @@ async def _action_chunks(client: OperatorActions) -> AsyncIterator[AsyncIterator
                 chunks = await stack.enter_async_context(client.stream_requests())
         except TimeoutError as error:
             raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "Action stream startup timed out") from error
-        yield _renewed(client, chunks)
+        yield _without_repeated_snapshots(_renewed(client, chunks))
 
 
 async def _renewed(client: OperatorActionServiceClient, opened: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
@@ -460,6 +461,27 @@ async def _renewed(client: OperatorActionServiceClient, opened: AsyncIterator[by
         if not delivered:
             return
         upstream = client.stream_requests()
+
+
+async def _without_repeated_snapshots(chunks: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+    """`chunks` regrouped into whole SSE frames, less each `snapshot` identical to the last one
+    forwarded. A snapshot is the whole Action history, megabytes (#7922), and every upstream
+    `_renewed` opens starts with one, however little has changed."""
+    pending = bytearray()
+    last_snapshot: bytes | None = None
+    async for chunk in chunks:
+        # A boundary split between two chunks starts at the last byte already held.
+        searched = max(len(pending) - 1, 0)
+        pending += chunk
+        while (end := pending.find(b"\n\n", searched)) != -1:
+            frame = bytes(pending[: end + 2])
+            del pending[: end + 2]
+            searched = 0
+            if frame.startswith(b"event: snapshot\n"):
+                if (digest := hashlib.sha256(frame).digest()) == last_snapshot:
+                    continue
+                last_snapshot = digest
+            yield frame
 
 
 @actions_router.get("/stream")

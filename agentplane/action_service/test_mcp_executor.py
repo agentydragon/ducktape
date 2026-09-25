@@ -10,6 +10,7 @@ coordinator's single-dispatch/lease/no-retry guarantees rather than the adapter'
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 import sys
 from datetime import UTC, datetime, timedelta
@@ -22,6 +23,9 @@ import pytest
 import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.tools import ToolResult
+from mcp.types import CallToolResult, ImageContent, TextContent
+from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
@@ -80,6 +84,11 @@ async def _allowed_execution(service: ActionService, *, idempotency_key: str) ->
         OPERATOR,
     )
     return view.id
+
+
+def _without_server_info(result: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    """FastMCP stamps its own name and version into every result's `_meta`; the rest is the tool's answer."""
+    return {key: value for key, value in result.items() if key != "_meta"}
 
 
 async def _poll_state(store: ActionStore, request_id: Any, *, want: ActionState) -> None:
@@ -215,7 +224,7 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
         assert calls == [{"text": "hi"}]
         view = await store.get(request_id, CALLER)
         assert view.execution is not None
-        assert view.execution.result == {"echoed": "hi"}
+        assert CallToolResult.model_validate(view.execution.result).structured_content == {"echoed": "hi"}
 
         # A duplicate Decision on the same already-decided request must not dispatch a second time.
         try:
@@ -252,10 +261,49 @@ async def test_tool_error_output_is_a_successful_result(execution_lease: Executi
         )
         assert result.state is ExecutionState.SUCCEEDED
         assert result.error is None
-        assert result.result == {"is_error": True, "content": ["credential xyz-secret-123 rejected by upstream"]}
+        assert isinstance(result.result, dict)
+        assert _without_server_info(result.result) == {
+            "content": [{"type": "text", "text": "credential xyz-secret-123 rejected by upstream"}],
+            "isError": True,
+        }
         assert group.available
         assert executor._connection is not None
         assert executor._connection.client.is_connected()
+    finally:
+        await executor.close()
+
+
+async def test_result_keeps_every_content_block_beside_structured_content(execution_lease: ExecutionLease) -> None:
+    mcp = FastMCP("demo")
+    image = base64.b64encode(b"test-image-bytes").decode()
+
+    @mcp.tool
+    def snapshot() -> ToolResult:
+        return ToolResult(
+            content=[
+                TextContent(type="text", text="test caption"),
+                ImageContent(type="image", data=image, mime_type="image/png"),
+            ],
+            structured_content={"width": 1, "height": 1},
+        )
+
+    executor = McpActionGroupExecutor(GROUP_KEY, _group(), mcp)
+    await executor.start()
+    await wait_available(executor._group)
+    try:
+        result = await executor.execute(
+            _request(action=ActionIdentity(group=GROUP_KEY, name="snapshot"), arguments={}), execution_lease
+        )
+        assert result.state is ExecutionState.SUCCEEDED
+        assert isinstance(result.result, dict)
+        assert _without_server_info(result.result) == {
+            "content": [
+                {"type": "text", "text": "test caption"},
+                {"type": "image", "data": image, "mimeType": "image/png"},
+            ],
+            "structuredContent": {"width": 1, "height": 1},
+            "isError": False,
+        }
     finally:
         await executor.close()
 
@@ -427,7 +475,7 @@ async def test_runtime_binds_configured_mcp_group(engine: AsyncEngine, tmp_path:
             await _poll_state(store, view.id, want=ActionState.SUCCEEDED)
             result = await store.get(view.id, CALLER)
             assert result.execution is not None
-            assert result.execution.result == {"echoed": "bound"}
+            assert CallToolResult.model_validate(result.execution.result).structured_content == {"echoed": "bound"}
             assert marker.read_text() == "started"
         finally:
             await service.close()
@@ -648,7 +696,7 @@ async def test_long_mcp_call_drains_with_live_execution_and_executor_leases(engi
             final = await store.get(request_id, CALLER)
             assert final.state is ActionState.SUCCEEDED
             assert final.execution is not None
-            assert final.execution.result == {"echoed": "hi"}
+            assert CallToolResult.model_validate(final.execution.result).structured_content == {"echoed": "hi"}
             assert calls == ["hi"]
     finally:
         release.set()

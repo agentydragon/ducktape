@@ -190,41 +190,11 @@ _ACTIONS_SETTINGS = {
                 "kind": "sandbox",
                 "description": "Stamped and exec'd by this service, as the caller, in its own namespace.",
                 "namespace": _NAMESPACE,
-                "environments": {
-                    "sandbox": {
-                        "template": command_sandbox.NAME,
-                        "container": command_sandbox.CONTAINER,
-                        "default_cwd": command_sandbox.HOME,
-                        "description": (
-                            "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, "
-                            "kubectl (configured as the caller's ServiceAccount) and python3 (install packages "
-                            "into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the "
-                            "box's Pod."
-                        ),
-                    },
-                    "build": {
-                        "template": command_sandbox.BUILD_NAME,
-                        "container": command_sandbox.CONTAINER,
-                        "default_cwd": command_sandbox.HOME,
-                        "description": (
-                            "The sandbox box sized for a build: the same tools, 2 cores and 4Gi, and a home "
-                            "directory that survives the container being killed for running out of memory, "
-                            "though not the box's Pod."
-                        ),
-                    },
-                    # The integration app's runner template, for a caller that wants the harnesses
-                    # or a state volume that survives its Pod.
-                    "runner": {
-                        "template": "agentplane-runner",
-                        "container": "runner",
-                        "default_cwd": "/state",
-                        "description": (
-                            "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, "
-                            "ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
-                        ),
-                    },
-                },
-                "default_environment": "sandbox",
+                # Each describes itself in its own `description` annotation. The integration app's
+                # runner template is offered for a caller that wants the harnesses or a state volume
+                # that survives its Pod.
+                "templates": [command_sandbox.NAME, command_sandbox.BUILD_NAME, "agentplane-runner"],
+                "default_template": command_sandbox.NAME,
             },
         },
         "ssh": {

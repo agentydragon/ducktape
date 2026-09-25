@@ -16,13 +16,13 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio.client import ApiException
 
-from agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
-from agentplane.sandbox_actions.inventory import SandboxActionError, SandboxInventory
+from agentplane.sandbox_actions.binding import DESCRIPTION_ANNOTATION, SandboxExecutorBinding
+from agentplane.sandbox_actions.inventory import DEFAULT_CONTAINER_ANNOTATION, SandboxActionError, SandboxInventory
 from agentplane.sandbox_actions.models import READY_CONDITION
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import CommandResult
 from mcp_infra.exec.models import Exited
-from util.agent_sandbox import POD_NAME_ANNOTATION
+from util.agent_sandbox import POD_NAME_ANNOTATION, TEMPLATES_PLURAL
 
 NAMESPACE = "agentplane-test"
 CALLER = ServiceAccountRef(namespace=NAMESPACE, name="caller-one")
@@ -30,18 +30,17 @@ CALLER = ServiceAccountRef(namespace=NAMESPACE, name="caller-one")
 OBJECT_NAME = "caller-one-box"
 
 BINDING = SandboxExecutorBinding(
-    description="test sandboxes",
-    namespace=NAMESPACE,
-    environments={
-        "default": SandboxEnvironment(
-            template="test-template", container="workspace", default_cwd="/workspace", description="the test box"
-        )
-    },
-    default_environment="default",
+    description="test sandboxes", namespace=NAMESPACE, templates={"test-template"}, default_template="test-template"
 )
 
 
-def _sandbox(*, ready: bool, pod_annotation: str | None, reason: str | None = None) -> dict[str, Any]:
+def _sandbox(
+    *,
+    ready: bool,
+    pod_annotation: str | None,
+    reason: str | None = None,
+    pod_template_annotations: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """One Sandbox as the API server returns it."""
     condition = {
         "type": READY_CONDITION,
@@ -59,9 +58,15 @@ def _sandbox(*, ready: bool, pod_annotation: str | None, reason: str | None = No
                 "sandbox-actions.agentplane.allegedly.works/caller": CALLER.name,
                 "sandbox-actions.agentplane.allegedly.works/caller-namespace": CALLER.namespace,
                 "sandbox-actions.agentplane.allegedly.works/name": "box",
-                "sandbox-actions.agentplane.allegedly.works/environment": "default",
+                "sandbox-actions.agentplane.allegedly.works/template": "test-template",
             },
             **({"annotations": {POD_NAME_ANNOTATION: pod_annotation}} if pod_annotation is not None else {}),
+        },
+        "spec": {
+            "podTemplate": {
+                "metadata": {"annotations": pod_template_annotations or {}},
+                "spec": {"containers": [{"name": "workspace"}, {"name": "egress-sidecar"}]},
+            }
         },
         "status": {"conditions": [condition]},
     }
@@ -70,9 +75,12 @@ def _sandbox(*, ready: bool, pod_annotation: str | None, reason: str | None = No
 @dataclass
 class FakeCustomObjects:
     sandbox: dict[str, Any]
+    templates: dict[str, dict[str, Any]] = field(default_factory=dict)
 
-    async def get_namespaced_custom_object(self, *args: object) -> dict[str, Any]:
-        return self.sandbox
+    async def get_namespaced_custom_object(
+        self, group: str, version: str, namespace: str, plural: str, name: str
+    ) -> dict[str, Any]:
+        return self.templates[name] if plural == TEMPLATES_PLURAL else self.sandbox
 
 
 @dataclass
@@ -92,16 +100,23 @@ class FakeCoreV1:
 @dataclass
 class FakeExecRunner:
     ran_against: list[str] = field(default_factory=list)
+    ran_in: list[str] = field(default_factory=list)
 
-    async def run(self, *, pod_name: str, **kwargs: object) -> CommandResult:
+    async def run(self, *, pod_name: str, container: str, **kwargs: object) -> CommandResult:
         self.ran_against.append(pod_name)
+        self.ran_in.append(container)
         return CommandResult(exit=Exited(exit_code=0), stdout="", stderr="", duration_seconds=0.1)
 
 
-def _inventory(sandbox: dict[str, Any], core_v1: FakeCoreV1, runner: FakeExecRunner) -> SandboxInventory:
+def _inventory(
+    sandbox: dict[str, Any],
+    core_v1: FakeCoreV1,
+    runner: FakeExecRunner,
+    templates: dict[str, dict[str, Any]] | None = None,
+) -> SandboxInventory:
     return SandboxInventory(
         BINDING,
-        custom_objects=FakeCustomObjects(sandbox),  # type: ignore[arg-type]
+        custom_objects=FakeCustomObjects(sandbox, templates or {}),  # type: ignore[arg-type]
         core_v1=core_v1,  # type: ignore[arg-type]
         exec_runner=runner,  # `ExecRunner` is a Protocol, so this one needs no ignore.
     )
@@ -182,6 +197,45 @@ async def test_exec_runs_against_the_pod_the_controller_named() -> None:
     )
     await inventory.execute(CALLER, "box", script="true", cwd=None, timeout_seconds=5, max_output_bytes=100)
     assert runner.ran_against == ["sandbox-pod-abc123"]
+
+
+@pytest.mark.parametrize(
+    ("pod_template_annotations", "container"),
+    [({}, "workspace"), ({DEFAULT_CONTAINER_ANNOTATION: "egress-sidecar"}, "egress-sidecar")],
+)
+async def test_exec_runs_in_the_container_kubectl_exec_would_pick(
+    pod_template_annotations: dict[str, str], container: str
+) -> None:
+    """The box's Pod template names its default container, else its first is the one."""
+    runner = FakeExecRunner()
+    sandbox = _sandbox(
+        ready=True, pod_annotation="sandbox-pod-abc123", pod_template_annotations=pod_template_annotations
+    )
+    inventory = _inventory(sandbox, FakeCoreV1(pods={"sandbox-pod-abc123"}), runner)
+    await inventory.execute(CALLER, "box", script="true", cwd=None, timeout_seconds=5, max_output_bytes=100)
+    assert runner.ran_in == [container]
+
+
+async def test_a_template_this_deployment_does_not_offer_is_refused() -> None:
+    inventory = _inventory(_sandbox(ready=True, pod_annotation=None), FakeCoreV1(), FakeExecRunner())
+    with pytest.raises(SandboxActionError, match="unknown template 'another-template'; this deployment offers"):
+        await inventory.create(CALLER, "box", "another-template")
+
+
+async def test_an_offered_template_describes_itself_in_its_annotation() -> None:
+    template = {"metadata": {"annotations": {DESCRIPTION_ANNOTATION: "the test box"}}}
+    inventory = _inventory(
+        _sandbox(ready=True, pod_annotation=None), FakeCoreV1(), FakeExecRunner(), {"test-template": template}
+    )
+    assert await inventory.template_descriptions() == {"test-template": "the test box"}
+
+
+async def test_an_offered_template_that_says_nothing_is_named_rather_than_offered_blank() -> None:
+    inventory = _inventory(
+        _sandbox(ready=True, pod_annotation=None), FakeCoreV1(), FakeExecRunner(), {"test-template": {"metadata": {}}}
+    )
+    with pytest.raises(ValueError, match="'test-template' has no 'description' annotation"):
+        await inventory.template_descriptions()
 
 
 @pytest.mark.parametrize(

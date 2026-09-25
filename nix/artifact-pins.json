@@ -231,6 +231,10 @@
     "agentplane-runner": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-727faa4863eb/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
       "sha256": "cn+qSGProGTl4iCf1jT2WrBVvUfDwzruaW+AZfWu/d8="
+    },
+    "skill-cdk8s_builders": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-0c8fba6bef55/cdk8s_builders.skill",
+      "sha256": "DI+6a+9VeiF/oOjWrvI80uVT9D0hq037PRToDdAMfiA="
     }
   }
 }

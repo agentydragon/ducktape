@@ -473,8 +473,9 @@ rotation, expiry cleanup) sends a transactional `NOTIFY` every replica hears; th
 re-reads its own row, as it also does after a listener reconnect and at the row's `expires_at`, and
 ends once the row is gone or expired. The Action Service ends its side when the one-minute token it
 was opened with expires; the BFF exchanges a fresh one and reopens the upstream behind the same
-browser response, whose next frame is the new upstream's snapshot. An upstream that ends before its
-first frame ends the browser stream instead.
+browser response. That response forwards whole SSE frames and drops a `snapshot` identical to the
+last one it forwarded, so the snapshot each new upstream opens with reaches the tab only if the
+list changed. An upstream that ends before its first frame ends the browser stream instead.
 
 The Settings modal's Notifications tab (`/#/notifications`, see [Settings](#settings)) registers the
 current browser, lists registered browsers, identifies this one, and forgets registrations. Forgetting the current browser also unsubscribes locally. The stable
