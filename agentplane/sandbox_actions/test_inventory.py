@@ -29,9 +29,7 @@ CALLER = ServiceAccountRef(namespace=NAMESPACE, name="caller-one")
 # `_object_name` composes it this way; spelled out so a change to that scheme fails here loudly.
 OBJECT_NAME = "caller-one-box"
 
-BINDING = SandboxExecutorBinding(
-    description="test sandboxes", namespace=NAMESPACE, templates={"test-template"}, default_template="test-template"
-)
+BINDING = SandboxExecutorBinding(description="test sandboxes", namespace=NAMESPACE, templates={"test-template"})
 
 
 def _sandbox(
@@ -234,7 +232,7 @@ async def test_an_offered_template_that_says_nothing_is_named_rather_than_offere
     inventory = _inventory(
         _sandbox(ready=True, pod_annotation=None), FakeCoreV1(), FakeExecRunner(), {"test-template": {"metadata": {}}}
     )
-    with pytest.raises(ValueError, match="'test-template' has no 'description' annotation"):
+    with pytest.raises(ValueError, match=r"'test-template' has no .*/description' annotation"):
         await inventory.template_descriptions()
 
 

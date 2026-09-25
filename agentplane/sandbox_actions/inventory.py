@@ -16,7 +16,7 @@ from typing import Any, cast
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiException, CoreV1Api
 
-from agentplane.sandbox_actions.binding import DESCRIPTION_ANNOTATION, SandboxExecutorBinding
+from agentplane.sandbox_actions.binding import DESCRIPTION_ANNOTATION, PREFIX, SandboxExecutorBinding
 from agentplane.sandbox_actions.models import READY_CONDITION, SandboxInfo
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import CommandResult, ExecRunner
@@ -25,15 +25,14 @@ from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
 
-_PREFIX = "sandbox-actions.agentplane.allegedly.works"
 # What this surface will touch. The Action Service's `pods/exec` grant is namespace-wide and cannot
 # express "only the boxes this Action made", so the boundary is here: every read, exec and delete
 # selects on this label and on the caller's, and a Sandbox carrying neither is not ours to act on.
-MANAGED_LABEL = f"{_PREFIX}/managed"
-CALLER_LABEL = f"{_PREFIX}/caller"
-CALLER_NAMESPACE_LABEL = f"{_PREFIX}/caller-namespace"
-TEMPLATE_LABEL = f"{_PREFIX}/template"
-NAME_LABEL = f"{_PREFIX}/name"
+MANAGED_LABEL = f"{PREFIX}/managed"
+CALLER_LABEL = f"{PREFIX}/caller"
+CALLER_NAMESPACE_LABEL = f"{PREFIX}/caller-namespace"
+TEMPLATE_LABEL = f"{PREFIX}/template"
+NAME_LABEL = f"{PREFIX}/name"
 # The annotation `kubectl exec` and `kubectl logs` pick a Pod's container by when none is named.
 DEFAULT_CONTAINER_ANNOTATION = "kubectl.kubernetes.io/default-container"
 
@@ -95,14 +94,6 @@ class SandboxInventory:
         self._custom_objects = custom_objects
         self._core_v1 = core_v1
         self._exec_runner = exec_runner
-
-    def _offered(self, name: str | None) -> str:
-        """The offered template `name` names, or the default when it names none."""
-        template = name or self._binding.default_template
-        if template not in self._binding.templates:
-            offered = ", ".join(sorted(self._binding.templates))
-            raise SandboxActionError(f"unknown template {template!r}; this deployment offers {offered}")
-        return template
 
     async def template_descriptions(self) -> dict[str, str]:
         """What each offered template says a box made from it holds, from its own annotation.
@@ -178,7 +169,7 @@ class SandboxInventory:
             pod_ips=cast(list[str], status.get("podIPs") or []),
         )
 
-    async def create(self, caller: ServiceAccountRef, name: str, template_name: str | None) -> SandboxInfo:
+    async def create(self, caller: ServiceAccountRef, name: str, template: str) -> SandboxInfo:
         """Stamp the caller's sandbox if it has none by that name, and report where it got to.
 
         Returns once the object exists rather than waiting for the box to come up: a cold start
@@ -190,7 +181,9 @@ class SandboxInventory:
         was created from. Deciding that the shape is wrong is the caller's, and `dispose` is how it
         acts on that.
         """
-        template = self._offered(template_name)
+        if template not in self._binding.templates:
+            offered = ", ".join(sorted(self._binding.templates))
+            raise SandboxActionError(f"unknown template {template!r}; this deployment offers {offered}")
         if (existing := await self._sandbox(caller, name)) is None:
             await self._stamp(caller, name, template)
         elif (existing_template := existing["metadata"]["labels"][TEMPLATE_LABEL]) != template:

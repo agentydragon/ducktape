@@ -2,8 +2,8 @@
 with no harness and no state volume. The command box runs the plain sandbox image
 (agentplane/images/sandbox.nix) and costs the namespace quota what a command needs; the build box is
 the same box sized for a build, on the build image (agentplane/images/build.nix), which adds Bazel
-and its toolchain. staging.py offers both to the sandbox Actions, the command box as the default, and
-each template's `description` annotation is what those Actions tell an agent choosing one.
+and its toolchain. staging.py offers both to the sandbox Actions, and each template describes itself
+to an agent choosing one in the annotation those Actions read.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
+from agentplane.sandbox_actions.binding import DESCRIPTION_ANNOTATION
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import egress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
@@ -137,7 +138,7 @@ def _template(
     SandboxTemplate(
         scope,
         id,
-        metadata=metadata(name, env.namespace, annotations={"description": description}),
+        metadata=metadata(name, env.namespace, annotations={DESCRIPTION_ANNOTATION: description}),
         spec=SandboxTemplateSpec(
             # The CiliumNetworkPolicy beside it is the box's fence.
             network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
