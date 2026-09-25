@@ -25,7 +25,7 @@ let
     paths = [
       substrate.nixLdLibraries
 
-      pkgs.bashInteractive
+      pkgs.bashInteractiveFHS # the substrate's /bin/bash; the default build has no PATH fallback
       pkgs.coreutils
       pkgs.findutils
       pkgs.gnugrep
