@@ -108,6 +108,12 @@ class CreateArgs(BaseModel):
     )
 
 
+class TemplateArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template: str = Field(description="Which SandboxTemplate to show; only the ones `create` offers.")
+
+
 class ExecArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

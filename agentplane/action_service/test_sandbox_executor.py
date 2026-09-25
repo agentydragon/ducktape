@@ -34,6 +34,9 @@ ELSEWHERE = ServiceAccountRef(namespace="somewhere-else", name="caller-one")
 
 TEMPLATE = "test-template"
 BINDING = SandboxExecutorBinding(description="test sandboxes", namespace=NAMESPACE, templates={TEMPLATE})
+TEMPLATE_SPEC: dict[str, JsonValue] = {
+    "podTemplate": {"spec": {"containers": [{"name": "workspace", "image": "test-image:unset"}]}}
+}
 
 
 def _ready() -> SandboxCondition:
@@ -49,7 +52,7 @@ def _released() -> asyncio.Event:
 
 @dataclass
 class FakeInventory:
-    """Records who asked for what; every call carries the caller the executor resolved."""
+    """Records who asked for what; every call about a box carries the caller the executor resolved."""
 
     callers: list[ServiceAccountRef] = field(default_factory=list)
     raises: Exception | None = None
@@ -64,6 +67,9 @@ class FakeInventory:
     async def create(self, caller: ServiceAccountRef, name: str, template: str) -> SandboxInfo:
         self._record(caller)
         return SandboxInfo(name=name, conditions=[_ready()], template=template)
+
+    async def template(self, name: str) -> dict[str, JsonValue]:
+        return {"metadata": {"name": name}, "spec": TEMPLATE_SPEC}
 
     async def info(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
         self._record(caller)
@@ -241,9 +247,16 @@ async def test_an_unexpected_failure_is_not_swallowed(executor: SandboxExecutor,
         await executor.execute(_request(SandboxAction.DISPOSE, {"name": "box"}), LEASE)
 
 
+async def test_a_template_comes_back_as_the_object_itself(executor: SandboxExecutor) -> None:
+    """Not a summary wrapped around it: the agent reads the Kubernetes object it already knows."""
+    result = await executor.execute(_request(SandboxAction.TEMPLATE, {"template": TEMPLATE}), LEASE)
+    assert result.state is ExecutionState.SUCCEEDED
+    assert result.result == {"metadata": {"name": TEMPLATE}, "spec": TEMPLATE_SPEC}
+
+
 def test_the_offered_actions_name_the_offered_templates() -> None:
-    """The offered templates are deployment configuration an agent cannot otherwise see, and naming
-    one that is not offered is the likeliest way to get create wrong."""
+    """create's own description is where an agent learns which templates exist, and naming one that
+    is not offered is the likeliest way to get create wrong."""
     offered = actions(BINDING, {TEMPLATE: "the test box"})
     assert set(offered) == set(SandboxAction)
     assert '"test-template": "the test box"' in offered[SandboxAction.CREATE].description

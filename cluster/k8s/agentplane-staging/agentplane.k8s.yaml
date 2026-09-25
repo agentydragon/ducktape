@@ -4055,6 +4055,7 @@ spec:
           - exec
           - info
           - list
+          - template
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet

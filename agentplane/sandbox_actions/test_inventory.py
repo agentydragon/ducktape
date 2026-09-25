@@ -220,6 +220,31 @@ async def test_a_template_this_deployment_does_not_offer_is_refused() -> None:
         await inventory.create(CALLER, "box", "another-template")
 
 
+async def test_an_offered_template_is_shown_whole_but_for_its_field_ownership_record() -> None:
+    spec = {"podTemplate": {"spec": {"containers": [{"name": "workspace", "image": "test-image:unset"}]}}}
+    served = {
+        "metadata": {"name": "test-template", "managedFields": [{"manager": "test-manager", "operation": "Apply"}]},
+        "spec": spec,
+    }
+    inventory = _inventory(
+        _sandbox(ready=True, pod_annotation=None), FakeCoreV1(), FakeExecRunner(), {"test-template": served}
+    )
+    assert await inventory.template("test-template") == {"metadata": {"name": "test-template"}, "spec": spec}
+
+
+async def test_a_template_in_the_namespace_that_is_not_offered_is_not_shown() -> None:
+    """What a caller can read stays what it can create, though the template exists and holds nothing
+    secret."""
+    inventory = _inventory(
+        _sandbox(ready=True, pod_annotation=None),
+        FakeCoreV1(),
+        FakeExecRunner(),
+        {"another-template": {"metadata": {}}},
+    )
+    with pytest.raises(SandboxActionError, match="unknown template 'another-template'; this deployment offers"):
+        await inventory.template("another-template")
+
+
 async def test_an_offered_template_describes_itself_in_its_annotation() -> None:
     template = {"metadata": {"annotations": {DESCRIPTION_ANNOTATION: "the test box"}}}
     inventory = _inventory(
