@@ -86,7 +86,7 @@ def _ollama_container() -> k8s.Container:
             k8s.EnvVar(name="NVIDIA_VISIBLE_DEVICES", value="all"),
             k8s.EnvVar(name="OLLAMA_KV_CACHE_TYPE", value="q8_0"),
             k8s.EnvVar(name="OLLAMA_FLASH_ATTENTION", value="1"),
-            k8s.EnvVar(name="OLLAMA_NUM_CTX", value="131072"),
+            k8s.EnvVar(name="OLLAMA_CONTEXT_LENGTH", value="131072"),
         ],
         resources=k8s.ResourceRequirements(
             requests={

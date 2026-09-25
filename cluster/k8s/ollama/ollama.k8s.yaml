@@ -52,7 +52,7 @@ spec:
               value: q8_0
             - name: OLLAMA_FLASH_ATTENTION
               value: "1"
-            - name: OLLAMA_NUM_CTX
+            - name: OLLAMA_CONTEXT_LENGTH
               value: "131072"
           image: ollama/ollama:0.34.0
           livenessProbe:
