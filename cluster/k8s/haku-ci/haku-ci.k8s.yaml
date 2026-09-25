@@ -92,7 +92,7 @@ spec:
                   --instance "$FORGEJO_INSTANCE_URL" \
                   --token "$(cat /secrets/token)" \
                   --name "$RUNNER_NAME" \
-                  --labels "haku-ci:docker://catthehacker/ubuntu:act-latest" \
+                  --labels "haku-ci:docker://catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43" \
                   --config /config/config.yaml
                 exec forgejo-runner one-job --wait --config /config/config.yaml
             command:

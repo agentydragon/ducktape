@@ -55,6 +55,17 @@ _NO_PROXY = (
 )
 _CA_FILE = "/egress-proxy-ca/ca-certificates.crt"
 _DOCKER_PORT = 2375
+# Pinned by digest, not `:act-latest`. dind pulls Docker Hub through oci-cache (Zot, on-demand
+# sync), which answers a TAG request only after re-checking upstream whether the tag moved. That
+# check has taken 1m46s even with the image already cached, dockerd abandons the mirror at 60s,
+# and its direct Docker Hub fallback is blocked by the egress fence: every job queued behind it
+# failed in its first minute without running a step. A digest is immutable, so Zot serves it from
+# its own store without asking upstream. Bump by hand from the tag's current index digest:
+#   docker buildx imagetools inspect catthehacker/ubuntu:act-latest --format '{{.Manifest.Digest}}'
+# Sync: cluster/k8s/haku-ci/config.yaml `runner.labels` must carry the same label.
+_JOB_LABEL = (
+    "haku-ci:docker://catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43"
+)
 
 
 def _add_egress_fence(chart: Chart) -> None:
@@ -271,7 +282,7 @@ def _runner() -> keda.ScaledJobSpecJobTargetRefTemplateSpecContainers:
             '  --instance "$FORGEJO_INSTANCE_URL" \\\n'
             '  --token "$(cat /secrets/token)" \\\n'
             '  --name "$RUNNER_NAME" \\\n'
-            '  --labels "haku-ci:docker://catthehacker/ubuntu:act-latest" \\\n'
+            f'  --labels "{_JOB_LABEL}" \\\n'
             "  --config /config/config.yaml\n"
             "exec forgejo-runner one-job --wait --config /config/config.yaml\n"
         ],
