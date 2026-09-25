@@ -174,5 +174,5 @@ live cluster in this order:
 4. Always wait ≥5 s after starting the Mimir + Loki port-forwards
    before invoking the script.
 
-See <../../cdk8s/flux_monitoring.py> for the
+See `cluster/cdk8s/flux_monitoring.py` for the
 metric-scraping wiring this depends on.

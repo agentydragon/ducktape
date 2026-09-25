@@ -120,14 +120,14 @@ edit. Anything that must persist belongs in a schema field — `comment:`
 
 These opt-in per-chunk analyses are sound only when the input avoids shapes that
 defeat static reasoning; each checks its precondition per statement and falls
-back to the conservative path (<docs/design.md> → "Conditionally-correct
+back to the conservative path (`docs/design.md` → "Conditionally-correct
 optimizations"):
 
 - `chunk_analysis_options.<chunk_id>.dataflow_aware_s_chain`, with the
   author-trusted `trusted_dataflow_summaries` refinement, orders impure
-  statements by the cells they touch (<docs/design.md> → "Emission modes").
+  statements by the cells they touch (`docs/design.md` → "Emission modes").
 - `chunk_analysis_options.<chunk_id>.local_property_effects` makes
-  `X.prop = <pure-rhs>;` a local effect on `X` (<docs/design.md> → A10).
+  `X.prop = <pure-rhs>;` a local effect on `X` (`docs/design.md` → A10).
 
 ## Input-chunk admission checks
 
@@ -135,5 +135,5 @@ Every materialized chunk is screened for A1 (top-level `eval`), A3 (dynamic
 `import(...)`) and A5 (`import.meta`) before any quotient or lowering work
 (`stage_one/chunk_admission.rs`). Audited corpora disable individual checks per
 chunk with `chunk_analysis_options.<chunk>.admission_overrides`. Enforcement
-strength, override reporting and the unchecked residual: <docs/design.md> →
+strength, override reporting and the unchecked residual: `docs/design.md` →
 "Conditions on the input chunk".

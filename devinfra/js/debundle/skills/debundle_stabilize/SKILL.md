@@ -58,19 +58,19 @@ instrument**, not a last resort:
   hand-picked an anchor but want the surrounding shape holed down. Whether the
   anchor it kept is _meaningful_ is yours to judge (§ What makes a good anchor).
 - **`spec match-selector`** — the prove/probe. Resolves your candidate alone and
-  reports its outcome (<SPEC.md> § Outcomes) and over-pin slack.
+  reports its outcome (<references/SPEC.md> § Outcomes) and over-pin slack.
 - **`spec validate`** — the whole-spec keep-going sweep: one outcome per selector
   that did not resolve, plus warnings for selectors resolved only by
-  elimination (<SPEC.md> § Outcomes). A `no_match` of a one-statement template
+  elimination (<references/SPEC.md> § Outcomes). A `no_match` of a one-statement template
   may list `nearest_unclaimed` statements: start a repair from the first one. It
   also lists what each matched template's free identifiers mean: check that
   every `reference` names the entity you meant. Its full and source-only
-  modes: <references/cli.md> § Running the pipeline.
+  modes: <references/docs/cli.md> § Running the pipeline.
 
 ## Shared CLI workflows
 
-@references/cli.md
-@references/selectors.md
+@references/docs/cli.md
+@references/docs/selectors.md
 
 ## Setup
 
@@ -89,7 +89,7 @@ debundler repo, drop the prefix.
 The whole-spec gate is the exception: full `spec validate` (and `debundle run`)
 needs the Bazel `:debundle` **pipeline target**, with its package roots and a
 repo-root source root, not the standalone binary against the snapshot dir
-(<references/cli.md> § Running the pipeline). On NixOS, `--server_javabase=…`
+(<references/docs/cli.md> § Running the pipeline). On NixOS, `--server_javabase=…`
 is a **startup** option: it must precede `build`, not follow it.
 
 ## The worklist
@@ -158,7 +158,7 @@ wrong anchor, so slack only prioritizes; it never decides.
 3. **Choose a purpose anchor** (rubric below) and write it into a
    `source_matches[]` entry — by hand, or by taking `synthesize-selectors --apply`
    output and tightening it onto the anchor you picked. After any `--apply`, run
-   the repo formatter **before** reading the diff (<references/selectors.md>
+   the repo formatter **before** reading the diff (<references/docs/selectors.md>
    § Bulk conversion loop).
 
 4. **Prove it.** Test the candidate with
@@ -176,7 +176,7 @@ wrong anchor, so slack only prioritizes; it never decides.
    one `source_matches[]` entry rather than emitting N overlapping selectors.
 
 6. **Leave honest debt.** If the entity has no purpose-bearing anchor stable enough
-   to trust, keep the name pin with a `note:` (<references/selectors.md>
+   to trust, keep the name pin with a `note:` (<references/docs/selectors.md>
    § Selector debt).
 
 ## What makes a good anchor
@@ -201,7 +201,7 @@ looking.
 renames `getOwner` → `gO` freely but cannot rewrite the string
 `"DocumentAccessorFactory"` — strings are observable behavior. So an identity carried
 by a _literal_ is doubly stable: identity-bearing _and_ minification-immune. The
-full ranking, and what to reject as if stable: <references/selectors.md>
+full ranking, and what to reject as if stable: <references/docs/selectors.md>
 § Anchor strength tiers.
 
 ### Good / okay / bad: one entity, three selectors
@@ -310,7 +310,7 @@ honest pin beats a photograph that _looks_ structural and durable but isn't.
   module, so no template of a copy's body tells the copies apart. Pin each copy
   through a statement that uses it: claim the helper's free identifier in a
   `source_matches[]` template of its decorator call
-  (<references/selectors.md> § Pinning by use site), or use `makes_decorate_call`.
+  (<references/docs/selectors.md> § Pinning by use site), or use `makes_decorate_call`.
   Leave name-pin debt only for a copy no use site tells apart.
 
 ## Don't hand-transcribe long bodies

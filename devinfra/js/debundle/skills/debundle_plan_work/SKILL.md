@@ -11,9 +11,9 @@ spec edits; this skill does not mutate YAML itself.
 
 ## Shared CLI Workflows
 
-@references/cli.md
-@references/selectors.md
-@references/spec_editing.md
+@references/docs/cli.md
+@references/docs/selectors.md
+@references/docs/spec_editing.md
 
 ## Setup Notes
 
@@ -42,14 +42,14 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
   coherent module-family peels, then give workers explicit `--item` lists or
   scoped `--module` / `--module-prefix` selectors for
   `debundle spec synthesize-selectors`.
-- Hold planned selector work to `references/selectors.md` § The contract and
+- Hold planned selector work to `references/docs/selectors.md` § The contract and
   the ladder: prefer lanes that land minimized selectors.
 - Use `coverage` and `atoms` when current YAML or atomic-unit closure is
   the question.
 - Use `describe` and `show-source` before recommending any assignment.
 - Treat `modules propose` output as planning evidence. Which reviewed rows
   `bindings assign --batch` takes, and what the rest need:
-  `references/cli.md` § `--batch` JSON format.
+  `references/docs/cli.md` § `--batch` JSON format.
 
 Prefer these commands over grepping generated output. The owner graph is
 the source of truth for cycle gates and residual dependencies; the embedded
