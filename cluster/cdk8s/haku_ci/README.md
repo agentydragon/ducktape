@@ -60,9 +60,10 @@ rejections are handled by `oci-cache`'s Zot `http.compat: ["docker2s2"]` setting
 
 ## What's here
 
-| File               | Role                                                                                                                                                                                                                                                               |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `haku-ci.k8s.yaml` | generated (`cluster/cdk8s/haku_ci/runner.py`): namespace, egress fence (DNS + in-cluster + haku-egress-proxy only), KEDA `ScaledJob` (one-job runner + rootless `dind` native sidecar, Forgejo queue trigger, token auth), and the forgejo-runner config ConfigMap |
+| File               | Role                                                                                                                                                                                                                                                                                                              |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runner.py`        | generator for `cluster/generated/haku-ci/`: namespace, egress fence (DNS + in-cluster + haku-egress-proxy only), KEDA `ScaledJob` (`register` init container, rootless `dind` native sidecar, one-job runner, Forgejo queue trigger), the forgejo-runner config ConfigMap, and the directory's Flux Kustomization |
+| `runner_config.py` | the fields of the forgejo-runner config file haku-ci sets                                                                                                                                                                                                                                                         |
 
 The registration-token Secret (`haku-ci-runner-token`) is provisioned by `tf/gitops/haku-state`
 (a `hashicorp/http` GET of the repo's runner registration-token API, written to the Secret) —

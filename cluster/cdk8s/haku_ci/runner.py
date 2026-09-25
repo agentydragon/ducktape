@@ -1,14 +1,11 @@
 """haku-ci: the operator-owned namespace running Haku's image builds, the KEDA ScaledJob of
 ephemeral Forgejo Actions runners it scales on the queue, their forgejo-runner config, and the
-egress fence forcing their external traffic through haku-egress-proxy. See
-cluster/k8s/haku-ci/README.md.
-
-Hand-written beside the output: the directory's `kustomization.yaml`.
+egress fence forcing their external traffic through haku-egress-proxy. See README.md.
 """
 
 from __future__ import annotations
 
-from datetime import timedelta
+import shlex
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
@@ -27,21 +24,47 @@ from cilium_clusterwide_crds.io.cilium import (
     CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator,
 )
 from keda_scaledjob_crds.sh import keda
+from keda_scaledjob_crds.sh.keda import (
+    ScaledJobSpecJobTargetRefTemplateSpecContainers as Container,
+    ScaledJobSpecJobTargetRefTemplateSpecContainersEnv as ContainerEnv,
+    ScaledJobSpecJobTargetRefTemplateSpecContainersResources as ContainerResources,
+    ScaledJobSpecJobTargetRefTemplateSpecContainersResourcesLimits as ContainerLimit,
+    ScaledJobSpecJobTargetRefTemplateSpecContainersResourcesRequests as ContainerRequest,
+    ScaledJobSpecJobTargetRefTemplateSpecContainersVolumeMounts as ContainerMount,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainers as InitContainer,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersEnv as InitEnv,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersEnvValueFrom as InitEnvFrom,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersEnvValueFromFieldRef as InitFieldRef,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersEnvValueFromSecretKeyRef as InitSecretKeyRef,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersResources as InitResources,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersResourcesLimits as InitLimit,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersResourcesRequests as InitRequest,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersSecurityContext as InitSecurityContext,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbe as InitStartupProbe,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbeTcpSocket as InitProbeTcpSocket,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbeTcpSocketPort as InitProbePort,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersVolumeMounts as InitMount,
+    ScaledJobSpecJobTargetRefTemplateSpecVolumes as Volume,
+    ScaledJobSpecJobTargetRefTemplateSpecVolumesConfigMap as VolumeConfigMap,
+    ScaledJobSpecJobTargetRefTemplateSpecVolumesEmptyDir as EmptyDir,
+)
 from keda_triggerauthentication_crds.sh.keda import (
     TriggerAuthentication,
     TriggerAuthenticationSpec,
     TriggerAuthenticationSpecSecretTargetRef,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku_ci import runner_config
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "haku-ci"
 NAMESPACE = "haku-ci"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku-ci"
+OUTPUT_DIR = f"{GENERATED_ROOT}/haku-ci"
 
 _RUNNER = "haku-runner"
 _LABELS = {"app.kubernetes.io/name": _RUNNER}
@@ -51,16 +74,37 @@ FORGEJO_TOKEN_SECRET = "haku-forgejo-tea"
 FORGEJO_TOKEN_KEY = "token"
 _FORGEJO_URL = "http://forgejo-http.forgejo:3000"
 _PROXY_URL = "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
-_NO_PROXY = (
-    "127.0.0.1,localhost,host.docker.internal,*.allegedly.works,.allegedly.works,forgejo-http.forgejo,"
-    "forgejo-http.forgejo.svc.cluster.local,.forgejo,.svc.cluster.local,10.0.0.0/8"
-)
 _CA_DIR = "/egress-proxy-ca"
 _CA_FILE = f"{_CA_DIR}/ca-certificates.crt"
-# Pointed at the haku-egress-proxy CA in both the runner and every job container.
+# External egress goes through haku-egress-proxy, the sole external door (the force-proxy CCNP
+# below), for dind, the runner and every job container. NO_PROXY keeps in-cluster Forgejo (git +
+# registry, long-poll), public cluster Gateway names (*.allegedly.works), and the dind socket
+# direct. The public names still land on Cilium Gateway nodes and stay bounded by the cluster-only
+# CNP; sending them through haku-egress-proxy creates a DNS-round-robin chance of proxy-pod ->
+# own-node Gateway self-hairpin, which Cilium Gateway answers with Envoy "Access denied" for this
+# policy-constrained identity. Both wildcard and suffix forms, because NO_PROXY matching differs
+# by client.
+#
+# TODO(check): the explicit forgejo-http.forgejo{,.svc.cluster.local} and 10.0.0.0/8 entries may
+# be redundant with the `.forgejo`/`.svc.cluster.local` suffixes; suffix matching differs per tool
+# (Go vs curl vs python), so verify against a real job before dropping any.
+_PROXY_ENV = {
+    "HTTP_PROXY": _PROXY_URL,
+    "HTTPS_PROXY": _PROXY_URL,
+    "NO_PROXY": "127.0.0.1,localhost,host.docker.internal,*.allegedly.works,.allegedly.works,"
+    "forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local,.forgejo,.svc.cluster.local,10.0.0.0/8",
+}
+# Trust the haku-egress-proxy CA, in the runner and every job container.
 # TODO: dedupe with the same CA env-var lists in kyverno/proxy_injection.py,
 # agentplane/sandbox_pod.py, public_coder_agent_config.py and haku_openclaw_spike_config.py.
-_CA_ENV_VARS = ("SSL_CERT_FILE", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS")
+# TODO(after 1st green): in job containers the `/etc/ssl/certs` mount makes the CA the system
+# default, so SSL_CERT_FILE/CURL_CA_BUNDLE/GIT_SSL_CAINFO are likely redundant there, and
+# REQUESTS_CA_BUNDLE/NODE_EXTRA_CA_CERTS only matter to python-requests and node. Bazel's Java
+# downloader reads none of these; the haku-state build image imports the CA into the JDK cacerts
+# itself.
+_CA_ENV = dict.fromkeys(
+    ("SSL_CERT_FILE", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS"), _CA_FILE
+)
 _DOCKER_PORT = 2375
 _BAZEL_CACHE = "/bazel-cache"
 _CONFIG_MAP = "haku-runner-config"
@@ -77,9 +121,9 @@ _REGISTRATION_SECRET = "haku-ci-runner-token"
 _RUNNER_IMAGE = "code.forgejo.org/forgejo/runner:12.13.2"
 # `bazel-ci / image` has taken 27m03s, and with one job per pod the Bazel cache does not carry
 # over between CI jobs, so this needs real headroom.
-_JOB_TIMEOUT = timedelta(hours=1)
+_JOB_TIMEOUT_SECONDS = 3600
 # On SIGTERM (node drain, eviction), the runner finishes the running job instead of dropping it.
-_SHUTDOWN_TIMEOUT = timedelta(minutes=30)
+_SHUTDOWN_TIMEOUT_SECONDS = 1800
 # Pinned by digest, not `:act-latest`. dind pulls Docker Hub through oci-cache (Zot, on-demand
 # sync), which answers a TAG request only after re-checking upstream whether the tag moved. That
 # check has taken 1m46s even with the image already cached, dockerd abandons the mirror at 60s,
@@ -111,54 +155,44 @@ def _config() -> runner_config.Config:
             file=f"{_RUNNER_DATA}/.runner",
             # One job per pod is enforced by `one-job`; this keeps the two in agreement.
             capacity=1,
-            timeout=_JOB_TIMEOUT,
-            shutdown_timeout=_SHUTDOWN_TIMEOUT,
+            timeout=_JOB_TIMEOUT_SECONDS,
+            shutdown_timeout=_SHUTDOWN_TIMEOUT_SECONDS,
             labels=[_JOB_LABEL],
         ),
         container=runner_config.Container(
             # How the RUNNER reaches dind: it shares the pod network namespace with the sidecar.
             docker_host=f"tcp://localhost:{_DOCKER_PORT}",
             # Job containers run on a per-job docker bridge network, not the pod netns, so
-            # `localhost` there is the job container itself. The build steps (bazel/bazelisk, npm,
-            # pip, git) run in them, so their egress must also go through haku-egress-proxy and
-            # trust its CA.
-            options=[
-                # Reach dind from the bridge network.
-                "--add-host",
-                "host.docker.internal:host-gateway",
-                "-e",
-                f"DOCKER_HOST=tcp://host.docker.internal:{_DOCKER_PORT}",
-                # act/forgejo-runner does not forward the runner's own proxy env into job
-                # containers (nektos/act#1578), so it is injected per job here.
-                "-e",
-                f"HTTP_PROXY={_PROXY_URL}",
-                "-e",
-                f"HTTPS_PROXY={_PROXY_URL}",
-                # TODO(check): the explicit forgejo-http.forgejo{,.svc.cluster.local} and
-                # 10.0.0.0/8 entries may be redundant with the `.forgejo`/`.svc.cluster.local`
-                # suffixes; suffix matching differs per tool (Go vs curl vs python), so verify
-                # against a real job before dropping any. Keep the allegedly.works entries: see
-                # the runner's NO_PROXY.
-                "-e",
-                f"NO_PROXY={_NO_PROXY}",
-                # TODO(after 1st green): the `/etc/ssl/certs` mount below makes the CA the system
-                # default, so SSL_CERT_FILE/CURL_CA_BUNDLE/GIT_SSL_CAINFO are likely redundant, and
-                # REQUESTS_CA_BUNDLE/NODE_EXTRA_CA_CERTS only matter to python-requests and node.
-                # Bazel's Java downloader reads none of these; the haku-state build image imports
-                # the CA into the JDK cacerts itself.
-                *(arg for name in _CA_ENV_VARS for arg in ("-e", f"{name}={_CA_FILE}")),
-                "-v",
-                f"{_CA_FILE}:{_CA_FILE}:ro",
-                # Overlays the CA onto the system trust store, so curl/git trust the proxy's
-                # re-signed TLS with no per-tool variable.
-                "-v",
-                f"{_CA_FILE}:/etc/ssl/certs/ca-certificates.crt:ro",
-                # The pod's Bazel-cache emptyDir, so the output base, --disk_cache and repo cache
-                # carry across the job containers of one CI job (bazel-ci's `Test` then `Build`).
-                # Resolved on the dind filesystem, where the emptyDir is mounted.
-                "-v",
-                f"{_BAZEL_CACHE}:/root/.cache",
-            ],
+            # `localhost` there is the job container itself; they reach dind via the host gateway.
+            # The build steps (bazel/bazelisk, npm, pip, git) run in them, so they need the proxy
+            # and CA env too: act/forgejo-runner does not forward the runner's own env into job
+            # containers (nektos/act#1578).
+            options=shlex.join(
+                [
+                    "--add-host",
+                    "host.docker.internal:host-gateway",
+                    *(
+                        arg
+                        for name, value in {
+                            "DOCKER_HOST": f"tcp://host.docker.internal:{_DOCKER_PORT}",
+                            **_PROXY_ENV,
+                            **_CA_ENV,
+                        }.items()
+                        for arg in ("-e", f"{name}={value}")
+                    ),
+                    "-v",
+                    f"{_CA_FILE}:{_CA_FILE}:ro",
+                    # Overlays the CA onto the system trust store, so curl/git trust the proxy's
+                    # re-signed TLS with no per-tool variable.
+                    "-v",
+                    f"{_CA_FILE}:/etc/ssl/certs/ca-certificates.crt:ro",
+                    # The pod's Bazel-cache emptyDir, so the output base, --disk_cache and repo
+                    # cache carry across the job containers of one CI job (bazel-ci's `Test` then
+                    # `Build`). Resolved on the dind filesystem, where the emptyDir is mounted.
+                    "-v",
+                    f"{_BAZEL_CACHE}:/root/.cache",
+                ]
+            ),
             # Lets the bind mounts above through act_runner's volume gate; a Haku-authored workflow
             # still cannot mount arbitrary dind-host paths.
             #
@@ -255,7 +289,7 @@ def _add_egress_fence(chart: Chart) -> None:
     )
 
 
-def _dind() -> keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainers:
+def _dind() -> InitContainer:
     """dind is a NATIVE SIDECAR (an initContainer with restartPolicy: Always), not an ordinary
     container. Two things depend on that, and both are load-bearing:
 
@@ -279,13 +313,9 @@ def _dind() -> keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainers:
     because of the masks. Crucially the DAEMON still runs ROOTLESS (UID 1000 via the -rootless
     image), so this is strictly better than classic rootful dind; the privileged POD is the price,
     contained by haku-ci being operator-only (no Haku RBAC), off control planes, and
-    egress-fenced. See cluster/k8s/haku-ci/README.md.
+    egress-fenced. See README.md.
     """
-    env = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersEnv
-    quantity = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersResourcesRequests
-    limit = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersResourcesLimits
-    mount = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersVolumeMounts
-    return keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainers(
+    return InitContainer(
         name="dind",
         image="docker:29-dind-rootless",
         restart_policy="Always",
@@ -312,54 +342,38 @@ def _dind() -> keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainers:
             # request to an HTTPS server". Emptying it disables TLS so 2375 is plain HTTP
             # (localhost-only inside the pod). This is the last piece that lets the runner connect
             # to the rootless daemon.
-            env(name="DOCKER_TLS_CERTDIR", value=""),
-            # dockerd pulls base images through haku-egress-proxy. Docker >=23 reads these proxy
-            # vars from the daemon environment for registry pulls; NO_PROXY keeps the in-cluster
-            # Forgejo registry push and public cluster Gateway names direct. dockerd is Go, so
-            # SSL_CERT_FILE points its registry-TLS trust at the haku-egress-proxy CA bundle (a
-            # full bundle incl. system + cluster roots), so it validates the intercepted registry
-            # TLS.
-            env(name="HTTP_PROXY", value=_PROXY_URL),
-            env(name="HTTPS_PROXY", value=_PROXY_URL),
-            env(name="NO_PROXY", value=_NO_PROXY),
-            env(name="SSL_CERT_FILE", value=_CA_FILE),
+            InitEnv(name="DOCKER_TLS_CERTDIR", value=""),
+            # dockerd pulls base images through haku-egress-proxy: Docker >=23 reads the proxy vars
+            # from the daemon environment for registry pulls. dockerd is Go, so SSL_CERT_FILE
+            # points its registry-TLS trust at the haku-egress-proxy CA bundle (a full bundle incl.
+            # system + cluster roots), so it validates the intercepted registry TLS.
+            *(InitEnv(name=name, value=value) for name, value in {**_PROXY_ENV, "SSL_CERT_FILE": _CA_FILE}.items()),
         ],
-        startup_probe=keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbe(
-            tcp_socket=keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbeTcpSocket(
-                port=keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbeTcpSocketPort.from_number(
-                    _DOCKER_PORT
-                )
-            ),
+        startup_probe=InitStartupProbe(
+            tcp_socket=InitProbeTcpSocket(port=InitProbePort.from_number(_DOCKER_PORT)),
             period_seconds=2,
             failure_threshold=90,
         ),
-        security_context=keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersSecurityContext(
-            privileged=True, run_as_user=1000, run_as_group=1000
-        ),
+        security_context=InitSecurityContext(privileged=True, run_as_user=1000, run_as_group=1000),
         volume_mounts=[
-            mount(name="docker-data", mount_path="/var/lib/docker"),
-            mount(name="egress-proxy-ca", mount_path=_CA_DIR, read_only=True),
+            InitMount(name="docker-data", mount_path="/var/lib/docker"),
+            InitMount(name="egress-proxy-ca", mount_path=_CA_DIR, read_only=True),
             # dind resolves the job containers' `-v` bind mounts (`_config`) against its own
             # filesystem, so the pod-local emptyDir must be mounted here rather than just in the
             # runner.
-            mount(name="bazel-cache", mount_path=_BAZEL_CACHE),
+            InitMount(name="bazel-cache", mount_path=_BAZEL_CACHE),
         ],
-        resources=keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersResources(
-            requests={"cpu": quantity.from_string("200m"), "memory": quantity.from_string("512Mi")},
-            limits={"cpu": limit.from_string("3"), "memory": limit.from_string("6Gi")},
+        resources=InitResources(
+            requests={"cpu": InitRequest.from_string("200m"), "memory": InitRequest.from_string("512Mi")},
+            limits={"cpu": InitLimit.from_string("3"), "memory": InitLimit.from_string("6Gi")},
         ),
     )
 
 
-def _register() -> keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainers:
+def _register() -> InitContainer:
     """Registers this pod EPHEMERALLY with the haku-state repo, writing the registration `one-job`
     reads. Runs before dind starts: registering needs no docker daemon."""
-    env = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersEnv
-    value_from = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersEnvValueFrom
-    quantity = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersResourcesRequests
-    limit = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersResourcesLimits
-    mount = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersVolumeMounts
-    return keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainers(
+    return InitContainer(
         name="register",
         image=_RUNNER_IMAGE,
         command=["forgejo-runner"],
@@ -386,44 +400,29 @@ def _register() -> keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainers:
             _CONFIG_PATH,
         ],
         env=[
-            env(
+            InitEnv(
                 name="RUNNER_TOKEN",
-                value_from=value_from(
-                    secret_key_ref=keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersEnvValueFromSecretKeyRef(
-                        name=_REGISTRATION_SECRET, key="token"
-                    )
-                ),
+                value_from=InitEnvFrom(secret_key_ref=InitSecretKeyRef(name=_REGISTRATION_SECRET, key="token")),
             ),
             # Every pod registers separately. A fixed name would race or overwrite registrations
             # when KEDA starts additional pods.
-            env(
-                name="RUNNER_NAME",
-                value_from=value_from(
-                    field_ref=keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersEnvValueFromFieldRef(
-                        field_path="metadata.name"
-                    )
-                ),
-            ),
+            InitEnv(name="RUNNER_NAME", value_from=InitEnvFrom(field_ref=InitFieldRef(field_path="metadata.name"))),
         ],
         volume_mounts=[
-            mount(name="config", mount_path=_CONFIG_DIR, read_only=True),
-            mount(name="runner-data", mount_path=_RUNNER_DATA),
+            InitMount(name="config", mount_path=_CONFIG_DIR, read_only=True),
+            InitMount(name="runner-data", mount_path=_RUNNER_DATA),
         ],
-        resources=keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersResources(
-            requests={"cpu": quantity.from_string("50m"), "memory": quantity.from_string("128Mi")},
-            limits={"cpu": limit.from_string("1"), "memory": limit.from_string("1Gi")},
+        resources=InitResources(
+            requests={"cpu": InitRequest.from_string("50m"), "memory": InitRequest.from_string("128Mi")},
+            limits={"cpu": InitLimit.from_string("1"), "memory": InitLimit.from_string("1Gi")},
         ),
     )
 
 
-def _runner() -> keda.ScaledJobSpecJobTargetRefTemplateSpecContainers:
+def _runner() -> Container:
     """The Forgejo Actions runner: waits for exactly one job, runs it in a docker-cli job container
     against the dind sidecar, and exits -- which completes the Job and ends the pod."""
-    env = keda.ScaledJobSpecJobTargetRefTemplateSpecContainersEnv
-    quantity = keda.ScaledJobSpecJobTargetRefTemplateSpecContainersResourcesRequests
-    limit = keda.ScaledJobSpecJobTargetRefTemplateSpecContainersResourcesLimits
-    mount = keda.ScaledJobSpecJobTargetRefTemplateSpecContainersVolumeMounts
-    return keda.ScaledJobSpecJobTargetRefTemplateSpecContainers(
+    return Container(
         name="runner",
         image=_RUNNER_IMAGE,
         command=["forgejo-runner"],
@@ -432,55 +431,39 @@ def _runner() -> keda.ScaledJobSpecJobTargetRefTemplateSpecContainers:
         # task isn't dispatchable in that instant, which would fail the Job on a pure startup
         # race. Bounded by activeDeadlineSeconds.
         args=["one-job", "--wait", "--config", _CONFIG_PATH],
+        # The runner fetches `uses:` actions (data.forgejo.org, etc.) through haku-egress-proxy.
         env=[
-            env(name="DOCKER_HOST", value=f"tcp://localhost:{_DOCKER_PORT}"),
-            # Route the runner's external egress (fetching `uses:` actions from data.forgejo.org,
-            # etc.) through haku-egress-proxy -- the sole external door (the force-proxy CCNP
-            # above). NO_PROXY keeps in-cluster Forgejo (git + registry, long-poll), public cluster
-            # Gateway names (*.allegedly.works), and the localhost dind socket direct. The public
-            # names still land on Cilium Gateway nodes and stay bounded by the cluster-only CNP;
-            # sending them through haku-egress-proxy creates a DNS-round-robin chance of proxy-pod
-            # -> own-node Gateway self-hairpin, which Cilium Gateway answers with Envoy "Access
-            # denied" for this policy-constrained identity. Include both wildcard and suffix forms
-            # because NO_PROXY matching differs by client.
-            env(name="HTTP_PROXY", value=_PROXY_URL),
-            env(name="HTTPS_PROXY", value=_PROXY_URL),
-            env(name="NO_PROXY", value=_NO_PROXY),
-            *(env(name=name, value=_CA_FILE) for name in _CA_ENV_VARS),
+            ContainerEnv(name=name, value=value)
+            for name, value in {"DOCKER_HOST": f"tcp://localhost:{_DOCKER_PORT}", **_PROXY_ENV, **_CA_ENV}.items()
         ],
         volume_mounts=[
-            mount(name="config", mount_path=_CONFIG_DIR, read_only=True),
-            mount(name="runner-data", mount_path=_RUNNER_DATA),
-            mount(name="egress-proxy-ca", mount_path=_CA_DIR, read_only=True),
+            ContainerMount(name="config", mount_path=_CONFIG_DIR, read_only=True),
+            ContainerMount(name="runner-data", mount_path=_RUNNER_DATA),
+            ContainerMount(name="egress-proxy-ca", mount_path=_CA_DIR, read_only=True),
         ],
-        resources=keda.ScaledJobSpecJobTargetRefTemplateSpecContainersResources(
-            requests={"cpu": quantity.from_string("50m"), "memory": quantity.from_string("128Mi")},
-            limits={"cpu": limit.from_string("1"), "memory": limit.from_string("1Gi")},
+        resources=ContainerResources(
+            requests={"cpu": ContainerRequest.from_string("50m"), "memory": ContainerRequest.from_string("128Mi")},
+            limits={"cpu": ContainerLimit.from_string("1"), "memory": ContainerLimit.from_string("1Gi")},
         ),
     )
 
 
-def _volumes(config: ConfigMap) -> list[keda.ScaledJobSpecJobTargetRefTemplateSpecVolumes]:
-    volume = keda.ScaledJobSpecJobTargetRefTemplateSpecVolumes
-    empty_dir = keda.ScaledJobSpecJobTargetRefTemplateSpecVolumesEmptyDir
+def _volumes(config: ConfigMap) -> list[Volume]:
     return [
-        volume(name="config", config_map=keda.ScaledJobSpecJobTargetRefTemplateSpecVolumesConfigMap(name=config.name)),
+        Volume(name="config", config_map=VolumeConfigMap(name=config.name)),
         # Holds the registration `register` writes for `one-job` (the config's `runner.file`).
-        volume(name="runner-data", empty_dir=empty_dir()),
-        volume(name="docker-data", empty_dir=empty_dir()),
+        Volume(name="runner-data", empty_dir=EmptyDir()),
+        Volume(name="docker-data", empty_dir=EmptyDir()),
         # Bazel cache (output base + --disk_cache + repo cache), bind-mounted into each job
         # container's ~/.cache. Under the old Deployment it also warmed SUCCESSIVE jobs on a
         # surviving pod; one job per pod means it now only spans the Bazel invocations WITHIN a
         # single CI job (bazel-ci's `Test` step then `Build`), which is still most of the win. See
         # README for the cost and the follow-up.
-        volume(name="bazel-cache", empty_dir=empty_dir()),
+        Volume(name="bazel-cache", empty_dir=EmptyDir()),
         # haku-egress-proxy CA trust bundle, written into this namespace by the trust-manager
         # Bundle (agents/haku-egress-proxy/trust-bundle.yaml). Mounted into both the runner and
         # dind so intercepted external TLS validates.
-        volume(
-            name="egress-proxy-ca",
-            config_map=keda.ScaledJobSpecJobTargetRefTemplateSpecVolumesConfigMap(name="haku-egress-proxy-ca-cert"),
-        ),
+        Volume(name="egress-proxy-ca", config_map=VolumeConfigMap(name="haku-egress-proxy-ca-cert")),
     ]
 
 
@@ -552,7 +535,7 @@ def _add_runner(chart: Chart) -> None:
                 # `one-job --wait` blocks until Forgejo hands it a task, so a pod created for a job
                 # that is cancelled before pickup would otherwise wait forever holding one of the
                 # four slots. The runner's job timeout plus slack for the wait and registration.
-                active_deadline_seconds=int((_JOB_TIMEOUT + timedelta(minutes=10)).total_seconds()),
+                active_deadline_seconds=_JOB_TIMEOUT_SECONDS + 600,
                 template=keda.ScaledJobSpecJobTargetRefTemplate(
                     metadata=keda.ScaledJobSpecJobTargetRefTemplateMetadata(labels=_LABELS),
                     spec=keda.ScaledJobSpecJobTargetRefTemplateSpec(
@@ -562,9 +545,7 @@ def _add_runner(chart: Chart) -> None:
                         # any more. Slightly above the runner's shutdown timeout so a drained node
                         # lets a build of up to that length finish instead of dropping it; at or
                         # below it, the kubelet SIGKILLs before that timeout can elapse.
-                        termination_grace_period_seconds=int(
-                            (_SHUTDOWN_TIMEOUT + timedelta(seconds=30)).total_seconds()
-                        ),
+                        termination_grace_period_seconds=_SHUTDOWN_TIMEOUT_SECONDS + 30,
                         # No node affinity: this privileged, agent-controlled build compute may land
                         # on any worker -- the HIL workers, the home OptiPlex, wyrm2, and the roaming
                         # laptops when they are reachable. Control-plane nodes keep their NoSchedule
@@ -623,7 +604,7 @@ def chart(app: App) -> Chart:
     # has no RBAC here, so a prompt-injected Haku cannot tamper with the runner pod or its
     # registry/git push creds. But the runner executes Haku-authored build steps (its workflow +
     # Dockerfile), so it IS agent-controlled compute and is egress-fenced like haku-sandbox. See
-    # cluster/k8s/haku-ci/README.md.
+    # README.md.
     k8s.KubeNamespace(
         chart,
         "namespace",
@@ -654,3 +635,17 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
+
+
+def haku_ci(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, keda_kustomization: Kustomization) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        artifact,
+        timeout="5m",
+        # The runner pod stays pending until its registration-token Secret is provisioned by
+        # tf/gitops/haku-state -- don't block on health.
+        wait=False,
+        # Supplies the ScaledJob and TriggerAuthentication CRDs.
+        depends_on=flux_kustomization_depends_on_many(keda_kustomization),
+    )

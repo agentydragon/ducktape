@@ -3,11 +3,8 @@ runner's default. Upstream reference: the runner's `internal/pkg/config/config.e
 
 from __future__ import annotations
 
-import shlex
-from datetime import timedelta
-
 import yaml
-from pydantic import BaseModel, field_serializer
+from pydantic import BaseModel, Field, field_serializer
 
 
 class Log(BaseModel):
@@ -17,25 +14,21 @@ class Log(BaseModel):
 class Runner(BaseModel):
     file: str
     capacity: int
-    timeout: timedelta
-    shutdown_timeout: timedelta
+    timeout: int = Field(description="Seconds.")
+    shutdown_timeout: int = Field(description="Seconds.")
     labels: list[str]
 
     @field_serializer("timeout", "shutdown_timeout")
-    def _go_duration(self, value: timedelta) -> str:
-        return f"{int(value.total_seconds())}s"
+    def _go_duration(self, seconds: int) -> str:
+        # The runner decodes these into Go `time.Duration`, which reads a bare YAML integer as
+        # nanoseconds.
+        return f"{seconds}s"
 
 
 class Container(BaseModel):
     docker_host: str
-    options: list[str]
+    options: str = Field(description="`docker run` flags, split by the runner with go-shellquote.")
     valid_volumes: list[str]
-
-    @field_serializer("options")
-    def _shell_joined(self, value: list[str]) -> str:
-        # The runner takes one string and splits it with go-shellquote (POSIX shell rules), which
-        # is what shlex.join quotes for.
-        return shlex.join(value)
 
 
 class Cache(BaseModel):

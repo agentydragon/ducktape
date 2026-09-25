@@ -623,8 +623,8 @@ spec:
       name: haku-workspaces-app
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/haku-ci/**"
-          to: "@artifact/cluster/k8s/haku-ci/"
+        - from: "@repo/cluster/generated/haku-ci/**"
+          to: "@artifact/cluster/generated/haku-ci/"
       name: haku-ci
       originRevision: "@repo"
     - copy:

@@ -3,30 +3,20 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "flux_kustomizations",
-    srcs = ["flux_kustomizations.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
-        "@pypi//cdk8s",
-    ],
-)
-
-py_library(
     name = "runner",
     srcs = ["runner.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":runner_config",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumclusterwidenetworkpolicy",
         "//cluster/cdk8s/crd_bindings/keda:scaledjob",
         "//cluster/cdk8s/crd_bindings/keda:triggerauthentication",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
