@@ -407,7 +407,6 @@ def _activitywatch_read(
 
 def _aiquota_read(scope: Construct, *, namespace: str) -> None:
     # The Secret arrives by aiquota's own bearer mirror (aiquota.py), not a store here.
-    selector = AGENTPLANE_STAGING_BEARER.secret_key_selector
     EgressCredential(
         scope,
         "egresscredential-aiquota-read",
@@ -420,7 +419,9 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
                 "`aiquota-read`'s rule presents it only on GETs under /v1/."
             ),
             source=EgressCredentialSpecSource(
-                secret_ref=EgressCredentialSpecSourceSecretRef(name=selector.name, key=selector.key)
+                secret_ref=EgressCredentialSpecSourceSecretRef(
+                    name=AGENTPLANE_STAGING_BEARER.secret_name, key=AGENTPLANE_STAGING_BEARER.secret_key_selector.key
+                )
             ),
             targets=[
                 EgressCredentialSpecTargets(
