@@ -460,7 +460,17 @@ class App(Construct):
         SandboxTemplate(
             self,
             "sandboxtemplate",
-            metadata=metadata("agentplane-runner", namespace),
+            metadata=metadata(
+                "agentplane-runner",
+                namespace,
+                # What the sandbox Actions tell an agent choosing among the templates they offer.
+                annotations={
+                    "description": (
+                        "The shared runner image, built to host an agent harness: the sandbox tools (git, "
+                        "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
+                    )
+                },
+            ),
             spec=SandboxTemplateSpec(
                 # The CiliumNetworkPolicy next to this construct is the runner's fence.
                 network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,

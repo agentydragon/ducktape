@@ -2005,6 +2005,8 @@ spec:
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
+  annotations:
+    description: "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
   name: agentplane-runner
   namespace: agentplane-staging
 spec:
@@ -2400,20 +2402,11 @@ data:
           kind: sandbox
           description: Stamped and exec'd by this service, as the caller, in its own namespace.
           namespace: agentplane-staging
-          environments:
-            sandbox:
-              template: agentplane-sandbox
-              container: sandbox
-              description: "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl (configured as the caller's ServiceAccount) and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
-            build:
-              template: agentplane-sandbox-build
-              container: sandbox
-              description: "The sandbox box sized for a build: the same tools, 2 cores and 4Gi, and a home directory that survives the container being killed for running out of memory, though not the box's Pod."
-            runner:
-              template: agentplane-runner
-              container: runner
-              description: "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
-          default_environment: sandbox
+          templates:
+            - agentplane-sandbox
+            - agentplane-sandbox-build
+            - agentplane-runner
+          default_template: agentplane-sandbox
       ssh:
         title: SSH
         description: SSH commands on configured targets; every Action remains subject to operator approval.
@@ -2994,6 +2987,8 @@ spec:
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
+  annotations:
+    description: "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl (configured as the caller's ServiceAccount) and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
   name: agentplane-sandbox
   namespace: agentplane-staging
 spec:
@@ -3138,6 +3133,8 @@ spec:
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
+  annotations:
+    description: "The sandbox box sized for a build: the same tools, 2 cores and 4Gi, and a home directory that survives the container being killed for running out of memory, though not the box's Pod."
   name: agentplane-sandbox-build
   namespace: agentplane-staging
 spec:

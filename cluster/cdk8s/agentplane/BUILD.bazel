@@ -565,3 +565,21 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_sandbox_templates",
+    # Synth imports the agentplane services' Settings, and with them their runtime modules.
+    size = "medium",
+    srcs = ["test_sandbox_templates.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/sandbox_actions:binding",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

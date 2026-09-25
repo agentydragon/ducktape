@@ -10,22 +10,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
-class SandboxEnvironment(BaseModel):
-    """One box shape a caller may ask for, by name.
-
-    The template is named here and never by the caller: a free-form template argument would let
-    whoever may call this Action stamp any template in the namespace, the integration app's runner
-    template included.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    template: str = Field(min_length=1, description="SandboxTemplate in the sandbox namespace.")
-    container: str = Field(min_length=1, description="Container in that template's Pod that commands run in.")
-    description: str = Field(
-        min_length=1, max_length=2000, description="What this box holds, for the agent picking it."
-    )
+# Where an offered SandboxTemplate says what a box made from it holds, for the agent choosing one:
+# the `description` annotation the cluster's manifests carry on any resource that needs explaining.
+DESCRIPTION_ANNOTATION = "description"
 
 
 class SandboxExecutorBinding(BaseModel):
@@ -41,15 +28,17 @@ class SandboxExecutorBinding(BaseModel):
     kind: Literal["sandbox"] = "sandbox"
     description: str = Field(min_length=1, max_length=2000, description="Agent-visible executor description.")
     namespace: str = Field(min_length=1, description="Namespace Sandboxes are stamped into and exec'd in.")
-    environments: dict[str, SandboxEnvironment] = Field(
-        min_length=1, description="The box shapes this deployment offers, keyed by the name a caller may ask for."
+    templates: set[str] = Field(
+        min_length=1,
+        description="The SandboxTemplates in the namespace a caller may create a box from, by name. Only "
+        "these: a caller free to name any would stamp whatever template the namespace holds.",
     )
-    default_environment: str = Field(min_length=1, description="Which of them a caller that names none gets.")
+    default_template: str = Field(min_length=1, description="Which of them a caller that names none gets.")
     max_timeout_seconds: int = Field(default=1800, gt=0, le=3600)
     max_output_bytes: int = Field(default=200_000, ge=0, le=1_000_000)
 
     @model_validator(mode="after")
-    def _default_exists(self) -> SandboxExecutorBinding:
-        if self.default_environment not in self.environments:
-            raise ValueError("default_environment must name one of environments")
+    def _default_offered(self) -> SandboxExecutorBinding:
+        if self.default_template not in self.templates:
+            raise ValueError("default_template must name one of templates")
         return self
