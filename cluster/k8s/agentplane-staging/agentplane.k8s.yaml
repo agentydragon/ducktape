@@ -4053,9 +4053,9 @@ spec:
           - create
           - dispose
           - exec
+          - get_template
           - info
           - list
-          - template
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet

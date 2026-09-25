@@ -229,7 +229,7 @@ async def test_an_offered_template_is_shown_whole_but_for_its_field_ownership_re
     inventory = _inventory(
         _sandbox(ready=True, pod_annotation=None), FakeCoreV1(), FakeExecRunner(), {"test-template": served}
     )
-    assert await inventory.template("test-template") == {"metadata": {"name": "test-template"}, "spec": spec}
+    assert await inventory.get_template("test-template") == {"metadata": {"name": "test-template"}, "spec": spec}
 
 
 async def test_a_template_in_the_namespace_that_is_not_offered_is_not_shown() -> None:
@@ -242,7 +242,7 @@ async def test_a_template_in_the_namespace_that_is_not_offered_is_not_shown() ->
         {"another-template": {"metadata": {}}},
     )
     with pytest.raises(SandboxActionError, match="unknown template 'another-template'; this deployment offers"):
-        await inventory.template("another-template")
+        await inventory.get_template("another-template")
 
 
 async def test_an_offered_template_describes_itself_in_its_annotation() -> None:

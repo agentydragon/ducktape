@@ -51,7 +51,7 @@ class SandboxAction(StrEnum):
     these by value, which a module-level constant would silently capture into instead."""
 
     CREATE = "create"
-    TEMPLATE = "template"
+    GET_TEMPLATE = "get_template"
     EXEC = "exec"
     LIST = "list"
     INFO = "info"
@@ -77,11 +77,11 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
                 "the object exists, before the box can run anything, so poll "
                 f'{SandboxAction.INFO} until its {READY_CONDITION!r} condition has status "True". '
                 f"Idempotent on the name, so polling with {SandboxAction.CREATE} would also work but "
-                f"tells you nothing more. Templates: {offered}."
+                f"tells you nothing more. Templates: {offered}. {SandboxAction.GET_TEMPLATE} shows one whole."
             ),
             input_schema=_schema(CreateArgs),
         ),
-        SandboxAction.TEMPLATE: ActionDefinition(
+        SandboxAction.GET_TEMPLATE: ActionDefinition(
             description=(
                 f"One template that {SandboxAction.CREATE} offers, whole, as the API server holds it: the "
                 "Pod each box made from it gets, with its images, resources, working directory, "
@@ -170,9 +170,9 @@ class SandboxExecutor(Executor):
                 args = CreateArgs.model_validate(arguments)
                 info = await self._inventory.create(caller, args.name, args.template)
                 return _succeeded(info)
-            case SandboxAction.TEMPLATE:
+            case SandboxAction.GET_TEMPLATE:
                 template_args = TemplateArgs.model_validate(arguments)
-                template = await self._inventory.template(template_args.template)
+                template = await self._inventory.get_template(template_args.template)
                 return ExecutionResult(state=ExecutionState.SUCCEEDED, result=cast(JsonValue, template))
             case SandboxAction.EXEC:
                 exec_args = ExecArgs.model_validate(arguments)

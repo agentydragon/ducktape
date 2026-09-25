@@ -68,7 +68,7 @@ class FakeInventory:
         self._record(caller)
         return SandboxInfo(name=name, conditions=[_ready()], template=template)
 
-    async def template(self, name: str) -> dict[str, JsonValue]:
+    async def get_template(self, name: str) -> dict[str, JsonValue]:
         return {"metadata": {"name": name}, "spec": TEMPLATE_SPEC}
 
     async def info(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
@@ -249,7 +249,7 @@ async def test_an_unexpected_failure_is_not_swallowed(executor: SandboxExecutor,
 
 async def test_a_template_comes_back_as_the_object_itself(executor: SandboxExecutor) -> None:
     """Not a summary wrapped around it: the agent reads the Kubernetes object it already knows."""
-    result = await executor.execute(_request(SandboxAction.TEMPLATE, {"template": TEMPLATE}), LEASE)
+    result = await executor.execute(_request(SandboxAction.GET_TEMPLATE, {"template": TEMPLATE}), LEASE)
     assert result.state is ExecutionState.SUCCEEDED
     assert result.result == {"metadata": {"name": TEMPLATE}, "spec": TEMPLATE_SPEC}
 
