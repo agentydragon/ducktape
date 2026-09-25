@@ -4032,6 +4032,8 @@ spec:
     - grocy-sf-readonly
     - home-assistant-readonly
     - activitywatch-read
+    - aiquota-read
+    - haku-mailbox
     - coinbase
     - agentplane-testing
     - github-downloads
@@ -4750,3 +4752,147 @@ spec:
         - /api/0/query/
       credentialRef:
         name: activitywatch-read
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: aiquota-read
+  namespace: agentplane-staging
+spec:
+  description: aiquota's shared API bearer (aiquota.py), mirrored into this namespace by reflector. The API behind it serves only reads -- the Claude and Codex subscription quotas and each provider's raw usage response -- and `aiquota-read`'s rule presents it only on GETs under /v1/.
+  source:
+    secretRef:
+      name: aiquota-api-bearer-agentplane-staging
+      key: bearer-token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: aiquota-read
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - aiquota.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /v1/**
+      credentialRef:
+        name: aiquota-read
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-haku-mail-reader
+  namespace: flux-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-mail-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-haku-mail-reader
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-haku-mail-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-haku-mail-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: flux-system
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-mail-token
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: haku-mail-token
+        property: jwt
+      secretKey: jwt
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-haku-mail-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: haku-mail-token
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: haku-mailbox
+  namespace: agentplane-staging
+spec:
+  description: The Authentik JWT of Haku's mailbox account (haku@allegedly.works on the Stalwart server, cluster/k8s/haku/mailbox), rotated by authentik-jwt-rotation and copied into this namespace by ESO. It reads and changes the contents of that one mailbox over JMAP; it cannot send mail or administer the server (haku/docs/security.md).
+  source:
+    secretRef:
+      name: haku-mail-token
+      key: jwt
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: haku-mailbox
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - haku-mailbox.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /.well-known/jmap
+        - /jmap/**
+      credentialRef:
+        name: haku-mailbox
+    - hosts:
+        - haku-mailbox.allegedly.works
+      methods:
+        - POST
+      paths:
+        - /jmap/**
+      credentialRef:
+        name: haku-mailbox
