@@ -115,11 +115,9 @@ def egress_mounts() -> list[SandboxTemplateSpecPodTemplateSpecContainersVolumeMo
 def add_tool_config(scope: Construct, env: Environment) -> None:
     """Bazel's system rc, which every Bazel in a box reads before its workspace's own. Bazel's JVM
     fetches through the proxy but trusts only its own store, which lacks the interception root; and
-    Bazel scrubs a test's environment, so the proxy and the bundle reach a test only when named
+    Bazel scrubs a test's environment, so the box's egress environment reaches a test only when named
     here."""
-    passthrough = " ".join(
-        f"--test_env={name}" for name in (*PROXY_VAR_NAMES, *NO_PROXY_VAR_NAMES, *CA_BUNDLE_VAR_NAMES)
-    )
+    passthrough = " ".join(f"--test_env={var.name}" for var in egress_env())
     ConfigMap(
         scope,
         "sandbox-tool-config",
