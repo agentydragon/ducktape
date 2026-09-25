@@ -1,8 +1,8 @@
 # agentplane's sandbox image: the command-line tools of a box that runs commands, as one list,
 # on the nix-ld substrate FHS binaries need (<../../nix/lib/nix-ld-image.nix>). Its user is uid
 # 1000 `runner`, home /home/runner. The runner image (<../runner/image.nix>) is this definition
-# plus the runner and both harnesses, so a tool added here reaches both unless `hostsHarness`
-# leaves it out.
+# plus the runner and both harnesses, and the build image (<build.nix>) this definition plus bazel,
+# so a tool added here reaches all three.
 #
 # The egress proxy's CA comes from the pod, not from this image: nothing here sets
 # SSL_CERT_FILE, for the reason the Haku image records beside its own `Env`
@@ -13,10 +13,6 @@
 {
   pkgs,
   name ? "agentplane-sandbox",
-  # Whether the image's container runs an agent's harness, as the runner image's does. Crossing a
-  # container's memory limit kills every process in it, so Bazel, which readily exhausts memory, is
-  # left out of such an image: its build would take the harness down with it.
-  hostsHarness,
   # What an image built on this one adds: packages linked into /bin beside the tools, and image
   # config such as an entrypoint.
   extraPaths ? [ ],
@@ -24,13 +20,6 @@
 }:
 let
   substrate = import ../../nix/lib/nix-ld-image.nix { inherit pkgs; };
-
-  # `bazel` as bazelisk, which runs the upstream release a workspace's `.bazelversion` names: an FHS
-  # binary, which the substrate lets run.
-  bazel = pkgs.runCommand "bazel-bazelisk" { } ''
-    mkdir -p $out/bin
-    ln -s ${pkgs.bazelisk}/bin/bazelisk $out/bin/bazel
-  '';
 
   sandboxEnv = pkgs.buildEnv {
     name = "${name}-env";
@@ -73,7 +62,6 @@ let
       # `python3 -m venv`, whose ensurepip brings its own pip.
       pkgs.python3
     ]
-    ++ pkgs.lib.optional (!hostsHarness) bazel
     ++ extraPaths;
     pathsToLink = [
       "/bin"

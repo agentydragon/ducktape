@@ -41,7 +41,6 @@ in
 import ../sandbox_image {
   inherit pkgs;
   name = "agentplane-runner";
-  hostsHarness = true;
   extraPaths = [
     runner
     pkgsUnstable.claude-code

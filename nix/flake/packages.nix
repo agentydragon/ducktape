@@ -95,10 +95,11 @@ ducktapePkgs
   # (agentplane/sandbox_image/default.nix).
   # Build: nix build .#agentplane-sandbox-image
   # Load:  docker load < result
-  agentplane-sandbox-image = import ../../agentplane/sandbox_image {
-    inherit pkgs;
-    hostsHarness = false;
-  };
+  agentplane-sandbox-image = import ../../agentplane/sandbox_image { inherit pkgs; };
+  # The build box's image: the sandbox image plus bazel (agentplane/sandbox_image/build.nix).
+  # Build: nix build .#agentplane-sandbox-build-image
+  # Load:  docker load < result
+  agentplane-sandbox-build-image = import ../../agentplane/sandbox_image/build.nix { inherit pkgs; };
   # agentplane's runner image: the sandbox image plus the released runner wheel and nixpkgs'
   # Claude Code and Codex (agentplane/runner/image.nix).
   # Build: nix build .#agentplane-runner-image
