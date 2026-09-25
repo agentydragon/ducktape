@@ -450,6 +450,7 @@ def _network_policy(scope: Construct) -> None:
         egress_deny=[
             CiliumNetworkPolicySpecEgressDeny(
                 to_cidr=[
+                    # keep-sorted start
                     "0.0.0.0/8",
                     "10.0.0.0/8",
                     "100.64.0.0/10",
@@ -461,6 +462,7 @@ def _network_policy(scope: Construct) -> None:
                     "::1/128",
                     "fc00::/7",
                     "fe80::/10",
+                    # keep-sorted end
                 ],
                 to_ports=[
                     CiliumNetworkPolicySpecEgressDenyToPorts(

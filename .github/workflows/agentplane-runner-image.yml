@@ -20,15 +20,17 @@ on:
   # Build-only on PRs, so a change to the image is proven to build before it merges.
   pull_request:
     paths:
-      - "agentplane/runner/image.nix"
-      - "agentplane/images/sandbox.nix"
-      - "nix/lib/nix-ld-image.nix"
-      - "nix/artifact-pins.json"
-      - "flake.lock"
-      - "nix/flake/packages.nix"
+      # keep-sorted start
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-image.yml"
       - ".github/workflows/nix-image.yml"
+      - "agentplane/images/sandbox.nix"
+      - "agentplane/runner/image.nix"
+      - "flake.lock"
+      - "nix/artifact-pins.json"
+      - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
+      # keep-sorted end
   workflow_dispatch:
 
 concurrency:

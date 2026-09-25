@@ -8,6 +8,7 @@ import "./markdown.css";
 // transcript needs, with no attributes that can navigate or script.
 const marked = new Marked({ gfm: true, breaks: true });
 const ALLOWED_TAGS = [
+  // keep-sorted start
   "a",
   "blockquote",
   "br",
@@ -33,6 +34,7 @@ const ALLOWED_TAGS = [
   "thead",
   "tr",
   "ul",
+  // keep-sorted end
 ];
 
 /**

@@ -1344,24 +1344,24 @@ metadata:
 spec:
   rules:
     - hosts:
-        - pypi.org
-        - files.pythonhosted.org
-        - registry.npmjs.org
-        - nodejs.org
-        - index.crates.io
-        - static.crates.io
-        - static.rust-lang.org
-        - releases.bazel.build
         - bcr.bazel.build
         - cache.nixos.org
-        - nixos.org
         - channels.nixos.org
-        - ftp.gnu.org
-        - snapshot.debian.org
         - code.forgejo.org
         - data.forgejo.org
+        - files.pythonhosted.org
+        - ftp.gnu.org
         - ghcr.io
+        - index.crates.io
+        - nixos.org
+        - nodejs.org
         - pkg-containers.githubusercontent.com
+        - pypi.org
+        - registry.npmjs.org
+        - releases.bazel.build
+        - snapshot.debian.org
+        - static.crates.io
+        - static.rust-lang.org
       methods:
         - GET
         - HEAD
@@ -3691,36 +3691,36 @@ spec:
     - type: exact_actions
       actions:
         github:
-          - get_me
-          - get_team_members
-          - get_teams
-          - ui_get
           - find_duplicate
-          - get_label
-          - issue_dependency_read
-          - issue_read
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - search_issues
-          - list_pull_requests
-          - pull_request_read
-          - search_pull_requests
           - get_commit
           - get_file_blame
           - get_file_contents
+          - get_label
           - get_latest_release
+          - get_me
           - get_release_by_tag
           - get_tag
+          - get_team_members
+          - get_teams
+          - issue_dependency_read
+          - issue_read
           - list_branches
           - list_commits
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - list_pull_requests
           - list_releases
           - list_repository_collaborators
           - list_tags
+          - pull_request_read
           - search_code
           - search_commits
+          - search_issues
+          - search_pull_requests
           - search_repositories
           - search_users
+          - ui_get
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
@@ -3771,9 +3771,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
       owner: agentydragon-agent
       repository: ducktape
 ---
@@ -3812,9 +3812,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
       owner: agentydragon
       repository: ducktape
 ---
@@ -3853,9 +3853,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
       owner: agentydragon
       repository: gaffer-private
 ---
@@ -3894,9 +3894,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -4396,12 +4396,12 @@ metadata:
 spec:
   rules:
     - hosts:
-        - gmail.googleapis.com
-        - tasks.googleapis.com
-        - people.googleapis.com
         - docs.googleapis.com
+        - gmail.googleapis.com
+        - people.googleapis.com
         - sheets.googleapis.com
         - slides.googleapis.com
+        - tasks.googleapis.com
         - youtube.googleapis.com
       methods:
         - GET
@@ -4524,13 +4524,13 @@ spec:
       methods:
         - GET
       paths:
+        - /api/files/**
         - /api/objects/**
         - /api/stock
         - /api/stock/**
-        - /api/user
-        - /api/system/info
         - /api/system/db-changed-time
-        - /api/files/**
+        - /api/system/info
+        - /api/user
       credentialRef:
         name: grocy-sf-readonly
 ---

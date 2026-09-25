@@ -273,27 +273,29 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 # (actions_staging_policies.py).
                 EgressPolicySpecRules(
                     hosts=[
-                        "pypi.org",
-                        "files.pythonhosted.org",
-                        "registry.npmjs.org",
-                        "nodejs.org",
-                        "index.crates.io",
-                        "static.crates.io",
-                        "static.rust-lang.org",
-                        "releases.bazel.build",
+                        # keep-sorted start
                         "bcr.bazel.build",
                         "cache.nixos.org",
-                        "nixos.org",
                         "channels.nixos.org",
-                        "ftp.gnu.org",
-                        "snapshot.debian.org",
                         "code.forgejo.org",
                         "data.forgejo.org",
+                        "files.pythonhosted.org",
+                        "ftp.gnu.org",
                         "ghcr.io",
+                        "index.crates.io",
+                        "nixos.org",
+                        "nodejs.org",
                         # ghcr.io redirects blob reads here, so a pull fails without it. A
                         # githubusercontent host in this policy rather than the GitHub one because
                         # it carries container layers, not repository content, and needs no token.
                         "pkg-containers.githubusercontent.com",
+                        "pypi.org",
+                        "registry.npmjs.org",
+                        "releases.bazel.build",
+                        "snapshot.debian.org",
+                        "static.crates.io",
+                        "static.rust-lang.org",
+                        # keep-sorted end
                     ],
                     methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.HEAD],
                 )

@@ -94,41 +94,44 @@ def _binding(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: Ac
 # manual until reviewed here. `ui_get` reads an MCP App UI resource, not GitHub
 # repository state.
 _GITHUB_READS_ACTIONS = [
-    "get_me",
-    "get_team_members",
-    "get_teams",
-    "ui_get",
+    # keep-sorted start
     "find_duplicate",
-    "get_label",
-    "issue_dependency_read",
-    "issue_read",
-    "list_issue_fields",
-    "list_issue_types",
-    "list_issues",
-    "search_issues",
-    "list_pull_requests",
-    "pull_request_read",
-    "search_pull_requests",
     "get_commit",
     "get_file_blame",
     "get_file_contents",
+    "get_label",
     "get_latest_release",
+    "get_me",
     "get_release_by_tag",
     "get_tag",
+    "get_team_members",
+    "get_teams",
+    "issue_dependency_read",
+    "issue_read",
     "list_branches",
     "list_commits",
+    "list_issue_fields",
+    "list_issue_types",
+    "list_issues",
+    "list_pull_requests",
     "list_releases",
     "list_repository_collaborators",
     "list_tags",
+    "pull_request_read",
     "search_code",
     "search_commits",
+    "search_issues",
+    "search_pull_requests",
     "search_repositories",
     "search_users",
+    "ui_get",
+    # keep-sorted end
 ]
 
 # The tool list every repository-scoped read set shares -- only the trusted owner/repo
 # (or, for public-github-reads, a live visibility check) differs.
 _REPOSITORY_SCOPED_ACTIONS = [
+    # keep-sorted start
     "actions_get",
     "actions_list",
     "find_duplicate",
@@ -152,9 +155,10 @@ _REPOSITORY_SCOPED_ACTIONS = [
     "list_repository_collaborators",
     "list_tags",
     "pull_request_read",
+    "search_code",
     "search_issues",
     "search_pull_requests",
-    "search_code",
+    # keep-sorted end
 ]
 
 
@@ -168,6 +172,7 @@ _REPOSITORY_SCOPED_ACTIONS = [
 # support/issue-tracker report, not a Home Assistant state read. New upstream tools stay
 # manual until reviewed here, same convention as the GitHub reads set above.
 _HOME_ASSISTANT_READS_ACTIONS = [
+    # keep-sorted start
     "ha_config_get_automation",
     "ha_config_get_calendar_events",
     "ha_config_get_category",
@@ -198,12 +203,14 @@ _HOME_ASSISTANT_READS_ACTIONS = [
     "ha_list_floors_areas",
     "ha_list_services",
     "ha_search",
+    # keep-sorted end
 ]
 
 # Gmail's generated read-only surface (haku/console/tools/gmail.py's _GMAIL_READ_TOOLS); writes
 # (drafts_create/update/delete, threads_modify_labels, labels_create/patch/delete,
 # filters_create/delete) stay on the human path.
 _GMAIL_READS_ACTIONS = [
+    # keep-sorted start
     "drafts_get",
     "drafts_list",
     "filters_get",
@@ -213,6 +220,7 @@ _GMAIL_READS_ACTIONS = [
     "messages_get",
     "threads_get",
     "threads_list",
+    # keep-sorted end
 ]
 
 # Google Calendar's read-only surface (haku/console/tools/google_calendar.py); create_event
@@ -223,6 +231,7 @@ _GOOGLE_CALENDAR_READS_ACTIONS = ["get_event", "list_event_instances", "list_eve
 # date's calendar node when it is missing. Reviewed exclusion: `open_node` navigates the
 # operator's Tana desktop app. New upstream tools stay manual until reviewed here.
 _TANA_READS_ACTIONS = [
+    # keep-sorted start
     "get_children",
     "get_or_create_calendar_node",
     "get_tag_schema",
@@ -230,12 +239,14 @@ _TANA_READS_ACTIONS = [
     "list_workspaces",
     "read_node",
     "search_nodes",
+    # keep-sorted end
 ]
 
 # Grocy SF's read-only surface, as haku-console's `grocy_reads` policy auto-approved it.
 # Reviewed exclusion: `open_product_stock` marks a product opened. New upstream tools stay manual
 # until reviewed here.
 _GROCY_SF_READS_ACTIONS = [
+    # keep-sorted start
     "entities_get",
     "entities_list",
     "file_get",
@@ -255,6 +266,7 @@ _GROCY_SF_READS_ACTIONS = [
     "shopping_lists_list",
     "stock_entries_list",
     "stock_get",
+    # keep-sorted end
 ]
 
 

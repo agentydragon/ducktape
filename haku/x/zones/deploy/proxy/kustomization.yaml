@@ -1,10 +1,12 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - certificate.yaml
-  - trust-bundle.yaml
-  - deployment.yaml
-  - service.yaml
-  - networkpolicy.yaml
-  - cnp-zones-egress.yaml
+  # keep-sorted start
   - ccnp-zones-force-proxy-egress.yaml
+  - certificate.yaml
+  - cnp-zones-egress.yaml
+  - deployment.yaml
+  - networkpolicy.yaml
+  - service.yaml
+  - trust-bundle.yaml
+  # keep-sorted end

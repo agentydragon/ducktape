@@ -164,13 +164,15 @@ def _google_readonly(scope: Construct, *, namespace: str) -> None:
                 # One API per host, so read-only methods are the only restriction needed.
                 EgressPolicySpecRules(
                     hosts=[
-                        "gmail.googleapis.com",
-                        "tasks.googleapis.com",
-                        "people.googleapis.com",
+                        # keep-sorted start
                         "docs.googleapis.com",
+                        "gmail.googleapis.com",
+                        "people.googleapis.com",
                         "sheets.googleapis.com",
                         "slides.googleapis.com",
+                        "tasks.googleapis.com",
                         "youtube.googleapis.com",
+                        # keep-sorted end
                     ],
                     methods=[EgressPolicySpecRulesMethods.GET],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
@@ -253,14 +255,16 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
                     hosts=["grocy-sf.allegedly.works"],
                     methods=[EgressPolicySpecRulesMethods.GET],
                     paths=[
+                        # keep-sorted start
+                        "/api/files/**",
                         "/api/objects/**",
                         # `/api/stock/**` does not match `/api/stock` itself.
                         "/api/stock",
                         "/api/stock/**",
-                        "/api/user",
-                        "/api/system/info",
                         "/api/system/db-changed-time",
-                        "/api/files/**",
+                        "/api/system/info",
+                        "/api/user",
+                        # keep-sorted end
                     ],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="grocy-sf-readonly"),
                 )
