@@ -1636,6 +1636,32 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: Cross-repo bridge. Reconciles gaffer-private/k8s/ from the gaffer-private GitRepository -- entry point for every private app's flux-kustomization.yaml.
+  name: gaffer-private
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: gaffer-private-source
+      namespace: flux-system
+    - name: authentik
+      namespace: ducktape-flux
+    - name: gateway
+      namespace: ducktape-flux
+    - name: cert-manager-issuer-config
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./k8s
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: gaffer-private
+  timeout: 5m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: dns-automation
   namespace: ducktape-flux
 spec:
