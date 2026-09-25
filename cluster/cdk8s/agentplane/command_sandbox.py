@@ -1,8 +1,9 @@
-"""The sandbox Actions' own boxes: the plain sandbox image (agentplane/images/sandbox.nix) behind
-the egress path every agentplane box shares (sandbox_pod.py), with no harness and no state volume.
-The command box costs the namespace quota what a command needs; the build box is the same box sized
-for a build. staging.py offers both to the sandbox Actions, the command box as the default, and each
-template's `description` annotation is what those Actions tell an agent choosing one.
+"""The sandbox Actions' own boxes, behind the egress path every agentplane box shares (sandbox_pod.py),
+with no harness and no state volume. The command box runs the plain sandbox image
+(agentplane/images/sandbox.nix) and costs the namespace quota what a command needs; the build box is
+the same box sized for a build, on the build image (agentplane/images/build.nix), which adds Bazel
+and its toolchain. staging.py offers both to the sandbox Actions, the command box as the default, and
+each template's `description` annotation is what those Actions tell an agent choosing one.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ CONTAINER = "sandbox"
 # The image's HOME and WorkingDir, writable by its uid 1000 (agentplane/images/sandbox.nix).
 HOME = "/home/runner"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox"
+_BUILD_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-build"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _LABELS = {"app.kubernetes.io/name": NAME}
 _COMMAND_RESOURCES = SandboxTemplateSpecPodTemplateSpecContainersResources(
@@ -88,7 +90,7 @@ class CommandSandbox(Construct):
                 "(configured as the caller's ServiceAccount) and python3 (install packages into a "
                 "`python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
             ),
-            workload=_workload(_COMMAND_RESOURCES),
+            workload=_workload(_IMAGE, _COMMAND_RESOURCES),
             volumes=[],
         )
         _template(
@@ -97,10 +99,12 @@ class CommandSandbox(Construct):
             env,
             name=BUILD_NAME,
             description=(
-                "The sandbox box sized for a build: the same tools, 2 cores and 4Gi, and a home directory "
+                "The sandbox box sized for a build: the same tools plus bazel (bazelisk, which runs the "
+                "version a workspace's `.bazelversion` names) and gcc, 2 cores and 4Gi, and a home directory "
                 "that survives the container being killed for running out of memory, though not the box's Pod."
             ),
             workload=_workload(
+                _BUILD_IMAGE,
                 _BUILD_RESOURCES,
                 SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(name=_BUILD_HOME.name, mount_path=HOME),
             ),
@@ -147,12 +151,13 @@ def _template(
 
 
 def _workload(
+    image: str,
     resources: SandboxTemplateSpecPodTemplateSpecContainersResources,
     *mounts: SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts,
 ) -> SandboxTemplateSpecPodTemplateSpecContainers:
     return SandboxTemplateSpecPodTemplateSpecContainers(
         name=CONTAINER,
-        image=f"{_IMAGE}:{_PLACEHOLDER_TAG}",
+        image=f"{image}:{_PLACEHOLDER_TAG}",
         # The image has no entrypoint of its own: the box idles until something is exec'd into it.
         # PID 1 ignores a signal it installs no handler for, so a bare `sleep` would hold every
         # dispose, and the quota the box holds, for the whole termination grace period.
