@@ -233,8 +233,8 @@
       "sha256": "cn+qSGProGTl4iCf1jT2WrBVvUfDwzruaW+AZfWu/d8="
     },
     "skill-cdk8s_builders": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-0c8fba6bef55/cdk8s_builders.skill",
-      "sha256": "DI+6a+9VeiF/oOjWrvI80uVT9D0hq037PRToDdAMfiA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-d751ec8f04f3/cdk8s_builders.skill",
+      "sha256": "11HsjwTztp20H3Fb2SwzQ5Yt2p8NN+w6I9HF/xqpZLk="
     }
   }
 }
