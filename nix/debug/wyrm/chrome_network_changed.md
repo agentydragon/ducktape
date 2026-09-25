@@ -45,18 +45,21 @@ exposed via `chrome://flags` or command-line switches.
 
 All NixOS k8s workers set `net.ipv6.conf.default.addr_gen_mode = 1` in
 <../../nixos/modules/k8s-worker.nix>, so pod veths get no link-local;
-NetworkManager-managed NICs set their own mode. Unverified until deployed: re-run the
-pause-pod test from [#7921](https://github.com/agentydragon/ducktape/issues/7921) and
-expect no `inet6` events.
+NetworkManager-managed NICs set their own mode. On wyrm2 since 2026-09-25: the pause-pod
+test from [#7921](https://github.com/agentydragon/ducktape/issues/7921) shows no `inet6`
+events, and the Chrome symptoms have not been seen since.
 
 ### Why not isolate containerd instead?
 
 Containerd doesn't create veths — the CNI plugin (Cilium) does, in the host namespace.
 Moving containerd wouldn't help; moving Cilium would break all pod routing.
 
-## TODOs
+## Status: watching
 
-- [ ] Verify the `addr_gen_mode` sysctl on each worker after deploy (#7921)
+Watch over time whether the churn-driven resets stay gone. If `ERR_NETWORK_CHANGED`
+comes back, capture what fired it before changing anything: `ip -ts monitor address`
+on the host during a burst (which interface still gains or loses an address), and a
+`chrome://net-export` log around it. Delete this note if it is still quiet on 2026-10-25.
 
 ## Related
 
