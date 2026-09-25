@@ -835,6 +835,9 @@ spec:
         key: tls.crt
         name: agentplane-testing-egress-ca
   target:
+    additionalFormats:
+      pkcs12:
+        key: ca-certificates.p12
     configMap:
       key: ca-certificates.crt
       metadata:
@@ -1346,6 +1349,17 @@ spec:
         - POST
       credentialRef:
         name: github-pat
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-sandbox-tool-config
+  namespace: agentplane-testing
+data:
+  bazel.bazelrc: |
+    startup --host_jvm_args=-Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
+    common --test_env=HTTP_PROXY --test_env=HTTPS_PROXY --test_env=http_proxy --test_env=https_proxy --test_env=NO_PROXY --test_env=no_proxy --test_env=SSL_CERT_FILE --test_env=NODE_EXTRA_CA_CERTS --test_env=CURL_CA_BUNDLE --test_env=GIT_SSL_CAINFO --test_env=REQUESTS_CA_BUNDLE
+immutable: false
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -2019,6 +2033,14 @@ spec:
               name: egress-ca
               readOnly: true
               subPath: ca-certificates.crt
+            - mountPath: /etc/ssl/certs/java/cacerts
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.p12
+            - mountPath: /etc/bazel.bazelrc
+              name: tool-config
+              readOnly: true
+              subPath: bazel.bazelrc
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
               value: agentplane-egress.agentplane-testing.svc.cluster.local
@@ -2073,6 +2095,9 @@ spec:
         - configMap:
             name: agentplane-testing-egress-ca
           name: egress-ca
+        - configMap:
+            name: agentplane-sandbox-tool-config
+          name: tool-config
         - name: egress-token
           projected:
             sources:
