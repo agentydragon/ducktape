@@ -1,7 +1,8 @@
-"""The sandbox Actions' own boxes: the plain sandbox image (agentplane/images/sandbox.nix) behind
-the egress path every agentplane box shares (sandbox_pod.py), with no harness and no state volume.
-The command box costs the namespace quota what a command needs; the build box is the same box sized
-for a build. staging.py offers them as the sandbox group's `sandbox` (default) and `build`
+"""The sandbox Actions' own boxes, behind the egress path every agentplane box shares (sandbox_pod.py),
+with no harness and no state volume. The command box runs the plain sandbox image
+(agentplane/images/sandbox.nix) and costs the namespace quota what a command needs; the build box is
+the same box sized for a build, on the build image (agentplane/images/build.nix), which adds Bazel
+and its toolchain. staging.py offers them as the sandbox group's `sandbox` (default) and `build`
 environments.
 """
 
@@ -39,6 +40,7 @@ CONTAINER = "sandbox"
 # The image's HOME and WorkingDir, writable by its uid 1000 (agentplane/images/sandbox.nix).
 HOME = "/home/runner"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox"
+_BUILD_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-build"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _LABELS = {"app.kubernetes.io/name": NAME}
 _COMMAND_RESOURCES = SandboxTemplateSpecPodTemplateSpecContainersResources(
@@ -78,13 +80,14 @@ class CommandSandbox(Construct):
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
-        _template(self, "sandboxtemplate", env, name=NAME, workload=_workload(_COMMAND_RESOURCES), volumes=[])
+        _template(self, "sandboxtemplate", env, name=NAME, workload=_workload(_IMAGE, _COMMAND_RESOURCES), volumes=[])
         _template(
             self,
             "build-sandboxtemplate",
             env,
             name=BUILD_NAME,
             workload=_workload(
+                _BUILD_IMAGE,
                 _BUILD_RESOURCES,
                 SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(name=_BUILD_HOME.name, mount_path=HOME),
             ),
@@ -130,12 +133,13 @@ def _template(
 
 
 def _workload(
+    image: str,
     resources: SandboxTemplateSpecPodTemplateSpecContainersResources,
     *mounts: SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts,
 ) -> SandboxTemplateSpecPodTemplateSpecContainers:
     return SandboxTemplateSpecPodTemplateSpecContainers(
         name=CONTAINER,
-        image=f"{_IMAGE}:{_PLACEHOLDER_TAG}",
+        image=f"{image}:{_PLACEHOLDER_TAG}",
         # The image has no entrypoint of its own: the box idles until something is exec'd into it.
         # PID 1 ignores a signal it installs no handler for, so a bare `sleep` would hold every
         # dispose, and the quota the box holds, for the whole termination grace period.

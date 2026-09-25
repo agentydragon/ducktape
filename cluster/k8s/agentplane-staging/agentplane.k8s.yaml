@@ -2409,7 +2409,7 @@ data:
               template: agentplane-sandbox-build
               container: sandbox
               default_cwd: /home/runner
-              description: "The sandbox box sized for a build: the same tools, 2 cores and 4Gi, and a home directory that survives the container being killed for running out of memory, though not the box's Pod."
+              description: "The sandbox box sized for a build: the same tools plus bazel (bazelisk, which runs the version a workspace's `.bazelversion` names) and gcc, 2 cores and 4Gi, and a home directory that survives the container being killed for running out of memory, though not the box's Pod."
             runner:
               template: agentplane-runner
               container: runner
@@ -3180,7 +3180,7 @@ spec:
               value: /etc/ssl/certs/ca-certificates.crt
             - name: KUBECONFIG
               value: /etc/kubernetes/kubeconfig
-          image: git.allegedly.works/ducktape-ci/agentplane-sandbox:unset
+          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-build:unset
           name: sandbox
           resources:
             limits:

@@ -207,8 +207,9 @@ _ACTIONS_SETTINGS = {
                         "container": command_sandbox.CONTAINER,
                         "default_cwd": command_sandbox.HOME,
                         "description": (
-                            "The sandbox box sized for a build: the same tools, 2 cores and 4Gi, and a home "
-                            "directory that survives the container being killed for running out of memory, "
+                            "The sandbox box sized for a build: the same tools plus bazel (bazelisk, which runs "
+                            "the version a workspace's `.bazelversion` names) and gcc, 2 cores and 4Gi, and a "
+                            "home directory that survives the container being killed for running out of memory, "
                             "though not the box's Pod."
                         ),
                     },
