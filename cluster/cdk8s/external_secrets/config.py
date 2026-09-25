@@ -154,6 +154,7 @@ def chart(app: App) -> Chart:
         chart,
         "kubernetes-forgejo-images-secret-store",
         namespaces=[
+            # keep-sorted start
             "activitywatch",
             "agent-workspaces",
             "agentplane-index",
@@ -186,10 +187,9 @@ def chart(app: App) -> Chart:
             "ssh-mcp",
             "study-casino",
             "tana-mcp",
-            # gaffer-private (not cdk8s): its ExternalSecret lives in the gaffer-private
-            # repo (k8s/thrive-scraper/forgejo-images-creds-eso.yaml), not in this tree.
-            "thrive-scraper",
+            "thrive-scraper",  # gaffer-private (not cdk8s); ESO lives in that repo's k8s/
             "wayback-cache",
+            # keep-sorted end
         ],
         remote_namespace="forgejo-images",
     )
