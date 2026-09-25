@@ -139,7 +139,7 @@ class Agent:
                 return cls(client, thread_id=thread.id, cursor=attachment.last_cursor)
         raise AssertionError("unreachable: reraise=True either returns an agent or raises")
 
-    async def run(self, prompt: str) -> Turn:
+    async def run(self, prompt: str, *, read_seconds: float = TURN_SECONDS) -> Turn:
         """Send `prompt` and collect the turn it starts. Nothing else drives this session, so reading
         the cursor before submitting cannot miss an event."""
         after = self._cursor
@@ -150,7 +150,7 @@ class Agent:
             ),
         )
         turn = Turn(admitted=time.monotonic())
-        async for entry in self._client.events(self._thread_id, after=after, read_seconds=TURN_SECONDS):
+        async for entry in self._client.events(self._thread_id, after=after, read_seconds=read_seconds):
             self._cursor = entry.cursor
             event = entry.event
             match event.WhichOneof("observation"):
