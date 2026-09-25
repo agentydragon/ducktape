@@ -203,7 +203,8 @@ is the authority for what the proxy actually served.
 
 ### Where an agent can run it
 
-In a claude-ai runner box, through <box_bazel.sh>. **Deviation** from
+In a claude-ai box created with `environment: runner`, through <box_bazel.sh>. The default
+`sandbox` environment has one core and no `/state` volume. **Deviation** from
 <../../devinfra/docs/rbe_workflows.md>: the box's egress refuses BuildBuddy, so the script runs
 Bazel locally, on the workspace bazelrc minus its RBE import. Its kubectl presents the box's own
 workload identity, which may mint the acceptance token:
