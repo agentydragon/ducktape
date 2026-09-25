@@ -143,5 +143,5 @@ def _workload(
         security_context=sandbox_pod.workload_security_context(),
         env=sandbox_pod.egress_env(),
         resources=resources,
-        volume_mounts=[*sandbox_pod.egress_mounts(), *mounts],
+        volume_mounts=[*sandbox_pod.egress_mounts(), sandbox_pod.bazelrc_mount(), *mounts],
     )
