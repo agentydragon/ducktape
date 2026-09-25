@@ -24,6 +24,7 @@ from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
 from cluster.cdk8s.agentplane.app_settings import (
+    ACTIVITYWATCH_READ_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
@@ -60,6 +61,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _google_readonly(construct, namespace=namespace)
     _grocy_sf_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _home_assistant_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
+    _activitywatch_read(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
 
 
 def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
@@ -323,6 +325,72 @@ def _home_assistant_readonly(
                     paths=["/api/states", "/api/states/*", "/api/history/period/*"],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="home-assistant-readonly"),
                 )
+            ]
+        ),
+    )
+
+
+def _activitywatch_read(
+    scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str
+) -> None:
+    # Exact source access: the activitywatch namespace also holds the write token.
+    credential_external_secret(
+        scope,
+        namespace=credentials_namespace,
+        target="activitywatch-read-token",
+        source="activitywatch-read-token",
+        key="token",
+        store=single_secret_store(
+            scope,
+            "agentplane-staging-activitywatch",
+            reader=reader,
+            source_namespace="activitywatch",
+            source_secret="activitywatch-read-token",
+            consumer_namespace=credentials_namespace,
+        ),
+    )
+    EgressCredential(
+        scope,
+        "egresscredential-activitywatch-read",
+        metadata=ApiObjectMetadata(name="activitywatch-read", namespace=namespace),
+        spec=EgressCredentialSpec(
+            description=(
+                "The static bearer of the central ActivityWatch server's read route "
+                "(cluster/docs/activitywatch/README.md), copied into this namespace by ESO. The "
+                "route's own proxy admits it on GETs and on POST /api/0/query/ only, so it cannot "
+                "write; what it reads is every device's window titles, URLs and AFK history."
+            ),
+            source=EgressCredentialSpecSource(
+                secret_ref=EgressCredentialSpecSourceSecretRef(name="activitywatch-read-token", key="token")
+            ),
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                )
+            ],
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-activitywatch-read",
+        metadata=ApiObjectMetadata(name=ACTIVITYWATCH_READ_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                # The API half of what the read route admits; its web UI stays unreachable. The query
+                # endpoint needs its trailing slash: without it the route 301s, and a client following
+                # that turns the POST into a GET.
+                EgressPolicySpecRules(
+                    hosts=["activitywatch-read.allegedly.works"],
+                    methods=[EgressPolicySpecRulesMethods.GET],
+                    paths=["/api/0/**"],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="activitywatch-read"),
+                ),
+                EgressPolicySpecRules(
+                    hosts=["activitywatch-read.allegedly.works"],
+                    methods=[EgressPolicySpecRulesMethods.POST],
+                    paths=["/api/0/query/"],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="activitywatch-read"),
+                ),
             ]
         ),
     )
