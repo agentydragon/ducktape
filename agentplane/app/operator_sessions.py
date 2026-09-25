@@ -33,10 +33,6 @@ from agentplane.app.changes import Changes
 from agentplane.app.database import Base
 from agentplane.app.database_updates import Channel, notify
 
-# A request moves the idle deadline only once it would move by more than this, so a burst of
-# requests does not each rewrite the row; the idle timeout therefore holds to within this much.
-ACTIVITY_STEP = timedelta(minutes=5)
-
 # How long a login may take from /auth/login to its callback.
 _PENDING_LOGIN = timedelta(minutes=10)
 
@@ -49,9 +45,10 @@ class BrowserSession(Base):
     absolute_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
 
-    def record_activity(self, idle: timedelta, now: datetime) -> None:
+    def record_activity(self, idle: timedelta, step: timedelta, now: datetime) -> None:
+        """Move the idle deadline, once it would move by more than `step` (or half the idle timeout)."""
         deadline = min(self.absolute_expires_at, now + idle)
-        if deadline - self.expires_at > min(ACTIVITY_STEP, idle / 2):
+        if deadline - self.expires_at > min(step, idle / 2):
             self.expires_at = deadline
 
 
@@ -86,11 +83,18 @@ class SessionRow:
     """
 
     def __init__(
-        self, store: OperatorSessionStore, row_id: str, *, idle: timedelta, request_session: dict[str, Any] | None
+        self,
+        store: OperatorSessionStore,
+        row_id: str,
+        *,
+        idle: timedelta,
+        step: timedelta,
+        request_session: dict[str, Any] | None,
     ) -> None:
         self.id = row_id
         self._store = store
         self._idle = idle
+        self._step = step
         self._request_session = request_session
         self._mutex = asyncio.Lock()
 
@@ -111,7 +115,7 @@ class SessionRow:
                 if row is None:
                     yield None
                     return
-                row.record_activity(self._idle, now)
+                row.record_activity(self._idle, self._step, now)
                 payload = copy.deepcopy(row.payload)
                 yield payload
                 if not payload:
@@ -150,6 +154,7 @@ class OperatorSessionMiddleware(BaseHTTPMiddleware):
         https_only: bool,
         max_age: int,
         idle_seconds: int,
+        activity_step_seconds: int,
     ) -> None:
         super().__init__(app)
         self._store = store
@@ -158,6 +163,7 @@ class OperatorSessionMiddleware(BaseHTTPMiddleware):
         self._secure = https_only
         self._max_age = max_age
         self._idle = timedelta(seconds=idle_seconds)
+        self._step = timedelta(seconds=activity_step_seconds)
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         handle: str | None = None
@@ -179,11 +185,13 @@ class OperatorSessionMiddleware(BaseHTTPMiddleware):
                     await db.delete(row)
                     row, ended = None, True
                 if row is not None:
-                    row.record_activity(self._idle, now)
+                    row.record_activity(self._idle, self._step, now)
             initial = copy.deepcopy(row.payload) if row is not None else {}
             request.scope["session"] = copy.deepcopy(initial)
             current = (
-                SessionRow(self._store, row.id, idle=self._idle, request_session=request.scope["session"])
+                SessionRow(
+                    self._store, row.id, idle=self._idle, step=self._step, request_session=request.scope["session"]
+                )
                 if row is not None
                 else None
             )

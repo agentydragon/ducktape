@@ -37,7 +37,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import OIDCSettings
-from agentplane.app.operator_sessions import ACTIVITY_STEP, BrowserSession, OperatorSessionStore
+from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import TEMPLATE, FakeAuthenticationV1Api
 from util.net import bind_free_port
@@ -47,6 +47,7 @@ from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 OPERATOR = "agentydragon"
 SUBJECT = "op-subject-1"
 SESSION_SECRET = "test-session-secret"  # a test literal, not a real credential
+ACTIVITY_STEP = timedelta(minutes=5)
 MODELS = {Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]}
 
 
@@ -113,6 +114,7 @@ def serve(
             client_secret="agentplane-secret",  # a test literal, not a real credential
             session_secret=SESSION_SECRET,
             public_base_url=app_url,
+            session_activity_step_seconds=int(ACTIVITY_STEP.total_seconds()),
         )
         reviewer = TokenReviewer(cast(Any, authentication), audience=AUDIENCE, subjects=subjects)
         app = create_app(

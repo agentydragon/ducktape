@@ -49,6 +49,12 @@ class OIDCSettings(BaseSettings):
     session_idle_seconds: int = Field(
         default=86400, gt=0, description="How long a login lasts without an authenticated request."
     )
+    session_activity_step_seconds: int = Field(
+        default=300,
+        gt=0,
+        description="Activity moves the idle deadline only once it would move by more than this, so a "
+        "burst of requests does not each rewrite the session row; the idle timeout holds to within it.",
+    )
     token_renew_before_seconds: int = Field(
         default=30,
         ge=0,
@@ -119,6 +125,18 @@ class LoginTokens(BaseModel):
     @field_serializer("access_token", "refresh_token", when_used="json")
     def _stored(self, token: SecretStr | None) -> str | None:
         return token.get_secret_value() if token is not None else None
+
+
+class TokenResponse(BaseModel):
+    """The token endpoint's answer, as authlib hands it over with `expires_at` derived from `expires_in`."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True, hide_input_in_errors=True)
+
+    access_token: SecretStr = Field(min_length=1)
+    expires_at: float | None = Field(
+        default=None, allow_inf_nan=False, description="None when the provider stated no lifetime."
+    )
+    refresh_token: SecretStr | None = Field(default=None, min_length=1, description="None when it issued none.")
 
 
 class OperatorSession(BaseModel):

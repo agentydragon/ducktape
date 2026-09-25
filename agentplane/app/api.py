@@ -895,6 +895,7 @@ def create_app(
             https_only=oidc.secure,
             max_age=oidc.session_max_seconds,
             idle_seconds=oidc.session_idle_seconds,
+            activity_step_seconds=oidc.session_activity_step_seconds,
         )
         app.state.oauth = build_oauth(oidc)
         # Unguarded, because these are how a browser with no credential acquires one.

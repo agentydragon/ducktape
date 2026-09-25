@@ -178,7 +178,7 @@ async def stored_login(store: OperatorSessionStore, login: OperatorSession) -> S
     )
     async with store.sessions.begin() as db:
         db.add(row)
-    return SessionRow(store, row.id, idle=timedelta(hours=1), request_session=None)
+    return SessionRow(store, row.id, idle=timedelta(hours=1), step=timedelta(minutes=5), request_session=None)
 
 
 SPEC = protocol_pb2.SessionSpec(

@@ -19,12 +19,20 @@ import httpx2
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from fastapi import Request
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.identity import CallerIdentity, CallerKind
-from agentplane.app.oidc import CLIENT_NAME, LoginTokens, OIDCSettings, OperatorSession, build_oauth, operator_session
+from agentplane.app.oidc import (
+    CLIENT_NAME,
+    LoginTokens,
+    OIDCSettings,
+    OperatorSession,
+    TokenResponse,
+    build_oauth,
+    operator_session,
+)
 from agentplane.app.operator_sessions import SessionRow, operator_session_row
 from mcp_infra.oidc_principal import InvalidOidcPrincipalError, OidcPrincipalVerificationUnavailableError
 
@@ -238,20 +246,17 @@ class FederatedOperatorActions:
         token = await self._login.fetch_access_token(
             grant_type="refresh_token", refresh_token=refresh_token.get_secret_value()
         )
-        access_token, expires_at = token.get("access_token"), token.get("expires_at")
-        if (
-            not isinstance(access_token, str)
-            or not access_token
-            or not isinstance(expires_at, (float, int))
-            or expires_at <= time.time()
-        ):
+        try:
+            response = TokenResponse.model_validate(token)
+        except ValidationError:
+            raise OperatorFederationError("operator_federation_exchange_failed", status_code=502) from None
+        if response.expires_at is None or response.expires_at <= time.time():
             raise OperatorFederationError("operator_federation_exchange_failed", status_code=502)
         # A provider that does not rotate the refresh token leaves the one just spent valid.
-        rotated = token.get("refresh_token")
         return LoginTokens(
-            access_token=SecretStr(access_token),
-            expires_at=expires_at,
-            refresh_token=SecretStr(rotated) if isinstance(rotated, str) and rotated else refresh_token,
+            access_token=response.access_token,
+            expires_at=response.expires_at,
+            refresh_token=response.refresh_token or refresh_token,
         )
 
 

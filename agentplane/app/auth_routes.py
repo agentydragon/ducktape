@@ -19,9 +19,9 @@ from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from joserfc.errors import JoseError
-from pydantic import BaseModel, ConfigDict, SecretStr
+from pydantic import BaseModel, ConfigDict, ValidationError
 
-from agentplane.app.oidc import CLIENT_NAME, LoginTokens, OperatorSession, session_operator, settings
+from agentplane.app.oidc import CLIENT_NAME, LoginTokens, OperatorSession, TokenResponse, session_operator, settings
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +51,9 @@ async def callback(request: Request) -> RedirectResponse:
     try:
         client = _oauth(request).create_client(CLIENT_NAME)
         token = await client.authorize_access_token(request)
-    except json.JSONDecodeError:
-        logger.warning("OIDC token exchange returned a non-JSON response")
+        response = TokenResponse.model_validate(token)
+    except json.JSONDecodeError, ValidationError:
+        logger.warning("OIDC token exchange returned an invalid response")
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, "Identity provider returned an invalid response; please retry."
         ) from None
@@ -81,22 +82,14 @@ async def callback(request: Request) -> RedirectResponse:
     id_expiry = claims.get("exp")
     if not isinstance(id_expiry, (float, int)) or not math.isfinite(id_expiry) or id_expiry <= now:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "id token has no valid expiry")
-    access_token = token.get("access_token")
-    token_expiry = token.get("expires_at")
-    refresh_token = token.get("refresh_token")
     # Never retain a token without a known lifetime. Login still works, but federation fails closed.
     tokens = (
         LoginTokens(
-            access_token=SecretStr(access_token),
-            expires_at=token_expiry,
-            refresh_token=SecretStr(refresh_token) if isinstance(refresh_token, str) and refresh_token else None,
+            access_token=response.access_token, expires_at=response.expires_at, refresh_token=response.refresh_token
         )
         if request.app.state.operator_actions is not None
-        and isinstance(access_token, str)
-        and access_token
-        and isinstance(token_expiry, (float, int))
-        and math.isfinite(token_expiry)
-        and token_expiry > now
+        and response.expires_at is not None
+        and response.expires_at > now
         else None
     )
     request.session.clear()
