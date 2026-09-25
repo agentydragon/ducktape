@@ -48,11 +48,6 @@ from keda_scaledjob_crds.sh.keda import (
     ScaledJobSpecJobTargetRefTemplateSpecVolumesConfigMap as VolumeConfigMap,
     ScaledJobSpecJobTargetRefTemplateSpecVolumesEmptyDir as EmptyDir,
 )
-from keda_triggerauthentication_crds.sh.keda import (
-    TriggerAuthentication,
-    TriggerAuthenticationSpec,
-    TriggerAuthenticationSpecSecretTargetRef,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
@@ -61,6 +56,8 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku_ci import runner_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.keda.scaled_job import forgejo_runner_trigger
+from cluster.cdk8s.providers.keda.trigger_authentication import TriggerAuthentication
 
 NAME = "haku-ci"
 NAMESPACE = "haku-ci"
@@ -477,17 +474,14 @@ def _add_runner(chart: Chart) -> None:
     # forgejo-runner scaler instead polls Forgejo's authenticated, repo-scoped runner-jobs endpoint,
     # filtered to this runner label. Its result is exactly the number of jobs presently waiting for
     # a haku-ci runner.
-    TriggerAuthentication(
+    trigger_auth = TriggerAuthentication.from_secret_key(
         chart,
         "trigger-authentication",
-        metadata=metadata(_AUTH, NAMESPACE),
-        spec=TriggerAuthenticationSpec(
-            secret_target_ref=[
-                TriggerAuthenticationSpecSecretTargetRef(
-                    parameter="token", name=FORGEJO_TOKEN_SECRET, key=FORGEJO_TOKEN_KEY
-                )
-            ]
-        ),
+        name=_AUTH,
+        namespace=NAMESPACE,
+        parameter="token",
+        secret_name=FORGEJO_TOKEN_SECRET,
+        secret_key=FORGEJO_TOKEN_KEY,
     )
     # ScaledJob, NOT ScaledObject -- this is the whole point.
     #
@@ -585,13 +579,8 @@ def _add_runner(chart: Chart) -> None:
                 ),
             ),
             triggers=[
-                keda.ScaledJobSpecTriggers(
-                    type="forgejo-runner",
-                    # No `name:` -- the docs list it as required, but the scaler filters on labels
-                    # and the current deployment has worked without it. A fixed name could not
-                    # match anyway: every pod registers under its own pod name.
-                    metadata={"address": _FORGEJO_URL, "owner": "haku", "repo": "haku-state", "labels": "haku-ci"},
-                    authentication_ref=keda.ScaledJobSpecTriggersAuthenticationRef(name=_AUTH),
+                forgejo_runner_trigger(
+                    address=_FORGEJO_URL, owner="haku", repo="haku-state", labels="haku-ci", authentication=trigger_auth
                 )
             ],
         ),
