@@ -437,7 +437,7 @@ destination records the actual token issuer and subject, not a shared BFF identi
 environments set `AGENTPLANE_ACTIONS_OPERATOR_OIDC` from the `operator-oidc` key of their
 `agentplane-action-federation` ConfigMap (built from the `action_federation`/`operator_oidc`
 dicts in `cluster/cdk8s/generate_manifests.py`); staging
-targets the Authentik `agentplane-actions` provider. See
+targets the Authentik `agentplane-staging-actions` provider. See
 [`../docs/operator_federation.md`](../docs/operator_federation.md) for settings and test evidence.
 
 ## Action live updates and approval Web Push

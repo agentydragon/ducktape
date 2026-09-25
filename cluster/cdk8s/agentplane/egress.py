@@ -59,6 +59,8 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecSourcesConfigMap,
     BundleSpecSourcesSecret,
     BundleSpecTarget,
+    BundleSpecTargetAdditionalFormats,
+    BundleSpecTargetAdditionalFormatsPkcs12,
     BundleSpecTargetConfigMap,
     BundleSpecTargetConfigMapMetadata,
     BundleSpecTargetNamespaceSelector,
@@ -102,6 +104,8 @@ _ROOT_CA_ISSUER = "cluster-ca-bootstrap"
 KUBERNETES_AUDIENCE = "https://localhost:7445"
 # Where a sandbox's kubectl sends everything. Cluster-internal by definition, hence the rule below.
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
+# The credential substituted there, whose placeholder a sandbox's kubeconfig carries (sandbox_pod.py).
+KUBERNETES_CREDENTIAL = "kubernetes-workload"
 # The in-cluster Forgejo, not `git.allegedly.works`: the public name would hairpin out through
 # the Gateway and back for a Service one hop away. Plain HTTP on 3000, so the proxy reads the
 # request without bumping TLS.
@@ -112,9 +116,10 @@ FORGEJO_PORT = 3000
 HOME_ASSISTANT_HOST = "home-assistant.home-assistant.svc.cluster.local"
 HOME_ASSISTANT_PORT = 8123
 _SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"
-# The trust bundle's ConfigMap key -- the runner SandboxTemplate's volumeMount subPath
-# (app.py) must name the same key.
+# The trust bundles' ConfigMap key.
 CA_BUNDLE_KEY = "ca-certificates.crt"
+# The sandbox bundle's roots again, as the PKCS12 trust store a JVM reads.
+JAVA_TRUST_STORE_KEY = "ca-certificates.p12"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
 
 
@@ -165,7 +170,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
     EgressCredential(
         scope,
         "egresscredential-kubernetes-workload",
-        metadata=ApiObjectMetadata(name="kubernetes-workload", namespace=namespace),
+        metadata=ApiObjectMetadata(name=KUBERNETES_CREDENTIAL, namespace=namespace),
         spec=EgressCredentialSpec(
             description=(
                 "The calling Sandbox Pod's own ServiceAccount, minted for the Kubernetes API server "
@@ -237,7 +242,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 EgressPolicySpecRules(
                     hosts=[KUBERNETES_HOST],
                     cluster_internal=True,
-                    credential_ref=EgressPolicySpecRulesCredentialRef(name="kubernetes-workload"),
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name=KUBERNETES_CREDENTIAL),
                 )
             ]
         ),
@@ -402,8 +407,8 @@ class Egress(Construct):
             ),
         )
         # Public roots + cluster root + the proxy's interception root, written as a
-        # ConfigMap of the same name, where the runner SandboxTemplate mounts it over
-        # the runner container's system bundle.
+        # ConfigMap of the same name, which every sandbox Pod mounts over its system
+        # bundle and as its Java trust store (sandbox_pod.py).
         Bundle(
             self,
             "bundle",
@@ -427,6 +432,11 @@ class Egress(Construct):
                                 )
                             }
                         ),
+                    ),
+                    # With no password, trust-manager writes the store with neither encryption nor
+                    # a MAC, which a JVM loads when it is given no password either.
+                    additional_formats=BundleSpecTargetAdditionalFormats(
+                        pkcs12=BundleSpecTargetAdditionalFormatsPkcs12(key=JAVA_TRUST_STORE_KEY)
                     ),
                     namespace_selector=BundleSpecTargetNamespaceSelector(
                         match_expressions=[

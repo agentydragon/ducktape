@@ -2,7 +2,8 @@
 #
 # The app is the relying party (authlib + a signed session cookie; see agentplane/app/oidc.py).
 # The application slug is the per-provider issuer path, which the app pins the id token's `iss`
-# against, so `agentplane` cannot be renamed without changing the app's configured issuer.
+# against, so `agentplane-staging` cannot be renamed without changing the app's configured issuer
+# and login JWKS URI (`cluster/cdk8s/agentplane/staging.py`).
 
 resource "authentik_provider_oauth2" "agentplane_staging" {
   name               = "agentplane-staging-oauth2"
@@ -19,9 +20,12 @@ resource "authentik_provider_oauth2" "agentplane_staging" {
   include_claims_in_id_token = true
 
   # The profile scope supplies display names only; authorization uses issuer + sub.
+  # offline_access issues the refresh token that renews the short-lived access token the app's
+  # Action federation presents, for as long as the app's own session lasts.
   property_mappings = [
     data.authentik_property_mapping_provider_scope.openid.id,
     data.authentik_property_mapping_provider_scope.profile.id,
+    data.authentik_property_mapping_provider_scope.offline_access.id,
   ]
 
   allowed_redirect_uris = [
@@ -35,7 +39,7 @@ resource "authentik_provider_oauth2" "agentplane_staging" {
 
 resource "authentik_application" "agentplane_staging" {
   name              = "Agentplane staging"
-  slug              = "agentplane"
+  slug              = "agentplane-staging"
   protocol_provider = authentik_provider_oauth2.agentplane_staging.id
   meta_description  = "Agentplane integration app on staging - sandboxes running Claude Code and Codex on the cheap-experiments key"
   meta_launch_url   = "https://agentplane-staging.allegedly.works"

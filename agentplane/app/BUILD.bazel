@@ -158,6 +158,7 @@ py_library(
         ":identity",
         ":inventory",
         ":live",
+        ":oidc",
         ":operator_sessions",
         "//agentplane/app/agent_runtime:ingestion",
         "//agentplane/app/agent_runtime/events:event_log",
@@ -235,6 +236,7 @@ py_test(
         "@pypi//pyjwt",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
         "@pypi//starlette",
         "@pypi//uvicorn",
     ],
@@ -688,6 +690,7 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//protobuf",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -720,6 +723,7 @@ py_library(
     deps = [
         ":identity",
         ":oidc",
+        ":operator_sessions",
         "//agentplane/action_service:client",
         "//agentplane/action_service:operator_oidc",
         "//mcp_infra:oidc_principal",
@@ -950,11 +954,14 @@ py_test(
 
 py_test(
     name = "test_action_federation",
+    size = "medium",
     srcs = ["test_action_federation.py"],
     deps = [
         ":action_federation",
         ":conftest",
+        ":database",
         ":oidc",
+        ":operator_sessions",
         "//:conftest",
         "//agentplane/action_service:operator_oidc",
         "//util:net",
@@ -964,6 +971,7 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
         "@pypi//starlette",
     ],
 )

@@ -6,6 +6,7 @@
 import { createContext, useContext, type Context, type JSX, type ReactNode } from "react";
 
 import type { ThreadEntityView } from "./client";
+import type { StreamConnection } from "./live_stream";
 
 export type Decimal = string | bigint;
 export function decimalBigInt(value: Decimal): bigint {
@@ -42,9 +43,9 @@ export interface ThreadWindow {
    * stopped or its epoch is gone, so a view may call it whenever the reader nears the oldest row. */
   loadingOlder: boolean;
   loadOlder: () => void;
-  /** Whether a read of the thread failed and is being retried. Until one succeeds, `rows` may be
-   * out of date. */
-  reconnecting: boolean;
+  /** `reconnecting` while a failed read of the thread is being retried, and until one succeeds
+   * `rows` may be out of date; `live` otherwise. */
+  connection: StreamConnection;
   /** Why the window stopped following the thread; `refresh` opens it again. */
   error: string | null;
   refresh: () => void;

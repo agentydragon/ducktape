@@ -8,6 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { SandboxView, ThreadView } from "./client";
 import type { ThreadsSnapshot } from "./live";
 import { Sidebar } from "./sidebar";
+import { DEGRADED_AFTER_MS } from "./stream_status";
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();
@@ -22,6 +23,7 @@ beforeEach(() => vi.stubGlobal("fetch", fetchMock));
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.clearAllMocks();
   window.localStorage.clear();
   vi.unstubAllGlobals();
@@ -81,6 +83,8 @@ async function render(
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
+      // An error is the network's, which the browser retries: the source stays CONNECTING.
+      readyState = 0;
       constructor(url: string) {
         super();
         expect(url).toBe("/live/threads");
@@ -186,14 +190,21 @@ it("keeps retained rows but withdraws live indicators when any update source is 
     }),
   ];
   const sandboxes = { "test-sandbox": sandbox("test-sandbox") };
+  vi.useFakeTimers({ now: new Date(2026, 0, 1, 17, 21, 4) });
   const { stream } = await render(threads, sandboxes);
+  // A drop shorter than the grace is a blip, and changes nothing on screen.
   await act(async () => stream.dispatchEvent(new Event("error")));
-  expect(container.textContent).toContain("Not connected to the live stream");
+  expect(container.querySelector("[data-connection]")).toBeNull();
+  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(1);
+  await act(async () => vi.advanceTimersByTime(DEGRADED_AFTER_MS));
+  expect(container.querySelector('[data-connection="degraded"]')?.getAttribute("aria-label")).toBe(
+    "Threads: reconnecting since 17:21:04 · attempt 1"
+  );
   expect(container.textContent).toContain("Retained thread");
   expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(0);
 
   await pushSnapshot(stream, { ...snapshot(threads, sandboxes), updates_connected: false });
-  expect(container.textContent).not.toContain("Not connected to the live stream");
+  expect(container.querySelector("[data-connection]")).toBeNull();
   expect(container.textContent).toContain("Thread updates disconnected");
   expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(0);
 
