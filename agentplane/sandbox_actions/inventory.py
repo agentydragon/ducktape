@@ -16,7 +16,7 @@ from typing import Any, cast
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiException, CoreV1Api
 
-from agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
+from agentplane.sandbox_actions.binding import DESCRIPTION_ANNOTATION, SandboxExecutorBinding
 from agentplane.sandbox_actions.models import READY_CONDITION, SandboxInfo
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import CommandResult, ExecRunner
@@ -32,8 +32,10 @@ _PREFIX = "sandbox-actions.agentplane.allegedly.works"
 MANAGED_LABEL = f"{_PREFIX}/managed"
 CALLER_LABEL = f"{_PREFIX}/caller"
 CALLER_NAMESPACE_LABEL = f"{_PREFIX}/caller-namespace"
-ENVIRONMENT_LABEL = f"{_PREFIX}/environment"
+TEMPLATE_LABEL = f"{_PREFIX}/template"
 NAME_LABEL = f"{_PREFIX}/name"
+# The annotation `kubectl exec` and `kubectl logs` pick a Pod's container by when none is named.
+DEFAULT_CONTAINER_ANNOTATION = "kubectl.kubernetes.io/default-container"
 
 
 class SandboxActionError(Exception):
@@ -44,12 +46,12 @@ class ForeignSandboxError(SandboxActionError):
     """A Sandbox of that name exists and belongs to someone else, or to nothing this surface made."""
 
 
-def _labels(caller: ServiceAccountRef, name: str, environment: str) -> dict[str, str]:
+def _labels(caller: ServiceAccountRef, name: str, template: str) -> dict[str, str]:
     return {
         MANAGED_LABEL: "true",
         CALLER_LABEL: caller.name,
         CALLER_NAMESPACE_LABEL: caller.namespace,
-        ENVIRONMENT_LABEL: environment,
+        TEMPLATE_LABEL: template,
         NAME_LABEL: name,
     }
 
@@ -57,6 +59,14 @@ def _labels(caller: ServiceAccountRef, name: str, environment: str) -> dict[str,
 def _object_name(caller: ServiceAccountRef, name: str) -> str:
     """Deterministic, so creating the same name twice reaches the same box rather than a second one."""
     return f"{caller.name}-{name}"[:63].rstrip("-")
+
+
+def _workload_container(sandbox: dict[str, Any]) -> str:
+    """The container commands run in, by the rule `kubectl exec` follows: the one the box's Pod
+    template names as its default, else its first."""
+    pod_template = sandbox["spec"]["podTemplate"]
+    annotations = pod_template.get("metadata", {}).get("annotations", {})
+    return cast(str, annotations.get(DEFAULT_CONTAINER_ANNOTATION) or pod_template["spec"]["containers"][0]["name"])
 
 
 def _ready(sandbox: dict[str, Any]) -> dict[str, Any] | None:
@@ -86,13 +96,34 @@ class SandboxInventory:
         self._core_v1 = core_v1
         self._exec_runner = exec_runner
 
-    def environment(self, name: str | None) -> tuple[str, SandboxEnvironment]:
-        key = name or self._binding.default_environment
-        environment = self._binding.environments.get(key)
-        if environment is None:
-            offered = ", ".join(sorted(self._binding.environments))
-            raise SandboxActionError(f"unknown environment {key!r}; this deployment offers {offered}")
-        return key, environment
+    def _offered(self, name: str | None) -> str:
+        """The offered template `name` names, or the default when it names none."""
+        template = name or self._binding.default_template
+        if template not in self._binding.templates:
+            offered = ", ".join(sorted(self._binding.templates))
+            raise SandboxActionError(f"unknown template {template!r}; this deployment offers {offered}")
+        return template
+
+    async def template_descriptions(self) -> dict[str, str]:
+        """What each offered template says a box made from it holds, from its own annotation.
+
+        Read once, when the service starts: an offered template that is missing or says nothing
+        is a deployment defect, and refusing to start names it where a caller would only meet it
+        as a box that cannot be created.
+        """
+        descriptions = {}
+        for name in sorted(self._binding.templates):
+            template = cast(
+                dict[str, Any],
+                await self._custom_objects.get_namespaced_custom_object(
+                    *EXTENSIONS_API, self._binding.namespace, TEMPLATES_PLURAL, name
+                ),
+            )
+            description = template["metadata"].get("annotations", {}).get(DESCRIPTION_ANNOTATION)
+            if not description:
+                raise ValueError(f"offered SandboxTemplate {name!r} has no {DESCRIPTION_ANNOTATION!r} annotation")
+            descriptions[name] = description
+        return descriptions
 
     async def _sandbox(self, caller: ServiceAccountRef, name: str) -> dict[str, Any] | None:
         """The caller's Sandbox of that name, or None. A same-named object this surface did not
@@ -138,7 +169,7 @@ class SandboxInventory:
         status = cast(dict[str, Any], sandbox.get("status") or {})
         return SandboxInfo(
             name=metadata["labels"][NAME_LABEL],
-            environment=metadata["labels"][ENVIRONMENT_LABEL],
+            template=metadata["labels"][TEMPLATE_LABEL],
             conditions=cast(list[Any], status.get("conditions") or []),
             created_at=metadata.get("creationTimestamp"),
             # Only for the name to exec into; whether the box is usable is the conditions' answer.
@@ -147,7 +178,7 @@ class SandboxInventory:
             pod_ips=cast(list[str], status.get("podIPs") or []),
         )
 
-    async def create(self, caller: ServiceAccountRef, name: str, environment_name: str | None) -> SandboxInfo:
+    async def create(self, caller: ServiceAccountRef, name: str, template_name: str | None) -> SandboxInfo:
         """Stamp the caller's sandbox if it has none by that name, and report where it got to.
 
         Returns once the object exists rather than waiting for the box to come up: a cold start
@@ -155,25 +186,25 @@ class SandboxInventory:
         outcome for a box that is in fact fine. `info` is how a caller follows one from `not_ready`
         to `ready`, carrying the controller's own reason.
 
-        Idempotent: an existing sandbox of that name is returned as it stands, whatever environment
-        it was created from. Deciding that the shape is wrong is the caller's, and `dispose` is how
-        it acts on that.
+        Idempotent: an existing sandbox of that name is returned as it stands, whatever template it
+        was created from. Deciding that the shape is wrong is the caller's, and `dispose` is how it
+        acts on that.
         """
-        key, environment = self.environment(environment_name)
+        template = self._offered(template_name)
         if (existing := await self._sandbox(caller, name)) is None:
-            await self._stamp(caller, name, key, environment)
-        elif existing["metadata"]["labels"][ENVIRONMENT_LABEL] != key:
-            logger.info("sandbox %r exists from environment %r; returning it as it stands", name, key)
+            await self._stamp(caller, name, template)
+        elif (existing_template := existing["metadata"]["labels"][TEMPLATE_LABEL]) != template:
+            logger.info("sandbox %r exists from template %r; returning it as it stands", name, existing_template)
         sandbox = await self._sandbox(caller, name)
         if sandbox is None:
             raise SandboxActionError(f"sandbox {name!r} disappeared as it was created")
         return await self._info(caller, sandbox)
 
-    async def _stamp(self, caller: ServiceAccountRef, name: str, key: str, environment: SandboxEnvironment) -> None:
+    async def _stamp(self, caller: ServiceAccountRef, name: str, template_name: str) -> None:
         template = cast(
             dict[str, Any],
             await self._custom_objects.get_namespaced_custom_object(
-                *EXTENSIONS_API, self._binding.namespace, TEMPLATES_PLURAL, environment.template
+                *EXTENSIONS_API, self._binding.namespace, TEMPLATES_PLURAL, template_name
             ),
         )
         pod_template = cast(dict[str, Any], template["spec"]["podTemplate"])
@@ -181,7 +212,7 @@ class SandboxInventory:
         body = {
             "apiVersion": SANDBOX_API.api_version,
             "kind": "Sandbox",
-            "metadata": {"name": _object_name(caller, name), "labels": _labels(caller, name, key)},
+            "metadata": {"name": _object_name(caller, name), "labels": _labels(caller, name, template_name)},
             # Retain: this surface owns deletion, and a box whose caller is still working in it must
             # not be collected out from under them on a schedule nobody set.
             # TODO(sandbox-lifetime): so a forgotten box keeps its 2500m of the namespace's
@@ -266,11 +297,10 @@ class SandboxInventory:
             # published is gone. Distinct from not-ready, and a caller that conflates them polls
             # a box whose own controller says it is fine.
             raise SandboxActionError(f"sandbox {name!r} is ready but has no running Pod to exec into")
-        _, environment = self.environment(info.environment)
         return await self._exec_runner.run(
             pod_name=info.pod_name,
             namespace=self._binding.namespace,
-            container=environment.container,
+            container=_workload_container(sandbox),
             script=script,
             cwd=cwd,
             max_output_bytes=min(max_output_bytes, self._binding.max_output_bytes),

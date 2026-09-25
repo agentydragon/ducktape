@@ -291,6 +291,8 @@ def pod_spec(
     `service_account_name` is the template's own; whoever stamps a Sandbox from it may replace it.
     `workload_volumes` are Pod volumes the workload mounts beyond the egress path's own."""
     return SandboxTemplateSpecPodTemplateSpec(
+        # The workload first: with no default-container annotation, the first container is the one
+        # `kubectl exec` and the sandbox Actions run a command in.
         containers=[workload, _egress_sidecar(env)],
         automount_service_account_token=False,
         image_pull_secrets=[SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=SECRET_NAME)],

@@ -59,11 +59,14 @@ watches and gates operations on (<../app/inventory.py>, <../app/live.py>). An ex
 it joins the app's fleet view and its ingestion coordinator, which then discovers a runner the box
 does not have.
 
-**Its own template set**, reviewed configuration selected by name at the same operator cadence as
-`action_groups`. Not a free-form argument, which would let a caller stamp any template in the
-namespace, the app's runner template included. Staging's default is its own `agentplane-sandbox`
-template on the plain sandbox image (<../../cluster/cdk8s/agentplane/command_sandbox.py>), with
-the app's runner template offered beside it.
+**Its own template set**: a caller names a SandboxTemplate, but only one the group's reviewed
+configuration offers, at the same operator cadence as `action_groups`. A free-form choice would let
+a caller stamp any template in the namespace. Staging's default is its own `agentplane-sandbox`
+template on the plain sandbox image (<../../cluster/cdk8s/agentplane/command_sandbox.py>), with a
+build-sized box and the app's runner template offered beside it. Each template describes itself:
+its `description` annotation is what `create` tells an agent, read once when the service starts,
+and a command runs in the container `kubectl exec` would pick, the Pod template's
+`kubectl.kubernetes.io/default-container` or else its first.
 
 **Its own inventory code**, reusing the CRD shapes rather than `SandboxInventory`, which hardcodes
 the per-sandbox account, the app's label and the app's ownership model. The CRD vocabulary both

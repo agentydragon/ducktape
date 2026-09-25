@@ -60,14 +60,14 @@ def _schema(model: type[BaseModel]) -> dict[str, JsonValue]:
     return cast(dict[str, JsonValue], model.model_json_schema())
 
 
-def actions(binding: SandboxExecutorBinding) -> dict[str, ActionDefinition]:
+def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> dict[str, ActionDefinition]:
     """What this group offers, declared from its own models rather than discovered over a wire.
 
-    The environment list is rendered into the description because it is deployment configuration an
-    agent cannot otherwise see, and naming an environment that does not exist is the most likely way
-    to get `create` wrong.
+    The offered templates, with what each says of itself (`descriptions`), are rendered into the
+    description because they are deployment configuration an agent cannot otherwise see, and naming
+    a template that is not offered is the most likely way to get `create` wrong.
     """
-    offered = json.dumps({name: environment.description for name, environment in sorted(binding.environments.items())})
+    offered = json.dumps(dict(sorted(descriptions.items())))
     return {
         SandboxAction.CREATE: ActionDefinition(
             description=(
@@ -75,8 +75,7 @@ def actions(binding: SandboxExecutorBinding) -> dict[str, ActionDefinition]:
                 "the object exists, before the box can run anything, so poll "
                 f'{SandboxAction.INFO} until its {READY_CONDITION!r} condition has status "True". '
                 f"Idempotent on the name, so polling with {SandboxAction.CREATE} would also work but "
-                f"tells you nothing more. Environments: {offered}. Defaults to "
-                f"{binding.default_environment!r}."
+                f"tells you nothing more. Templates: {offered}. Defaults to {binding.default_template!r}."
             ),
             input_schema=_schema(CreateArgs),
         ),
@@ -158,7 +157,7 @@ class SandboxExecutor(Executor):
         match action:
             case SandboxAction.CREATE:
                 args = CreateArgs.model_validate(arguments)
-                info = await self._inventory.create(caller, args.name, args.environment)
+                info = await self._inventory.create(caller, args.name, args.template)
                 return _succeeded(info)
             case SandboxAction.EXEC:
                 exec_args = ExecArgs.model_validate(arguments)
