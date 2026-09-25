@@ -12,11 +12,13 @@ from agentplane.egress import sidecar
 from cluster.cdk8s.agentplane import testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
+    AIQUOTA_READ_POLICY,
     BASIC_POLICY,
     FORGEJO_HAKU_POLICY,
     GITHUB_PUBLIC_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
+    HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
@@ -65,6 +67,8 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             GROCY_SF_READONLY_POLICY,
             HOME_ASSISTANT_READONLY_POLICY,
             ACTIVITYWATCH_READ_POLICY,
+            AIQUOTA_READ_POLICY,
+            HAKU_MAILBOX_POLICY,
         }
         for doc in manifests
     )
