@@ -39,9 +39,10 @@ session-authenticated requests, including logout, require an **exact** same-orig
 missing, trailing-slash, and foreign origins fail. Kubernetes-token callers keep their separate
 non-ambient authentication and never enter the operator Action path. Responses are `no-store`. The app disables Uvicorn access logs to keep OAuth callback codes out of
 request URLs in logs; callback failures use fixed messages without provider/query text.
-Already-admitted requests/streams are not retrospectively cancelled by logout; revocation gates the
-next request. Upstream account disablement is not polled; without a fresh login, the absolute expiry
-is the browser identity lifetime. Token exchange may reject an upstream-revoked access token sooner.
+Already-admitted requests are not retrospectively cancelled by logout; revocation gates the next
+request. The Actions stream (`/actions/stream`) is the exception: deleting a session row notifies
+every replica, and a stream ends at its own row's deletion or expiry. Upstream account disablement
+is not polled; without a fresh login, the absolute expiry is the browser identity lifetime. Token exchange may reject an upstream-revoked access token sooner.
 
 ## Why the browser holds a handle and not a token
 

@@ -164,7 +164,7 @@ from cluster.cdk8s.haku import (
     workloads as haku_workloads,
     workspaces as haku_workspaces,
 )
-from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations, runner as haku_ci_runner
+from cluster.cdk8s.haku_ci import runner as haku_ci_runner
 from cluster.cdk8s.home_assistant import (
     app as home_assistant_app,
     backup as home_assistant_backup,
@@ -1007,7 +1007,7 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
     )
     haku_ci_artifact = artifact("haku-ci", haku_ci_runner.OUTPUT_DIR)
-    haku_ci_flux_kustomizations.haku_ci(flux_chart, haku_ci_artifact, keda_kustomization)
+    haku_ci_runner.haku_ci(flux_chart, haku_ci_artifact, keda_kustomization)
     flux_grafana_secrets_artifact = artifact("flux-grafana-secrets", flux_grafana_secrets.OUTPUT_DIR)
     flux_grafana_secrets.flux_grafana_secrets(
         flux_chart, flux_grafana_secrets_artifact, grafana_instance_kustomization, grafana_operator_kustomization

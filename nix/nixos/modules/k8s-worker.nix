@@ -250,6 +250,14 @@ in
       "net.ipv4.conf.default.rp_filter" = 0;
       "net.ipv4.conf.all.rp_filter" = 0;
       "net.ipv4.conf.*.rp_filter" = 0;
+      # No kernel link-local on interfaces created after boot. Chromium resets
+      # every connection (ERR_NETWORK_CHANGED) on any IP address add/remove on
+      # any interface, and by default each pod's host-side lxc* veth gets a
+      # fe80:: address, so every pod start and stop resets a browser running on
+      # the worker. NetworkManager-managed interfaces are unaffected: NM sets
+      # their mode itself. Evidence:
+      # https://github.com/agentydragon/ducktape/issues/7921
+      "net.ipv6.conf.default.addr_gen_mode" = 1;
     };
 
     # Disable iptables rpfilter (nixos-fw-rpfilter chain in mangle/

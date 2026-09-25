@@ -23,10 +23,10 @@ from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
@@ -131,8 +131,8 @@ def ingestion(engine: AsyncEngine) -> Ingestion:
 
 
 @pytest.fixture
-async def thread_updates(engine: AsyncEngine) -> AsyncIterator[ThreadUpdates]:
-    updates = ThreadUpdates(engine.url)
+async def database_updates(engine: AsyncEngine) -> AsyncIterator[DatabaseUpdates]:
+    updates = DatabaseUpdates(engine.url)
     await updates.start()
     try:
         yield updates
@@ -147,13 +147,14 @@ class Replica:
     store: ThreadStore
     event_logs: EventLogStore
     ingestion: Ingestion
+    operator_sessions: OperatorSessionStore
 
 
 @pytest.fixture
 async def replica(db_url: str) -> AsyncIterator[Replica]:
     engine = connect(db_url)
     try:
-        yield Replica(ThreadStore(engine), EventLogStore(engine), Ingestion(engine))
+        yield Replica(ThreadStore(engine), EventLogStore(engine), Ingestion(engine), OperatorSessionStore(engine))
     finally:
         await engine.dispose()
 
@@ -216,14 +217,14 @@ def bridge(
     event_logs: EventLogStore,
     content: ContentStore,
     ingester: Ingester,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
 ) -> RunnerBridge:
     return RunnerBridge(
         runners=runners,
         event_logs=event_logs,
         content=content,
         ingester=ingester,
-        thread_changes=thread_updates.changes,
+        thread_changes=database_updates.changes[Channel.THREADS],
     )
 
 

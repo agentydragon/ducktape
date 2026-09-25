@@ -91,7 +91,7 @@ own, so the Cilium `toFQDNs` policy is the whole fence (an L7 allowlist is what
 iron-proxy adds, and these pods are not on it yet). In-cluster and node-IP destinations
 (all of `*.allegedly.works`) are deliberately unfenced via `toEntities: cluster`; those
 services authenticate their own callers.
-Source of truth: <../../cluster/k8s/agents/haku-egress-proxy/>, <../../cluster/k8s/haku-ci/>.
+Source of truth: <../../cluster/k8s/agents/haku-egress-proxy/>, <../../cluster/cdk8s/haku_ci/>.
 
 ### Operator-source credentials reflected into `haku-sandbox`
 
