@@ -99,6 +99,47 @@ at `/tmp/wyrm2-llm-experiments-2026-09-24/long_context_request.json`; its reposi
 payload is not duplicated here. An initial undersized context probe had 2,358 prompt
 tokens and is excluded from this matched comparison.
 
+## Tensor parallelism: container NCCL repair and measurements
+
+The base CUDA image packages NCCL 2.25.1. Tensor splitting failed during warmup
+with CUDA `invalid argument`, an NCCL shared-memory limit warning (82,240 versus
+79,856 bytes), and process exit 139. Docker reported no OOM; GPU allocations were
+released. The second attempt enabled `NCCL_DEBUG=INFO` to capture the cause:
+[initial log](dense_tensor_failure.log), [diagnostic log](dense_tensor_nccl_failure.log).
+This matches a previously reported [NCCL/5090 issue](https://discuss.pytorch.org/t/torch-distributed-distbackenderror-nccl-error-in-pytorch-torch-csrc-distributed-c10d-processgroupnccl-cpp-3368-unhandled-cuda-error-run-with-nccl-debug-info-for-details-nccl-version-2-25-1/221360/2).
+
+Replacing only the container's `libnccl2` with NVIDIA's SHA256-pinned
+2.27.7-1+cuda12.9 package resolved this startup failure. No host packages, driver,
+kernel, or services changed. [Dockerfile](Dockerfile.nccl227):
+
+```bash
+docker build -t wyrm2-llama-nccl:2.27.7 -f Dockerfile.nccl227 .
+bash dense_tensor.sh
+```
+
+The measured derived image ID was
+`sha256:85a6cda88b8fe62e22255615a7aab7984e836249a3cba1000911f88bda185cd9`.
+Tensor mode lacks automatic fitting, so its [launcher](dense_tensor.sh) checks free
+GPU memory and permits at most the measured 32K context for this dense checkpoint.
+It disables the unsupported fitter explicitly; the measured command supplied
+`--fit-target`, which emitted a warning and had no effect.
+
+| Actual input tokens | Generated tokens | Prefill ms | Prefill tokens/s | Decode ms | Decode tokens/s |
+| ------------------- | ---------------: | ---------: | ---------------: | --------: | --------------: |
+| 102                 |             1807 |    164.953 |           618.36 | 25136.393 |           71.85 |
+| 24132               |             1670 |   7884.432 |          3060.72 | 24463.114 |           68.23 |
+
+Both requests ended with `stop`. GPU allocations during the long sample were
+17,392 / 14,670 MiB (desktop included on GPU0), leaving about 14 GiB free on GPU0.
+Both GPUs reached about 94% utilization; sampled temperatures were 52/61 C.
+The same prompts and output caps were used, but generated token counts changed
+with this execution mode despite temperature zero. Thus these token rates suggest
+about 1.4 times the one-GPU decode throughput, not a matched-output task speedup.
+Tensor prefill was slower than layer splitting. Coding quality and desktop
+responsiveness under sustained tensor inference remain unmeasured.
+Raw [short](dense_tensor_nccl227_32k_short.json) and
+[long](dense_tensor_nccl227_32k_long.json) responses preserve those differences.
+
 ## Agentplane evidence to reuse
 
 [PR #7898](https://github.com/agentydragon/ducktape/pull/7898) adds a deployed

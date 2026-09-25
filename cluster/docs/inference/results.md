@@ -31,6 +31,12 @@ source text, not a retrieval test. Full inputs, caveats and artifacts are in the
 | GPU1                  |              32768 |               24132 |          3363.97 |           47.74 | local~ |
 | Two GPUs, layer split |              32768 |               24132 |          5013.31 |           46.18 | local~ |
 
+Tensor splitting initially failed with the base image's NCCL 2.25.1. Replacing only
+that container library with pinned NCCL 2.27.7 yielded 71.85 tokens/s on the short
+input and 68.23 at 24,132 input tokens, with 32K configured context (`local~`).
+Output lengths changed, so this is not a matched-output task-speed comparison.
+See the same run for the build recipe, failure logs and measurements.
+
 The GPU1 reasoning-enabled synthetic tool roundtrip passed. Real Agentplane coding
 screening remains pending. See PLAN for limitations of historical measurements below;
 their numbers are not directly comparable with this screen.
