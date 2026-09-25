@@ -19,7 +19,7 @@ import { Alert } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
 import type { components } from "./api/schema";
-import { api } from "./client";
+import { followStream } from "./live_stream";
 
 export type WatchHealth = components["schemas"]["WatchHealth"];
 export type SandboxesSnapshot = components["schemas"]["SandboxesSnapshot"];
@@ -64,8 +64,6 @@ export function useLive<T extends { watch: WatchHealth }>(url: string): Live<T> 
   const resource = new URL(url, window.location.origin).pathname;
   useEffect(() => setState({ snapshot: null, health: null, connection: "connecting" }), [resource]);
   useEffect(() => {
-    let probed = false;
-    const source = new EventSource(url);
     const silent = window.setTimeout(
       () =>
         setState((current) =>
@@ -73,29 +71,24 @@ export function useLive<T extends { watch: WatchHealth }>(url: string): Live<T> 
         ),
       OPENING_GRACE_MS
     );
-    source.addEventListener("snapshot", (message: MessageEvent<string>) => {
-      const snapshot = JSON.parse(message.data) as T;
-      setState({ snapshot, health: snapshot.watch, connection: "connected" });
-    });
-    source.addEventListener("health", (message: MessageEvent<string>) => {
-      const health = JSON.parse(message.data) as WatchHealth;
-      setState((current) => ({ ...current, health, connection: "connected" }));
-    });
-    source.addEventListener("error", () => {
-      // EventSource cannot see the status of a connection the server refused, so a stream that
-      // fails before its first frame may be nothing worse than an expired session. One request
-      // settles it: the API client sends the browser to log in on a 401.
-      if (!probed) {
-        probed = true;
-        // The error below already exposes an outage. A failed probe must not leak a rejection
-        // or overwrite a newer snapshot if the stream recovered while this request was pending.
-        void api.GET("/models").catch(() => undefined);
-      }
-      setState((current) => ({ ...current, connection: "disconnected" }));
+    const stop = followStream(url, {
+      events: {
+        snapshot: (message) => {
+          const snapshot = JSON.parse(message.data) as T;
+          setState({ snapshot, health: snapshot.watch, connection: "connected" });
+        },
+        health: (message) => {
+          const health = JSON.parse(message.data) as WatchHealth;
+          setState((current) => ({ ...current, health, connection: "connected" }));
+        },
+      },
+      onConnection: (connection) => {
+        if (connection.phase === "reconnecting") setState((current) => ({ ...current, connection: "disconnected" }));
+      },
     });
     return () => {
       window.clearTimeout(silent);
-      source.close();
+      stop();
     };
   }, [url]);
   return state;

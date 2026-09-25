@@ -163,6 +163,8 @@ class FakeSync {
   olderPage: (() => Promise<Response | undefined>) | null = null;
   /** Whether the shapes are out of reach, as over a dropped network: every read of one fails unanswered. */
   unreachable = false;
+  /** Whether the reader's login has expired: every read of a shape is refused 401. */
+  loggedOut = false;
   /** Whether a live read goes unanswered, as one does until its connection opens: only its reader's
    * abort ends it. */
   liveUnanswered = false;
@@ -184,6 +186,7 @@ class FakeSync {
     const path = url.pathname.split("/sync/")[1];
     this.requests.push({ method, path, query: url.searchParams, subset });
     if (path === "scope") return this.folded ? this.scope() : this.#hold(init?.signal);
+    if (this.loggedOut) return Response.json({ detail: "test session expired" }, { status: 401 });
     if (this.unreachable) throw new TypeError("Failed to fetch");
     if (url.searchParams.get("projection_epoch") !== this.epoch) return Response.json({}, { status: 410 });
     const relation = relationOf(path);
@@ -553,6 +556,20 @@ it("says it is reconnecting while Electric's client retries a failed read, until
   await vi.waitFor(() => expect(reconnecting(container)).toBe(false), { timeout: 2_000 });
   await sync.send("entities", (relation) => [change(relation, "insert", item(4))]);
   await vi.waitFor(() => expect(itemsShown(container)).toContain("item-4@4"));
+});
+
+it("sends the browser to log in when a shape read finds the login expired, and shows the thread no error", async () => {
+  const replace = vi.fn();
+  vi.stubGlobal("location", { href: window.location.href, pathname: "/", hash: "#/threads/thread", replace });
+  const sync = stubSync();
+  thread(sync, 3);
+  sync.loggedOut = true;
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+
+  await vi.waitFor(() => expect(replace.mock.calls).toEqual([["/auth/login"]]));
+  // Refused reads never reach Electric's client, which would stop the window on them.
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(reconnecting(container)).toBe(false);
 });
 
 it("does not take a live read it abandoned for a subset as a failed one", async () => {
