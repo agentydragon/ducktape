@@ -204,27 +204,27 @@ is the authority for what the proxy actually served.
 
 ### Where an agent can run it
 
-In a claude-ai box created with `environment: runner`, through <box_bazel.sh>. The default
-`sandbox` environment has one core and no `/state` volume. **Deviation** from
+In a claude-ai box created with `environment: build`, through <box_bazel.sh>. **Deviation** from
 <../../devinfra/docs/rbe_workflows.md>: the box's egress refuses BuildBuddy, so the script runs
-Bazel locally, on the workspace bazelrc minus its RBE import. Its kubectl presents the box's own
+Bazel locally, on the workspace bazelrc minus its RBE import. The box's kubectl presents its own
 workload identity, which may mint the acceptance token:
 
 ```bash
-cd /state && rm -rf src && mkdir src
+cd ~ && rm -rf src && mkdir src
 curl -sSfL https://codeload.github.com/agentydragon/ducktape/tar.gz/refs/heads/devel |
   tar -xz -C src --strip-components=1
 src/agentplane/acceptance/box_bazel.sh test //agentplane/acceptance:test_egress \
   --local_test_jobs=1 --test_output=errors \
   --test_env=AGENTPLANE_ACCEPTANCE_URL=http://agentplane-app.agentplane-testing.svc.cluster.local:8080 \
-  >/state/run.log 2>&1 &
+  >run.log 2>&1 &
 ```
 
 - The URL is the testing app's Service, which staging's egress proxy admits for claude-ai. The
   public name hangs whenever the proxy dials its own node (#7918).
 - A cold build is about a thousand actions, roughly 15 minutes on the box's two CPUs, so the run
   goes to the background; a job whose output is redirected outlives the command that started it.
-  Read `/state/run.log` from later commands.
+  Read `~/run.log` from later commands. The home directory, with the checkout and Bazel's cache,
+  outlives the container being killed for running out of memory, so a rerun picks up the build.
 - Dispose of the box afterwards: it holds a share of the sandbox quota.
 
 Anywhere else an agent runs, the controlled-host instructions above stay operator-only.
