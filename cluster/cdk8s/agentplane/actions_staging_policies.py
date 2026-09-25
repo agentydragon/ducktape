@@ -43,6 +43,7 @@ from agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAct
 from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.agentplane import app as app_component, egress, testing
 from cluster.cdk8s.agentplane.app_settings import (
+    ACTIVITYWATCH_READ_POLICY,
     BASIC_POLICY,
     COINBASE_POLICY,
     FORGEJO_HAKU_POLICY,
@@ -496,7 +497,9 @@ def add_staging_action_policies(scope: Construct) -> None:
     # (egress_staging_credentials.py). `grocy-sf-readonly` presents the app password of an Authentik
     # service account with no Grocy permissions, as HTTP Basic, on GETs to Grocy's own REST API (see
     # that module's `grocy-sf-readonly` EgressPolicy for why that's Grocy's API rather than the
-    # grocy-mcp-sf MCP server). `coinbase` presents nothing: the sandbox signs with the key above.
+    # grocy-mcp-sf MCP server). `activitywatch-read` presents the ActivityWatch read route's bearer,
+    # which that route itself holds to reads. `coinbase` presents nothing: the sandbox signs with the
+    # key above.
     # `agentplane-testing` presents nothing either: the acceptance suite brings its own app token.
     # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
     #
@@ -525,6 +528,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 GOOGLE_READONLY_POLICY,
                 GROCY_SF_READONLY_POLICY,
                 HOME_ASSISTANT_READONLY_POLICY,
+                ACTIVITYWATCH_READ_POLICY,
                 COINBASE_POLICY,
                 _AGENTPLANE_TESTING_POLICY,
                 _GITHUB_DOWNLOADS_POLICY,

@@ -4031,6 +4031,7 @@ spec:
     - google-readonly
     - grocy-sf-readonly
     - home-assistant-readonly
+    - activitywatch-read
     - coinbase
     - agentplane-testing
     - github-downloads
@@ -4638,3 +4639,114 @@ spec:
       clusterInternal: true
       credentialRef:
         name: home-assistant-readonly
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-activitywatch-reader
+  namespace: activitywatch
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - activitywatch-read-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-activitywatch-reader
+  namespace: activitywatch
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-activitywatch-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-activitywatch-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: activitywatch
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: activitywatch-read-token
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: activitywatch-read-token
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-activitywatch-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: activitywatch-read-token
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: activitywatch-read
+  namespace: agentplane-staging
+spec:
+  description: The static bearer of the central ActivityWatch server's read route (cluster/docs/activitywatch/README.md), copied into this namespace by ESO. The route's own proxy admits it on GETs and on POST /api/0/query/ only, so it cannot write; what it reads is every device's window titles, URLs and AFK history.
+  source:
+    secretRef:
+      name: activitywatch-read-token
+      key: token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: activitywatch-read
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - activitywatch-read.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /api/0/**
+      credentialRef:
+        name: activitywatch-read
+    - hosts:
+        - activitywatch-read.allegedly.works
+      methods:
+        - POST
+      paths:
+        - /api/0/query/
+      credentialRef:
+        name: activitywatch-read
