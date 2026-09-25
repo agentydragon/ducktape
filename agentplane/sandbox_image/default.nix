@@ -50,6 +50,12 @@ let
       pkgs.cacert
       pkgs.kubectl # the sandbox's own Kubernetes identity, through the egress proxy
 
+      # `bazel` as bazelisk, which runs the upstream release a workspace's `.bazelversion` names:
+      # an FHS binary, which the substrate lets run.
+      (pkgs.runCommand "bazel-bazelisk" { } ''
+        mkdir -p $out/bin
+        ln -s ${pkgs.bazelisk}/bin/bazelisk $out/bin/bazel
+      '')
       # What a local Bazel build compiles and probes with: rules_cc's auto-detected toolchain is
       # this gcc, whose wrapper carries binutils (protoc and protobuf's editions defaults build
       # from source), and aspect_rules_py reads the host libc from `ldd --version`.
