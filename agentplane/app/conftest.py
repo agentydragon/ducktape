@@ -33,8 +33,7 @@ from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
-from agentplane.app.oidc import OperatorSession
-from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore, SessionRow
+from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from agentplane.app.testing.kubernetes import (
     NAMESPACE,
@@ -174,11 +173,12 @@ async def stored_login(store: OperatorSessionStore, login: OperatorSession) -> S
         id=secrets.token_hex(32),
         expires_at=now + timedelta(hours=1),
         absolute_expires_at=now + timedelta(days=1),
-        payload={"user": login.model_dump(mode="json")},
+        payload={},
     )
+    row.login = login
     async with store.sessions.begin() as db:
         db.add(row)
-    return SessionRow(store, row.id, idle=timedelta(hours=1), step=timedelta(minutes=5), request_session=None)
+    return SessionRow(store, row.id, idle=timedelta(hours=1), step=timedelta(minutes=5), request_login=None)
 
 
 SPEC = protocol_pb2.SessionSpec(

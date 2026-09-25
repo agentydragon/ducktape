@@ -31,8 +31,8 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
-from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings, OperatorSession
-from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
+from agentplane.app.operator_sessions import OperatorSession, OperatorSessionStore, request_session
 from agentplane.app.presets import Harness
 
 APP_URL = "http://test-app.invalid"
@@ -187,10 +187,10 @@ def serve(
 
         @app.post("/test-login")
         async def login(request: Request, seconds: float) -> None:
-            request.session["user"] = OperatorSession(
-                issuer=OIDC.issuer, subject="test-subject", username="test-operator"
-            ).model_dump(mode="json")
-            request.state.operator_session_absolute_expires_at = datetime.now(UTC) + timedelta(seconds=seconds)
+            request_session(request).log_in(
+                OperatorSession(issuer=OIDC.issuer, subject="test-subject", username="test-operator"),
+                absolute_expires_at=datetime.now(UTC) + timedelta(seconds=seconds),
+            )
 
         return app
 

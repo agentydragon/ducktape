@@ -4,7 +4,7 @@ renews an expiring login token under the session row's lock."""
 import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from time import time
 from urllib.parse import parse_qs
 
@@ -22,8 +22,14 @@ from agentplane.action_service.operator_oidc import OperatorOidcSettings, Operat
 from agentplane.app.action_federation import DirectFederationSettings, FederatedOperatorActions, OperatorFederationError
 from agentplane.app.conftest import stored_login
 from agentplane.app.database import connect
-from agentplane.app.oidc import LoginTokens, OIDCSettings, OperatorSession
-from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore, SessionRow
+from agentplane.app.oidc import OIDCSettings
+from agentplane.app.operator_sessions import (
+    BrowserSession,
+    LoginTokens,
+    OperatorSession,
+    OperatorSessionStore,
+    SessionRow,
+)
 from util.net import bind_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_jwks, build_mock_oidc_app, generate_rsa_keypair, sign_jwt
@@ -51,7 +57,9 @@ async def dex_session() -> AsyncIterator[OperatorSession]:
             issuer=issuer,
             subject="test-dex-user",
             username="test-dex-name",
-            tokens=LoginTokens(access_token=SecretStr(token), expires_at=now + 60, refresh_token=None),
+            tokens=LoginTokens(
+                access_token=SecretStr(token), expires_at=datetime.fromtimestamp(now + 60, UTC), refresh_token=None
+            ),
         )
 
 
@@ -134,7 +142,9 @@ async def login_provider() -> AsyncIterator[LoginProvider]:
         scope="openid",
     )
     expired = LoginTokens(
-        access_token=SecretStr("test-expired-login-token"), expires_at=time() - 1, refresh_token=SecretStr(SPENT)
+        access_token=SecretStr("test-expired-login-token"),
+        expires_at=datetime.now(UTC) - timedelta(seconds=1),
+        refresh_token=SecretStr(SPENT),
     )
     async with httpx.AsyncClient() as http:
         provider = LoginProvider(
@@ -168,7 +178,9 @@ async def _stored_tokens(store: OperatorSessionStore, row_id: str) -> LoginToken
     async with store.sessions() as db:
         row = await db.get(BrowserSession, row_id)
     assert row is not None
-    return OperatorSession.model_validate(row.payload["user"]).tokens
+    login = row.login
+    assert login is not None
+    return login.tokens
 
 
 async def _lock_waiters(store: OperatorSessionStore) -> int:
@@ -194,7 +206,7 @@ async def test_an_expired_login_token_is_renewed_and_the_rotated_one_kept(
     assert renewed.refresh_token is not None
     assert login_provider.presented == [SPENT]
     assert renewed.refresh_token.get_secret_value() == "test-rotated-refresh-token-1"
-    assert renewed.expires_at > time()
+    assert renewed.expires_at > datetime.now(UTC)
     assert token == renewed.access_token.get_secret_value()
     # Renewed, the token is good for another exchange without spending the refresh token again.
     assert await login_provider.federation.exchange(row) == token
@@ -211,11 +223,7 @@ async def test_two_replicas_renewing_one_login_spend_its_refresh_token_once(
     engine = connect(db_url)
     try:
         replica = SessionRow(
-            OperatorSessionStore(engine),
-            row.id,
-            idle=timedelta(hours=1),
-            step=timedelta(minutes=5),
-            request_session=None,
+            OperatorSessionStore(engine), row.id, idle=timedelta(hours=1), step=timedelta(minutes=5), request_login=None
         )
         async with operator_sessions.sessions.begin() as holder:
             await holder.scalar(select(BrowserSession).where(BrowserSession.id == row.id).with_for_update())

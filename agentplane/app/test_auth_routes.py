@@ -260,15 +260,18 @@ async def test_session_expiry_and_server_side_oauth_state(
         row = (await db.scalars(select(BrowserSession))).one()
         assert "_state_" in next(iter(row.payload))
         assert "code_verifier" in str(row.payload)
+        assert row.login is None
         assert row.expires_at <= datetime.now(UTC) + timedelta(minutes=10)
     await browser.get(response.headers["location"])
     async with operator_sessions.sessions.begin() as db:
         row = (await db.scalars(select(BrowserSession))).one()
-        assert row.payload["user"]["issuer"]
-        assert row.payload["user"]["subject"] == SUBJECT
-        assert row.payload["user"]["username"] == OPERATOR
-        assert row.payload["user"]["tokens"] is None, "disabled federation needs no retained token"
-        assert list(row.payload) == ["user"], "OAuth nonce/state/PKCE are consumed at login"
+        login = row.login
+        assert login is not None
+        assert login.issuer
+        assert login.subject == SUBJECT
+        assert login.username == OPERATOR
+        assert login.tokens is None, "disabled federation needs no retained token"
+        assert row.payload == {}, "OAuth nonce/state/PKCE are consumed at login, and the login is not payload"
         await db.execute(update(BrowserSession).values(expires_at=datetime.now(UTC) - timedelta(seconds=1)))
     assert (await browser.get("/auth/me")).status_code == 401
     assert (await browser.get("/sandboxes")).status_code == 401

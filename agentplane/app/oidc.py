@@ -14,11 +14,14 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime
 
 from authlib.integrations.starlette_client import OAuth
 from fastapi import Request
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from agentplane.app.operator_sessions import OperatorSession, request_session
 
 logger = logging.getLogger(__name__)
 
@@ -112,45 +115,20 @@ def session_operator(request: Request) -> str | None:
     return session.username if session is not None else None
 
 
-class LoginTokens(BaseModel):
-    """The login's access token and what renews it, kept only while Action federation needs them."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
-
-    access_token: SecretStr
-    expires_at: float = Field(description="The access token's expiry, as a Unix time.")
-    refresh_token: SecretStr | None = Field(default=None, description="None when the provider issued none.")
-
-    # The session row is the only JSON this is written to, and it has to hold the tokens themselves.
-    @field_serializer("access_token", "refresh_token", when_used="json")
-    def _stored(self, token: SecretStr | None) -> str | None:
-        return token.get_secret_value() if token is not None else None
-
-
 class TokenResponse(BaseModel):
     """The token endpoint's answer, as authlib hands it over with `expires_at` derived from `expires_in`."""
 
-    model_config = ConfigDict(extra="ignore", frozen=True, hide_input_in_errors=True)
+    # Pydantic would otherwise read a Unix time past 2e10 as milliseconds; authlib's is always seconds.
+    model_config = ConfigDict(extra="ignore", frozen=True, hide_input_in_errors=True, val_temporal_unit="seconds")
 
     access_token: SecretStr = Field(min_length=1)
-    expires_at: float | None = Field(
-        default=None, allow_inf_nan=False, description="None when the provider stated no lifetime."
-    )
+    expires_at: datetime | None = Field(default=None, description="None when the provider stated no lifetime.")
     refresh_token: SecretStr | None = Field(default=None, min_length=1, description="None when it issued none.")
 
 
-class OperatorSession(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
-
-    issuer: str
-    subject: str
-    username: str
-    tokens: LoginTokens | None = None
-
-
 def operator_session(request: Request) -> OperatorSession | None:
-    """The login in this request's snapshot of its session, which the session middleware only hands on
-    unexpired. Its tokens may be stale: the federation path reads them from the row."""
-    if "session" not in request.scope or not request.session.get("user"):
+    """The login of the session this request presented, which the session middleware only hands on
+    unexpired, or None. Its tokens may be stale: the federation path reads them from the row."""
+    if request.app.state.oidc is None:
         return None
-    return OperatorSession.model_validate(request.session["user"])
+    return request_session(request).held.login
