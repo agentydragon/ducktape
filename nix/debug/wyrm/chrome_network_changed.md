@@ -54,26 +54,9 @@ expect no `inet6` events.
 Containerd doesn't create veths — the CNI plugin (Cilium) does, in the host namespace.
 Moving containerd wouldn't help; moving Cilium would break all pod routing.
 
-### Cluster-level
-
-1. Fix pve-cp-0 stalls — see <../../../debug/kernel_6_18_amd_kvm_stall.md>
-2. Add `NoSchedule` taints to VPS control plane nodes (prevent OOM cascade; #5361)
-3. Clean up stale VolumeAttachments for `talos-pve-gpu-worker-0`
-
-## Cluster Outage — 2026-03-30
-
-While debugging the kernel 6.18 stalls, removing pve-cp-0 left 2-member etcd. VPS nodes
-(no `NoSchedule` taint) absorbed workload pods → OOM → nebula tunnel broke → etcd no
-leader → full cluster outage. Recovered by rebooting + cordoning VPS nodes.
-
-**Prevention**: VPS control plane nodes need `NoSchedule` taints.
-
 ## TODOs
 
 - [ ] Verify the `addr_gen_mode` sysctl on each worker after deploy (#7921)
-- [ ] Add `NoSchedule` taints to VPS nodes (tracked in #5361)
-- [ ] Clean up stale VolumeAttachments for `talos-pve-gpu-worker-0`
-- [ ] Bring `rugged` back online
 
 ## Related
 
