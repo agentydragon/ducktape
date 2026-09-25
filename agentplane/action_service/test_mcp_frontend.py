@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import get_args
 from unittest.mock import AsyncMock
 from uuid import UUID
 
@@ -28,11 +29,10 @@ from agentplane.action_service.auth import DisabledOperatorAuthenticator, worklo
 from agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, McpExecutorBinding
 from agentplane.action_service.client import WORKLOAD_CREDENTIAL_PLACEHOLDER
 from agentplane.action_service.db import ActionStore, make_sessionmaker
+from agentplane.action_service.mcp_frontend import CancellationView, PolicyField, Receipt, RequestField
 from agentplane.action_service.models import (
-    ActionRequestView,
     ActionState,
     CancellationOutcome,
-    CancellationResult,
     DecisionInput,
     Executor,
     OperatorPrincipal,
@@ -56,6 +56,10 @@ from agentplane.workload_auth.principal import (
 AUDIENCE = "test-action-audience"
 NAMESPACE = "test-action-sandboxes"
 OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
+# Passed as include_fields to reconstruct the full wire model where a test needs every field.
+# RequestField/PolicyField are Literal aliases (see mcp_frontend.py), not iterable enum classes.
+ALL_REQUEST_FIELDS = list(get_args(RequestField))
+ALL_POLICY_FIELDS = list(get_args(PolicyField))
 
 
 def sandbox(label: str) -> WorkloadPrincipal:
@@ -262,7 +266,7 @@ async def test_compact_catalog_opt_in_pagination_and_small_generic_schema(fronte
         tools = await client.list_tools()
         assert len(tools) == 7
         cancellation = next(tool for tool in tools if tool.name == "cancel_action_request")
-        assert set(cancellation.input_schema["properties"]) == {"request_id"}
+        assert set(cancellation.input_schema["properties"]) == {"request_id", "include_fields"}
         assert cancellation.input_schema["required"] == ["request_id"]
         assert all("args" not in tool.input_schema["properties"] for tool in tools)
         assert "test-full-description" not in " ".join(tool.model_dump_json() for tool in tools)
@@ -288,6 +292,72 @@ async def test_compact_catalog_opt_in_pagination_and_small_generic_schema(fronte
         assert unsupported.is_error
 
 
+async def test_receipts_and_policy_view_are_compact_by_default_and_widen_via_include_fields(frontend: Frontend) -> None:
+    always_receipt_fields = {"id", "state", "version", "created_at", "updated_at"}
+    always_policy_fields = {"subject", "synced", "bindings"}
+    async with frontend.client() as client:
+        envelope = {
+            "idempotency_key": "test-compact-receipt",
+            "title": "test title for test-compact-receipt",
+            "action": {"group": "test-group", "name": "alpha"},
+            "arguments": {"message": "test-compact"},
+        }
+        compact = (await client.call_tool("request_action", {"request": envelope})).structured_content
+        assert compact is not None
+        assert set(compact) == always_receipt_fields
+        request_id = compact["id"]
+
+        # include_fields is a pure allowlist, not additive to the default: naming only the wide
+        # fields you want drops the compact ones, so widening past the default means repeating it.
+        widened = (
+            await client.call_tool(
+                "get_action_request", {"request_id": request_id, "include_fields": ["input", "execution"]}
+            )
+        ).structured_content
+        assert widened is not None
+        # execution is requested but genuinely null (still decision_pending): the key survives as
+        # null, distinguishing "asked for and absent" from "never asked for" -- see _receipt.
+        assert set(widened) == {"input", "execution"}
+        assert widened["input"] == {**envelope, "description": None}
+        assert widened["execution"] is None
+
+        widened_plus_defaults = (
+            await client.call_tool(
+                "get_action_request",
+                {"request_id": request_id, "include_fields": [*always_receipt_fields, "execution"]},
+            )
+        ).structured_content
+        assert widened_plus_defaults is not None
+        assert set(widened_plus_defaults) == always_receipt_fields | {"execution"}
+
+        rejected = await client.call_tool(
+            "get_action_request", {"request_id": request_id, "include_fields": ["bogus"]}, raise_on_error=False
+        )
+        assert rejected.is_error
+
+        cancelled = (await client.call_tool("cancel_action_request", {"request_id": request_id})).structured_content
+        assert cancelled is not None
+        assert set(cancelled) == {"outcome", "request"}
+        assert set(cancelled["request"]) == always_receipt_fields
+
+        widened_cancel = (
+            await client.call_tool("cancel_action_request", {"request_id": request_id, "include_fields": ["decision"]})
+        ).structured_content
+        assert widened_cancel is not None
+        assert set(widened_cancel["request"]) == {"decision"}
+
+        policy_compact = (await client.call_tool("get_action_policy")).structured_content
+        assert policy_compact is not None
+        assert set(policy_compact) == always_policy_fields
+
+        policy_widened = (
+            await client.call_tool("get_action_policy", {"include_fields": ["auto_approve_if"]})
+        ).structured_content
+        assert policy_widened is not None
+        assert set(policy_widened) == {"auto_approve_if"}
+        assert policy_widened["auto_approve_if"] != []
+
+
 async def test_submission_wait_receipts_events_and_owner_scope(frontend: Frontend) -> None:
     async with frontend.client() as caller, frontend.client("test-token-b") as other:
         key = "test-submit"
@@ -297,44 +367,52 @@ async def test_submission_wait_receipts_events_and_owner_scope(frontend: Fronten
             "action": {"group": "test-group", "name": "alpha"},
             "arguments": {"message": "test-message"},
         }
-        result = await caller.call_tool("request_action", {"request": envelope})
-        receipt = ActionRequestView.model_validate(result.structured_content)
+        result = await caller.call_tool("request_action", {"request": envelope, "include_fields": ALL_REQUEST_FIELDS})
+        receipt = Receipt.model_validate(result.structured_content)
         assert receipt.state is ActionState.DECISION_PENDING
+        assert receipt.id is not None
+        request_id = receipt.id
         with pytest.raises(ToolError, match="idempotency key already used"):
             await caller.call_tool("request_action", {"request": envelope})
         by_key = {"idempotency_key": key}
-        assert (await caller.call_tool("get_action_request", by_key)).structured_content == result.structured_content
-        for args in ({}, {"request_id": str(receipt.id), **by_key}):
+        assert (
+            await caller.call_tool("get_action_request", {**by_key, "include_fields": ALL_REQUEST_FIELDS})
+        ).structured_content == result.structured_content
+        for args in ({}, {"request_id": str(request_id), **by_key}):
             with pytest.raises(ToolError, match="exactly one of request_id or idempotency_key"):
                 await caller.call_tool("get_action_request", args)
         for name, args in (
-            ("get_action_request", {"request_id": str(receipt.id)}),
+            ("get_action_request", {"request_id": str(request_id)}),
             ("get_action_request", by_key),
-            ("list_action_request_events", {"request_id": str(receipt.id)}),
+            ("list_action_request_events", {"request_id": str(request_id)}),
         ):
             denied = await other.call_tool(name, args, raise_on_error=False)
             assert denied.is_error
-        task = asyncio.create_task(caller.call_tool("get_action_request", {**by_key, "wait_seconds": 10}))
+        task = asyncio.create_task(
+            caller.call_tool(
+                "get_action_request", {**by_key, "wait": {"wait_seconds": 10}, "include_fields": ALL_REQUEST_FIELDS}
+            )
+        )
         # A commit before or after subscription must both be observed, without polling.
         await frontend.store.decide(
-            receipt.id,
+            request_id,
             DecisionInput(verdict=Verdict.DENY, expected_version=1, idempotency_key="test-deny"),
             OPERATOR,
             provider="test-human",
         )
-        assert ActionRequestView.model_validate((await task).structured_content).state is ActionState.DENIED
-        first = await caller.call_tool("list_action_request_events", {"request_id": str(receipt.id), "limit": 1})
+        assert Receipt.model_validate((await task).structured_content).state is ActionState.DENIED
+        first = await caller.call_tool("list_action_request_events", {"request_id": str(request_id), "limit": 1})
         assert first.structured_content is not None
         assert first.structured_content["next_after_sequence"] == 1
         second = await caller.call_tool(
-            "list_action_request_events", {"request_id": str(receipt.id), "after_sequence": 1}
+            "list_action_request_events", {"request_id": str(request_id), "after_sequence": 1}
         )
         assert second.structured_content is not None
         assert second.structured_content["events"][0]["state"] == "denied"
         assert "next_after_sequence" not in second.structured_content
         assert (
-            await frontend.store.get(receipt.id, workload_principal(frontend.tokens["test-token-a"]))
-        ).id == receipt.id
+            await frontend.store.get(request_id, workload_principal(frontend.tokens["test-token-a"]))
+        ).id == request_id
 
 
 async def test_an_unlabelled_account_is_refused_at_the_transport_despite_a_binding(frontend: Frontend) -> None:
@@ -356,7 +434,9 @@ async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(f
     in the same namespace appears only when that Sandbox is the target. The HTTP route is the
     caller's own view. Nothing is submitted by reading."""
     async with frontend.client(egress=True) as caller, frontend.client("test-token-b") as other:
-        own = CallerActionPolicyView.model_validate((await caller.call_tool("get_action_policy")).structured_content)
+        own = CallerActionPolicyView.model_validate(
+            (await caller.call_tool("get_action_policy", {"include_fields": ALL_POLICY_FIELDS})).structured_content
+        )
         assert isinstance(own.subject, ServiceAccountRef)
         assert own.subject == workload_principal(frontend.tokens["test-token-a"]).account
         assert own.synced is True
@@ -366,23 +446,35 @@ async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(f
         ]
         assert "test-vanished" not in str(own)
         assert "test-elsewhere" not in str(own)
-        by_name = await caller.call_tool("get_action_policy", {"target": "self"})
+        by_name = await caller.call_tool("get_action_policy", {"target": "self", "include_fields": ALL_POLICY_FIELDS})
         assert CallerActionPolicyView.model_validate(by_name.structured_content) == own
-        nothing = CallerActionPolicyView.model_validate((await other.call_tool("get_action_policy")).structured_content)
+        nothing = CallerActionPolicyView.model_validate(
+            (await other.call_tool("get_action_policy", {"include_fields": ALL_POLICY_FIELDS})).structured_content
+        )
         assert nothing.subject == workload_principal(frontend.tokens["test-token-b"]).account
         assert (nothing.synced, nothing.bindings, nothing.auto_approve_if) == (True, [], [])
         # A named target gets the same view its own caller would; one the service does not watch has nothing.
-        about_a = await other.call_tool("get_action_policy", {"target": {"service_account": own.subject.model_dump()}})
+        about_a = await other.call_tool(
+            "get_action_policy",
+            {"target": {"service_account": own.subject.model_dump()}, "include_fields": ALL_POLICY_FIELDS},
+        )
         assert CallerActionPolicyView.model_validate(about_a.structured_content) == own
         elsewhere = await caller.call_tool(
             "get_action_policy",
-            {"target": {"service_account": {"namespace": NAMESPACE, "name": "test-runner-elsewhere"}}},
+            {
+                "target": {"service_account": {"namespace": NAMESPACE, "name": "test-runner-elsewhere"}},
+                "include_fields": ALL_POLICY_FIELDS,
+            },
         )
         assert [b.name for b in CallerActionPolicyView.model_validate(elsewhere.structured_content).bindings] == [
             "test-elsewhere"
         ]
         unwatched = await caller.call_tool(
-            "get_action_policy", {"target": {"service_account": {"namespace": "test-unwatched", "name": "nobody"}}}
+            "get_action_policy",
+            {
+                "target": {"service_account": {"namespace": "test-unwatched", "name": "nobody"}},
+                "include_fields": ALL_POLICY_FIELDS,
+            },
         )
         assert CallerActionPolicyView.model_validate(unwatched.structured_content).bindings == []
     assert await frontend.store.list_requests(OPERATOR) == []
@@ -433,7 +525,7 @@ async def test_protocol_setup_needs_a_bearer_at_the_transport(frontend: Frontend
 
 
 async def test_tools_act_as_the_identity_the_transport_verified(frontend: Frontend) -> None:
-    receipts: dict[str, ActionRequestView] = {}
+    request_ids: dict[str, UUID] = {}
     for token in ("test-token-a", "test-token-b"):
         async with frontend.client(token) as client:
             result = await client.call_tool(
@@ -447,9 +539,10 @@ async def test_tools_act_as_the_identity_the_transport_verified(frontend: Fronte
                     }
                 },
             )
-            receipts[token] = ActionRequestView.model_validate(result.structured_content)
-    for token, receipt in receipts.items():
-        stored = await frontend.store.get(receipt.id, OPERATOR)
+            assert result.structured_content is not None
+            request_ids[token] = UUID(result.structured_content["id"])
+    for token, request_id in request_ids.items():
+        stored = await frontend.store.get(request_id, OPERATOR)
         assert stored.caller == workload_principal(frontend.tokens[token]).account
         assert stored.external_grant is None
 
@@ -512,15 +605,16 @@ async def test_submission_deadline_and_wait_validation(frontend: Frontend) -> No
             "action": {"group": "test-group", "name": "alpha"},
             "arguments": {"message": "test-wait"},
         }
-        receipt = ActionRequestView.model_validate(
-            (await client.call_tool("request_action", {"request": request, "wait_seconds": 0.001})).structured_content
-        )
-        assert receipt.state is ActionState.DECISION_PENDING
+        submitted = (
+            await client.call_tool("request_action", {"request": request, "wait": {"wait_seconds": 0.001}})
+        ).structured_content
+        assert submitted is not None
+        assert submitted["state"] == ActionState.DECISION_PENDING
         assert not frontend.updates._subscribers
         for seconds in (-1, 31):
             invalid = await client.call_tool(
                 "request_action",
-                {"request": {**request, "idempotency_key": "test-invalid"}, "wait_seconds": seconds},
+                {"request": {**request, "idempotency_key": "test-invalid"}, "wait": {"wait_seconds": seconds}},
                 raise_on_error=False,
             )
             assert invalid.is_error
@@ -540,20 +634,22 @@ async def test_allowed_action_executes_and_returns_canonical_result(frontend: Fr
                 }
             },
         )
-        receipt = ActionRequestView.model_validate(result.structured_content)
+        assert result.structured_content is not None
+        request_id, version = result.structured_content["id"], result.structured_content["version"]
         await frontend.service.decide(
-            receipt.id,
-            DecisionInput(verdict=Verdict.ALLOW, expected_version=receipt.version, idempotency_key="test-allow"),
+            UUID(request_id),
+            DecisionInput(verdict=Verdict.ALLOW, expected_version=version, idempotency_key="test-allow"),
             OPERATOR,
         )
-        finished = ActionRequestView.model_validate(
-            (
-                await client.call_tool("get_action_request", {"request_id": str(receipt.id), "wait_seconds": 10})
-            ).structured_content
-        )
-        assert finished.state is ActionState.SUCCEEDED
-        assert finished.execution is not None
-        assert finished.execution.result == {"echo": {"message": "test-result"}}
+        finished = (
+            await client.call_tool(
+                "get_action_request",
+                {"request_id": request_id, "wait": {"wait_seconds": 10}, "include_fields": ["state", "execution"]},
+            )
+        ).structured_content
+        assert finished is not None
+        assert finished["state"] == ActionState.SUCCEEDED
+        assert finished["execution"]["result"] == {"echo": {"message": "test-result"}}
 
 
 @dataclass
@@ -601,7 +697,7 @@ async def test_http_disconnect_releases_wait_without_cancelling_action(
                                 "action": {"group": "test-group", "name": "alpha"},
                                 "arguments": {"message": "test-disconnect"},
                             },
-                            "wait_seconds": 30,
+                            "wait": {"wait_seconds": 30},
                         },
                     },
                 }
@@ -659,15 +755,15 @@ async def test_cancellation_preserves_canonical_cutoff_ownership_and_retry(
             "action": {"group": "test-group", "name": "alpha"},
             "arguments": {"message": "test-cancel"},
         }
-        receipt = ActionRequestView.model_validate(
-            (await caller.call_tool("request_action", {"request": request})).structured_content
-        )
+        submitted = (await caller.call_tool("request_action", {"request": request})).structured_content
+        assert submitted is not None
+        request_id, version = UUID(submitted["id"]), submitted["version"]
         if state is not ActionState.DECISION_PENDING:
             await frontend.store.decide(
-                receipt.id,
+                request_id,
                 DecisionInput(
                     verdict=Verdict.DENY if state is ActionState.DENIED else Verdict.ALLOW,
-                    expected_version=receipt.version,
+                    expected_version=version,
                     idempotency_key="test-cancel-decision",
                 ),
                 OPERATOR,
@@ -676,16 +772,16 @@ async def test_cancellation_preserves_canonical_cutoff_ownership_and_retry(
         if state is ActionState.DISPATCHING:
             assert (
                 await frontend.store.claim_execution(
-                    receipt.id, executor_id="test-executor", lease_duration=timedelta(seconds=30)
+                    request_id, executor_id="test-executor", lease_duration=timedelta(seconds=30)
                 )
                 is not None
             )
-        args = {"request_id": str(receipt.id)}
+        args = {"request_id": str(request_id), "include_fields": ALL_REQUEST_FIELDS}
         assert (await other.call_tool("cancel_action_request", args, raise_on_error=False)).is_error
-        cancelled = CancellationResult.model_validate(
+        cancelled = CancellationView.model_validate(
             (await caller.call_tool("cancel_action_request", args)).structured_content
         )
-        repeated = CancellationResult.model_validate(
+        repeated = CancellationView.model_validate(
             (await caller.call_tool("cancel_action_request", args)).structured_content
         )
         if state is ActionState.DISPATCHING:
@@ -701,38 +797,45 @@ async def test_cancellation_preserves_canonical_cutoff_ownership_and_retry(
         assert repeated.request == cancelled.request
         with pytest.raises(ToolError, match="idempotency key already used"):
             await caller.call_tool("request_action", {"request": request})
-        by_key = {"idempotency_key": key}
+        by_key = {"idempotency_key": key, "include_fields": ALL_REQUEST_FIELDS}
         recovered = (await caller.call_tool("get_action_request", by_key)).structured_content
-        assert ActionRequestView.model_validate(recovered) == cancelled.request
+        assert Receipt.model_validate(recovered) == cancelled.request
 
 
 async def test_cancellation_wakes_mcp_receipt_wait(frontend: Frontend, subscription_signals: WaitSignals) -> None:
     async with frontend.client() as client:
-        receipt = ActionRequestView.model_validate(
-            (
-                await client.call_tool(
-                    "request_action",
-                    {
-                        "request": {
-                            "idempotency_key": "test-cancel-wake",
-                            "title": "test title for test-cancel-wake",
-                            "action": {"group": "test-group", "name": "alpha"},
-                            "arguments": {"message": "test-cancel-wake"},
-                        }
-                    },
-                )
-            ).structured_content
-        )
+        submitted = (
+            await client.call_tool(
+                "request_action",
+                {
+                    "request": {
+                        "idempotency_key": "test-cancel-wake",
+                        "title": "test title for test-cancel-wake",
+                        "action": {"group": "test-group", "name": "alpha"},
+                        "arguments": {"message": "test-cancel-wake"},
+                    }
+                },
+            )
+        ).structured_content
+        assert submitted is not None
+        request_id = submitted["id"]
         async with asyncio.timeout(10):
             pending = asyncio.create_task(
-                client.call_tool("get_action_request", {"request_id": str(receipt.id), "wait_seconds": 30})
+                client.call_tool(
+                    "get_action_request",
+                    {"request_id": request_id, "wait": {"wait_seconds": 30}, "include_fields": ALL_REQUEST_FIELDS},
+                )
             )
             await subscription_signals.registered.wait()
-            cancelled = CancellationResult.model_validate(
-                (await client.call_tool("cancel_action_request", {"request_id": str(receipt.id)})).structured_content
+            cancelled = CancellationView.model_validate(
+                (
+                    await client.call_tool(
+                        "cancel_action_request", {"request_id": request_id, "include_fields": ALL_REQUEST_FIELDS}
+                    )
+                ).structured_content
             )
             assert cancelled.outcome is CancellationOutcome.CANCELLED
-            assert ActionRequestView.model_validate((await pending).structured_content) == cancelled.request
+            assert Receipt.model_validate((await pending).structured_content) == cancelled.request
             await subscription_signals.released.wait()
         assert not frontend.updates._subscribers
 

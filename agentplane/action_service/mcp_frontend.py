@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from enum import StrEnum
+from datetime import datetime
 from functools import wraps
-from typing import Annotated, cast
+from typing import Annotated, Any, Final, Literal, cast
 from uuid import UUID
 
 from fastmcp import FastMCP
@@ -34,51 +34,84 @@ from agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
     ActionRequestView,
+    ActionState,
     CallerPrincipal,
+    CancellationOutcome,
+    DecisionView,
+    ExecutionView,
     ExternalGrantProvenance,
 )
 from agentplane.action_service.policy_view import SELF, PolicyTarget
 from agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
 from agentplane.action_service.updates import ActionUpdates, UpdatesUnavailableError
 from agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitUntil
+from agentplane.subjects import ServiceAccountRef
 
 PageSize = Annotated[int, Field(ge=1, le=100, description="Maximum entries in this page (1-100).")]
-WaitSeconds = Annotated[
-    float,
-    Field(ge=0, le=30, allow_inf_nan=False, description="Wait at most this many seconds; zero returns immediately."),
-]
 IdempotencyKey = Annotated[
     str, Field(min_length=1, max_length=200, description="The idempotency_key this caller submitted the request under.")
 ]
 
 
 def _parse_request_id(value: UUID | str) -> UUID:
-    """Accept the JSON string form of a UUID before FastMCP's strict model validation."""
+    """Accept the JSON string form of a UUID before FastMCP's strict model validation. Unlike an
+    enum vocabulary (below), UUID has no Literal-shaped escape since it isn't a closed set of
+    values, so this BeforeValidator is the one wire-boundary workaround that's still needed."""
     return value if isinstance(value, UUID) else UUID(value)
 
 
 McpRequestId = Annotated[UUID, BeforeValidator(_parse_request_id)]
 
+# FastMCP's strict_input_validation validates enum-typed fields by isinstance, which rejects the
+# plain JSON string every MCP client actually sends. Verified against pydantic 2.12.5: neither
+# Field(strict=False) nor model_config=ConfigDict(strict=False) can override an explicit
+# strict=True passed to validate_python -- the outer call always wins. A Literal has no such
+# problem: its members are the raw JSON scalars, not instances of a custom type, so strict and lax
+# validation agree. These vocabularies exist only at this wire boundary, never as Python-side
+# domain values, so a Literal is the STYLE.md-sanctioned escape ("unless an external API dictates
+# the Literal shape") rather than a StrEnum.
+IncludeField = Literal["input_schema", "description"]
 
-class IncludeField(StrEnum):
-    INPUT_SCHEMA = "input_schema"
-    DESCRIPTION = "description"
+RequestField = Literal[
+    "id",
+    "state",
+    "version",
+    "created_at",
+    "updated_at",
+    "input",
+    "origin",
+    "correlation",
+    "caller",
+    "external_grant",
+    "decision",
+    "execution",
+]
+
+DEFAULT_RECEIPT_FIELDS: Final[list[RequestField]] = ["id", "state", "version", "created_at", "updated_at"]
+
+PolicyField = Literal["subject", "synced", "bindings", "auto_approve_if", "auto_deny_if", "auto_deny_unless"]
+
+DEFAULT_POLICY_FIELDS: Final[list[PolicyField]] = ["subject", "synced", "bindings"]
 
 
-def _parse_include_field(value: IncludeField | str) -> IncludeField:
-    """Accept the JSON string form before FastMCP's strict enum validation."""
-    return value if isinstance(value, IncludeField) else IncludeField(value)
+class WaitInput(BaseModel):
+    """The MCP-facing twin of WaitOptions, wait_until as a Literal for the reason given above."""
+
+    wait_seconds: Annotated[
+        float,
+        Field(
+            ge=0, le=30, allow_inf_nan=False, description="Wait at most this many seconds; zero returns immediately."
+        ),
+    ] = 0
+    wait_until: Literal["decision", "terminal"] = "terminal"
+
+    def options(self) -> WaitOptions:
+        return WaitOptions(wait_seconds=self.wait_seconds, wait_until=WaitUntil(self.wait_until))
 
 
-McpIncludeField = Annotated[IncludeField, BeforeValidator(_parse_include_field)]
-
-
-def _parse_wait_until(value: WaitUntil | str) -> WaitUntil:
-    """Accept the JSON string form before FastMCP's strict enum validation."""
-    return value if isinstance(value, WaitUntil) else WaitUntil(value)
-
-
-McpWaitUntil = Annotated[WaitUntil, BeforeValidator(_parse_wait_until)]
+# FastMCP resolves a parameter by its dependency default and strips it from a tool's input schema;
+# module-level because a call in a default is what ruff's B008 refuses (also below, for CURRENT_ACCESS_TOKEN).
+DEFAULT_WAIT: Final = WaitInput()
 
 
 class ActionSummary(BaseModel):
@@ -97,6 +130,38 @@ class ActionPage(BaseModel):
 class EventPage(BaseModel):
     events: list[ActionEventView]
     next_after_sequence: int | None = None
+
+
+class RequestInput(BaseModel):
+    """The caller-authored submission envelope, echoed back as one unit."""
+
+    idempotency_key: str
+    action: ActionIdentity
+    arguments: dict[str, JsonValue]
+    title: str
+    description: str | None
+
+
+class Receipt(BaseModel):
+    """The MCP-facing projection of an ActionRequestView; every field is gated by include_fields."""
+
+    id: UUID | None = None
+    state: ActionState | None = None
+    version: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    input: RequestInput | None = None
+    origin: dict[str, JsonValue] | None = None
+    correlation: dict[str, JsonValue] | None = None
+    caller: ServiceAccountRef | None = None
+    external_grant: ExternalGrantProvenance | None = None
+    decision: DecisionView | None = None
+    execution: ExecutionView | None = None
+
+
+class CancellationView(BaseModel):
+    outcome: CancellationOutcome
+    request: Receipt
 
 
 class TransportDisconnects:
@@ -176,6 +241,8 @@ def _tool_errors[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitab
             InvalidActionArgumentsError,
             UpdatesUnavailableError,
         ) as error:
+            # Re-raised as ToolError (a FastMCPError) so mask_error_details=True still lets this
+            # message through: FastMCP only preserves FastMCPError text, masking any other exception.
             raise ToolError(str(error)) from None
         except UnsupportedActionError:
             raise ToolError(
@@ -191,13 +258,54 @@ def _summary(catalog: ActionCatalog, identity: ActionIdentity, fields: set[Inclu
         group=identity.group,
         name=identity.name,
         available=group.available,
-        input_schema=action.input_schema if IncludeField.INPUT_SCHEMA in fields else None,
-        description=action.description if IncludeField.DESCRIPTION in fields else None,
+        input_schema=action.input_schema if "input_schema" in fields else None,
+        description=action.description if "description" in fields else None,
     )
 
 
-def _result(model: BaseModel, *, exclude_none: bool = False) -> ToolResult:
-    return ToolResult(structured_content=model.model_dump(mode="json", exclude_none=exclude_none))
+def _receipt(view: ActionRequestView, fields: set[RequestField]) -> Receipt:
+    """Set only the requested fields, via model_construct, so a field that is requested but
+    genuinely null (e.g. execution before dispatch) still dumps as null rather than being
+    indistinguishable from one that was never requested -- exclude_none can't tell those apart,
+    exclude_unset (below) can, since only explicitly-set fields survive it regardless of value."""
+    values: dict[str, Any] = {}
+    if "id" in fields:
+        values["id"] = view.id
+    if "state" in fields:
+        values["state"] = view.state
+    if "version" in fields:
+        values["version"] = view.version
+    if "created_at" in fields:
+        values["created_at"] = view.created_at
+    if "updated_at" in fields:
+        values["updated_at"] = view.updated_at
+    if "input" in fields:
+        values["input"] = RequestInput(
+            idempotency_key=view.idempotency_key,
+            action=view.action,
+            arguments=view.arguments,
+            title=view.title,
+            description=view.description,
+        )
+    if "origin" in fields:
+        values["origin"] = view.origin
+    if "correlation" in fields:
+        values["correlation"] = view.correlation
+    if "caller" in fields:
+        values["caller"] = view.caller
+    if "external_grant" in fields:
+        values["external_grant"] = view.external_grant
+    if "decision" in fields:
+        values["decision"] = view.decision
+    if "execution" in fields:
+        values["execution"] = view.execution
+    return Receipt.model_construct(**values)
+
+
+def _result(model: BaseModel, *, exclude_none: bool = False, exclude_unset: bool = False) -> ToolResult:
+    return ToolResult(
+        structured_content=model.model_dump(mode="json", exclude_none=exclude_none, exclude_unset=exclude_unset)
+    )
 
 
 def create_server(
@@ -244,7 +352,7 @@ def create_server(
         group: Key | None = None,
         after: ActionIdentity | None = None,
         limit: PageSize = 30,
-        include_fields: list[McpIncludeField] | None = None,
+        include_fields: list[IncludeField] | None = None,
     ) -> ToolResult:
         """Discover available Action identifiers without loading their full schemas or descriptions.
         Use this before get_action when the group/name is unknown; this never submits an Action.
@@ -274,7 +382,7 @@ def create_server(
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
-    async def get_action(group: Key, name: Key, include_fields: list[McpIncludeField] | None = None) -> ToolResult:
+    async def get_action(group: Key, name: Key, include_fields: list[IncludeField] | None = None) -> ToolResult:
         """Read one Action definition, not a submitted request or its execution status.
         Provide group/name from list_actions; request input_schema before constructing unfamiliar arguments.
         Full description and input_schema appear only when named in include_fields; defaults are compact.
@@ -286,54 +394,61 @@ def create_server(
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
-    async def get_action_policy(target: PolicyTarget = SELF, caller: Caller = CALLER) -> ToolResult:
+    async def get_action_policy(
+        target: PolicyTarget = SELF, include_fields: list[PolicyField] = DEFAULT_POLICY_FIELDS, caller: Caller = CALLER
+    ) -> ToolResult:
         """Read what bindings auto-decide for a target: your own ("self", the default), or a named
-        ServiceAccount. The answer is the policy sets bound to it and the auto_approve_if,
-        auto_deny_if and auto_deny_unless entries in evaluation order, each naming the binding, set and index
-        a Decision's policy_evidence names. Use it before request_action to learn which Actions and arguments
-        are approved without an operator; a request matching nothing waits for one, and until synced is true
-        nothing auto-decides. A target the service does not watch reads as no bindings. This never submits an
-        Action and says nothing about past Decisions; read those with get_action_request.
+        ServiceAccount. include_fields is a pure allowlist over subject (self-target only), synced,
+        bindings, auto_approve_if, auto_deny_if, and auto_deny_unless, defaulting to
+        subject/synced/bindings. Name auto_approve_if before request_action to learn which Actions and
+        arguments are approved without an operator -- each entry names the binding, set and index a
+        Decision's policy_evidence names; a request matching nothing waits for one, and until synced is
+        true nothing auto-decides. A target the service does not watch reads as no bindings. This never
+        submits an Action and says nothing about past Decisions; read those with get_action_request.
         """
-        if target == SELF:
-            return _result(service.caller_action_policy(caller.principal, caller.external_grant))
-        subject = target.service_account
-        return _result(service.target_action_policy(subject))
+        view = (
+            service.caller_action_policy(caller.principal, caller.external_grant)
+            if target == SELF
+            else service.target_action_policy(target.service_account)
+        )
+        requested = set(include_fields)
+        data = view.model_dump(mode="json")
+        return ToolResult(structured_content={key: value for key, value in data.items() if key in requested})
 
     @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
     @_tool_errors
     async def request_action(
         request: ActionRequestInput,
-        wait_seconds: WaitSeconds = 0,
-        wait_until: McpWaitUntil = WaitUntil.TERMINAL,
+        wait: WaitInput = DEFAULT_WAIT,
+        include_fields: list[RequestField] = DEFAULT_RECEIPT_FIELDS,
         caller: Caller = CALLER,
     ) -> ToolResult:
         """Submit one Action for policy evaluation, human decision if needed, and single-shot execution.
         Supply a stable idempotency_key with structured action group/name, validated arguments, and a title the deciding operator reads.
-        Returns the durable receipt immediately by default; optionally wait up to 30 seconds for decision or terminal state.
+        Returns a compact receipt (id, state, version, created_at, updated_at) immediately by default; wait.wait_seconds (0-30) optionally waits for wait.wait_until ("decision" or "terminal", default terminal).
+        include_fields is a pure allowlist: input (the submitted idempotency_key/action/arguments/title/description as one unit), origin, correlation, caller, external_grant, decision, and execution widen it.
         Pending is not success. A key this caller already used is refused; after response loss read the request with get_action_request(idempotency_key=...), never submit a new key.
         """
         principal = caller.principal
         view = await service.submit(request, principal, external_grant=caller.external_grant)
-        if wait_seconds:
-            view = await wait_for_receipt(
-                view.id, principal, WaitOptions(wait_seconds=wait_seconds, wait_until=wait_until)
-            )
+        if wait.wait_seconds:
+            view = await wait_for_receipt(view.id, principal, wait.options())
             await revalidate(principal)
-        return _result(view)
+        return _result(_receipt(view, set(include_fields)), exclude_unset=True)
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
     async def get_action_request(
         request_id: McpRequestId | None = None,
         idempotency_key: IdempotencyKey | None = None,
-        wait_seconds: WaitSeconds = 0,
-        wait_until: McpWaitUntil = WaitUntil.TERMINAL,
+        wait: WaitInput = DEFAULT_WAIT,
+        include_fields: list[RequestField] = DEFAULT_RECEIPT_FIELDS,
         caller: Caller = CALLER,
     ) -> ToolResult:
         """Read your submitted Action's current receipt, Decision, and safe execution result/error.
         Name the request by exactly one of the request ID returned by request_action or the idempotency_key you submitted it under; the key recovers a submission whose response was lost.
-        Optionally wait up to 30 seconds for decision or terminal state; a deadline returns the current pending receipt.
+        wait.wait_seconds (0-30) optionally waits for wait.wait_until ("decision" or "terminal", default terminal); a deadline returns the current pending receipt.
+        Returns a compact receipt by default -- see request_action for what include_fields widens; request decision/execution once state is terminal to read the outcome.
         This never submits, retries, or cancels execution, and other callers' requests are not readable.
         """
         principal = caller.principal
@@ -344,22 +459,26 @@ def create_server(
                 await service.list_requests(principal, idempotency_key=idempotency_key),
                 too_short=ActionNotFoundError(idempotency_key),
             ).id
-        view = await wait_for_receipt(
-            request_id, principal, WaitOptions(wait_seconds=wait_seconds, wait_until=wait_until)
-        )
-        if wait_seconds:
+        view = await wait_for_receipt(request_id, principal, wait.options())
+        if wait.wait_seconds:
             await revalidate(principal)
-        return _result(view)
+        return _result(_receipt(view, set(include_fields)), exclude_unset=True)
 
     @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
     @_tool_errors
-    async def cancel_action_request(request_id: McpRequestId, caller: Caller = CALLER) -> ToolResult:
+    async def cancel_action_request(
+        request_id: McpRequestId, include_fields: list[RequestField] = DEFAULT_RECEIPT_FIELDS, caller: Caller = CALLER
+    ) -> ToolResult:
         """Withdraw your Action request only before its execution has been claimed for dispatch.
         Provide the durable request ID; no version is required, and another caller's requests are inaccessible.
-        Returns cancelled, already_cancelled, already_finished, or too_late together with the current receipt.
+        Returns cancelled, already_cancelled, already_finished, or too_late together with the current receipt, compact by default -- see request_action for include_fields.
         Dispatching/running or unknown executions cannot be stopped; the cancelled receipt stays readable by request ID or idempotency key.
         """
-        return _result(await service.cancel(request_id, caller.principal))
+        result = await service.cancel(request_id, caller.principal)
+        return _result(
+            CancellationView(outcome=result.outcome, request=_receipt(result.request, set(include_fields))),
+            exclude_unset=True,
+        )
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
