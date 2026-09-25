@@ -60,10 +60,9 @@ rejections are handled by `oci-cache`'s Zot `http.compat: ["docker2s2"]` setting
 
 ## What's here
 
-| File               | Role                                                                                                                                                                                                                      |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `haku-ci.k8s.yaml` | generated (`cluster/cdk8s/haku_ci/runner.py`): namespace, egress fence (DNS + in-cluster + haku-egress-proxy only), KEDA `ScaledJob` (one-job runner + rootless `dind` native sidecar, Forgejo queue trigger, token auth) |
-| `config.yaml`      | the forgejo-runner config (labels, dind `DOCKER_HOST`, capacity, job-container `-v` mounts)                                                                                                                               |
+| File               | Role                                                                                                                                                                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `haku-ci.k8s.yaml` | generated (`cluster/cdk8s/haku_ci/runner.py`): namespace, egress fence (DNS + in-cluster + haku-egress-proxy only), KEDA `ScaledJob` (one-job runner + rootless `dind` native sidecar, Forgejo queue trigger, token auth), and the forgejo-runner config ConfigMap |
 
 The registration-token Secret (`haku-ci-runner-token`) is provisioned by `tf/gitops/haku-state`
 (a `hashicorp/http` GET of the repo's runner registration-token API, written to the Secret) —
@@ -113,7 +112,8 @@ Job ever complete — an ordinary `dind` container would never exit, so the Job 
 
 ### Ephemeral registration
 
-Each pod runs `forgejo-runner register --ephemeral` and then `one-job --wait`. `--ephemeral`
+Each pod's `register` init container runs `forgejo-runner register --ephemeral`, then the `runner`
+container runs `one-job --wait`. `--ephemeral`
 instructs Forgejo to delete the registration once the runner has run one job; it requires Forgejo
 15+ (this instance is 15.0.3) and is refused outright by older servers, so it fails loudly rather
 than drifting.

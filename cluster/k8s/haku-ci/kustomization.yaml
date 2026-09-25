@@ -2,27 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 # No top-level `namespace:` transformer: haku-ci.k8s.yaml holds a cluster-scoped
 # CiliumClusterwideNetworkPolicy that must NOT be stamped with a namespace. Its
-# namespaced objects already set `namespace: haku-ci` explicitly, and the
-# generated ConfigMap (which would otherwise land namespaceless and make Flux fail
-# the whole apply with "namespace not specified") gets its namespace from the
-# per-generator field below.
+# namespaced objects already set `namespace: haku-ci` explicitly.
 resources:
   # cdk8s-generated (cluster/cdk8s/haku_ci/runner.py) -- see cluster/docs/cdk8s.md.
   - haku-ci.k8s.yaml
-configMapGenerator:
-  # No name-suffix hash, unlike the Deployment this replaced.
-  #
-  # The hash existed to roll long-lived runner pods when config.yaml changed. Runner
-  # pods are now one-CI-job Kubernetes Jobs, so the next job picks up the new ConfigMap
-  # on its own and there is nothing to roll. Dropping the hash also sidesteps a real
-  # trap: kustomize's nameReference transformer rewrites ConfigMap references only in
-  # field paths it knows, and it does not know
-  # `ScaledJob.spec.jobTargetRef.template.spec.volumes[].configMap.name`. A hashed name
-  # would silently not be substituted there, and every runner pod would fail to start
-  # on a missing ConfigMap.
-  - name: haku-runner-config
-    namespace: haku-ci
-    options:
-      disableNameSuffixHash: true
-    files:
-      - config.yaml

@@ -19,6 +19,7 @@ py_library(
     srcs = ["runner.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":runner_config",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
@@ -28,6 +29,15 @@ py_library(
         "//cluster/cdk8s/crd_bindings/keda:triggerauthentication",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "runner_config",
+    srcs = ["runner_config.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
     ],
 )
 

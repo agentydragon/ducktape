@@ -1,17 +1,18 @@
 """haku-ci: the operator-owned namespace running Haku's image builds, the KEDA ScaledJob of
-ephemeral Forgejo Actions runners it scales on the queue, and the egress fence forcing their
-external traffic through haku-egress-proxy. See cluster/k8s/haku-ci/README.md.
+ephemeral Forgejo Actions runners it scales on the queue, their forgejo-runner config, and the
+egress fence forcing their external traffic through haku-egress-proxy. See
+cluster/k8s/haku-ci/README.md.
 
-Hand-written beside the output: the runner's `config.yaml` and the directory's
-`kustomization.yaml`, whose `configMapGenerator` entry needs options not expressible here.
+Hand-written beside the output: the directory's `kustomization.yaml`.
 """
 
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ConfigMap, k8s
 from cilium_clusterwide_crds.io.cilium import (
     CiliumClusterwideNetworkPolicy,
     CiliumClusterwideNetworkPolicySpec,
@@ -34,6 +35,7 @@ from keda_triggerauthentication_crds.sh.keda import (
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.haku_ci import runner_config
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 
@@ -53,8 +55,34 @@ _NO_PROXY = (
     "127.0.0.1,localhost,host.docker.internal,*.allegedly.works,.allegedly.works,forgejo-http.forgejo,"
     "forgejo-http.forgejo.svc.cluster.local,.forgejo,.svc.cluster.local,10.0.0.0/8"
 )
-_CA_FILE = "/egress-proxy-ca/ca-certificates.crt"
+_CA_DIR = "/egress-proxy-ca"
+_CA_FILE = f"{_CA_DIR}/ca-certificates.crt"
+# Pointed at the haku-egress-proxy CA in both the runner and every job container.
+_CA_ENV_VARS = ("SSL_CERT_FILE", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS")
 _DOCKER_PORT = 2375
+_BAZEL_CACHE = "/bazel-cache"
+_CONFIG_MAP = "haku-runner-config"
+_CONFIG_DIR = "/config"
+_CONFIG_FILE = "config.yaml"
+_CONFIG_PATH = f"{_CONFIG_DIR}/{_CONFIG_FILE}"
+_RUNNER_DATA = "/data"
+# A repo-scoped runner registration token for haku-state, provisioned by tf/gitops/haku-state (see
+# README). `register` stays in CreateContainerConfigError until this Secret exists.
+_REGISTRATION_SECRET = "haku-ci-runner-token"
+# Pinned, and a major jump from the old floating `:6` tag -- unavoidable, since `one-job` needs
+# runner >6.1 and `register --ephemeral` needs both a recent runner and a Forgejo 15+ server
+# (this instance reports 15.0.3). 12.13.2 rather than the newest 13.0.0: it carries `--ephemeral`,
+# `one-job` and `--wait` (verified in its source tree) with several more weeks of soak. Pinned
+# rather than floating so an upstream release can't silently change CI behaviour.
+# Crossing 8.0.0 means workflows are now schema-validated and will REFUSE to run if they don't
+# parse -- see README, "Upgrading the runner image".
+_RUNNER_IMAGE = "code.forgejo.org/forgejo/runner:12.13.2"
+# Was 30m, which the `bazel-ci / image` job came within three minutes of (27m03s observed). One
+# job per pod also means the Bazel cache no longer carries over between CI jobs, so builds get
+# slower, not faster -- this needs real headroom.
+_JOB_TIMEOUT = timedelta(hours=1)
+# On SIGTERM (node drain, eviction), the runner finishes the running job instead of dropping it.
+_SHUTDOWN_TIMEOUT = timedelta(minutes=30)
 # Pinned by digest, not `:act-latest`. dind pulls Docker Hub through oci-cache (Zot, on-demand
 # sync), which answers a TAG request only after re-checking upstream whether the tag moved. That
 # check has taken 1m46s even with the image already cached, dockerd abandons the mirror at 60s,
@@ -65,10 +93,84 @@ _DOCKER_PORT = 2375
 # Zot's first request for a new digest syncs it cold (1m36s observed), which fails jobs the same
 # way, so HEAD `http://oci-cache.oci-cache.svc/v2/catthehacker/ubuntu/manifests/<digest>` once
 # from inside the cluster before the bump lands.
-# Sync: cluster/k8s/haku-ci/config.yaml `runner.labels` must carry the same label.
+#
+# The image must carry the docker CLI (to reach the dind sidecar) AND node+git (so
+# actions/checkout and other JS actions run); the standard act image bundles all three.
 _JOB_LABEL = (
     "haku-ci:docker://catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43"
 )
+
+
+def _config() -> runner_config.Config:
+    """forgejo-runner's config, shared by `register` and `one-job`. Jobs run in the act image
+    (`_JOB_LABEL`), talking to the rootless dind sidecar via DOCKER_HOST."""
+    return runner_config.Config(
+        log=runner_config.Log(level="info"),
+        runner=runner_config.Runner(
+            # Where `register` writes the registration it hands to `one-job`.
+            file=f"{_RUNNER_DATA}/.runner",
+            # One job per pod is enforced by `one-job`; this keeps the two in agreement.
+            capacity=1,
+            timeout=_JOB_TIMEOUT,
+            shutdown_timeout=_SHUTDOWN_TIMEOUT,
+            labels=[_JOB_LABEL],
+        ),
+        container=runner_config.Container(
+            # How the RUNNER reaches dind: it shares the pod network namespace with the sidecar.
+            docker_host=f"tcp://localhost:{_DOCKER_PORT}",
+            # Job containers run on a per-job docker bridge network, not the pod netns, so
+            # `localhost` there is the job container itself. The build steps (bazel/bazelisk, npm,
+            # pip, git) run in them, so their egress must also go through haku-egress-proxy and
+            # trust its CA.
+            options=[
+                # Reach dind from the bridge network.
+                "--add-host",
+                "host.docker.internal:host-gateway",
+                "-e",
+                f"DOCKER_HOST=tcp://host.docker.internal:{_DOCKER_PORT}",
+                # act/forgejo-runner does not forward the runner's own proxy env into job
+                # containers (nektos/act#1578), so it is injected per job here.
+                "-e",
+                f"HTTP_PROXY={_PROXY_URL}",
+                "-e",
+                f"HTTPS_PROXY={_PROXY_URL}",
+                # TODO(check): the explicit forgejo-http.forgejo{,.svc.cluster.local} and
+                # 10.0.0.0/8 entries may be redundant with the `.forgejo`/`.svc.cluster.local`
+                # suffixes; suffix matching differs per tool (Go vs curl vs python), so verify
+                # against a real job before dropping any. Keep the allegedly.works entries: see
+                # the runner's NO_PROXY.
+                "-e",
+                f"NO_PROXY={_NO_PROXY}",
+                # TODO(after 1st green): the `/etc/ssl/certs` mount below makes the CA the system
+                # default, so SSL_CERT_FILE/CURL_CA_BUNDLE/GIT_SSL_CAINFO are likely redundant, and
+                # REQUESTS_CA_BUNDLE/NODE_EXTRA_CA_CERTS only matter to python-requests and node.
+                # Bazel's Java downloader reads none of these; the haku-state build image imports
+                # the CA into the JDK cacerts itself.
+                *(arg for name in _CA_ENV_VARS for arg in ("-e", f"{name}={_CA_FILE}")),
+                "-v",
+                f"{_CA_FILE}:{_CA_FILE}:ro",
+                # Overlays the CA onto the system trust store, so curl/git trust the proxy's
+                # re-signed TLS with no per-tool variable.
+                "-v",
+                f"{_CA_FILE}:/etc/ssl/certs/ca-certificates.crt:ro",
+                # The pod's Bazel-cache emptyDir, so the output base, --disk_cache and repo cache
+                # carry across the job containers of one CI job (bazel-ci's `Test` then `Build`).
+                # Resolved on the dind filesystem, where the emptyDir is mounted.
+                "-v",
+                f"{_BAZEL_CACHE}:/root/.cache",
+            ],
+            # Lets the bind mounts above through act_runner's volume gate; a Haku-authored workflow
+            # still cannot mount arbitrary dind-host paths.
+            #
+            # No oci-cache credential: in-cluster consumers reach Zot's internal Service
+            # anonymously. Bazel rules_oci does not go through the dind mirror, so haku-state's
+            # MODULE.bazel `oci.pull` refs must name that internal Service, not the
+            # authenticated oci-cache.allegedly.works.
+            valid_volumes=[_CA_FILE, _BAZEL_CACHE],
+        ),
+        # No actions/cache server: the Bazel cache is the bind-mounted emptyDir above.
+        cache=runner_config.Cache(enabled=False),
+    )
 
 
 def _add_egress_fence(chart: Chart) -> None:
@@ -236,11 +338,11 @@ def _dind() -> keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainers:
         ),
         volume_mounts=[
             mount(name="docker-data", mount_path="/var/lib/docker"),
-            mount(name="egress-proxy-ca", mount_path="/egress-proxy-ca", read_only=True),
-            # dind resolves the `-v /bazel-cache:/root/.cache` job-container bind mount (config.yaml)
-            # against its own filesystem, so the pod-local emptyDir must be mounted here rather
-            # than just in the runner.
-            mount(name="bazel-cache", mount_path="/bazel-cache"),
+            mount(name="egress-proxy-ca", mount_path=_CA_DIR, read_only=True),
+            # dind resolves the job containers' `-v` bind mounts (`_config`) against its own
+            # filesystem, so the pod-local emptyDir must be mounted here rather than just in the
+            # runner.
+            mount(name="bazel-cache", mount_path=_BAZEL_CACHE),
         ],
         resources=keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersResources(
             requests={"cpu": quantity.from_string("200m"), "memory": quantity.from_string("512Mi")},
@@ -249,58 +351,88 @@ def _dind() -> keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainers:
     )
 
 
-def _runner() -> keda.ScaledJobSpecJobTargetRefTemplateSpecContainers:
-    """The Forgejo Actions runner: registers EPHEMERALLY with the haku-state repo, waits for exactly
-    one job, runs it in a docker-cli job container against the dind sidecar, and exits -- which
-    completes the Job and ends the pod."""
-    env = keda.ScaledJobSpecJobTargetRefTemplateSpecContainersEnv
-    quantity = keda.ScaledJobSpecJobTargetRefTemplateSpecContainersResourcesRequests
-    limit = keda.ScaledJobSpecJobTargetRefTemplateSpecContainersResourcesLimits
-    mount = keda.ScaledJobSpecJobTargetRefTemplateSpecContainersVolumeMounts
-    return keda.ScaledJobSpecJobTargetRefTemplateSpecContainers(
-        name="runner",
-        # Pinned, and a major jump from the old floating `:6` tag -- unavoidable, since `one-job`
-        # needs runner >6.1 and `register --ephemeral` needs both a recent runner and a Forgejo 15+
-        # server (this instance reports 15.0.3). 12.13.2 rather than the newest 13.0.0: it carries
-        # `--ephemeral`, `one-job` and `--wait` (verified in its source tree) with several more
-        # weeks of soak. Pinned rather than floating so an upstream release can't silently change
-        # CI behaviour.
-        # Crossing 8.0.0 means workflows are now schema-validated and will REFUSE to run if they
-        # don't parse -- see README, "Upgrading the runner image".
-        image="code.forgejo.org/forgejo/runner:12.13.2",
-        command=["sh", "-c"],
+def _register() -> keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainers:
+    """Registers this pod EPHEMERALLY with the haku-state repo, writing the registration `one-job`
+    reads. Runs before dind starts: registering needs no docker daemon."""
+    env = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersEnv
+    value_from = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersEnvValueFrom
+    quantity = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersResourcesRequests
+    limit = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersResourcesLimits
+    mount = keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersVolumeMounts
+    return keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainers(
+        name="register",
+        image=_RUNNER_IMAGE,
+        command=["forgejo-runner"],
         # --ephemeral tells Forgejo to DELETE this runner registration once it has run one job. The
         # old Deployment re-registered on every pod start and never deregistered -- its comment
         # claimed "ephemeral" but the flag was absent, and the repo had accumulated 529 runner
         # registrations, 525 of them offline. --ephemeral is refused outright by servers older
         # than Forgejo 15, so this fails loudly rather than drifting silently.
         #
-        # `one-job --wait` blocks until Forgejo assigns a task, runs it, and exits. The --wait
-        # matters: without it the runner makes a single fetch attempt and exits NON-ZERO if the
-        # task isn't dispatchable in that instant, which would fail the Job on a pure startup
-        # race. Bounded by activeDeadlineSeconds.
+        # `$(VAR)` is expanded by the kubelet from `env`, not by a shell.
         args=[
-            "set -e\n"
-            "forgejo-runner register --no-interactive --ephemeral \\\n"
-            '  --instance "$FORGEJO_INSTANCE_URL" \\\n'
-            '  --token "$(cat /secrets/token)" \\\n'
-            '  --name "$RUNNER_NAME" \\\n'
-            f'  --labels "{_JOB_LABEL}" \\\n'
-            "  --config /config/config.yaml\n"
-            "exec forgejo-runner one-job --wait --config /config/config.yaml\n"
+            "register",
+            "--no-interactive",
+            "--ephemeral",
+            "--instance",
+            _FORGEJO_URL,
+            "--token",
+            "$(RUNNER_TOKEN)",
+            "--name",
+            "$(RUNNER_NAME)",
+            "--labels",
+            _JOB_LABEL,
+            "--config",
+            _CONFIG_PATH,
         ],
         env=[
-            env(name="FORGEJO_INSTANCE_URL", value=_FORGEJO_URL),
+            env(
+                name="RUNNER_TOKEN",
+                value_from=value_from(
+                    secret_key_ref=keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersEnvValueFromSecretKeyRef(
+                        name=_REGISTRATION_SECRET, key="token"
+                    )
+                ),
+            ),
             # Every pod registers separately. A fixed name would race or overwrite registrations
             # when KEDA starts additional pods.
             env(
                 name="RUNNER_NAME",
-                value_from=keda.ScaledJobSpecJobTargetRefTemplateSpecContainersEnvValueFrom(
-                    field_ref=keda.ScaledJobSpecJobTargetRefTemplateSpecContainersEnvValueFromFieldRef(
+                value_from=value_from(
+                    field_ref=keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersEnvValueFromFieldRef(
                         field_path="metadata.name"
                     )
                 ),
             ),
+        ],
+        volume_mounts=[
+            mount(name="config", mount_path=_CONFIG_DIR, read_only=True),
+            mount(name="runner-data", mount_path=_RUNNER_DATA),
+        ],
+        resources=keda.ScaledJobSpecJobTargetRefTemplateSpecInitContainersResources(
+            requests={"cpu": quantity.from_string("50m"), "memory": quantity.from_string("128Mi")},
+            limits={"cpu": limit.from_string("1"), "memory": limit.from_string("1Gi")},
+        ),
+    )
+
+
+def _runner() -> keda.ScaledJobSpecJobTargetRefTemplateSpecContainers:
+    """The Forgejo Actions runner: waits for exactly one job, runs it in a docker-cli job container
+    against the dind sidecar, and exits -- which completes the Job and ends the pod."""
+    env = keda.ScaledJobSpecJobTargetRefTemplateSpecContainersEnv
+    quantity = keda.ScaledJobSpecJobTargetRefTemplateSpecContainersResourcesRequests
+    limit = keda.ScaledJobSpecJobTargetRefTemplateSpecContainersResourcesLimits
+    mount = keda.ScaledJobSpecJobTargetRefTemplateSpecContainersVolumeMounts
+    return keda.ScaledJobSpecJobTargetRefTemplateSpecContainers(
+        name="runner",
+        image=_RUNNER_IMAGE,
+        command=["forgejo-runner"],
+        # `one-job --wait` blocks until Forgejo assigns a task, runs it, and exits. The --wait
+        # matters: without it the runner makes a single fetch attempt and exits NON-ZERO if the
+        # task isn't dispatchable in that instant, which would fail the Job on a pure startup
+        # race. Bounded by activeDeadlineSeconds.
+        args=["one-job", "--wait", "--config", _CONFIG_PATH],
+        env=[
             env(name="DOCKER_HOST", value=f"tcp://localhost:{_DOCKER_PORT}"),
             # Route the runner's external egress (fetching `uses:` actions from data.forgejo.org,
             # etc.) through haku-egress-proxy -- the sole external door (the force-proxy CCNP
@@ -314,22 +446,12 @@ def _runner() -> keda.ScaledJobSpecJobTargetRefTemplateSpecContainers:
             env(name="HTTP_PROXY", value=_PROXY_URL),
             env(name="HTTPS_PROXY", value=_PROXY_URL),
             env(name="NO_PROXY", value=_NO_PROXY),
-            *(
-                env(name=name, value=_CA_FILE)
-                for name in (
-                    "SSL_CERT_FILE",
-                    "CURL_CA_BUNDLE",
-                    "GIT_SSL_CAINFO",
-                    "REQUESTS_CA_BUNDLE",
-                    "NODE_EXTRA_CA_CERTS",
-                )
-            ),
+            *(env(name=name, value=_CA_FILE) for name in _CA_ENV_VARS),
         ],
         volume_mounts=[
-            mount(name="config", mount_path="/config", read_only=True),
-            mount(name="token", mount_path="/secrets", read_only=True),
-            mount(name="runner-data", mount_path="/data"),
-            mount(name="egress-proxy-ca", mount_path="/egress-proxy-ca", read_only=True),
+            mount(name="config", mount_path=_CONFIG_DIR, read_only=True),
+            mount(name="runner-data", mount_path=_RUNNER_DATA),
+            mount(name="egress-proxy-ca", mount_path=_CA_DIR, read_only=True),
         ],
         resources=keda.ScaledJobSpecJobTargetRefTemplateSpecContainersResources(
             requests={"cpu": quantity.from_string("50m"), "memory": quantity.from_string("128Mi")},
@@ -338,21 +460,12 @@ def _runner() -> keda.ScaledJobSpecJobTargetRefTemplateSpecContainers:
     )
 
 
-def _volumes() -> list[keda.ScaledJobSpecJobTargetRefTemplateSpecVolumes]:
+def _volumes(config: ConfigMap) -> list[keda.ScaledJobSpecJobTargetRefTemplateSpecVolumes]:
     volume = keda.ScaledJobSpecJobTargetRefTemplateSpecVolumes
     empty_dir = keda.ScaledJobSpecJobTargetRefTemplateSpecVolumesEmptyDir
     return [
-        volume(
-            name="config",
-            config_map=keda.ScaledJobSpecJobTargetRefTemplateSpecVolumesConfigMap(name="haku-runner-config"),
-        ),
-        volume(
-            name="token",
-            # Provisioned out-of-band during paving (see README): a repo-scoped runner
-            # registration token for haku-state. The pod stays pending until this Secret exists.
-            secret=keda.ScaledJobSpecJobTargetRefTemplateSpecVolumesSecret(secret_name="haku-ci-runner-token"),
-        ),
-        # Holds the `.runner` file written by `register` (config.yaml pins the path).
+        volume(name="config", config_map=keda.ScaledJobSpecJobTargetRefTemplateSpecVolumesConfigMap(name=config.name)),
+        # Holds the registration `register` writes for `one-job` (the config's `runner.file`).
         volume(name="runner-data", empty_dir=empty_dir()),
         volume(name="docker-data", empty_dir=empty_dir()),
         # Bazel cache (output base + --disk_cache + repo cache), bind-mounted into each job
@@ -372,6 +485,11 @@ def _volumes() -> list[keda.ScaledJobSpecJobTargetRefTemplateSpecVolumes]:
 
 
 def _add_runner(chart: Chart) -> None:
+    # No name-suffix hash: each ScaledJob pod is a fresh one-CI-job Job, so the next job reads the
+    # new config on its own and there is nothing to roll.
+    config = ConfigMap(
+        chart, "runner-config", metadata=metadata(_CONFIG_MAP, NAMESPACE), data={_CONFIG_FILE: _config().to_yaml()}
+    )
     # Forgejo's /metrics endpoint exposes no Actions queue-depth metric. KEDA's native
     # forgejo-runner scaler instead polls Forgejo's authenticated, repo-scoped runner-jobs endpoint,
     # filtered to this runner label. Its result is exactly the number of jobs presently waiting for
@@ -433,18 +551,20 @@ def _add_runner(chart: Chart) -> None:
                 # Upper bound on the pod's whole life: waiting for a task + running it.
                 # `one-job --wait` blocks until Forgejo hands it a task, so a pod created for a job
                 # that is cancelled before pickup would otherwise wait forever holding one of the
-                # four slots. 70m = config.yaml's `timeout: 1h` plus slack.
-                active_deadline_seconds=4200,
+                # four slots. The runner's job timeout plus slack for the wait and registration.
+                active_deadline_seconds=int((_JOB_TIMEOUT + timedelta(minutes=10)).total_seconds()),
                 template=keda.ScaledJobSpecJobTargetRefTemplate(
                     metadata=keda.ScaledJobSpecJobTargetRefTemplateMetadata(labels=_LABELS),
                     spec=keda.ScaledJobSpecJobTargetRefTemplateSpec(
                         restart_policy="Never",
                         automount_service_account_token=False,
                         # Only matters for eviction/drain now -- nothing deletes this pod mid-build
-                        # any more. Slightly above config.yaml's `shutdown_timeout: 30m` so a
-                        # drained node lets a build of up to that length finish instead of dropping
-                        # it.
-                        termination_grace_period_seconds=1830,
+                        # any more. Slightly above the runner's shutdown timeout so a drained node
+                        # lets a build of up to that length finish instead of dropping it; at or
+                        # below it, the kubelet SIGKILLs before that timeout can elapse.
+                        termination_grace_period_seconds=int(
+                            (_SHUTDOWN_TIMEOUT + timedelta(seconds=30)).total_seconds()
+                        ),
                         # No node affinity: this privileged, agent-controlled build compute may land
                         # on any worker -- the HIL workers, the home OptiPlex, wyrm2, and the roaming
                         # laptops when they are reachable. Control-plane nodes keep their NoSchedule
@@ -477,9 +597,9 @@ def _add_runner(chart: Chart) -> None:
                                 ),
                             )
                         ],
-                        init_containers=[_dind()],
+                        init_containers=[_register(), _dind()],
                         containers=[_runner()],
-                        volumes=_volumes(),
+                        volumes=_volumes(config),
                     ),
                 ),
             ),
