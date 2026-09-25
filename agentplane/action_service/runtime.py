@@ -38,6 +38,11 @@ async def running_executor(
                 # its offered templates say of themselves is read from the cluster, once, here.
                 inventory = sandboxes.inventory(binding)
                 group.actions = actions(binding, await inventory.template_descriptions())
+                # A discovered catalog can only show a missing name later; a declared roster shows a typo now.
+                if group.direct_tools is not None and (unoffered := group.direct_tools - group.actions.keys()):
+                    raise ValueError(
+                        f"ActionGroup {key!r} direct_tools names Actions it does not offer: {sorted(unoffered)}"
+                    )
                 executors[key] = SandboxExecutor(binding, inventory)
             case McpExecutorBinding():
                 try:

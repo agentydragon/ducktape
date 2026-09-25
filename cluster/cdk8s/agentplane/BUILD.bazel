@@ -394,6 +394,7 @@ py_library(
         ":environment",
         ":generation",
         ":staging_config",
+        "//agentplane/action_service:sandbox_executor",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s/crd_bindings/external_secrets:externalsecret",

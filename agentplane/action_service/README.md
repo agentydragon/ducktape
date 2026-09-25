@@ -276,6 +276,25 @@ request ID or resume events. Discovery/read failures cannot submit anything; a w
 the same not-found response as an absent request. Discovery projects no executor configuration,
 group descriptions, or hidden schemas through nested payloads.
 
+### Direct tools
+
+A group's `direct_tools` names Actions an external Connection also gets as MCP tools of their own
+(`direct_tools.py`), named `<group>__<action>` with the Action's schema, description, title and
+annotations (mirrored from an MCP backend's `tools/list`, declared by the sandbox roster). Each
+request lists them for a caller whose bearer is a Connection grant, keeping only those an
+`autoApproveIf` policy of its bindings names (`policy_evaluation.auto_approvable`); a workload
+bearer sees none. A group offering them must not have `__` in its key, and a sandbox group's names
+must be in its roster at startup.
+
+A call submits through `ActionService.submit_decided` with a server-minted idempotency key and the
+title `Direct tool call`. If no provider decides it, nothing is persisted and the call answers an
+error naming each policy's reason (`UndecidedRequestError`) and pointing at `request_action`. A
+decided call waits up to 30 seconds and answers through `tool_results.py`, as `get_action_result`
+does, so an unfinished one names its request to keep waiting on. A configured name the caller's
+policy does not cover still resolves, so it is refused with a reason rather than unknown. Listing
+is per request with no `tools/list_changed`: a client holding an older list only meets refusals,
+and `request_action` reaches any Action whatever the list says.
+
 ## Action catalog
 
 `catalog.ActionCatalog` is the Agent-facing discovery seam: an `ActionGroup` (e.g. `github`) is the

@@ -2406,6 +2406,12 @@ data:
             - agentplane-sandbox
             - agentplane-sandbox-build
             - agentplane-runner
+        direct_tools:
+          - create
+          - dispose
+          - exec
+          - info
+          - list
       ssh:
         title: SSH
         description: SSH commands on configured targets; every Action remains subject to operator approval.

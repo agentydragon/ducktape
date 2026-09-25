@@ -7,8 +7,10 @@ Decision, not this one's, so the Decision records what it saw.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 
+from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.models import (
     BindingEvidence,
@@ -20,7 +22,7 @@ from agentplane.action_service.models import (
     ProviderVerdict,
 )
 from agentplane.action_service.policies.kind import Matched, NotMatched
-from agentplane.action_service.policies.registry import evaluate
+from agentplane.action_service.policies.registry import evaluate, lists
 from agentplane.action_service.policies.resources import ActionPolicyBinding, ActionPolicySet, InvalidResource
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.providers import DecisionContext, ResolvedBinding
@@ -63,6 +65,18 @@ def resolve_bindings(index: PolicyIndex, caller: ServiceAccountRef, now: datetim
     return tuple(resolved)
 
 
+def auto_approvable(bindings: Sequence[ResolvedBinding]) -> frozenset[ActionIdentity]:
+    """Every Action some `autoApproveIf` policy of these bindings names, whatever its arguments."""
+    return frozenset(
+        ActionIdentity(group=group, name=name)
+        for resolved in bindings
+        for policy_set in resolved.policy_sets
+        for policy in policy_set.spec.auto_approve_if
+        for group, names in policy.actions.items()
+        for name in names
+    )
+
+
 def _evidence(context: DecisionContext, matched: MatchedPolicy) -> PolicyEvidence:
     bindings: list[ActionPolicyBinding] = [resolved.binding for resolved in context.bindings]
     sets = {
@@ -102,6 +116,9 @@ class PolicySetDecisionProvider:
         self._visibility = visibility
 
     async def decide(self, context: DecisionContext) -> ProviderOutcome:
+        # Why each policy naming this Action did not match. No Decision records a no-opinion, so
+        # this reaches only a direct caller refused because nothing decided.
+        declined: list[str] = []
         for resolved in context.bindings:
             for policy_set in resolved.policy_sets:
                 for index, policy in enumerate(policy_set.spec.auto_approve_if):
@@ -127,6 +144,18 @@ class PolicySetDecisionProvider:
                                     ),
                                 ),
                             )
-                        case NotMatched():
-                            continue
-        return ProviderOutcome(verdict=ProviderVerdict.NO_OPINION, reason_code=NO_MATCH_REASON)
+                        case NotMatched(reason=reason):
+                            if lists(policy, context.action):
+                                declined.append(
+                                    f"set {policy_set.metadata.name} autoApproveIf[{index}] {policy.type}: {reason}"
+                                )
+        action = context.action
+        return ProviderOutcome(
+            verdict=ProviderVerdict.NO_OPINION,
+            reason_code=NO_MATCH_REASON,
+            reason_description=(
+                "; ".join(declined)
+                if declined
+                else f"no autoApproveIf policy bound to the caller lists {action.group}/{action.name}"
+            )[:_DESCRIPTION_LIMIT],
+        )
