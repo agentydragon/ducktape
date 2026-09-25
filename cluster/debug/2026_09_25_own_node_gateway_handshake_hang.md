@@ -1,7 +1,8 @@
 # A Pod's handshake with its own node's Gateway listener never completes
 
-Cause identified from source and host state; probes E and F, which test it directly, are pending.
-Observed 2026-09-25 from the staging egress proxy's Pods on the control-plane nodes
+Cause confirmed by probes E and F. The one link read from source rather than from a node is which
+rule drops the invalid packets. Observed 2026-09-25 from the staging egress proxy's Pods on the
+control-plane nodes
 `ovh-ns104952` and `ovh-ns1001419`. Every Talos node runs Talos v1.14.0 (kernel 6.18.48) and
 Cilium 1.19.6.
 
@@ -112,24 +113,48 @@ Over 3.6 s, the request socket's SYN-ACK retry count rose from 0 to 2, and the c
 stayed `SYN_SENT [UNREPLIED]`. Across the attempt, the host's `TcpExt` listen-drop, ACK-skip,
 challenge-ACK and checksum counters did not move. `rp_filter` is 0 on every interface.
 
+Probe E, 07:00 UTC, from `n2rlk` to the node's Nebula address: first `:443` (the Gateway,
+`fwmark:0xb00`), then `:6443` (kube-apiserver, host network, no mark, also in the Pod's policy):
+
+```text
+gateway-443 10.42.0.16:443: 4007 ms: no handshake
+  host  SYN-RECV  10.42.0.16:443  10.244.0.143:39356  timer:(on,1.004ms,1)
+  host  SYN_SENT src=10.244.0.143 dst=10.42.0.16 sport=39356 dport=443 [UNREPLIED]
+  Pod   ESTAB 0 336  10.244.0.143:39356  10.42.0.16:443  timer:(on,1.292ms,3)
+  host conntrack invalid +9 (+0 in the 3 s before)
+  "NOTRACK for proxy return traffic" [0:0] -> [3:180]
+apiserver-6443 10.42.0.16:6443: 78 ms: CONNECTION ESTABLISHED
+  host conntrack invalid +0; entry TIME_WAIT ... [ASSURED]
+```
+
+The Pod held its unacknowledged 336-byte ClientHello, and the NOTRACK rule counted three 60-byte
+packets: the SYN-ACK and its two retries.
+
+Probe F, 07:00 UTC, from the Haku openclaw spike proxy (`10.244.1.119`) on worker `ovh-ns103656`.
+Its egress rule has the same shape as the staging egress proxy's:
+
+```text
+own-443 147.135.39.162:443: 207 ms: CONNECTION ESTABLISHED Protocol version: TLSv1.3
+  host  SYN_SENT src=10.244.1.119 dst=147.135.39.162 sport=40764 dport=443 [UNREPLIED]
+  host conntrack invalid +7
+own-443 10.42.0.13:443: 68 ms: CONNECTION ESTABLISHED Protocol version: TLSv1.3
+  host conntrack invalid +7
+```
+
+On the worker the connection completes even though conntrack never leaves `SYN_SENT` and counts
+the Pod's segments invalid: nothing there drops them. The rule that drops them on `ovh-ns104952`
+was not read from the node. That takes `talosctl get nftableschains` or `nft`, and the
+cilium-agent image has no `nft`.
+
 Node state on `ovh-ns104952`, from its cilium agent:
 
 - `cilium-dbg status`: `KubeProxyReplacement: True [eno1 147.135.104.5, nebula1 10.42.0.16
 (Direct Routing)]`, `Routing: Network: Tunnel [vxlan] Host: Legacy`,
   `Masquerading: IPTables [IPv4: Enabled]`, `Attach Mode: TCX`, `Host firewall: Disabled`.
-- `ss -lntpe 'sport = :443'`: five `0.0.0.0:443` Gateway listeners (cilium-envoy, host network),
-  each `fwmark:0xb00`.
+- `ss -lntpe 'sport = :443'`: the `0.0.0.0:443` Gateway listeners (cilium-envoy, host network)
+  each carry `fwmark:0xb00`.
 - The egress proxy's rule toward `world`, `remote-node` and `host` on 443 and 80 is L3/L4 only.
   The flow above is `-> stack`, never `-> proxy`.
-
-## Pending
-
-- Probe E, from `n2rlk`: the node's Nebula address on `:443` (Gateway, `fwmark:0xb00`) against
-  `:6443` (kube-apiserver, host network, no mark, in the Pod's policy). It tests whether only the
-  first hangs, and whether the host's conntrack `invalid` count rises with it.
-- Probe F: the same dial from a Pod on worker `ovh-ns103656`, the same Talos, kernel and Cilium
-  with no `NetworkRuleConfig`. It tests whether the handshake completes while the ACK is still
-  counted invalid.
 
 ## Scope
 
