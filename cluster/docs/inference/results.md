@@ -41,6 +41,15 @@ The GPU1 reasoning-enabled synthetic tool roundtrip passed. Real Agentplane codi
 screening remains pending. See PLAN for limitations of historical measurements below;
 their numbers are not directly comparable with this screen.
 
+## September larger-model feasibility
+
+Flash-Next Q4 runs on both GPUs with CPU offload and lazy mmap embeddings under a
+38 GiB container cap. At 8K configured context and 102 input tokens, a 1,776-token
+coding generation decoded at 32.73 tokens/s (`local~`). Coding correctness is unscored.
+Its first synthetic tool-result answer invented file content; two seeded repeats
+returned grounded answers. This is a retained failure, not a passed agent-quality
+gate. [Exact inputs, responses, launch and limits](runs/2026-09-24_qwen38_ssd/README.md).
+
 ## Historical coding-agent configurations
 
 | Config                       | Runtime          | Quant                        | Allocated ctx | Effective ctx       | Decode tok/s @128K           | Peak VRAM              | Coding quality          | Tool calls                         | Run                                                           |

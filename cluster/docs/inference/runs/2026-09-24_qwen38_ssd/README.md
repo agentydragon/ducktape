@@ -20,7 +20,8 @@ data. Report observed interference. Do not change drivers or kernel for these tr
 - SSD mount `/var/lib/llm-models-ssd`: 1 TiB, initially 515 GiB available.
 - [Checkpoint manifest](checkpoints.json): pinned Hugging Face revisions, file sizes,
   and SHA256 hashes. Qwen3.8-27B Q8 is 29.05 GB; Flash-Next Q4 is 111.33 GB.
-  Dense Q8 downloaded and SHA256 verified; Flash-Next download continues sequentially,
+  Dense Q8 and all four Flash-Next Q4 shards are downloaded and SHA256 verified.
+  Downloads ran sequentially,
   at low CPU/I/O priority with a 60 MiB/s rate cap.
   Credentials come from the existing SOPS-managed `HF_TOKEN`; do not log them.
 - Official CUDA server image:
@@ -140,6 +141,52 @@ responsiveness under sustained tensor inference remain unmeasured.
 Raw [short](dense_tensor_nccl227_32k_short.json) and
 [long](dense_tensor_nccl227_32k_long.json) responses preserve those differences.
 
+## Flash-Next Q4 initial feasibility
+
+All four checkpoint shards passed their pinned size/SHA256 checks. The successful
+8K launch used both GPUs, automatic placement with free-memory targets of 8 GiB
+on GPU0 and 2 GiB on GPU1, a 38 GiB container memory limit, no swap, eight CPU
+threads, mmap, lazy embedding-table reads, and no CPU weight repacking. The launcher
+requires at least 54 GiB host available RAM immediately before launch, leaving a
+16 GiB margin against its hard cap: [flash_dual.sh](flash_dual.sh).
+
+The first attempt inherited the dense control's explicit `--tensor-split 1,1`.
+Because this model required refitting, llama.cpp refused to adjust that explicit
+split. That attempt was stopped immediately after observing the warning, and the
+explicit split was removed before retrying. No OOM was observed.
+[Failed-attempt log](flash_explicit_split_fit_failure.txt).
+
+The successful server became ready at 88.13 s; cache state was uncontrolled.
+[Server log](flash_8k_server.txt). Initial Docker working-set display was 23.05 GiB,
+but that excludes inactive file cache: later cgroup memory peak reached the full
+38 GiB limit, with reclaim events and zero OOM/kill events. Host available RAM was
+still about 54 GiB. [Cgroup snapshot](flash_8k_resources.txt).
+During generation, GPU allocations were 23,939 / 29,700 MiB including the desktop,
+leaving roughly 8 GiB on GPU0. No user-authored data was moved or deleted.
+
+The same short coding request produced 1,776 tokens with `stop`: 1.378 s prefill,
+54.234 s decode, **32.73 tokens/s**. This is one generation, not a correctness score.
+[Request](flash_coding_request.json), [response](flash_dual_8k_coding.json).
+An earlier arithmetic probe returned 323 for 17×19; its four generated tokens are
+not a useful throughput sample.
+
+### Tool grounding failure retained
+
+The first reasoning-enabled `read_file` request made the expected call. The supplied
+result contained only `verification_code=SSD-5090-7C2E`. The final answer repeated
+that code but invented an embedded `<agent_instructions>` block and a prompt-injection
+warning. Thus the protocol worked but **this grounding check failed**.
+Exact [first request](flash_tool_request.json), [first response](flash_tool_response.json),
+[follow-up request](flash_tool_followup_request.json) and
+[follow-up response](flash_tool_followup_response.json) are retained.
+
+A repeat with `cache_prompt=false` and seed 42 returned the code without that claim.
+A second repeat with the same seed and caching enabled also returned the same clean
+answer (369 cached tokens versus zero). This does not isolate the first failure to
+caching: the initial run had no fixed seed, and both controlled variants succeeded.
+See the `flash_tool_followup_uncached_*` and `flash_tool_followup_cached42_*` artifacts.
+Do not promote this model from parameter count, one clean retry or token rate alone.
+
 ## Agentplane evidence to reuse
 
 [PR #7898](https://github.com/agentydragon/ducktape/pull/7898) adds a deployed
@@ -153,7 +200,7 @@ correctness, prefill, reasoning/decode, and total task completion time.
 
 ## Next evidence
 
-1. Finish Flash-Next checkpoint download and SHA256 verification.
+1. Measure Flash-Next at 32K after the successful 8K feasibility run.
 2. Evaluate alternate two-GPU splitting where supported; 32K filled-input baseline is recorded above.
 3. Connect an authenticated private host endpoint through LiteLLM to Agentplane;
    validate real shell tools and coding tasks through both harnesses.
