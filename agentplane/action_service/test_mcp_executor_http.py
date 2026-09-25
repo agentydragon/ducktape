@@ -314,7 +314,7 @@ async def test_http_tool_error_output_is_a_successful_result(
     result = await executor.execute(execution_request, execution_lease)
     assert result.state is ExecutionState.SUCCEEDED
     assert result.error is None
-    assert result.result == {"is_error": True, "content": ["backend tool error text"]}
+    assert result.result == {"content": [{"type": "text", "text": "backend tool error text"}], "isError": True}
     assert len(fake_server.calls) == 1
 
 
@@ -574,7 +574,11 @@ async def test_main_oauth_serves_during_backend_outage_and_recovers(
                 while (final := await service.get(pending.id, caller)).state is not ActionState.SUCCEEDED:
                     pass  # Database reads yield until the durable result is published.
             assert final.execution is not None
-            assert final.execution.result == {"echoed": "recovered", "api_key": "[redacted]"}
+            assert final.execution.result == {
+                "content": [{"type": "text", "text": "hi"}],
+                "structuredContent": {"echoed": "recovered", "api_key": "[redacted]"},
+                "isError": False,
+            }
             assert len(fake_server.calls) == 1
             assert (await client.get("/.well-known/oauth-authorization-server")).json() == metadata.json()
 
@@ -635,8 +639,12 @@ async def test_production_http_composition_one_execution_no_replay(
                 pass  # Each database read yields; wait for durable completion, not an elapsed delay.
         assert final.execution is not None
         assert final.execution.result == {
-            "success": {"echoed": "hi", "api_key": "[redacted]"},
-            "tool_error": {"is_error": True, "content": ["backend tool error text"]},
+            "success": {
+                "content": [{"type": "text", "text": "hi"}],
+                "structuredContent": {"echoed": "hi", "api_key": "[redacted]"},
+                "isError": False,
+            },
+            "tool_error": {"content": [{"type": "text", "text": "backend tool error text"}], "isError": True},
         }.get(outcome)
         if outcome not in {"success", "tool_error"}:
             assert final.execution.error is not None

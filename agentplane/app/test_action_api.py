@@ -597,7 +597,7 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(
             if final["state"] == "succeeded":
                 break
             # Each read awaits service IO; no fixed delay or elapsed-time assertion.
-    assert final["execution"]["result"] == {"recorded": "hi"}
+    assert final["execution"]["result"]["structuredContent"] == {"recorded": "hi"}
     caller_view = await service.get(pending.id, CALLER)
     assert caller_view.decision is not None
     assert final["decision"] == caller_view.decision.model_dump(mode="json")
