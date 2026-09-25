@@ -163,11 +163,6 @@ Extend the small Kustomize model for an actually used field (`patches`,
 
 ## Kubernetes manifests and deliberate external owners
 
-- **Private-repository bridge:** convert
-  `cluster/k8s/gaffer-private-source/bridge.yaml` to a typed Flux Kustomization, keeping
-  `namespace=flux-system`, the direct `gaffer-private` source, `path=./k8s`, its
-  cross-namespace dependencies, and no readiness wait. Keep private child resources
-  outside this generator's graph.
 - **Remote installations:** `agents/agent-sandbox/controller/{kustomization,patches}.yaml`
   and `kubevirt/{operator,cdi-operator}/{kustomization,namespace-patch}.yaml` compose
   upstream release bundles with local patches. Keep upstream release ownership.

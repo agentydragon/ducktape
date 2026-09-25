@@ -139,11 +139,6 @@ The preserved mechanism findings and alternatives are in the remainder backlog.
 Do not create per-app Secret Kustomizations, copy ciphertext, change image automation,
 or change resource ownership merely to make a directory qualify as generated.
 
-The `gaffer-private-source/bridge.yaml` Flux object is a small, separate conversion:
-it can use a typed explicit GitRepository source without importing the private
-repository's resources into our graph. Bootstrap and parked packages retain their
-distinct owners.
-
 ## Gates and completion
 
 Use `render_diff.py` for conversions claiming unchanged Kubernetes objects, within

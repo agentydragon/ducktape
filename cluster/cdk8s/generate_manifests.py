@@ -510,7 +510,7 @@ def generate_manifests(root: Path) -> None:
     user_agentydragon_kustomization = user_agentydragon.user_agentydragon(flux_chart, user_agentydragon_artifact)
     valkey_artifact = artifact("valkey", valkey.OUTPUT_DIR)
     valkey_kustomization = valkey.valkey(flux_chart, valkey_artifact)
-    gaffer_private_source_flux_kustomizations.gaffer_private_source(
+    gaffer_private_source_kustomization = gaffer_private_source_flux_kustomizations.gaffer_private_source(
         flux_chart, flux_image_automation_ghcr_kustomization
     )
     kubevirt_artifact = artifact("kubevirt", kubevirt_app.OUTPUT_DIR)
@@ -681,6 +681,13 @@ def generate_manifests(root: Path) -> None:
     authentik_artifact = artifact("authentik", f"{HAND_WRITTEN_ROOT}/authentik")
     authentik_kustomization = authentik_flux_kustomizations.authentik(
         flux_chart, authentik_artifact, cnpg_kustomization, monitoring_crds_kustomization
+    )
+    gaffer_private_source_flux_kustomizations.gaffer_private_bridge(
+        flux_chart,
+        gaffer_private_source_kustomization,
+        authentik_kustomization,
+        gateway_kustomization,
+        cert_manager_issuer_config_kustomization,
     )
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
     dns_automation.dns_automation(
