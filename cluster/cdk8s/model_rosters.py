@@ -385,10 +385,7 @@ class LlamaCppModel:
 # the selected server is expected to be running at a time.
 LLAMA_CPP_MODELS: tuple[LlamaCppModel, ...] = (
     LlamaCppModel(
-        id="qwen3.8-27b-q8",
-        api_base="http://10.42.0.20:18081/v1",
-        total_context_tokens=32_768,
-        max_output_tokens=8_192,
+        id="qwen3.8-27b-q8", api_base="http://10.42.0.20:18081/v1", total_context_tokens=32_768, max_output_tokens=8_192
     ),
     LlamaCppModel(
         id="qwen3.8-flash-next-q4",
