@@ -9,6 +9,7 @@ from it, so both kinds of box sit behind the same egress path.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpec,
@@ -272,12 +273,17 @@ def _egress_volumes(env: Environment) -> list[SandboxTemplateSpecPodTemplateSpec
 
 
 def pod_spec(
-    env: Environment, *, workload: SandboxTemplateSpecPodTemplateSpecContainers, service_account_name: str | None
+    env: Environment,
+    *,
+    workload: SandboxTemplateSpecPodTemplateSpecContainers,
+    service_account_name: str | None,
+    workload_volumes: Sequence[SandboxTemplateSpecPodTemplateSpecVolumes] = (),
 ) -> SandboxTemplateSpecPodTemplateSpec:
     """`workload` beside the egress sidecar, as uid 1000, with no ServiceAccount token in the Pod: the
     projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
     several boxes out of the container a command runs in (agentplane/docs/sandbox_actions.md).
-    `service_account_name` is the template's own; whoever stamps a Sandbox from it may replace it."""
+    `service_account_name` is the template's own; whoever stamps a Sandbox from it may replace it.
+    `workload_volumes` are Pod volumes the workload mounts beyond the egress path's own."""
     return SandboxTemplateSpecPodTemplateSpec(
         containers=[workload, _egress_sidecar(env)],
         automount_service_account_token=False,
@@ -296,5 +302,5 @@ def pod_spec(
             fs_group=1000,
             seccomp_profile=SandboxTemplateSpecPodTemplateSpecSecurityContextSeccompProfile(type="RuntimeDefault"),
         ),
-        volumes=_egress_volumes(env),
+        volumes=[*_egress_volumes(env), *workload_volumes],
     )
