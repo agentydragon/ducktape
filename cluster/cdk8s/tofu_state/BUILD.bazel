@@ -12,9 +12,9 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/agentplane:node_scheduling",
-        "//cluster/cdk8s/crd_bindings/cnpg:cluster",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/providers/cnpg:cluster",
         "@pypi//cdk8s",
     ],
 )
