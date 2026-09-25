@@ -186,16 +186,17 @@ runtime before investigating staging.
 
 Use the first point at which the run fails to choose the next investigation:
 
-| Observation                                                   | Likely seam                                                                  |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| No `accept-*` Sandbox is created                              | Bazel client, module/repository rules, kubeconfig, or acceptance-token setup |
-| Sandbox is created but never becomes ready                    | Scheduling, image pull, runner bootstrap, or testing capacity                |
-| App rejects the initial API request                           | Acceptance token audience, subject allowlist, or app ingress                 |
-| Model turn hangs and the decision history is empty            | Sandbox proxy environment, proxy route, or model ingress path                |
-| Ring records a deny for an expected destination               | Egress policy/binding or destination URL mismatch                            |
-| Rules discovery succeeds but destination authentication fails | Placeholder substitution or independent destination authentication           |
-| Test assertions pass but teardown reports a failure           | Runtime cleanup/reconciliation; inspect the named Sandbox before rerunning   |
-| Process is killed and `accept-*` Sandboxes remain             | Expected teardown limitation; clean them up deliberately before the next run |
+| Observation                                                   | Likely seam                                                                                                                                |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| No `accept-*` Sandbox is created                              | Bazel client, module/repository rules, kubeconfig, or acceptance-token setup                                                               |
+| Sandbox is created but never becomes ready                    | Scheduling, image pull, runner bootstrap, or testing capacity                                                                              |
+| App rejects the initial API request                           | Acceptance token audience, subject allowlist, or app ingress                                                                               |
+| Model turn hangs and the decision history is empty            | Sandbox proxy environment, proxy route, or model ingress path                                                                              |
+| Turn fails with `exceeded retry limit, last status: 429`      | The model provider's quota; LiteLLM's log names the upstream error, e.g. `usage_limit_reached` for the ChatGPT subscription behind `codex` |
+| Ring records a deny for an expected destination               | Egress policy/binding or destination URL mismatch                                                                                          |
+| Rules discovery succeeds but destination authentication fails | Placeholder substitution or independent destination authentication                                                                         |
+| Test assertions pass but teardown reports a failure           | Runtime cleanup/reconciliation; inspect the named Sandbox before rerunning                                                                 |
+| Process is killed and `accept-*` Sandboxes remain             | Expected teardown limitation; clean them up deliberately before the next run                                                               |
 
 Keep the complete test output and the proxy/app decision evidence together.
 The model transcript explains what the agent attempted, but the decision history
