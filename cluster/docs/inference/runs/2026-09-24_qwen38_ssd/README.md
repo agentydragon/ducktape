@@ -105,7 +105,7 @@ The base CUDA image packages NCCL 2.25.1. Tensor splitting failed during warmup
 with CUDA `invalid argument`, an NCCL shared-memory limit warning (82,240 versus
 79,856 bytes), and process exit 139. Docker reported no OOM; GPU allocations were
 released. The second attempt enabled `NCCL_DEBUG=INFO` to capture the cause:
-[initial log](dense_tensor_failure.log), [diagnostic log](dense_tensor_nccl_failure.log).
+[initial log](dense_tensor_failure.txt), [diagnostic log](dense_tensor_nccl_failure.txt).
 This matches a previously reported [NCCL/5090 issue](https://discuss.pytorch.org/t/torch-distributed-distbackenderror-nccl-error-in-pytorch-torch-csrc-distributed-c10d-processgroupnccl-cpp-3368-unhandled-cuda-error-run-with-nccl-debug-info-for-details-nccl-version-2-25-1/221360/2).
 
 Replacing only the container's `libnccl2` with NVIDIA's SHA256-pinned
