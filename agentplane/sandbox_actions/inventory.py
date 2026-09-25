@@ -272,7 +272,7 @@ class SandboxInventory:
             namespace=self._binding.namespace,
             container=environment.container,
             script=script,
-            cwd=cwd or environment.default_cwd,
+            cwd=cwd,
             max_output_bytes=min(max_output_bytes, self._binding.max_output_bytes),
             timeout_seconds=min(timeout_seconds, self._binding.max_timeout_seconds),
         )

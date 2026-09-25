@@ -23,7 +23,6 @@ class SandboxEnvironment(BaseModel):
 
     template: str = Field(min_length=1, description="SandboxTemplate in the sandbox namespace.")
     container: str = Field(min_length=1, description="Container in that template's Pod that commands run in.")
-    default_cwd: str = Field(min_length=1, description="Working directory an exec uses when it names none.")
     description: str = Field(
         min_length=1, max_length=2000, description="What this box holds, for the agent picking it."
     )

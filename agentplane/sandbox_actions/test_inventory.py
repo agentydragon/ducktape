@@ -33,9 +33,7 @@ BINDING = SandboxExecutorBinding(
     description="test sandboxes",
     namespace=NAMESPACE,
     environments={
-        "default": SandboxEnvironment(
-            template="test-template", container="workspace", default_cwd="/workspace", description="the test box"
-        )
+        "default": SandboxEnvironment(template="test-template", container="workspace", description="the test box")
     },
     default_environment="default",
 )

@@ -194,7 +194,6 @@ _ACTIONS_SETTINGS = {
                     "sandbox": {
                         "template": command_sandbox.NAME,
                         "container": command_sandbox.CONTAINER,
-                        "default_cwd": command_sandbox.HOME,
                         "description": (
                             "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, "
                             "kubectl (configured as the caller's ServiceAccount) and python3 (install packages "
@@ -205,7 +204,6 @@ _ACTIONS_SETTINGS = {
                     "build": {
                         "template": command_sandbox.BUILD_NAME,
                         "container": command_sandbox.CONTAINER,
-                        "default_cwd": command_sandbox.HOME,
                         "description": (
                             "The sandbox box sized for a build: the same tools, 2 cores and 4Gi, and a home "
                             "directory that survives the container being killed for running out of memory, "
@@ -217,7 +215,6 @@ _ACTIONS_SETTINGS = {
                     "runner": {
                         "template": "agentplane-runner",
                         "container": "runner",
-                        "default_cwd": "/state",
                         "description": (
                             "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, "
                             "ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."

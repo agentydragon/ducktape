@@ -416,6 +416,9 @@ class App(Construct):
             name="runner",
             image=f"{_RUNNER_IMAGE}:{_PLACEHOLDER_TAG}",
             args=args,
+            # The runner works in absolute paths. This is for a command exec'd in: the sandbox
+            # Actions' `runner` boxes start there unless the caller names a directory.
+            working_dir=_STATE_DIR,
             ports=[SandboxTemplateSpecPodTemplateSpecContainersPorts(name="runner", container_port=_RUNNER_PORT)],
             security_context=sandbox_pod.workload_security_context(),
             env=[
