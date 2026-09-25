@@ -11,11 +11,12 @@
 import { api } from "./client";
 
 /** `since` is when the stream entered the phase; `reconnecting` covers every failure since it was
- * last live, a failed first connection included, and `attempt` counts them. */
+ * last live, a failed first connection included, and `attempt` counts them. `lastError` is why the
+ * last one failed, where the stream can tell: an `EventSource` cannot. */
 export type StreamConnection =
   | { phase: "connecting"; since: number }
   | { phase: "live"; since: number }
-  | { phase: "reconnecting"; since: number; attempt: number };
+  | { phase: "reconnecting"; since: number; attempt: number; lastError: string | null };
 
 const FIRST_RETRY_MS = 1_000;
 const LAST_RETRY_MS = 30_000;
@@ -63,6 +64,7 @@ export function followStream(url: string, { events, onConnection }: StreamHandle
         phase: "reconnecting",
         since: connection.phase === "live" ? Date.now() : connection.since,
         attempt: connection.phase === "reconnecting" ? connection.attempt + 1 : 1,
+        lastError: null,
       });
       if (current.readyState !== EventSource.CLOSED) return;
       // The API client never settles a 401 but sends the browser to log in, so a source refused for

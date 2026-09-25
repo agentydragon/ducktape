@@ -21,6 +21,7 @@ import { createContext, type JSX, type ReactNode, useContext, useEffect, useStat
 import { z } from "zod";
 
 import { displayableError, fetchWithLogin, threadScope, type ThreadScope } from "./client";
+import type { StreamConnection } from "./live_stream";
 import {
   decimalBigInt,
   type Decimal,
@@ -190,7 +191,7 @@ async function keepingOffset(input: RequestInfo | URL, init?: RequestInit): Prom
 class Shape {
   readonly #abort = new AbortController();
   readonly #stream: ShapeStream<Row>;
-  readonly #onRetrying: (retrying: boolean) => void;
+  readonly #onAttempt: (failure: string | null) => void;
   // Settles with the shape's first subset. Electric answers that one from the shape's definition
   // with the handle and offset the stream then follows; later subsets name that handle.
   #opened: Promise<unknown> | null = null;
@@ -200,9 +201,9 @@ class Shape {
     url: string,
     onMessages: (messages: Message<Row>[]) => void,
     onError: (error: unknown) => void,
-    onRetrying: (retrying: boolean) => void
+    onAttempt: (failure: string | null) => void
   ) {
-    this.#onRetrying = onRetrying;
+    this.#onAttempt = onAttempt;
     this.#stream = new ShapeStream({
       url,
       offset: "now",
@@ -232,18 +233,19 @@ class Shape {
     try {
       response = await keepingOffset(input, init);
     } catch (error) {
-      if (!init?.signal?.aborted) this.#retried(true);
+      if (!init?.signal?.aborted) this.#attempted(displayableError(error));
       throw error;
     }
-    this.#retried(response.status >= 500 || response.status === 429);
+    this.#attempted(response.status >= 500 || response.status === 429 ? `HTTP ${response.status}` : null);
     return response;
   }
 
-  #retried(retrying: boolean): void {
+  /** Every failed attempt, and the first success after them. */
+  #attempted(failure: string | null): void {
     // A subset's request carries no signal, so it goes on retrying once the shape is closed.
-    if (this.closed || retrying === this.#retrying) return;
-    this.#retrying = retrying;
-    this.#onRetrying(retrying);
+    if (this.closed || (failure === null && !this.#retrying)) return;
+    this.#retrying = failure !== null;
+    this.#onAttempt(failure);
   }
 
   /** Rows of the shape, delivered to its subscriber like any change and returned. */
@@ -262,7 +264,7 @@ class Shape {
   }
 
   close(): void {
-    this.#retried(false);
+    this.#attempted(null);
     this.#abort.abort();
   }
 }
@@ -271,7 +273,7 @@ class Shape {
 class PayloadShape extends Listeners {
   readonly #url: string;
   readonly #onGone: () => void;
-  readonly #onRetrying: (retrying: boolean) => void;
+  readonly #onAttempt: (failure: string | null) => void;
   #shape: Shape | null = null;
   // Chunk text by index, per body: an owner at one generation.
   readonly #chunks = new Map<string, Map<number, string>>();
@@ -281,11 +283,11 @@ class PayloadShape extends Listeners {
   #error: string | null = null;
   #closed = false;
 
-  constructor(url: string, onGone: () => void, onRetrying: (retrying: boolean) => void) {
+  constructor(url: string, onGone: () => void, onAttempt: (failure: string | null) => void) {
     super();
     this.#url = url;
     this.#onGone = onGone;
-    this.#onRetrying = onRetrying;
+    this.#onAttempt = onAttempt;
   }
 
   getVersion = (): number => this.#version;
@@ -342,7 +344,7 @@ class PayloadShape extends Listeners {
       this.#url,
       (messages) => this.#apply(messages),
       (error) => this.#fail(error),
-      this.#onRetrying
+      this.#onAttempt
     ));
     for (const batch of batches(this.#queued.splice(0), SUBSET_BODIES))
       shape.subset(bodySubset(batch)).catch((error: unknown) => {
@@ -388,7 +390,7 @@ interface WindowState {
   caughtUp: boolean;
   olderAvailable: boolean;
   loadingOlder: boolean;
-  reconnecting: boolean;
+  connection: StreamConnection;
   error: string | null;
 }
 
@@ -397,7 +399,7 @@ const NO_WINDOW: WindowState = {
   caughtUp: false,
   olderAvailable: false,
   loadingOlder: false,
-  reconnecting: false,
+  connection: { phase: "live", since: 0 },
   error: null,
 };
 
@@ -423,6 +425,7 @@ class EpochWindow extends Listeners {
   #refreshed: Set<string> | null = null;
   // The shapes, by path, whose client is retrying a failed request.
   readonly #retrying = new Set<string>();
+  #connection: StreamConnection = { phase: "live", since: Date.now() };
   #closed = false;
   #state: WindowState = NO_WINDOW;
 
@@ -435,7 +438,7 @@ class EpochWindow extends Listeners {
       this.#url("entities"),
       (messages) => this.#apply(messages),
       (error) => this.#fail(error),
-      (retrying) => this.#retried("entities", retrying)
+      (failure) => this.#attempted("entities", failure)
     );
     void this.#guard(async () => {
       await Promise.all([
@@ -474,8 +477,8 @@ class EpochWindow extends Listeners {
     if (shape === undefined)
       this.#bodies.set(
         field,
-        (shape = new PayloadShape(this.#url(`chunks/${field}`), this.#onGone, (retrying) =>
-          this.#retried(field, retrying)
+        (shape = new PayloadShape(this.#url(`chunks/${field}`), this.#onGone, (failure) =>
+          this.#attempted(field, failure)
         ))
       );
     return shape;
@@ -586,9 +589,18 @@ class EpochWindow extends Listeners {
     this.#onGone();
   }
 
-  #retried(shape: string, retrying: boolean): void {
-    if (retrying) this.#retrying.add(shape);
-    else this.#retrying.delete(shape);
+  /** One shape's attempt: a failure counts against the window until every shape it has has recovered. */
+  #attempted(shape: string, failure: string | null): void {
+    const was = this.#connection;
+    if (failure !== null) {
+      this.#retrying.add(shape);
+      this.#connection =
+        was.phase === "reconnecting"
+          ? { ...was, attempt: was.attempt + 1, lastError: failure }
+          : { phase: "reconnecting", since: Date.now(), attempt: 1, lastError: failure };
+    } else if (this.#retrying.delete(shape) && this.#retrying.size === 0) {
+      this.#connection = { phase: "live", since: Date.now() };
+    }
     this.#publish();
   }
 
@@ -601,7 +613,7 @@ class EpochWindow extends Listeners {
         this.#ready && view !== undefined && decimalBigInt(view.revisionCursor) >= BigInt(this.scope.through_cursor),
       olderAvailable: this.#lowest !== null && !this.#exhausted,
       loadingOlder: this.#loadingOlder,
-      reconnecting: this.#retrying.size > 0,
+      connection: this.#connection,
       error,
     };
     this.notify();
@@ -726,7 +738,7 @@ function useThread(): ThreadState {
             olderAvailable: state.olderAvailable,
             loadingOlder: state.loadingOlder,
             loadOlder: shown.loadOlder,
-            reconnecting: state.reconnecting,
+            connection: state.connection,
             error: state.error,
             refresh: thread.refresh,
           },
