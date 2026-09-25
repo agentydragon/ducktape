@@ -19,11 +19,11 @@ from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.views import ThreadEntityView
 from agentplane.app.api import create_app
 from agentplane.app.database import connect
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ThreadScopeResponse
@@ -38,7 +38,7 @@ def openapi_document() -> dict[str, Any]:
     inventory = SandboxInventory(namespace="schema", custom_objects=cast(Any, None), core_v1=cast(Any, None))
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
     engine = connect("postgresql+asyncpg://schema@localhost/schema")
-    thread_updates = ThreadUpdates(engine.url)
+    database_updates = DatabaseUpdates(engine.url)
     event_logs, content = EventLogStore(engine), ContentStore(engine)
     live = LiveIndex(stale_after_seconds=900)
     runners = Runners(live, port=1)
@@ -49,7 +49,7 @@ def openapi_document() -> dict[str, Any]:
             event_logs=event_logs,
             content=content,
             ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
-            thread_changes=thread_updates.changes,
+            thread_changes=database_updates.changes[Channel.THREADS],
         ),
         ThreadStore(engine),
         {harness: ["schema-model"] for harness in Harness},
@@ -59,7 +59,7 @@ def openapi_document() -> dict[str, Any]:
         ActionPolicyInventory(namespace="schema", custom_objects=cast(Any, None)),
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=OperatorSessionStore(engine),
     ).openapi()
     components = document["components"]

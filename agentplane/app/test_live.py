@@ -25,11 +25,11 @@ from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import create_app
 from agentplane.app.conftest import Replica
 from agentplane.app.database import connect
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
@@ -276,14 +276,14 @@ def app(
     runs, and the document comes from the signatures -- so the engine here never connects."""
     engine = connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
     event_logs, content = EventLogStore(engine), ContentStore(engine)
-    thread_updates = ThreadUpdates(engine.url)
+    database_updates = DatabaseUpdates(engine.url)
     runners = Runners(live_index, port=1)
     bridge = RunnerBridge(
         runners=runners,
         event_logs=event_logs,
         content=content,
         ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
-        thread_changes=thread_updates.changes,
+        thread_changes=database_updates.changes[Channel.THREADS],
     )
     return create_app(
         inventory,
@@ -297,7 +297,7 @@ def app(
         reviewer=reviewer,
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=OperatorSessionStore(engine),
     )
 
@@ -318,10 +318,14 @@ async def _next_threads(stream: AsyncIterator[str | bytes | memoryview]) -> Thre
 
 
 async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_changes(
-    seeded: LiveIndex, store: ThreadStore, event_logs: EventLogStore, replica: Replica, thread_updates: ThreadUpdates
+    seeded: LiveIndex,
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    replica: Replica,
+    database_updates: DatabaseUpdates,
 ) -> None:
     drain = Drain()
-    response = await live_threads(index=seeded, store=replica.store, updates=thread_updates, shutdown=drain)
+    response = await live_threads(index=seeded, store=replica.store, updates=database_updates, shutdown=drain)
     stream = aiter(response.body_iterator)
     try:
         async with asyncio.timeout(10):
@@ -358,10 +362,10 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
 
 
 async def test_global_thread_stream_reports_listener_loss_then_rereads_after_reconnect(
-    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, thread_updates: ThreadUpdates, db_url: str
+    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, database_updates: DatabaseUpdates, db_url: str
 ) -> None:
     drain = Drain()
-    response = await live_threads(index=seeded, store=replica.store, updates=thread_updates, shutdown=drain)
+    response = await live_threads(index=seeded, store=replica.store, updates=database_updates, shutdown=drain)
     stream = aiter(response.body_iterator)
     engine = create_async_engine(db_url)
     try:
@@ -371,7 +375,7 @@ async def test_global_thread_stream_reports_listener_loss_then_rereads_after_rec
                 await connection.execute(
                     text(
                         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                        "WHERE datname = current_database() AND application_name = 'agentplane-thread-updates'"
+                        "WHERE datname = current_database() AND application_name = 'agentplane-database-updates'"
                     )
                 )
             assert not (await _next_threads(stream)).updates_connected

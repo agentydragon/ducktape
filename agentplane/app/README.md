@@ -49,8 +49,7 @@ bbr test //agentplane/app/...
   sessions into the event log: the `Ingester` holds one lease per sandbox across replicas and runs a
   `Feed` per session, which batches the runner's events for `Ingestion` to record, the event log's
   and the fold's writes in one transaction under the lease; each transaction folds only the batch
-  and its touched entities, then commits all projection writes and checkpoint. `updates.py` turns
-  committed PostgreSQL notifications into replica-local wakeups.
+  and its touched entities, then commits all projection writes and checkpoint.
 - `agent_runtime/runner/`: `bridge.py` (runner-first sessions and commands) and `runners.py` (the
   runner in each sandbox as the cluster index shows it: which sandboxes run one, and a client to
   reach each).
@@ -68,6 +67,9 @@ bbr test //agentplane/app/...
   Service, and the SSE streams that push a snapshot of it to every open tab.
 - `changes.py`: the payload-free wake-up a reader of the cluster index or the thread store waits
   on; a burst of changes coalesces into one re-read.
+- `database_updates.py`: the replica's one PostgreSQL `LISTEN` connection, turning each channel's
+  committed notifications (thread writes, deleted operator sessions) into that channel's
+  `changes.py` wake-up, and waking every channel after a reconnect.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
 - `agent_runtime/view/`: the conversation view projected from a thread's events. `fold.py` (the
@@ -82,7 +84,7 @@ bbr test //agentplane/app/...
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
 - `database.py`: the declarative `Base` every table maps onto, and the app's one connection pool;
-  `main.py` builds the pool and hands it to each store and to the thread update listener.
+  `main.py` builds the pool and hands it to each store and to the database update listener.
 - `database_migrate.py` and `migrations/`: the Alembic history covering the tables of
   `operator_sessions.py` and `agent_runtime/models.py`. Migrations run separately through
   `:migrate`; the server itself never creates or checks tables at startup.
@@ -465,9 +467,14 @@ one. Which lists the service enforces is its contract
 
 `/#/actions` follows the Action Service's operator SSE stream through `/actions/stream`, replacing
 its old two-second timer poll. Streams provide fresh snapshots after reconnect, and an unavailable
-stream is shown as disconnected rather than silently presenting stale state as live. The BFF
-bounds stream lifetime to 30 seconds so each reconnect checks current browser-session state,
-including logout in another replica. These reconnects are authentication checks, not state polling.
+stream is shown as disconnected rather than silently presenting stale state as live. The BFF keeps
+the stream open for as long as its browser session. Deleting a session row (logout, a login's
+rotation, expiry cleanup) sends a transactional `NOTIFY` every replica hears; the stream then
+re-reads its own row, as it also does after a listener reconnect and at the row's `expires_at`, and
+ends once the row is gone or expired. The Action Service ends its side when the one-minute token it
+was opened with expires; the BFF exchanges a fresh one and reopens the upstream behind the same
+browser response, whose next frame is the new upstream's snapshot. An upstream that ends before its
+first frame ends the browser stream instead.
 
 The Settings modal's Notifications tab (`/#/notifications`, see [Settings](#settings)) registers the
 current browser, lists registered browsers, identifies this one, and forgets registrations. Forgetting the current browser also unsubscribes locally. The stable

@@ -7,6 +7,7 @@ not after streaming the response, so logout cannot be undone by an older in-flig
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import hashlib
 import secrets
@@ -24,7 +25,9 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
 
+from agentplane.app.changes import Changes
 from agentplane.app.database import Base
+from agentplane.app.database_updates import Channel, notify
 
 
 class BrowserSession(Base):
@@ -38,6 +41,30 @@ class BrowserSession(Base):
 class OperatorSessionStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self.sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def until_ended(self, session_id: str, changes: Changes) -> None:
+        """Return once the session's row is deleted, on any replica, or its current `expires_at` has
+        passed. Each wake from `changes` (the sessions channel) and each deadline re-reads the row."""
+        changed = asyncio.Event()
+        with changes.subscribe(changed):
+            while True:
+                changed.clear()
+                async with self.sessions() as db:
+                    expires_at = await db.scalar(
+                        select(BrowserSession.expires_at).where(BrowserSession.id == session_id)
+                    )
+                if expires_at is None or expires_at <= datetime.now(UTC):
+                    return
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(changed.wait(), (expires_at - datetime.now(UTC)).total_seconds())
+
+
+def operator_session_id(request: Request) -> str:
+    """The row this request's operator session was read from; only a request that found one may ask."""
+    session_id = request.state.operator_session_id
+    if not isinstance(session_id, str):
+        raise TypeError(f"request.state.operator_session_id is {type(session_id).__name__}, not str")
+    return session_id
 
 
 class OperatorSessionMiddleware(BaseHTTPMiddleware):
@@ -66,6 +93,7 @@ class OperatorSessionMiddleware(BaseHTTPMiddleware):
                 handle = self._signer.unsign(cookie, max_age=self._max_age).decode("ascii")
         async with self._store.sessions.begin() as db:
             row = None
+            ended = False
             if handle is not None:
                 row = await db.scalar(
                     select(BrowserSession)
@@ -74,9 +102,10 @@ class OperatorSessionMiddleware(BaseHTTPMiddleware):
                 )
                 if row is not None and row.expires_at <= datetime.now(UTC):
                     await db.delete(row)
-                    row = None
+                    row, ended = None, True
             initial = copy.deepcopy(row.payload) if row is not None else {}
             request.scope["session"] = copy.deepcopy(initial)
+            request.state.operator_session_id = row.id if row is not None else None
             request.state.rotate_operator_session = False
             request.state.operator_session_expires_at = None
             response = await call_next(request)
@@ -86,7 +115,7 @@ class OperatorSessionMiddleware(BaseHTTPMiddleware):
             if changed:
                 if row is not None and (not payload or rotate):
                     await db.delete(row)
-                    row = None
+                    row, ended = None, True
                 if payload:
                     expiry = request.state.operator_session_expires_at
                     if row is None:
@@ -118,5 +147,10 @@ class OperatorSessionMiddleware(BaseHTTPMiddleware):
             # Bounded by login activity, not a background scheduler. Expired credentials are never read.
             if rotate:
                 await db.execute(delete(BrowserSession).where(BrowserSession.expires_at <= datetime.now(UTC)))
+                ended = True
+            if ended:
+                # In the deleting transaction, so it is delivered with the commit that makes the deletion
+                # visible and never for one rolled back: what ends a stream on the session, on any replica.
+                await notify(db, Channel.OPERATOR_SESSIONS)
         response.headers["Cache-Control"] = "no-store"
         return response
