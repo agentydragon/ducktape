@@ -2405,6 +2405,11 @@ data:
               container: sandbox
               default_cwd: /home/runner
               description: "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl (configured as the caller's ServiceAccount) and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
+            build:
+              template: agentplane-sandbox-build
+              container: sandbox
+              default_cwd: /home/runner
+              description: "The sandbox box sized for a build: the same tools, 2 cores and 4Gi, and a home directory that survives the container being killed for running out of memory, though not the box's Pod."
             runner:
               template: agentplane-runner
               container: runner
@@ -3131,6 +3136,155 @@ spec:
                   audience: https://localhost:7445
                   expirationSeconds: 600
                   path: kubernetes-token
+---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  name: agentplane-sandbox-build
+  namespace: agentplane-staging
+spec:
+  networkPolicyManagement: Unmanaged
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-sandbox
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - command:
+            - bash
+            - -c
+            - trap 'exit 0' TERM; sleep infinity & wait
+          env:
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:3128
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:3128
+            - name: http_proxy
+              value: http://127.0.0.1:3128
+            - name: https_proxy
+              value: http://127.0.0.1:3128
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost
+            - name: no_proxy
+              value: 127.0.0.1,localhost
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: CURL_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: GIT_SSL_CAINFO
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubeconfig
+          image: git.allegedly.works/ducktape-ci/agentplane-sandbox:unset
+          name: sandbox
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /etc/ssl/certs/ca-certificates.crt
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.crt
+            - mountPath: /etc/ssl/certs/java/cacerts
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.p12
+            - mountPath: /etc/kubernetes/kubeconfig
+              name: tool-config
+              readOnly: true
+              subPath: kubeconfig
+            - mountPath: /etc/bazel.bazelrc
+              name: tool-config
+              readOnly: true
+              subPath: bazel.bazelrc
+            - mountPath: /home/runner
+              name: home
+        - env:
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
+              value: agentplane-egress.agentplane-staging.svc.cluster.local
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
+              value: "8888"
+            - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
+              value: "3128"
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
+              value: 0.0.0.0
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
+              value: "3129"
+            - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
+              value: /var/run/agentplane-egress/token
+            - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
+          name: egress-sidecar
+          readinessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /readyz
+              port: 3129
+            periodSeconds: 2
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /var/run/agentplane-egress
+              name: egress-token
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - configMap:
+            name: agentplane-egress-ca
+          name: egress-ca
+        - configMap:
+            name: agentplane-sandbox-tool-config
+          name: tool-config
+        - name: egress-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-egress
+                  expirationSeconds: 600
+                  path: token
+              - serviceAccountToken:
+                  audience: https://localhost:7445
+                  expirationSeconds: 600
+                  path: kubernetes-token
+        - emptyDir:
+            sizeLimit: 20Gi
+          name: home
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

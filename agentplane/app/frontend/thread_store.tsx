@@ -20,7 +20,7 @@ import {
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { z } from "zod";
 
-import { displayableError, threadScope, type ThreadScope } from "./client";
+import { displayableError, fetchWithLogin, threadScope, type ThreadScope } from "./client";
 import {
   decimalBigInt,
   type Decimal,
@@ -170,10 +170,11 @@ class Listeners {
  * behind the subset, skips every change in between to rows outside the subset. The stream's own
  * offset is on the request, so the response carries that back instead.
  */
-// CLEANUP(added 2026-09-23): Drop once a released @electric-sql/client moves only a stream at `now`
-//   to a subset's offset; 1.5.28's requestSnapshot moves a live one too (LiveState.handleResponseMetadata).
+// CLEANUP(added 2026-09-23): Drop, leaving `fetchWithLogin` as the shapes' fetch, once a released
+//   @electric-sql/client moves only a stream at `now` to a subset's offset; 1.5.28's requestSnapshot
+//   moves a live one too (LiveState.handleResponseMetadata).
 async function keepingOffset(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const response = await fetch(input, init);
+  const response = await fetchWithLogin(input, init);
   const offset = new URL(input instanceof Request ? input.url : String(input)).searchParams.get("offset");
   if (init?.method !== "POST" || !response.ok || offset === null || offset === "now") return response;
   const headers = new Headers(response.headers);

@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
 import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
-import { api, command, getThread, models, type ThreadView } from "./client";
+import { command, getThread, models, type ThreadView } from "./client";
 import { historyRows, rowKey } from "./history_rows";
 import { LocalCommands } from "./local_commands";
 import { EntityCard, HistoryRowView, ProjectedSession, pruneCommandErrors } from "./projected_session";
@@ -63,11 +63,11 @@ beforeEach(() => {
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({ HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] });
   vi.mocked(command).mockReturnValue(new Promise(() => {}));
-  // A dropped stream probes the session once; the probe's answer is not what these tests are about.
-  vi.spyOn(api, "GET").mockReturnValue(new Promise<never>(() => {}));
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
+      // A drop is the network's, which the browser retries: the source stays CONNECTING.
+      readyState = 0;
       constructor() {
         super();
         queueMicrotask(() => {
