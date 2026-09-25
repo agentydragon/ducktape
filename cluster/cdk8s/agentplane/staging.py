@@ -53,7 +53,7 @@ from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, 
 _NAMESPACE = "agentplane-staging"
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _AUTHENTIK = "https://auth.allegedly.works"
-_ACTIONS_OIDC_APP = f"{_AUTHENTIK}/application/o/agentplane-actions"
+_ACTIONS_OIDC_APP = f"{_AUTHENTIK}/application/o/agentplane-staging-actions"
 # The push services web-push subscriptions may target: both the Action Service's own
 # allowlist and its egress rule, so the policy cannot drift from what the app accepts.
 _WEB_PUSH_ALLOWED_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.com")
@@ -93,14 +93,14 @@ _OIDC_SESSION_SECRET = "agentplane-staging-session-secret"
 # from operators: the same Authentik application.
 _FEDERATION_TARGET = {
     "issuer": f"{_ACTIONS_OIDC_APP}/",
-    "audience": "agentplane-actions",
+    "audience": "agentplane-staging-actions",
     "jwks_uri": f"{_ACTIONS_OIDC_APP}/jwks/",
 }
 _ACTION_FEDERATION = {
     "mode": "exchange",
     "service_url": f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions.CONTAINER_PORT}",
     "token_endpoint": f"{_AUTHENTIK}/application/o/token/",
-    "login_jwks_uri": f"{_AUTHENTIK}/application/o/agentplane/jwks/",
+    "login_jwks_uri": f"{_AUTHENTIK}/application/o/agentplane-staging/jwks/",
     "target": _FEDERATION_TARGET,
     "scope": "openid",
 }
@@ -314,7 +314,7 @@ ENV = Environment(
     egress=EgressProps(ca_secret_name="agentplane-egress-ca", credentials_namespace=STAGING_NAMESPACE),
     app=AppProps(
         hostname=_HOSTNAME,
-        oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane/",
+        oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
         reach_incluster_authentik=True,
         runner_zone="hil-ovh",
         oidc_session_secret_name=_OIDC_SESSION_SECRET,
@@ -352,7 +352,7 @@ ENV = Environment(
             cilium.egress_to(cilium.endpoint_labels("tana-mcp", "tana-mcp"), 8263),
             cilium.egress_to(cilium.endpoint_labels("google-mcp", "google-mcp"), 8080),
             # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
-            # resolver fetches /application/o/agentplane-actions/jwks/ over HTTPS.
+            # resolver fetches /application/o/agentplane-staging-actions/jwks/ over HTTPS.
             cilium.egress_via_gateway("auth.allegedly.works"),
             # GitHub MCP discovery advertises github.com as its OAuth authorization server.
             cilium.egress_to_fqdns("api.githubcopilot.com", "github.com"),
