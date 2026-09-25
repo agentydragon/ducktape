@@ -454,7 +454,7 @@ class App(Construct):
                 SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
                     name=_STATE_VOLUME_NAME, mount_path=_STATE_DIR
                 ),
-                sandbox_pod.egress_ca_mount(),
+                *sandbox_pod.egress_mounts(),
             ],
         )
 

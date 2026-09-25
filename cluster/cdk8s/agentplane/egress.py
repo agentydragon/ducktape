@@ -59,6 +59,8 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecSourcesConfigMap,
     BundleSpecSourcesSecret,
     BundleSpecTarget,
+    BundleSpecTargetAdditionalFormats,
+    BundleSpecTargetAdditionalFormatsPkcs12,
     BundleSpecTargetConfigMap,
     BundleSpecTargetConfigMapMetadata,
     BundleSpecTargetNamespaceSelector,
@@ -112,9 +114,10 @@ FORGEJO_PORT = 3000
 HOME_ASSISTANT_HOST = "home-assistant.home-assistant.svc.cluster.local"
 HOME_ASSISTANT_PORT = 8123
 _SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"
-# The trust bundle's ConfigMap key -- the runner SandboxTemplate's volumeMount subPath
-# (app.py) must name the same key.
+# The trust bundles' ConfigMap key.
 CA_BUNDLE_KEY = "ca-certificates.crt"
+# The sandbox bundle's roots again, as the PKCS12 trust store a JVM reads.
+JAVA_TRUST_STORE_KEY = "ca-certificates.p12"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
 
 
@@ -402,8 +405,8 @@ class Egress(Construct):
             ),
         )
         # Public roots + cluster root + the proxy's interception root, written as a
-        # ConfigMap of the same name, where the runner SandboxTemplate mounts it over
-        # the runner container's system bundle.
+        # ConfigMap of the same name, which every sandbox Pod mounts over its system
+        # bundle and as its Java trust store (sandbox_pod.py).
         Bundle(
             self,
             "bundle",
@@ -427,6 +430,11 @@ class Egress(Construct):
                                 )
                             }
                         ),
+                    ),
+                    # With no password, trust-manager writes the store with neither encryption nor
+                    # a MAC, which a JVM loads when it is given no password either.
+                    additional_formats=BundleSpecTargetAdditionalFormats(
+                        pkcs12=BundleSpecTargetAdditionalFormatsPkcs12(key=JAVA_TRUST_STORE_KEY)
                     ),
                     namespace_selector=BundleSpecTargetNamespaceSelector(
                         match_expressions=[
