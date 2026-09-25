@@ -2739,6 +2739,25 @@ subjects:
     name: claude-ai
     namespace: agentplane-staging
 ---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-app-from-staging-egress
+  namespace: agentplane-testing
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-app
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
