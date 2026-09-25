@@ -1,8 +1,8 @@
 # agentplane's sandbox image: the command-line tools of a box that runs commands, as one list,
 # on the nix-ld substrate FHS binaries need (<../../nix/lib/nix-ld-image.nix>). Its user is uid
 # 1000 `runner`, home /home/runner. The runner image (<../runner/image.nix>) is this definition
-# plus the runner and both harnesses, and the build image (<build.nix>) this definition plus bazel,
-# so a tool added here reaches all three.
+# plus the runner and both harnesses, and the build image (<build.nix>) this definition plus Bazel
+# and what a build compiles with, so a tool added here reaches all three.
 #
 # The egress proxy's CA comes from the pod, not from this image: nothing here sets
 # SSL_CERT_FILE, for the reason the Haku image records beside its own `Env`
@@ -50,12 +50,6 @@ let
       pkgs.openssl
       pkgs.cacert
       pkgs.kubectl # the sandbox's own Kubernetes identity, through the egress proxy
-
-      # What a local Bazel build compiles and probes with: rules_cc's auto-detected toolchain is
-      # this gcc, whose wrapper carries binutils (protoc and protobuf's editions defaults build
-      # from source), and aspect_rules_py reads the host libc from `ldd --version`.
-      pkgs.gcc
-      pkgs.glibc.bin
 
       # FULL python3, never `python3Minimal`, whose missing `json`/`shutil` broke the Haku image's
       # scripts. nixpkgs marks it EXTERNALLY-MANAGED, so a run installs packages into a

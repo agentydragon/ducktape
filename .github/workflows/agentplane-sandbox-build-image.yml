@@ -1,13 +1,14 @@
-# Build agentplane's Nix build-box image (agentplane/sandbox_image/build.nix: the sandbox image
-# plus bazel) and push it to the Forgejo registry, through nix-image.yml. The archive also goes to
-# the Attic cache.
+# Build agentplane's Nix build-box image (agentplane/images/build.nix: the sandbox image plus Bazel
+# and its toolchain) and push it to the Forgejo registry, through nix-image.yml. The archive also
+# goes to the Attic cache.
 name: Agentplane Sandbox Build Image
 
 on:
   push:
     branches: [devel]
     paths:
-      - "agentplane/sandbox_image/**"
+      - "agentplane/images/sandbox.nix"
+      - "agentplane/images/build.nix"
       - "nix/lib/nix-ld-image.nix"
       - "flake.lock"
       - "nix/flake/packages.nix"
@@ -17,7 +18,8 @@ on:
   # Build-only on PRs, so a change to either tool list is proven to build before it merges.
   pull_request:
     paths:
-      - "agentplane/sandbox_image/**"
+      - "agentplane/images/sandbox.nix"
+      - "agentplane/images/build.nix"
       - "nix/lib/nix-ld-image.nix"
       - "flake.lock"
       - "nix/flake/packages.nix"
