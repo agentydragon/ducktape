@@ -164,6 +164,10 @@ To run one cell, set `AGENTPLANE_CODING_CASE` to `harness_codex-stable-topologic
 bazelisk test //agentplane/acceptance:test_local_coding --test_env=AGENTPLANE_CODING_CASE=harness_codex-stable-topological-order --test_output=streamed
 ```
 
+Run one cell per Bazel invocation so each process gets a fresh acceptance token. The default
+ServiceAccount token lifetime is 1800 seconds, which may expire during a full four-cell run; if
+supplying `AGENTPLANE_ACCEPTANCE_TOKEN` directly, make sure it remains valid for the entire cell.
+
 By default it tests `https://agentplane-testing.allegedly.works` and mints its own bearer token with
 `kubectl -n agentplane-testing create token agentplane-agent --audience=agentplane`. That call needs
 RBAC on `serviceaccounts/token`, and the app only admits subjects its `AGENTPLANE_TOKEN_SUBJECTS`
