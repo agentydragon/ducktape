@@ -87,13 +87,13 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-_NAME = "agentplane-app"
+NAME = "agentplane-app"
 _APP_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
 _RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner"
-_CONTAINER_PORT = 8080
+CONTAINER_PORT = 8080
 _RUNNER_PORT = 7000
-_LABELS = {"app.kubernetes.io/name": _NAME}
+_LABELS = {"app.kubernetes.io/name": NAME}
 _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
 _CONFIG_DIR = "/etc/agentplane"
 # Shared by the runner's --state-dir flag, its container volumeMount, and the
@@ -133,7 +133,7 @@ class App(Construct):
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the app
         # mounts its own token to call TokenReview as itself.
         app_service_account = ServiceAccount(
-            self, "serviceaccount-app", metadata=metadata(_NAME, namespace), automount_token=True
+            self, "serviceaccount-app", metadata=metadata(NAME, namespace), automount_token=True
         )
         # The runner Pods' identity, with no RBAC of its own.
         ServiceAccount(
@@ -149,13 +149,13 @@ class App(Construct):
             self,
             "token-reviewer",
             name=f"{namespace}-app-token-reviewer",
-            service_account_name=_NAME,
+            service_account_name=NAME,
             namespace=namespace,
         )
         Role(
             self,
             "role",
-            metadata=metadata(_NAME, namespace),
+            metadata=metadata(NAME, namespace),
             rules=[
                 # GET /sandboxes/templates lists them; a get-only Role 403'd the route (#7023).
                 RolePolicyRule(
@@ -195,7 +195,7 @@ class App(Construct):
             ],
         )
         RoleBinding(
-            self, "rolebinding", metadata=metadata(_NAME, namespace), role=Role.from_role_name(self, "role-ref", _NAME)
+            self, "rolebinding", metadata=metadata(NAME, namespace), role=Role.from_role_name(self, "role-ref", NAME)
         ).add_subjects(app_service_account)
 
     def _container_env(self) -> dict[str, EnvValue]:
@@ -246,7 +246,7 @@ class App(Construct):
             self,
             "deployment",
             metadata=metadata(
-                _NAME,
+                NAME,
                 namespace,
                 labels=_LABELS,
                 annotations={
@@ -286,12 +286,12 @@ class App(Construct):
                 sandbox_namespace=namespace,
                 runner_port=_RUNNER_PORT,
                 host="0.0.0.0",
-                port=_CONTAINER_PORT,
+                port=CONTAINER_PORT,
             ),
             env_variables=env,
-            ports=[ContainerPort(name="http", number=_CONTAINER_PORT, protocol=Protocol.TCP)],
-            readiness=http_probe("/readyz", port=_CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10),
-            liveness=http_probe("/healthz", port=_CONTAINER_PORT, initial_delay_seconds=20, period_seconds=30),
+            ports=[ContainerPort(name="http", number=CONTAINER_PORT, protocol=Protocol.TCP)],
+            readiness=http_probe("/readyz", port=CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10),
+            liveness=http_probe("/healthz", port=CONTAINER_PORT, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
@@ -312,9 +312,9 @@ class App(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, self.env.namespace, labels=_LABELS),
+            metadata=metadata(NAME, self.env.namespace, labels=_LABELS),
             selector=deployment,
-            ports=[ServicePort(name="http", port=_CONTAINER_PORT, target_port=_CONTAINER_PORT, protocol=Protocol.TCP)],
+            ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
         )
 
     def _add_http_route(self) -> None:
@@ -324,8 +324,8 @@ class App(Construct):
             "httproute",
             metadata=metadata(namespace, namespace),
             hostname=self.env.app.hostname,
-            backend=_NAME,
-            port=_CONTAINER_PORT,
+            backend=NAME,
+            port=CONTAINER_PORT,
             # A session stream stays attached for as long as the tab is open.
             timeout="3600s",
         )
@@ -360,9 +360,9 @@ class App(Construct):
         cilium.network_policy(
             self,
             "networkpolicy-app",
-            metadata=metadata(_NAME, namespace),
+            metadata=metadata(NAME, namespace),
             selector=_LABELS,
-            ingress=[cilium.ingress_from_gateway(_CONTAINER_PORT)],
+            ingress=[cilium.ingress_from_gateway(CONTAINER_PORT)],
             egress=[
                 dns_egress,
                 cilium.egress_to_entities("kube-apiserver"),
@@ -383,7 +383,7 @@ class App(Construct):
 
     def _add_pdb(self, min_available: int) -> None:
         add_pod_disruption_budget(
-            self, "pdb", name=_NAME, namespace=self.env.namespace, min_available=min_available, selector=_LABELS
+            self, "pdb", name=NAME, namespace=self.env.namespace, min_available=min_available, selector=_LABELS
         )
 
     def _runner_container(self) -> SandboxTemplateSpecPodTemplateSpecContainers:

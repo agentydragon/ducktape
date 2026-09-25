@@ -40,8 +40,8 @@ from external_secrets_crds.io.external_secrets import (
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAction
-from cluster.cdk8s import external_creds
-from cluster.cdk8s.agentplane import testing
+from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s.agentplane import app as app_component, egress, testing
 from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
     COINBASE_POLICY,
@@ -431,13 +431,32 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
     )
     # The testing deployment's app, for the acceptance suite's harness scenarios run from a box
-    # (agentplane/acceptance/README.md). Nothing is substituted: the suite presents the app token
-    # it mints in agentplane-testing (rbac.AcceptanceToken), so any method may pass.
+    # (agentplane/acceptance/README.md): by its Service rather than its public name, which would
+    # hairpin out through the Gateway and back. Plain HTTP, so the proxy reads the request without
+    # bumping TLS. Nothing is substituted: the suite presents the app token it mints in
+    # agentplane-testing (rbac.AcceptanceToken), so any method may pass.
     EgressPolicy(
         scope,
         "egresspolicy-agentplane-testing",
         metadata=ApiObjectMetadata(name=_AGENTPLANE_TESTING_POLICY, namespace=_NAMESPACE),
-        spec=EgressPolicySpec(rules=[EgressPolicySpecRules(hosts=[testing.ENV.app.hostname])]),
+        spec=EgressPolicySpec(
+            rules=[
+                EgressPolicySpecRules(
+                    hosts=[f"{app_component.NAME}.{testing.ENV.namespace}.svc.cluster.local"], cluster_internal=True
+                )
+            ]
+        ),
+    )
+    cilium.network_policy(
+        scope,
+        "networkpolicy-egress-to-testing-app",
+        metadata=metadata(f"{egress.NAME}-to-testing-app", _NAMESPACE),
+        selector={"app.kubernetes.io/name": egress.NAME},
+        egress=[
+            cilium.egress_to(
+                cilium.endpoint_labels(testing.ENV.namespace, app_component.NAME), app_component.CONTAINER_PORT
+            )
+        ],
     )
     # GitHub downloads with nothing substituted: a release asset or a tag archive, which is what a
     # Bazel `http_archive` fetches, without the write-capable PAT `github-public` carries.
