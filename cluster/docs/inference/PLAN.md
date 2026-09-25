@@ -1,6 +1,7 @@
 # Wyrm2 capability-first inference plan (WIP)
 
-Updated: 2026-09-24. Research and read-only inspection; no workloads changed or weights downloaded.
+Updated: 2026-09-24. Execution is underway; live results and exact commands are in
+[runs/2026-09-24_qwen38_ssd/README.md](runs/2026-09-24_qwen38_ssd/README.md).
 
 ## Objective and decision
 
@@ -12,7 +13,7 @@ Choose a model, quantization, runtime, reasoning setting, and usable context tog
 Optimize task success and independence from human rescue first; retain latency measurements to expose the cost.
 No blanket tokens/s cutoff. A slow model earns its place by solving tasks the faster ones cannot.
 
-## Current machine: directly observed
+## Initial machine snapshot (before storage work and experiments)
 
 - Two RTX 5090s, 32,607 MiB each; driver 595.71.05. GPU0 used 2,460 MiB; GPU1 5 MiB.
 - GPU P2P read support: `NS`; topology `PHB`. Do not assume two GPUs behave as one unified 64 GB allocation.
@@ -135,6 +136,18 @@ comparison checkpoints total roughly 770 GiB, fitting the expanded model filesys
 Use 400 GiB of pool-available SSD space as an operating headroom target, checking it
 before downloads. Existing disks are thin-provisioned: shrinking an empty allocation
 does not recover the nominal size as physical space.
+
+## Execution checkpoint
+
+Model storage is expanded and Ollama is paused through GitOps (#7907), with its PVC
+retained and Flux Ready. The node no longer reported DiskPressure at experiment start.
+The resident Qwen3.8-27B Q8 checkpoint is SHA256 verified; initial reasoning/tool
+protocol and one-versus-two-GPU measurements are recorded in the run linked above.
+Flash-Next Q4 is downloading. Current host available RAM is about 54–56 GiB, so
+large-model trials must reserve workstation headroom from that value rather than
+use the initial 70 GiB snapshot. No old model archive has been removed yet.
+Qwen runs first because the current pinned upstream CUDA runtime supports it;
+GLM-5.3-Flash runtime support was still an open upstream PR at inspection.
 
 ## Ranked execution plan
 

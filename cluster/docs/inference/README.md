@@ -57,8 +57,11 @@ with their dated run records.
 
 ## Current state
 
-The declared cluster service is **Ollama / GGUF on wyrm2** (see
-<../../cdk8s/ollama/app.py>); verify live readiness before using it. The July
+Cluster **Ollama / GGUF on wyrm2** is temporarily paused for authorized host GPU
+experiments (see <../../cdk8s/ollama/app.py> and
+[PR #7907](https://github.com/agentydragon/ducktape/pull/7907)); its PVC is retained.
+The [September SSD run](runs/2026-09-24_qwen38_ssd/README.md) records current
+Qwen3.8 experiments and launch commands. The July
 `runs/` records include Kubernetes vLLM experiments, while host launchers live
 in `x/local_llm/`. The dated backend matrix is in <backend_comparison.md>.
 

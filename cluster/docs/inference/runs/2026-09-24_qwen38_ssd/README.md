@@ -63,14 +63,41 @@ and returned a synthetic verification code from the supplied tool result. Its tw
 responses decoded at 50.71 and 50.82 tokens/s. This is a synthetic tool-protocol gate,
 not a real filesystem operation or coding benchmark; see
 [dense_tool_roundtrip.json](dense_tool_roundtrip.json).
-GPU1 startup was 3.84 s and dual startup 19.91 s, both with warm filesystem cache
-after checkpoint verification; neither establishes cold SSD loading performance.
+GPU1 startup was 3.84 s and dual startup 19.91 s for the initial 8K trials.
+Filesystem cache was not controlled and checkpoint verification read the dense file
+beforehand; neither establishes cold SSD loading performance.
 
 An initial Kubernetes hostPath plan was blocked by baseline Pod Security. Automatic
 approval rejected relaxing namespace enforcement; that change was not applied.
 The experiment uses existing host Docker/CDI instead. No driver, kernel, NixOS
 activation or desktop service changes were made. Desktop responsiveness is not
 instrumented; sampled GPU allocation and temperature alone do not establish it.
+
+## Filled-context measurements
+
+Set `CONTEXT_SIZE=32768` with the same launchers. Prepend exactly 24,000 tokenizer
+IDs of repository source to the same coding question; chat formatting and task bring
+the actual input to 24,132 tokens. This measures processing unrelated source context,
+not whether the model can retrieve or reason over it. No prompt-cache hits were
+reported. One request per placement, both `stop`, both 1,758 generated tokens.
+
+| Placement                   | Prefill ms | Prefill tokens/s | Decode ms | Decode tokens/s | Sampled GPU0 / GPU1 allocated MiB |
+| --------------------------- | ---------: | ---------------: | --------: | --------------: | --------------------------------- |
+| GPU1                        |   7173.672 |          3363.97 | 36799.951 |           47.74 | 2727 / 28058                      |
+| Two GPUs, equal layer split |   4813.582 |          5013.31 | 38049.605 |           46.18 | 17063 / 14840                     |
+
+Dual-GPU prefill was about 1.49 times as fast in this sample, while decode was about
+3% slower. Total server prompt-plus-decode time was 42.86 s dual versus 43.97 s on
+GPU1. This does not establish a task-quality advantage or a statistically stable
+performance difference. The concurrent rate-capped model download was active for
+both placements. No cache eviction or desktop shutdown was performed.
+
+Exact responses: [GPU1](dense_gpu1_32k_long.json),
+[dual](dense_dual_32k_long.json). [Source manifest](long_context_sources.json) records
+the ordered files, content hashes and full request hash. The local request is retained
+at `/tmp/wyrm2-llm-experiments-2026-09-24/long_context_request.json`; its repository
+payload is not duplicated here. An initial undersized context probe had 2,358 prompt
+tokens and is excluded from this matched comparison.
 
 ## Agentplane evidence to reuse
 
@@ -86,7 +113,7 @@ correctness, prefill, reasoning/decode, and total task completion time.
 ## Next evidence
 
 1. Finish Flash-Next checkpoint download and SHA256 verification.
-2. Repeat dense measurements with substantial input context at 32K.
+2. Evaluate alternate two-GPU splitting where supported; 32K filled-input baseline is recorded above.
 3. Connect an authenticated private host endpoint through LiteLLM to Agentplane;
    validate real shell tools and coding tasks through both harnesses.
 4. Run Flash-Next Q4 with asymmetric GPU headroom and bounded CPU memory; compare

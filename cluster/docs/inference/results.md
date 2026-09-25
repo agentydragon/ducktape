@@ -17,7 +17,25 @@ Rules: don't edit an accepted run's numbers in place — add a new run directory
 and repoint the row. Keep configurations that failed or underperformed in the
 table; a known dead end is a result.
 
-## Coding-agent configurations
+## September resident control (initial screen)
+
+Qwen3.8-27B Q8, CUDA llama.cpp build 11151, Q8 KV, one slot. These are one-sample
+server token timings; coding quality is not scored. Filled context contains unrelated
+source text, not a retrieval test. Full inputs, caveats and artifacts are in the
+[SSD run](runs/2026-09-24_qwen38_ssd/README.md).
+
+| Placement             | Configured context | Actual input tokens | Prefill tokens/s | Decode tokens/s | Trust  |
+| --------------------- | -----------------: | ------------------: | ---------------: | --------------: | ------ |
+| GPU1                  |               8192 |                 102 |           826.21 |           51.09 | local~ |
+| Two GPUs, layer split |               8192 |                 102 |           733.12 |           50.00 | local~ |
+| GPU1                  |              32768 |               24132 |          3363.97 |           47.74 | local~ |
+| Two GPUs, layer split |              32768 |               24132 |          5013.31 |           46.18 | local~ |
+
+The GPU1 reasoning-enabled synthetic tool roundtrip passed. Real Agentplane coding
+screening remains pending. See PLAN for limitations of historical measurements below;
+their numbers are not directly comparable with this screen.
+
+## Historical coding-agent configurations
 
 | Config                       | Runtime          | Quant                        | Allocated ctx | Effective ctx       | Decode tok/s @128K           | Peak VRAM              | Coding quality          | Tool calls                         | Run                                                           |
 | ---------------------------- | ---------------- | ---------------------------- | ------------- | ------------------- | ---------------------------- | ---------------------- | ----------------------- | ---------------------------------- | ------------------------------------------------------------- |
