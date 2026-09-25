@@ -9,11 +9,14 @@ Chrome.
 ## Root Cause
 
 Chrome's `NetworkChangeNotifier` on Linux listens to **rtnetlink** (`RTMGRP_LINK`,
-`RTMGRP_IPV4_IFADDR`, `RTMGRP_IPV6_IFADDR`) for `RTM_NEWLINK`, `RTM_DELLINK`,
-`RTM_NEWADDR`, `RTM_DELADDR` on **all** interfaces in the network namespace. Every pod
-veth creation/deletion fires these events. Chrome does not filter by interface name — it
-treats every event as a potential network change, drains the connection pool, and errors
-pending requests with `ERR_NETWORK_CHANGED`.
+`RTMGRP_IPV4_IFADDR`, `RTMGRP_IPV6_IFADDR`) on **all** interfaces in the network
+namespace, with no interface filter. Any `RTM_NEWADDR`/`RTM_DELADDR` counts as an IP
+address change: Chrome flushes every socket pool and errors pending requests with
+`ERR_NETWORK_CHANGED`. Link add/remove alone matters only when it changes the connection
+type, which pod veths do not. The trigger is the kernel `fe80::` link-local each pod's
+host-side `lxc*` veth gets about 2 s after link-up, and its removal at teardown; the
+veths carry no IPv4 (pause-pod test, 2026-09-25,
+[#7921](https://github.com/agentydragon/ducktape/issues/7921)).
 
 wyrm2 is a NixOS k8s worker node; Chrome runs on the same host as the kubelet. All pod
 networking events in the host network namespace are visible to Chrome.
@@ -35,42 +38,25 @@ After clearing locks and stabilizing etcd: pod churn dropped from ~663/hr to ~72
 
 ## Mitigations
 
-### Chrome-side: Network namespace isolation (recommended)
+### Host-side: no kernel link-local on new interfaces
 
 There are **no Chrome flags** to disable or tune the `NetworkChangeNotifier`. It is not
 exposed via `chrome://flags` or command-line switches.
 
-Run Chrome in a separate network namespace that only sees host interfaces, not pod veths:
-
-```bash
-firejail --net=eth0 google-chrome
-```
+All NixOS k8s workers set `net.ipv6.conf.default.addr_gen_mode = 1` in
+<../../nixos/modules/k8s-worker.nix>, so pod veths get no link-local;
+NetworkManager-managed NICs set their own mode. Unverified until deployed: re-run the
+pause-pod test from [#7921](https://github.com/agentydragon/ducktape/issues/7921) and
+expect no `inet6` events.
 
 ### Why not isolate containerd instead?
 
 Containerd doesn't create veths — the CNI plugin (Cilium) does, in the host namespace.
 Moving containerd wouldn't help; moving Cilium would break all pod routing.
 
-### Cluster-level
-
-1. Fix pve-cp-0 stalls — see <../../../debug/kernel_6_18_amd_kvm_stall.md>
-2. Add `NoSchedule` taints to VPS control plane nodes (prevent OOM cascade; #5361)
-3. Clean up stale VolumeAttachments for `talos-pve-gpu-worker-0`
-
-## Cluster Outage — 2026-03-30
-
-While debugging the kernel 6.18 stalls, removing pve-cp-0 left 2-member etcd. VPS nodes
-(no `NoSchedule` taint) absorbed workload pods → OOM → nebula tunnel broke → etcd no
-leader → full cluster outage. Recovered by rebooting + cordoning VPS nodes.
-
-**Prevention**: VPS control plane nodes need `NoSchedule` taints.
-
 ## TODOs
 
-- [ ] Consider `firejail --net=<iface>` for Chrome permanently
-- [ ] Add `NoSchedule` taints to VPS nodes (tracked in #5361)
-- [ ] Clean up stale VolumeAttachments for `talos-pve-gpu-worker-0`
-- [ ] Bring `rugged` back online
+- [ ] Verify the `addr_gen_mode` sysctl on each worker after deploy (#7921)
 
 ## Related
 
