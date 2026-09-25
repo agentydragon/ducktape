@@ -198,5 +198,5 @@ whether it uses OAuth linkage or a mounted credential.
 Approved work remains durably unclaimed during temporary backend outages. Revoked authority
 still becomes terminal; removed Actions and incompatible schemas are not treated as outages.
 Execution pins one connection generation and never automatically replays an ambiguous call.
-A tool's own error output is one of its two valid answers and completes the Action; the caller receives it flagged as an error. Only unreachable backends and unknown outcomes fail an execution. Draining stops new claims and reconnects while keeping
+A tool's own error output is one of its two valid answers and completes the Action; the caller receives it flagged as an error. Either answer is kept whole: every content block the tool returned, including images, audio and resources, and its structured content. Only unreachable backends and unknown outcomes fail an execution. Draining stops new claims and reconnects while keeping
 in-flight execution leases and connections through bounded result persistence.

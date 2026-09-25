@@ -432,8 +432,9 @@ auth: none # or `oauth` with `server_id`, or `static_bearer` with `bearer_file`
 
 HTTP uses the pinned FastMCP `StreamableHttpTransport` and MCP session implementation, including
 JSON/SSE responses and session shutdown. Both transports use the same catalog refresh, live schema
-validation, safe tool-error mapping, and ambiguous-call failure path; a failed `tools/call` transport
-exchange is not retried. HTTP config rejects userinfo, URL queries/fragments, launch fields, and
+validation, result recording, and ambiguous-call failure path; a failed `tools/call` transport
+exchange is not retried. The Execution's `result` is the tool's `CallToolResult` in MCP wire shape
+(`content` blocks of every type, `structuredContent`, `isError`, `_meta`), tool errors included. HTTP config rejects userinfo, URL queries/fragments, launch fields, and
 header settings. `auth: none` sends no credentials. `auth: oauth` names a configured `mcp_servers`
 linkage through `server_id`; `from_group_with_linkage` attaches an `httpx` auth hook that resolves
 that linkage's current access token on every request, and the group stays unavailable until the

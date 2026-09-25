@@ -1376,10 +1376,12 @@ at every raw-JSON dump site (`actions.tsx`, `actions_history.tsx`, `session.tsx`
 caller/client/issuer/connection lines) collapsed behind one disclosure widget, and styling parity
 between the pending and history cards.
 
-**Remaining, in #6309 (open):** an MCP tool call's `execution.result` is
-`{"content": [<json-encoded string>, ...]}`; recursively parse/pretty-print a JSON string sitting
-inside a `content` array rather than leaving it double-encoded, so it renders as structure instead
-of one escaped-quote wall of text.
+**Remaining, in #6309 (open):** an MCP tool call's `execution.result` is its `CallToolResult`
+(`{"content": [{"type": "text", "text": <json-encoded string>}, ...], "structuredContent": ...,
+"isError": ...}`); recursively parse/pretty-print a JSON string sitting in a text block's `text`
+rather than leaving it double-encoded, so it renders as structure instead of one escaped-quote wall
+of text. #6309 was written against the earlier `{"content": [<json-encoded string>, ...]}` shape and
+needs to follow; image blocks now also arrive and could render as images.
 
 **No dependency** on the UI-shell cluster; ships independently.
 

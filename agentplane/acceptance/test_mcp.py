@@ -347,7 +347,11 @@ wait for an operator decision in this turn.
         pytest.fail("Decision operator identity differs from the dedicated Secret", pytrace=False)
     assert decided.decision.idempotency_key == decision.idempotency_key
     expected_state = ActionState.SUCCEEDED if verdict is Verdict.ALLOW else ActionState.DENIED
-    expected_result = {"content": [f"Echo: {marker}"]} if verdict is Verdict.ALLOW else None
+    expected_result = (
+        {"content": [{"type": "text", "text": f"Echo: {marker}"}], "isError": False}
+        if verdict is Verdict.ALLOW
+        else None
+    )
     if verdict is Verdict.ALLOW:
         assert decided.state is ActionState.ALLOWED
         assert decided.execution is not None
