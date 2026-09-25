@@ -2,7 +2,8 @@
 #
 # The app is the relying party (authlib + a signed session cookie; see agentplane/app/oidc.py).
 # The application slug is the per-provider issuer path, which the app pins the id token's `iss`
-# against, so `agentplane` cannot be renamed without changing the app's configured issuer.
+# against, so `agentplane-staging` cannot be renamed without changing the app's configured issuer
+# and login JWKS URI (`cluster/cdk8s/agentplane/staging.py`).
 
 resource "authentik_provider_oauth2" "agentplane_staging" {
   name               = "agentplane-staging-oauth2"
@@ -35,7 +36,7 @@ resource "authentik_provider_oauth2" "agentplane_staging" {
 
 resource "authentik_application" "agentplane_staging" {
   name              = "Agentplane staging"
-  slug              = "agentplane"
+  slug              = "agentplane-staging"
   protocol_provider = authentik_provider_oauth2.agentplane_staging.id
   meta_description  = "Agentplane integration app on staging - sandboxes running Claude Code and Codex on the cheap-experiments key"
   meta_launch_url   = "https://agentplane-staging.allegedly.works"
