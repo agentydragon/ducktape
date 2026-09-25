@@ -62,6 +62,9 @@ _DOCKER_PORT = 2375
 # failed in its first minute without running a step. A digest is immutable, so Zot serves it from
 # its own store without asking upstream. Bump by hand from the tag's current index digest:
 #   docker buildx imagetools inspect catthehacker/ubuntu:act-latest --format '{{.Manifest.Digest}}'
+# Zot's first request for a new digest syncs it cold (1m36s observed), which fails jobs the same
+# way, so HEAD `http://oci-cache.oci-cache.svc/v2/catthehacker/ubuntu/manifests/<digest>` once
+# from inside the cluster before the bump lands.
 # Sync: cluster/k8s/haku-ci/config.yaml `runner.labels` must carry the same label.
 _JOB_LABEL = (
     "haku-ci:docker://catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43"
