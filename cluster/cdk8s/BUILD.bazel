@@ -119,8 +119,8 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":local_path_provisioner",
-        ":metadata",
-        "//cluster/cdk8s/crd_bindings/cnpg:cluster",
+        "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s/providers/cnpg:cnpg_cluster",
         "@pypi//constructs",
     ],
 )
@@ -974,10 +974,10 @@ py_library(
         ":pod_spec_patches",
         ":probes",
         "//cluster/cdk8s/agentplane:node_scheduling",
-        "//cluster/cdk8s/crd_bindings/cnpg:cluster",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/external_secrets:clustersecretstore",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",

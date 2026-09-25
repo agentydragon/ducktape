@@ -1,9 +1,11 @@
-# gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/crd_bindings/cnpg:cluster
-# gazelle:resolve py cnpg_database_crds //cluster/cdk8s/crd_bindings/cnpg:database
-# gazelle:resolve py cnpg_scheduledbackup_crds //cluster/cdk8s/crd_bindings/cnpg:scheduledbackup
-# gazelle:resolve py barman_cloud_objectstore_crds //cluster/cdk8s/crd_bindings/cnpg:objectstore
+# gazelle:ignore
+# gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/providers/cnpg:cluster
+# gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
+# gazelle:resolve py cnpg_scheduledbackup_crds //cluster/cdk8s/providers/cnpg:scheduledbackup
+# gazelle:resolve py barman_cloud_objectstore_crds //cluster/cdk8s/providers/cnpg:objectstore
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+load("//devinfra/python:defs.bzl", "py_library")
 
 cdk8s_import(
     name = "cluster",
@@ -35,4 +37,15 @@ cdk8s_import(
     module_name = "barman_cloud_objectstore_crds",
     module_path = "io/cnpg/barmancloud",
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "cnpg_cluster",
+    srcs = ["cluster.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":cluster",
+        "//cluster/cdk8s:metadata",
+        "@pypi//constructs",
+    ],
 )
