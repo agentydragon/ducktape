@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ActionRequests, stateLabel } from "./actions";
 import { button, render, request, unmountLast } from "./actions_testing";
 import { actionService, type ActionRequestView, type ActionService } from "./client";
+import { STALE_AFTER_MS } from "./stream_status";
 
 describe("ActionRequests", () => {
   it("shows structured list errors without an empty-state claim", async () => {
@@ -164,6 +165,40 @@ describe("ActionRequests", () => {
       expect(close).toHaveBeenCalledOnce();
     } finally {
       list.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps a dropped stream's requests without comment until it has been down a minute", async () => {
+    vi.useFakeTimers({ now: new Date(2026, 0, 1, 17, 21, 4) });
+    let stream: EventTarget | undefined;
+    class Stream extends EventTarget {
+      // A drop is the network's, which the browser retries: the source stays CONNECTING.
+      readyState = 0;
+      close = vi.fn();
+      constructor() {
+        super();
+        stream = this;
+      }
+    }
+    vi.stubGlobal("EventSource", Stream);
+    try {
+      const container = await render(actionService, ActionRequests);
+      await act(async () => {
+        stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("decision_pending", 1)]) }));
+        stream?.dispatchEvent(new Event("error"));
+      });
+      await act(async () => vi.advanceTimersByTime(STALE_AFTER_MS - 1));
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect(container.textContent).toContain("Pending (1)");
+
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+        "What's on screen may be out of date; last update 17:21:04"
+      );
+      expect(container.textContent).toContain("Pending (1)");
+    } finally {
+      vi.useRealTimers();
       vi.unstubAllGlobals();
     }
   });

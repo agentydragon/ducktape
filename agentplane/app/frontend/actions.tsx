@@ -11,7 +11,8 @@ import {
   type Verdict,
 } from "./client";
 import { JsonView } from "./json_view";
-import { followStream } from "./live_stream";
+import { followStream, type StreamConnection } from "./live_stream";
+import { StaleNotice, useStreamStatus, type StreamStatus } from "./stream_status";
 
 const STATE_COLORS: Partial<Record<ActionState, string>> = {
   decision_pending: "yellow",
@@ -108,18 +109,22 @@ export function ActionCaller({ request }: { request: ActionRequestView }): JSX.E
 }
 
 /** Shared fetch/decide plumbing for the pending and history views: one live snapshot (the real
- * service pushes over `/actions/stream`) or one polled `list()` (any other service, e.g. tests). */
+ * service pushes over `/actions/stream`) or one polled `list()` (any other service, e.g. tests),
+ * which has no `stream`. */
 export function useActionRequests(service: ActionService): {
   requests: ActionRequestView[];
   error: string | null;
   loading: boolean;
+  stream: StreamStatus | null;
   deciding: string | null;
   decide: (request: ActionRequestView, verdict: Verdict) => void;
 } {
   const [requests, setRequests] = useState<ActionRequestView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [connection, setConnection] = useState<StreamConnection | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
+  const stream = useStreamStatus("Actions", connection);
 
   const refresh = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -152,11 +157,7 @@ export function useActionRequests(service: ActionService): {
           }
         },
       },
-      onConnection: (connection) => {
-        if (connection.phase !== "reconnecting") return;
-        setLoading(false);
-        setError("The live Action stream disconnected; reconnecting.");
-      },
+      onConnection: setConnection,
     });
   }, [refresh, service]);
 
@@ -176,7 +177,14 @@ export function useActionRequests(service: ActionService): {
     }
   }
 
-  return { requests, error, loading, deciding, decide: (request, verdict) => void decideRequest(request, verdict) };
+  return {
+    requests,
+    error,
+    loading,
+    stream,
+    deciding,
+    decide: (request, verdict) => void decideRequest(request, verdict),
+  };
 }
 
 function PendingActionCard({
@@ -225,7 +233,7 @@ function PendingActionCard({
  * terminal requests live on the separate `ActionHistory` view (`actions_history.tsx`) instead of
  * alongside these. */
 export function ActionRequests({ service = actionService }: { service?: ActionService }): JSX.Element {
-  const { requests, error, loading, deciding, decide } = useActionRequests(service);
+  const { requests, error, loading, stream, deciding, decide } = useActionRequests(service);
   const pending = requests.filter((request) => request.state === "decision_pending");
 
   return (
@@ -236,6 +244,7 @@ export function ActionRequests({ service = actionService }: { service?: ActionSe
           Review pending ActionRequests. Allow dispatches the single permitted Execution automatically.
         </Text>
       </div>
+      <StaleNotice streams={[stream]} />
       {error && <Text c="red">{error}</Text>}
       {loading && <Text role="status">Loading actions…</Text>}
       <Title order={3}>{loading || error ? "Pending" : `Pending (${pending.length})`}</Title>

@@ -59,6 +59,7 @@ import {
 import { historyRows, rowKey, summarizeRun, type HistoryRow } from "./history_rows";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
+import { StaleNotice, useStreamStatus, type StreamStatus } from "./stream_status";
 import { HighlightedText, JsonView } from "./json_view";
 import { Markdown } from "./markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
@@ -1073,12 +1074,15 @@ type Operational = Extract<ThreadEntity["state"], { operational: unknown }>["ope
  * or an unavailable sandbox makes the retained feed and harness state history, not a live claim. */
 function threadStatus({
   sync,
+  degraded,
   archived,
   available,
   operational,
   harness,
 }: {
   sync: ThreadState;
+  /** The thread's reads have been failing for longer than a blip. */
+  degraded: boolean;
   archived: boolean;
   available: boolean;
   operational: Operational | null;
@@ -1086,7 +1090,7 @@ function threadStatus({
 }): ThreadStatus {
   if (sync.window?.error) return { color: "red", label: `Thread sync stopped: ${sync.window.error}` };
   if (!sync.window) return { color: "yellow", breathing: true, label: "Connecting…" };
-  if (sync.error || sync.window.reconnecting) return { color: "yellow", breathing: true, label: "Reconnecting…" };
+  if (sync.error || degraded) return { color: "yellow", breathing: true, label: "Reconnecting…" };
   if (!sync.window.caughtUp) return { color: "yellow", breathing: true, label: "Catching up…" };
   if (archived) return { color: "gray", label: "Thread archived" };
   if (!available) return { color: "gray", label: "Sandbox unavailable" };
@@ -1106,12 +1110,14 @@ function ProjectedSessionBody({
   thread,
   history,
   available,
+  degraded,
 }: {
   threadId: string;
   entities: ThreadEntity[];
   thread: ThreadView;
   history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
   available: boolean;
+  degraded: boolean;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
   const sync = useThreadSync().useThread();
@@ -1266,6 +1272,7 @@ function ProjectedSessionBody({
             <StatusDot
               {...threadStatus({
                 sync,
+                degraded,
                 archived: thread.archived,
                 available,
                 operational,
@@ -1354,27 +1361,28 @@ function SyncedThread({
   threadId,
   thread,
   available,
+  inventory,
 }: {
   threadId: string;
   thread: ThreadView;
   available: boolean;
+  /** The sandbox inventory's stream, which the page's one stale notice covers too. */
+  inventory: StreamStatus;
 }): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
+  // A stopped window is not following the thread at all, and its alert says so.
+  const stream = useStreamStatus("Thread", shown !== null && shown.error === null ? shown.connection : null);
   if (!shown) {
     if (error) return <p role="alert">Thread sync failed: {error}</p>;
     return <p role="status">Loading thread…</p>;
   }
   return (
     <>
+      <StaleNotice streams={[inventory, stream]} />
       {error && <p role="alert">Thread sync failed: {error}; showing the current window and retrying.</p>}
       {shown.error && (
         <p role="alert">
           Thread synchronization stopped: {shown.error} <button onClick={shown.refresh}>Refresh thread</button>
-        </p>
-      )}
-      {!shown.error && shown.reconnecting && (
-        <p role="status" data-thread-reconnecting="true">
-          Reconnecting to the thread. What is on screen may be out of date.
         </p>
       )}
       {!shown.error && !shown.caughtUp && (
@@ -1388,6 +1396,7 @@ function SyncedThread({
         thread={thread}
         history={shown}
         available={available}
+        degraded={stream !== null && stream.standing !== "current"}
       />
     </>
   );
@@ -1410,8 +1419,8 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
   const sync = useThreadSync();
   const [thread, setThread] = useState<ThreadView | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl());
-  const inventoryFresh = environment.connection === "connected" && environment.health?.fresh === true;
+  const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
+  const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
   const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
   const notice = thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
   useEffect(() => {
@@ -1427,9 +1436,11 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
           <ChronologicalDebugLink />
           <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
         </Group>
-        {/* The controls wait on this stream's word that the sandbox runs, so a dropped or stale one
-            disables them as surely as a stopped sandbox; this says which it is. */}
+        {/* The controls wait on this stream's word that the sandbox runs, so one down past a blip, or
+            whose watch has stalled, disables them as surely as a stopped sandbox. The sidebar's
+            connection indicator says the first; this says the second. */}
         <LiveStatus live={environment} />
+        {!thread && <StaleNotice streams={[environment.stream]} />}
         {error && (
           <Text role="alert" c="red">
             {error}
@@ -1456,6 +1467,7 @@ export function ProjectedSession({ threadId, onBack }: { threadId: string; onBac
               threadId={threadId}
               thread={thread}
               available={inventoryFresh && sandbox?.state === "running"}
+              inventory={environment.stream}
             />
           </sync.Thread>
         )}

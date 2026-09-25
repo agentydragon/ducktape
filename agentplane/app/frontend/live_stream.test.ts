@@ -84,10 +84,10 @@ it("reports when the stream stopped being live and how often it has failed since
   expect(connections).toEqual([
     { phase: "connecting", since: start },
     // A first connection that fails is down from when it began.
-    { phase: "reconnecting", since: start, attempt: 1 },
+    { phase: "reconnecting", since: start, attempt: 1, lastError: null },
     { phase: "live", since: start + 1_000 },
-    { phase: "reconnecting", since: start + 3_000, attempt: 1 },
-    { phase: "reconnecting", since: start + 3_000, attempt: 2 },
+    { phase: "reconnecting", since: start + 3_000, attempt: 1, lastError: null },
+    { phase: "reconnecting", since: start + 3_000, attempt: 2, lastError: null },
   ]);
   // The browser retries a dropped network itself.
   expect(sources).toHaveLength(1);

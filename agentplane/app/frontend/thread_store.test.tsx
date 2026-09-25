@@ -372,7 +372,7 @@ function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadWindow }
         older
       </button>
       {history.error && <p role="alert">{history.error}</p>}
-      {history.reconnecting && <p role="status">reconnecting</p>}
+      {history.connection.phase === "reconnecting" && <p role="status">{history.connection.lastError}</p>}
     </>
   );
 }
@@ -549,6 +549,7 @@ it("says it is reconnecting while Electric's client retries a failed read, until
   // The live read ends, as a dropped connection ends it, and its reconnect finds no network.
   await sync.close("entities");
   await vi.waitFor(() => expect(reconnecting(container)).toBe(true));
+  expect(container.querySelector('[role="status"]')?.textContent).toBe("Failed to fetch");
   expect(itemsShown(container)).toHaveLength(3);
 
   sync.unreachable = false;
