@@ -186,16 +186,17 @@ runtime before investigating staging.
 
 Use the first point at which the run fails to choose the next investigation:
 
-| Observation                                                   | Likely seam                                                                  |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| No `accept-*` Sandbox is created                              | Bazel client, module/repository rules, kubeconfig, or acceptance-token setup |
-| Sandbox is created but never becomes ready                    | Scheduling, image pull, runner bootstrap, or testing capacity                |
-| App rejects the initial API request                           | Acceptance token audience, subject allowlist, or app ingress                 |
-| Model turn hangs and the decision history is empty            | Sandbox proxy environment, proxy route, or model ingress path                |
-| Ring records a deny for an expected destination               | Egress policy/binding or destination URL mismatch                            |
-| Rules discovery succeeds but destination authentication fails | Placeholder substitution or independent destination authentication           |
-| Test assertions pass but teardown reports a failure           | Runtime cleanup/reconciliation; inspect the named Sandbox before rerunning   |
-| Process is killed and `accept-*` Sandboxes remain             | Expected teardown limitation; clean them up deliberately before the next run |
+| Observation                                                   | Likely seam                                                                                                                                |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| No `accept-*` Sandbox is created                              | Bazel client, module/repository rules, kubeconfig, or acceptance-token setup                                                               |
+| Sandbox is created but never becomes ready                    | Scheduling, image pull, runner bootstrap, or testing capacity                                                                              |
+| App rejects the initial API request                           | Acceptance token audience, subject allowlist, or app ingress                                                                               |
+| Model turn hangs and the decision history is empty            | Sandbox proxy environment, proxy route, or model ingress path                                                                              |
+| Turn fails with `exceeded retry limit, last status: 429`      | The model provider's quota; LiteLLM's log names the upstream error, e.g. `usage_limit_reached` for the ChatGPT subscription behind `codex` |
+| Ring records a deny for an expected destination               | Egress policy/binding or destination URL mismatch                                                                                          |
+| Rules discovery succeeds but destination authentication fails | Placeholder substitution or independent destination authentication                                                                         |
+| Test assertions pass but teardown reports a failure           | Runtime cleanup/reconciliation; inspect the named Sandbox before rerunning                                                                 |
+| Process is killed and `accept-*` Sandboxes remain             | Expected teardown limitation; clean them up deliberately before the next run                                                               |
 
 Keep the complete test output and the proxy/app decision evidence together.
 The model transcript explains what the agent attempted, but the decision history
@@ -203,12 +204,30 @@ is the authority for what the proxy actually served.
 
 ### Where an agent can run it
 
-Agent pods must use `bbr`/CI, never local Bazel or pytest. This deployed suite is
-`manual` / `no-remote-exec` and lacks an approved CI runner with staging identity and
-connectivity. Therefore it is **blocked from agent pods**; do not disable remote
-execution/caching or mint substitute credentials to work around that boundary.
-The controlled-host instructions above are operator-only, not an agent-pod fallback.
-See [repository instructions](../../AGENTS.md).
+In a claude-ai box created with `template: agentplane-sandbox-build`, through <box_bazel.sh>.
+**Deviation** from <../../devinfra/docs/rbe_workflows.md>: the box's egress refuses BuildBuddy, so
+the script runs Bazel locally, on the workspace bazelrc minus its RBE import. The box's kubectl
+presents its own workload identity, which may mint the acceptance token:
+
+```bash
+cd ~ && rm -rf src && mkdir src
+curl -sSfL https://codeload.github.com/agentydragon/ducktape/tar.gz/refs/heads/devel |
+  tar -xz -C src --strip-components=1
+src/agentplane/acceptance/box_bazel.sh test //agentplane/acceptance:test_egress \
+  --local_test_jobs=1 --test_output=errors \
+  --test_env=AGENTPLANE_ACCEPTANCE_URL=http://agentplane-app.agentplane-testing.svc.cluster.local:8080 \
+  >run.log 2>&1 &
+```
+
+- The URL is the testing app's Service, which staging's egress proxy admits for claude-ai. The
+  public name hangs whenever the proxy dials its own node (#7918).
+- A cold build is about a thousand actions, roughly 15 minutes on the box's two CPUs, so the run
+  goes to the background; a job whose output is redirected outlives the command that started it.
+  Read `~/run.log` from later commands. The home directory, with the checkout and Bazel's cache,
+  outlives the container being killed for running out of memory, so a rerun picks up the build.
+- Dispose of the box afterwards: it holds a share of the sandbox quota.
+
+Anywhere else an agent runs, the controlled-host instructions above stay operator-only.
 
 Afterwards, check that nothing leaked: `kubectl -n agentplane-testing get sandboxes.agents.x-k8s.io`
 should show no `accept-*`.
