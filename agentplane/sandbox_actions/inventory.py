@@ -66,7 +66,7 @@ def _workload_container(sandbox: dict[str, Any]) -> str:
     template names as its default, else its first."""
     pod_template = sandbox["spec"]["podTemplate"]
     annotations = pod_template.get("metadata", {}).get("annotations", {})
-    return annotations.get(DEFAULT_CONTAINER_ANNOTATION) or pod_template["spec"]["containers"][0]["name"]
+    return cast(str, annotations.get(DEFAULT_CONTAINER_ANNOTATION) or pod_template["spec"]["containers"][0]["name"])
 
 
 def _ready(sandbox: dict[str, Any]) -> dict[str, Any] | None:
