@@ -394,13 +394,7 @@ class App(Construct):
         # value, NAME=value sets one. The routing vars are named rather than set, so the
         # container env below is where they are written once and everything in the Pod
         # agrees -- a harness child by this passthrough, anything else by inheritance.
-        harness_env = [
-            "HOME",
-            "PATH",
-            *sandbox_pod.PROXY_VAR_NAMES,
-            *sandbox_pod.NO_PROXY_VAR_NAMES,
-            *sandbox_pod.CA_BUNDLE_VAR_NAMES,
-        ]
+        harness_env = ["HOME", "PATH", *(var.name for var in sandbox_pod.egress_env())]
         args = [
             "--state-dir",
             _STATE_DIR,

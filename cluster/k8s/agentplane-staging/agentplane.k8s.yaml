@@ -1389,7 +1389,25 @@ metadata:
 data:
   bazel.bazelrc: |
     startup --host_jvm_args=-Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
-    common --test_env=HTTP_PROXY --test_env=HTTPS_PROXY --test_env=http_proxy --test_env=https_proxy --test_env=NO_PROXY --test_env=no_proxy --test_env=SSL_CERT_FILE --test_env=NODE_EXTRA_CA_CERTS --test_env=CURL_CA_BUNDLE --test_env=GIT_SSL_CAINFO --test_env=REQUESTS_CA_BUNDLE
+    common --test_env=HTTP_PROXY --test_env=HTTPS_PROXY --test_env=http_proxy --test_env=https_proxy --test_env=NO_PROXY --test_env=no_proxy --test_env=SSL_CERT_FILE --test_env=NODE_EXTRA_CA_CERTS --test_env=CURL_CA_BUNDLE --test_env=GIT_SSL_CAINFO --test_env=REQUESTS_CA_BUNDLE --test_env=KUBECONFIG
+  kubeconfig: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: in-cluster
+        cluster:
+          server: https://kubernetes.default.svc.cluster.local
+          certificate-authority: /etc/ssl/certs/ca-certificates.crt
+    users:
+      - name: workload
+        user:
+          token: agentplane-credential-kubernetes-workload
+    contexts:
+      - name: in-cluster
+        context:
+          cluster: in-cluster
+          user: workload
+    current-context: in-cluster
 immutable: false
 ---
 apiVersion: external-secrets.io/v1
@@ -2037,6 +2055,8 @@ spec:
             - GIT_SSL_CAINFO
             - --harness-env
             - REQUESTS_CA_BUNDLE
+            - --harness-env
+            - KUBECONFIG
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
@@ -2062,6 +2082,8 @@ spec:
               value: /etc/ssl/certs/ca-certificates.crt
             - name: REQUESTS_CA_BUNDLE
               value: /etc/ssl/certs/ca-certificates.crt
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubeconfig
             - name: ANTHROPIC_AUTH_TOKEN
               value: agentplane-credential-agentplane-workload
             - name: OPENAI_API_KEY
@@ -2098,6 +2120,10 @@ spec:
               name: tool-config
               readOnly: true
               subPath: bazel.bazelrc
+            - mountPath: /etc/kubernetes/kubeconfig
+              name: tool-config
+              readOnly: true
+              subPath: kubeconfig
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
               value: agentplane-egress.agentplane-staging.svc.cluster.local
@@ -2382,7 +2408,7 @@ data:
               template: agentplane-sandbox
               container: sandbox
               default_cwd: /home/runner
-              description: "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
+              description: "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl (configured as the caller's ServiceAccount) and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
             runner:
               template: agentplane-runner
               container: runner
@@ -3007,6 +3033,8 @@ spec:
               value: /etc/ssl/certs/ca-certificates.crt
             - name: REQUESTS_CA_BUNDLE
               value: /etc/ssl/certs/ca-certificates.crt
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubeconfig
           image: git.allegedly.works/ducktape-ci/agentplane-sandbox:unset
           name: sandbox
           resources:
@@ -3034,6 +3062,10 @@ spec:
               name: tool-config
               readOnly: true
               subPath: bazel.bazelrc
+            - mountPath: /etc/kubernetes/kubeconfig
+              name: tool-config
+              readOnly: true
+              subPath: kubeconfig
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
               value: agentplane-egress.agentplane-staging.svc.cluster.local

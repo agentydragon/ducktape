@@ -197,8 +197,9 @@ _ACTIONS_SETTINGS = {
                         "default_cwd": command_sandbox.HOME,
                         "description": (
                             "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, "
-                            "kubectl and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, "
-                            "and no volume: files last as long as the box's Pod."
+                            "kubectl (configured as the caller's ServiceAccount) and python3 (install packages "
+                            "into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the "
+                            "box's Pod."
                         ),
                     },
                     # The integration app's runner template, for a caller that wants the harnesses
