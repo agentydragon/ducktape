@@ -51,7 +51,7 @@ class StreamActions(FederatedOperatorActions):
     def __init__(self, client: OperatorActionServiceClient) -> None:
         self.client = client
 
-    def for_session(self, session: OperatorSession) -> OperatorActionServiceClient:
+    def for_request(self, request: Request) -> OperatorActionServiceClient:
         return self.client
 
 
@@ -187,11 +187,10 @@ def serve(
 
         @app.post("/test-login")
         async def login(request: Request, seconds: float) -> None:
-            expiry = datetime.now(UTC) + timedelta(seconds=seconds)
             request.session["user"] = OperatorSession(
-                issuer=OIDC.issuer, subject="test-subject", username="test-operator", expires_at=expiry.timestamp()
-            ).model_dump()
-            request.state.operator_session_expires_at = expiry
+                issuer=OIDC.issuer, subject="test-subject", username="test-operator"
+            ).model_dump(mode="json")
+            request.state.operator_session_absolute_expires_at = datetime.now(UTC) + timedelta(seconds=seconds)
 
         return app
 

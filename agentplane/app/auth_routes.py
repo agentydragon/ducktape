@@ -19,9 +19,9 @@ from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from joserfc.errors import JoseError
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SecretStr
 
-from agentplane.app.oidc import CLIENT_NAME, session_operator, settings
+from agentplane.app.oidc import CLIENT_NAME, LoginTokens, OperatorSession, session_operator, settings
 
 logger = logging.getLogger(__name__)
 
@@ -81,31 +81,32 @@ async def callback(request: Request) -> RedirectResponse:
     id_expiry = claims.get("exp")
     if not isinstance(id_expiry, (float, int)) or not math.isfinite(id_expiry) or id_expiry <= now:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "id token has no valid expiry")
-    expiry = min(now + settings(request).session_seconds, id_expiry)
     access_token = token.get("access_token")
     token_expiry = token.get("expires_at")
+    refresh_token = token.get("refresh_token")
     # Never retain a token without a known lifetime. Login still works, but federation fails closed.
-    if (
-        request.app.state.operator_actions is not None
+    tokens = (
+        LoginTokens(
+            access_token=SecretStr(access_token),
+            expires_at=token_expiry,
+            refresh_token=SecretStr(refresh_token) if isinstance(refresh_token, str) and refresh_token else None,
+        )
+        if request.app.state.operator_actions is not None
         and isinstance(access_token, str)
         and access_token
         and isinstance(token_expiry, (float, int))
         and math.isfinite(token_expiry)
         and token_expiry > now
-    ):
-        expiry = min(expiry, token_expiry)
-    else:
-        access_token = None
+        else None
+    )
     request.session.clear()
-    request.session["user"] = {
-        "issuer": settings(request).issuer,
-        "subject": subject,
-        "username": username,
-        "access_token": access_token,
-        "expires_at": expiry,
-    }
+    request.session["user"] = OperatorSession(
+        issuer=settings(request).issuer, subject=subject, username=username, tokens=tokens
+    ).model_dump(mode="json")
     request.state.rotate_operator_session = True
-    request.state.operator_session_expires_at = datetime.fromtimestamp(expiry, UTC)
+    request.state.operator_session_absolute_expires_at = datetime.fromtimestamp(
+        now + settings(request).session_max_seconds, UTC
+    )
     logger.info("operator logged in")
     return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 

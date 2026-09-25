@@ -5,9 +5,10 @@
 The app's existing routes remain unchanged. Its browser cookie now contains only a signed random
 256-bit session handle. `operator_browser_session` in the **app database**, not the Action database,
 holds Authlib's state/nonce/PKCE verifier while login is pending, then verified login issuer, stable
-`sub`, display username, absolute deadline, and (only when Action federation is configured and its
-lifetime is known) the access token. ID tokens and refresh tokens are not retained. Neither identity
-nor OAuth/token material is encoded in the cookie. The row key is a SHA-256 digest of the handle.
+`sub`, display username, and (only when Action federation is configured and the access token's
+lifetime is known) the access token, its expiry and the refresh token. ID tokens are not retained.
+Neither identity nor OAuth/token material is encoded in the cookie. The row key is a SHA-256 digest
+of the handle.
 
 The table and its expiry index come from the app's own Alembic history
 (`agentplane/app/migrations/`), applied by the `migrate` init container before the app starts; the
@@ -18,14 +19,26 @@ must use the same app database, OIDC configuration, public origin, and session s
 Login requires a verified signature, the exact configured issuer, a single audience naming the
 login client (string or singleton list), a matching `azp` when present, and valid state/nonce/expiry.
 Pending login expires after at most ten minutes. Authentication rotates the handle, deletes the
-pending row, and consumes all OAuth state. Login lasts at most `AGENTPLANE_OIDC_SESSION_SECONDS`
-(default eight hours), shortened to the verified ID-token expiry and retained access-token expiry.
-There is no sliding renewal and no refresh grant: expiry requires another authorization-code login.
-An access token without a known future expiry is discarded; federation then returns
-`operator_reauthentication_required`. Browser login alone does not require an access token.
+pending row, and consumes all OAuth state. A login then lasts until `AGENTPLANE_OIDC_SESSION_IDLE_SECONDS`
+(default a day) pass without a request presenting it, and at most `AGENTPLANE_OIDC_SESSION_MAX_SECONDS`
+(default a week) from login; token lifetimes do not bound it. The row's `expires_at` is the earlier
+of the two deadlines, and the cookie lasts until the absolute one. A request moves the idle deadline
+only when it would move by more than five minutes, so the idle timeout holds to within that and a
+burst of requests costs one row write.
+
+The login asks for `offline_access`, so Authentik issues a refresh token beside its ten-minute access
+token. When an exchange needs the access token and it expires within 30 seconds, the app renews it
+with the refresh token and stores the new tokens, under the session row's lock: Authentik rotates the
+refresh token on every use and refuses the one it replaced, so a second replica renewing with it would
+lose the session. The renewal counts as activity, so a stream renewing its upstream token keeps the
+session alive up to the absolute deadline. A refused renewal deletes the session and answers 401
+`operator_reauthentication_required`; the SPA then logs in again, silently while the Authentik
+session lasts. An access token without a known future expiry is discarded; federation then returns
+403 `operator_reauthentication_required`. Browser login alone does not require an access token.
 
 Each request re-reads its row. PostgreSQL row locking serializes same-session requests across
-replicas through response headers (not the lifetime of an SSE stream). Callback rotation/logout
+replicas through response headers (not the lifetime of an SSE stream); a streamed body that needs the
+login token later takes the row lock in a transaction of its own. Callback rotation/logout
 cannot be undone by an older request saving stale state. Logout deletes the entire row; cookie
 replay then fails on every replica. Deleting a row also invalidates that session administratively.
 Expired rows are rejected immediately and deleted on access; successful logins additionally clean
@@ -42,7 +55,10 @@ request URLs in logs; callback failures use fixed messages without provider/quer
 Already-admitted requests are not retrospectively cancelled by logout; revocation gates the next
 request. The Actions stream (`/actions/stream`) is the exception: deleting a session row notifies
 every replica, and a stream ends at its own row's deletion or expiry. Upstream account disablement
-is not polled; without a fresh login, the absolute expiry is the browser identity lifetime. Token exchange may reject an upstream-revoked access token sooner.
+is not polled: the browser identity lasts until its idle or absolute deadline. In Authentik 2026.8.2's
+source the refresh grant checks the client and the refresh token (unexpired, unrevoked), not the
+application's policy bindings, and a refresh token outlives the Authentik session it came from; the
+Action target's policy, evaluated at every exchange, is what withdraws Action access sooner.
 
 ## Why the browser holds a handle and not a token
 
@@ -274,7 +290,8 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
 - `//agentplane/app:test_action_api` and `//agentplane/action_service:test_operator_oidc`: signed
   offline request/authorization seams, including distinct operator identities and rejected token claims.
 - `//mcp_infra:test_oidc_principal` and `//agentplane/app:test_action_federation`: strict shared
-  verification and the independently selected login/target profiles for direct Dex federation.
+  verification and the independently selected login/target profiles for direct Dex federation; login
+  token renewal, one refresh for two replicas renewing at once, and a refused renewal ending the session.
 
 Run through `bbr`/CI only. There is no parallel copied-literal HCL/manifest contract test: those
 assertions detected edits rather than executing federation. Synthetic Settings JSON also did not
@@ -291,8 +308,9 @@ acceptance above remains required even when every offline target is green.
 - No browser session: 401. A workload caller asking for Action review: 403 with
   `operator_session_required`.
 - Federation absent: 503 with `detail.code=operator_federation_not_configured`.
-- Expired session: 401, re-login. No usable retained access token: 403 with
-  `operator_reauthentication_required`.
+- Expired session: 401, re-login. An expired access token with no refresh token, or a refused
+  renewal (which also deletes the session): 401 with `operator_reauthentication_required`, re-login.
+  No retained access token: 403 with the same code.
 - Token/session or source/target subject mismatch: 403 with `operator_federation_identity_mismatch`.
 - Signature/issuer/audience/azp/expiry/required-claim rejection: 403 with `operator_federation_token_invalid`.
 - Signing keys unusable with no HTTP failure to report: 503 with
@@ -315,9 +333,10 @@ A result echoing an argument does not become an operator credential-disclosure p
 - `//agentplane/app:test_action_api`: signed login, request-bound exchange, independent destination
   verifier, durable decisions, two app instances with distinct DB connection pools sharing PostgreSQL,
   callback on another replica, two operators with distinct subjects and no local subject mapping,
-  logout replay rejection, wrong issuer/audience/expiry/subject rejection, and real MCP single dispatch.
-- `//agentplane/app:test_auth_routes`: server-side PKCE/state, stable subject, expiry, logout and
-  strict same-origin mutations, rejected signed login claims/signatures, state/nonce mismatch, handle
+  logout replay rejection, wrong issuer/audience/expiry/subject rejection, real MCP single dispatch,
+  and login-token renewal through the app, refused renewal included.
+- `//agentplane/app:test_auth_routes`: server-side PKCE/state, stable subject, idle and absolute
+  expiry, logout and strict same-origin mutations, rejected signed login claims/signatures, state/nonce mismatch, handle
   rotation and callback replay, alongside the existing Kubernetes caller boundary.
 - `//agentplane/action_service:test_operator_oidc`: actual operator API admission with signed
   valid arbitrary-subject and wrong-issuer/audience/azp/expired/missing-sub/wrong-signature tokens.
