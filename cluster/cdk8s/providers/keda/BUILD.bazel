@@ -31,13 +31,3 @@ py_library(
         "@pypi//constructs",
     ],
 )
-
-py_library(
-    name = "scaled_job",
-    srcs = ["scaled_job.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        ":scaledjob",
-        ":trigger_authentication",
-    ],
-)

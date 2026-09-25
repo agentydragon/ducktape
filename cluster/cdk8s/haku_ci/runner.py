@@ -56,7 +56,6 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku_ci import runner_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.keda.scaled_job import forgejo_runner_trigger
 from cluster.cdk8s.providers.keda.trigger_authentication import TriggerAuthentication
 
 NAME = "haku-ci"
@@ -579,8 +578,13 @@ def _add_runner(chart: Chart) -> None:
                 ),
             ),
             triggers=[
-                forgejo_runner_trigger(
-                    address=_FORGEJO_URL, owner="haku", repo="haku-state", labels="haku-ci", authentication=trigger_auth
+                keda.ScaledJobSpecTriggers(
+                    type="forgejo-runner",
+                    # No `name:` -- the docs list it as required, but the scaler filters on labels
+                    # and the current deployment has worked without it. A fixed name could not
+                    # match anyway: every pod registers under its own pod name.
+                    metadata={"address": _FORGEJO_URL, "owner": "haku", "repo": "haku-state", "labels": "haku-ci"},
+                    authentication_ref=keda.ScaledJobSpecTriggersAuthenticationRef(name=trigger_auth.name),
                 )
             ],
         ),

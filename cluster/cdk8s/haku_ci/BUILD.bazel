@@ -15,7 +15,6 @@ py_library(
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumclusterwidenetworkpolicy",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
-        "//cluster/cdk8s/providers/keda:scaled_job",
         "//cluster/cdk8s/providers/keda:scaledjob",
         "//cluster/cdk8s/providers/keda:trigger_authentication",
         "@pypi//cdk8s",
