@@ -241,7 +241,7 @@ def _values() -> dict[str, object]:
                 # replicas and needs no rebuildable filesystem state.
                 "indexer": {"ISSUE_INDEXER_TYPE": "db"},
                 # In-cluster CI (Forgejo Actions). Enables the server-side feature; a
-                # registered act_runner (cluster/k8s/haku-ci) executes workflows. Used so
+                # registered act_runner (cluster/cdk8s/haku_ci) executes workflows. Used so
                 # Haku can build its own UI image from haku-state source entirely
                 # in-cluster — haku-state may hold private operator data, so its builds must
                 # never go to BuildBuddy/RBE or any external CI. See haku/PLAN.md.

@@ -6,43 +6,29 @@
  * (`live.py`). A snapshot replaces the page's state outright, so a reconnect needs no resume.
  *
  * The banner is the other half of that trade. A poll that stops shows an error on the next tick,
- * while a stream that goes quiet looks exactly like nothing happening, so `LiveStatus` says which
- * it is: the stream's own connection, and the server's verdict on whether its watch is still
- * cycling, are both on screen rather than assumed.
- *
- * A stream that has not opened yet is not a stream that failed, and `LiveStatus` says nothing
- * about it: a page begins in `connecting`, where every page load begins, and only an error or a
- * grace period with no frame at all makes it `disconnected`. Reporting the first millisecond of a
- * healthy load as a fault put an alarm on the screen of every load and moved the page under it.
+ * while a stream that goes quiet looks exactly like nothing happening, so neither is assumed: the
+ * stream's own connection goes to the app's one connection indicator (`stream_status.tsx`), and
+ * `LiveStatus` shows the server's verdict on whether its watch is still cycling.
  */
 import { Alert } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
 import type { components } from "./api/schema";
-import { api } from "./client";
+import { followStream, type StreamConnection } from "./live_stream";
+import { type StreamStatus, useStreamStatus } from "./stream_status";
 
 export type WatchHealth = components["schemas"]["WatchHealth"];
 export type SandboxesSnapshot = components["schemas"]["SandboxesSnapshot"];
 export type SandboxSnapshot = components["schemas"]["SandboxSnapshot"];
 export type ThreadsSnapshot = components["schemas"]["ThreadsSnapshot"];
 
-/** Not yet opened, carrying frames, or failed -- the middle one is not a fault. */
-export type Connection = "connecting" | "connected" | "disconnected";
-
 export interface Live<T> {
   /** The last snapshot, or null until the first frame arrives. */
   snapshot: T | null;
   /** The watch's freshness, from the last frame of either kind. */
   health: WatchHealth | null;
-  connection: Connection;
+  stream: StreamStatus;
 }
-
-/**
- * How long a stream may stay silent before silence counts as failure. A server that accepts the
- * connection and then sends nothing never fires `error`, so without this the page would wait
- * forever with no snapshot and no explanation. Long enough that no ordinary load reaches it.
- */
-const OPENING_GRACE_MS = 10_000;
 
 export function liveSandboxesUrl(): string {
   return "/live/sandboxes";
@@ -56,49 +42,33 @@ export function liveSandboxUrl(name: string, includeArchived: boolean): string {
   return `/live/sandboxes/${encodeURIComponent(name)}?include_archived=${includeArchived}`;
 }
 
-export function useLive<T extends { watch: WatchHealth }>(url: string): Live<T> {
-  const [state, setState] = useState<Live<T>>({ snapshot: null, health: null, connection: "connecting" });
+/** The stream at `url`, which the connection indicator calls `name`. */
+export function useLive<T extends { watch: WatchHealth }>(url: string, name: string): Live<T> {
+  const [state, setState] = useState<Pick<Live<T>, "snapshot" | "health">>({ snapshot: null, health: null });
+  const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
   // A different object starts blank; the same one under a different filter does not. Only the path
-  // says which this is, so a query-string-only change resets nothing and does not flash the
-  // disconnected banner.
+  // says which this is, so a query-string-only change resets nothing.
   const resource = new URL(url, window.location.origin).pathname;
-  useEffect(() => setState({ snapshot: null, health: null, connection: "connecting" }), [resource]);
-  useEffect(() => {
-    let probed = false;
-    const source = new EventSource(url);
-    const silent = window.setTimeout(
-      () =>
-        setState((current) =>
-          current.connection === "connecting" ? { ...current, connection: "disconnected" } : current
-        ),
-      OPENING_GRACE_MS
-    );
-    source.addEventListener("snapshot", (message: MessageEvent<string>) => {
-      const snapshot = JSON.parse(message.data) as T;
-      setState({ snapshot, health: snapshot.watch, connection: "connected" });
-    });
-    source.addEventListener("health", (message: MessageEvent<string>) => {
-      const health = JSON.parse(message.data) as WatchHealth;
-      setState((current) => ({ ...current, health, connection: "connected" }));
-    });
-    source.addEventListener("error", () => {
-      // EventSource cannot see the status of a connection the server refused, so a stream that
-      // fails before its first frame may be nothing worse than an expired session. One request
-      // settles it: the API client sends the browser to log in on a 401.
-      if (!probed) {
-        probed = true;
-        // The error below already exposes an outage. A failed probe must not leak a rejection
-        // or overwrite a newer snapshot if the stream recovered while this request was pending.
-        void api.GET("/models").catch(() => undefined);
-      }
-      setState((current) => ({ ...current, connection: "disconnected" }));
-    });
-    return () => {
-      window.clearTimeout(silent);
-      source.close();
-    };
-  }, [url]);
-  return state;
+  useEffect(() => setState({ snapshot: null, health: null }), [resource]);
+  useEffect(
+    () =>
+      followStream(url, {
+        events: {
+          snapshot: (message) => {
+            const snapshot = JSON.parse(message.data) as T;
+            setState({ snapshot, health: snapshot.watch });
+          },
+          health: (message) => {
+            const health = JSON.parse(message.data) as WatchHealth;
+            setState((current) => ({ ...current, health }));
+          },
+        },
+        onConnection: setConnection,
+      }),
+    [url]
+  );
+  const stream = useStreamStatus(name, connection);
+  return { ...state, stream };
 }
 
 const AGE = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -119,21 +89,12 @@ function stalest(health: WatchHealth): string {
   return `${kind} last updated ${humanAge(age)}`;
 }
 
-/** Nothing while the stream is live and the server's watch is moving; otherwise why it is not. */
+/** Nothing while the server's watch is moving; otherwise how far behind it is. */
 export function LiveStatus<T>({ live }: { live: Live<T> }): JSX.Element | null {
-  if (live.connection === "disconnected") {
-    return (
-      <Alert color="orange" p="xs">
-        Not connected to the live stream; reconnecting. What is on screen may be out of date.
-      </Alert>
-    );
-  }
-  if (live.health && !live.health.fresh) {
-    return (
-      <Alert color="red" p="xs">
-        The server&apos;s watch has stopped moving ({stalest(live.health)}), so this page is not being updated.
-      </Alert>
-    );
-  }
-  return null;
+  if (!live.health || live.health.fresh) return null;
+  return (
+    <Alert color="red" p="xs">
+      The server&apos;s watch has stopped moving ({stalest(live.health)}), so this page is not being updated.
+    </Alert>
+  );
 }

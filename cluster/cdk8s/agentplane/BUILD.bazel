@@ -184,10 +184,15 @@ py_library(
         ":egress",
         ":environment",
         ":llm_ingress",
+        "//agentplane/egress:resources",
         "//agentplane/egress:sidecar",
+        "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/agent_sandbox:sandboxtemplate",
         "//util:settings_contract",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
     ],
 )
 
@@ -359,6 +364,7 @@ py_library(
         ":environment",
         ":llm_ingress",
         ":rbac",
+        ":sandbox_pod",
         "//agentplane/app:main",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:fleet_rules",

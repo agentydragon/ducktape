@@ -1,7 +1,8 @@
-"""The sandbox Actions' own box: the plain sandbox image (agentplane/sandbox_image/default.nix) behind
-the egress path every agentplane box shares (sandbox_pod.py), with no harness and no state volume, so
-it costs the namespace quota what a command needs. staging.py offers it as the sandbox group's
-default environment.
+"""The sandbox Actions' own boxes: the plain sandbox image (agentplane/images/sandbox.nix) behind
+the egress path every agentplane box shares (sandbox_pod.py), with no harness and no state volume.
+The command box costs the namespace quota what a command needs; the build box is the same box sized
+for a build. staging.py offers them as the sandbox group's `sandbox` (default) and `build`
+environments.
 """
 
 from __future__ import annotations
@@ -16,6 +17,10 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecContainersResources,
     SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits,
     SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests,
+    SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts,
+    SandboxTemplateSpecPodTemplateSpecVolumes,
+    SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir,
+    SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit,
 )
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
@@ -25,37 +30,67 @@ from cluster.cdk8s.agentplane import egress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.metadata import metadata
 
-# The SandboxTemplate, its Pods' name label, and their fence. The egress proxy's policy spells it
-# too (egress.py), since this module imports that one.
+# The command box's SandboxTemplate, and both boxes' Pod name label and fence. The egress proxy's
+# policy spells it too (egress.py), since this module imports that one.
 NAME = "agentplane-sandbox"
+BUILD_NAME = "agentplane-sandbox-build"
 # The workload container, which `exec` runs commands in.
 CONTAINER = "sandbox"
-# The image's HOME and WorkingDir, writable by its uid 1000 (agentplane/sandbox_image/default.nix).
+# The image's HOME and WorkingDir, writable by its uid 1000 (agentplane/images/sandbox.nix).
 HOME = "/home/runner"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _LABELS = {"app.kubernetes.io/name": NAME}
+_COMMAND_RESOURCES = SandboxTemplateSpecPodTemplateSpecContainersResources(
+    requests={
+        "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("100m"),
+        "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("256Mi"),
+    },
+    limits={
+        "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("1"),
+        "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("2Gi"),
+    },
+)
+# The most the LimitRange lets one container have (rbac.py), which a Bazel build of the acceptance
+# suite fit in.
+_BUILD_RESOURCES = SandboxTemplateSpecPodTemplateSpecContainersResources(
+    requests={
+        "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("500m"),
+        "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("1Gi"),
+    },
+    limits={
+        "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("2"),
+        "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("4Gi"),
+    },
+)
+# The build box's home, on the Pod rather than in the container: running out of memory kills every
+# process in the container, and the container that replaces it still has the checkout and Bazel's
+# cache.
+_BUILD_HOME = SandboxTemplateSpecPodTemplateSpecVolumes(
+    name="home",
+    empty_dir=SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir(
+        size_limit=SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit.from_string("20Gi")
+    ),
+)
 
 
 class CommandSandbox(Construct):
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
-        SandboxTemplate(
+        _template(self, "sandboxtemplate", env, name=NAME, workload=_workload(_COMMAND_RESOURCES), volumes=[])
+        _template(
             self,
-            "sandboxtemplate",
-            metadata=metadata(NAME, namespace),
-            spec=SandboxTemplateSpec(
-                # The CiliumNetworkPolicy below is the box's fence.
-                network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
-                pod_template=SandboxTemplateSpecPodTemplate(
-                    metadata=SandboxTemplateSpecPodTemplateMetadata(labels=_LABELS),
-                    # No account of its own: the sandbox Actions stamp every box as its caller.
-                    spec=sandbox_pod.pod_spec(env, workload=_workload(), service_account_name=None),
-                ),
+            "build-sandboxtemplate",
+            env,
+            name=BUILD_NAME,
+            workload=_workload(
+                _BUILD_RESOURCES,
+                SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(name=_BUILD_HOME.name, mount_path=HOME),
             ),
+            volumes=[_BUILD_HOME],
         )
-        # DNS and the egress proxy out, nothing in: `exec` reaches the box through the API server.
+        # DNS and the egress proxy out, nothing in: `exec` reaches a box through the API server.
         cilium.network_policy(
             self,
             "networkpolicy",
@@ -69,7 +104,35 @@ class CommandSandbox(Construct):
         )
 
 
-def _workload() -> SandboxTemplateSpecPodTemplateSpecContainers:
+def _template(
+    scope: Construct,
+    id: str,
+    env: Environment,
+    *,
+    name: str,
+    workload: SandboxTemplateSpecPodTemplateSpecContainers,
+    volumes: list[SandboxTemplateSpecPodTemplateSpecVolumes],
+) -> None:
+    SandboxTemplate(
+        scope,
+        id,
+        metadata=metadata(name, env.namespace),
+        spec=SandboxTemplateSpec(
+            # The CiliumNetworkPolicy beside it is the box's fence.
+            network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
+            pod_template=SandboxTemplateSpecPodTemplate(
+                metadata=SandboxTemplateSpecPodTemplateMetadata(labels=_LABELS),
+                # No account of its own: the sandbox Actions stamp every box as its caller.
+                spec=sandbox_pod.pod_spec(env, workload=workload, service_account_name=None, workload_volumes=volumes),
+            ),
+        ),
+    )
+
+
+def _workload(
+    resources: SandboxTemplateSpecPodTemplateSpecContainersResources,
+    *mounts: SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts,
+) -> SandboxTemplateSpecPodTemplateSpecContainers:
     return SandboxTemplateSpecPodTemplateSpecContainers(
         name=CONTAINER,
         image=f"{_IMAGE}:{_PLACEHOLDER_TAG}",
@@ -79,15 +142,6 @@ def _workload() -> SandboxTemplateSpecPodTemplateSpecContainers:
         command=["bash", "-c", "trap 'exit 0' TERM; sleep infinity & wait"],
         security_context=sandbox_pod.workload_security_context(),
         env=sandbox_pod.egress_env(),
-        resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
-            requests={
-                "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("100m"),
-                "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("256Mi"),
-            },
-            limits={
-                "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("1"),
-                "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("2Gi"),
-            },
-        ),
-        volume_mounts=[sandbox_pod.egress_ca_mount()],
+        resources=resources,
+        volume_mounts=[*sandbox_pod.egress_mounts(), sandbox_pod.bazelrc_mount(), *mounts],
     )

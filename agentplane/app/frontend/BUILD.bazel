@@ -106,6 +106,8 @@ ts_library(
     deps = [
         ":client",
         ":json_view",
+        ":live_stream",
+        ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -121,6 +123,7 @@ ts_library(
         ":actions",
         ":actions_testing",
         ":client",
+        ":stream_status",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",
@@ -146,6 +149,7 @@ ts_library(
         ":actions_history_css",
         ":client",
         ":json_view",
+        ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -282,12 +286,60 @@ ts_library(
 )
 
 ts_library(
+    name = "live_stream",
+    srcs = ["live_stream.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+ts_library(
+    name = "live_stream_test",
+    testonly = True,
+    srcs = ["live_stream.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":live_stream",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "stream_status",
+    srcs = ["stream_status.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":live_stream",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "stream_status_test",
+    testonly = True,
+    srcs = ["stream_status.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":live_stream",
+        ":stream_status",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "live",
     srcs = ["live.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
+        ":live_stream",
         ":schema",
+        ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -393,6 +445,7 @@ ts_library(
         ":launch_presets",
         ":lifecycle",
         ":live",
+        ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -449,6 +502,7 @@ ts_library(
         ":live",
         ":sandboxes",
         ":sidebar_css",
+        ":stream_status",
         ":thread_groups",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -467,6 +521,7 @@ ts_library(
         ":client",
         ":live",
         ":sidebar",
+        ":stream_status",
         ":thread_groups",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -539,6 +594,7 @@ ts_library(
         ":launch_presets",
         ":lifecycle",
         ":live",
+        ":stream_status",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -685,6 +741,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":live_stream",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -696,6 +753,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":live_stream",
         ":thread_sync",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",
@@ -818,6 +876,7 @@ ts_library(
         ":markdown",
         ":projected_session_css",
         ":retained_disclosures",
+        ":stream_status",
         ":thread_sync",
         ":thread_title",
         "//:node_modules/@bufbuild/protobuf",
@@ -882,6 +941,7 @@ ts_library(
         ":local_commands",
         ":projected_session",
         ":retained_disclosures",
+        ":stream_status",
         ":thread_entity_fixture",
         ":thread_sync",
         "//:node_modules/@bufbuild/protobuf",
@@ -1003,6 +1063,7 @@ vitest_bin.vitest_test(
         ":history_rows_test",
         ":json_view_test",
         ":launch_presets_test",
+        ":live_stream_test",
         ":local_commands_test",
         ":mcp_servers_test",
         ":projected_session_test",
@@ -1012,6 +1073,7 @@ vitest_bin.vitest_test(
         ":sandboxes_test",
         ":settings_test",
         ":sidebar_test",
+        ":stream_status_test",
         ":thread_groups_test",
         ":thread_store_test",
         ":thread_title_test",
@@ -1046,6 +1108,7 @@ ts_library(
         ":connections_fixture",
         ":live",
         ":local_commands",
+        ":stream_status",
         ":visual_scenarios",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",

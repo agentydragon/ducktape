@@ -1,0 +1,47 @@
+# Build agentplane's Nix build-box image (agentplane/images/build.nix: the sandbox image plus Bazel
+# and its toolchain) and push it to the Forgejo registry, through nix-image.yml. The archive also
+# goes to the Attic cache.
+name: Agentplane Sandbox Build Image
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      - "agentplane/images/sandbox.nix"
+      - "agentplane/images/build.nix"
+      - "nix/lib/nix-ld-image.nix"
+      - "flake.lock"
+      - "nix/flake/packages.nix"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/agentplane-sandbox-build-image.yml"
+      - ".github/workflows/nix-image.yml"
+  # Build-only on PRs, so a change to either tool list is proven to build before it merges.
+  pull_request:
+    paths:
+      - "agentplane/images/sandbox.nix"
+      - "agentplane/images/build.nix"
+      - "nix/lib/nix-ld-image.nix"
+      - "flake.lock"
+      - "nix/flake/packages.nix"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/agentplane-sandbox-build-image.yml"
+      - ".github/workflows/nix-image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: agentplane-sandbox-build-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    uses: ./.github/workflows/nix-image.yml
+    with:
+      attr: agentplane-sandbox-build-image
+      image: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
+      registry: forgejo
+      attic: true
+    secrets:
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}

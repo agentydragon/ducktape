@@ -2,6 +2,9 @@
 
 No global operator client/token cache, static BFF bearer, or workload-token promotion. Separate
 providers use the same Authentik subject mode, and the app verifies subject continuity after exchange.
+
+The login access token that the exchange presents is shorter-lived than the session holding it, so an
+exchange first renews it with the login's refresh token when it is about to expire.
 """
 
 from __future__ import annotations
@@ -16,12 +19,21 @@ import httpx2
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from fastapi import Request
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.identity import CallerIdentity, CallerKind
-from agentplane.app.oidc import OIDCSettings, OperatorSession, operator_session
+from agentplane.app.oidc import (
+    CLIENT_NAME,
+    LoginTokens,
+    OIDCSettings,
+    OperatorSession,
+    TokenResponse,
+    build_oauth,
+    operator_session,
+)
+from agentplane.app.operator_sessions import SessionRow, operator_session_row
 from mcp_infra.oidc_principal import InvalidOidcPrincipalError, OidcPrincipalVerificationUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -123,6 +135,8 @@ class FederatedOperatorActions:
         self._config = config
         self._http = http
         self._login_issuer = oidc.issuer
+        self._renew_before = oidc.token_renew_before_seconds
+        self._login = build_oauth(oidc).create_client(CLIENT_NAME)
         self._upstream = OperatorOidcSettings(
             issuer=oidc.issuer,
             audience=oidc.client_id,
@@ -131,20 +145,25 @@ class FederatedOperatorActions:
         ).resolver()
         self._target = config.target.resolver()
 
-    def for_session(self, session: OperatorSession) -> OperatorActionServiceClient:
-        return OperatorActionServiceClient(self._http, _SessionToken(self, session))
+    def for_request(self, request: Request) -> OperatorActionServiceClient:
+        return OperatorActionServiceClient(self._http, _SessionToken(self, operator_session_row(request)))
 
-    async def exchange(self, session: OperatorSession) -> str:
-        if session.issuer != self._login_issuer or session.expires_at <= time.time() or session.access_token is None:
-            raise OperatorFederationError("operator_reauthentication_required")
+    async def exchange(self, row: SessionRow) -> str:
+        """A target token for the operator whose login `row` holds, renewing the login token first if
+        it is about to expire."""
+        session: OperatorSession | None = None
         try:
-            upstream = await self._upstream.resolve(
-                {"access_token": session.access_token.get_secret_value(), "token_type": "Bearer"}
-            )
+            session = await self._current_login(row)
+            if session.issuer != self._login_issuer or session.tokens is None:
+                raise OperatorFederationError("operator_reauthentication_required")
+            if session.tokens.expires_at <= time.time():
+                raise OperatorFederationError("operator_reauthentication_required", status_code=401)
+            login_token = session.tokens.access_token.get_secret_value()
+            upstream = await self._upstream.resolve({"access_token": login_token, "token_type": "Bearer"})
             if (upstream.issuer, upstream.subject) != (session.issuer, session.subject):
                 raise OperatorFederationError("operator_federation_identity_mismatch")
             if self._config.mode == "direct":
-                token = {"access_token": session.access_token.get_secret_value(), "token_type": "Bearer"}
+                token = {"access_token": login_token, "token_type": "Bearer"}
             else:
                 assert self._config.token_endpoint is not None
                 # Authlib mutates token state: create a fresh OAuth client for each exchange.
@@ -157,7 +176,7 @@ class FederatedOperatorActions:
                         url=self._config.token_endpoint,
                         grant_type="client_credentials",
                         client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-                        client_assertion=session.access_token.get_secret_value(),
+                        client_assertion=login_token,
                         scope=self._config.scope,
                     )
             downstream = await self._target.resolve(token)
@@ -168,7 +187,8 @@ class FederatedOperatorActions:
                 raise OperatorFederationError("operator_federation_token_invalid")
             return access_token
         except OperatorFederationError as error:
-            logger.warning(f"operator federation refused for {session.subject=}: {error}")
+            subject = session.subject if session is not None else None
+            logger.warning(f"operator federation refused for {subject=}: {error}")
             raise
         except InvalidOidcPrincipalError as error:
             logger.warning(f"operator federation rejected the login token: {type(error).__name__}")
@@ -189,14 +209,64 @@ class FederatedOperatorActions:
             logger.warning(f"operator federation exchange failed: {type(error).__name__}")
             raise OperatorFederationError("operator_federation_exchange_failed", status_code=502) from None
 
+    async def _current_login(self, row: SessionRow) -> OperatorSession:
+        """The login as the row holds it now, its access token renewed if it is about to expire.
+
+        Under the row lock, because the provider rotates the refresh token on use: a second replica
+        spending the one it replaced would be refused, and would end the session. A refusal ends it
+        here, so the browser's next request is sent to log in again.
+        """
+        async with row.locked() as payload:
+            user = payload.get("user") if payload is not None else None
+            session = OperatorSession.model_validate(user) if user else None
+            tokens = session.tokens if session is not None else None
+            if (
+                payload is not None
+                and session is not None
+                and session.issuer == self._login_issuer
+                and tokens is not None
+                and tokens.refresh_token is not None
+                and tokens.expires_at - time.time() <= self._renew_before
+            ):
+                try:
+                    renewed = await self._renew(tokens.refresh_token)
+                except OAuthError:
+                    # Provider text stays out of logs; whichever error it answered, the grant is gone.
+                    logger.warning(f"operator login renewal refused for {session.subject=}; ending the session")
+                    payload.clear()
+                    session = None
+                else:
+                    session = session.model_copy(update={"tokens": renewed})
+                    payload["user"] = session.model_dump(mode="json")
+        if session is None:
+            raise OperatorFederationError("operator_reauthentication_required", status_code=401)
+        return session
+
+    async def _renew(self, refresh_token: SecretStr) -> LoginTokens:
+        token = await self._login.fetch_access_token(
+            grant_type="refresh_token", refresh_token=refresh_token.get_secret_value()
+        )
+        try:
+            response = TokenResponse.model_validate(token)
+        except ValidationError:
+            raise OperatorFederationError("operator_federation_exchange_failed", status_code=502) from None
+        if response.expires_at is None or response.expires_at <= time.time():
+            raise OperatorFederationError("operator_federation_exchange_failed", status_code=502)
+        # A provider that does not rotate the refresh token leaves the one just spent valid.
+        return LoginTokens(
+            access_token=response.access_token,
+            expires_at=response.expires_at,
+            refresh_token=response.refresh_token or refresh_token,
+        )
+
 
 class _SessionToken:
-    def __init__(self, provider: FederatedOperatorActions, session: OperatorSession) -> None:
+    def __init__(self, provider: FederatedOperatorActions, row: SessionRow) -> None:
         self._provider = provider
-        self._session = session
+        self._row = row
 
     async def token(self) -> str:
-        return await self._provider.exchange(self._session)
+        return await self._provider.exchange(self._row)
 
 
 def operator_actions(request: Request, caller: CallerIdentity) -> OperatorActionServiceClient:
@@ -210,7 +280,6 @@ def operator_actions(request: Request, caller: CallerIdentity) -> OperatorAction
         raise OperatorFederationError("operator_federation_not_configured", status_code=503)
     if not isinstance(provider, FederatedOperatorActions):
         raise TypeError("operator_actions must be FederatedOperatorActions")
-    session = operator_session(request)
-    if session is None:
+    if operator_session(request) is None:
         raise OperatorFederationError("operator_reauthentication_required", status_code=401)
-    return provider.for_session(session)
+    return provider.for_request(request)

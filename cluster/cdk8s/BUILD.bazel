@@ -1465,7 +1465,6 @@ py_library(
         "//cluster/cdk8s/haku:ui_image_webhook",
         "//cluster/cdk8s/haku:workloads",
         "//cluster/cdk8s/haku:workspaces",
-        "//cluster/cdk8s/haku_ci:flux_kustomizations",
         "//cluster/cdk8s/haku_ci:runner",
         "//cluster/cdk8s/home_assistant:app",
         "//cluster/cdk8s/home_assistant:backup",

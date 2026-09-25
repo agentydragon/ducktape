@@ -22,6 +22,7 @@ import { archiveThread, displayableError, type SandboxView, type ThreadView } fr
 import { LiveStatus, liveThreadsUrl, useLive, type ThreadsSnapshot } from "./live";
 import { stateDetail } from "./sandboxes";
 import "./sidebar.css";
+import { ConnectionIndicator } from "./stream_status";
 import { archivedCount, groupThreads, type ThreadGroup } from "./thread_groups";
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "agentplane-sidebar-width";
@@ -296,9 +297,9 @@ export function Sidebar({
   const threadRoute = useMatch("/threads/:threadId");
   const [includeArchived, setIncludeArchived] = useState(false);
   const { width, setWidth, resizeBy } = useSidebarWidth();
-  const live = useLive<ThreadsSnapshot>(liveThreadsUrl());
+  const live = useLive<ThreadsSnapshot>(liveThreadsUrl(), "Threads");
   const data = live.snapshot;
-  const fresh = live.connection === "connected" && live.health?.fresh === true && data?.updates_connected === true;
+  const fresh = live.stream.standing === "current" && live.health?.fresh === true && data?.updates_connected === true;
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -407,6 +408,7 @@ export function Sidebar({
           )}
         </div>
         <div className="agentplane-sidebar-footer">
+          <ConnectionIndicator />
           <Tooltip label="Sandboxes" withArrow>
             <ActionIcon
               variant={location.pathname === "/sandboxes" ? "light" : "subtle"}
