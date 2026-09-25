@@ -122,7 +122,9 @@ class ExecArgs(BaseModel):
     max_output_bytes: int = Field(
         ge=0, le=1_000_000, description="Maximum bytes retained independently from stdout and stderr."
     )
-    cwd: str | None = Field(default=None, description="Working directory; omit for the environment's default.")
+    cwd: str | None = Field(
+        default=None, description="Working directory; omit to start in the container's own working directory."
+    )
 
 
 class NameArgs(BaseModel):

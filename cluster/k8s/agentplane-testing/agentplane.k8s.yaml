@@ -2063,6 +2063,7 @@ spec:
               name: tool-config
               readOnly: true
               subPath: kubeconfig
+          workingDir: /state
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
               value: agentplane-egress.agentplane-testing.svc.cluster.local
