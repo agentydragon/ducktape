@@ -2,8 +2,8 @@
 with no harness and no state volume. The command box runs the plain sandbox image
 (agentplane/images/sandbox.nix) and costs the namespace quota what a command needs; the build box is
 the same box sized for a build, on the build image (agentplane/images/build.nix), which adds Bazel
-and its toolchain. staging.py offers them as the sandbox group's `sandbox` (default) and `build`
-environments.
+and its toolchain. staging.py offers both to the sandbox Actions, the command box as the default, and
+each template's `description` annotation is what those Actions tell an agent choosing one.
 """
 
 from __future__ import annotations
@@ -80,12 +80,29 @@ class CommandSandbox(Construct):
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
-        _template(self, "sandboxtemplate", env, name=NAME, workload=_workload(_IMAGE, _COMMAND_RESOURCES), volumes=[])
+        _template(
+            self,
+            "sandboxtemplate",
+            env,
+            name=NAME,
+            description=(
+                "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl "
+                "(configured as the caller's ServiceAccount) and python3 (install packages into a "
+                "`python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
+            ),
+            workload=_workload(_IMAGE, _COMMAND_RESOURCES),
+            volumes=[],
+        )
         _template(
             self,
             "build-sandboxtemplate",
             env,
             name=BUILD_NAME,
+            description=(
+                "The sandbox box sized for a build: the same tools plus bazel (bazelisk, which runs the "
+                "version a workspace's `.bazelversion` names) and gcc, 2 cores and 4Gi, and a home directory "
+                "that survives the container being killed for running out of memory, though not the box's Pod."
+            ),
             workload=_workload(
                 _BUILD_IMAGE,
                 _BUILD_RESOURCES,
@@ -113,13 +130,14 @@ def _template(
     env: Environment,
     *,
     name: str,
+    description: str,
     workload: SandboxTemplateSpecPodTemplateSpecContainers,
     volumes: list[SandboxTemplateSpecPodTemplateSpecVolumes],
 ) -> None:
     SandboxTemplate(
         scope,
         id,
-        metadata=metadata(name, env.namespace),
+        metadata=metadata(name, env.namespace, annotations={"description": description}),
         spec=SandboxTemplateSpec(
             # The CiliumNetworkPolicy beside it is the box's fence.
             network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,

@@ -4,9 +4,10 @@
 
 The app's existing routes remain unchanged. Its browser cookie now contains only a signed random
 256-bit session handle. `operator_browser_session` in the **app database**, not the Action database,
-holds Authlib's state/nonce/PKCE verifier while login is pending, then verified login issuer, stable
-`sub`, display username, and (only when Action federation is configured and the access token's
-lifetime is known) the access token, its expiry and the refresh token. ID tokens are not retained.
+holds Authlib's state/nonce/PKCE verifier in its JSON payload while login is pending, then, in typed
+columns, verified login issuer, stable `sub`, display username, and (only when Action federation is
+configured and the access token's lifetime is known) the access token, its expiry and the refresh
+token. Check constraints keep a row from holding part of a login. ID tokens are not retained.
 Neither identity nor OAuth/token material is encoded in the cookie. The row key is a SHA-256 digest
 of the handle.
 

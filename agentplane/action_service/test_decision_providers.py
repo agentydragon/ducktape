@@ -11,6 +11,7 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
+from mcp.types import CallToolResult
 from more_itertools import one
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -439,7 +440,7 @@ async def test_bound_subject_is_auto_approved_with_evidence_and_an_execution(
         assert allowed.execution is not None
         view = await _succeeded(service, allowed.id)
         assert view.execution is not None
-        assert view.execution.result == {"n": 3}
+        assert CallToolResult.model_validate(view.execution.result).structured_content == {"n": 3}
         # The same evidence is the operator's; a repeat of the key is refused and the lookup keeps the Decision.
         assert (await service.get(allowed.id, OPERATOR)).decision == allowed.decision
         with pytest.raises(ActionConflictError):

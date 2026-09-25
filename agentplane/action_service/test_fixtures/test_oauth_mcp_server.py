@@ -10,6 +10,7 @@ from uuid import uuid4
 import httpx
 import httpx2
 import pytest_bazel
+from mcp.types import CallToolResult
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.catalog import ActionGroup, ActionIdentity, McpExecutorBinding
@@ -92,7 +93,7 @@ async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_l
                     ),
                     execution_lease,
                 )
-                assert result.result == {"result": "Echo: hi"}
+                assert CallToolResult.model_validate(result.result).structured_content == {"result": "Echo: hi"}
             finally:
                 await executor.close()
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
@@ -46,8 +45,15 @@ from agentplane.app.live import (
     frames,
     live_threads,
 )
-from agentplane.app.oidc import LoginTokens, OIDCSettings, OperatorSession
-from agentplane.app.operator_sessions import OperatorSessionStore, SessionRow
+from agentplane.app.oidc import OIDCSettings
+from agentplane.app.operator_sessions import (
+    HeldLogin,
+    LoginTokens,
+    OperatorSession,
+    OperatorSessionStore,
+    RequestSession,
+    SessionRow,
+)
 from agentplane.app.presets import Harness
 from agentplane.app.shutdown import Drain
 from agentplane.app.testing.kubernetes import (
@@ -160,8 +166,8 @@ async def test_the_sandbox_stream_asks_the_service_again_only_when_a_policy_obje
 
 
 def _request(app: FastAPI, login: OperatorSession, row: SessionRow) -> Request:
-    """A request as the session middleware hands it on: the login's own dict under `user`, and the
-    row it came from."""
+    """A request as the session middleware hands it on: its session holding the login, and the row
+    it came from."""
     return Request(
         {
             "type": "http",
@@ -169,8 +175,7 @@ def _request(app: FastAPI, login: OperatorSession, row: SessionRow) -> Request:
             "path": "/live/sandboxes/runner-1",
             "headers": [],
             "app": app,
-            "session": {"user": login.model_dump(mode="json")},
-            "state": {"operator_session_row": row},
+            "state": {"request_session": RequestSession({}, HeldLogin(login), row)},
         }
     )
 
@@ -201,6 +206,8 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
         session_secret="test-only-session-secret",
         public_base_url="http://test-app.invalid",
     )
+    # An app with a login, whose session middleware `_request` stands in for.
+    app.state.oidc = oidc
     app.state.operator_actions = (
         FederatedOperatorActions(
             DirectFederationSettings(
@@ -223,7 +230,11 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
         issuer=oidc.issuer,
         subject="test-operator-subject",
         username="test-operator",
-        tokens=LoginTokens(access_token=SecretStr("test-not-a-jwt"), expires_at=time.time() + 600, refresh_token=None),
+        tokens=LoginTokens(
+            access_token=SecretStr("test-not-a-jwt"),
+            expires_at=datetime.now(UTC) + timedelta(minutes=10),
+            refresh_token=None,
+        ),
     )
     row = await stored_login(operator_sessions, login)
 

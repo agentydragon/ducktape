@@ -20,7 +20,7 @@ from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionState
 from agentplane.action_service.sandbox_executor import SandboxAction, SandboxExecutor, actions
 from agentplane.action_service.service import ExecutionOutcomeUnknownError
-from agentplane.sandbox_actions.binding import SandboxEnvironment, SandboxExecutorBinding
+from agentplane.sandbox_actions.binding import SandboxExecutorBinding
 from agentplane.sandbox_actions.inventory import ForeignSandboxError, SandboxActionError
 from agentplane.sandbox_actions.models import READY_CONDITION, SandboxCondition, SandboxInfo
 from agentplane.subjects import ServiceAccountRef
@@ -33,14 +33,7 @@ OTHER = ServiceAccountRef(namespace=NAMESPACE, name="caller-two")
 ELSEWHERE = ServiceAccountRef(namespace="somewhere-else", name="caller-one")
 
 BINDING = SandboxExecutorBinding(
-    description="test sandboxes",
-    namespace=NAMESPACE,
-    environments={
-        "default": SandboxEnvironment(
-            template="test-template", container="workspace", default_cwd="/workspace", description="the test box"
-        )
-    },
-    default_environment="default",
+    description="test sandboxes", namespace=NAMESPACE, templates={"test-template"}, default_template="test-template"
 )
 
 
@@ -64,29 +57,22 @@ class FakeInventory:
     started: asyncio.Event = field(default_factory=asyncio.Event)
     release: asyncio.Event = field(default_factory=_released)
 
-    def environment(self, name: str | None) -> tuple[str, SandboxEnvironment]:
-        key = name or BINDING.default_environment
-        environment = BINDING.environments.get(key)
-        if environment is None:
-            raise SandboxActionError(f"unknown environment {key!r}")
-        return key, environment
-
     def _record(self, caller: ServiceAccountRef) -> None:
         self.callers.append(caller)
         if self.raises is not None:
             raise self.raises
 
-    async def create(self, caller: ServiceAccountRef, name: str, environment_name: str | None) -> SandboxInfo:
+    async def create(self, caller: ServiceAccountRef, name: str, template_name: str | None) -> SandboxInfo:
         self._record(caller)
-        return SandboxInfo(name=name, conditions=[_ready()], environment=environment_name or "default")
+        return SandboxInfo(name=name, conditions=[_ready()], template=template_name or BINDING.default_template)
 
     async def info(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
         self._record(caller)
-        return SandboxInfo(name=name, conditions=[_ready()], environment="default")
+        return SandboxInfo(name=name, conditions=[_ready()], template=BINDING.default_template)
 
     async def list(self, caller: ServiceAccountRef) -> list[SandboxInfo]:
         self._record(caller)
-        return [SandboxInfo(name="one", conditions=[_ready()], environment="default")]
+        return [SandboxInfo(name="one", conditions=[_ready()], template=BINDING.default_template)]
 
     async def dispose(self, caller: ServiceAccountRef, name: str) -> bool:
         self._record(caller)
@@ -251,12 +237,12 @@ async def test_an_unexpected_failure_is_not_swallowed(executor: SandboxExecutor,
         await executor.execute(_request(SandboxAction.DISPOSE, {"name": "box"}), LEASE)
 
 
-def test_the_offered_actions_name_the_configured_environments() -> None:
-    """The environment roster is deployment configuration an agent cannot otherwise see, and naming
-    one that does not exist is the likeliest way to get create wrong."""
-    offered = actions(BINDING)
+def test_the_offered_actions_name_the_offered_templates() -> None:
+    """The offered templates are deployment configuration an agent cannot otherwise see, and naming
+    one that is not offered is the likeliest way to get create wrong."""
+    offered = actions(BINDING, {"test-template": "the test box"})
     assert set(offered) == set(SandboxAction)
-    assert "the test box" in offered[SandboxAction.CREATE].description
+    assert '"test-template": "the test box"' in offered[SandboxAction.CREATE].description
     assert offered[SandboxAction.EXEC].input_schema["additionalProperties"] is False
 
 

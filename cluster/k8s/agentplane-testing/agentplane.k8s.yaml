@@ -1948,6 +1948,8 @@ spec:
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
+  annotations:
+    description: "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
   name: agentplane-runner
   namespace: agentplane-testing
 spec:
@@ -2063,6 +2065,7 @@ spec:
               name: tool-config
               readOnly: true
               subPath: kubeconfig
+          workingDir: /state
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
               value: agentplane-egress.agentplane-testing.svc.cluster.local

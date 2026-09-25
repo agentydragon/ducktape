@@ -34,10 +34,11 @@ async def running_executor(
             case SandboxExecutorBinding() as binding:
                 if sandboxes is None:
                     raise ValueError(f"ActionGroup {key!r} is a sandbox group and no Kubernetes access was supplied")
-                # Declared, not discovered: a code-owned group's roster is its own models, so it is
-                # offered from the moment configuration validates rather than after a handshake.
-                group.actions = actions(binding)
-                executors[key] = SandboxExecutor(binding, sandboxes.inventory(binding))
+                # Declared, not discovered: a code-owned group's roster is its own models. Only what
+                # its offered templates say of themselves is read from the cluster, once, here.
+                inventory = sandboxes.inventory(binding)
+                group.actions = actions(binding, await inventory.template_descriptions())
+                executors[key] = SandboxExecutor(binding, inventory)
             case McpExecutorBinding():
                 try:
                     supervised[key] = (

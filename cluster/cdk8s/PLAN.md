@@ -19,7 +19,43 @@ live in [the design](../docs/cdk8s.md) and [AGENTS.md](AGENTS.md).
 These are recommendations for subsequent implementation PRs. Updating this plan does
 not approve a new abstraction, resource owner, authorization grant, or deployment.
 
-### A. Restore dependency-update ownership
+### A. Split generic cdk8s builders from ducktape's cluster-specific wiring
+
+`cluster/cdk8s/<provider>.py` (`cilium.py`, `flux.py`, `cnpg.py`, `gateway.py`, ...) and
+`crd_bindings/<provider>/` today mix three things across two disconnected locations: raw
+`cdk8s_import` bindings, CRD-schema-shaped ergonomic constructors with no ducktape fact
+in them, and this cluster's own topology/secret/namespace values.
+[The builder-authoring skill](../skills/cdk8s_builders/SKILL.md) states the target shape
+for the middle piece; this closes the gap between that skill and the actual layout.
+
+1. Create `cluster/cdk8s/providers/<name>/` per CRD/provider family: the `cdk8s_import`
+   BUILD target (moved from `crd_bindings/<name>/`) plus generic constructor functions
+   for that CRD — cdk8s-plus's own conventions (reference-passing, named factories for
+   recurring value fragments, a tiered escape hatch, one constructor per resource kind),
+   not a different style invented for this repo. No ducktape namespace, secret name,
+   hostname, or topology fact belongs here; a parameter that would need one stays
+   required, with no default.
+2. Using the same skill, add the `providers/` modules this repo doesn't have yet for
+   CRDs `cdk8s_plus_34` doesn't cover and that are still hand-built raw at their call
+   sites: KEDA (`ScaledJob`, `TriggerAuthentication`), Agentplane's own CRDs
+   (`EgressPolicy`, `EgressCredential`, `EgressBinding`, `ActionPolicySet`,
+   `ActionPolicyBinding`), cert-manager (`Certificate`, `ClusterIssuer`), kyverno
+   (`ClusterPolicy`), the agent-sandbox `SandboxTemplate`, and a shared
+   `ServiceMonitor`/`PodMonitor` constructor.
+3. Point every existing ducktape-specific module at the matching `providers/` package
+   instead of constructing the CRD's generated dataclasses inline, and update its
+   consumers to the new import. Land `external_secrets/` first (already fully generic —
+   a pure move, proves the BUILD/gazelle mechanics) before touching a high-consumer-count
+   module; `flux.py` (~150 call sites) goes last, and keeps its existing call sites
+   unchanged by re-exporting a `functools.partial`-bound constructor rather than pushing
+   a new required keyword to every one of them.
+
+Done: `crd_bindings/` no longer exists as a tree separate from `providers/`; no
+ducktape-specific module builds a CRD's generated dataclasses raw at more than one call
+site; `//cluster/cdk8s:test_generate_manifests` shows no rendered-output diff across the
+whole migration.
+
+### B. Restore dependency-update ownership
 
 `renovate.json5` scans both `cluster/k8s` and `cluster/generated` for Flux and
 Kubernetes YAML. Its custom manager covers Terraform provider pins, not cdk8s Python.
@@ -35,7 +71,7 @@ coordinated updates where they describe the same deployed API.
 Done: an actual dependency update changes the Python source and its generated output,
 passes the generation gate, and leaves no independently editable duplicate pin.
 
-### B. Convert useful YAML seams
+### C. Convert useful YAML seams
 
 Start with Grocy's household overlays, then Airlock's typed configuration and the
 rotator rosters; Haku CI's shared runner/Pod values is another independent slice.
@@ -52,7 +88,7 @@ Done per slice: one source supplies the duplicated values, the YAML overlay or d
 roster is removed, and the final resource/config semantics are checked. Preserve
 ConfigMap rollout behavior; serialization changes can change hashes and restart Pods.
 
-### C. Close validation gaps before moving checks
+### D. Close validation gaps before moving checks
 
 `fleet_rules.add_fleet_rules` has 11 production registration sites, not universal
 coverage. `resolved_references` only rejects a reference when the same name exists as
@@ -79,7 +115,7 @@ unrepresentable, not because its inputs became generated.
 Done: the declared validation scope matches its behavior, and the known ESO wiring
 failures are caught without maintaining a second provider inventory.
 
-### D. Reduce raw construction where it buys relationships
+### E. Reduce raw construction where it buys relationships
 
 No production `ApiObject(...)` constructors were found in `cluster/cdk8s`; the
 remaining low-level code is mostly typed `k8s.Kube*` bindings, Helm values and a small
@@ -98,15 +134,15 @@ would require several compensating patches. Treat these as targeted improvements
 - Keep the shared typed pod-seccomp patch while the pinned API requires it. Review
   Kyverno's schema-gap patches and Helm's explicit-null patch against their actual
   schemas; do not erase them merely to reduce a count.
-- Try one ServiceMonitor helper that takes the actual Service/selector and typed
-  endpoints. Preserve differences in auth, labels and timeouts across ntfy, aiquota and
-  LiteLLM. A helper earns its place by owning that relationship, not just shortening
+- The ServiceMonitor/PodMonitor helper is covered by the `providers/` builder work above;
+  preserve differences in auth, labels and timeouts across ntfy, aiquota and LiteLLM when
+  it lands. A helper earns its place by owning that relationship, not just shortening
   constructor syntax.
 
 Done per slice: fewer separately authored facts or untyped values, no loss of expressible
 Kubernetes fields, and a reviewed rendered diff.
 
-### E. Make chart composition consistent in small steps
+### F. Make chart composition consistent in small steps
 
 The existing target is `chart(app, ...values) -> Chart`, with synthesis/writing outside
 resource construction and Flux nodes receiving already-built dependencies and values.
@@ -128,7 +164,7 @@ class or a parallel deployment specification.
 Done: a workload can be synthesized without building its Flux node or writing to a real
 checkout, and new abstractions demonstrate their value on actual callers.
 
-### F. Finish layout only where it simplifies ownership
+### G. Finish layout only where it simplifies ownership
 
 Keep mixed directories colocated under `cluster/k8s` under the current rule. Move a
 whole directory to `cluster/generated` when all its files are generator-owned.

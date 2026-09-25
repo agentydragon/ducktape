@@ -5,6 +5,12 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 py_library(
     name = "binding",
     srcs = ["binding.py"],
+    # The offered templates and the annotation each describes itself in, which the generator's test
+    # checks every offered template carries.
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
     deps = ["@pypi//pydantic"],
 )
 

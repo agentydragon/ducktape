@@ -416,6 +416,9 @@ class App(Construct):
             name="runner",
             image=f"{_RUNNER_IMAGE}:{_PLACEHOLDER_TAG}",
             args=args,
+            # The runner works in absolute paths. This is for a command exec'd in: the sandbox
+            # Actions' `runner` boxes start there unless the caller names a directory.
+            working_dir=_STATE_DIR,
             ports=[SandboxTemplateSpecPodTemplateSpecContainersPorts(name="runner", container_port=_RUNNER_PORT)],
             security_context=sandbox_pod.workload_security_context(),
             env=[
@@ -457,7 +460,17 @@ class App(Construct):
         SandboxTemplate(
             self,
             "sandboxtemplate",
-            metadata=metadata("agentplane-runner", namespace),
+            metadata=metadata(
+                "agentplane-runner",
+                namespace,
+                # What the sandbox Actions tell an agent choosing among the templates they offer.
+                annotations={
+                    "description": (
+                        "The shared runner image, built to host an agent harness: the sandbox tools (git, "
+                        "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
+                    )
+                },
+            ),
             spec=SandboxTemplateSpec(
                 # The CiliumNetworkPolicy next to this construct is the runner's fence.
                 network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,

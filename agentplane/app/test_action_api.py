@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import copy
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
@@ -73,8 +72,8 @@ from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex, SandboxSnapshot
-from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings, OperatorSession
-from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
+from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
+from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
 from agentplane.subjects import ServiceAccountRef
@@ -598,7 +597,7 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(
             if final["state"] == "succeeded":
                 break
             # Each read awaits service IO; no fixed delay or elapsed-time assertion.
-    assert final["execution"]["result"] == {"recorded": "hi"}
+    assert final["execution"]["result"]["structuredContent"] == {"recorded": "hi"}
     caller_view = await service.get(pending.id, CALLER)
     assert caller_view.decision is not None
     assert final["decision"] == caller_view.decision.model_dump(mode="json")
@@ -782,17 +781,18 @@ async def test_two_replicas_share_login_callback_and_logout_and_keep_two_operato
 async def _stored_login(sessions: OperatorSessionStore) -> tuple[BrowserSession, OperatorSession]:
     async with sessions.sessions() as db:
         row = (await db.scalars(select(BrowserSession))).one()
-    return row, OperatorSession.model_validate(row.payload["user"])
+    login = row.login
+    assert login is not None
+    return row, login
 
 
 async def _expire_login_token(sessions: OperatorSessionStore) -> str:
     """Age the stored access token past renewal, returning the refresh token that renews it."""
     async with sessions.sessions.begin() as db:
         row = (await db.scalars(select(BrowserSession).with_for_update())).one()
-        user = copy.deepcopy(row.payload["user"])
-        user["tokens"]["expires_at"] = time.time() - 1
-        row.payload = {**row.payload, "user": user}
-    return cast(str, user["tokens"]["refresh_token"])
+        row.access_token_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    assert row.refresh_token is not None
+    return row.refresh_token
 
 
 async def test_a_login_keeps_what_renews_it_and_outlasts_its_access_token(
@@ -808,7 +808,7 @@ async def test_a_login_keeps_what_renews_it_and_outlasts_its_access_token(
     assert session.tokens is not None
     assert session.tokens.refresh_token is not None
     # The provider's access token lasts an hour; the session a day of idleness, a week at most.
-    assert datetime.fromtimestamp(session.tokens.expires_at, UTC) <= after + timedelta(hours=1)
+    assert session.tokens.expires_at <= after + timedelta(hours=1)
     assert before + timedelta(days=1) <= row.expires_at <= after + timedelta(days=1)
     assert before + timedelta(days=7) <= row.absolute_expires_at <= after + timedelta(days=7)
 
@@ -827,7 +827,7 @@ async def test_an_expired_login_token_is_renewed_once_for_the_exchange(
     assert session.tokens.refresh_token is not None
     assert review.refreshes == [spent]
     assert session.tokens.refresh_token.get_secret_value() != spent
-    assert session.tokens.expires_at > time.time()
+    assert session.tokens.expires_at > datetime.now(UTC)
     assert review.exchanged_subjects == [SUBJECT_A, SUBJECT_A]
 
 

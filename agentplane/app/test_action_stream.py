@@ -31,8 +31,8 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
-from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings, OperatorSession
-from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
+from agentplane.app.operator_sessions import OperatorSession, OperatorSessionStore, request_session
 from agentplane.app.presets import Harness
 
 APP_URL = "http://test-app.invalid"
@@ -45,6 +45,7 @@ OIDC = OIDCSettings(
 )
 FIRST = b"event: snapshot\ndata: first\n\n"
 SECOND = b"event: snapshot\ndata: second\n\n"
+KEEPALIVE = b": keepalive\n\n"
 
 
 class StreamActions(FederatedOperatorActions):
@@ -187,10 +188,10 @@ def serve(
 
         @app.post("/test-login")
         async def login(request: Request, seconds: float) -> None:
-            request.session["user"] = OperatorSession(
-                issuer=OIDC.issuer, subject="test-subject", username="test-operator"
-            ).model_dump(mode="json")
-            request.state.operator_session_absolute_expires_at = datetime.now(UTC) + timedelta(seconds=seconds)
+            request_session(request).log_in(
+                OperatorSession(issuer=OIDC.issuer, subject="test-subject", username="test-operator"),
+                absolute_expires_at=datetime.now(UTC) + timedelta(seconds=seconds),
+            )
 
         return app
 
@@ -312,6 +313,35 @@ async def test_an_upstream_ended_by_its_token_is_reopened_under_a_new_one(app: F
         browser.disconnect()
         await browser.ended()
     assert service.authorizations == ["Bearer test-token-1", "Bearer test-token-2"]
+    assert all(upstream.closed for upstream in service.upstreams)
+
+
+async def test_a_snapshot_a_reopened_upstream_repeats_is_not_forwarded(app: FastAPI) -> None:
+    # The second upstream's only frame is the repeat; it delivered all the same, so it is renewed.
+    service = ActionService(Upstream(FIRST, None), Upstream(FIRST, None), Upstream(FIRST, KEEPALIVE, SECOND, FIRST))
+    cookie = await login(app)
+    async with operator_actions(app, service.transport()):
+        browser = EventSource(app, cookie)
+        # FIRST after SECOND is a change again.
+        assert [await browser.next_chunk() for _ in range(4)] == [FIRST, KEEPALIVE, SECOND, FIRST]
+        browser.disconnect()
+        await browser.ended()
+    assert len(service.authorizations) == 3
+    assert all(upstream.closed for upstream in service.upstreams)
+
+
+async def test_a_repeated_snapshot_split_across_chunks_is_still_recognized(app: FastAPI) -> None:
+    # The repeat arrives in pieces, one joined to the frames after it; two boundaries split between
+    # their newlines.
+    service = ActionService(
+        Upstream(FIRST[:-1], FIRST[-1:], None), Upstream(FIRST[:7], FIRST[7:] + KEEPALIVE + SECOND[:-1], SECOND[-1:])
+    )
+    cookie = await login(app)
+    async with operator_actions(app, service.transport()):
+        browser = EventSource(app, cookie)
+        assert [await browser.next_chunk() for _ in range(3)] == [FIRST, KEEPALIVE, SECOND]
+        browser.disconnect()
+        await browser.ended()
     assert all(upstream.closed for upstream in service.upstreams)
 
 
