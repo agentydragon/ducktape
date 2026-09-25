@@ -1,9 +1,10 @@
 """The Pod shape every agentplane SandboxTemplate shares: the egress sidecar that relays a box's
 traffic to the central proxy, the tokens only it mounts, the interception CA over the system bundle
-and as Java's trust store, a system bazelrc that points Bazel at both, a kubeconfig that reaches the
-API server through the proxy, and the proxy environment that points a workload at the sidecar. The
-runner template (app.py) and the sandbox Actions' command box (command_sandbox.py) are both built
-from it, so both kinds of box sit behind the same egress path.
+and as Java's trust store, a kubeconfig that reaches the API server through the proxy, and the proxy
+environment that points a workload at the sidecar. The runner template (app.py) and the sandbox
+Actions' command box (command_sandbox.py) are both built from it, so both kinds of box sit behind
+the same egress path; only the command box also gets the system bazelrc that points Bazel at the
+trust store.
 """
 
 from __future__ import annotations
@@ -103,9 +104,8 @@ def egress_env() -> list[SandboxTemplateSpecPodTemplateSpecContainersEnv]:
 
 def egress_mounts() -> list[SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts]:
     """Public roots + cluster root + the proxy's interception root, over the image's own bundle at the
-    path every client falls back to and as Java's trust store, plus Bazel's system rc and the
-    kubeconfig. A subPath mount does not follow ConfigMap updates: a CA rotation reaches a sandbox at
-    its next Pod."""
+    path every client falls back to and as Java's trust store, plus the kubeconfig. A subPath mount
+    does not follow ConfigMap updates: a CA rotation reaches a sandbox at its next Pod."""
     return [
         SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
             name=_EGRESS_CA_VOLUME_NAME, mount_path=_CA_BUNDLE_PATH, sub_path=egress.CA_BUNDLE_KEY, read_only=True
@@ -117,16 +117,22 @@ def egress_mounts() -> list[SandboxTemplateSpecPodTemplateSpecContainersVolumeMo
             read_only=True,
         ),
         SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
-            name=_TOOL_CONFIG_VOLUME_NAME, mount_path="/etc/bazel.bazelrc", sub_path=_BAZELRC_KEY, read_only=True
-        ),
-        SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
             name=_TOOL_CONFIG_VOLUME_NAME, mount_path=_KUBECONFIG_PATH, sub_path=_KUBECONFIG_KEY, read_only=True
         ),
     ]
 
 
+def bazelrc_mount() -> SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts:
+    """Bazel's system rc, for a box that only runs commands. A runner leaves it out: crossing a
+    container's memory limit kills every process in it, and a build that did would take the agent's
+    harness down with it."""
+    return SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+        name=_TOOL_CONFIG_VOLUME_NAME, mount_path="/etc/bazel.bazelrc", sub_path=_BAZELRC_KEY, read_only=True
+    )
+
+
 def add_tool_config(scope: Construct, env: Environment) -> None:
-    """Bazel's system rc, which every Bazel in a box reads before its workspace's own, and the
+    """Bazel's system rc, which Bazel in a command box reads before its workspace's own, and the
     kubeconfig. Bazel's JVM fetches through the proxy but trusts only its own store, which lacks the
     interception root; and Bazel scrubs a test's environment, so the box's egress environment reaches
     a test only when named here. The kubeconfig reaches the API server through the proxy, verified

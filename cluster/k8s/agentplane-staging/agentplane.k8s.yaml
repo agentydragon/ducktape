@@ -2116,10 +2116,6 @@ spec:
               name: egress-ca
               readOnly: true
               subPath: ca-certificates.p12
-            - mountPath: /etc/bazel.bazelrc
-              name: tool-config
-              readOnly: true
-              subPath: bazel.bazelrc
             - mountPath: /etc/kubernetes/kubeconfig
               name: tool-config
               readOnly: true
@@ -3058,14 +3054,14 @@ spec:
               name: egress-ca
               readOnly: true
               subPath: ca-certificates.p12
-            - mountPath: /etc/bazel.bazelrc
-              name: tool-config
-              readOnly: true
-              subPath: bazel.bazelrc
             - mountPath: /etc/kubernetes/kubeconfig
               name: tool-config
               readOnly: true
               subPath: kubeconfig
+            - mountPath: /etc/bazel.bazelrc
+              name: tool-config
+              readOnly: true
+              subPath: bazel.bazelrc
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
               value: agentplane-egress.agentplane-staging.svc.cluster.local

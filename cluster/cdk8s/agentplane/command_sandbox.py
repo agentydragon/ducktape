@@ -89,5 +89,5 @@ def _workload() -> SandboxTemplateSpecPodTemplateSpecContainers:
                 "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("2Gi"),
             },
         ),
-        volume_mounts=sandbox_pod.egress_mounts(),
+        volume_mounts=[*sandbox_pod.egress_mounts(), sandbox_pod.bazelrc_mount()],
     )
