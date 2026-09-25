@@ -76,7 +76,7 @@ from agentplane.app.inventory import (
 )
 from agentplane.app.live import LiveIndex, Updates, router as live_router
 from agentplane.app.oidc import OIDCSettings, build_oauth
-from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_id
+from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
 from agentplane.runner.client import OpenTimeoutError, RunnerError
@@ -470,7 +470,7 @@ async def action_stream(
     sessions: OperatorSessions,
     chunks: Annotated[AsyncIterator[bytes], Depends(_action_chunks)],
 ) -> StreamingResponse:
-    session_id = operator_session_id(request)
+    session_id = operator_session_row(request).id
 
     async def session_over() -> None:
         # The replicas share its end -- a logout on any of them, or its expiry -- through PostgreSQL.
@@ -893,7 +893,9 @@ def create_app(
             secret_key=oidc.session_secret,
             session_cookie=oidc.cookie_name,
             https_only=oidc.secure,
-            max_age=oidc.session_seconds,
+            max_age=oidc.session_max_seconds,
+            idle_seconds=oidc.session_idle_seconds,
+            activity_step_seconds=oidc.session_activity_step_seconds,
         )
         app.state.oauth = build_oauth(oidc)
         # Unguarded, because these are how a browser with no credential acquires one.

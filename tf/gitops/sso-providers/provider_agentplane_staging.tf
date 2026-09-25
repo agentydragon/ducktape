@@ -20,9 +20,12 @@ resource "authentik_provider_oauth2" "agentplane_staging" {
   include_claims_in_id_token = true
 
   # The profile scope supplies display names only; authorization uses issuer + sub.
+  # offline_access issues the refresh token that renews the short-lived access token the app's
+  # Action federation presents, for as long as the app's own session lasts.
   property_mappings = [
     data.authentik_property_mapping_provider_scope.openid.id,
     data.authentik_property_mapping_provider_scope.profile.id,
+    data.authentik_property_mapping_provider_scope.offline_access.id,
   ]
 
   allowed_redirect_uris = [

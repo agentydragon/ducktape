@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
@@ -20,8 +21,9 @@ import pytest_bazel
 import uvicorn
 from fastapi import FastAPI
 from fastmcp import FastMCP
+from sqlalchemy import select
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from agentplane.action_service import api as service_api
@@ -71,8 +73,8 @@ from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex, SandboxSnapshot
-from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
-from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings, OperatorSession
+from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
 from agentplane.subjects import ServiceAccountRef
@@ -112,6 +114,8 @@ class Review:
     connections: ConnectionAuthority
     policies: PolicyIndex
     app: FastAPI
+    # Every refresh token presented to the login provider, in order.
+    refreshes: list[str]
 
 
 @pytest.fixture
@@ -235,6 +239,8 @@ async def review(
                 {"access_token": sign_jwt(private_key, exchanged), "token_type": "Bearer", "expires_in": 60}
             )
 
+        refreshes: list[str] = []
+
         def login_provider(subject: str):
             provider = build_mock_oidc_app(
                 issuer_url=idp_url,
@@ -247,6 +253,25 @@ async def review(
                 },
                 authentik_compatible=True,
             )
+            issue = next(
+                route.endpoint
+                for route in provider.routes
+                if isinstance(route, Route) and route.path == "/application/o/token/"
+            )
+
+            async def token(request: Request) -> Response:
+                form = parse_qs((await request.body()).decode())
+                if form["grant_type"] == ["refresh_token"]:
+                    refreshes.append(form["refresh_token"][0])
+                    if operator_connection == "refresh-refused":
+                        return JSONResponse(
+                            {"error": "invalid_grant", "error_description": "test-private-provider-detail"},
+                            status_code=400,
+                        )
+                # The mock renews by refresh token too, issuing a new one each time.
+                return cast(Response, await issue(request))
+
+            provider.routes.insert(0, Route("/application/o/token/", token, methods=["POST"]))
             provider.routes.insert(0, Route("/exchange", exchange, methods=["POST"]))
             return provider
 
@@ -357,6 +382,7 @@ async def review(
             connections,
             policies,
             app,
+            refreshes,
         )
 
 
@@ -751,6 +777,76 @@ async def test_two_replicas_share_login_callback_and_logout_and_keep_two_operato
     a.cookies.update(old_a_cookies)
     assert (await a.get("/auth/me")).status_code == 401
     assert (await a.get("/actions")).status_code == 401
+
+
+async def _stored_login(sessions: OperatorSessionStore) -> tuple[BrowserSession, OperatorSession]:
+    async with sessions.sessions() as db:
+        row = (await db.scalars(select(BrowserSession))).one()
+    return row, OperatorSession.model_validate(row.payload["user"])
+
+
+async def _expire_login_token(sessions: OperatorSessionStore) -> str:
+    """Age the stored access token past renewal, returning the refresh token that renews it."""
+    async with sessions.sessions.begin() as db:
+        row = (await db.scalars(select(BrowserSession).with_for_update())).one()
+        user = copy.deepcopy(row.payload["user"])
+        user["tokens"]["expires_at"] = time.time() - 1
+        row.payload = {**row.payload, "user": user}
+    return cast(str, user["tokens"]["refresh_token"])
+
+
+async def test_a_login_keeps_what_renews_it_and_outlasts_its_access_token(
+    review: Review, operator_sessions: OperatorSessionStore
+) -> None:
+    login = await review.browser.get("/auth/login", follow_redirects=False)
+    assert "offline_access" in httpx.URL(login.headers["location"]).params["scope"].split()
+    before = datetime.now(UTC)
+    await review.browser.get(login.headers["location"])
+    after = datetime.now(UTC)
+
+    row, session = await _stored_login(operator_sessions)
+    assert session.tokens is not None
+    assert session.tokens.refresh_token is not None
+    # The provider's access token lasts an hour; the session a day of idleness, a week at most.
+    assert datetime.fromtimestamp(session.tokens.expires_at, UTC) <= after + timedelta(hours=1)
+    assert before + timedelta(days=1) <= row.expires_at <= after + timedelta(days=1)
+    assert before + timedelta(days=7) <= row.absolute_expires_at <= after + timedelta(days=7)
+
+
+async def test_an_expired_login_token_is_renewed_once_for_the_exchange(
+    review: Review, operator_sessions: OperatorSessionStore
+) -> None:
+    await review.browser.get("/auth/login")
+    spent = await _expire_login_token(operator_sessions)
+
+    assert (await review.browser.get("/actions")).status_code == 200
+    assert (await review.browser.get("/actions")).status_code == 200
+
+    _, session = await _stored_login(operator_sessions)
+    assert session.tokens is not None
+    assert session.tokens.refresh_token is not None
+    assert review.refreshes == [spent]
+    assert session.tokens.refresh_token.get_secret_value() != spent
+    assert session.tokens.expires_at > time.time()
+    assert review.exchanged_subjects == [SUBJECT_A, SUBJECT_A]
+
+
+@pytest.mark.parametrize("operator_connection", ["refresh-refused"])
+async def test_a_refused_renewal_ends_the_session_and_asks_for_a_login(
+    review: Review, operator_sessions: OperatorSessionStore
+) -> None:
+    await review.browser.get("/auth/login")
+    spent = await _expire_login_token(operator_sessions)
+
+    refused = await review.browser.get("/actions")
+
+    assert refused.status_code == 401
+    assert refused.json() == {"detail": {"code": "operator_reauthentication_required"}}
+    assert review.refreshes == [spent]
+    async with operator_sessions.sessions() as db:
+        assert (await db.scalars(select(BrowserSession))).all() == []
+    assert (await review.browser.get("/auth/me")).status_code == 401
+    assert review.exchanged_subjects == []
 
 
 async def test_concurrent_cross_replica_callbacks_consume_pending_login_once(review: Review) -> None:

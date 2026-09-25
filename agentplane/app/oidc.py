@@ -1,8 +1,10 @@
 """The app's own OIDC login, so a browser reaches it without a forward-auth proxy in front.
 
 Authentik's application policy binding decides who may log in. PostgreSQL stores the identity,
-access token and OAuth state; the browser carries only a signed random handle. Expiry is absolute,
-bounded by the ID token and (when retained) access token; renewal requires a fresh login.
+login tokens and OAuth state; the browser carries only a signed random handle. A login lasts until
+it has gone unused for `session_idle_seconds` or reached `session_max_seconds`, whichever is
+first; the tokens' own lifetimes do not bound it. Action federation renews the access token with
+the refresh token as it needs one (`action_federation.py`).
 
 A login exists iff `AGENTPLANE_OIDC_ISSUER` is set. Unset, a browser has no way in and the only
 credential the app accepts is a Kubernetes token (`identity.py`); the API is guarded either way.
@@ -12,11 +14,10 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import UTC, datetime
 
 from authlib.integrations.starlette_client import OAuth
 from fastapi import Request
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -42,10 +43,23 @@ class OIDCSettings(BaseSettings):
     client_secret: str
     session_secret: str = Field(description="Signs the session cookie; minted with the client in Terraform.")
     public_base_url: str = Field(description="The app's public origin, which the redirect URI is built from.")
-    session_seconds: int = Field(
-        default=28800,
+    session_max_seconds: int = Field(
+        default=604800, gt=0, description="How long a login lasts at most, however it is used."
+    )
+    session_idle_seconds: int = Field(
+        default=86400, gt=0, description="How long a login lasts without an authenticated request."
+    )
+    session_activity_step_seconds: int = Field(
+        default=300,
         gt=0,
-        description="Maximum absolute login lifetime; token expiry may shorten it. Re-login to renew.",
+        description="Activity moves the idle deadline only once it would move by more than this, so a "
+        "burst of requests does not each rewrite the session row; the idle timeout holds to within it.",
+    )
+    token_renew_before_seconds: int = Field(
+        default=30,
+        ge=0,
+        description="Renew the login access token once it is this close to expiry, so it cannot lapse "
+        "between the check and the provider reading it.",
     )
 
     @property
@@ -78,7 +92,8 @@ def build_oauth(settings: OIDCSettings) -> OAuth:
         client_id=settings.client_id,
         client_secret=settings.client_secret,
         server_metadata_url=settings.server_metadata_url,
-        client_kwargs={"scope": "openid profile", "code_challenge_method": "S256"},
+        # offline_access is what makes Authentik issue a refresh token.
+        client_kwargs={"scope": "openid profile offline_access", "code_challenge_method": "S256"},
     )
     return oauth
 
@@ -92,9 +107,36 @@ def settings(request: Request) -> OIDCSettings:
 
 
 def session_operator(request: Request) -> str | None:
-    """The operator this request's session names, or None when it has none or it has expired."""
+    """The operator this request's session names, or None when it has none."""
     session = operator_session(request)
     return session.username if session is not None else None
+
+
+class LoginTokens(BaseModel):
+    """The login's access token and what renews it, kept only while Action federation needs them."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    access_token: SecretStr
+    expires_at: float = Field(description="The access token's expiry, as a Unix time.")
+    refresh_token: SecretStr | None = Field(default=None, description="None when the provider issued none.")
+
+    # The session row is the only JSON this is written to, and it has to hold the tokens themselves.
+    @field_serializer("access_token", "refresh_token", when_used="json")
+    def _stored(self, token: SecretStr | None) -> str | None:
+        return token.get_secret_value() if token is not None else None
+
+
+class TokenResponse(BaseModel):
+    """The token endpoint's answer, as authlib hands it over with `expires_at` derived from `expires_in`."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True, hide_input_in_errors=True)
+
+    access_token: SecretStr = Field(min_length=1)
+    expires_at: float | None = Field(
+        default=None, allow_inf_nan=False, description="None when the provider stated no lifetime."
+    )
+    refresh_token: SecretStr | None = Field(default=None, min_length=1, description="None when it issued none.")
 
 
 class OperatorSession(BaseModel):
@@ -103,14 +145,12 @@ class OperatorSession(BaseModel):
     issuer: str
     subject: str
     username: str
-    access_token: SecretStr | None = None
-    expires_at: float
+    tokens: LoginTokens | None = None
 
 
 def operator_session(request: Request) -> OperatorSession | None:
+    """The login in this request's snapshot of its session, which the session middleware only hands on
+    unexpired. Its tokens may be stale: the federation path reads them from the row."""
     if "session" not in request.scope or not request.session.get("user"):
         return None
-    session = OperatorSession.model_validate(request.session["user"])
-    if session.expires_at <= datetime.now(UTC).timestamp():
-        return None
-    return session
+    return OperatorSession.model_validate(request.session["user"])
