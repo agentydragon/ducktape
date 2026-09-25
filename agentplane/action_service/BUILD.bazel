@@ -864,6 +864,7 @@ py_test(
         ":connections",
         ":db",
         ":enrollments",
+        ":mcp_frontend",
         ":models",
         ":oauth",
         ":policy_informer",

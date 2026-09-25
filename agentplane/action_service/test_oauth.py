@@ -44,13 +44,8 @@ from agentplane.action_service.enrollments import (
     EnrollmentConnection,
     EnrollmentPreviewInput,
 )
-from agentplane.action_service.models import (
-    ActionRequestView,
-    CallerPrincipal,
-    CancellationResult,
-    Executor,
-    OperatorPrincipal,
-)
+from agentplane.action_service.mcp_frontend import CancellationView, Receipt, RequestField
+from agentplane.action_service.models import CallerPrincipal, Executor, OperatorPrincipal
 from agentplane.action_service.oauth import ActionsOAuthProxy, OAuthSettings, running_oauth
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
@@ -633,20 +628,24 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
             "action": {"group": "agentplane", "name": "echo"},
             "arguments": {"message": "external-test"},
         }
-        receipt = ActionRequestView.model_validate(
-            await _call_mcp(http, bearer, "request_action", {"request": request})
+        all_fields = list(RequestField)
+        receipt = Receipt.model_validate(
+            await _call_mcp(http, bearer, "request_action", {"request": request, "include_fields": all_fields})
         )
+        assert receipt.id is not None
         assert receipt.external_grant == grant.provenance()
         assert receipt.caller is None, "a caller reading its own receipt is not shown the caller column"
         assert (await store.get(receipt.id, OPERATOR)).caller == grant.caller
-        cancelled = CancellationResult.model_validate(
-            await _call_mcp(http, bearer, "cancel_action_request", {"request_id": str(receipt.id)})
+        cancelled = CancellationView.model_validate(
+            await _call_mcp(
+                http, bearer, "cancel_action_request", {"request_id": str(receipt.id), "include_fields": all_fields}
+            )
         )
         assert cancelled.request.external_grant == grant.provenance()
         repeat = await _call_mcp_result(http, bearer, "request_action", {"request": request})
         assert repeat.is_error, repeat
-        recovered = ActionRequestView.model_validate(
-            await _call_mcp(http, bearer, "get_action_request", {"idempotency_key": key})
+        recovered = Receipt.model_validate(
+            await _call_mcp(http, bearer, "get_action_request", {"idempotency_key": key, "include_fields": all_fields})
         )
         assert recovered == cancelled.request
         assert isinstance(oauth.proxy._client_storage, BaseWrapper)
