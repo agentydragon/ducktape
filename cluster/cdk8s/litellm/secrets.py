@@ -11,18 +11,14 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import ServiceAccount
-from external_secrets_crds.io.external_secrets import ExternalSecret, ExternalSecretSpecTargetCreationPolicy
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import (
-    add_external_secret,
-    cluster_secret_store,
-    remote_data,
-)
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/secrets"
 _NAME = "litellm-secrets"
@@ -44,13 +40,13 @@ def _external_secret(
     source_property: str,
     annotations: dict[str, str] | None = None,
 ) -> ExternalSecret:
-    return add_external_secret(
+    return ExternalSecret(
         chart,
         id,
         name=name,
         namespace=_NAMESPACE,
         refresh="1h",
-        store=cluster_secret_store(store),
+        store=SecretStoreRef.cluster(store),
         data=[remote_data(source, source_property, secret_key=secret_key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         target_name=target,
@@ -115,13 +111,13 @@ def _chart(app: App) -> Chart:
         )
     # tana-mcp's Firebase refresh token, for LiteLLM's Tana provider (tana/litellm_proxy). The
     # tana-mcp resigner patches the source when it re-seeds, hence the short refresh.
-    add_external_secret(
+    ExternalSecret(
         chart,
         "tana",
         name=_TANA_REFRESH_TOKEN,
         namespace=_NAMESPACE,
         refresh="10m",
-        store=cluster_secret_store(
+        store=SecretStoreRef.cluster(
             single_secret_store(
                 chart,
                 f"litellm-{_TANA_REFRESH_TOKEN}",

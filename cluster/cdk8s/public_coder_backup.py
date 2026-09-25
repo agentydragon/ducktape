@@ -57,7 +57,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, remote_data, secret_store
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "public-coder-agent-backup"
@@ -200,13 +200,13 @@ def _repository_store(scope: Construct) -> None:
 def _repository(scope: Construct) -> None:
     """The combined repository Secret VolSync requires, rendered by ESO from the S3 credentials
     and the Restic password."""
-    add_external_secret(
+    ExternalSecret(
         scope,
         "repository",
         name=_REPOSITORY_SECRET_NAME,
         namespace=_NAMESPACE,
         refresh="1h",
-        store=secret_store(_SECRET_STORE_NAME),
+        store=SecretStoreRef.namespaced(_SECRET_STORE_NAME),
         data=[
             remote_data(_S3_CREDENTIALS_SECRET_NAME, "AWS_ACCESS_KEY_ID"),
             remote_data(_S3_CREDENTIALS_SECRET_NAME, "AWS_SECRET_ACCESS_KEY"),

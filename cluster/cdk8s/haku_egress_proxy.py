@@ -58,7 +58,7 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, remote_data
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "haku-egress-proxy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy"
@@ -410,7 +410,7 @@ def _github_token(chart: Chart, name: str) -> None:
     """The agentydragon-agent GitHub PAT, consumed only by one iron-proxy here; its sandbox
     receives a non-secret placeholder that the proxy replaces in Authorization headers for
     exact GitHub hosts."""
-    add_external_secret(
+    ExternalSecret(
         chart,
         name,
         name=name,

@@ -24,11 +24,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import (
-    add_external_secret,
-    cluster_secret_store,
-    remote_data,
-)
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 _LITELLM_NAMESPACE = "litellm"
 _AGENTPLANE_NAMESPACE = "agentplane-testing"
@@ -89,13 +85,13 @@ class CheapExperimentsCredentials(Construct):
             ),
         )
 
-        add_external_secret(
+        ExternalSecret(
             self,
             "target-external-secret",
             name=_KEY_SECRET_NAME,
             namespace=_AGENTPLANE_NAMESPACE,
             refresh="1m",
-            store=cluster_secret_store(_SECRET_STORE_NAME),
+            store=SecretStoreRef.cluster(_SECRET_STORE_NAME),
             data=[remote_data(_KEY_SECRET_NAME, "api-key")],
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
             deletion_policy=ExternalSecretSpecTargetDeletionPolicy.DELETE,

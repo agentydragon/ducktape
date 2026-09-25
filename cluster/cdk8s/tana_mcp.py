@@ -39,7 +39,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, remote_data
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/tana-mcp"
@@ -476,7 +476,7 @@ def chart(app: App) -> Chart:
         ),
         automount_service_account_token=False,
     )
-    add_external_secret(
+    ExternalSecret(
         chart,
         "tana-pat",
         name=_PAT_SECRET,

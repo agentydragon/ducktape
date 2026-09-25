@@ -22,7 +22,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, remote_data
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "cert-manager-environment"
 NAMESPACE = "cert-manager"
@@ -35,7 +35,7 @@ def chart(app: App) -> Chart:
     chart = Chart(app, "environment", disable_resource_name_hashes=True)
     # Consumer-owned identity for reading approved canonical credentials.
     k8s.KubeServiceAccount(chart, "reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=NAMESPACE))
-    add_external_secret(
+    ExternalSecret(
         chart,
         "route53-credentials",
         name=_ROUTE53_SECRET,

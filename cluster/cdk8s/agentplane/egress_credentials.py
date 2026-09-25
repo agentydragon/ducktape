@@ -15,11 +15,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import (
-    add_external_secret,
-    cluster_secret_store,
-    remote_data,
-)
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 STAGING_NAMESPACE = "agentplane-staging-egress-credentials"
 TESTING_NAMESPACE = "agentplane-testing-egress-credentials"
@@ -63,13 +59,13 @@ def credential_external_secret(
     scope: Construct, *, namespace: str, target: str, source: str, key: str, store: str
 ) -> None:
     """ESO copy of one credential into `namespace`, as Secret `target`."""
-    add_external_secret(
+    ExternalSecret(
         scope,
         target,
         name=target,
         namespace=namespace,
         refresh="1h",
-        store=cluster_secret_store(store),
+        store=SecretStoreRef.cluster(store),
         data=[remote_data(source, key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,

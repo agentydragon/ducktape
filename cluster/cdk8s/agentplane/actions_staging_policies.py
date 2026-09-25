@@ -59,7 +59,7 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GITHUB_READS_SET,
 )
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, remote_data
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 _NAMESPACE = "agentplane-staging"
 _GITHUB_READS_SET = "github-reads"
@@ -392,7 +392,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # holds the key and signs for itself: it may read this one Secret through the API server, and
     # the `coinbase` policy passes its GETs to api.coinbase.com unchanged. What makes handing the
     # sandbox the key acceptable is that the key can only view.
-    add_external_secret(
+    ExternalSecret(
         scope,
         "coinbase-external-secret",
         name=_COINBASE_SECRET,

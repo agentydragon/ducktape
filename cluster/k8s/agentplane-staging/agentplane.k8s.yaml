@@ -159,6 +159,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-actions-generator
   refreshInterval: 8760h
@@ -195,6 +196,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-egress-generator
   refreshInterval: 8760h
@@ -231,6 +233,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-electric-generator
   refreshInterval: 8760h

@@ -25,7 +25,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, password_generator
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ollama"
 _NAME = "ollama"
@@ -277,14 +277,14 @@ def _direct_token(scope: Construct) -> None:
         metadata=metadata(_DIRECT_TOKEN, _NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    add_external_secret(
+    ExternalSecret(
         scope,
         "direct-token",
         name=_DIRECT_TOKEN,
         namespace=_NAMESPACE,
         # A direct-API credential is generated once, not periodically rotated.
         refresh="8760h",
-        data_from=[password_generator(generator.name)],
+        data_from=[DataFrom.from_password_generator(generator.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         template=ExternalSecretSpecTargetTemplate(

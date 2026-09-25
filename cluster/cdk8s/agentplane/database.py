@@ -23,18 +23,12 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 )
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
-    ExternalSecretSpecTargetTemplate,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetTemplate
 
 from cluster.cdk8s import cnpg
 from cluster.cdk8s.agentplane import node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 _CLUSTER_NAME = "postgres"
 _STORAGE_CLASS = "local-path-ovh-ssd"
@@ -65,22 +59,13 @@ def _role_credentials(
         metadata=ApiObjectMetadata(name=f"{secret_name}-generator", namespace=namespace),
         spec=PasswordSpec(length=40, digits=8, symbols=0, no_upper=False, allow_repeat=True),
     )
-    add_external_secret(
+    ExternalSecret(
         scope,
         id,
         name=secret_name,
         namespace=namespace,
         refresh="8760h",
-        data_from=[
-            ExternalSecretSpecDataFrom(
-                source_ref=ExternalSecretSpecDataFromSourceRef(
-                    generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                        kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                        name=f"{secret_name}-generator",
-                    )
-                )
-            )
-        ],
+        data_from=[DataFrom.from_password_generator(f"{secret_name}-generator")],
         template=ExternalSecretSpecTargetTemplate(
             type="kubernetes.io/basic-auth",
             data={

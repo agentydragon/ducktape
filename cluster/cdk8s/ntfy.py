@@ -71,11 +71,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.external_secrets.external_secret import (
-    add_external_secret,
-    cluster_secret_store,
-    remote_data,
-)
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 NAME = "ntfy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ntfy"
@@ -130,13 +126,13 @@ def _secret_store(scope: Construct) -> None:
 
 def _auth_external_secret(scope: Construct) -> None:
     """Derive stable-on-change ntfy auth inputs from the SOPS source Secret."""
-    add_external_secret(
+    ExternalSecret(
         scope,
         "auth-external-secret",
         name=_AUTH_SECRET,
         namespace=NAMESPACE,
         refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-        store=cluster_secret_store(SECRET_STORE),
+        store=SecretStoreRef.cluster(SECRET_STORE),
         data=[
             remote_data(_AUTH_SOURCE_SECRET, "alertmanager-password", secret_key="alertmanager_password"),
             remote_data(_AUTH_SOURCE_SECRET, "alertmanager-token", secret_key="alertmanager_token"),
@@ -170,13 +166,13 @@ def _auth_external_secret(scope: Construct) -> None:
 
 def _alertmanager_webhook_secret(scope: Construct) -> None:
     """Publish the ntfy bearer credential as Alertmanager's webhook Secret."""
-    add_external_secret(
+    ExternalSecret(
         scope,
         "alertmanager-webhook-external-secret",
         name="alertmanager-ntfy-webhook",
         namespace="monitoring",
         refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-        store=cluster_secret_store(SECRET_STORE),
+        store=SecretStoreRef.cluster(SECRET_STORE),
         data=[remote_data(_AUTH_SOURCE_SECRET, "alertmanager-token", secret_key="alertmanager_token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,

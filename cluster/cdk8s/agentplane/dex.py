@@ -31,12 +31,8 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecDataFrom,
     ExternalSecretSpecDataFromRewrite,
     ExternalSecretSpecDataFromRewriteRegexp,
-    ExternalSecretSpecDataFromSourceRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRef,
-    ExternalSecretSpecDataFromSourceRefGeneratorRefKind,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
@@ -50,7 +46,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 _NAMESPACE = "agentplane-testing"
 _NAME = "agentplane-testing-dex"
@@ -126,13 +122,9 @@ def _add_credentials(scope: Construct) -> None:
         scope, "session-secret-generator", name="agentplane-testing-agentplane-session-secret", length=64, digits=16
     )
 
-    def rewrite(source: str, target: str) -> ExternalSecretSpecDataFrom:
-        return ExternalSecretSpecDataFrom(
-            source_ref=ExternalSecretSpecDataFromSourceRef(
-                generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                    kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD, name=source
-                )
-            ),
+    def rewrite(source: str, target: str) -> DataFrom:
+        return DataFrom.from_password_generator(
+            source,
             rewrite=[
                 ExternalSecretSpecDataFromRewrite(
                     regexp=ExternalSecretSpecDataFromRewriteRegexp(source="password", target=target)
@@ -140,7 +132,7 @@ def _add_credentials(scope: Construct) -> None:
             ],
         )
 
-    add_external_secret(
+    ExternalSecret(
         scope,
         "oidc-credentials",
         name="agentplane-oidc",
@@ -163,7 +155,7 @@ def _add_credentials(scope: Construct) -> None:
         annotations={"description": "ESO-generated Dex client credentials and Agentplane session signing key."},
     )
 
-    add_external_secret(
+    ExternalSecret(
         scope,
         "mcp-oauth-credentials",
         name="agentplane-mcp-oauth",
@@ -179,7 +171,7 @@ def _add_credentials(scope: Construct) -> None:
         annotations={"description": "ESO-generated credentials for the testing MCP client registered in Dex."},
     )
 
-    add_external_secret(
+    ExternalSecret(
         scope,
         "acceptance-operator-credentials",
         name="agentplane-testing-acceptance-operator",
@@ -188,16 +180,7 @@ def _add_credentials(scope: Construct) -> None:
         # Dex's config and the acceptance client's password both come from this one
         # dataFrom entry: two ExternalSecrets naming the same Password generator get two
         # independent values (#7042).
-        data_from=[
-            ExternalSecretSpecDataFrom(
-                source_ref=ExternalSecretSpecDataFromSourceRef(
-                    generator_ref=ExternalSecretSpecDataFromSourceRefGeneratorRef(
-                        kind=ExternalSecretSpecDataFromSourceRefGeneratorRefKind.PASSWORD,
-                        name="agentplane-testing-dex-operator-password",
-                    )
-                )
-            )
-        ],
+        data_from=[DataFrom.from_password_generator("agentplane-testing-dex-operator-password")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         template=ExternalSecretSpecTargetTemplate(

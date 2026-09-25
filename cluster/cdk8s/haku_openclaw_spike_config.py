@@ -33,7 +33,7 @@ from cluster.cdk8s.openclaw_gateway import (
     session_memory_hook,
     trusted_proxy_gateway,
 )
-from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, password_generator
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.seaweedfs import s3
 
 _NAMESPACE = "haku-openclaw-spike"
@@ -477,7 +477,7 @@ def _gateway_password(scope: Construct) -> None:
         metadata=metadata("haku-openclaw-spike-gateway-password-generator", _NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    add_external_secret(
+    ExternalSecret(
         scope,
         "gateway-password",
         name=_GATEWAY_PASSWORD_NAME,
@@ -485,7 +485,7 @@ def _gateway_password(scope: Construct) -> None:
         # The generator value is stable. Avoid automatic rotation, which would
         # interrupt active local Gateway clients unnecessarily.
         refresh="8760h",
-        data_from=[password_generator(generator.name)],
+        data_from=[DataFrom.from_password_generator(generator.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         template=ExternalSecretSpecTargetTemplate(data={"password": "{{ .password }}"}),

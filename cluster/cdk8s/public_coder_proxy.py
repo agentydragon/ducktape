@@ -60,7 +60,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, remote_data
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "public-coder-agent-proxy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/proxy"
@@ -98,7 +98,7 @@ def _endpoint(namespace: str, labels: dict[str, str]) -> dict[str, str]:
 def _external_secrets(scope: Construct) -> None:
     forgejo_images_creds_external_secret(scope, "forgejo-images-creds", namespace=NAMESPACE)
     brave = "brave-search-api-key"
-    add_external_secret(
+    ExternalSecret(
         scope,
         "brave-search-api-key",
         name=brave,

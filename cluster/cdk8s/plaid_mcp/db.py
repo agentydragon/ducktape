@@ -21,8 +21,6 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
 )
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromExtract,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
@@ -35,11 +33,7 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
-from cluster.cdk8s.providers.external_secrets.external_secret import (
-    add_external_secret,
-    cluster_secret_store,
-    password_generator,
-)
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/db"
 _CLUSTER = "plaid-mcp-db"
@@ -102,13 +96,13 @@ def _readonly_credentials(chart: Chart) -> None:
         metadata=metadata(_READONLY_GENERATOR, NAMESPACE),
         spec=PasswordSpec(length=40, digits=8, symbols=0, no_upper=False, allow_repeat=True),
     )
-    add_external_secret(
+    ExternalSecret(
         chart,
         "readonly-external-secret",
         name=_READONLY_SECRET,
         namespace=NAMESPACE,
         refresh="8760h",
-        data_from=[password_generator(_READONLY_GENERATOR)],
+        data_from=[DataFrom.from_password_generator(_READONLY_GENERATOR)],
         template=ExternalSecretSpecTargetTemplate(
             data={
                 "username": _READONLY_ROLE,
@@ -137,14 +131,14 @@ def _readonly_copy(chart: Chart) -> None:
         source_secret=_READONLY_SECRET,
         consumer_namespace=_READONLY_CONSUMER,
     )
-    add_external_secret(
+    ExternalSecret(
         chart,
         "consumer-copy",
         name=_READONLY_SECRET,
         namespace=_READONLY_CONSUMER,
         refresh="10m",
-        store=cluster_secret_store(store),
-        data_from=[ExternalSecretSpecDataFrom(extract=ExternalSecretSpecDataFromExtract(key=_READONLY_SECRET))],
+        store=SecretStoreRef.cluster(store),
+        data_from=[DataFrom.from_extract(_READONLY_SECRET)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )

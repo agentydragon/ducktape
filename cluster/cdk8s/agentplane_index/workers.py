@@ -33,7 +33,7 @@ from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, password_generator
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from util.settings_contract import env_name
 
 NAME = "agentplane-index"
@@ -84,13 +84,13 @@ def _read_token(chart: Chart) -> None:
         metadata=metadata(_READ_TOKEN, NAME),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    add_external_secret(
+    ExternalSecret(
         chart,
         "read-token",
         name=_READ_TOKEN,
         namespace=NAME,
         refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[password_generator(_READ_TOKEN)],
+        data_from=[DataFrom.from_password_generator(_READ_TOKEN)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
     )

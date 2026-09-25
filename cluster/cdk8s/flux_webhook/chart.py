@@ -46,11 +46,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import (
-    add_external_secret,
-    cluster_secret_store,
-    remote_data,
-)
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 NAME = "flux-webhook"
 NAMESPACE = "flux-system"
@@ -196,13 +192,13 @@ def chart(app: App) -> Chart:
             policy_types=["Ingress"],
         ),
     )
-    add_external_secret(
+    ExternalSecret(
         chart,
         "ntfy-webhook",
         name=_NTFY_WEBHOOK,
         namespace=NAMESPACE,
         refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-        store=cluster_secret_store(ntfy.SECRET_STORE),
+        store=SecretStoreRef.cluster(ntfy.SECRET_STORE),
         data=[remote_data("ntfy-credentials", "alertmanager-token", secret_key="alertmanager_token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,

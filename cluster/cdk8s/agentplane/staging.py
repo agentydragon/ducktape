@@ -43,9 +43,9 @@ from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import (
-    add_external_secret,
-    cluster_secret_store,
-    password_generator,
+    DataFrom,
+    ExternalSecret,
+    SecretStoreRef,
     remote_data,
 )
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
@@ -387,7 +387,7 @@ def chart(app: App) -> Chart:
     reader = ServiceAccount(
         chart, "external-creds-reader", metadata=metadata("external-creds-reader", _NAMESPACE), automount_token=False
     )
-    add_external_secret(
+    ExternalSecret(
         chart,
         "tana-pat-external-secret",
         name=_TANA_MCP_BEARER_SECRET,
@@ -421,13 +421,13 @@ def chart(app: App) -> Chart:
         )
     # The GitHub App's pre-registered OAuth client, whose SOPS source stays in haku-console
     # (cluster/k8s/haku/console/README.md): the id rides an env var, the secret a mounted file.
-    add_external_secret(
+    ExternalSecret(
         chart,
         "github-mcp-client-external-secret",
         name=_GITHUB_MCP_CLIENT_SECRET,
         namespace=_NAMESPACE,
         refresh="1h",
-        store=cluster_secret_store(
+        store=SecretStoreRef.cluster(
             single_secret_store(
                 chart,
                 "agentplane-staging-github-mcp-client",
@@ -464,13 +464,13 @@ def _add_session_secret(scope: Chart) -> None:
         metadata=metadata(_OIDC_SESSION_SECRET, _NAMESPACE),
         spec=PasswordSpec(length=64, digits=16, symbols=0, no_upper=False, allow_repeat=True),
     )
-    add_external_secret(
+    ExternalSecret(
         scope,
         "session-external-secret",
         name=_OIDC_SESSION_SECRET,
         namespace=_NAMESPACE,
         refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[password_generator(_OIDC_SESSION_SECRET)],
+        data_from=[DataFrom.from_password_generator(_OIDC_SESSION_SECRET)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"session-secret": "{{ .password }}"}),
