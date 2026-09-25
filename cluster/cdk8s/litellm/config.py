@@ -11,11 +11,13 @@ from cluster.cdk8s.model_rosters import (
     GEMINI_EMBEDDING_COMPAT_ALIAS,
     GEMINI_EMBEDDING_MODELS,
     GEMINI_MODELS,
+    LLAMA_CPP_MODELS,
     MISTRAL_MODELS,
     OLLAMA_CHAT_MODELS,
     OLLAMA_EMBEDDING_MODEL,
     OPENCLAW_CODEX_MODELS,
     TANA_MODELS,
+    ApiShape,
     Provider,
     codex_responses_name,
     exposed_name,
@@ -200,6 +202,27 @@ def _ollama_entries() -> list[dict]:
     return entries
 
 
+def _llama_cpp_entries() -> list[dict]:
+    shape = ApiShape.OAI_CHAT
+    return [
+        _model_entry(
+            exposed_name(Provider.LLAMA_CPP, shape, model.id),
+            f"openai/{model.id}",
+            shape_mode(shape),
+            api_base=model.api_base,
+            api_key="os.environ/LLAMA_CPP_API_KEY",
+            timeout=600,
+            supports_function_calling=True,
+            model_info={
+                "max_input_tokens": model.total_context_tokens - model.max_output_tokens,
+                "max_output_tokens": model.max_output_tokens,
+                "max_tokens": model.max_output_tokens,
+            },
+        )
+        for model in LLAMA_CPP_MODELS
+    ]
+
+
 _CODEX_LIMITS = {model.id: model for model in OPENCLAW_CODEX_MODELS}
 
 
@@ -356,6 +379,7 @@ def main_proxy_config() -> dict:
     """Return the complete main-proxy config from the shared Python roster."""
     model_list = [
         *_ollama_entries(),
+        *_llama_cpp_entries(),
         *_tana_entries(),
         *_cliproxy_entries(),
         *_anthropic_entries(),

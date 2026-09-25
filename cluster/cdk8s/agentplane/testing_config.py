@@ -9,14 +9,23 @@ from cluster.cdk8s.agentplane.app_settings import settings
 from cluster.cdk8s.litellm.keys import (
     CHEAP_EXPERIMENTS_CLAUDE_MODEL,
     CHEAP_EXPERIMENTS_CODEX_MODEL,
+    LLAMA_CPP_CHAT_CLIENT_MODELS,
     OLLAMA_CHAT_CLIENT_MODELS,
 )
 
 _NAMESPACE = "agentplane-testing"
 
-# The cheap-experiments key admits these native models and the local Ollama chat routes.
-_HARNESS_CLAUDE = [CHEAP_EXPERIMENTS_CLAUDE_MODEL, *OLLAMA_CHAT_CLIENT_MODELS]
-_HARNESS_CODEX = [CHEAP_EXPERIMENTS_CODEX_MODEL, *OLLAMA_CHAT_CLIENT_MODELS]
+# Testing-only catalog for native, Ollama, and experimental llama.cpp chat routes.
+_HARNESS_CLAUDE = [
+    CHEAP_EXPERIMENTS_CLAUDE_MODEL,
+    *OLLAMA_CHAT_CLIENT_MODELS,
+    *LLAMA_CPP_CHAT_CLIENT_MODELS,
+]
+_HARNESS_CODEX = [
+    CHEAP_EXPERIMENTS_CODEX_MODEL,
+    *OLLAMA_CHAT_CLIENT_MODELS,
+    *LLAMA_CPP_CHAT_CLIENT_MODELS,
+]
 
 
 def config() -> dict:

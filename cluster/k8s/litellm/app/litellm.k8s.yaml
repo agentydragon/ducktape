@@ -126,6 +126,30 @@ data:
           api_base: http://ollama.ollama.svc.cluster.local:11434
         model_info:
           mode: embedding
+      - model_name: llama-cpp/oai-chat/qwen3.8-27b-q8
+        litellm_params:
+          model: openai/qwen3.8-27b-q8
+          api_base: http://10.42.0.20:18081/v1
+          api_key: os.environ/LLAMA_CPP_API_KEY
+          timeout: 600
+        model_info:
+          mode: chat
+          supports_function_calling: true
+          max_input_tokens: 24576
+          max_output_tokens: 8192
+          max_tokens: 8192
+      - model_name: llama-cpp/oai-chat/qwen3.8-flash-next-q4
+        litellm_params:
+          model: openai/qwen3.8-flash-next-q4
+          api_base: http://10.42.0.20:18082/v1
+          api_key: os.environ/LLAMA_CPP_API_KEY
+          timeout: 600
+        model_info:
+          mode: chat
+          supports_function_calling: true
+          max_input_tokens: 24576
+          max_output_tokens: 8192
+          max_tokens: 8192
       - model_name: tana/ant-messages/claude-sonnet-4-6
         litellm_params:
           model: tana/tana/claude-sonnet-4-6/medium
@@ -754,6 +778,12 @@ spec:
                 secretKeyRef:
                   key: MISTRAL_API_KEY
                   name: litellm-mistral-key
+            - name: LLAMA_CPP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: api-key
+                  name: litellm-llama-cpp-api-key
+                  optional: true
             - name: CLIPROXY_CLIENT_KEY
               valueFrom:
                 secretKeyRef:
