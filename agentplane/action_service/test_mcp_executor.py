@@ -25,6 +25,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import ToolResult
 from mcp.types import CallToolResult, ImageContent, TextContent
+from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
@@ -83,6 +84,11 @@ async def _allowed_execution(service: ActionService, *, idempotency_key: str) ->
         OPERATOR,
     )
     return view.id
+
+
+def _without_server_info(result: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    """FastMCP stamps its own name and version into every result's `_meta`; the rest is the tool's answer."""
+    return {key: value for key, value in result.items() if key != "_meta"}
 
 
 async def _poll_state(store: ActionStore, request_id: Any, *, want: ActionState) -> None:
@@ -255,7 +261,8 @@ async def test_tool_error_output_is_a_successful_result(execution_lease: Executi
         )
         assert result.state is ExecutionState.SUCCEEDED
         assert result.error is None
-        assert result.result == {
+        assert isinstance(result.result, dict)
+        assert _without_server_info(result.result) == {
             "content": [{"type": "text", "text": "credential xyz-secret-123 rejected by upstream"}],
             "isError": True,
         }
@@ -288,7 +295,8 @@ async def test_result_keeps_every_content_block_beside_structured_content(execut
             _request(action=ActionIdentity(group=GROUP_KEY, name="snapshot"), arguments={}), execution_lease
         )
         assert result.state is ExecutionState.SUCCEEDED
-        assert result.result == {
+        assert isinstance(result.result, dict)
+        assert _without_server_info(result.result) == {
             "content": [
                 {"type": "text", "text": "test caption"},
                 {"type": "image", "data": image, "mimeType": "image/png"},

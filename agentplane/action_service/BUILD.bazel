@@ -371,6 +371,7 @@ py_test(
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//mcp_types",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

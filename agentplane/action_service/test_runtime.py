@@ -234,7 +234,7 @@ async def test_live_catalog_and_exact_group_dispatch(execution_lease: ExecutionL
                     _request(ActionIdentity(group=key, name="owner")), execution_lease
                 )
                 assert result.state is ExecutionState.SUCCEEDED
-                assert result.result == {"owner": key}
+                assert CallToolResult.model_validate(result.result).structured_content == {"owner": key}
             assert (
                 await executors["one"].execute(
                     _request(ActionIdentity(group="one_extra", name="owner")), execution_lease

@@ -240,7 +240,11 @@ async def test_http_session_discovery_call_and_shutdown(
         assert http_group.actions["echo"].input_schema == fake_server.tools[0]["inputSchema"]
         result = await executor.execute(execution_request, execution_lease)
         assert result.state is ExecutionState.SUCCEEDED
-        assert result.result == {"echoed": "hi", "api_key": "test-only-backend-secret"}
+        assert result.result == {
+            "content": [{"type": "text", "text": "hi"}],
+            "structuredContent": {"echoed": "hi", "api_key": "test-only-backend-secret"},
+            "isError": False,
+        }
         assert [post["method"] for post in fake_server.posts] == [
             "server/discover",
             "initialize",
