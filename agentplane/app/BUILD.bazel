@@ -158,7 +158,6 @@ py_library(
         ":identity",
         ":inventory",
         ":live",
-        ":oidc",
         ":operator_sessions",
         "//agentplane/app/agent_runtime:ingestion",
         "//agentplane/app/agent_runtime/events:event_log",
@@ -556,6 +555,7 @@ py_library(
     srcs = ["auth_routes.py"],
     deps = [
         ":oidc",
+        ":operator_sessions",
         "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//joserfc",
@@ -571,6 +571,7 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
+        ":operator_sessions",
         "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//pydantic",
@@ -743,6 +744,7 @@ py_library(
         ":database",
         ":database_updates",
         "@pypi//itsdangerous",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
     ],

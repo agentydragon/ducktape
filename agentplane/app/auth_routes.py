@@ -11,8 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
@@ -21,7 +20,8 @@ from fastapi.responses import RedirectResponse
 from joserfc.errors import JoseError
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from agentplane.app.oidc import CLIENT_NAME, LoginTokens, OperatorSession, TokenResponse, session_operator, settings
+from agentplane.app.oidc import CLIENT_NAME, TokenResponse, session_operator, settings
+from agentplane.app.operator_sessions import LoginTokens, OperatorSession, request_session
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +78,9 @@ async def callback(request: Request) -> RedirectResponse:
     subject = claims.get("sub")
     if not isinstance(subject, str) or not subject:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "id token has no subject")
-    now = time.time()
+    now = datetime.now(UTC)
     id_expiry = claims.get("exp")
-    if not isinstance(id_expiry, (float, int)) or not math.isfinite(id_expiry) or id_expiry <= now:
+    if not isinstance(id_expiry, (float, int)) or not math.isfinite(id_expiry) or id_expiry <= now.timestamp():
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "id token has no valid expiry")
     # Never retain a token without a known lifetime. Login still works, but federation fails closed.
     tokens = (
@@ -92,13 +92,9 @@ async def callback(request: Request) -> RedirectResponse:
         and response.expires_at > now
         else None
     )
-    request.session.clear()
-    request.session["user"] = OperatorSession(
-        issuer=settings(request).issuer, subject=subject, username=username, tokens=tokens
-    ).model_dump(mode="json")
-    request.state.rotate_operator_session = True
-    request.state.operator_session_absolute_expires_at = datetime.fromtimestamp(
-        now + settings(request).session_max_seconds, UTC
+    request_session(request).log_in(
+        OperatorSession(issuer=settings(request).issuer, subject=subject, username=username, tokens=tokens),
+        absolute_expires_at=now + timedelta(seconds=settings(request).session_max_seconds),
     )
     logger.info("operator logged in")
     return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
@@ -108,7 +104,7 @@ async def callback(request: Request) -> RedirectResponse:
 async def logout(request: Request) -> RedirectResponse:
     if request.headers.get("origin") != settings(request).public_base_url.rstrip("/"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "logout requires exact same-origin Origin")
-    request.session.clear()
+    request_session(request).end()
     return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
 
