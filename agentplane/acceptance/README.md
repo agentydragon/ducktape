@@ -203,12 +203,29 @@ is the authority for what the proxy actually served.
 
 ### Where an agent can run it
 
-Agent pods must use `bbr`/CI, never local Bazel or pytest. This deployed suite is
-`manual` / `no-remote-exec` and lacks an approved CI runner with staging identity and
-connectivity. Therefore it is **blocked from agent pods**; do not disable remote
-execution/caching or mint substitute credentials to work around that boundary.
-The controlled-host instructions above are operator-only, not an agent-pod fallback.
-See [repository instructions](../../AGENTS.md).
+In a claude-ai runner box, through <box_bazel.sh>. **Deviation** from
+<../../devinfra/docs/rbe_workflows.md>: the box's egress refuses BuildBuddy, so the script runs
+Bazel locally, on the workspace bazelrc minus its RBE import. Its kubectl presents the box's own
+workload identity, which may mint the acceptance token:
+
+```bash
+cd /state && rm -rf src && mkdir src
+curl -sSfL https://codeload.github.com/agentydragon/ducktape/tar.gz/refs/heads/devel |
+  tar -xz -C src --strip-components=1
+src/agentplane/acceptance/box_bazel.sh test //agentplane/acceptance:test_egress \
+  --local_test_jobs=1 --test_output=errors \
+  --test_env=AGENTPLANE_ACCEPTANCE_URL=http://agentplane-app.agentplane-testing.svc.cluster.local:8080 \
+  >/state/run.log 2>&1 &
+```
+
+- The URL is the testing app's Service, which staging's egress proxy admits for claude-ai. The
+  public name hangs whenever the proxy dials its own node (#7918).
+- A cold build is about a thousand actions, roughly 15 minutes on the box's two CPUs, so the run
+  goes to the background; a job whose output is redirected outlives the command that started it.
+  Read `/state/run.log` from later commands.
+- Dispose of the box afterwards: it holds a share of the sandbox quota.
+
+Anywhere else an agent runs, the controlled-host instructions above stay operator-only.
 
 Afterwards, check that nothing leaked: `kubectl -n agentplane-testing get sandboxes.agents.x-k8s.io`
 should show no `accept-*`.
