@@ -21,6 +21,7 @@ model:
   which serves the same models on an OpenAI-compatible `/v1` and on its own native
   endpoints; the chat model segment carries the `num_ctx` variant (`gpt-oss-20b-512k`)
   that distinguishes chat entries
+- `llama-cpp/oai-chat/*` — the local llama.cpp server on its OpenAI-compatible `/v1` API
 
 The shape is the OUTBOUND wire — the request LiteLLM makes to the provider, never the
 request a client makes to LiteLLM. Nothing about the inbound side is pinned: LiteLLM routes
@@ -77,6 +78,7 @@ class Provider(StrEnum):
     GOOGLE = "google"
     MISTRAL = "mistral"
     OLLAMA = "ollama"
+    LLAMA_CPP = "llama-cpp"
     GROQ = "groq"
 
 
@@ -367,6 +369,31 @@ GEMINI_EMBEDDING_COMPAT_ALIAS = "gemini-embedding-2"
 # a measured one. Used by public-coder-agent's OpenClaw catalog.
 GEMINI_CONTEXT_WINDOW = 1_048_576
 GEMINI_MAX_OUTPUT_TOKENS = 65_536
+
+
+@dataclass(frozen=True)
+class LlamaCppModel:
+    """One experimental llama.cpp server profile and its declared token limits."""
+
+    id: str
+    api_base: str
+    total_context_tokens: int
+    max_output_tokens: int
+
+
+# Experimental Agentplane testing backends; these profiles share GPU capacity, so only
+# the selected server is expected to be running at a time.
+LLAMA_CPP_MODELS: tuple[LlamaCppModel, ...] = (
+    LlamaCppModel(
+        id="qwen3.8-27b-q8", api_base="http://10.42.0.20:18081/v1", total_context_tokens=32_768, max_output_tokens=8_192
+    ),
+    LlamaCppModel(
+        id="qwen3.8-flash-next-q4",
+        api_base="http://10.42.0.20:18082/v1",
+        total_context_tokens=32_768,
+        max_output_tokens=8_192,
+    ),
+)
 
 # Self-hosted Ollama chat models: (exposed model, Ollama model, num_ctx variants).
 # Each variant is served on both the OpenAI-compatible `/v1` and Ollama's native

@@ -11,9 +11,20 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import ServiceAccount
-from external_secrets_crds.io.external_secrets import ExternalSecret, ExternalSecretSpecTargetCreationPolicy
+from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecret,
+    ExternalSecretSpecRefreshPolicy,
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetTemplate,
+)
 
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
+from cluster.cdk8s.external_secrets.external_secret import (
+    add_external_secret,
+    cluster_secret_store,
+    password_generator,
+    remote_data,
+)
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
@@ -26,6 +37,26 @@ _NAMESPACE = "litellm"
 _EXTERNAL_CREDS_STORE = "kubernetes-external-creds-secret-store"
 _SOPS_FILES = ("litellm-master-key.sops.yaml", "litellm-salt-key.sops.yaml")
 _TANA_REFRESH_TOKEN = "tana-firebase-refresh-token"
+_LLAMA_CPP_API_KEY = "litellm-llama-cpp-api-key"
+
+
+def _llama_cpp_api_key(chart: Chart) -> None:
+    Password(
+        chart,
+        "llama-cpp-api-key-generator",
+        metadata=metadata(_LLAMA_CPP_API_KEY, _NAMESPACE),
+        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
+    )
+    add_external_secret(
+        chart,
+        "llama-cpp-api-key",
+        name=_LLAMA_CPP_API_KEY,
+        namespace=_NAMESPACE,
+        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
+        data_from=[password_generator(_LLAMA_CPP_API_KEY)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"api-key": "{{ .password }}"}),
+    )
 
 
 def _external_secret(
@@ -56,6 +87,7 @@ def _external_secret(
 
 def _chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
+    _llama_cpp_api_key(chart)
     # Consumer-owned referent identity for canonical credentials approved by
     # source-side RoleBindings in external-creds, and for the Tana copy below.
     reader = ServiceAccount(

@@ -171,6 +171,7 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                 _SecretEnv("GROQ_API_KEY", "litellm-groq-key", "GROQ_API_KEY"),
                 _SecretEnv("GEMINI_API_KEY", "litellm-gemini-key", "GEMINI_API_KEY"),
                 _SecretEnv("MISTRAL_API_KEY", "litellm-mistral-key", "MISTRAL_API_KEY"),
+                _SecretEnv("LLAMA_CPP_API_KEY", "litellm-llama-cpp-api-key", "api-key", optional=True),
                 _SecretEnv("CLIPROXY_CLIENT_KEY", "litellm-cliproxy-key", "CLIPROXY_CLIENT_KEY"),
                 _SecretEnv(
                     "TANA_FIREBASE_REFRESH_TOKEN", "tana-firebase-refresh-token", "refresh_token", optional=True

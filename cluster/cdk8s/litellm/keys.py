@@ -28,6 +28,7 @@ from cluster.cdk8s.model_rosters import (
     GEMINI_EMBEDDING_COMPAT_ALIAS,
     GEMINI_EMBEDDING_MODELS,
     GEMINI_MODELS,
+    LLAMA_CPP_MODELS,
     MISTRAL_MODELS,
     OLLAMA_CHAT_MODELS,
     OLLAMA_EMBEDDING_MODEL,
@@ -83,6 +84,11 @@ OLLAMA_CHAT_CLIENT_MODELS = [
     for shape in (ApiShape.OAI_CHAT, ApiShape.OLM_CHAT)
 ]
 
+# Experimental OpenAI-compatible local llama.cpp chat routes for Agentplane testing.
+LLAMA_CPP_CHAT_CLIENT_MODELS = [
+    exposed_name(Provider.LLAMA_CPP, ApiShape.OAI_CHAT, model.id) for model in LLAMA_CPP_MODELS
+]
+
 # The one native subscription model per harness the agentplane testing session form
 # offers; the Codex one on both wires, for Claude Code clients on the same key.
 CHEAP_EXPERIMENTS_CLAUDE_MODEL = exposed_name(
@@ -94,13 +100,14 @@ CHEAP_EXPERIMENTS_CODEX_MODEL = codex_responses_name(_CHEAP_EXPERIMENTS_CODEX)
 # Kubernetes grant and standing on the agentplane testing LLM ingress. Intentionally an
 # exact, cheap-model-only set rather than a provider-wide prefix or wildcard: the Gemini
 # chat and embedding lineups, the API-key-verified Mistral chat roster, every
-# model/context/protocol variant of the self-hosted Ollama chat models, and the two
-# native subscription models above.
+# model/context/protocol variant of the self-hosted Ollama chat models, the local
+# llama.cpp chat route, and the two native subscription models above.
 CHEAP_EXPERIMENTS_MODELS = [
     *GEMINI_CLIENT_MODELS,
     *_GEMINI_EMBEDDING_ROUTES,
     *(exposed_name(Provider.MISTRAL, ApiShape.OAI_CHAT, model) for model in MISTRAL_MODELS),
     *OLLAMA_CHAT_CLIENT_MODELS,
+    *LLAMA_CPP_CHAT_CLIENT_MODELS,
     CHEAP_EXPERIMENTS_CLAUDE_MODEL,
     codex_messages_name(_CHEAP_EXPERIMENTS_CODEX),
     CHEAP_EXPERIMENTS_CODEX_MODEL,
