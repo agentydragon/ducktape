@@ -204,10 +204,10 @@ is the authority for what the proxy actually served.
 
 ### Where an agent can run it
 
-In a claude-ai box created with `environment: build`, through <box_bazel.sh>. **Deviation** from
-<../../devinfra/docs/rbe_workflows.md>: the box's egress refuses BuildBuddy, so the script runs
-Bazel locally, on the workspace bazelrc minus its RBE import. The box's kubectl presents its own
-workload identity, which may mint the acceptance token:
+In a claude-ai box created with `template: agentplane-sandbox-build`, through <box_bazel.sh>.
+**Deviation** from <../../devinfra/docs/rbe_workflows.md>: the box's egress refuses BuildBuddy, so
+the script runs Bazel locally, on the workspace bazelrc minus its RBE import. The box's kubectl
+presents its own workload identity, which may mint the acceptance token:
 
 ```bash
 cd ~ && rm -rf src && mkdir src
