@@ -88,11 +88,10 @@ def test_parse_run_page_extracts_web_ui_endpoint_state() -> None:
 
     assert state.actions_url == "/haku/haku-state/actions"
     assert state.run_index == "391"
-    assert state.job_index == "0"
     assert state.attempt == "1"
     assert (
-        state.log_endpoint("https://git.allegedly.works/")
-        == "https://git.allegedly.works/haku/haku-state/actions/runs/391/jobs/0/attempt/1"
+        state.log_endpoint("https://git.allegedly.works/", 1)
+        == "https://git.allegedly.works/haku/haku-state/actions/runs/391/jobs/1/attempt/1"
     )
 
 
@@ -186,6 +185,15 @@ def test_resolve_job_accepts_index_or_unique_name() -> None:
         forgejo.resolve_job(jobs, "deploy")
     with pytest.raises(SystemExit, match="out of range"):
         forgejo.resolve_job(jobs, "2")
+
+
+def test_select_job_refuses_to_guess_among_several_jobs() -> None:
+    jobs = forgejo.run_view(forgejo.parse_run_page(RUN_HTML).initial_post_response).jobs
+
+    assert forgejo.select_job(jobs, "image") == 1
+    assert forgejo.select_job(jobs[:1], None) == 0
+    with pytest.raises(SystemExit, match=r"pass --job(.|\n)*1\tfailure\timage"):
+        forgejo.select_job(jobs, None)
 
 
 def test_rerun_endpoint_posts_under_the_page_run_link() -> None:
