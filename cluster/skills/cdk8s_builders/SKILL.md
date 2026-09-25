@@ -52,6 +52,19 @@ Check whether this repo already has a class doing this for another CRD and match
 
 A new wrapper's `__init__` doesn't need every field on day one. An uncovered field takes the CRD's own generated struct as a raw keyword value (never a bespoke dict) and becomes a named keyword the moment a second caller needs it.
 
+### A factory groups schema variance, not one caller's use of the escape hatch
+
+A `@classmethod` factory (above) earns its place on **real, typed variance the CRD
+schema itself defines** — an enum-discriminated field, alternate typed sub-structs. A
+CRD that leaves a field genuinely untyped (a plugin system's freeform
+`metadata: map[string]string`, an opaque values blob) has no schema-level shape to name
+a factory after. Wrapping one caller's particular use of that field in a factory doesn't
+add cdk8s-plus ergonomics — cdk8s-plus itself never manufactures a shared type for a
+field the schema declined to type. That value is exactly what the escape hatch just
+above is for: the wrapper's `__init__` takes it as a raw keyword, and the one caller
+that needs a specific shape builds it directly, rather than a factory invented to make
+an untyped, single-user value look like reusable schema structure.
+
 ## Don't invent a mechanism cdk8s/Kubernetes doesn't already have
 
 `cluster/cdk8s/AGENTS.md`'s boundary rule binds here too: the vocabulary is Kubernetes, cdk8s, Flux and Kustomize objects plus plain Python values — no marker annotation, "provides" declaration, registry, or record type standing in for an object. If a wrapper's design seems to need one of those, stop and ask rather than ship it.
