@@ -58,6 +58,8 @@ _NO_PROXY = (
 _CA_DIR = "/egress-proxy-ca"
 _CA_FILE = f"{_CA_DIR}/ca-certificates.crt"
 # Pointed at the haku-egress-proxy CA in both the runner and every job container.
+# TODO: dedupe with the same CA env-var lists in kyverno/proxy_injection.py,
+# agentplane/sandbox_pod.py, public_coder_agent_config.py and haku_openclaw_spike_config.py.
 _CA_ENV_VARS = ("SSL_CERT_FILE", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS")
 _DOCKER_PORT = 2375
 _BAZEL_CACHE = "/bazel-cache"
@@ -69,17 +71,12 @@ _RUNNER_DATA = "/data"
 # A repo-scoped runner registration token for haku-state, provisioned by tf/gitops/haku-state (see
 # README). `register` stays in CreateContainerConfigError until this Secret exists.
 _REGISTRATION_SECRET = "haku-ci-runner-token"
-# Pinned, and a major jump from the old floating `:6` tag -- unavoidable, since `one-job` needs
-# runner >6.1 and `register --ephemeral` needs both a recent runner and a Forgejo 15+ server
-# (this instance reports 15.0.3). 12.13.2 rather than the newest 13.0.0: it carries `--ephemeral`,
-# `one-job` and `--wait` (verified in its source tree) with several more weeks of soak. Pinned
-# rather than floating so an upstream release can't silently change CI behaviour.
-# Crossing 8.0.0 means workflows are now schema-validated and will REFUSE to run if they don't
-# parse -- see README, "Upgrading the runner image".
+# Needs `one-job --wait` and `register --ephemeral`; the latter also needs a Forgejo 15+ server.
+# Since 8.0.0 the runner refuses workflows that fail schema validation -- see README, "Upgrading
+# the runner image".
 _RUNNER_IMAGE = "code.forgejo.org/forgejo/runner:12.13.2"
-# Was 30m, which the `bazel-ci / image` job came within three minutes of (27m03s observed). One
-# job per pod also means the Bazel cache no longer carries over between CI jobs, so builds get
-# slower, not faster -- this needs real headroom.
+# `bazel-ci / image` has taken 27m03s, and with one job per pod the Bazel cache does not carry
+# over between CI jobs, so this needs real headroom.
 _JOB_TIMEOUT = timedelta(hours=1)
 # On SIGTERM (node drain, eviction), the runner finishes the running job instead of dropping it.
 _SHUTDOWN_TIMEOUT = timedelta(minutes=30)
@@ -96,6 +93,9 @@ _SHUTDOWN_TIMEOUT = timedelta(minutes=30)
 #
 # The image must carry the docker CLI (to reach the dind sidecar) AND node+git (so
 # actions/checkout and other JS actions run); the standard act image bundles all three.
+#
+# TODO: see whether Flux image automation can bump this digest (ImageRepository + ImagePolicy
+# on the tag, a Setters marker here), including the oci-cache pre-warm above.
 _JOB_LABEL = (
     "haku-ci:docker://catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43"
 )
