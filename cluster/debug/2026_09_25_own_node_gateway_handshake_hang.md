@@ -50,11 +50,25 @@ never enters conntrack in either direction: the to-proxy mark `0x200` is exempt 
 invalid. A host-network client's SYN-ACK leaves through `lo`, which the NOTRACK rule does not
 match.
 
-The upgrade to v1.14.0 started 2026-09-19 (#7269, #7404, #7424). The
-[2026-09-11 local Gateway RCA](agentplane_oidc/local_gateway_tls_rca.md) predates it; its
-own-node control passed 3/3 on a worker. That RCA's failure was a different mechanism: a reset
-at 2.0 s from the L7 policy proxy's 5-tuple collision, fixed by
-`envoy.useOriginalSourceAddress: false` (#6182).
+The upgrade to v1.14.0 started 2026-09-19 (#7269, #7404, #7424).
+
+## Earlier own-node failures
+
+Own-node hairpins through the public Gateway have failed at four other layers, each fixed where
+it broke. None of those fixes covers this one, which involves neither a policy proxy nor a
+backend setting.
+
+- Authentik's ingress policy saw the caller Pod's identity rather than `ingress` and dropped the
+  connection. Callers' namespaces were admitted (<../docs/mcp_oauth_authentik_notes.md>
+  § Hairpin + CiliumNetworkPolicy; #5932 for `agentplane-staging`).
+- A caller's `toEntities: [world]` egress rule excluded the node's own address, and the dial
+  hung. Rules now name `host` and `remote-node` (#3647, <../docs/cilium_network_policy.md>).
+- An SNI egress rule's policy proxy collided with its own downstream and reset TLS to Authentik
+  at 2.0 s. `envoy.useOriginalSourceAddress: false` fixed it (#6182,
+  [RCA](agentplane_oidc/local_gateway_tls_rca.md)). That RCA's own-node control, which had no L7
+  rule, passed on a worker before the v1.14 upgrade.
+- Authentik distrusted forwarded headers from a pod-network source and advertised `http://`
+  issuer URLs. The pod CIDR is now trusted (#6981).
 
 ## Evidence
 
@@ -127,14 +141,17 @@ cert-manager, Kyverno, SeaweedFS and CNPG instances among others. Which of them 
 
 ## Options
 
-| Option                                                                                                                                         | Effect                                                                              | Cost                                                                                                                                            |
-| ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| a. Drop `control_plane_metrics_firewall_config`; return kube-controller-manager and kube-scheduler to Talos's loopback `bind-address`          | No firewall chain on any node; 10257/10259 unreachable off the host                 | Their ServiceMonitors cannot scrape. They have not since 2026-08-07 (<../k8s/TODO.md> § Alloy), and that entry's native-scrape option goes away |
-| b. Keep the rule; keep clients off their own node's listener: the egress proxy skips own-node addresses, or in-cluster DNS answers the Gateway | Fixes the clients changed                                                           | Every other Pod on a control-plane node keeps the bug. The DNS variant is the RCA's option c, a cluster-wide change                             |
-| c. Drop the rule, keep `bind-address: 0.0.0.0`                                                                                                 | Fixes                                                                               | 10257/10259 reachable from the internet (authenticated, `/healthz` anonymous)                                                                   |
-| d. Upstream                                                                                                                                    | Talos: no accept-mode invalid drop on CNI interfaces; Cilium: the one-sided NOTRACK | Not in our hands                                                                                                                                |
+| Option                                                                                                                                | Effect                                                                              | Cost                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| a. Drop `control_plane_metrics_firewall_config`; return kube-controller-manager and kube-scheduler to Talos's loopback `bind-address` | No firewall chain on any node; 10257/10259 unreachable off the host                 | Their ServiceMonitors cannot scrape. They have not since 2026-08-07 (<../k8s/TODO.md> § Alloy), and that entry's native-scrape option goes away |
+| b. Keep the rule; the egress proxy skips its own node's addresses                                                                     | Fixes the egress proxy                                                              | Every other Pod on a control-plane node keeps the bug                                                                                           |
+| c. In-cluster DNS answers `*.allegedly.works` with the Gateway Service                                                                | No Pod dials a node address for our names, the precondition of all five failures    | Cluster-wide: rules written for node addresses (entity egress rules, Authentik's admissions and header trust) need review. The RCA's option c   |
+| d. Drop the rule, keep `bind-address: 0.0.0.0`                                                                                        | Fixes                                                                               | 10257/10259 reachable from the internet (authenticated, `/healthz` anonymous)                                                                   |
+| e. Upstream                                                                                                                           | Talos: no accept-mode invalid drop on CNI interfaces; Cilium: the one-sided NOTRACK | Not in our hands                                                                                                                                |
 
 The OVH edge and Game firewalls are not options: own-node traffic never leaves the host.
+Recommended: (a) now, and a design note for (c), since this is the fifth failure of the same
+hairpin.
 
 ## Mitigations
 
