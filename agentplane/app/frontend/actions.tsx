@@ -11,6 +11,7 @@ import {
   type Verdict,
 } from "./client";
 import { JsonView } from "./json_view";
+import { followStream } from "./live_stream";
 
 const STATE_COLORS: Partial<Record<ActionState, string>> = {
   decision_pending: "yellow",
@@ -138,26 +139,25 @@ export function useActionRequests(service: ActionService): {
       void refresh();
       return;
     }
-    const source = new EventSource("/actions/stream");
-    source.onopen = () => {
-      setLoading(true);
-      setError(null);
-    };
-    source.addEventListener("snapshot", (event) => {
-      try {
-        setRequests(JSON.parse((event as MessageEvent).data) as ActionRequestView[]);
-        setError(null);
-      } catch {
-        setError("The live Action update was invalid.");
-      } finally {
+    return followStream("/actions/stream", {
+      events: {
+        snapshot: (message) => {
+          try {
+            setRequests(JSON.parse(message.data) as ActionRequestView[]);
+            setError(null);
+          } catch {
+            setError("The live Action update was invalid.");
+          } finally {
+            setLoading(false);
+          }
+        },
+      },
+      onConnection: (connection) => {
+        if (connection.phase !== "reconnecting") return;
         setLoading(false);
-      }
+        setError("The live Action stream disconnected; reconnecting.");
+      },
     });
-    source.onerror = () => {
-      setLoading(false);
-      setError("The live Action stream disconnected; reconnecting.");
-    };
-    return () => source.close();
   }, [refresh, service]);
 
   async function decideRequest(request: ActionRequestView, verdict: Verdict): Promise<void> {

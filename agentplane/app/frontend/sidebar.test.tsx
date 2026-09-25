@@ -81,6 +81,8 @@ async function render(
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
+      // An error is the network's, which the browser retries: the source stays CONNECTING.
+      readyState = 0;
       constructor(url: string) {
         super();
         expect(url).toBe("/live/threads");
