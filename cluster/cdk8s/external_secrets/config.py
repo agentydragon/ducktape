@@ -186,6 +186,9 @@ def chart(app: App) -> Chart:
             "ssh-mcp",
             "study-casino",
             "tana-mcp",
+            # gaffer-private (not cdk8s): its ExternalSecret lives in the gaffer-private
+            # repo (k8s/thrive-scraper/forgejo-images-creds-eso.yaml), not in this tree.
+            "thrive-scraper",
             "wayback-cache",
         ],
         remote_namespace="forgejo-images",
