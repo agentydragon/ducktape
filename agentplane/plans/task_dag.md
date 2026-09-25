@@ -881,7 +881,7 @@ consumers are listed here rather than discovered later:
   `NO_PROXY` and the CA trust variables to every Pod in that namespace -- so an audit that greps the
   tool's source concludes it has no proxy dependency, and is wrong.
 - **`haku-ci`**, which wires it explicitly instead: `HTTP(S)_PROXY` env in
-  `cluster/k8s/haku-ci/{config,scaledjob}.yaml`, including for dockerd's image pulls.
+  `cluster/cdk8s/haku_ci/runner.py`, including for dockerd's image pulls.
 - **The sandbox image**, `cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh`.
 - **One more iron-proxy listener it hosts**: `haku-openclaw-spike-proxy` for
   `haku-openclaw-spike` -- the second OpenClaw deployment, after public-coder.

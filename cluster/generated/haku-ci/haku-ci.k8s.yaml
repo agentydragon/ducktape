@@ -53,6 +53,40 @@ spec:
         values:
           - haku-ci
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: haku-runner-config
+  namespace: haku-ci
+data:
+  config.yaml: |
+    log:
+      level: info
+    runner:
+      file: /data/.runner
+      capacity: 1
+      timeout: 3600s
+      shutdown_timeout: 1800s
+      labels:
+      - haku-ci:docker://catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43
+    container:
+      docker_host: tcp://localhost:2375
+      options: --add-host host.docker.internal:host-gateway -e DOCKER_HOST=tcp://host.docker.internal:2375
+        -e HTTP_PROXY=http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080
+        -e HTTPS_PROXY=http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080
+        -e 'NO_PROXY=127.0.0.1,localhost,host.docker.internal,*.allegedly.works,.allegedly.works,forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local,.forgejo,.svc.cluster.local,10.0.0.0/8'
+        -e SSL_CERT_FILE=/egress-proxy-ca/ca-certificates.crt -e CURL_CA_BUNDLE=/egress-proxy-ca/ca-certificates.crt
+        -e GIT_SSL_CAINFO=/egress-proxy-ca/ca-certificates.crt -e REQUESTS_CA_BUNDLE=/egress-proxy-ca/ca-certificates.crt
+        -e NODE_EXTRA_CA_CERTS=/egress-proxy-ca/ca-certificates.crt -v /egress-proxy-ca/ca-certificates.crt:/egress-proxy-ca/ca-certificates.crt:ro
+        -v /egress-proxy-ca/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
+        -v /bazel-cache:/root/.cache
+      valid_volumes:
+      - /egress-proxy-ca/ca-certificates.crt
+      - /bazel-cache
+    cache:
+      enabled: false
+immutable: false
+---
 apiVersion: keda.sh/v1alpha1
 kind: TriggerAuthentication
 metadata:
@@ -86,25 +120,13 @@ spec:
         automountServiceAccountToken: false
         containers:
           - args:
-              - |
-                set -e
-                forgejo-runner register --no-interactive --ephemeral \
-                  --instance "$FORGEJO_INSTANCE_URL" \
-                  --token "$(cat /secrets/token)" \
-                  --name "$RUNNER_NAME" \
-                  --labels "haku-ci:docker://catthehacker/ubuntu:act-latest" \
-                  --config /config/config.yaml
-                exec forgejo-runner one-job --wait --config /config/config.yaml
+              - one-job
+              - --wait
+              - --config
+              - /config/config.yaml
             command:
-              - sh
-              - -c
+              - forgejo-runner
             env:
-              - name: FORGEJO_INSTANCE_URL
-                value: http://forgejo-http.forgejo:3000
-              - name: RUNNER_NAME
-                valueFrom:
-                  fieldRef:
-                    fieldPath: metadata.name
               - name: DOCKER_HOST
                 value: tcp://localhost:2375
               - name: HTTP_PROXY
@@ -136,15 +158,53 @@ spec:
               - mountPath: /config
                 name: config
                 readOnly: true
-              - mountPath: /secrets
-                name: token
-                readOnly: true
               - mountPath: /data
                 name: runner-data
               - mountPath: /egress-proxy-ca
                 name: egress-proxy-ca
                 readOnly: true
         initContainers:
+          - args:
+              - register
+              - --no-interactive
+              - --ephemeral
+              - --instance
+              - http://forgejo-http.forgejo:3000
+              - --token
+              - $(RUNNER_TOKEN)
+              - --name
+              - $(RUNNER_NAME)
+              - --labels
+              - haku-ci:docker://catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43
+              - --config
+              - /config/config.yaml
+            command:
+              - forgejo-runner
+            env:
+              - name: RUNNER_TOKEN
+                valueFrom:
+                  secretKeyRef:
+                    key: token
+                    name: haku-ci-runner-token
+              - name: RUNNER_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.name
+            image: code.forgejo.org/forgejo/runner:12.13.2
+            name: register
+            resources:
+              limits:
+                cpu: "1"
+                memory: 1Gi
+              requests:
+                cpu: 50m
+                memory: 128Mi
+            volumeMounts:
+              - mountPath: /config
+                name: config
+                readOnly: true
+              - mountPath: /data
+                name: runner-data
           - args:
               - --host=tcp://0.0.0.0:2375
               - --tls=false
@@ -207,9 +267,6 @@ spec:
           - configMap:
               name: haku-runner-config
             name: config
-          - name: token
-            secret:
-              secretName: haku-ci-runner-token
           - emptyDir: {}
             name: runner-data
           - emptyDir: {}

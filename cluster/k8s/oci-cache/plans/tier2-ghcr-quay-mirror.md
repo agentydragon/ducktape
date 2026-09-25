@@ -60,7 +60,7 @@ If this ever becomes important again, per-registry (ghcr/quay) mirroring needs o
   worry about uses Docker Hub bases, and Docker Hub is already mirrored. Most other Haku
   images are Bazel `oci_image` outputs or Nix-built outside haku-ci.
 - **No access to haku-ci.** It's operator-only with **no Haku RBAC** (by design —
-  see `cluster/k8s/haku-ci/README.md`), so an agent authenticating as `haku-k8s`
+  see `cluster/cdk8s/haku_ci/README.md`), so an agent authenticating as `haku-k8s`
   cannot create/exec pods there.
 - **haku-sandbox enforces `baseline` PodSecurity.** It's the only namespace the Haku
   agent can write to, but it **rejects `privileged` pods**:

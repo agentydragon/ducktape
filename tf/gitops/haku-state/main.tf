@@ -199,7 +199,7 @@ resource "kubernetes_secret" "haku_forgejo_token_mint" {
 #   - the auth Haku's own ImageRepository uses to scan the registry for new tags (the image
 #     automation is reconciled into haku-sandbox; see haku/state_template/k8s/haku-ui-image-automation).
 # The CI push credential is a repo Action secret (below), NOT this pull secret.
-# See cluster/k8s/haku-ci + haku/PLAN.md.
+# See cluster/cdk8s/haku_ci + haku/PLAN.md.
 resource "kubernetes_secret" "haku_forgejo_registry_pull" {
   metadata {
     name      = "haku-forgejo-registry-pull"
@@ -302,7 +302,7 @@ resource "terraform_data" "ducktape_mirror_secret_refresh" {
   triggers_replace = ["2026-07-11-haku-ducktape-mirror-token-init"]
 }
 
-# Registration token for the contained Forgejo Actions runner (cluster/k8s/haku-ci),
+# Registration token for the contained Forgejo Actions runner (cluster/cdk8s/haku_ci),
 # which builds Haku's UI image from haku-state. The svalabs/forgejo provider has no
 # runner-token resource, so fetch it from the repo's registration-token API as the
 # repo-owning haku user (owner ⇒ repo admin) and deliver it to the haku-ci namespace
@@ -319,7 +319,7 @@ data "http" "haku_ci_registration_token" {
   depends_on = [forgejo_repository.state]
 }
 
-# The haku-ci namespace is created by its own Flux kustomization (cluster/k8s/haku-ci);
+# The haku-ci namespace is created by its own Flux kustomization (cluster/cdk8s/haku_ci);
 # this resource retries until it exists. Replaces the manual SOPS bootstrap token.
 resource "kubernetes_secret" "haku_ci_runner_token" {
   metadata {
