@@ -29,7 +29,7 @@ metadata:
   name: ollama
   namespace: ollama
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: ollama
@@ -224,35 +224,6 @@ subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: setup-gpt-oss-v3
-  namespace: ollama
-spec:
-  template:
-    spec:
-      containers:
-        - command:
-            - /scripts/setup-gpt-oss-v2.sh
-          env:
-            - name: OLLAMA_HOST
-              value: http://ollama.ollama.svc.cluster.local:11434
-          image: curlimages/curl:8.22.0
-          name: setup
-          volumeMounts:
-            - mountPath: /scripts
-              name: scripts
-      nodeSelector:
-        topology.kubernetes.io/region: proxmox
-      restartPolicy: OnFailure
-      volumes:
-        - configMap:
-            defaultMode: 493
-            name: gpt-oss-scripts
-          name: scripts
-  ttlSecondsAfterFinished: 86400
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
