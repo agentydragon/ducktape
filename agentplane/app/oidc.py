@@ -49,6 +49,12 @@ class OIDCSettings(BaseSettings):
     session_idle_seconds: int = Field(
         default=86400, gt=0, description="How long a login lasts without an authenticated request."
     )
+    token_renew_before_seconds: int = Field(
+        default=30,
+        ge=0,
+        description="Renew the login access token once it is this close to expiry, so it cannot lapse "
+        "between the check and the provider reading it.",
+    )
 
     @property
     def redirect_uri(self) -> str:

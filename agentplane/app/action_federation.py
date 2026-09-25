@@ -30,10 +30,6 @@ from mcp_infra.oidc_principal import InvalidOidcPrincipalError, OidcPrincipalVer
 
 logger = logging.getLogger(__name__)
 
-# A login access token this close to expiry is renewed before an exchange presents it, so it cannot
-# lapse between the check and the provider reading it.
-RENEW_BEFORE_SECONDS = 30
-
 
 class OperatorFederationError(Exception):
     """Fixed public failure codes only; never provider bodies or token material."""
@@ -131,6 +127,7 @@ class FederatedOperatorActions:
         self._config = config
         self._http = http
         self._login_issuer = oidc.issuer
+        self._renew_before = oidc.token_renew_before_seconds
         self._login = build_oauth(oidc).create_client(CLIENT_NAME)
         self._upstream = OperatorOidcSettings(
             issuer=oidc.issuer,
@@ -221,7 +218,7 @@ class FederatedOperatorActions:
                 and session.issuer == self._login_issuer
                 and tokens is not None
                 and tokens.refresh_token is not None
-                and tokens.expires_at - time.time() <= RENEW_BEFORE_SECONDS
+                and tokens.expires_at - time.time() <= self._renew_before
             ):
                 try:
                     renewed = await self._renew(tokens.refresh_token)
