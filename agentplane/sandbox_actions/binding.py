@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
-# Where an offered SandboxTemplate says what a box made from it holds, for the agent choosing one:
-# the `description` annotation the cluster's manifests carry on any resource that needs explaining.
-DESCRIPTION_ANNOTATION = "description"
+# The sandbox Actions' own namespace, for the labels they stamp and the annotation they read.
+PREFIX = "sandbox-actions.agentplane.allegedly.works"
+# Where an offered SandboxTemplate says what a box made from it holds, for the agent choosing one.
+DESCRIPTION_ANNOTATION = f"{PREFIX}/description"
 
 
 class SandboxExecutorBinding(BaseModel):
@@ -33,12 +34,5 @@ class SandboxExecutorBinding(BaseModel):
         description="The SandboxTemplates in the namespace a caller may create a box from, by name. Only "
         "these: a caller free to name any would stamp whatever template the namespace holds.",
     )
-    default_template: str = Field(min_length=1, description="Which of them a caller that names none gets.")
     max_timeout_seconds: int = Field(default=1800, gt=0, le=3600)
     max_output_bytes: int = Field(default=200_000, ge=0, le=1_000_000)
-
-    @model_validator(mode="after")
-    def _default_offered(self) -> SandboxExecutorBinding:
-        if self.default_template not in self.templates:
-            raise ValueError("default_template must name one of templates")
-        return self

@@ -63,6 +63,7 @@ from constructs import Construct
 
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
+from agentplane.sandbox_actions.binding import DESCRIPTION_ANNOTATION
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
     actions,
@@ -465,7 +466,7 @@ class App(Construct):
                 namespace,
                 # What the sandbox Actions tell an agent choosing among the templates they offer.
                 annotations={
-                    "description": (
+                    DESCRIPTION_ANNOTATION: (
                         "The shared runner image, built to host an agent harness: the sandbox tools (git, "
                         "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
                     )

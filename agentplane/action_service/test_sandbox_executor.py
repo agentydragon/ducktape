@@ -32,9 +32,8 @@ CALLER = ServiceAccountRef(namespace=NAMESPACE, name="caller-one")
 OTHER = ServiceAccountRef(namespace=NAMESPACE, name="caller-two")
 ELSEWHERE = ServiceAccountRef(namespace="somewhere-else", name="caller-one")
 
-BINDING = SandboxExecutorBinding(
-    description="test sandboxes", namespace=NAMESPACE, templates={"test-template"}, default_template="test-template"
-)
+TEMPLATE = "test-template"
+BINDING = SandboxExecutorBinding(description="test sandboxes", namespace=NAMESPACE, templates={TEMPLATE})
 
 
 def _ready() -> SandboxCondition:
@@ -62,17 +61,17 @@ class FakeInventory:
         if self.raises is not None:
             raise self.raises
 
-    async def create(self, caller: ServiceAccountRef, name: str, template_name: str | None) -> SandboxInfo:
+    async def create(self, caller: ServiceAccountRef, name: str, template: str) -> SandboxInfo:
         self._record(caller)
-        return SandboxInfo(name=name, conditions=[_ready()], template=template_name or BINDING.default_template)
+        return SandboxInfo(name=name, conditions=[_ready()], template=template)
 
     async def info(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
         self._record(caller)
-        return SandboxInfo(name=name, conditions=[_ready()], template=BINDING.default_template)
+        return SandboxInfo(name=name, conditions=[_ready()], template=TEMPLATE)
 
     async def list(self, caller: ServiceAccountRef) -> list[SandboxInfo]:
         self._record(caller)
-        return [SandboxInfo(name="one", conditions=[_ready()], template=BINDING.default_template)]
+        return [SandboxInfo(name="one", conditions=[_ready()], template=TEMPLATE)]
 
     async def dispose(self, caller: ServiceAccountRef, name: str) -> bool:
         self._record(caller)
@@ -138,11 +137,11 @@ def executor(inventory: FakeInventory) -> SandboxExecutor:
 async def test_every_action_acts_as_the_request_caller(executor: SandboxExecutor, inventory: FakeInventory) -> None:
     """The identity comes from the authenticated request and never from an argument, so a caller
     cannot reach another account's boxes by asking for them."""
-    await executor.execute(_request(SandboxAction.CREATE, {"name": "box"}), LEASE)
+    await executor.execute(_request(SandboxAction.CREATE, {"name": "box", "template": TEMPLATE}), LEASE)
     await executor.execute(_request(SandboxAction.INFO, {"name": "box"}), LEASE)
     await executor.execute(_request(SandboxAction.LIST, {}), LEASE)
     await executor.execute(_request(SandboxAction.DISPOSE, {"name": "box"}), LEASE)
-    await executor.execute(_request(SandboxAction.CREATE, {"name": "box"}, caller=OTHER), LEASE)
+    await executor.execute(_request(SandboxAction.CREATE, {"name": "box", "template": TEMPLATE}, caller=OTHER), LEASE)
     assert inventory.callers == [CALLER, CALLER, CALLER, CALLER, OTHER]
 
 
@@ -150,7 +149,10 @@ async def test_an_account_named_in_arguments_is_not_read(executor: SandboxExecut
     """`extra="forbid"` is what keeps the argument schema from carrying an identity at all, so an
     attempt to name one is refused rather than quietly ignored."""
     result = await executor.execute(
-        _request(SandboxAction.CREATE, {"name": "box", "caller": OTHER.name, "namespace": NAMESPACE}), LEASE
+        _request(
+            SandboxAction.CREATE, {"name": "box", "template": TEMPLATE, "caller": OTHER.name, "namespace": NAMESPACE}
+        ),
+        LEASE,
     )
     assert result.state is ExecutionState.FAILED
     assert result.error is not None
@@ -161,7 +163,9 @@ async def test_an_account_named_in_arguments_is_not_read(executor: SandboxExecut
 async def test_a_caller_from_another_namespace_is_refused(executor: SandboxExecutor, inventory: FakeInventory) -> None:
     """A Pod runs as an account in its own namespace or not at all, so a caller from elsewhere
     cannot be given a sandbox that is it -- and must not be given one that is somebody else."""
-    result = await executor.execute(_request(SandboxAction.CREATE, {"name": "box"}, caller=ELSEWHERE), LEASE)
+    result = await executor.execute(
+        _request(SandboxAction.CREATE, {"name": "box", "template": TEMPLATE}, caller=ELSEWHERE), LEASE
+    )
     assert result.state is ExecutionState.FAILED
     assert result.error is not None
     assert result.error["kind"] == "caller_not_local"
@@ -240,7 +244,7 @@ async def test_an_unexpected_failure_is_not_swallowed(executor: SandboxExecutor,
 def test_the_offered_actions_name_the_offered_templates() -> None:
     """The offered templates are deployment configuration an agent cannot otherwise see, and naming
     one that is not offered is the likeliest way to get create wrong."""
-    offered = actions(BINDING, {"test-template": "the test box"})
+    offered = actions(BINDING, {TEMPLATE: "the test box"})
     assert set(offered) == set(SandboxAction)
     assert '"test-template": "the test box"' in offered[SandboxAction.CREATE].description
     assert offered[SandboxAction.EXEC].input_schema["additionalProperties"] is False

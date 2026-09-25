@@ -190,11 +190,10 @@ _ACTIONS_SETTINGS = {
                 "kind": "sandbox",
                 "description": "Stamped and exec'd by this service, as the caller, in its own namespace.",
                 "namespace": _NAMESPACE,
-                # Each describes itself in its own `description` annotation. The integration app's
+                # Each describes itself in the annotation the sandbox Actions read. The integration app's
                 # runner template is offered for a caller that wants the harnesses or a state volume
                 # that survives its Pod.
                 "templates": [command_sandbox.NAME, command_sandbox.BUILD_NAME, "agentplane-runner"],
-                "default_template": command_sandbox.NAME,
             },
         },
         "ssh": {

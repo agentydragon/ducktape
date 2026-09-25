@@ -75,7 +75,7 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
                 "the object exists, before the box can run anything, so poll "
                 f'{SandboxAction.INFO} until its {READY_CONDITION!r} condition has status "True". '
                 f"Idempotent on the name, so polling with {SandboxAction.CREATE} would also work but "
-                f"tells you nothing more. Templates: {offered}. Defaults to {binding.default_template!r}."
+                f"tells you nothing more. Templates: {offered}."
             ),
             input_schema=_schema(CreateArgs),
         ),

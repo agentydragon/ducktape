@@ -102,10 +102,9 @@ class CreateArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: SandboxName
-    template: str | None = Field(
-        default=None,
-        description="Which SandboxTemplate to create the box from; omit for this deployment's default. "
-        "Only the templates this deployment offers can be named.",
+    template: str = Field(
+        description="Which SandboxTemplate to create the box from. Only the templates this deployment offers "
+        "can be named."
     )
 
 
