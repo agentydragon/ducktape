@@ -34,7 +34,7 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s import cnpg
 from cluster.cdk8s.agentplane import node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret
+from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret
 
 _CLUSTER_NAME = "postgres"
 _STORAGE_CLASS = "local-path-ovh-ssd"

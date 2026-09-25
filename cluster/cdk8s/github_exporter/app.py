@@ -37,10 +37,10 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 
 from cluster.cdk8s import external_creds, forgejo_images
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, remote_data
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/github-exporter"
 _NAMESPACE = "monitoring"

@@ -37,12 +37,12 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, password_generator
 
 NAME = "airlock"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/airlock"

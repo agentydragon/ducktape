@@ -26,7 +26,6 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s import external_creds, public_coder_proxy, public_coder_sshpiper
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator, remote_data
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, console_config, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -49,6 +48,11 @@ from cluster.cdk8s.openclaw_gateway import (
     haku_console_mcp,
     session_memory_hook,
     trusted_proxy_gateway,
+)
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    add_external_secret,
+    password_generator,
+    remote_data,
 )
 
 _CODEX_BY_ID = {model.id: model for model in OPENCLAW_CODEX_MODELS}

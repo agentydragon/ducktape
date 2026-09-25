@@ -36,8 +36,8 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import cnpg
 from cluster.cdk8s.agentplane import node_scheduling
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret
 
 NAMESPACE = "haku-console"
 CLUSTER_NAME = "haku-console-db"

@@ -1,10 +1,12 @@
-# gazelle:resolve py external_secrets_crds //cluster/cdk8s/crd_bindings/external_secrets:externalsecret
-# gazelle:resolve py external_secret_store_crds //cluster/cdk8s/crd_bindings/external_secrets:clustersecretstore
-# gazelle:resolve py eso_password_generator_crds //cluster/cdk8s/crd_bindings/external_secrets:passwordgenerator
-# gazelle:resolve py external_secrets_secretstore_crds //cluster/cdk8s/crd_bindings/external_secrets:secretstore
-# gazelle:resolve py external_secrets_clusterexternalsecret_crds //cluster/cdk8s/crd_bindings/external_secrets:clusterexternalsecret
+# gazelle:ignore
+# gazelle:resolve py external_secrets_crds //cluster/cdk8s/providers/external_secrets:externalsecret
+# gazelle:resolve py external_secret_store_crds //cluster/cdk8s/providers/external_secrets:clustersecretstore
+# gazelle:resolve py eso_password_generator_crds //cluster/cdk8s/providers/external_secrets:passwordgenerator
+# gazelle:resolve py external_secrets_secretstore_crds //cluster/cdk8s/providers/external_secrets:secretstore
+# gazelle:resolve py external_secrets_clusterexternalsecret_crds //cluster/cdk8s/providers/external_secrets:clusterexternalsecret
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+load("//devinfra/python:defs.bzl", "py_library")
 
 # The bundle has multiple CRDs; cdk8s imports one per rule and fails on unrelated
 # JSII-incompatible fields.
@@ -69,4 +71,15 @@ cdk8s_import(
     module_name = "external_secrets_clusterexternalsecret_crds",
     module_path = "io/external_secrets",
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "external_secret",
+    srcs = ["external_secret.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":externalsecret",
+        "//cluster/cdk8s:metadata",
+        "@pypi//constructs",
+    ],
 )

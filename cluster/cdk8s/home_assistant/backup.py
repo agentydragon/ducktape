@@ -28,11 +28,11 @@ from external_secrets_secretstore_crds.io.external_secrets import (
     SecretStoreSpecProviderKubernetesServerCaProviderType,
 )
 
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data, secret_store
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, remote_data, secret_store
 from cluster.cdk8s.seaweedfs import s3
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant/backup"

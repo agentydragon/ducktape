@@ -13,12 +13,16 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import ServiceAccount
 from external_secrets_crds.io.external_secrets import ExternalSecret, ExternalSecretSpecTargetCreationPolicy
 
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    add_external_secret,
+    cluster_secret_store,
+    remote_data,
+)
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/secrets"
 _NAME = "litellm-secrets"

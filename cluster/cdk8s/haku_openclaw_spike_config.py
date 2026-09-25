@@ -22,7 +22,6 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s.config_format import json5_config
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -34,6 +33,7 @@ from cluster.cdk8s.openclaw_gateway import (
     session_memory_hook,
     trusted_proxy_gateway,
 )
+from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.seaweedfs import s3
 
 _NAMESPACE = "haku-openclaw-spike"

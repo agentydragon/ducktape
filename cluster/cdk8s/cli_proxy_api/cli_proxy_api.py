@@ -41,7 +41,6 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -54,6 +53,11 @@ from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    add_external_secret,
+    cluster_secret_store,
+    remote_data,
+)
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cli-proxy-api"
 NAME = "cli-proxy-api"

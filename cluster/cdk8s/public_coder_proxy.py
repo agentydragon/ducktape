@@ -55,12 +55,12 @@ from trust_manager_crds.io.cert_manager.trust import (
 from cluster.cdk8s import cilium, external_creds, public_coder_devbox
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, remote_data
 
 NAME = "public-coder-agent-proxy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/proxy"

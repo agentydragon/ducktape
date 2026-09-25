@@ -13,7 +13,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s import external_creds
 from cluster.cdk8s.cert_manager import cluster_ca, config
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.flux import (
     CERT_MANAGER_ISSUER_SUBSTITUTION,
     Kustomization,
@@ -23,6 +22,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, remote_data
 
 NAME = "cert-manager-environment"
 NAMESPACE = "cert-manager"

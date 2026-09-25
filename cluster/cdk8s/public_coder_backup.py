@@ -47,7 +47,6 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data, secret_store
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -58,6 +57,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, remote_data, secret_store
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "public-coder-agent-backup"

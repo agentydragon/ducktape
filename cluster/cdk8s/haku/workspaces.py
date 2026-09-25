@@ -63,7 +63,6 @@ from kyverno_cleanuppolicy_crds.io.kyverno import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds, forgejo_images
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
@@ -75,6 +74,11 @@ from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    add_external_secret,
+    cluster_secret_store,
+    remote_data,
+)
 
 NAME = "haku-workspaces"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku/workspaces/app"

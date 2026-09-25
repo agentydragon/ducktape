@@ -29,11 +29,11 @@ from external_secrets_crds.io.external_secrets import (
 
 from agentplane.indexing.main import Settings
 from cluster.cdk8s import cnpg, forgejo_images
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, password_generator
 from util.settings_contract import env_name
 
 NAME = "agentplane-index"

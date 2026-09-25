@@ -29,13 +29,17 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cilium, cnpg
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, password_generator
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    add_external_secret,
+    cluster_secret_store,
+    password_generator,
+)
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/db"
 _CLUSTER = "plaid-mcp-db"

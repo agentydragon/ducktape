@@ -10,11 +10,11 @@ from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAcco
 from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.external_secrets.external_secret import cluster_secret_store
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import sops_decryption, write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import cluster_secret_store
 
 NAMESPACE = "ducktape-flux"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/external-creds"

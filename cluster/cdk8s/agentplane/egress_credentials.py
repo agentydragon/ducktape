@@ -14,8 +14,12 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    add_external_secret,
+    cluster_secret_store,
+    remote_data,
+)
 
 STAGING_NAMESPACE = "agentplane-staging-egress-credentials"
 TESTING_NAMESPACE = "agentplane-testing-egress-credentials"

@@ -38,16 +38,16 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.external_secrets.external_secret import (
+from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
+from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
+from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import (
     add_external_secret,
     cluster_secret_store,
     password_generator,
     remote_data,
 )
-from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
 
 _NAMESPACE = "agentplane-staging"

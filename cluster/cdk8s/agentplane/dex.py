@@ -46,11 +46,11 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret
 
 _NAMESPACE = "agentplane-testing"
 _NAME = "agentplane-testing-dex"

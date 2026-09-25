@@ -58,8 +58,8 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GAFFER_PRIVATE_READS_SET,
     PUBLIC_GITHUB_READS_SET,
 )
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import add_external_secret, remote_data
 
 _NAMESPACE = "agentplane-staging"
 _GITHUB_READS_SET = "github-reads"
