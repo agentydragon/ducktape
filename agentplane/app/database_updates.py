@@ -1,10 +1,11 @@
-"""Replica-local invalidations of durable thread state, including reconnect gaps."""
+"""Replica-local invalidations of durable state, per NOTIFY channel, including reconnect gaps."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 from contextlib import suppress
+from enum import StrEnum
 from typing import Any
 
 import asyncpg
@@ -14,15 +15,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.app.changes import Changes
 
-CHANNEL = "agentplane_thread_updates"
 logger = logging.getLogger(__name__)
 
 
-class ThreadUpdates:
+class Channel(StrEnum):
+    """What a replica listens for. A notification carries no payload -- no thread and no identity --
+    so its readers re-read what they follow."""
+
+    # A thread, its copied event log or its feed state was written.
+    THREADS = "agentplane_thread_updates"
+    # A browser session row was deleted: logout, the rotation a login makes, or expiry cleanup.
+    OPERATOR_SESSIONS = "agentplane_operator_sessions"
+
+
+class DatabaseUpdates:
+    """One LISTEN connection per replica, fanning each channel out to that channel's `Changes`."""
+
     def __init__(self, database_url: URL) -> None:
         self._dsn = database_url.set(drivername="postgresql").render_as_string(hide_password=False)
-        # Every committed thread write in the database, as this replica hears of it.
-        self.changes = Changes()
+        # Per channel, every commit in the database that announced itself on it, as this replica hears of it.
+        self.changes = {channel: Changes() for channel in Channel}
         self._connection: asyncpg.Connection[Any] | None = None
         self._lost = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
@@ -40,27 +52,28 @@ class ThreadUpdates:
 
     async def start(self) -> None:
         if self._task is not None:
-            raise RuntimeError("thread update listener already started")
+            raise RuntimeError("database update listener already started")
         await self._connect()
         self._task = asyncio.create_task(self._recover())
 
     async def _connect(self) -> None:
         self._lost.clear()
         connection = await asyncpg.connect(
-            self._dsn, timeout=10, server_settings={"application_name": "agentplane-thread-updates"}
+            self._dsn, timeout=10, server_settings={"application_name": "agentplane-database-updates"}
         )
         try:
             connection.add_termination_listener(self._terminated)
-            await connection.add_listener(CHANNEL, self._notified)
+            for channel in Channel:
+                await connection.add_listener(channel, self._notified)
             if connection.is_closed():
-                raise ConnectionError("thread listener disconnected during startup")
+                raise ConnectionError("database update listener disconnected during startup")
         except BaseException:
             await connection.close(timeout=2)
             raise
         self._connection = connection
-        # LISTEN is not a durable queue. Every successful reconnect requires a database read,
-        # even if no notification arrives after it (all writes may have happened in the gap).
-        self.changes.notify()
+        # LISTEN is not a durable queue. Every successful reconnect requires a database read on every
+        # channel, even if no notification arrives after it (all writes may have happened in the gap).
+        self._wake_all()
 
     async def _recover(self) -> None:
         while True:
@@ -71,7 +84,7 @@ class ThreadUpdates:
                 await self._connect()
             except Exception:
                 self._lost.set()
-                logger.exception("thread listener reconnect failed")
+                logger.exception("database update listener reconnect failed")
 
     async def _disconnect(self) -> None:
         if self._connection is not None:
@@ -86,14 +99,18 @@ class ThreadUpdates:
             self._task = None
         await self._disconnect()
 
-    def _notified(self, _connection: object, _pid: int, _channel: str, _payload: object) -> None:
-        self.changes.notify()
+    def _notified(self, _connection: object, _pid: int, channel: str, _payload: object) -> None:
+        self.changes[Channel(channel)].notify()
 
     def _terminated(self, _connection: object) -> None:
         self._lost.set()
-        self.changes.notify()
+        self._wake_all()
+
+    def _wake_all(self) -> None:
+        for changes in self.changes.values():
+            changes.notify()
 
 
-async def notify(session: AsyncSession) -> None:
-    # PostgreSQL delivers NOTIFY only on commit; payloads carry no thread or identity data.
-    await session.execute(select(func.pg_notify(CHANNEL, "")))
+async def notify(session: AsyncSession, channel: Channel) -> None:
+    # PostgreSQL delivers NOTIFY only on commit, to every replica listening.
+    await session.execute(select(func.pg_notify(channel, "")))

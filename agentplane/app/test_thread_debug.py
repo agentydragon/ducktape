@@ -10,10 +10,10 @@ from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.ingestion import Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import create_app
 from agentplane.app.conftest import AGENT_AUTH
+from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
@@ -34,7 +34,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     event_logs: EventLogStore,
     content: ContentStore,
     ingestion: Ingestion,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -84,7 +84,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         reviewer=reviewer,
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=operator_sessions,
     )
     path = f"/threads/{thread}/evidence"

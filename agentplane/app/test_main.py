@@ -25,10 +25,10 @@ from agentplane.app.agent_runtime.models import SandboxIngestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import create_app
 from agentplane.app.conftest import AGENT_AUTH
+from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
@@ -172,7 +172,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     engine: AsyncEngine,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
@@ -204,7 +204,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
         reviewer=reviewer,
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=operator_sessions,
     )
     port = pick_free_port()
@@ -214,7 +214,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
         drain_of(app),
     )
     serving = asyncio.create_task(
-        serve_then_close(server, ingester=ingester, runners=runners, thread_updates=thread_updates, engine=engine)
+        serve_then_close(server, ingester=ingester, runners=runners, database_updates=database_updates, engine=engine)
     )
     # The ingester leases the sandbox it cannot dial; the socket already accepts, so wait for uvicorn itself.
     while not server.started or await _leases(database) == 0:

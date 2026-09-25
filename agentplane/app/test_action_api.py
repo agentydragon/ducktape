@@ -60,12 +60,12 @@ from agentplane.app.action_policy import (
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import create_app
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.consent import ConsentAllow
 from agentplane.app.database import connect
+from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
@@ -130,7 +130,7 @@ async def review(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: ThreadStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -306,7 +306,7 @@ async def review(
             operator_actions=operator_client,
             event_logs=event_logs,
             content=content,
-            thread_updates=thread_updates,
+            database_updates=database_updates,
             operator_sessions=operator_sessions,
         )
         await stack.enter_async_context(serve_app(idp, sock=idp_sock))
@@ -333,8 +333,8 @@ async def review(
             else FederatedOperatorActions(federation, oidc, downstream_http),
             event_logs=EventLogStore(replica_engine),
             content=ContentStore(replica_engine),
-            # Never started: nothing here reads thread updates, only the shared operator sessions.
-            thread_updates=ThreadUpdates(replica_engine.url),
+            # Never started: nothing served here listens; the replica shares only the operator sessions.
+            database_updates=DatabaseUpdates(replica_engine.url),
             operator_sessions=OperatorSessionStore(replica_engine),
         )
         second_browser = await stack.enter_async_context(

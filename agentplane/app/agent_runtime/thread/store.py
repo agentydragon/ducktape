@@ -16,8 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.app.agent_runtime.events.event_log import ThreadNotFoundError
 from agentplane.app.agent_runtime.models import Event, EventLog, FeedState, Thread
-from agentplane.app.agent_runtime.updates import notify
 from agentplane.app.agent_runtime.view.views import ThreadView
+from agentplane.app.database_updates import Channel, notify
 from agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -72,7 +72,7 @@ class ThreadStore:
         """Set or, with None, clear the thread's name."""
         async with self._sessions.begin() as session:
             renamed = await _set_thread(session, thread_id, name=name)
-            await notify(session)
+            await notify(session, Channel.THREADS)
         return renamed
 
     async def archive(self, thread_id: UUID) -> ThreadView:
@@ -85,7 +85,7 @@ class ThreadStore:
     async def _set_archived(self, thread_id: UUID, archived: bool) -> ThreadView:
         async with self._sessions.begin() as session:
             view = await _set_thread(session, thread_id, archived=archived)
-            await notify(session)
+            await notify(session, Channel.THREADS)
         return view
 
 
