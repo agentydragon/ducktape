@@ -205,32 +205,35 @@ class FederatedOperatorActions:
     async def _current_login(self, row: SessionRow) -> OperatorSession:
         """The login as the row holds it now, its access token renewed if it is about to expire.
 
-        Under the row lock, because the provider rotates the refresh token on use: a second replica
-        spending the one it replaced would be refused, and would end the session. A refusal ends it
-        here, so the browser's next request is sent to log in again.
+        The renewal holds the row lock, because the provider rotates the refresh token on use: a
+        second replica spending the one it replaced would be refused, and would end the session. So
+        it re-reads the row under the lock and leaves a login another request renewed meanwhile as
+        it is. A refusal ends the session, so the browser's next request is sent to log in again.
         """
-        async with row.locked() as held:
-            session = held.login
-            tokens = session.tokens if session is not None else None
-            if (
-                session is not None
-                and session.issuer == self._login_issuer
-                and tokens is not None
-                and tokens.refresh_token is not None
-                and tokens.expires_at - datetime.now(UTC) <= self._renew_before
-            ):
-                try:
-                    renewed = await self._renew(tokens.refresh_token)
-                except OAuthError:
-                    # Provider text stays out of logs; whichever error it answered, the grant is gone.
-                    logger.warning(f"operator login renewal refused for {session.subject=}; ending the session")
-                    session = None
-                else:
-                    session = replace(session, tokens=renewed)
-                held.login = session
+        session = await row.login()
+        if session is not None and self._refresh_token(session) is not None:
+            async with row.locked() as held:
+                session = held.login
+                if session is not None and (refresh_token := self._refresh_token(session)) is not None:
+                    try:
+                        renewed = await self._renew(refresh_token)
+                    except OAuthError:
+                        # Provider text stays out of logs; whichever error it answered, the grant is gone.
+                        logger.warning(f"operator login renewal refused for {session.subject=}; ending the session")
+                        session = None
+                    else:
+                        session = replace(session, tokens=renewed)
+                    held.login = session
         if session is None:
             raise OperatorFederationError("operator_reauthentication_required", status_code=401)
         return session
+
+    def _refresh_token(self, session: OperatorSession) -> SecretStr | None:
+        """What renews `session`'s access token, once that is about to expire."""
+        tokens = session.tokens
+        if session.issuer != self._login_issuer or tokens is None:
+            return None
+        return tokens.refresh_token if tokens.expires_at - datetime.now(UTC) <= self._renew_before else None
 
     async def _renew(self, refresh_token: SecretStr) -> LoginTokens:
         token = await self._login.fetch_access_token(

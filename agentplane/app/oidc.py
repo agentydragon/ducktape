@@ -131,4 +131,4 @@ def operator_session(request: Request) -> OperatorSession | None:
     unexpired, or None. Its tokens may be stale: the federation path reads them from the row."""
     if request.app.state.oidc is None:
         return None
-    return request_session(request).held.login
+    return request_session(request).login

@@ -350,14 +350,14 @@ OperatorActions = Annotated[OperatorActionServiceClient, Depends(_operator_actio
 
 @consent_router.post("/{handle}/preview")
 async def connection_preview(request: Request, handle: EnrollmentHandle, client: OperatorActions) -> ConsentPreview:
-    return await preview_enrollment(request, handle, client)
+    return await preview_enrollment(operator_session_row(request), handle, client)
 
 
 @consent_router.post("/{handle}/decision")
 async def connection_decision(
     request: Request, handle: EnrollmentHandle, body: ConsentDecision, client: OperatorActions
 ) -> EnrollmentDecisionResult:
-    return await decide_enrollment(request, handle, body, client)
+    return await decide_enrollment(operator_session_row(request), handle, body, client)
 
 
 connections_router = APIRouter(tags=["connections"])

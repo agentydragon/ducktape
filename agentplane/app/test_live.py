@@ -47,7 +47,6 @@ from agentplane.app.live import (
 )
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import (
-    HeldLogin,
     LoginTokens,
     OperatorSession,
     OperatorSessionStore,
@@ -175,7 +174,7 @@ def _request(app: FastAPI, login: OperatorSession, row: SessionRow) -> Request:
             "path": "/live/sandboxes/runner-1",
             "headers": [],
             "app": app,
-            "state": {"request_session": RequestSession({}, HeldLogin(login), row)},
+            "state": {"request_session": RequestSession({}, login, row)},
         }
     )
 

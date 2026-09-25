@@ -293,6 +293,8 @@ with the existing exact-Origin check and per-request federation. The BFF stores 
 browser binding, CSRF token, original version, and decision retry key in the persistent
 operator session. The binding never leaves the server-side app/Actions channel. Distinct
 interactions have distinct bindings; replicas share them, while logout/re-login does not.
+Each step changes the stored interactions under the session row's lock, never held across an
+Actions call, so concurrent previews lose none and two of one handle share its binding.
 At most 32 unexpired interactions are retained per session. The Actions authority binds
 the first preview to that browser and authenticated operator, owns expiry, and consumes
 one decision. The BFF preserves the exact attempted decision for retry after a lost

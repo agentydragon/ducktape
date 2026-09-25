@@ -2,8 +2,13 @@
 
 A row's JSON payload is Starlette's session -- authlib's state/nonce/PKCE data while a login is
 pending, and the consent flow's interactions -- and the operator's login is typed columns beside it.
-A row lock serializes concurrent callbacks/logout across replicas. Commit before sending headers,
-not after streaming the response, so logout cannot be undone by an older in-flight save.
+
+No request holds its row while its handler runs, so requests presenting one session run
+concurrently. The middleware reads the row before the handler and, before the response headers go
+out, writes what the handler changed in a transaction that locks the row and applies the change to
+the row as it is then. What changes the row in between -- a renewed login token, a consent
+interaction -- does the same through `SessionRow`. A write that finds the row gone does not bring it
+back, so an in-flight request cannot undo a logout.
 
 A row expires at the earlier of its absolute deadline, fixed when it is created, and an idle
 deadline that every request presenting it moves forward.
@@ -23,13 +28,13 @@ from typing import Any
 
 from itsdangerous import BadSignature, TimestampSigner
 from pydantic import SecretStr
-from sqlalchemy import CheckConstraint, DateTime, Text, delete, select
+from sqlalchemy import CheckConstraint, ColumnElement, DateTime, Select, Text, delete, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from agentplane.app.changes import Changes
@@ -124,16 +129,144 @@ class BrowserSession(Base):
             tokens.refresh_token.get_secret_value() if tokens is not None and tokens.refresh_token is not None else None
         )
 
-    def record_activity(self, idle: timedelta, step: timedelta, now: datetime) -> None:
-        """Move the idle deadline, once it would move by more than `step` (or half the idle timeout)."""
+    def activity_deadline(self, idle: timedelta, step: timedelta, now: datetime) -> datetime | None:
+        """Where activity at `now` moves the idle deadline, or None while that would move it by no
+        more than `step` (or half the idle timeout)."""
         deadline = min(self.absolute_expires_at, now + idle)
-        if deadline - self.expires_at > min(step, idle / 2):
-            self.expires_at = deadline
+        return deadline if deadline - self.expires_at > min(step, idle / 2) else None
+
+
+def _row_id(handle: str) -> str:
+    return hashlib.sha256(handle.encode()).hexdigest()
+
+
+def _unheld(row_id: str, *criteria: ColumnElement[bool]) -> Select[tuple[str]]:
+    """`row_id`, locking its row, if the row meets `criteria` and no other transaction holds it."""
+    return select(BrowserSession.id).where(BrowserSession.id == row_id, *criteria).with_for_update(skip_locked=True)
+
+
+async def _end(db: AsyncSession, row: BrowserSession) -> None:
+    """Delete `row`. Whichever transaction deletes a row notifies, so the notification arrives with
+    the commit that makes the deletion visible and never for one rolled back: what ends a stream on
+    the session, on any replica."""
+    await db.delete(row)
+    await notify(db, Channel.OPERATOR_SESSIONS)
+
+
+async def _locked(db: AsyncSession, row_id: str) -> BrowserSession | None:
+    """`row_id`'s row, locked for the rest of `db`'s transaction; None once its session has ended or
+    expired, deleting an expired one."""
+    row = await db.scalar(select(BrowserSession).where(BrowserSession.id == row_id).with_for_update())
+    if row is not None and row.expires_at <= datetime.now(UTC):
+        await _end(db, row)
+        return None
+    return row
+
+
+def _insert(
+    db: AsyncSession,
+    payload: dict[str, Any],
+    login: OperatorSession | None,
+    absolute_expires_at: datetime,
+    idle: timedelta,
+) -> str:
+    """Add a new row, returning the new handle that reaches it."""
+    handle = secrets.token_urlsafe(32)
+    row = BrowserSession(
+        id=_row_id(handle),
+        payload=payload,
+        absolute_expires_at=absolute_expires_at,
+        expires_at=min(absolute_expires_at, datetime.now(UTC) + idle),
+    )
+    if login is not None:
+        row.login = login
+    db.add(row)
+    return handle
+
+
+@dataclass(frozen=True)
+class NewLogin:
+    login: OperatorSession
+    absolute_expires_at: datetime
 
 
 class OperatorSessionStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self.sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def read(self, row_id: str, *, idle: timedelta, step: timedelta) -> BrowserSession | None:
+        """The row as it is now, or None once its session has ended or expired. Counts as activity.
+
+        Waits on no lock: a row another transaction holds -- a renewal holds it across its call to
+        the identity provider -- keeps its idle deadline for a later request to move, and when it
+        has expired, its holder or a later request deletes it.
+        """
+        async with self.sessions.begin() as db:
+            row = await db.get(BrowserSession, row_id)
+            now = datetime.now(UTC)
+            if row is not None and row.expires_at <= now:
+                expired = (
+                    delete(BrowserSession)
+                    .where(BrowserSession.id.in_(_unheld(row_id, BrowserSession.expires_at <= now)))
+                    .returning(BrowserSession.id)
+                    .execution_options(synchronize_session=False)
+                )
+                if await db.scalar(expired) is not None:
+                    await notify(db, Channel.OPERATOR_SESSIONS)
+                return None
+            if row is not None and (deadline := row.activity_deadline(idle, step, now)) is not None:
+                await db.execute(
+                    update(BrowserSession)
+                    .where(BrowserSession.id.in_(_unheld(row_id, BrowserSession.expires_at < deadline)))
+                    .values(expires_at=deadline)
+                    .execution_options(synchronize_session=False)
+                )
+        return row
+
+    async def create(self, payload: dict[str, Any], absolute_expires_at: datetime, *, idle: timedelta) -> str:
+        """A new pending login's row, returning the handle that reaches it."""
+        async with self.sessions.begin() as db:
+            return _insert(db, payload, None, absolute_expires_at, idle)
+
+    async def log_in(
+        self, pending: str | None, payload: dict[str, Any], new: NewLogin, *, idle: timedelta
+    ) -> str | None:
+        """A new row holding `new`, in place of `pending`'s when the request found one, returning the
+        handle that reaches it; None, creating nothing, once `pending`'s row is gone: another request
+        replaced it first, or its session ended."""
+        async with self.sessions.begin() as db:
+            if pending is not None:
+                replaced = delete(BrowserSession).where(BrowserSession.id == pending).returning(BrowserSession.id)
+                if await db.scalar(replaced) is None:
+                    return None
+            handle = _insert(db, payload, new.login, new.absolute_expires_at, idle)
+            # Bounded by login activity, not a background scheduler. Expired credentials are never read.
+            await db.execute(delete(BrowserSession).where(BrowserSession.expires_at <= datetime.now(UTC)))
+            await notify(db, Channel.OPERATOR_SESSIONS)
+        return handle
+
+    async def save(self, row_id: str, before: dict[str, Any], after: dict[str, Any]) -> bool:
+        """Make a request's change to its session's payload, `before` to `after`, to the payload as the
+        row holds it now, key by key, so that what another request changed meanwhile stands. False once
+        the session is over: it ended, or it is a pending login with nothing left in its payload."""
+        async with self.sessions.begin() as db:
+            row = await _locked(db, row_id)
+            if row is None:
+                return False
+            payload = {key: value for key, value in row.payload.items() if key in after or key not in before}
+            payload.update((key, value) for key, value in after.items() if key not in before or before[key] != value)
+            if row.login is None and not payload:
+                await _end(db, row)
+                return False
+            row.payload = payload
+        return True
+
+    async def end(self, row_id: str) -> None:
+        """Delete the row, whatever another request is making of it meanwhile."""
+        async with self.sessions.begin() as db:
+            ended = delete(BrowserSession).where(BrowserSession.id == row_id).returning(BrowserSession.id)
+            if await db.scalar(ended) is not None:
+                await notify(db, Channel.OPERATOR_SESSIONS)
 
     async def until_ended(self, session_id: str, changes: Changes) -> None:
         """Return once the session's row is deleted, on any replica, or its current `expires_at` has
@@ -153,100 +286,84 @@ class OperatorSessionStore:
 
 
 @dataclass
-class HeldLogin:
-    """A session's login, None once the session has expired or ended (or while its login is pending).
-    Whoever holds it may replace the login to save renewed tokens, or clear it to end the session."""
+class HeldSession:
+    """A logged-in session as its row holds it now, held exclusively until the block holding it
+    exits, which saves what the block made of it. `login` is None once the session has ended or
+    expired; clearing it ends the session."""
 
     login: OperatorSession | None
+    payload: dict[str, Any]
 
 
 class SessionRow:
     """A request's session row, for reading or changing it as it is now rather than as the request's
-    snapshot, which another request or replica may since have changed.
+    snapshot, which another request or replica may since have changed. Each use is a short
+    transaction of its own."""
 
-    Until the response headers are out the middleware holds the row lock, which a second transaction
-    would wait on forever; `locked()` then hands out the request's own login, which the middleware
-    saves. Afterwards -- in a streamed body -- it takes the lock in a transaction of its own.
-    """
-
-    def __init__(
-        self,
-        store: OperatorSessionStore,
-        row_id: str,
-        *,
-        idle: timedelta,
-        step: timedelta,
-        request_login: HeldLogin | None,
-    ) -> None:
+    def __init__(self, store: OperatorSessionStore, row_id: str, *, idle: timedelta, step: timedelta) -> None:
         self.id = row_id
         self._store = store
         self._idle = idle
         self._step = step
-        self._request_login = request_login
-        self._mutex = asyncio.Lock()
+
+    async def login(self) -> OperatorSession | None:
+        """The login as the row holds it now; None once the session has ended or expired. Counts as
+        activity."""
+        row = await self._store.read(self.id, idle=self._idle, step=self._step)
+        return row.login if row is not None else None
 
     @asynccontextmanager
-    async def locked(self) -> AsyncIterator[HeldLogin]:
-        """The login as the row holds it now, held exclusively. Counts as activity."""
-        async with self._mutex:
-            if self._request_login is not None:
-                yield self._request_login
+    async def locked(self) -> AsyncIterator[HeldSession]:
+        """The session under the row lock until the block exits. Every other write to the row waits
+        for the block, so nothing in it may itself need the lock, as an exchange renewing the login
+        does."""
+        async with self._store.sessions.begin() as db:
+            row = await _locked(db, self.id)
+            login = row.login if row is not None else None
+            if row is None or login is None:
+                yield HeldSession(None, {})
                 return
-            async with self._store.sessions.begin() as db:
-                row = await db.scalar(select(BrowserSession).where(BrowserSession.id == self.id).with_for_update())
-                now = datetime.now(UTC)
-                if row is not None and row.expires_at <= now:
-                    await _end(db, row)
-                    row = None
-                if row is None:
-                    yield HeldLogin(None)
-                    return
-                row.record_activity(self._idle, self._step, now)
-                login = row.login
-                held = HeldLogin(login)
-                yield held
-                if held.login != login:
-                    if held.login is None:
-                        await _end(db, row)
-                    else:
-                        row.login = held.login
-
-    async def release(self) -> None:
-        """For the middleware, as it takes the response headers: it is about to save and unlock."""
-        async with self._mutex:
-            self._request_login = None
+            held = HeldSession(login, copy.deepcopy(row.payload))
+            yield held
+            if held.login is None:
+                await _end(db, row)
+                return
+            if held.login != login:
+                row.login = held.login
+            if held.payload != row.payload:
+                row.payload = held.payload
 
 
 @dataclass(frozen=True)
-class NewLogin:
-    login: OperatorSession
-    absolute_expires_at: datetime
+class Logout:
+    """The request ended its session."""
 
 
 class RequestSession:
     """A request's browser session as the middleware read it, and what the request makes of it, which
-    the middleware saves before the response headers go out. `request.session` is its payload.
+    the middleware saves before the response headers go out. `request.session` is its payload, and
+    `login` the login the request found, whatever the request or another makes of the row since.
 
     A session whose login ends is over, whatever its payload still holds; one with neither a login
     nor a payload is no session at all.
     """
 
-    def __init__(self, payload: dict[str, Any], held: HeldLogin, row: SessionRow | None) -> None:
+    def __init__(self, payload: dict[str, Any], login: OperatorSession | None, row: SessionRow | None) -> None:
         self._payload = payload
-        self.held = held
+        self.login = login
         self.row = row
-        self.new_login: NewLogin | None = None
+        self.replaced: NewLogin | Logout | None = None
 
     def log_in(self, login: OperatorSession, absolute_expires_at: datetime) -> None:
         """The callback's: `login` replaces the session, in a new row under a new handle, so that the
-        handle the pending login was reached by cannot reach it. The pending login's state is spent."""
+        handle the pending login was reached by cannot reach it. The pending login's state is spent:
+        of the requests replacing one row, only the first succeeds, and none once the row has ended."""
         self._payload.clear()
-        self.new_login = NewLogin(login, absolute_expires_at)
+        self.replaced = NewLogin(login, absolute_expires_at)
 
     def end(self) -> None:
         self._payload.clear()
-        self.held.login = None
-        self.new_login = None
+        self.replaced = Logout()
 
 
 def request_session(request: Request) -> RequestSession:
@@ -263,12 +380,6 @@ def operator_session_row(request: Request) -> SessionRow:
     if row is None:
         raise TypeError("this request's operator session has no row")
     return row
-
-
-async def _end(db: AsyncSession, row: BrowserSession) -> None:
-    """Delete `row`, telling every replica's streams on it as the middleware's deletions do."""
-    await db.delete(row)
-    await notify(db, Channel.OPERATOR_SESSIONS)
 
 
 class OperatorSessionMiddleware(BaseHTTPMiddleware):
@@ -299,84 +410,53 @@ class OperatorSessionMiddleware(BaseHTTPMiddleware):
         if cookie is not None:
             with suppress(BadSignature, UnicodeError):
                 handle = self._signer.unsign(cookie, max_age=self._max_age).decode("ascii")
-        async with self._store.sessions.begin() as db:
-            row = None
-            ended = False
-            if handle is not None:
-                row = await db.scalar(
-                    select(BrowserSession)
-                    .where(BrowserSession.id == hashlib.sha256(handle.encode()).hexdigest())
-                    .with_for_update()
+        row = await self._store.read(_row_id(handle), idle=self._idle, step=self._step) if handle is not None else None
+        initial = copy.deepcopy(row.payload) if row is not None else {}
+        request.scope["session"] = copy.deepcopy(initial)
+        session = RequestSession(
+            request.scope["session"],
+            row.login if row is not None else None,
+            SessionRow(self._store, row.id, idle=self._idle, step=self._step) if row is not None else None,
+        )
+        request.state.request_session = session
+        response = await call_next(request)
+        payload = request.session
+        replaced = session.replaced
+        if isinstance(replaced, Logout):
+            if row is not None:
+                await self._store.end(row.id)
+            self._forget(response)
+        elif isinstance(replaced, NewLogin):
+            handle = await self._store.log_in(row.id if row is not None else None, payload, replaced, idle=self._idle)
+            if handle is None:
+                response = JSONResponse(
+                    {"detail": "This login was completed or its session ended meanwhile; log in again."},
+                    status_code=401,
                 )
-                now = datetime.now(UTC)
-                if row is not None and row.expires_at <= now:
-                    await db.delete(row)
-                    row, ended = None, True
-                if row is not None:
-                    row.record_activity(self._idle, self._step, now)
-            initial = copy.deepcopy(row.payload) if row is not None else {}
-            initial_login = row.login if row is not None else None
-            request.scope["session"] = copy.deepcopy(initial)
-            held = HeldLogin(initial_login)
-            current = (
-                SessionRow(self._store, row.id, idle=self._idle, step=self._step, request_login=held)
-                if row is not None
-                else None
-            )
-            session = RequestSession(request.scope["session"], held, current)
-            request.state.request_session = session
-            response = await call_next(request)
-            if current is not None:
-                await current.release()
-            payload = request.session
-            new_login = session.new_login
-            login = new_login.login if new_login is not None else held.login
-            kept = login is not None or (bool(payload) and initial_login is None)
-            if payload != initial or login != initial_login or new_login is not None:
-                if row is not None and (not kept or new_login is not None):
-                    await db.delete(row)
-                    row, ended = None, True
-                if kept:
-                    if row is None:
-                        now = datetime.now(UTC)
-                        absolute = (
-                            new_login.absolute_expires_at
-                            if new_login is not None
-                            else now + min(_PENDING_LOGIN, timedelta(seconds=self._max_age))
-                        )
-                        handle = secrets.token_urlsafe(32)
-                        row = BrowserSession(
-                            id=hashlib.sha256(handle.encode()).hexdigest(),
-                            payload=payload,
-                            absolute_expires_at=absolute,
-                            expires_at=min(absolute, now + self._idle),
-                        )
-                        db.add(row)
-                    else:
-                        row.payload = payload
-                    if login is not None:
-                        row.login = login
-                    assert handle is not None
-                    response.set_cookie(
-                        self._cookie,
-                        self._signer.sign(handle).decode("ascii"),
-                        max_age=max(0, int((row.absolute_expires_at - datetime.now(UTC)).total_seconds())),
-                        httponly=True,
-                        secure=self._secure,
-                        samesite="lax",
-                        path="/",
-                    )
-                else:
-                    response.delete_cookie(self._cookie, path="/", secure=self._secure, httponly=True, samesite="lax")
-            elif cookie is not None and row is None:
-                response.delete_cookie(self._cookie, path="/", secure=self._secure, httponly=True, samesite="lax")
-            # Bounded by login activity, not a background scheduler. Expired credentials are never read.
-            if new_login is not None:
-                await db.execute(delete(BrowserSession).where(BrowserSession.expires_at <= datetime.now(UTC)))
-                ended = True
-            if ended:
-                # In the deleting transaction, so it is delivered with the commit that makes the deletion
-                # visible and never for one rolled back: what ends a stream on the session, on any replica.
-                await notify(db, Channel.OPERATOR_SESSIONS)
+                self._forget(response)
+            else:
+                self._remember(response, handle, replaced.absolute_expires_at)
+        elif payload != initial:
+            if row is None:
+                absolute = datetime.now(UTC) + min(_PENDING_LOGIN, timedelta(seconds=self._max_age))
+                self._remember(response, await self._store.create(payload, absolute, idle=self._idle), absolute)
+            elif not await self._store.save(row.id, initial, payload):
+                self._forget(response)
+        elif cookie is not None and row is None:
+            self._forget(response)
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    def _remember(self, response: Response, handle: str, absolute_expires_at: datetime) -> None:
+        response.set_cookie(
+            self._cookie,
+            self._signer.sign(handle).decode("ascii"),
+            max_age=max(0, int((absolute_expires_at - datetime.now(UTC)).total_seconds())),
+            httponly=True,
+            secure=self._secure,
+            samesite="lax",
+            path="/",
+        )
+
+    def _forget(self, response: Response) -> None:
+        response.delete_cookie(self._cookie, path="/", secure=self._secure, httponly=True, samesite="lax")
