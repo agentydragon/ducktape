@@ -62,7 +62,6 @@ from aiquota.config import Config
 from cluster.cdk8s import public_coder_proxy
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app  # aiquota()'s parameter is its Kustomization
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
@@ -78,6 +77,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from util.settings_contract import checked_value, env_name, settings_file
 
 NAME = "aiquota"
@@ -193,13 +193,13 @@ class Aiquota(Construct):
         self._add_service_monitor()
 
     def _add_bearer_mirror(self, mirror: BearerMirror) -> None:
-        add_external_secret(
+        ExternalSecret(
             self,
             f"bearer-{mirror.consumer}",
             name=mirror.secret_name,
             namespace=NAMESPACE,
             refresh="1h",
-            store=cluster_secret_store("kubernetes-cli-proxy-api-secret-store"),
+            store=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
             data=[remote_data(BEARER_SECRET_NAME, _BEARER_KEY)],
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
             deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,

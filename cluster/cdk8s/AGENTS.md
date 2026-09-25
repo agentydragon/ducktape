@@ -291,9 +291,12 @@ typed alternative exists. Three tiers, in order:
 3. **CRD type** (own `apiVersion` group, e.g. `external-secrets.io`,
    `monitoring.coreos.com`): generate real bindings via `cdk8s_import`
    (`devinfra/js/cdk8s_import.bzl`;
-   `//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium}` are
-   the examples) — this is the same generator tier 2 already ran for you on the core
-   API, just pointed at the CRD's own schema instead.
+   `//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,cilium}` and
+   `//cluster/cdk8s/providers/external_secrets` are the examples) — this is the same
+   generator tier 2 already ran for you on the core API, just pointed at the CRD's own
+   schema instead. `providers/<name>/` is the target layout for every provider
+   (`cluster/cdk8s/PLAN.md` item A): the `cdk8s_import` declarations colocated with that
+   CRD's generic, cluster-topology-free wrapper functions, once it has one.
 
    Put each `cdk8s_import` declaration and any import smoke test in
    `cluster/cdk8s/crd_bindings/<provider>/BUILD.bazel`. Keep pinned upstream CRD

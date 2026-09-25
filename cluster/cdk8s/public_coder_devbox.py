@@ -51,7 +51,6 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -62,6 +61,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAMESPACE = "public-coder-agent"
 SERVICE_NAME = "public-coder-devbox-ssh"
@@ -126,7 +126,7 @@ def _bazel_cache_claim(scope: Construct) -> None:
 
 def _buildbuddy_api_key(scope: Construct) -> None:
     name = _BUILDBUDDY_API_KEY
-    add_external_secret(
+    ExternalSecret(
         scope,
         "buildbuddy-api-key",
         name=name,
