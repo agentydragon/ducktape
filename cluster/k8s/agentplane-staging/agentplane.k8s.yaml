@@ -130,11 +130,11 @@ data:
       mode: exchange
       service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
       token_endpoint: https://auth.allegedly.works/application/o/token/
-      login_jwks_uri: https://auth.allegedly.works/application/o/agentplane/jwks/
+      login_jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging/jwks/
       target:
-        issuer: https://auth.allegedly.works/application/o/agentplane-actions/
-        audience: agentplane-actions
-        jwks_uri: https://auth.allegedly.works/application/o/agentplane-actions/jwks/
+        issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
+        audience: agentplane-staging-actions
+        jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
       scope: openid
 immutable: false
 ---
@@ -1633,7 +1633,7 @@ spec:
             - name: AGENTPLANE_ELECTRIC_URL
               value: http://agentplane-electric.agentplane-staging.svc.cluster.local:3000
             - name: AGENTPLANE_OIDC_ISSUER
-              value: https://auth.allegedly.works/application/o/agentplane/
+              value: https://auth.allegedly.works/application/o/agentplane-staging/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
               value: https://agentplane-staging.allegedly.works
             - name: AGENTPLANE_OIDC_CLIENT_ID
@@ -1732,7 +1732,7 @@ spec:
             - name: AGENTPLANE_ELECTRIC_URL
               value: http://agentplane-electric.agentplane-staging.svc.cluster.local:3000
             - name: AGENTPLANE_OIDC_ISSUER
-              value: https://auth.allegedly.works/application/o/agentplane/
+              value: https://auth.allegedly.works/application/o/agentplane-staging/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
               value: https://agentplane-staging.allegedly.works
             - name: AGENTPLANE_OIDC_CLIENT_ID
@@ -2283,9 +2283,9 @@ metadata:
 data:
   settings.yaml: |
     operator_oidc:
-      issuer: https://auth.allegedly.works/application/o/agentplane-actions/
-      audience: agentplane-actions
-      jwks_uri: https://auth.allegedly.works/application/o/agentplane-actions/jwks/
+      issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
+      audience: agentplane-staging-actions
+      jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
     allowed_service_account_namespaces:
       - agentplane-staging
     web_push:
