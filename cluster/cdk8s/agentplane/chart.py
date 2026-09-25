@@ -46,7 +46,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
     electric.Electric(chart, "electric", env)
     llm_ingress.LlmIngress(chart, "llm-ingress", env)
     egress.Egress(chart, "egress", env)
-    sandbox_pod.add_system_bazelrc(chart, env)
+    sandbox_pod.add_tool_config(chart, env)
     app_component.App(chart, "app", env)
     actions.Actions(chart, "actions", env)
     add_fleet_rules(

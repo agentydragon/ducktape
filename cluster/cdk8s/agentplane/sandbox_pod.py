@@ -59,9 +59,10 @@ _NO_PROXY_HOSTS = "127.0.0.1,localhost"
 _CA_BUNDLE_PATH = "/etc/ssl/certs/ca-certificates.crt"
 # Where Debian's JDKs keep the system trust store; Bazel's embedded JDK reads it only when told to.
 _JAVA_TRUST_STORE_PATH = "/etc/ssl/certs/java/cacerts"
-_BAZELRC_CONFIG_MAP_NAME = "agentplane-sandbox-bazelrc"
+# Configuration files for the box's tools, one key each, mounted file by file.
+_TOOL_CONFIG_MAP_NAME = "agentplane-sandbox-tool-config"
+_TOOL_CONFIG_VOLUME_NAME = "tool-config"
 _BAZELRC_KEY = "bazel.bazelrc"
-_BAZELRC_VOLUME_NAME = "bazelrc"
 PROXY_VAR_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
 NO_PROXY_VAR_NAMES = ("NO_PROXY", "no_proxy")
 CA_BUNDLE_VAR_NAMES = ("SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "REQUESTS_CA_BUNDLE")
@@ -106,22 +107,23 @@ def egress_mounts() -> list[SandboxTemplateSpecPodTemplateSpecContainersVolumeMo
             read_only=True,
         ),
         SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
-            name=_BAZELRC_VOLUME_NAME, mount_path="/etc/bazel.bazelrc", sub_path=_BAZELRC_KEY, read_only=True
+            name=_TOOL_CONFIG_VOLUME_NAME, mount_path="/etc/bazel.bazelrc", sub_path=_BAZELRC_KEY, read_only=True
         ),
     ]
 
 
-def add_system_bazelrc(scope: Construct, env: Environment) -> None:
-    """The rc every Bazel in a box reads before its workspace's own. Bazel's JVM fetches through the
-    proxy but trusts only its own store, which lacks the interception root; and Bazel scrubs a
-    test's environment, so the proxy and the bundle reach a test only when named here."""
+def add_tool_config(scope: Construct, env: Environment) -> None:
+    """Bazel's system rc, which every Bazel in a box reads before its workspace's own. Bazel's JVM
+    fetches through the proxy but trusts only its own store, which lacks the interception root; and
+    Bazel scrubs a test's environment, so the proxy and the bundle reach a test only when named
+    here."""
     passthrough = " ".join(
         f"--test_env={name}" for name in (*PROXY_VAR_NAMES, *NO_PROXY_VAR_NAMES, *CA_BUNDLE_VAR_NAMES)
     )
     ConfigMap(
         scope,
-        "sandbox-bazelrc",
-        metadata=metadata(_BAZELRC_CONFIG_MAP_NAME, env.namespace),
+        "sandbox-tool-config",
+        metadata=metadata(_TOOL_CONFIG_MAP_NAME, env.namespace),
         data={
             _BAZELRC_KEY: (
                 f"startup --host_jvm_args=-Djavax.net.ssl.trustStore={_JAVA_TRUST_STORE_PATH}\ncommon {passthrough}\n"
@@ -205,8 +207,8 @@ def _egress_volumes(env: Environment) -> list[SandboxTemplateSpecPodTemplateSpec
             config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(name=env.egress.ca_secret_name),
         ),
         SandboxTemplateSpecPodTemplateSpecVolumes(
-            name=_BAZELRC_VOLUME_NAME,
-            config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(name=_BAZELRC_CONFIG_MAP_NAME),
+            name=_TOOL_CONFIG_VOLUME_NAME,
+            config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(name=_TOOL_CONFIG_MAP_NAME),
         ),
         # The Pod's identity, and to nobody else: this volume is mounted by the egress sidecar
         # alone, so no token here is readable from the container an agent runs commands in.

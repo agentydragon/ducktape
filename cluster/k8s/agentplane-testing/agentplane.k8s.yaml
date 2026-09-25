@@ -1353,7 +1353,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: agentplane-sandbox-bazelrc
+  name: agentplane-sandbox-tool-config
   namespace: agentplane-testing
 data:
   bazel.bazelrc: |
@@ -2038,7 +2038,7 @@ spec:
               readOnly: true
               subPath: ca-certificates.p12
             - mountPath: /etc/bazel.bazelrc
-              name: bazelrc
+              name: tool-config
               readOnly: true
               subPath: bazel.bazelrc
         - env:
@@ -2096,8 +2096,8 @@ spec:
             name: agentplane-testing-egress-ca
           name: egress-ca
         - configMap:
-            name: agentplane-sandbox-bazelrc
-          name: bazelrc
+            name: agentplane-sandbox-tool-config
+          name: tool-config
         - name: egress-token
           projected:
             sources:
