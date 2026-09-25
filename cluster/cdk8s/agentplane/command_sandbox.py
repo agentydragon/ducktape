@@ -1,4 +1,4 @@
-"""The sandbox Actions' own boxes: the plain sandbox image (agentplane/sandbox_image/default.nix) behind
+"""The sandbox Actions' own boxes: the plain sandbox image (agentplane/images/sandbox.nix) behind
 the egress path every agentplane box shares (sandbox_pod.py), with no harness and no state volume.
 The command box costs the namespace quota what a command needs; the build box is the same box sized
 for a build. staging.py offers them as the sandbox group's `sandbox` (default) and `build`
@@ -36,7 +36,7 @@ NAME = "agentplane-sandbox"
 BUILD_NAME = "agentplane-sandbox-build"
 # The workload container, which `exec` runs commands in.
 CONTAINER = "sandbox"
-# The image's HOME and WorkingDir, writable by its uid 1000 (agentplane/sandbox_image/default.nix).
+# The image's HOME and WorkingDir, writable by its uid 1000 (agentplane/images/sandbox.nix).
 HOME = "/home/runner"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml

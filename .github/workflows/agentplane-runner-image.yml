@@ -7,7 +7,7 @@ on:
     branches: [devel]
     paths:
       - "agentplane/runner/image.nix"
-      - "agentplane/sandbox_image/**"
+      - "agentplane/images/sandbox.nix"
       - "nix/lib/nix-ld-image.nix"
       # The runner arrives as a released wheel, so a runner change reaches the image when its
       # pin moves.
@@ -21,7 +21,7 @@ on:
   pull_request:
     paths:
       - "agentplane/runner/image.nix"
-      - "agentplane/sandbox_image/**"
+      - "agentplane/images/sandbox.nix"
       - "nix/lib/nix-ld-image.nix"
       - "nix/artifact-pins.json"
       - "flake.lock"
