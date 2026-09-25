@@ -102,6 +102,8 @@ _ROOT_CA_ISSUER = "cluster-ca-bootstrap"
 KUBERNETES_AUDIENCE = "https://localhost:7445"
 # Where a sandbox's kubectl sends everything. Cluster-internal by definition, hence the rule below.
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
+# The credential substituted there, whose placeholder a sandbox's kubeconfig carries (sandbox_pod.py).
+KUBERNETES_CREDENTIAL = "kubernetes-workload"
 # The in-cluster Forgejo, not `git.allegedly.works`: the public name would hairpin out through
 # the Gateway and back for a Service one hop away. Plain HTTP on 3000, so the proxy reads the
 # request without bumping TLS.
@@ -165,7 +167,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
     EgressCredential(
         scope,
         "egresscredential-kubernetes-workload",
-        metadata=ApiObjectMetadata(name="kubernetes-workload", namespace=namespace),
+        metadata=ApiObjectMetadata(name=KUBERNETES_CREDENTIAL, namespace=namespace),
         spec=EgressCredentialSpec(
             description=(
                 "The calling Sandbox Pod's own ServiceAccount, minted for the Kubernetes API server "
@@ -237,7 +239,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 EgressPolicySpecRules(
                     hosts=[KUBERNETES_HOST],
                     cluster_internal=True,
-                    credential_ref=EgressPolicySpecRulesCredentialRef(name="kubernetes-workload"),
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name=KUBERNETES_CREDENTIAL),
                 )
             ]
         ),
