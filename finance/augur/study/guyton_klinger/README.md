@@ -106,7 +106,7 @@ uncertainty from overlapping retirements. The 1973 reference is one path.
 
 ## Declared three-sleeve adaptation
 
-Historical replay of the 2006 rules runs <../study/guyton_klinger/> on three
+Historical replay of the 2006 rules runs this package on three
 sleeves, not Table 1's eight. Targets are the 65%-equity column with its six equity
 sleeves merged:
 

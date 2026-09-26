@@ -23,5 +23,5 @@ upstream outage cannot redden an unrelated PR. Run one by name.
 - <sbbi/README.md> — Ibbotson and Sinquefield (1989), the long-term corporate bond series
   Trinity's bonds are, and augur's only external check on its bond arithmetic.
 - <guyton_klinger/> — Guyton and Klinger (2006) rules replayed over annual history under a
-  [declared three-sleeve adaptation](../docs/guyton_klinger.md#declared-three-sleeve-adaptation),
+  [declared three-sleeve adaptation](guyton_klinger/README.md#declared-three-sleeve-adaptation),
   not a table reproduction. `run.py` carries the offline CLI invocation.

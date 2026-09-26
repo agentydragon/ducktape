@@ -1,28 +1,28 @@
 # Guyton–Klinger experiment implementation
 
 Proposed STUDY consumer, not an implemented reproduction. The
-[source contract](../docs/guyton_klinger.md) owns primary evidence, study versions,
+[source contract](README.md) owns primary evidence, study versions,
 the declared three-sleeve adaptation and remaining convention decisions. This plan
-owns the proposed code and leaves as its slices land; the [roadmap](roadmap.md) owns
+owns the proposed code and leaves as its slices land; the [roadmap](../../plans/roadmap.md) owns
 cross-component dependencies.
 
 ## Composition on current Augur primitives
 
-- <../study/guyton_klinger/run.py> drives the annual windows of
-  <../study/guyton_klinger/paths.py> through one caller-supplied batch policy
+- <run.py> drives the annual windows of
+  <paths.py> through one caller-supplied batch policy
   (`BatchPolicy = Callable[[list[Decision]], list[DecisionActions]]`); its fixed
   nominal withdrawal is a plumbing placeholder. Trinity's sales-only funding,
   coupon cash and success boundary are **not** GK defaults.
-- <../sim/observations.py> supplies current lots/prices/basis, cash, CPI and typed
+- <../../sim/observations.py> supplies current lots/prices/basis, cash, CPI and typed
   receipts; exact sell/buy/consume actions own canonical settlement. Policies
   see observations, never the prepared future path arrays.
-- <../policy/sleeves.py> supplies FIFO funding proposals and exact quantity
+- <../../policy/sleeves.py> supplies FIFO funding proposals and exact quantity
   budgeting, not PMR. One PMR proposal must reserve each lot/cash quantum once
   across its ordered stages. Independent helper calls do not share reservations.
   Extract a small reusable quote/lot-selection operation only where this real
   consumer needs it; no mutable ledger, native policy enum or new action system.
-- <../sim/results.py> retains compact payments/holdings and selected detailed
-  receipts/books. <../x/joint_spending_allocation/policy.py> demonstrates separate
+- <../../sim/results.py> retains compact payments/holdings and selected detailed
+  receipts/books. <../../x/joint_spending_allocation/policy.py> demonstrates separate
   author-owned intention records; study measurements must not replay accounting.
 
 ## Desired annual policy
