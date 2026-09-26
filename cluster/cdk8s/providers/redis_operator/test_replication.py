@@ -55,7 +55,7 @@ def _synth(
         memory_limit=Size.gibibytes(1),
         max_memory_percent_of_limit=max_memory_percent_of_limit,
         storage_class="test-storage-class",
-        storage_size="1Gi",
+        storage_size=Size.gibibytes(1),
         node_affinity_match=_ZONE_MATCH,
         preferred_node_affinity=preferred_node_affinity,
     )
@@ -64,10 +64,14 @@ def _synth(
 
 
 def test_resources_render_as_kubernetes_quantities() -> None:
+    """`Size.as_string()` formats in whatever unit it was constructed with -- `memory_limit`
+    here is `Size.gibibytes(1)`, which renders as `"1Gi"`, not a forced `"1024Mi"`."""
     redis_replication = _synth(max_memory_percent_of_limit=None, preferred_node_affinity=None)
     resources = redis_replication["spec"]["kubernetesConfig"]["resources"]
     assert resources["requests"] == {"cpu": "50m", "memory": "64Mi"}
-    assert resources["limits"] == {"cpu": "1", "memory": "1024Mi"}
+    assert resources["limits"] == {"cpu": "1", "memory": "1Gi"}
+    storage_resources = redis_replication["spec"]["storage"]["volumeClaimTemplate"]["spec"]["resources"]
+    assert storage_resources["requests"] == {"storage": "1Gi"}
 
 
 def test_pod_anti_affinity_is_derived_from_metadata_name_not_a_parameter() -> None:

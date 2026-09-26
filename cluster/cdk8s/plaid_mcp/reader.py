@@ -229,7 +229,7 @@ def chart(app: App) -> Chart:
         memory_limit=Size.mebibytes(128),
         max_memory_percent_of_limit=None,
         storage_class="local-path-ovh",
-        storage_size="1Gi",
+        storage_size=Size.gibibytes(1),
     )
     return chart
 

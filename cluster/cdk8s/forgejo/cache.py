@@ -33,7 +33,7 @@ def _chart(app: App) -> Chart:
         memory_limit=Size.mebibytes(512),
         max_memory_percent_of_limit=80,
         storage_class="local-path-ovh",
-        storage_size="2Gi",
+        storage_size=Size.gibibytes(2),
     ).add_json_patch(
         JsonPatch.add(
             "/spec/tolerations",

@@ -49,9 +49,8 @@ _POD_ANTI_AFFINITY_TOPOLOGY_KEY = "kubernetes.io/hostname"
 class RedisReplication(_RedisReplication):
     """`storage_class`/`storage_size` are `RedisReplicationSpec.storage`'s PVC template under
     their own names, always `ReadWriteOnce`. `cpu_request`/`cpu_limit`/`memory_request`/
-    `memory_limit` build `kubernetes_config.resources` the same way `cdk8s_plus_34.Container`
-    builds its own `resources=` internally, so a caller passes `Cpu`/`Size` values instead of
-    hand-typing the Kubernetes quantity string. `node_affinity_match` is the CRD's own required
+    `memory_limit`/`storage_size` take `Cpu`/`Size` values instead of hand-typed Kubernetes
+    quantity strings, formatted via `Cpu.amount`/`Size.as_string()`. `node_affinity_match` is the CRD's own required
     node-selector match expression(s) (`affinity.nodeAffinity.requiredDuringScheduling...`);
     `preferred_node_affinity` is its optional soft-scheduling terms, passed straight through
     (`None` omits them, so the scheduler applies no preference). `max_memory_percent_of_limit=None`
@@ -73,7 +72,7 @@ class RedisReplication(_RedisReplication):
         memory_limit: Size,
         max_memory_percent_of_limit: int | None,
         storage_class: str,
-        storage_size: str,
+        storage_size: Size,
         node_affinity_match: Sequence[
             RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions
         ],
@@ -99,13 +98,13 @@ class RedisReplication(_RedisReplication):
                                 cpu_request.amount
                             ),
                             "memory": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string(
-                                f"{memory_request.to_mebibytes()}Mi"
+                                memory_request.as_string()
                             ),
                         },
                         limits={
                             "cpu": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string(cpu_limit.amount),
                             "memory": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string(
-                                f"{memory_limit.to_mebibytes()}Mi"
+                                memory_limit.as_string()
                             ),
                         },
                     ),
@@ -123,7 +122,7 @@ class RedisReplication(_RedisReplication):
                             resources=RedisReplicationSpecStorageVolumeClaimTemplateSpecResources(
                                 requests={
                                     "storage": RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests.from_string(
-                                        storage_size
+                                        storage_size.as_string()
                                     )
                                 }
                             ),

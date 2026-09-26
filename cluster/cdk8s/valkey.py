@@ -84,7 +84,7 @@ def valkey_instance(
     memory_limit: Size,
     max_memory_percent_of_limit: int | None,
     storage_class: str,
-    storage_size: str,
+    storage_size: Size,
 ) -> RedisReplication:
     """A two-replica Valkey `RedisReplication` in `hil-ovh`, one replica per node.
 
