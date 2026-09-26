@@ -29,16 +29,12 @@ py_library(
     deps = [
         ":panel",
         ":paths",
+        ":policy",
         ":synthetic",
-        "//finance/augur/policy:sleeves",
-        "//finance/augur/sim:actions",
-        "//finance/augur/sim:books",
-        "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:ids",
-        "//finance/augur/sim:observations",
         "//finance/augur/sim:results",
         "//finance/augur/sim:session",
         "//finance/augur/sim:world",
+        "@pypi//pydantic",
     ],
 )
 
@@ -90,6 +86,7 @@ py_test(
     deps = [
         ":panel",
         ":paths",
+        ":policy",
         ":run",
         "//:conftest",
         "//finance/augur:conftest",
