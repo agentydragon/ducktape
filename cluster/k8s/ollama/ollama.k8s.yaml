@@ -56,7 +56,7 @@ spec:
               value: "131072"
             - name: OLLAMA_LOAD_TIMEOUT
               value: 30m
-          image: ollama/ollama:0.34.0
+          image: ollama/ollama:0.34.4
           livenessProbe:
             httpGet:
               path: /

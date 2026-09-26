@@ -81,7 +81,7 @@ def _ollama_container() -> k8s.Container:
     probe_action = k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("ollama"))
     return k8s.Container(
         name="ollama",
-        image="ollama/ollama:0.34.0",
+        image="ollama/ollama:0.34.4",
         ports=[k8s.ContainerPort(name="ollama", container_port=_OLLAMA_PORT, protocol="TCP")],
         env=[
             k8s.EnvVar(name="OLLAMA_MODELS", value="/models"),

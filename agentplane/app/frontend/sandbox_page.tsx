@@ -37,6 +37,7 @@ import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
+import { RawSwitch } from "./raw_switch";
 import { StaleNotice } from "./stream_status";
 import { HarnessState, SessionSpecSchema, type SessionSummary } from "../../runner/protocol_pb";
 
@@ -88,7 +89,7 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
     <Stack gap="xs">
       <Group>
         <Title order={4}>Status</Title>
-        <Switch label="Raw" checked={raw} onChange={(e) => setRaw(e.currentTarget.checked)} />
+        <RawSwitch raw={raw} onChange={setRaw} />
       </Group>
       {raw ? (
         <JsonView value={sandbox} />

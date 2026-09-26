@@ -487,6 +487,10 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   },
 ];
 
+// A 32x32 checkerboard, 95 bytes: a real image, small enough to inline.
+const DIAGRAM_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgAQMAAABJtOi3AAAABlBMVEX///8ii+b/FUc9AAAAFElEQVR42mNg+A+ERBBEKmOgsnkA7b0/wU6R7xwAAAAASUVORK5CYII=";
+
 const ACTIONS: ActionRequestView[] = [
   {
     id: "70000000-0000-4000-8000-000000000001",
@@ -515,9 +519,10 @@ const ACTIONS: ActionRequestView[] = [
   },
   {
     id: "70000000-0000-4000-8000-000000000002",
-    action: { group: "everything", name: "echo" },
-    arguments: { message: "completed fixture execution" },
-    title: "echo the completed fixture message",
+    // An MCP group in MCP_GROUPS below, so its stored result is the tool's whole CallToolResult.
+    action: { group: "example_docs", name: "render_diagram" },
+    arguments: { path: "docs/test-diagram.mmd" },
+    title: "render the test diagram",
     description: null,
     origin: { thread_id: THREADS[1].id },
     correlation: {},
@@ -539,7 +544,20 @@ const ACTIONS: ActionRequestView[] = [
     execution: {
       id: "72000000-0000-4000-8000-000000000002",
       state: "succeeded",
-      result: { echo: { message: "completed fixture execution" } },
+      result: {
+        content: [
+          { type: "text", text: "Rendered docs/test-diagram.mmd as a 32x32 PNG." },
+          { type: "image", data: DIAGRAM_PNG, mimeType: "image/png" },
+          {
+            type: "resource_link",
+            uri: "https://docs-mcp.example.test/diagrams/test-diagram",
+            name: "test-diagram",
+            title: "Test diagram page",
+          },
+        ],
+        structuredContent: { path: "docs/test-diagram.mmd", width: 32, height: 32 },
+        isError: false,
+      },
       error: null,
       created_at: ago(39 * 60_000),
       started_at: ago(39 * 60_000 - 500),
@@ -622,6 +640,41 @@ const ACTIONS: ActionRequestView[] = [
       created_at: ago(14 * 60_000),
       started_at: ago(14 * 60_000 - 500),
       completed_at: ago(14 * 60_000 - 900),
+      reconciled_at: null,
+    },
+  },
+  {
+    id: "70000000-0000-4000-8000-000000000005",
+    // A tool's error answer: the Action succeeded, and the CallToolResult says the tool failed.
+    action: { group: "example_notes", name: "get_note" },
+    arguments: { note_id: "test-missing-note" },
+    title: "read the missing test note",
+    description: null,
+    origin: { thread_id: THREADS[2].id },
+    correlation: {},
+    idempotency_key: "visual-tool-error",
+    caller: { namespace: "agentplane-visual", name: "demo-a1b2" },
+    state: "succeeded",
+    version: 4,
+    created_at: ago(10 * 60_000),
+    updated_at: ago(9 * 60_000),
+    decision: {
+      id: "71000000-0000-4000-8000-000000000005",
+      verdict: "allow",
+      provider: "human_operator",
+      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+      decision_note: null,
+      idempotency_key: "visual-allow-tool-error",
+      decided_at: ago(9 * 60_000),
+    },
+    execution: {
+      id: "72000000-0000-4000-8000-000000000005",
+      state: "succeeded",
+      result: { content: [{ type: "text", text: "No note has the id test-missing-note." }], isError: true },
+      error: null,
+      created_at: ago(9 * 60_000),
+      started_at: ago(9 * 60_000 - 500),
+      completed_at: ago(9 * 60_000 - 900),
       reconciled_at: null,
     },
   },
@@ -1165,7 +1218,14 @@ routes.push(
   // The Settings modal mounts all three tabs at once (Mantine keepMounted), so MCP servers and
   // Notifications fetch on mount even while the OAuth clients tab is the one shown in the shot.
   ["GET", /^\/mcp-servers$/, () => MCP_LINKAGES],
-  ["GET", /^\/action-groups$/, () => MCP_GROUPS],
+  [
+    "GET",
+    /^\/action-groups$/,
+    () =>
+      scenario.actionGroupsUnavailable
+        ? Response.json({ detail: "the Action Service did not answer: connection refused" }, { status: 502 })
+        : MCP_GROUPS,
+  ],
   ["GET", /^\/push\/config$/, () => ({ application_server_key: null })],
   ["GET", /^\/push\/subscriptions$/, () => []],
   [
@@ -1663,8 +1723,8 @@ if (scenario.openSettings) {
   });
   openSettings.observe(document, { childList: true, subtree: true });
 }
-if (scenario.openRawStatus) {
-  // No URL param toggles the switch (unlike the tab itself); flip it the way an operator would.
+if (scenario.openRaw) {
+  // No URL param toggles a Raw switch; flip the first one the way an operator would.
   const openRaw = new MutationObserver(() => {
     const label = [...document.querySelectorAll("label")].find((candidate) => candidate.textContent === "Raw");
     if (!label) return;
