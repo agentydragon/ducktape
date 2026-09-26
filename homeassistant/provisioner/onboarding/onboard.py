@@ -1,4 +1,4 @@
-"""Complete Home Assistant's onboarding and converge its UI-managed HTTP settings."""
+"""Complete Home Assistant's onboarding and converge its UI-managed HTTP and core settings."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import asyncio
 import httpx2
 
 from homeassistant.provisioner.client import HomeAssistantClient, OnboardingStep
-from homeassistant.provisioner.onboarding.settings import HttpConfig, Settings
+from homeassistant.provisioner.onboarding.settings import CoreConfig, HttpConfig, Settings
 
 
 def _config_without_metadata(config: object) -> dict[str, object]:
@@ -43,6 +43,19 @@ async def configure_http(client: HomeAssistantClient, http_config: HttpConfig, u
     await client.websocket_command({"id": 1, "type": "http/config/promote"})
 
 
+async def configure_core(client: HomeAssistantClient, core_config: CoreConfig) -> None:
+    """Converge the core settings `core_config` declares through Home Assistant's admin API."""
+    wanted: dict[str, object] = {"time_zone": core_config.time_zone}
+    if core_config.location is not None:
+        wanted |= core_config.location.model_dump()
+    current = await client.websocket_command({"id": 1, "type": "get_config"})
+    if not isinstance(current, dict):
+        raise TypeError(f"Home Assistant returned an invalid core config: {current!r}")
+    if all(current.get(key) == value for key, value in wanted.items()):
+        return
+    await client.websocket_command({"id": 1, "type": "config/core/update", **wanted})
+
+
 async def onboard(client: HomeAssistantClient, settings: Settings) -> None:
     """Create the owner if necessary and finish all onboarding steps."""
     password = settings.owner_password.get_secret_value()
@@ -51,6 +64,7 @@ async def onboard(client: HomeAssistantClient, settings: Settings) -> None:
     if completed is None or completed >= required_steps:
         await client.login(settings.owner_username, password)
         await configure_http(client, settings.http_config, settings.owner_username, password)
+        await configure_core(client, settings.core_config)
         print("Home Assistant onboarding is already complete")
         return
 
@@ -68,6 +82,7 @@ async def onboard(client: HomeAssistantClient, settings: Settings) -> None:
     if OnboardingStep.ANALYTICS not in completed:
         await client.request_json("/api/onboarding/analytics", data={})
     await configure_http(client, settings.http_config, settings.owner_username, password)
+    await configure_core(client, settings.core_config)
     print("Home Assistant onboarding is complete")
 
 
