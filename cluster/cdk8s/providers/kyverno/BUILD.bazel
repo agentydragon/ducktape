@@ -1,0 +1,48 @@
+# gazelle:ignore
+# gazelle:resolve py kyverno_clusterpolicy_crds //cluster/cdk8s/providers/kyverno:clusterpolicy
+# gazelle:resolve py kyverno_cleanuppolicy_crds //cluster/cdk8s/providers/kyverno:cleanuppolicy
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+cdk8s_import(
+    name = "clusterpolicy",
+    crd = "@kyverno_clusterpolicy_crd//file",
+    module_name = "kyverno_clusterpolicy_crds",
+    module_path = "io/kyverno",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "cleanuppolicy",
+    crd = "@kyverno_cleanuppolicy_crd//file",
+    module_name = "kyverno_cleanuppolicy_crds",
+    module_path = "io/kyverno",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "cluster_policy",
+    srcs = ["cluster_policy.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":clusterpolicy",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_cluster_policy",
+    srcs = ["test_cluster_policy.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":cluster_policy",
+        ":clusterpolicy",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
