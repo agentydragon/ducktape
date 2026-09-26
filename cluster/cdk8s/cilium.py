@@ -12,6 +12,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from cluster.cdk8s.providers.cilium.network_policy import (
     EgressRule,
+    Entity,
     Protocol,
     dns_egress as _dns_egress,
     fqdn_fence as _fqdn_fence,
@@ -37,7 +38,7 @@ def egress_via_gateway(*server_names: str, port: int = 443) -> CiliumNetworkPoli
     """A public origin the hostNetwork Gateway serves. It resolves to node IPs, which FQDN and
     CIDR selectors cannot match with the cluster's Cilium configuration; TLS SNI narrows the
     node:443 rule to that origin, and TLS stays end-to-end (no terminatingTLS secret, no MITM)."""
-    return EgressRule.to_entities("remote-node", "host", ports=[port], server_names=server_names)
+    return EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[port], server_names=server_names)
 
 
 def dns_egress(

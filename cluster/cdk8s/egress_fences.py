@@ -25,7 +25,7 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy, dns_allowlist
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy, dns_allowlist
 
 HAKU_EGRESS_PROXY_NAMESPACE = "haku-egress-proxy"
 MITMPROXY_NAMESPACE = "agents-mitmproxy"
@@ -219,7 +219,7 @@ def haku_cloud_api(app: App) -> Chart:
             # when targeting cluster endpoints (NO_PROXY in the inject policy still permits
             # explicit bypass for `*.svc.cluster.local` and `10.0.0.0/8`). The widest rule in
             # this fence, deliberately -- see the module docstring.
-            EgressRule.to_entities("cluster", ports=[80, 443, 8000, 8080, 11434]),
+            EgressRule.to_entities(Entity.CLUSTER, ports=[80, 443, 8000, 8080, 11434]),
         ],
     )
 
@@ -243,7 +243,7 @@ def haku_openclaw_spike(app: App) -> Chart:
             # haku.allegedly.works (node identity, cluster/docs/cilium_network_policy.md). What
             # bounds this proxy is the iron allowlist at L7 and the DNS rule above -- neither of
             # which stops a destination reached by literal IP.
-            EgressRule.to_entities("world", "remote-node", "host", ports=[443]),
+            EgressRule.to_entities(Entity.WORLD, Entity.REMOTE_NODE, Entity.HOST, ports=[443]),
             EgressRule.to_endpoints(
                 {"k8s:io.kubernetes.pod.namespace": "forgejo", "k8s:app.kubernetes.io/name": "forgejo"}, 3000
             ),
@@ -264,7 +264,7 @@ def mitmproxy_cloud_api(app: App) -> Chart:
             # mitmproxy in-path even when targeting cluster endpoints (e.g. `ollama.ollama:11434`);
             # NO_PROXY in the inject policy still permits explicit bypass for
             # `*.svc.cluster.local` and `10.0.0.0/8`.
-            EgressRule.to_entities("cluster", ports=[11434, 80, 443, 8000, 8080]),
+            EgressRule.to_entities(Entity.CLUSTER, ports=[11434, 80, 443, 8000, 8080]),
         ],
     )
 

@@ -44,7 +44,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name, settings_file
 
@@ -334,7 +334,7 @@ class Actions(Construct):
                 cilium.dns_egress(resolves=["*"]),
                 # Claude's credentialless CIMD document; no wildcard hosts, ports, or redirects.
                 EgressRule.to_fqdns("claude.ai"),
-                EgressRule.to_entities("kube-apiserver"),
+                EgressRule.to_entities(Entity.KUBE_APISERVER),
                 EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,

@@ -26,7 +26,7 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "loki-read-proxy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/loki-read-proxy"
@@ -224,7 +224,7 @@ def chart(app: App) -> Chart:
                 3100,
             ),
             # kube-apiserver: SelfSubjectAccessReview with the caller's bearer token.
-            EgressRule.to_entities("kube-apiserver", ports=[443, 6443]),
+            EgressRule.to_entities(Entity.KUBE_APISERVER, ports=[443, 6443]),
         ],
     )
     return chart

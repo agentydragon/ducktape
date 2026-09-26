@@ -52,7 +52,7 @@ from cluster.cdk8s.haku import console
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "haku-kube-api-proxy"
 HOSTNAME = "haku-kubeapi.allegedly.works"
@@ -237,7 +237,7 @@ class KubeApiProxy(Construct):
             ],
             egress=[
                 cilium.dns_egress(protocols=("ANY",), resolves=[console.HOSTNAME]),
-                EgressRule.to_entities("kube-apiserver", ports=[443, 6443]),
+                EgressRule.to_entities(Entity.KUBE_APISERVER, ports=[443, 6443]),
                 # The console's public origin resolves to Gateway node addresses; the process
                 # is configured with exactly one authorization URL and rejects redirects.
                 cilium.egress_via_gateway(console.HOSTNAME),

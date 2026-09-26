@@ -41,7 +41,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, f
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.ssh_mcp.config import (
     BEARER_SECRET_KEY,
@@ -102,7 +102,7 @@ def _egress(mesh: Mesh, config: SshMcpConfig) -> list[CiliumNetworkPolicySpecEgr
         cilium.dns_egress(),
         # Cluster nodes use Cilium's host/remote-node identities. A CIDR rule does not
         # select their Nebula IPs unless policy-cidr-match-mode:nodes is enabled.
-        EgressRule.to_entities("host", "remote-node", ports=[22]),
+        EgressRule.to_entities(Entity.HOST, Entity.REMOTE_NODE, ports=[22]),
         # The devbox is an ordinary pod, while non-Kubernetes Nebula peers need to be
         # selected by CIDR. Their membership and addresses come from nebula-mesh.json.
         EgressRule.to_endpoints(cilium.endpoint_labels("public-coder-agent", "public-coder-devbox"), 22),

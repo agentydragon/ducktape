@@ -84,7 +84,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
 
@@ -367,7 +367,7 @@ class App(Construct):
             ingress=[IngressRule.from_gateway(CONTAINER_PORT)],
             egress=[
                 dns_egress,
-                EgressRule.to_entities("kube-apiserver"),
+                EgressRule.to_entities(Entity.KUBE_APISERVER),
                 *self._oidc_egress_rules(),
                 EgressRule.to_endpoints(cilium.endpoint_labels(namespace, "agentplane-runner"), _RUNNER_PORT),
                 EgressRule.to_endpoints(cilium.endpoint_labels(namespace, "agentplane-egress"), egress.ADMIN_PORT),

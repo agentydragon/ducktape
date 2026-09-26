@@ -82,7 +82,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name, settings_file
 
@@ -649,7 +649,7 @@ class Egress(Construct):
                     database.POSTGRES_PORT,
                 ),
                 cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
-                EgressRule.to_entities("kube-apiserver"),
+                EgressRule.to_entities(Entity.KUBE_APISERVER),
                 EgressRule.to_endpoints(cilium.endpoint_labels(namespace, NAME), _AGENT_API_PORT),
                 EgressRule.to_endpoints(
                     cilium.endpoint_labels(namespace, "agentplane-llm-ingress"), llm_ingress.CONTAINER_PORT
@@ -661,7 +661,7 @@ class Egress(Construct):
                     {"k8s:io.kubernetes.pod.namespace": "forgejo", "k8s:app.kubernetes.io/name": "forgejo"},
                     FORGEJO_PORT,
                 ),
-                EgressRule.to_entities("remote-node", "host", ports=[HOME_ASSISTANT_PORT]),
-                EgressRule.to_entities("world", "remote-node", "host", ports=[443, 80]),
+                EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[HOME_ASSISTANT_PORT]),
+                EgressRule.to_entities(Entity.WORLD, Entity.REMOTE_NODE, Entity.HOST, ports=[443, 80]),
             ],
         )

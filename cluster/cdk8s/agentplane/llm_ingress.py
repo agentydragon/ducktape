@@ -35,7 +35,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name, settings_file
 
@@ -179,7 +179,7 @@ class LlmIngress(Construct):
             ],
             egress=[
                 cilium.dns_egress(),
-                EgressRule.to_entities("kube-apiserver"),
+                EgressRule.to_entities(Entity.KUBE_APISERVER),
                 EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": "litellm", "k8s:app.kubernetes.io/name": "litellm"}, 4000
                 ),

@@ -60,7 +60,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "public-coder-agent-proxy"
@@ -492,7 +492,7 @@ def _egress_policy(scope: Construct) -> None:
             # `reserved:host`. Widening a CIDR/FQDN rule cannot substitute --
             # `policy-cidr-match-mode` is unset cluster-wide, so CIDR-derived selectors never match
             # node IPs. See cluster/docs/cilium_network_policy.md.
-            EgressRule.to_entities("world", "remote-node", "host", ports=[443, 80]),
+            EgressRule.to_entities(Entity.WORLD, Entity.REMOTE_NODE, Entity.HOST, ports=[443, 80]),
             # The agent's normalized analytics reads leave the app through this Iron proxy, then
             # use the private ClickHouse HTTP ClusterIP service. Do not grant this egress to the
             # app Pod itself.

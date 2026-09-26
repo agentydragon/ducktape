@@ -24,7 +24,7 @@ from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "public-coder-agent-sshpiper"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/sshpiper"
@@ -276,7 +276,7 @@ def _network_policies(scope: Construct, app_namespace: str, app_labels: dict[str
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # The kubernetes plugin watches Pipes and resolves the upstream key Secret through the
             # API server; without this the piper starts and then refuses every connection.
-            EgressRule.to_entities("kube-apiserver"),
+            EgressRule.to_entities(Entity.KUBE_APISERVER),
             # The one upstream. KubeVirt gives the VM an ordinary Pod identity, so the guest's sshd
             # is selectable by the VM's domain label.
             EgressRule.to_endpoints(

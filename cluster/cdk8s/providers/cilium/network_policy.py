@@ -8,6 +8,7 @@ is a required parameter.
 
 from __future__ import annotations
 
+import enum
 from collections.abc import Sequence
 from typing import Literal
 
@@ -37,16 +38,21 @@ from cilium_crds.io.cilium import (
 from constructs import Construct
 
 Protocol = Literal["TCP", "UDP", "ANY"]
-Entity = Literal["world", "cluster", "remote-node", "host", "kube-apiserver"]
-# Cilium's reserved identities (toEntities' real enum); add another member the day a second
-# caller needs it -- the CRD also defines ingress/init/health/unmanaged/none/all.
-_EGRESS_ENTITIES = {
-    "world": CiliumNetworkPolicySpecEgressToEntities.WORLD,
-    "cluster": CiliumNetworkPolicySpecEgressToEntities.CLUSTER,
-    "remote-node": CiliumNetworkPolicySpecEgressToEntities.REMOTE_HYPHEN_NODE,
-    "host": CiliumNetworkPolicySpecEgressToEntities.HOST,
-    "kube-apiserver": CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER,
-}
+
+
+class Entity(enum.Enum):
+    """Cilium's reserved identities (`toEntities`' real enum), renamed off jsii's
+    hyphen-mangled generated names (`REMOTE_HYPHEN_NODE`, `KUBE_HYPHEN_APISERVER`) --
+    each member's value is the exact generated enum instance, so `Entity.X.value` is
+    what jsii's own type checking expects, not a lookalike. Add another member the day a
+    second caller needs it -- the CRD also defines ingress/init/health/unmanaged/none/all.
+    """
+
+    WORLD = CiliumNetworkPolicySpecEgressToEntities.WORLD
+    CLUSTER = CiliumNetworkPolicySpecEgressToEntities.CLUSTER
+    REMOTE_NODE = CiliumNetworkPolicySpecEgressToEntities.REMOTE_HYPHEN_NODE
+    HOST = CiliumNetworkPolicySpecEgressToEntities.HOST
+    KUBE_APISERVER = CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER
 
 
 def _ingress_ports(ports: Sequence[int]) -> CiliumNetworkPolicySpecIngressToPorts:
@@ -125,7 +131,7 @@ class EgressRule:
     ) -> CiliumNetworkPolicySpecEgress:
         """Cilium's named identities, on TCP `ports` or on any port when none are given."""
         return CiliumNetworkPolicySpecEgress(
-            to_entities=[_EGRESS_ENTITIES[entity] for entity in entities],
+            to_entities=[entity.value for entity in entities],
             to_ports=[_egress_ports(ports, "TCP", server_names=server_names)] if ports else None,
         )
 

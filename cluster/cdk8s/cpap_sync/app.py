@@ -58,7 +58,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 
 NAME = "cpap-sync"
 NAMESPACE = "cpap-sync"
@@ -331,7 +331,7 @@ def chart(app: App) -> Chart:
             ),
             # git.allegedly.works resolves to the cluster's Gateway node addresses;
             # cluster covers those node entities as well as in-cluster Forgejo traffic.
-            EgressRule.to_entities("cluster", ports=[443, 3000]),
+            EgressRule.to_entities(Entity.CLUSTER, ports=[443, 3000]),
         ],
     )
     return chart
