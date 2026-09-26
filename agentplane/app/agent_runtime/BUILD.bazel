@@ -8,6 +8,7 @@ py_library(
     deps = [
         "//agentplane/app:database",
         "//agentplane/app:presets",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )

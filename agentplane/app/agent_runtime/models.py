@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from pydantic import JsonValue
 from sqlalchemy import BigInteger, Boolean, DateTime, Enum as SqlEnum, ForeignKey, Index, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -72,7 +73,7 @@ class Event(Base):
     # The observation's oneof case, for filtering without opening the payload; "native" for frames.
     kind: Mapped[str] = mapped_column(Text)
     # Proto-JSON of the protocol's EventEntry, exactly what the bridge streams.
-    payload: Mapped[dict[str, object]] = mapped_column(JSONB)
+    payload: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
 
 
 class SandboxIngestion(Base):

@@ -240,6 +240,7 @@ py_test(
         ":store",
         "//:conftest",
         "//agentplane/native:transport",
+        "//agentplane/native/claude:blocks",
         "//agentplane/native/claude:wire",
         "@pypi//pydantic",
         "@pypi//pytest_bazel",
