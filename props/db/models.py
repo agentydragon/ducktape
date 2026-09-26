@@ -501,8 +501,8 @@ class OccurrenceRangeORM(Base):
     occurrence_id: Mapped[str] = mapped_column(String, nullable=False)
     file_path: Mapped[Path] = mapped_column(PathColumn(), nullable=False)
     range_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    start_line: Mapped[int] = mapped_column(Integer, nullable=False)
-    end_line: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_line: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    end_line: Mapped[int | None] = mapped_column(Integer, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
@@ -533,8 +533,11 @@ class OccurrenceRangeORM(Base):
             "snapshot_slug", "tp_id", "fp_id", "occurrence_id", "file_path", "range_id", name="uq_occurrence_ranges"
         ),
         CheckConstraint("(tp_id IS NULL) <> (fp_id IS NULL)", name="occurrence_range_exclusive_arc"),
-        CheckConstraint("start_line >= 1", name="occurrence_range_start_line_positive"),
-        CheckConstraint("end_line >= start_line", name="occurrence_range_end_gte_start"),
+        CheckConstraint("start_line IS NULL OR start_line >= 1", name="occurrence_range_start_line_positive"),
+        CheckConstraint(
+            "(start_line IS NULL AND end_line IS NULL) OR (start_line IS NOT NULL AND (end_line IS NULL OR end_line >= start_line))",
+            name="occurrence_range_end_gte_start",
+        ),
     )
 
     # Relationships - use foreign() to specify which columns to join on
