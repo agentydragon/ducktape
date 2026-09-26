@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import tomli_w
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Size
+from cdk8s import ApiObject, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
     ConfigMap,
@@ -31,7 +31,6 @@ from cdk8s_plus_34 import (
     ISecret,
     LabelSelector,
     MemoryResources,
-    PodSecurityContextProps,
     Protocol,
     Secret,
     SecretValue,
@@ -70,6 +69,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_hardening import hardened_pod_defaults
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -235,15 +235,12 @@ class Aiquota(Construct):
                     "reloader.stakater.com/auto": "true",
                 },
             ),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,
             # A Deployment's selector is immutable: keeping the hand-written one lets Flux
             # adopt the live object instead of failing the apply.
             select=False,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
-            automount_service_account_token=False,
-            enable_service_links=False,
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
+            **hardened_pod_defaults(_LABELS, uid=1000, gid=1000),
             # Applies schema.sql (idempotent CREATE/ALTER ... IF NOT EXISTS) before the API
             # server starts. An init container's pod template is mutable across rollouts
             # (unlike a bare Job's), so a schema change ships in the same PR as the code that

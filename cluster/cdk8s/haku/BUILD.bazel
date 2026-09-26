@@ -84,6 +84,7 @@ py_library(
         ":console",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:pod_hardening",
         "//cluster/cdk8s:pod_spec_patches",
         "//cluster/cdk8s/agentplane:container_security",
         "//cluster/cdk8s/agentplane:node_scheduling",

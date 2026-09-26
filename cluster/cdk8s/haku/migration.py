@@ -16,7 +16,7 @@ alembic_version.
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
+from cdk8s import ApiObject, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
@@ -24,7 +24,6 @@ from cdk8s_plus_34 import (
     ImagePullPolicy,
     Job,
     MemoryResources,
-    PodSecurityContextProps,
     RestartPolicy,
     ServiceAccount,
 )
@@ -34,6 +33,7 @@ from cluster.cdk8s.agentplane import container_security, node_scheduling
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.haku import console
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_hardening import hardened_pod_defaults
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 
 NAME = "haku-console-migration"
@@ -54,7 +54,6 @@ class Migration(Construct):
             self,
             "job",
             metadata=metadata(NAME, namespace, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}),
-            pod_metadata=ApiObjectMetadata(labels={"app.kubernetes.io/name": NAME}),
             select=False,
             # Retries are how this waits for the database, since nothing sequences the two
             # inside one Kustomization. Kubernetes backs off exponentially to a 6m ceiling,
@@ -64,10 +63,8 @@ class Migration(Construct):
             active_deadline=Duration.minutes(20),
             restart_policy=RestartPolicy.NEVER,
             service_account=service_account,
-            automount_service_account_token=False,
-            enable_service_links=False,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
+            **hardened_pod_defaults({"app.kubernetes.io/name": NAME}, uid=1000, gid=1000),
         )
         job.add_container(
             name="migrate",

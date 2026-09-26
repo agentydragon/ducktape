@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch, Size
+from cdk8s import ApiObject, App, Chart, JsonPatch, Size
 from cdk8s_plus_34 import (
     Capability,
     ConfigMap,
@@ -17,7 +17,6 @@ from cdk8s_plus_34 import (
     ImagePullPolicy,
     LabelSelector,
     MemoryResources,
-    PodSecurityContextProps,
     Protocol,
     Secret,
     SecretValue,
@@ -39,6 +38,7 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_hardening import hardened_pod_defaults
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -137,13 +137,10 @@ class SshMcp(Construct):
             self,
             "deployment",
             metadata=metadata(NAME, NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}),
-            pod_metadata=ApiObjectMetadata(labels=LABELS),
             replicas=1,
             select=False,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
-            automount_service_account_token=False,
-            enable_service_links=False,
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
+            **hardened_pod_defaults(LABELS, uid=1000, gid=1000),
         )
         # The Deployment selector is immutable; retain its existing labels for Flux adoption.
         deployment.select(LabelSelector.of(labels=LABELS))

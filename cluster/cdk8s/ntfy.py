@@ -25,7 +25,6 @@ from cdk8s_plus_34 import (
     LabelSelector,
     MemoryResources,
     Namespace,
-    PodSecurityContextProps,
     Protocol,
     Secret,
     SecretValue,
@@ -67,6 +66,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import sops_decryption, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_hardening import hardened_pod_defaults
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -234,12 +234,9 @@ class Ntfy(Construct):
                     "reloader.stakater.com/auto": "true",
                 },
             ),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,
             select=False,
-            automount_service_account_token=False,
-            enable_service_links=False,
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=65532, group=65532),
+            **hardened_pod_defaults(_LABELS, uid=65532, gid=65532),
         )
         deployment.select(LabelSelector.of(labels=_LABELS))
 

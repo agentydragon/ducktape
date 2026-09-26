@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration
-from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy, Secret
+from cdk8s import ApiObject, App, Chart, Duration
+from cdk8s_plus_34 import ConfigMap, Job, RestartPolicy, Secret
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.clickhouse import client
@@ -28,6 +28,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_hardening import hardened_pod_defaults
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 
 NAME = "clickhouse-schema"
@@ -59,13 +60,10 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        pod_metadata=ApiObjectMetadata(labels=_LABELS),
         active_deadline=Duration.minutes(20),
         backoff_limit=60,
         restart_policy=RestartPolicy.ON_FAILURE,
-        automount_service_account_token=False,
-        enable_service_links=False,
-        security_context=PodSecurityContextProps(ensure_non_root=True, user=_CLICKHOUSE_UID, group=_CLICKHOUSE_UID),
+        **hardened_pod_defaults(_LABELS, uid=_CLICKHOUSE_UID, gid=_CLICKHOUSE_UID),
         containers=[
             client.queries_file_container(
                 chart,

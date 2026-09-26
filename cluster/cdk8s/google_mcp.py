@@ -41,7 +41,6 @@ from cdk8s_plus_34 import (
     LabelSelector,
     MemoryResources,
     Namespace,
-    PodSecurityContextProps,
     Protocol,
     Secret,
     SecretValue,
@@ -70,6 +69,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, f
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_hardening import hardened_pod_defaults
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
@@ -133,14 +133,11 @@ class GoogleMcpApp(Construct):
             self,
             "deployment",
             metadata=metadata(_NAME, _NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,
             strategy=DeploymentStrategy.recreate(),
             select=False,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
-            automount_service_account_token=False,
-            enable_service_links=False,
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
+            **hardened_pod_defaults(_LABELS, uid=1000, gid=1000),
         )
         # The Deployment selector is immutable; retain its existing labels for Flux adoption.
         deployment.select(LabelSelector.of(labels=_LABELS))
