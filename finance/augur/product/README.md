@@ -1,8 +1,8 @@
 # Product projections
 
 `action_projection.metric_arrays` reduces finished `ActionSession` outcomes into
-the arrays consumed by `sim.product_metrics` fan/terminal reducers. It owns no
-session or policy. On a dense/forensic result, `trace.events` carries the same
+the arrays consumed by `sim.product_metrics` fan/terminal reducers, checked against a
+world composed like the session's. It owns no session or policy. On a dense/forensic result, `trace.events` carries the same
 rollout's columnar event log; `projection.project_product_rollout` combines
 those events with the arrays using only the original `rollout_id`. Metric arrays
 retain their ordered IDs; `select(ids)` subsets/reorders those IDs with their
@@ -14,9 +14,12 @@ metrics; absent detail is `trace=None`. Bond carrying value uses each declared b
 captured principal, including redemption and stopped-event marks, not a sale quote or
 an inferred history from its ending book. Missing/duplicate bond histories reject.
 Property and private-equity histories remain unsupported and raise explicitly.
-`ProductService` runs <simulation.py>: one world per path with the configured household
-(<../policy/configured_household.py>) tracked on it; these projection functions do not
-route between engines.
+`ProductService` lowers each request once in <scenarios.py> (`build_situation`: the
+household's accounts, holdings, home, counterparties and funding policy as prepared
+declarations), samples the series that situation reads, and composes one world per path
+(`compose`) with the configured household (<../policy/configured_household.py>) tracked on
+it; <simulation.py> steps each world. These projection functions do not route between
+engines.
 
 `shortfall_quanta` sums unpaid due claims and valid attempted consumption gaps,
 not additional cash needed to fund payment or newly incurred debt. Malformed

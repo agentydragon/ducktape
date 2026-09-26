@@ -41,7 +41,7 @@ Move those decisions to explicit actions as each consumer migrates; P12 deletes
 the scheduled-sale schema and executor branch with the last one. Reuse the
 existing explicit asset-sale and public-sale/tax controls as independent financial coverage.
 
-P12 also deletes `compiler/execution.py::_holding_pools`' strategy-derived
+P12 also deletes `compiler/execution.py::compile_holding_pools`' strategy-derived
 declarations/first-source-account choice and
 `product/scenarios.py::_target_allocation_policies_from_funding_policy` with their
 last configured allocator consumers, along with `policy/configured_allocation.py`'s
