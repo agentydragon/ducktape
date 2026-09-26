@@ -4077,6 +4077,7 @@ spec:
     - agentplane-testing
     - github-downloads
     - github-clone
+    - github-agentydragon-agent
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
