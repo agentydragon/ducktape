@@ -9,7 +9,15 @@ from finance.augur.sim.compiler.distributions import distribution_income_categor
 from finance.augur.sim.compiler.income_sources import income_source_sort_key
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
-from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket, ThresholdTax, load_jurisdiction
+from finance.augur.sim.jurisdictions import (
+    Jurisdiction,
+    JurisdictionLevel,
+    StatutoryAmount,
+    StatutoryIndexation,
+    TaxBracket,
+    ThresholdTax,
+    load_jurisdiction,
+)
 from finance.augur.sim.scenario import (
     BondHolding,
     FilingStatus,
@@ -68,6 +76,9 @@ class PreparedTaxRules:
     max_capital_loss_ordinary_offset: int
     # Positive caps federal-style unrecaptured depreciation; zero uses ordinary brackets.
     section_1250_rate_ppb: int
+    # The tax year the amounts are law for, and those of them statute adjusts for inflation.
+    law_year: int
+    indexed: frozenset[StatutoryAmount]
     # Over modified adjusted gross income, on the lesser of the excess and net investment income.
     net_investment_income_tax: PreparedThresholdTax | None = None
     # Over taxable income.
@@ -114,10 +125,13 @@ def compile_income_sources(
 def _agreed_capital_loss_offset_cap(
     profile: TaxProfile, jurisdictions: Mapping[JurisdictionId, Jurisdiction], *, quantum: Decimal
 ) -> int:
-    """Netting runs once per taxpayer; reject jurisdictions requiring different offset caps."""
+    """Netting runs once per taxpayer; reject jurisdictions requiring different offset caps, now or once indexed."""
 
     caps = {
-        jurisdiction_id: jurisdictions[jurisdiction_id].max_capital_loss_ordinary_offset[profile.filing_status]
+        jurisdiction_id: (
+            jurisdictions[jurisdiction_id].max_capital_loss_ordinary_offset[profile.filing_status],
+            jurisdictions[jurisdiction_id].indexation[StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET],
+        )
         for jurisdiction_id in profile.jurisdiction_ids
     }
     if len(set(caps.values())) > 1:
@@ -125,7 +139,7 @@ def _agreed_capital_loss_offset_cap(
             f"tax profile for {profile.agent_id!r} spans jurisdictions that cap the capital-loss "
             f"ordinary offset differently ({caps}); one netting per taxpayer cannot answer for both"
         )
-    return int(currency_amount_to_quanta(next(iter(caps.values())), quantum=quantum))
+    return int(currency_amount_to_quanta(next(iter(caps.values()))[0], quantum=quantum))
 
 
 def _brackets(brackets: Sequence[TaxBracket], *, quantum: Decimal) -> tuple[PreparedTaxBracket, ...]:
@@ -184,6 +198,12 @@ def compile_profile(
                 ),
                 taxable_income_surtax=_threshold_tax(
                     jurisdiction.taxable_income_surtax, profile.filing_status, quantum=quantum
+                ),
+                law_year=jurisdiction.law_year,
+                indexed=frozenset(
+                    amount
+                    for amount, indexation in jurisdiction.indexation.items()
+                    if indexation is StatutoryIndexation.CPI
                 ),
             )
         )

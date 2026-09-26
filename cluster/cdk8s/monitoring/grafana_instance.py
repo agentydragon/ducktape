@@ -259,6 +259,21 @@ def _datasources(chart: Chart) -> None:
             },
         ),
     )
+    # The Alertmanager that Mimir's ruler sends to: its alert groups and silences in
+    # Grafana, without exposing Alertmanager itself.
+    _datasource(
+        chart,
+        "alertmanager",
+        GrafanaDatasourceSpecDatasource(
+            name="Alertmanager",
+            type="alertmanager",
+            access="proxy",
+            url="http://alertmanager-operated.monitoring.svc.cluster.local:9093",
+            is_default=False,
+            editable=True,
+            json_data={"implementation": "prometheus", "handleGrafanaManagedAlerts": False},
+        ),
+    )
 
 
 def _dashboard(

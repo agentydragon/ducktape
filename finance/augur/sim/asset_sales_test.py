@@ -34,6 +34,7 @@ from finance.augur.sim.results import Executed, Finished, Rejected, RejectedActi
 from finance.augur.sim.scenario import ORDINARY_INCOME, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.world import World
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -135,7 +136,9 @@ def _compose(case: Situation, rollout_id: int) -> World:
             PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=0)
         )
     for profile in case.tax_profiles:
-        world.track(TaxAuthority(compile_profile(profile, jurisdictions, quantum=QUANTUM)))
+        world.track(
+            TaxAuthority(compile_profile(profile, jurisdictions, quantum=QUANTUM), indexation=FixedNominalLaw())
+        )
     for pool in {
         (lot.account_id, lot.asset_id): PreparedHoldingPool(
             agent_id=ALICE, account_id=lot.account_id, asset_id=lot.asset_id, quantity_scale=lot.quantity_scale

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import (
     ARRAY,
@@ -20,7 +20,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from haku.console.grants.envelope import GrantEnvelopeColumns, grant_envelope_table_args
 from haku.console.grants.kubernetes.models import GrantScope, Rule
@@ -33,10 +33,9 @@ from haku.console.identity.agent import (
     EnrollmentPhase,
 )
 from haku.console.identity.operator_identity import OperatorStatus
-from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.pydantic_column import PydanticColumn
 from haku.console.tool_calls import ToolCallStatus
-from util.sqlalchemy_types import StrEnumColumn, StringBackedStrEnumColumn
+from util.sqlalchemy_types import StrEnumColumn
 
 
 class Base(DeclarativeBase):
@@ -586,163 +585,6 @@ class McpToolCallPrincipal(Base):
     # Historical: the hosted session this audit row named before the console dropped hosted-session
     # runtime. No longer FK-enforced against a live table; kept as an inert audit field.
     session_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
-
-
-class OAuthTokenState(Base):
-    """Current access/refresh token state shared by every Operator OAuth association."""
-
-    __tablename__ = "oauth_token_states"
-    __table_args__ = (
-        UniqueConstraint("token_state_id", "operator_id", name="uq_oauth_token_states_id_operator"),
-        CheckConstraint(
-            "(refresh_claim_id IS NULL) = (refresh_claim_expires_at IS NULL)",
-            name="ck_oauth_token_states_refresh_claim_shape",
-        ),
-        CheckConstraint(
-            """
-            (refresh_failure_count = 0
-                AND refresh_failure_started_at IS NULL
-                AND refresh_failure_initial_kind IS NULL
-                AND refresh_failure_initial_message IS NULL
-                AND refresh_failure_latest_at IS NULL
-                AND refresh_failure_latest_kind IS NULL
-                AND refresh_failure_latest_message IS NULL
-                AND refresh_failure_action IS NULL
-                AND refresh_retry_at IS NULL)
-            OR
-            (refresh_failure_count > 0
-                AND refresh_failure_started_at IS NOT NULL
-                AND refresh_failure_initial_kind IS NOT NULL
-                AND refresh_failure_initial_message IS NOT NULL
-                AND refresh_failure_latest_at IS NOT NULL
-                AND refresh_failure_latest_kind IS NOT NULL
-                AND refresh_failure_latest_message IS NOT NULL
-                AND ((refresh_failure_action = 'retrying' AND refresh_retry_at IS NOT NULL)
-                    OR (refresh_failure_action IN ('reconnect', 'operator_action') AND refresh_retry_at IS NULL)))
-            """,
-            name="ck_oauth_token_states_refresh_failure_shape",
-        ),
-        Index(
-            "idx_oauth_token_states_refresh_candidates",
-            "token_expires_at",
-            postgresql_where=text("refresh_token IS NOT NULL AND token_expires_at IS NOT NULL"),
-        ),
-    )
-
-    token_state_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    operator_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
-    )
-    token_revision: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    access_token: Mapped[str] = mapped_column(Text, nullable=False)
-    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
-    token_type: Mapped[str] = mapped_column(Text, nullable=False)
-    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
-    token_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    refresh_claim_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
-    refresh_claim_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    refresh_failure_started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    refresh_failure_initial_kind: Mapped[str | None] = mapped_column(Text, nullable=True)
-    refresh_failure_initial_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    refresh_failure_latest_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    refresh_failure_latest_kind: Mapped[str | None] = mapped_column(Text, nullable=True)
-    refresh_failure_latest_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    refresh_failure_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
-    refresh_failure_action: Mapped[str | None] = mapped_column(Text, nullable=True)
-    refresh_retry_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class ProviderConnection(Base):
-    """One Operator's linked account for a well-known OAuth provider (Google today).
-
-    One row per deploy-named ``(operator_id, connection_name)``. ``provider_name`` records the
-    configured OAuth application that issued the grant, while ``provider`` records its protocol
-    kind. The connection owns one shared ``OAuthTokenState`` refreshed with that same client.
-    """
-
-    __tablename__ = "provider_connections"
-    operator_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
-    connection_name: Mapped[str] = mapped_column(Text, primary_key=True)
-    provider_name: Mapped[str] = mapped_column(Text, nullable=False)
-    provider: Mapped[ProviderConnectionKind] = mapped_column(
-        StringBackedStrEnumColumn(ProviderConnectionKind), nullable=False
-    )
-    connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), default=uuid4, nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    token_state_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
-    token_state: Mapped[OAuthTokenState] = relationship(
-        cascade="all, delete-orphan", single_parent=True, lazy="selectin"
-    )
-
-    __table_args__ = (
-        UniqueConstraint("connection_id", name="uq_provider_connections_connection_id"),
-        UniqueConstraint("token_state_id", name="uq_provider_connections_token_state_id"),
-        CheckConstraint("btrim(connection_name) <> ''", name="ck_provider_connections_connection_name_nonempty"),
-        CheckConstraint("btrim(provider_name) <> ''", name="ck_provider_connections_provider_name_nonempty"),
-        ForeignKeyConstraint(
-            ["token_state_id", "operator_id"],
-            ["oauth_token_states.token_state_id", "oauth_token_states.operator_id"],
-            name="fk_provider_connections_token_state",
-            ondelete="CASCADE",
-        ),
-        Index("idx_provider_connections_operator", "operator_id"),
-    )
-
-
-class ProviderConnectionFlow(Base):
-    """Short-lived authorization-code + PKCE flow state for a pending provider connection."""
-
-    __tablename__ = "provider_connection_flows"
-    __table_args__ = (
-        CheckConstraint("btrim(connection_name) <> ''", name="ck_provider_connection_flows_connection_name_nonempty"),
-        CheckConstraint("btrim(provider_name) <> ''", name="ck_provider_connection_flows_provider_name_nonempty"),
-        Index("idx_provider_connection_flows_operator", "operator_id"),
-        Index("idx_provider_connection_flows_expires_at", "expires_at"),
-    )
-
-    state: Mapped[str] = mapped_column(Text, primary_key=True)
-    operator_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
-    )
-    connection_name: Mapped[str] = mapped_column(Text, nullable=False)
-    provider_name: Mapped[str] = mapped_column(Text, nullable=False)
-    provider: Mapped[ProviderConnectionKind] = mapped_column(
-        StringBackedStrEnumColumn(ProviderConnectionKind), nullable=False
-    )
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    redirect_uri: Mapped[str] = mapped_column(Text, nullable=False)
-    code_verifier: Mapped[str] = mapped_column(Text, nullable=False)
-    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-
-class OAuthConnectionResultRow(Base):
-    """A short-lived, single-use browser handoff after an account-link callback.
-
-    The browser receives only the opaque ``result_id``. The outcome stays server-side, is
-    bound to the Operator who started the flow, and is consumed by the trusted console SPA.
-    """
-
-    __tablename__ = "oauth_connection_results"
-    __table_args__ = (
-        CheckConstraint("status IN ('success', 'error')", name="ck_oauth_connection_results_status"),
-        CheckConstraint("btrim(title) <> ''", name="ck_oauth_connection_results_title_nonempty"),
-        CheckConstraint("btrim(message) <> ''", name="ck_oauth_connection_results_message_nonempty"),
-        Index("idx_oauth_connection_results_operator", "operator_id"),
-        Index("idx_oauth_connection_results_expires_at", "expires_at"),
-    )
-
-    result_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
-    operator_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
-    )
-    status: Mapped[str] = mapped_column(Text, nullable=False)
-    title: Mapped[str] = mapped_column(Text, nullable=False)
-    message: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class OperatorLoginFlow(Base):

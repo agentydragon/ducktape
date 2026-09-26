@@ -178,9 +178,10 @@ in the US, holding equity funds, US Treasury and municipal bond funds, municipal
 and direct bonds and managed tax-loss-harvesting portfolios in taxable accounts. Qualified-dividend character, the net
 investment income tax and the mortgage-interest deduction (itemized against the
 standard deduction, with the SALT cap) belong to it; charitable deductions do not.
-Future years hold current law flat, with brackets and thresholds fixed in nominal
-dollars, and estimated tax and the true-up are paid on schedule without penalties:
-explicit assumptions, not forecasts. A distribution declared as qualified dividends is
+Future years hold current law flat, either in nominal dollars or with the amounts
+statute indexes following the modeled CPI, as the composition declares, and estimated
+tax and the true-up are paid on schedule without penalties: explicit assumptions, not
+forecasts. A distribution declared as qualified dividends is
 taxed at the federal long-term capital-gain rates and as ordinary income in California;
 the declaration is trusted without a holding-period test. The code does not yet cover
 this scope: NIIT's net investment income leaves out net rental income and the investment

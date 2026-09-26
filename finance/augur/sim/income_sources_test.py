@@ -30,6 +30,7 @@ from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile, TransferIncomeCategory
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -109,7 +110,8 @@ def compose(payments: tuple[Payment, ...]) -> World:
                     TaxProfile(agent_id=recipient, jurisdiction_ids=list(FILED_IN), tax_authority_agent_id=IRS),
                     jurisdictions,
                     quantum=QUANTUM,
-                )
+                ),
+                indexation=FixedNominalLaw(),
             )
         )
     for index, payment in enumerate(payments):

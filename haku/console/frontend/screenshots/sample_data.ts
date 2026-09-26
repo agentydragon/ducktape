@@ -212,42 +212,14 @@ export const SAMPLE_MCP_SERVERS: McpServerConnection[] = [
   {
     server_id: "sandbox",
     backend: { kind: "in_process", credential: { kind: "none" } },
-    connection: null,
   },
   {
     server_id: "grants",
     backend: { kind: "in_process", credential: { kind: "none" } },
-    connection: null,
   },
   {
-    server_id: "gmail",
-    backend: {
-      kind: "in_process",
-      credential: { kind: "operator_connection", connection: "google_mail" },
-    },
-    connection: {
-      connection: "google_mail",
-      display_name: "Google Mail",
-      provider: "google",
-      status: "connected",
-      connected_at: "2026-07-01T09:00:00Z",
-      token_expires_at: "2026-08-17T10:00:00Z",
-      scope: "https://www.googleapis.com/auth/gmail.modify",
-    },
-  },
-  {
-    server_id: "google_calendar",
-    backend: {
-      kind: "in_process",
-      credential: { kind: "operator_connection", connection: "google_calendar" },
-    },
-    connection: {
-      connection: "google_calendar",
-      display_name: "Google Calendar",
-      provider: "google",
-      status: "unprovisioned",
-      detail: "OAuth client not provisioned on this console; see the console deployment README.",
-    },
+    server_id: "haku_routine",
+    backend: { kind: "in_process", credential: { kind: "none" } },
   },
 ];
 
@@ -256,23 +228,11 @@ export const SAMPLE_MCP_PROBES: Record<string, McpServerProbe> = Object.fromEntr
     connection.server_id,
     {
       connection,
-      server:
-        connection.connection?.status === "unprovisioned"
-          ? {
-              server_id: connection.server_id,
-              title: connection.server_id,
-              state: {
-                status: "degraded" as const,
-                failure_stage: "credential_resolution" as const,
-                degraded_reason:
-                  "OAuth client for google_calendar is not provisioned on this console; see the console deployment README.",
-              },
-            }
-          : {
-              server_id: connection.server_id,
-              title: connection.server_id,
-              state: { status: "alive" as const, tools: [] },
-            },
+      server: {
+        server_id: connection.server_id,
+        title: connection.server_id,
+        state: { status: "alive" as const, tools: [] },
+      },
     },
   ])
 );

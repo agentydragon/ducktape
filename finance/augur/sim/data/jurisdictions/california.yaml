@@ -5,6 +5,19 @@
 # `ltcg_brackets` is omitted here — the tax layer will fall through to
 # the ordinary bracket when no LTCG-specific brackets are configured.
 jurisdiction_id: california
+# The amounts below are 2024 law: FTB's 2024 inflation-adjusted brackets and deduction.
+law_year: 2024
+
+indexation:
+  # R&TC 17041(h): FTB recomputes the brackets each year by the June-to-June change in the
+  # California CPI (all items).
+  ordinary_income_brackets: cpi
+  # R&TC 17073.5(d): FTB recomputes the standard deduction each year, as for the brackets.
+  standard_deduction: cpi
+  # IRC 1211(b)(1)'s $3,000, conformed below, with no inflation adjustment.
+  max_capital_loss_ordinary_offset: fixed
+  # R&TC 17043: $1,000,000, with no inflation adjustment.
+  taxable_income_surtax: fixed
 
 ordinary_income_brackets:
   single:
@@ -34,7 +47,7 @@ exempts_own_issue: true
 
 # R&TC 17043's 1% Behavioral Health Services Tax (formerly Mental Health Services Tax):
 # FTB 2025 Form 540 instructions, line 62: 1% of taxable income (Form 540 line 19) over
-# $1,000,000. The threshold is statutory and not inflation-indexed.
+# $1,000,000.
 # https://www.ftb.ca.gov/forms/2025/2025-540-instructions.html
 taxable_income_surtax:
   rate: 0.01

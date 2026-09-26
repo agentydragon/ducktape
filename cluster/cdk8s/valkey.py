@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from cdk8s import App, Chart, Size
@@ -21,6 +22,7 @@ from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
     RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
+    RedisReplicationSpecTolerations,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -85,10 +87,12 @@ def valkey_instance(
     max_memory_percent_of_limit: int | None,
     storage_class: str,
     storage_size: Size,
+    tolerations: Sequence[RedisReplicationSpecTolerations] | None = None,
 ) -> RedisReplication:
     """A two-replica Valkey `RedisReplication` in `hil-ovh`, one replica per node.
 
-    `max_memory_percent_of_limit=None` leaves `maxmemory` unset.
+    `max_memory_percent_of_limit=None` leaves `maxmemory` unset. `tolerations=None`
+    leaves the pod untolerant of any taint.
     """
     return RedisReplication(
         scope,
@@ -103,6 +107,7 @@ def valkey_instance(
         max_memory_percent_of_limit=max_memory_percent_of_limit,
         storage_class=storage_class,
         storage_size=storage_size,
+        tolerations=tolerations,
         node_affinity_match=[
             RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
                 key="topology.kubernetes.io/zone", operator="In", values=["hil-ovh"]

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
 from finance.augur.sim.ids import JurisdictionId
-from finance.augur.sim.jurisdictions import load_jurisdiction
+from finance.augur.sim.jurisdictions import Jurisdiction, StatutoryAmount, load_jurisdiction
 
 
 def test_load_federal_us_has_seven_ordinary_brackets() -> None:
@@ -42,6 +44,16 @@ def test_standard_deduction_present_for_single() -> None:
     ca = load_jurisdiction(JurisdictionId("california"))
     assert fed.standard_deduction["single"] == 14600.0
     assert ca.standard_deduction["single"] == 5363.0
+
+
+def test_every_dollar_amount_is_tagged_indexed_or_fixed() -> None:
+    """An amount nobody tagged would silently stay nominal under CPI indexing."""
+    data = load_jurisdiction(JurisdictionId("federal_us")).model_dump()
+    del data["indexation"][StatutoryAmount.NET_INVESTMENT_INCOME_TAX]
+    with pytest.raises(ValidationError, match="indexation tags"):
+        Jurisdiction.model_validate(data)
+    data["net_investment_income_tax"] = None
+    Jurisdiction.model_validate(data)
 
 
 if __name__ == "__main__":

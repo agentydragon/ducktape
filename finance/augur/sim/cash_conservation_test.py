@@ -73,6 +73,7 @@ from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.scenario import ORDINARY_INCOME, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.testing.issuer_protocol import at_month, issuer_protocol
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
@@ -349,7 +350,8 @@ def property_sale_world() -> World:
                 TaxProfile(agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=AgentId("irs")),
                 jurisdictions,
                 quantum=QUANTUM,
-            )
+            ),
+            indexation=FixedNominalLaw(),
         )
     )
     world.declare_housing(

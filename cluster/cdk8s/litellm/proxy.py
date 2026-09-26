@@ -61,7 +61,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
@@ -400,26 +400,32 @@ class LiteLLMServiceMonitor(Construct):
         )
 
 
-def litellm(
-    flux_chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    root: Path,
-    cnpg: Kustomization,
-    external_secrets_operator: Kustomization,
-    monitoring_crds: Kustomization,
-) -> Kustomization:
+def _chart(app: App) -> Chart:
     (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
-
-    app_dir = root / APP_DIR
-    app_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(app_dir))
     chart = Chart(app, spec.name, disable_resource_name_hashes=True)
     LiteLLMProxy(chart, "proxy", spec)
     LiteLLMServiceMonitor(chart, "monitoring")
     add_fleet_rules(chart)
-    app.synth()
+    return chart
 
-    kustomization = flux_kustomization(
+
+def write_manifests(root: Path) -> None:
+    (spec,) = proxy_specs()
+    write_charts(root, APP_DIR, _chart)
+    write_yaml(
+        root / APP_DIR / "kustomization.yaml",
+        kustomize_kustomization(namespace="litellm", resources=[f"{spec.name}.k8s.yaml"], components=["./image-pins"]),
+    )
+
+
+def litellm(
+    flux_chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    cnpg: Kustomization,
+    external_secrets_operator: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
         flux_chart,
         "litellm",
         artifact,
@@ -428,8 +434,3 @@ def litellm(
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, monitoring_crds),
     )
-    write_yaml(
-        app_dir / "kustomization.yaml",
-        kustomize_kustomization(namespace="litellm", resources=[f"{spec.name}.k8s.yaml"], components=["./image-pins"]),
-    )
-    return kustomization

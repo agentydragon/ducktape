@@ -45,6 +45,7 @@ from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.testing.issuer_protocol import Code, Money, Rate, at_month, issuer_protocol
 from finance.augur.sim.world import World
 
@@ -177,7 +178,8 @@ def compose(case: Holder, channels: Sequence[PreparedSeries]) -> World:
                     TaxProfile(agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS),
                     jurisdictions,
                     quantum=QUANTUM,
-                )
+                ),
+                indexation=FixedNominalLaw(),
             )
         )
     world.declare_pool(

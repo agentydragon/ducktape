@@ -35,6 +35,7 @@ from finance.augur.sim.results import Executed, Finished, Rejected, RejectedActi
 from finance.augur.sim.scenario import ORDINARY_INCOME, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.world import World
 
 ALICE = AgentId("alice")
@@ -112,7 +113,9 @@ def _compose(case: Situation, rollout_id: int) -> World:
     profile = TaxProfile(
         agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS, prior_year_tax=Decimal(0)
     )
-    world.track(TaxAuthority(compile_profile(profile, {FEDERAL: federal}, quantum=QUANTUM)))
+    world.track(
+        TaxAuthority(compile_profile(profile, {FEDERAL: federal}, quantum=QUANTUM), indexation=FixedNominalLaw())
+    )
     world.declare_pool(
         PreparedHoldingPool(
             agent_id=ALICE,

@@ -16,8 +16,8 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from haku.console.tools import google_discovery
-from haku.console.tools.google_discovery import GenTool, _execute, build_generated_tools
+from x.google_mcp_server import google_discovery
+from x.google_mcp_server.google_discovery import GenTool, _execute, build_generated_tools
 
 # A synthetic discovery doc exercising each dialect feature the converter must handle.
 _DOC: dict[str, Any] = {

@@ -33,6 +33,7 @@ from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -143,7 +144,8 @@ def compose(case: Situation, rollout_id: int) -> World:
                 ),
                 jurisdictions,
                 quantum=QUANTUM,
-            )
+            ),
+            indexation=FixedNominalLaw(),
         )
     )
     lots = case.extra_lots if case.with_harvest else (case.sleeve, *case.extra_lots)

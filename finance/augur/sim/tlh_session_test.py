@@ -29,6 +29,7 @@ from finance.augur.sim.results import Executed, Finished, InvalidRequest, Reject
 from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile, TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tlh import TlhAssumptions, TlhMarketUpdate, TlhOpeningCohort, TlhPortfolio
 from finance.augur.sim.world import Capture, World
 
@@ -118,7 +119,8 @@ def compose(case: Situation, rollout_id: int) -> World:
                     TaxProfile(agent_id=OWNER, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS),
                     {FEDERAL: load_jurisdiction(FEDERAL)},
                     quantum=QUANTUM,
-                )
+                ),
+                indexation=FixedNominalLaw(),
             )
         )
     world.declare_portfolio(

@@ -21,7 +21,6 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 
 from haku.console.config import KubernetesAuthorizationConfig
 from haku.console.identity.naming import normalize_agent_name
-from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import RuntimeActor
 from haku.recall_index.config import ConfiguredRecallIndex, GitRecallIndexDefinition
 from haku.sandbox.config import SandboxEnvironmentConfig
@@ -30,56 +29,6 @@ from mcp_infra.prefix import MCPMountPrefix
 
 class McpServerNotFoundError(LookupError):
     """The configured connected-server catalog has no entry for the requested id."""
-
-
-class OperatorConnectionProviderDefinition(BaseModel):
-    """A deploy-named OAuth application, optionally provisioned by nested settings."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    kind: ProviderConnectionKind
-    client_id: str | None = Field(default=None, min_length=1)
-    client_secret: SecretStr | None = None
-
-    @model_validator(mode="after")
-    def _complete_credentials(self) -> OperatorConnectionProviderDefinition:
-        if (self.client_id is None) != (self.client_secret is None):
-            raise ValueError("operator connection provider credentials require both client_id and client_secret")
-        return self
-
-
-class OperatorConnectionDefinition(BaseModel):
-    """A deploy-named external-account linkage backed by one configured OAuth application."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    display_name: str = Field(min_length=1)
-    provider: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_]*$")
-    scopes: tuple[str, ...] = Field(min_length=1)
-
-    @field_validator("display_name")
-    @classmethod
-    def _normalize_display_name(cls, value: str) -> str:
-        if not (normalized := value.strip()):
-            raise ValueError("operator connection display name must not be blank")
-        return normalized
-
-    @field_validator("scopes")
-    @classmethod
-    def _require_distinct_scopes(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        normalized = tuple(scope.strip() for scope in value)
-        if any(not scope for scope in normalized):
-            raise ValueError("operator connection scopes must not be blank")
-        if len(set(normalized)) != len(normalized):
-            raise ValueError("operator connection scopes must not contain duplicates")
-        return normalized
-
-
-class OperatorConnectionCredential(BaseModel):
-    """Inject the acting Operator's configured external-account token during execution."""
-
-    kind: Literal["operator_connection"] = "operator_connection"
-    connection: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_]*$")
 
 
 class NoCredential(BaseModel):
@@ -92,7 +41,7 @@ class NoCredential(BaseModel):
 # How a server resolves its backend credential for the acting Operator — exactly one variant per
 # server. The discriminated union replaces flag+optional fields that could set several at once;
 # dispatch by `isinstance` (mypy narrows), never a `kind`-string compare.
-type InProcessCredential = Annotated[OperatorConnectionCredential | NoCredential, Field(discriminator="kind")]
+type InProcessCredential = Annotated[NoCredential, Field(discriminator="kind")]
 
 
 class InProcessBackend(BaseModel):
@@ -139,14 +88,6 @@ class ExactToolsAutoApprovalPolicy(AutoApprovalPolicyBase):
             if any(not tool for tool in tools):
                 raise ValueError(f"exact-tools policy server {server_id!r} contains a blank tool name")
         return value
-
-
-class GmailLabelNamespaceAutoApprovalPolicy(AutoApprovalPolicyBase):
-    """Conditionally auto-approve Gmail label mutations confined to one namespace."""
-
-    type: Literal["gmail_label_namespace"] = "gmail_label_namespace"
-    server: Literal["gmail"] = "gmail"
-    label_prefix: str = Field(min_length=1)
 
 
 class HomeAssistantEntityControlAutoApprovalPolicy(AutoApprovalPolicyBase):
@@ -213,7 +154,6 @@ class NeverAutoApprovalPolicy(AutoApprovalPolicyBase):
 
 type AutoApprovalPolicy = Annotated[
     ExactToolsAutoApprovalPolicy
-    | GmailLabelNamespaceAutoApprovalPolicy
     | HomeAssistantEntityControlAutoApprovalPolicy
     | GrantSelfListAutoApprovalPolicy
     | KubernetesPassthroughAutoApprovalPolicy
@@ -288,8 +228,6 @@ class ConsoleConfigFile(BaseModel):
     auto_approval_policies: list[AutoApprovalPolicy] = Field(min_length=1)
     access_profiles: list[AccessProfile] = Field(min_length=1)
     default_access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
-    operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
-    operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)
     static_agents: dict[str, StaticAgentEntry] = Field(default_factory=dict)
     # Declared source configuration, not a harness convention. This is intentionally in the
     # deploy-owned non-secret catalog: adding a new source is a reviewed Git change, and matching
@@ -355,24 +293,6 @@ class ConsoleConfigFile(BaseModel):
                 raise ValueError(f"duplicate MCP server tool prefix {prefix!r}")
             server_ids.add(server.id)
             server_prefixes.add(prefix)
-            credential = server.backend.credential
-            if (
-                isinstance(credential, OperatorConnectionCredential)
-                and credential.connection not in self.operator_connections
-            ):
-                raise ValueError(
-                    f"MCP server {server.id!r} references unknown operator connection {credential.connection!r}"
-                )
-
-        for name in self.operator_connection_providers:
-            if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
-                raise ValueError(f"invalid operator connection provider name {name!r}")
-
-        for name, connection in self.operator_connections.items():
-            if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
-                raise ValueError(f"invalid operator connection name {name!r}")
-            if connection.provider not in self.operator_connection_providers:
-                raise ValueError(f"operator connection {name!r} references unknown provider {connection.provider!r}")
 
         agent_ids: set[UUID] = set()
         name_keys: set[str] = set()
@@ -392,13 +312,10 @@ class ConsoleConfigFile(BaseModel):
             if policy.id in policies:
                 raise ValueError(f"duplicate auto-approval policy id {policy.id!r}")
             policies[policy.id] = policy
-            if isinstance(policy, ExactToolsAutoApprovalPolicy):
-                if unknown_servers := set(policy.tools) - server_ids:
-                    raise ValueError(
-                        f"auto-approval policy {policy.id!r} references unknown MCP servers {sorted(unknown_servers)!r}"
-                    )
-            elif isinstance(policy, GmailLabelNamespaceAutoApprovalPolicy) and policy.server not in server_ids:
-                raise ValueError(f"auto-approval policy {policy.id!r} references unknown MCP server {policy.server!r}")
+            if isinstance(policy, ExactToolsAutoApprovalPolicy) and (unknown_servers := set(policy.tools) - server_ids):
+                raise ValueError(
+                    f"auto-approval policy {policy.id!r} references unknown MCP servers {sorted(unknown_servers)!r}"
+                )
 
         for policy in policies.values():
             if isinstance(policy, AnyOfAutoApprovalPolicy):
@@ -516,17 +433,14 @@ def _server_entry(config: ConsoleConfigFile, server_id: str) -> McpServerEntry:
 # `fastmcp.client.Client` accepts a `FastMCP` instance directly and opens an in-memory
 # `FastMCPTransport`, so a dispatcher drives a registered server through ordinary MCP calls.
 #
-# The registry holds *builders*, not prebuilt instances: a provider-backed server (gmail,
-# google_calendar) is built per execution from the acting Operator's access token, so the
-# credential flows in by argument with no shared/ambient state. The token is None only when
-# building for tool-schema reflection (`tools/list` never invokes a tool). Credential-free
-# servers (routine, tests) use `const_in_process_server`.
+# The registry holds *builders*, not prebuilt instances, so a future credentialed server can build
+# per execution from the acting Operator's resolved token with no shared/ambient state.
+# Credential-free servers (every registered server today) use `const_in_process_server`.
 InProcessServerBuilder = Callable[[str | None], FastMCP]
 InProcessRequestAuthorizer = Callable[[RuntimeActor, str, dict[str, Any]], str | None]
 
 
 class InProcessCredentialKind(StrEnum):
-    OPERATOR_CONNECTION = "operator_connection"
     NONE = "none"
 
 

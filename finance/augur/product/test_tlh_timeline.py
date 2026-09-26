@@ -25,6 +25,7 @@ from finance.augur.sim.results import Finished
 from finance.augur.sim.scenario import ORDINARY_INCOME, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -59,7 +60,8 @@ def compose(price: int) -> World:
                 TaxProfile(agent_id=OWNER, jurisdiction_ids=[FEDERAL_US], tax_authority_agent_id=AgentId("irs")),
                 {FEDERAL_US: FEDERAL},
                 quantum=QUANTUM,
-            )
+            ),
+            indexation=FixedNominalLaw(),
         )
     )
     world.declare_portfolio(

@@ -36,6 +36,7 @@ from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.world import World
 from finance.augur.study.guyton_klinger.panel import Sleeve
 from finance.augur.study.guyton_klinger.paths import (
@@ -159,7 +160,12 @@ def world(paths: list[Path], rollout_id: int) -> World:
             tax_authority_account_id=CHECKING,
             prior_year_tax=Decimal(path.prior_year_tax),
         )
-        result.track(TaxAuthority(compile_profile(profile, load_jurisdictions_for([profile]), quantum=Decimal(1))))
+        result.track(
+            TaxAuthority(
+                compile_profile(profile, load_jurisdictions_for([profile]), quantum=Decimal(1)),
+                indexation=FixedNominalLaw(),
+            )
+        )
         result.declare_distribution(
             PreparedDistribution(
                 agent_id=RETIREE,

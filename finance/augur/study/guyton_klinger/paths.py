@@ -55,6 +55,7 @@ from finance.augur.sim.scenario import (
     TransferIncomeCategory,
 )
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.world import World
 from finance.augur.study.guyton_klinger.panel import PRICED, AnnualPanel, Sleeve
 
@@ -205,7 +206,11 @@ def _declare_taxes(world: World) -> None:
     world.declare_account(
         PreparedAccount(account=AccountRef(agent_id=TAX_AUTHORITY, account_id=CHECKING), opening_balance=0)
     )
-    world.track(TaxAuthority(compile_profile(profile, load_jurisdictions_for([profile]), quantum=QUANTUM)))
+    world.track(
+        TaxAuthority(
+            compile_profile(profile, load_jurisdictions_for([profile]), quantum=QUANTUM), indexation=FixedNominalLaw()
+        )
+    )
     for sleeve in Sleeve:
         world.declare_distribution(
             PreparedDistribution(
