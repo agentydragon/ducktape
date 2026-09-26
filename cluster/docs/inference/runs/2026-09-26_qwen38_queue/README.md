@@ -104,3 +104,7 @@ cause. A cgroup below its memory limit alone does not rule out file-backed I/O s
 A later Ollama comparison should hold model bytes, SSD backing, placement, context,
 KV type and workload constant and record actual reads/faults and engine revision.
 This queue first establishes useful capacity on the known SSD/runtime combination.
+
+The [compaction follow-up](../2026-09-26_harbor_review/COMPACTION.md) identifies
+Terminus-2's default summarization and a practical OpenCode track. These are separate
+from the armed Mini-SWE diagnostic; verify actual compaction before expanding evals.
