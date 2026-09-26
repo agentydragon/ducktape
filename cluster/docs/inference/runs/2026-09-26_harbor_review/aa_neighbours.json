@@ -1,0 +1,44 @@
+[
+  {
+    "name": "GPT-6 Luna (max)",
+    "slug": "gpt-6-luna",
+    "intelligenceIndex": 37.2559686869738,
+    "terminalBench40": 0.126262626262626,
+    "contextWindowTokens": 1000000
+  },
+  {
+    "name": "Claude Sonnet 5 (Adaptive Reasoning, Max Effort)",
+    "slug": "claude-sonnet-5",
+    "intelligenceIndex": 38.1638712882576,
+    "terminalBench40": 0.141414141414141,
+    "contextWindowTokens": 1000000
+  },
+  {
+    "name": "GPT-6 Sol (medium)",
+    "slug": "gpt-6-sol-medium",
+    "intelligenceIndex": 39.7820971749522,
+    "terminalBench40": 0.186868686868687,
+    "contextWindowTokens": 872000
+  },
+  {
+    "name": "Qwen3.8-Flash-Next",
+    "slug": "qwen3-8-flash-next",
+    "intelligenceIndex": 39.8223021864741,
+    "terminalBench40": 0.252525252525253,
+    "contextWindowTokens": 256000
+  },
+  {
+    "name": "Claude Opus 5.5 (Adaptive Reasoning, Low Effort, Default Fallback)",
+    "slug": "claude-opus-5-5-low",
+    "intelligenceIndex": 42.3077781466168,
+    "terminalBench40": 0.313131313131313,
+    "contextWindowTokens": 1000000
+  },
+  {
+    "name": "GPT-6 Sol (high)",
+    "slug": "gpt-6-sol-high",
+    "intelligenceIndex": 42.8215513642985,
+    "terminalBench40": 0.262626262626263,
+    "contextWindowTokens": 872000
+  }
+]

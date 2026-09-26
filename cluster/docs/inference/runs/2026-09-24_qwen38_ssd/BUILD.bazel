@@ -1,0 +1,19 @@
+load("//devinfra/python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "download_checkpoints",
+    srcs = ["download_checkpoints.py"],
+    data = ["checkpoints.json"],
+    deps = ["//util/bazel:runfiles"],
+)
+
+py_binary(
+    name = "reproduce_probes",
+    srcs = ["reproduce_probes.py"],
+    data = [
+        "coding_request.json",
+        "dense_tool_roundtrip.json",
+        "long_context_sources.json",
+    ],
+    deps = ["//util/bazel:runfiles"],
+)
