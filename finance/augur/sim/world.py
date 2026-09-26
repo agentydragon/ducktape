@@ -311,11 +311,14 @@ class World:
         ):
             raise ValueError("invalid distribution tax character split")
         for part in spec.tax_character:
-            if part.issuer_jurisdiction_id is not None and part.issuer_jurisdiction_id not in {
-                item.jurisdiction_id for item in self.jurisdictions
-            }:
+            source = part.income_category
+            if (
+                isinstance(source, InterestIncome)
+                and source.issuer_jurisdiction_id is not None
+                and source.issuer_jurisdiction_id not in {item.jurisdiction_id for item in self.jurisdictions}
+            ):
                 raise ValueError("distribution has unknown issuer")
-            if InterestIncome(issuer_jurisdiction_id=part.issuer_jurisdiction_id) not in self.income_sources:
+            if source not in self.income_sources:
                 raise ValueError("distribution has undeclared income source")
         if self.distributions is None:
             self.distributions = Distributions(

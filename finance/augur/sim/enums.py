@@ -6,7 +6,10 @@ from enum import IntEnum
 
 
 class IncomeCategory(IntEnum):
-    """What KIND of ordinary income a dollar is. Only two, because only two BEHAVE differently.
+    """What KIND of income a dollar is. One category per distinct tax behavior.
+
+    Qualified dividends are singled out because they take the long-term capital-gain rates
+    wherever a jurisdiction has them, and ordinary rates elsewhere.
 
     Interest is singled out because jurisdictions disagree about it: a Treasury coupon is
     federal-taxable but state-exempt, a California muni coupon is exempt in California and
@@ -22,3 +25,4 @@ class IncomeCategory(IntEnum):
 
     ORDINARY = 0
     INTEREST = 1
+    QUALIFIED_DIVIDEND = 2

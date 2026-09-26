@@ -49,7 +49,6 @@ from haku.console.identity import (
     operator_auth,
     operator_login_flow,
 )
-from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
 from haku.console.identity.operator_identity import OperatorIdentityTrust
@@ -165,11 +164,6 @@ def create_app(
 ) -> FastAPI:
     # Deploy-time console config file (non-secret): the MCP server catalog and static agents.
     console_config = settings
-    # The `hostexec` MCP tool (Tier 1) has been removed, so `ConsoleConfigFile` no longer carries a
-    # `hostexec` field. The operator-login-identity token-exchange plumbing this still gates
-    # (Authentik token refresh, login offline_access, hostexec_enabled) is orphaned-but-harmless
-    # dead code pending a follow-up removal; hardcode the always-off value here rather than touch it.
-    hostexec_config = None
     # Postgres is required: it backs the approval ledger and the operator OAuth token stores, all
     # always constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
     # the test fixture), not here. Cross-replica fan-out (Postgres LISTEN/NOTIFY) is started by the
@@ -212,24 +206,8 @@ def create_app(
         if push_identity is not None
         else push.NullNotifier()
     )
-    # The operator's own Authentik token (captured at login via offline_access), self-refreshed with
-    # the operator-OIDC client — hostexec exchanges it for a per-host token. The store derives the
-    # Authentik token endpoint lazily (on refresh), so a non-Authentik operator OIDC that never
-    # refreshes (e.g. a hermetic test IdP with hostexec off) constructs it fine.
-    authentik_operator_token_store = PostgresAuthentikOperatorTokenStore(
-        db_sessions,
-        operator_identity_store=operator_identity_store,
-        token_states=oauth_token_states,
-        client_id=settings.operator_oidc.client_id,
-        client_secret=settings.operator_oidc.client_secret.get_secret_value(),
-        issuer=settings.operator_oidc.issuer,
-    )
     oauth_maintenance = association_maintenance.AssociationMaintenance(
-        db_engine,
-        db_sessions,
-        provider_store=provider_connection_store,
-        authentik_store=authentik_operator_token_store,
-        refresh_authentik_tokens=hostexec_config is not None,
+        db_engine, db_sessions, provider_store=provider_connection_store
     )
     agent_authority = PostgresAgentAuthority(
         db_sessions,
@@ -404,7 +382,6 @@ def create_app(
         in_process_servers=in_process_servers,
         gmail_client_provider=gmail_client_provider,
         provider_store=provider_connection_store,
-        authentik_token_store=authentik_operator_token_store,
         approval_notifier=approval_notifier,
         kubernetes_authorization=kubernetes_authorization,
     )
@@ -471,16 +448,12 @@ def create_app(
     # above uses these same objects rather than creating a second pool.
     app.state.db_engine = db_engine
     app.state.db_sessions = db_sessions
-    # The operator-login callback persists the operator's Authentik token only when hostexec is
-    # configured (offline_access is requested for the same reason). Read at request time from here.
-    app.state.hostexec_enabled = hostexec_config is not None
     app.state.agent_enrollment_service = agent_authority
     app.state.operator_identity_store = operator_identity_store
     app.state.operator_login_flows = operator_login_flows
     app.state.tool_call_service = tool_calls
     app.state.provider_connection_store = provider_connection_store
     app.state.oauth_connection_result_store = oauth_connection_result_store
-    app.state.authentik_operator_token_store = authentik_operator_token_store
     app.state.console_event_hub = console_event_hub
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher
@@ -567,9 +540,7 @@ def create_app(
 
     # Operator browser auth is mandatory. SessionMiddleware establishes request.session, which the
     # router guards read; https_only follows the canonical public origin.
-    app.state.operator_oauth = operator_auth.build_oauth(
-        settings.operator_oidc, login_flows=operator_login_flows, offline_access=hostexec_config is not None
-    )
+    app.state.operator_oauth = operator_auth.build_oauth(settings.operator_oidc, login_flows=operator_login_flows)
     app.include_router(operator_auth.router)
     app.add_middleware(
         SessionMiddleware,

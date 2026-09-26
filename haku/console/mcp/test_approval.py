@@ -387,12 +387,10 @@ def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID
     operator_ids: list[UUID] = []
 
     async def recording_service_auth(
-        *, server: McpServerEntry, operator_id: UUID, provider_store: Any = None, authentik_store: Any = None
+        *, server: McpServerEntry, operator_id: UUID, provider_store: Any = None
     ) -> str | None:
         operator_ids.append(operator_id)
-        return await backend_auth_for_operator(
-            server=server, operator_id=operator_id, provider_store=provider_store, authentik_store=authentik_store
-        )
+        return await backend_auth_for_operator(server=server, operator_id=operator_id, provider_store=provider_store)
 
     monkeypatch.setattr("haku.console.mcp.tool_call_service.backend_auth_for_operator", recording_service_auth)
     return operator_ids

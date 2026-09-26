@@ -28,26 +28,9 @@ py_library(
 )
 
 py_library(
-    name = "authentik_operator_token",
-    srcs = ["authentik_operator_token.py"],
-    deps = [
-        ":operator_identity_store",
-        "//haku/console:database_schema",
-        "//haku/console/oauth:token_state",
-        "//haku/console/oauth:token_support",
-        "//mcp_infra/authentik_auth:config",
-        "@pypi//httpx2",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "operator_auth",
     srcs = ["operator_auth.py"],
     deps = [
-        ":authentik_operator_token",
         ":operator_identity",
         ":operator_identity_store",
         ":operator_login_flow",
@@ -287,23 +270,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_authentik_operator_token",
-    size = "medium",
-    srcs = ["test_authentik_operator_token.py"],
-    requires_docker = True,
-    deps = [
-        ":authentik_operator_token",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console/oauth:token_state",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pytest_httpx2",  # keep: pytest plugin (auto-loaded), not a direct import
-        "@pypi//respx",
     ],
 )
 

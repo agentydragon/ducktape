@@ -75,7 +75,6 @@ def _service(tmp_path: Path, *, repository: AsyncMock, authorization: AsyncMock)
         executor=AsyncMock(),
         in_process_servers={},
         provider_store=AsyncMock(),
-        authentik_token_store=AsyncMock(),
         approval_notifier=AsyncMock(),
         gmail_client_provider=AsyncMock(return_value=None),
         kubernetes_authorization=authorization,

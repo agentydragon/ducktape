@@ -50,6 +50,7 @@ from finance.augur.sim.testing.security_distributions import (
     PAYOUTS_BY_YEAR_END,
     PER_UNIT,
     PRICE,
+    QUALIFIED_DIVIDENDS,
     SUB_QUANTUM_PER_UNIT,
     SYMBOL,
     TREASURY,
@@ -99,7 +100,7 @@ def _paths(payout: np.ndarray | None) -> tuple[PreparedSeries, ...]:
 def _slices(tax_character: tuple[DistributionTaxSlice, ...]) -> tuple[PreparedDistributionSlice, ...]:
     return tuple(
         PreparedDistributionSlice(
-            fraction_ppb=rate_to_ppb(tax_slice.fraction), issuer_jurisdiction_id=tax_slice.issuer_jurisdiction_id
+            fraction_ppb=rate_to_ppb(tax_slice.fraction), income_category=tax_slice.income_category
         )
         for tax_slice in tax_character
     )
@@ -146,18 +147,16 @@ def compose(
 
     slices = _slices(tax_character) if distributes else ()
     # The vocabulary a taxpayer shares: what the fund's slices name, plus where alice files.
-    issuers = {tax_slice.issuer_jurisdiction_id for tax_slice in slices if tax_slice.issuer_jurisdiction_id is not None}
+    issuers = {
+        part.income_category.issuer_jurisdiction_id
+        for part in slices
+        if isinstance(part.income_category, InterestIncome) and part.income_category.issuer_jurisdiction_id is not None
+    }
     world = World(
         MarketPath(_paths(payout), 0, rollout_count=1),
         horizon_months=HORIZON,
         income_sources=tuple(
-            sorted(
-                {
-                    ORDINARY_INCOME,
-                    *(InterestIncome(issuer_jurisdiction_id=part.issuer_jurisdiction_id) for part in slices),
-                },
-                key=income_source_sort_key,
-            )
+            sorted({ORDINARY_INCOME, *(part.income_category for part in slices)}, key=income_source_sort_key)
         ),
         jurisdictions=tuple(
             PreparedJurisdiction(jurisdiction_id=id_, level=load_jurisdiction(id_).level)
@@ -366,6 +365,30 @@ def test_the_payout_accrues_as_interest_per_issuer_and_not_as_one_lump() -> None
     assert [row.income for row in december] == [int(CORPORATE_SHARE * paid), int(TREASURY_SHARE * paid)]
 
 
+def test_qualified_dividends_take_federal_preferential_rates_and_california_ordinary_rates() -> None:
+    """Twelve $2,000 payouts close the year. Federal: 24,000 - 14,600 = 9,400 taxable, all in
+    the 0% long-term band, where the same payout as corporate interest owes 940.00 at 10%.
+    California: 24,000 - 5,363 = 18,637 at 1% to 10,412 and 2% above: 104.12 + 164.50."""
+
+    assert _tax_by_jurisdiction(_run(compose(tax_character=QUALIFIED_DIVIDENDS))) == {
+        "federal_us": 0,
+        "california": 26_862,
+    }
+    assert _tax_by_jurisdiction(_run(compose(tax_character=CORPORATE)))["federal_us"] == 94_000
+
+
+def test_qualified_dividends_are_their_own_row_in_the_holders_tax_records() -> None:
+    session = ActionSession({0: compose(tax_character=QUALIFIED_DIVIDENDS)}, ALICE)
+    try:
+        batch = session.start()
+    finally:
+        session.close()
+    assert not isinstance(batch, Finished)
+    [decision] = batch
+    assert decision.observation.tax_records is not None
+    assert decision.observation.tax_records.income == (("ordinary", 0), ("qualified_dividend", MONTHLY_PAYOUT_QUANTA))
+
+
 def test_a_declared_distribution_with_no_sampled_payout_series_is_rejected() -> None:
     """Named by the missing series rather than surfacing later as a non-finite payout."""
 
@@ -385,7 +408,7 @@ def test_current_payout_funds_an_explicit_same_month_claim() -> None:
     assert result.trace is not None
     assert result.trace.distributions is not None
     [payout] = [row for row in result.trace.distributions if row.month == 0]
-    assert (payout.asset_id, payout.amount, payout.issuer_jurisdiction_id) == ("bnd", 200_000, "federal_us")
+    assert (payout.asset_id, payout.amount, payout.income_source) == ("bnd", 200_000, "interest:federal_us")
 
 
 if __name__ == "__main__":

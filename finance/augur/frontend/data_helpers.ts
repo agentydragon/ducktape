@@ -318,7 +318,7 @@ export const EVENT_FORMATTERS = {
       return `TLH ${operation}: ${event.portfolioId}`;
     },
     detail: (event) =>
-      `cash ${cu(event.amountQuanta, event._currency)}; ST gain ${cu(event.shortTermGainQuanta, event._currency)}; LT gain ${cu(event.longTermGainQuanta, event._currency)}; basis change ${cu(event.basisChangeQuanta, event._currency)}; interest ${cu(event.interestIncomeQuanta, event._currency)}`,
+      `cash ${cu(event.amountQuanta, event._currency)}; ST gain ${cu(event.shortTermGainQuanta, event._currency)}; LT gain ${cu(event.longTermGainQuanta, event._currency)}; basis change ${cu(event.basisChangeQuanta, event._currency)}; income ${cu(event.incomeQuanta, event._currency)}`,
   },
   monthly_expense: {
     label: (event) => shortfallLabel(event, { ok: "Paid monthly expenses", shortfall: "Monthly expenses shortfall" }),

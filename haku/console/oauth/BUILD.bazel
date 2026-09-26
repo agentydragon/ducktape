@@ -9,7 +9,6 @@ py_library(
         ":provider_connection",
         ":token_support",
         "//haku/console:database_schema",
-        "//haku/console/identity:authentik_operator_token",
         "//haku/console/identity:operator_identity",
         "@pypi//sqlalchemy",
     ],

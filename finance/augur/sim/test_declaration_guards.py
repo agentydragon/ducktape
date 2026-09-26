@@ -265,7 +265,7 @@ DISTRIBUTION = PreparedDistribution(
     holding_account_id=BROKERAGE,
     asset_id=STOCK,
     to_account_id=CHECKING,
-    tax_character=(PreparedDistributionSlice(fraction_ppb=1_000_000_000, issuer_jurisdiction_id=None),),
+    tax_character=(PreparedDistributionSlice(fraction_ppb=1_000_000_000, income_category=InterestIncome()),),
 )
 
 
@@ -287,17 +287,23 @@ def test_a_distribution_pays_whoever_holds_the_security_not_a_cash_account() -> 
 @pytest.mark.parametrize(
     ("slices", "match"),
     [
-        ((PreparedDistributionSlice(fraction_ppb=400_000_000, issuer_jurisdiction_id=None),), "tax character"),
+        ((PreparedDistributionSlice(fraction_ppb=400_000_000, income_category=InterestIncome()),), "tax character"),
         (
             (
                 PreparedDistributionSlice(
-                    fraction_ppb=1_000_000_000, issuer_jurisdiction_id=JurisdictionId("test-unknown")
+                    fraction_ppb=1_000_000_000,
+                    income_category=InterestIncome(issuer_jurisdiction_id=JurisdictionId("test-unknown")),
                 ),
             ),
             "unknown",
         ),
         (
-            (PreparedDistributionSlice(fraction_ppb=1_000_000_000, issuer_jurisdiction_id=TAX_HOME.jurisdiction_id),),
+            (
+                PreparedDistributionSlice(
+                    fraction_ppb=1_000_000_000,
+                    income_category=InterestIncome(issuer_jurisdiction_id=TAX_HOME.jurisdiction_id),
+                ),
+            ),
             "undeclared income",
         ),
     ],

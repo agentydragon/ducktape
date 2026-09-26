@@ -366,8 +366,10 @@ def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> No
                 asset_id=AssetId(ASSET.symbol),
                 to_account_id=CHECKING,
                 tax_character=(
-                    PreparedDistributionSlice(fraction_ppb=500_000_000, issuer_jurisdiction_id=FEDERAL),
-                    PreparedDistributionSlice(fraction_ppb=500_000_000, issuer_jurisdiction_id=None),
+                    PreparedDistributionSlice(
+                        fraction_ppb=500_000_000, income_category=InterestIncome(issuer_jurisdiction_id=FEDERAL)
+                    ),
+                    PreparedDistributionSlice(fraction_ppb=500_000_000, income_category=InterestIncome()),
                 ),
             ),
         ),
@@ -385,9 +387,9 @@ def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> No
     [rollout] = result.rollouts
     assert rollout.trace is not None
     assert rollout.trace.distributions is not None
-    assert [(row.issuer_jurisdiction_id, row.units, row.amount) for row in rollout.trace.distributions] == [
-        (FEDERAL, None, 1),
-        (None, None, 1),
+    assert [(row.income_source, row.units, row.amount) for row in rollout.trace.distributions] == [
+        ("interest:federal_us", None, 1),
+        ("interest:corporate", None, 1),
     ]
     assert portfolios(rollout.summary.ending_book)[0].value == 100
     assert {(row.income_source, row.income) for row in rollout.summary.ending_book.income} == {

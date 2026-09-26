@@ -15,7 +15,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
@@ -40,7 +39,7 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
 )
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule

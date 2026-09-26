@@ -82,14 +82,6 @@ class OperatorConnectionCredential(BaseModel):
     connection: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_]*$")
 
 
-class OperatorLoginIdentityCredential(BaseModel):
-    """Execute under the acting Operator's own console-login (Authentik) identity: the tool call
-    resolves the Operator's stored Authentik login token (captured at login via offline_access),
-    which the server exchanges for a per-host token (hostexec)."""
-
-    kind: Literal["operator_login_identity"] = "operator_login_identity"
-
-
 class NoCredential(BaseModel):
     """No backend credential: an in-process server that carries its own (e.g. `haku_routine`, which
     holds the launch-routine secret) or otherwise needs none."""
@@ -100,9 +92,7 @@ class NoCredential(BaseModel):
 # How a server resolves its backend credential for the acting Operator — exactly one variant per
 # server. The discriminated union replaces flag+optional fields that could set several at once;
 # dispatch by `isinstance` (mypy narrows), never a `kind`-string compare.
-type InProcessCredential = Annotated[
-    OperatorConnectionCredential | OperatorLoginIdentityCredential | NoCredential, Field(discriminator="kind")
-]
+type InProcessCredential = Annotated[OperatorConnectionCredential | NoCredential, Field(discriminator="kind")]
 
 
 class InProcessBackend(BaseModel):
@@ -537,7 +527,6 @@ InProcessRequestAuthorizer = Callable[[RuntimeActor, str, dict[str, Any]], str |
 
 class InProcessCredentialKind(StrEnum):
     OPERATOR_CONNECTION = "operator_connection"
-    OPERATOR_LOGIN_IDENTITY = "operator_login_identity"
     NONE = "none"
 
 
