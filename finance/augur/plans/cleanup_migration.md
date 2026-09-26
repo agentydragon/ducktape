@@ -23,7 +23,21 @@ experiment consumers are added meanwhile.
 - The app's household never reinvests (`reinvest=None`), so the app never buys or
   contributes, and the zero-mark contribution refusal
   (`TlhPortfolioObservation.accepts_contributions`) is reachable only from household
-  tests (`policy/test_cash_band_household{,_world}.py`).
+  tests (`policy/test_cash_band_household{,_world}.py`). Turning it on (a
+  `FundingPolicy.reinvest_surplus` flag, off by default, passed through
+  `_funding_household` as `Reinvest(rebalance_tolerance_ppb=None)`, plus a funding-form
+  checkbox, `SCENARIO_SET_VERSION` bump and dropping "nothing buys" from `FundingPolicy`'s
+  docstring) still lacks:
+  - A security purchase in the timeline. `Holdings.buy` records no acquisition and no
+    event frame carries one, so a `Buy` moves the cash and holding-value series but
+    renders nothing. Needs an acquisition record captured into a new `EventLog` frame,
+    a `HoldingPurchaseEvent` in `product/wire.py` and `ROLLOUT_EVENT_KIND_ORDER`, and its
+    frontend rendering. Contributions already render as `tlh_financial_effect` rows.
+  - A purchase pool per security sleeve. Purchases land in `source_account_ids[0]`, and
+    `CashBandHousehold.check` refuses a sleeve without a declared pool there; the app
+    declares pools only from lots (`compile_holding_pools`), so a sleeve held only in a
+    later account fails. Declare an empty pool for each targeted security in that
+    account, or choose a per-sleeve purchase account.
 
 ## Older PR disposition
 
