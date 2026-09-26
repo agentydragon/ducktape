@@ -12,9 +12,8 @@ guidance.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from enum import StrEnum
 
-from cdk8s import ApiObjectMetadata, JsonPatch
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicy as _ClusterPolicy,
@@ -27,18 +26,8 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesValidateCel,
     ClusterPolicySpecRulesValidateCelExpressions,
     ClusterPolicySpecRulesValidateDeny,
+    ClusterPolicySpecValidationFailureAction,
 )
-
-
-class ValidationFailureAction(StrEnum):
-    """`spec.validationFailureAction`'s real values, in the casing Kyverno's own docs
-    and manifests use. cdk8s_import's jsii-generated enum for this field collapses the
-    CRD's duplicate-cased members (`audit`/`Audit`, `enforce`/`Enforce`) to the
-    lowercase spelling only; `ClusterPolicy.validation_failure_action` bypasses the
-    generated enum via `add_json_patch` to set the exact-cased value."""
-
-    AUDIT = "Audit"
-    ENFORCE = "Enforce"
 
 
 def match_resources(resources: ClusterPolicySpecRulesMatchAnyResources) -> ClusterPolicySpecRulesMatch:
@@ -89,8 +78,8 @@ class ClusterPolicy(_ClusterPolicy):
     """Kyverno's `ClusterPolicy`. Keywords are `ClusterPolicySpec` fields under their
     own names; `None` leaves a field unset, so Kyverno's own default applies.
     `validation_failure_action` sets the deprecated but still-served
-    `spec.validationFailureAction` (see `ValidationFailureAction`); Kyverno's newer,
-    per-rule `validate.failureAction` supersedes it but is unused by this repo today.
+    `spec.validationFailureAction`; Kyverno's newer, per-rule `validate.failureAction`
+    supersedes it but is unused by this repo today.
     """
 
     def __init__(
@@ -103,7 +92,7 @@ class ClusterPolicy(_ClusterPolicy):
         background: bool | None = None,
         admission: bool | None = None,
         mutate_existing_on_policy_update: bool | None = None,
-        validation_failure_action: ValidationFailureAction | None = None,
+        validation_failure_action: ClusterPolicySpecValidationFailureAction | None = None,
     ) -> None:
         super().__init__(
             scope,
@@ -114,7 +103,6 @@ class ClusterPolicy(_ClusterPolicy):
                 background=background,
                 admission=admission,
                 mutate_existing_on_policy_update=mutate_existing_on_policy_update,
+                validation_failure_action=validation_failure_action,
             ),
         )
-        if validation_failure_action is not None:
-            self.add_json_patch(JsonPatch.add("/spec/validationFailureAction", validation_failure_action))

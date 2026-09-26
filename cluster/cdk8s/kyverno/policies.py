@@ -29,6 +29,7 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesMatchAnySubjects,
     ClusterPolicySpecRulesMutate,
     ClusterPolicySpecRulesValidateCelExpressions,
+    ClusterPolicySpecValidationFailureAction,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -36,12 +37,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.kyverno import proxy_injection
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.providers.kyverno.cluster_policy import (
-    ClusterPolicy,
-    Validate,
-    ValidationFailureAction,
-    match_resources,
-)
+from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Validate, match_resources
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/policies"
 
@@ -114,7 +110,7 @@ def require_gitops_chart(app: App) -> Chart:
         # which requires admission context (request.userInfo) not available in background scans
         background=False,
         # Start in Audit mode - change to Enforce after validation
-        validation_failure_action=ValidationFailureAction.AUDIT,
+        validation_failure_action=ClusterPolicySpecValidationFailureAction.AUDIT,
         rules=[
             ClusterPolicySpecRules(
                 name="block-direct-workload-changes",
@@ -378,7 +374,7 @@ def restrict_agent_kustomization_patch_chart(app: App) -> Chart:
         ),
         admission=True,
         background=False,
-        validation_failure_action=ValidationFailureAction.ENFORCE,
+        validation_failure_action=ClusterPolicySpecValidationFailureAction.ENFORCE,
         rules=[
             ClusterPolicySpecRules(
                 name="only-reconcile-annotation",
@@ -465,7 +461,7 @@ def restrict_agent_gateway_routes_chart(app: App) -> Chart:
         # match), so it does not need request.userInfo; admission-time enforcement is
         # what matters for the GitOps + agent threat model.
         background=False,
-        validation_failure_action=ValidationFailureAction.ENFORCE,
+        validation_failure_action=ClusterPolicySpecValidationFailureAction.ENFORCE,
         rules=[
             ClusterPolicySpecRules(
                 name="deny-routes-in-agent-namespaces",
@@ -536,7 +532,7 @@ def require_secret_store_conditions_chart(app: App) -> Chart:
         # from gaffer-private and was the last holdout (gaffer-private#383). A store
         # that arrives without them is rejected at admission rather than merely
         # reported, so the fence cannot be dropped by a manifest edit.
-        validation_failure_action=ValidationFailureAction.ENFORCE,
+        validation_failure_action=ClusterPolicySpecValidationFailureAction.ENFORCE,
         rules=[
             ClusterPolicySpecRules(
                 name="require-conditions",
