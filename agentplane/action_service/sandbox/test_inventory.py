@@ -128,7 +128,7 @@ async def test_the_pod_name_comes_from_the_controllers_annotation() -> None:
     """The Pod carries nothing tying it back to its Sandbox, so this annotation is the only link."""
     core_v1 = FakeCoreV1(pods={"sandbox-pod-abc123"})
     inventory = _inventory(_sandbox(ready=True, pod_annotation="sandbox-pod-abc123"), core_v1, FakeExecRunner())
-    info = await inventory.info(CALLER, "box")
+    info = await inventory.get(CALLER, "box")
     assert info.pod_name == "sandbox-pod-abc123"
 
 
@@ -136,7 +136,7 @@ async def test_an_unannotated_sandbox_falls_back_to_its_own_name() -> None:
     """The controller names the Pod after the Sandbox when it publishes no annotation."""
     core_v1 = FakeCoreV1(pods={OBJECT_NAME})
     inventory = _inventory(_sandbox(ready=True, pod_annotation=None), core_v1, FakeExecRunner())
-    assert (await inventory.info(CALLER, "box")).pod_name == OBJECT_NAME
+    assert (await inventory.get(CALLER, "box")).pod_name == OBJECT_NAME
 
 
 async def test_a_ready_sandbox_whose_pod_is_gone_reports_no_pod() -> None:
@@ -144,7 +144,7 @@ async def test_a_ready_sandbox_whose_pod_is_gone_reports_no_pod() -> None:
     annotation is confirmed against the API server rather than trusted."""
     core_v1 = FakeCoreV1(pods=set())
     inventory = _inventory(_sandbox(ready=True, pod_annotation="sandbox-pod-abc123"), core_v1, FakeExecRunner())
-    info = await inventory.info(CALLER, "box")
+    info = await inventory.get(CALLER, "box")
     assert info.pod_name is None
 
 
@@ -154,7 +154,7 @@ async def test_a_not_ready_sandbox_is_not_searched_for_a_pod() -> None:
     inventory = _inventory(
         _sandbox(ready=False, pod_annotation=None, reason="Pod exists with phase: Pending"), core_v1, FakeExecRunner()
     )
-    info = await inventory.info(CALLER, "box")
+    info = await inventory.get(CALLER, "box")
     assert info.pod_name is None
     assert core_v1.read == []
 
@@ -176,7 +176,7 @@ async def test_every_condition_reaches_the_caller_as_the_controller_wrote_it() -
             "lastTransitionTime": "2026-09-19T09:49:30Z",
         },
     )
-    info = await _inventory(sandbox, FakeCoreV1(), FakeExecRunner()).info(CALLER, "box")
+    info = await _inventory(sandbox, FakeCoreV1(), FakeExecRunner()).get(CALLER, "box")
     suspended, ready = info.conditions
     assert (suspended.type, suspended.status, suspended.reason) == ("Suspended", "True", "SuspendedByOperator")
     assert suspended.last_transition_time is not None
@@ -187,7 +187,7 @@ async def test_a_sandbox_with_no_status_yet_reports_no_conditions() -> None:
     """The controller has not written one between the create call and the read that follows it."""
     sandbox = _sandbox(ready=False, pod_annotation=None)
     del sandbox["status"]
-    info = await _inventory(sandbox, FakeCoreV1(), FakeExecRunner()).info(CALLER, "box")
+    info = await _inventory(sandbox, FakeCoreV1(), FakeExecRunner()).get(CALLER, "box")
     assert info.conditions == []
     assert info.pod_name is None
 

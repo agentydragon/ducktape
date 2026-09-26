@@ -72,7 +72,7 @@ class FakeInventory:
     async def get_template(self, name: str) -> dict[str, JsonValue]:
         return {"metadata": {"name": name}, "spec": TEMPLATE_SPEC}
 
-    async def info(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
+    async def get(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
         self._record(caller)
         return SandboxInfo(name=name, conditions=[_ready()], template=TEMPLATE)
 
@@ -145,7 +145,7 @@ async def test_every_action_acts_as_the_request_caller(executor: SandboxExecutor
     """The identity comes from the authenticated request and never from an argument, so a caller
     cannot reach another account's boxes by asking for them."""
     await executor.execute(_request(SandboxAction.CREATE, {"name": "box", "template": TEMPLATE}), LEASE)
-    await executor.execute(_request(SandboxAction.INFO, {"name": "box"}), LEASE)
+    await executor.execute(_request(SandboxAction.GET, {"name": "box"}), LEASE)
     await executor.execute(_request(SandboxAction.LIST, {}), LEASE)
     await executor.execute(_request(SandboxAction.DISPOSE, {"name": "box"}), LEASE)
     await executor.execute(_request(SandboxAction.CREATE, {"name": "box", "template": TEMPLATE}, caller=OTHER), LEASE)
@@ -234,7 +234,7 @@ async def test_a_refusal_becomes_a_reason_the_caller_can_act_on(
     executor: SandboxExecutor, inventory: FakeInventory, raised: Exception, kind: str
 ) -> None:
     inventory.raises = raised
-    result = await executor.execute(_request(SandboxAction.INFO, {"name": "box"}), LEASE)
+    result = await executor.execute(_request(SandboxAction.GET, {"name": "box"}), LEASE)
     assert result.state is ExecutionState.FAILED
     assert result.error is not None
     assert result.error["kind"] == kind

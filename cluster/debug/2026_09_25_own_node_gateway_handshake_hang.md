@@ -183,6 +183,10 @@ readiness probes with a hardcoded `Host: "localhost"` (`k8stemplates/controller-
 **Chosen 2026-09-26: (a).** Applying it needs `bazel run //cluster:bootstrap`. A design note for
 (c) is still open, since this is the fifth failure of the same hairpin.
 
+The `gateway-probe` DaemonSet (<../cdk8s/monitoring/gateway_probe.py>) repeats this dial from an
+ordinary Pod on every public node. `OwnNodeGatewayHandshakeFailing` should fire for the control
+planes until (a) is applied and clear after it.
+
 ## Mitigations
 
 - #7911 routes claude-ai boxes' acceptance traffic to the testing app's Service.

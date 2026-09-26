@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import asynccontextmanager
 from datetime import timedelta
 
 import httpx
@@ -11,9 +13,16 @@ import pytest
 from fastmcp import FastMCP
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
+from starlette.applications import Starlette
 from testcontainers.postgres import PostgresContainer
 
-from agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, McpExecutorBinding
+from agentplane.action_service.catalog import (
+    ActionCatalog,
+    ActionDefinition,
+    ActionGroup,
+    ActionIdentity,
+    McpExecutorBinding,
+)
 from agentplane.action_service.database_migrate import RUNNER
 from agentplane.action_service.db import make_engine
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
@@ -90,6 +99,48 @@ class RecordingExecutor(Executor):
 @pytest.fixture
 def echo_executor() -> RecordingExecutor:
     return RecordingExecutor()
+
+
+class ScriptedExecutor(Executor):
+    """Answers each Action with the result a test set for it."""
+
+    def __init__(self) -> None:
+        self.results: dict[ActionIdentity, ExecutionResult] = {}
+
+    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
+        return self.results[request.action]
+
+
+@pytest.fixture
+def scripted() -> ScriptedExecutor:
+    return ScriptedExecutor()
+
+
+@asynccontextmanager
+async def lifespan_in_own_task(app: Starlette) -> AsyncIterator[None]:
+    """Hold `app`'s lifespan open in a task of its own. pytest-asyncio resumes a yield fixture's
+    teardown in another task, and the MCP lifespan's AnyIO scopes must enter and exit in the same
+    one, as they do under uvicorn."""
+    started: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+    stopping = asyncio.Event()
+
+    async def lifespan() -> None:
+        try:
+            async with app.router.lifespan_context(app):
+                started.set_result(None)
+                await stopping.wait()
+        except BaseException as error:
+            if not started.done():
+                started.set_exception(error)
+            raise
+
+    task = asyncio.create_task(lifespan())
+    try:
+        await started
+        yield
+    finally:
+        stopping.set()
+        await task
 
 
 @pytest.fixture

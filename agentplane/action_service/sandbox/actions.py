@@ -10,6 +10,7 @@ import json
 from enum import StrEnum
 from typing import cast
 
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, JsonValue
 
 from agentplane.action_service.catalog import ActionDefinition
@@ -36,7 +37,7 @@ class SandboxAction(StrEnum):
     GET_TEMPLATE = "get_template"
     EXEC = "exec"
     LIST = "list"
-    INFO = "info"
+    GET = "get"
     DISPOSE = "dispose"
 
 
@@ -57,11 +58,13 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
             description=(
                 "Create or reach a sandbox that runs as your own ServiceAccount. Returns as soon as "
                 "the object exists, before the box can run anything, so poll "
-                f'{SandboxAction.INFO} until its {READY_CONDITION!r} condition has status "True". '
+                f'{SandboxAction.GET} until its {READY_CONDITION!r} condition has status "True". '
                 f"Idempotent on the name, so polling with {SandboxAction.CREATE} would also work but "
                 f"tells you nothing more. Templates: {offered}. {SandboxAction.GET_TEMPLATE} shows one whole."
             ),
             input_schema=_schema(CreateArgs),
+            title="Create sandbox",
+            annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True),
         ),
         SandboxAction.GET_TEMPLATE: ActionDefinition(
             description=(
@@ -71,6 +74,8 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
                 "runs as your ServiceAccount, whatever `serviceAccountName` the template names."
             ),
             input_schema=_schema(TemplateArgs),
+            title="Show sandbox template",
+            annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         ),
         SandboxAction.EXEC: ActionDefinition(
             description=(
@@ -79,21 +84,29 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
                 f"retained output at {binding.max_output_bytes} bytes per stream, whatever you ask for."
             ),
             input_schema=_schema(ExecArgs),
+            title="Run script in sandbox",
+            annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=False),
         ),
         SandboxAction.LIST: ActionDefinition(
             description="Every sandbox you have here. Another account's are not listed and not reachable.",
             input_schema=_schema(NoArgs),
+            title="List sandboxes",
+            annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         ),
-        SandboxAction.INFO: ActionDefinition(
+        SandboxAction.GET: ActionDefinition(
             description=(
                 "Inspect one sandbox of yours without changing it: the controller's own conditions, "
                 f'verbatim. Poll it until {READY_CONDITION!r} has status "True"; until then that '
                 "condition's reason and message say what it is waiting on."
             ),
             input_schema=_schema(NameArgs),
+            title="Inspect sandbox",
+            annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         ),
         SandboxAction.DISPOSE: ActionDefinition(
             description="Delete one sandbox of yours, and everything in it. Disposing an absent one is not an error.",
             input_schema=_schema(NameArgs),
+            title="Dispose sandbox",
+            annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True),
         ),
     }

@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import StrEnum
 from functools import wraps
 from typing import Annotated, Any, Final, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
@@ -31,6 +31,7 @@ from agentplane.action_service.catalog import (
     UnknownActionError,
 )
 from agentplane.action_service.db import ActionConflictError, ActionNotFoundError
+from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE, DIRECT_WAIT_SECONDS, DirectToolProvider, refusal
 from agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -43,7 +44,12 @@ from agentplane.action_service.models import (
     ExternalGrantProvenance,
 )
 from agentplane.action_service.policy_view import SELF, PolicyTarget
-from agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
+from agentplane.action_service.service import (
+    ActionService,
+    InvalidActionArgumentsError,
+    UndecidedRequestError,
+    UnsupportedActionError,
+)
 from agentplane.action_service.tool_results import tool_result
 from agentplane.action_service.updates import ActionUpdates, UpdatesUnavailableError
 from agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitSeconds
@@ -359,6 +365,34 @@ def create_server(
             receipt.cancel()
             disconnect.cancel()
             await asyncio.gather(receipt, disconnect, return_exceptions=True)
+
+    def external_caller() -> CallerPrincipal | None:
+        # Outside an HTTP request there is no bearer, and so no caller to list for.
+        token = get_access_token()
+        if token is None:
+            return None
+        verified = _caller_token(token)
+        return verified.principal if verified.external_grant is not None else None
+
+    @_tool_errors
+    async def call_direct(action: ActionIdentity, arguments: dict[str, JsonValue]) -> ToolResult:
+        verified = _caller_token(get_access_token())
+        principal = verified.principal
+        try:
+            view = await service.submit_decided(
+                ActionRequestInput(
+                    idempotency_key=f"direct-{uuid4()}", title=DIRECT_CALL_TITLE, action=action, arguments=arguments
+                ),
+                principal,
+                external_grant=verified.external_grant,
+            )
+        except UndecidedRequestError as undecided:
+            return refusal(action, str(undecided))
+        view = await wait_for_receipt(view.id, principal, WaitOptions(wait_seconds=DIRECT_WAIT_SECONDS))
+        await revalidate(principal)
+        return tool_result(view, catalog.groups[action.group].executor)
+
+    server.add_provider(DirectToolProvider(catalog, service, external_caller, call_direct))
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors

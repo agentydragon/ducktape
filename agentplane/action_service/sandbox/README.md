@@ -111,8 +111,8 @@ own API proxy answers `501` to the upgrade verbs, so that is where to expect tro
 
 ## Tool surface
 
-`create`, `exec` and `list`, with `info`, `get_template` and `dispose`. `create` returns once the
-object exists and the caller polls `info` for the controller's conditions.
+`create`, `exec` and `list`, with `get`, `get_template` and `dispose`. `create` returns once the
+object exists and the caller polls `get` for the controller's conditions.
 
 **Conditions are passed through as the controller wrote them**, not summarised into a state. A
 reading taken here would be a second opinion that can disagree with the authority and carries less
@@ -122,7 +122,7 @@ not ready", and only the controller's own `reason` distinguishes them.
 
 **`create` does not wait for readiness.** A box can stay unready indefinitely -- refused by the
 namespace quota, or stopped on another `ReconcilerError` -- so a waiting `create` would spend its
-whole timeout to report a deadline, where `info` reports the controller's own reason for it.
+whole timeout to report a deadline, where `get` reports the controller's own reason for it.
 
 **Gotcha: a box the quota refused does not start when the quota frees.** agent-sandbox (v0.5.5)
 returns the Pod-create error from its reconcile, so controller-runtime retries that Sandbox on its
@@ -146,6 +146,13 @@ otherwise misreads every call:
   `execution_unknown` is reported as itself rather than as a failure;
 - an `ActionPolicySet` and a binding for the calling account are the access control. Without them
   every command waits for a human, which is not an exec loop.
+
+Staging also offers each of them to external Connections as a direct tool (`sandbox__exec` and so on;
+[Action Service README](../README.md) § Direct tools): a call answers with its result,
+the model as structured content and as JSON text, or with its request once 30 seconds have passed,
+for `get_action_result` to wait on. A command that outlives the wait keeps running; answering with
+the request rather than holding the call open keeps a client that gives up first from running the
+script again.
 
 ## Rejected alternatives
 
