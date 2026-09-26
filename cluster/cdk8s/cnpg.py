@@ -42,6 +42,16 @@ def _affinity(*, node_selector: dict[str, str], storage_class: str) -> ClusterSp
     )
 
 
+def same_owner_initdb(
+    name: str, *, locale_c_type: str | None = None, locale_collate: str | None = None
+) -> ClusterSpecBootstrapInitdb:
+    """`ClusterSpecBootstrapInitdb` for the common case where the app's database and its
+    owning role both take the app's own name."""
+    return ClusterSpecBootstrapInitdb(
+        database=name, owner=name, locale_c_type=locale_c_type, locale_collate=locale_collate
+    )
+
+
 def cluster(
     scope: Construct,
     id: str,

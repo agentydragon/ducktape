@@ -13,7 +13,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -67,7 +66,7 @@ def _database(scope: Construct) -> None:
         storage_class="local-path-ovh",
         size="2Gi",
         # CNPG generates the credentials in Secret attic-db-app.
-        initdb=ClusterSpecBootstrapInitdb(database="attic", owner="attic"),
+        initdb=cnpg.same_owner_initdb("attic"),
     )
 
 

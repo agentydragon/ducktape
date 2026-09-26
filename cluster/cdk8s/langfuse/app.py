@@ -10,7 +10,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -69,7 +68,7 @@ def _database(scope: Construct) -> None:
         storage_class="local-path-ovh-ssd",
         size="10Gi",
         # CNPG auto-generates credentials in secret langfuse-db-app
-        initdb=ClusterSpecBootstrapInitdb(database="langfuse", owner="langfuse"),
+        initdb=cnpg.same_owner_initdb("langfuse"),
     )
 
 

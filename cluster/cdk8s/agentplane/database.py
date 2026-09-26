@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
@@ -107,7 +106,7 @@ class Db(Construct):
             # rebuilding its replication pipeline. Keep a bounded outage budget below the
             # 5Gi volume instead of silently recycling the logical slot's WAL.
             postgresql=ClusterSpecPostgresql(parameters={"max_slot_wal_keep_size": "512MB"}),
-            initdb=ClusterSpecBootstrapInitdb(database="app", owner="app"),
+            initdb=cnpg.same_owner_initdb("app"),
             managed=ClusterSpecManaged(
                 roles=[
                     ClusterSpecManagedRoles(

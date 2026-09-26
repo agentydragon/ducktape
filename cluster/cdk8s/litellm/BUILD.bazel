@@ -92,7 +92,6 @@ py_library(
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/cnpg:cluster",
         "@pypi//cdk8s",
     ],
 )

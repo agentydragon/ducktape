@@ -969,7 +969,6 @@ py_library(
         ":pod_spec_patches",
         ":probes",
         "//cluster/cdk8s/agentplane:node_scheduling",
-        "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/external_secrets:clustersecretstore",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
