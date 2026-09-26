@@ -206,9 +206,7 @@ class KubeApiProxy(Construct):
                 memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
             ),
             security_context=ContainerSecurityContextProps(
-                allow_privilege_escalation=False,
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                read_only_root_filesystem=True,
+                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]), read_only_root_filesystem=True
             ),
         )
         tls = Secret.from_secret_name(self, "tls-secret", _TLS_SECRET)

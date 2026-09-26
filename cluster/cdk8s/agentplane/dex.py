@@ -253,9 +253,7 @@ def _add_deployment(scope: Construct) -> Deployment:
             memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(128)),
         ),
         security_context=ContainerSecurityContextProps(
-            allow_privilege_escalation=False,
-            read_only_root_filesystem=True,
-            capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
+            read_only_root_filesystem=True, capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL])
         ),
     )
     config_secret = Secret.from_secret_name(scope, "config-secret", "agentplane-testing-acceptance-operator")

@@ -85,9 +85,7 @@ def _add_mcp_everything(scope: Construct) -> None:
             ephemeral_storage=EphemeralStorageResources(request=Size.gibibytes(1), limit=Size.gibibytes(1)),
         ),
         security_context=ContainerSecurityContextProps(
-            allow_privilege_escalation=False,
-            read_only_root_filesystem=True,
-            capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
+            read_only_root_filesystem=True, capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL])
         ),
     )
     apply_pod_spec_patches(deployment)

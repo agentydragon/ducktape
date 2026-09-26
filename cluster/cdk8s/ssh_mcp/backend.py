@@ -167,7 +167,6 @@ class SshMcp(Construct):
             readiness=http_probe("/healthz", port=HTTP_PORT, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=HTTP_PORT, initial_delay_seconds=15, period_seconds=20),
             security_context=ContainerSecurityContextProps(
-                allow_privilege_escalation=False,
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
                 ensure_non_root=True,
                 user=1000,

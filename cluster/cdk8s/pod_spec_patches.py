@@ -11,8 +11,6 @@ from cdk8s import ApiObject, JsonPatch
 from cdk8s_plus_34 import Deployment, k8s
 
 _POD_SPEC_PATH = "/spec/template/spec"
-# A CronJob nests its pod template one level deeper, under the Job template it stamps out.
-CRON_JOB_POD_SPEC_PATH = "/spec/jobTemplate/spec/template/spec"
 
 
 def runtime_default_seccomp_patch(*, pod_spec_path: str = _POD_SPEC_PATH) -> JsonPatch:

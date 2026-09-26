@@ -8,7 +8,5 @@ from __future__ import annotations
 from cdk8s_plus_34 import Capability, ContainerSecurityContextProps, ContainerSecutiryContextCapabilities
 
 WRITABLE_ROOT = ContainerSecurityContextProps(
-    allow_privilege_escalation=False,
-    capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-    read_only_root_filesystem=False,
+    capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]), read_only_root_filesystem=False
 )
