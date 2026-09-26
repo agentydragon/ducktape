@@ -1,49 +1,53 @@
-# Remaining input and execution cleanup
+# P12: configured-strategy readers
 
-The [roadmap](roadmap.md) owns dependencies and dispatch. These are bounded
-deletion criteria for gaps found in the live-reader audit, not a new framework
-or a second migration plan. Remove each section with its last reader.
+The [roadmap](roadmap.md) owns P12's dependencies and dispatch. These are the
+configured strategy's live readers and their deletion criteria, not a new framework.
+Remove each entry with its last reader. No new configured implicit strategies or
+experiment consumers are added meanwhile.
 
-## Scope and expansion freeze
+## Readers
 
-The [roadmap's library cleanup slices](roadmap.md#committed-library-cleanups)
-are committed directions; composition and recording are decided in
-[the gate note](library_design_gates.md).
+- `policy/configured_household.py::ConfiguredHousehold` and
+  `policy/configured_allocation.py`'s proposer (`plan`) and `check_policies`: retire
+  with the app's household. Keep the shared sleeve calculations
+  (`policy/{cash_band,sleeves}.py`); their tests cover exact allocation, reserved
+  cash, zero targets/full exits, FIFO scoping and quantity scales. A newly required
+  product-specific calculation needs a real Python consumer and independent financial
+  checks; do not promote mixed-scale raw-quantity PE selection to a generic helper.
+- `product/scenarios.py::_target_allocation_policies_from_funding_policy` and
+  `sim/compiler/execution.py::compile_holding_pools`' sleeve-derived pools and
+  first-source-account choice: declarations, not a strategy configuration, determine
+  available accounts and instruments.
+- Scheduled sales: `_ScheduledSale` (`sim/prepared.py`) is an input only the sim and
+  product suites build; the configured household turns it into FIFO `Sell`s. Those
+  suites move their sales to explicit actions, and the record goes with the household.
+  Explicit asset-sale and public-sale/tax controls remain the independent coverage.
+- The PE issuer phase selects recovery, forced and tender lots with `Holdings.fifo`
+  inside the world; PE's migration after GPE replaces that with explicit responses.
+- The product shell's zero weight means "never sell this holding", whereas a zero
+  target in a selected core portfolio means "exit this sleeve". Keep exclusion and
+  target weight distinct when migrating the shell; never turn an excluded holding into
+  a sale.
 
-- **P12:** no new configured implicit strategies or experiment consumers.
+## Gaps on the app's configured path
 
-New domain capabilities wait only for their relevant existing financial/timing
-gate. The roadmap owns dependencies.
-
-## P12 reader retirement
-
-The configured household (`policy/configured_household.py`) and the acceptance
-suites that script sales still use scheduled asset sales.
-Move those decisions to explicit actions as each consumer migrates; P12 deletes
-the scheduled-sale schema and executor branch with the last one. Reuse the
-existing explicit asset-sale and public-sale/tax controls as independent financial coverage.
-
-P12 also deletes `compiler/execution.py::compile_holding_pools`' strategy-derived
-declarations/first-source-account choice and
-`product/scenarios.py::_target_allocation_policies_from_funding_policy` with their
-last configured allocator consumers, along with `policy/configured_allocation.py`'s
-configured-policy reader. The proposer is already Python-owned and calls shared
-sleeve helpers; its language port is not remaining work. Declarations, not a strategy configuration,
-must determine available accounts/instruments. Do not add new app endpoints or
-financial features while retiring them.
+- An ordinary lot on a TLH portfolio's (owner, account, asset) slot is refused, but
+  with the world's vague `lot ... references no declared holding pool`:
+  `compile_holding_pools` drops the managed slot's pool before the world sees it.
+- The product lowering sets `allow_purchases=False`, so the app never buys or
+  contributes, and the zero-mark contribution refusal
+  (`TlhPortfolioObservation.accepts_contributions`) is reachable only from household
+  tests (`policy/test_configured_household.py`).
 
 ## Older PR disposition
 
-These are proposed dispositions, not claims that the PRs have been closed. Remove
-each row when the disposition is resolved; do not preserve another history ledger.
+A proposed disposition, not a claim that the PR is closed. Remove the row when it is
+resolved.
 
 | PR                                                          | Disposition and surviving requirement                                                                                                                                                                                                                                        |
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [#5859](https://github.com/agentydragon/ducktape/pull/5859) | Keep as review-only study input, not another supported interface package. Consume its studies through STUDY/RUN/HOUSE/SCORE/ROBUST; inner-forecast continuation remains future scope. Replace sketches with runnable consumers rather than implementing every proposed stub. |
 
-The remaining PR dispositions do not gate implementation or create another DOCS
-project. Each migration updates its own affected README/SPEC and removes its
-completed plan entries. Optional model research lives in
-[the research note](market_model_research.md); implemented behavior lives in
-[calibration](../docs/calibration.md) and [PE model](../docs/private_equity_model.md)
-documentation.
+Optional model research lives in [the research note](market_model_research.md);
+implemented behavior lives in [calibration](../docs/calibration.md) and
+[PE model](../docs/private_equity_model.md) documentation.

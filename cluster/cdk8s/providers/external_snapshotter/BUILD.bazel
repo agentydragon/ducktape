@@ -1,4 +1,4 @@
-# gazelle:resolve py external_snapshotter_volumesnapshotclass_crds //cluster/cdk8s/crd_bindings/external_snapshotter:volumesnapshotclass
+# gazelle:resolve py external_snapshotter_volumesnapshotclass_crds //cluster/cdk8s/providers/external_snapshotter:volumesnapshotclass
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 

@@ -193,6 +193,7 @@ py_library(
         ":git_repo",
         ":pull_request",
         ":worktree_gc",
+        "@pypi//pygit2",
     ],
 )
 

@@ -1,7 +1,7 @@
 """Builds the Flux `Kustomization` custom resource each converted directory needs,
 plus the (kustomize) `kustomization.yaml` referencing its manifests.
 
-The Flux `Kustomization` CR is built from //cluster/cdk8s/crd_bindings/flux:kustomization's
+The Flux `Kustomization` CR is built from //cluster/cdk8s/providers/flux:kustomization's
 generated cdk8s constructs (see devinfra/js/cdk8s_import.bzl) rather than a plain
 dict, so a malformed dependsOn entry or sourceRef kind fails at synth time instead
 of silently emitting invalid YAML. The plain (non-CRD) kustomize.config.k8s.io

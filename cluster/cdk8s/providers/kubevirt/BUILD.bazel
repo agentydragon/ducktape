@@ -1,7 +1,7 @@
-# gazelle:resolve py kubevirt_kubevirt_crds //cluster/cdk8s/crd_bindings/kubevirt:kubevirt
-# gazelle:resolve py kubevirt_cdi_crds //cluster/cdk8s/crd_bindings/kubevirt:cdi
-# gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/crd_bindings/kubevirt:virtualmachine
-# gazelle:resolve py kubevirt_storageprofile_crds //cluster/cdk8s/crd_bindings/kubevirt:storageprofile
+# gazelle:resolve py kubevirt_kubevirt_crds //cluster/cdk8s/providers/kubevirt:kubevirt
+# gazelle:resolve py kubevirt_cdi_crds //cluster/cdk8s/providers/kubevirt:cdi
+# gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
+# gazelle:resolve py kubevirt_storageprofile_crds //cluster/cdk8s/providers/kubevirt:storageprofile
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 

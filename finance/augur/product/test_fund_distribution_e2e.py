@@ -55,7 +55,6 @@ _AGGREGATE = (
     DistributionTaxShareConfig(fraction=0.6),
 )
 _ALL_TREASURY = (DistributionTaxShareConfig(fraction=1.0, issuer_jurisdiction_id="federal_us"),)
-_ALL_CORPORATE = (DistributionTaxShareConfig(fraction=1.0),)
 
 
 def _with_bond_fund_series(model: ProviderConfig, *, distributes: bool) -> ProviderConfig:

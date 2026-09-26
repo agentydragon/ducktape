@@ -63,10 +63,6 @@ class Claim(ClaimId):
     to_account: AccountRef = Field(alias="to")
     amount_due: int
 
-    @property
-    def due_month(self) -> int:
-        return self.month
-
 
 class TlhPortfolioObservation(Record):
     """A managed portfolio at its mark: money and basis, no units or unit price."""

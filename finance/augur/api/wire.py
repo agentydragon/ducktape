@@ -17,8 +17,6 @@ from finance.augur.api.local_regulation import LocalRegulation
 from finance.augur.api.schemas import ApiModel, NonNegativeCurrencyAmount, PositiveCurrencyAmount
 from finance.augur.product.wire import SpendIndex
 
-PropertyId = str
-
 
 class ActorRole(StrEnum):
     PRIMARY_OWNER = "primary_owner"
