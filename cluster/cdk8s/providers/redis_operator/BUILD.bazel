@@ -1,4 +1,4 @@
-# gazelle:resolve py redis_operator_redisreplication_crds //cluster/cdk8s/crd_bindings/redis_operator:redisreplication
+# gazelle:resolve py redis_operator_redisreplication_crds //cluster/cdk8s/providers/redis_operator:redisreplication
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 
