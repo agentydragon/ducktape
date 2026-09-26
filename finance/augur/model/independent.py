@@ -3,10 +3,8 @@
 The provider enumerates every external series the simulator may request, grouped
 by role (asset-price `sp500`/`crypto`; property-value `home_value`; index
 `inflation`/`rent`), each mapped to a scalar level model (Constant / Deterministic
-/ GBM). Private-equity marks are a separate `private_equity_marks` map keyed by
-issuer id — they are not level series and do not travel in this provider's
-empty PE bundle. There is no prefix dispatch: config keys are
-already typed, so the level-vs-PE split is structural rather than parsed.
+/ GBM). It samples no private-equity marks; its PE bundle is empty. There is no
+prefix dispatch: config keys are already typed.
 """
 
 from __future__ import annotations
@@ -16,7 +14,6 @@ from typing import Literal
 import jax.numpy as jnp
 import numpy as np
 from numpyro import distributions as dist
-from pydantic import Field
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from finance.augur.model.gbm import GeometricBrownian
@@ -27,27 +24,24 @@ from finance.augur.model.series_model import ScalarSeriesSpec, sample_independen
 
 
 class IndependentProviderConfig(LevelSeriesGroups[ScalarSeriesSpec]):
-    """YAML provider that enumerates every level series and PE mark explicitly.
+    """YAML provider that enumerates every level series explicitly.
 
     Level series are the role sub-groups inherited from
     `LevelSeriesGroups` (`asset_prices` = `sp500`/`crypto`; `property_values` =
-    `home_value`; `index_series` = `inflation`/`rent`). `private_equity_marks` carries
-    per-issuer mark specs separately — PE marks are not level series. `extra="forbid"`
+    `home_value`; `index_series` = `inflation`/`rent`). `extra="forbid"`
     (from `FrozenModel`) rejects stray keys, including legacy `"security:btc"`-style wire ids.
     """
 
     type: Literal["independent"] = "independent"
-    private_equity_marks: dict[IssuerId, ScalarSeriesSpec] = Field(default_factory=dict)
 
     def realize_model(self) -> IndependentModel:
         # Pass the role sub-groups through structurally (no flatten/re-expand), dropping
-        # the config-only `type` sibling; PE marks travel separately as `pe_marks`.
+        # the config-only `type` sibling.
         return IndependentModel(
             asset_prices=self.asset_prices,
             security_distributions=self.security_distributions,
             property_values=self.property_values,
             index_series=self.index_series,
-            pe_marks=dict(self.private_equity_marks),
         )
 
 
@@ -60,20 +54,16 @@ class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
     Holds the level-series specs as the role sub-groups inherited from
     `LevelSeriesGroups` (`asset_prices`/`property_values`/`index_series`) — the same
     role-separated shape as the config and the sampled bundle, so nothing is flattened
-    to an opaque key/value map. `pe_marks` is keyed by typed `IssuerId`. The level-vs-PE split
-    is structural (it came from typed config), so this model never parses a prefix.
+    to an opaque key/value map.
     """
 
     label: str = "independent"
-    pe_marks: dict[IssuerId, ScalarSeriesSpec] = Field(default_factory=dict)
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
         return frozenset(self._level_specs_by_level_key())
 
     def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
-        # PE marks live in `pe_marks` but are scalar mark generators only — this provider
-        # doesn't synthesize a full PrivateEquityBundle, so it advertises no PE issuers as
-        # bundle-emittable. PE-bundle emission is a CompositeModel + PE-provider job.
+        # PE-bundle emission is a CompositeModel + PE-provider job.
         return frozenset()
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
