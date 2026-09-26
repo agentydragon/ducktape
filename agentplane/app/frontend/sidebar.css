@@ -31,7 +31,7 @@
   outline: none;
 }
 
-/* Dims the page behind the phone-width drawer (UISHELL_MOBILE); only ever rendered while the
+/* Dims the page behind the phone-width drawer; only ever rendered while the
    drawer is open (sidebar.tsx), so no default-hidden state is needed here for desktop -- but the
    media query still guards against a stale `mobileOpen` surviving a resize from phone to desktop
    width (e.g. rotating a tablet) without a click to reset it. */
