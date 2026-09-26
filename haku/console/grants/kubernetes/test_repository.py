@@ -39,10 +39,10 @@ from haku.console.grants.principal import (
 
 # Relative: Grant.status is computed against the live clock, so windows anchor to it.
 _NOW = datetime.now(UTC)
-_RULE = Rule(api_groups=("",), resources=("pods",), verbs=("get",))
-_SCOPE = NamespacesGrantScope(namespaces=("diagnostics", "public-coder-agent"))
-_CLUSTER_RULE = Rule(api_groups=("",), resources=("nodes",), verbs=("get",))
-_NON_RESOURCE_RULE = Rule(non_resource_urls=("/version",), verbs=("get",))
+_RULE = Rule(api_groups={""}, resources={"pods"}, verbs={"get"})
+_SCOPE = NamespacesGrantScope(namespaces={"diagnostics", "public-coder-agent"})
+_CLUSTER_RULE = Rule(api_groups={""}, resources={"nodes"}, verbs={"get"})
+_NON_RESOURCE_RULE = Rule(non_resource_urls={"/version"}, verbs={"get"})
 _RAW_GRANT_INSERT = text(
     """
     INSERT INTO kubernetes_grants (

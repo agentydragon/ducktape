@@ -70,12 +70,12 @@ from haku.grants.authorization import GrantSourceKind
 
 _NOW = datetime(2026, 8, 27, tzinfo=UTC)
 _K8S_SPEC = kubernetes_models.GrantSpec(
-    scope=kubernetes_models.NamespacesGrantScope(namespaces=("demo",)),
-    rules=(kubernetes_models.Rule(api_groups=("",), resources=("pods",), verbs=("get",)),),
+    scope=kubernetes_models.NamespacesGrantScope(namespaces={"demo"}),
+    rules=(kubernetes_models.Rule(api_groups={""}, resources={"pods"}, verbs={"get"}),),
 )
 _K8S_OTHER_SPEC = kubernetes_models.GrantSpec(
-    scope=kubernetes_models.NamespacesGrantScope(namespaces=("other",)),
-    rules=(kubernetes_models.Rule(api_groups=("apps",), resources=("deployments",), verbs=("patch",)),),
+    scope=kubernetes_models.NamespacesGrantScope(namespaces={"other"}),
+    rules=(kubernetes_models.Rule(api_groups={"apps"}, resources={"deployments"}, verbs={"patch"}),),
 )
 _HTTP_SPEC = http_models.GrantSpec(
     origin=http_models.HttpOrigin(scheme=http_models.HttpScheme.HTTPS, host="grocy.example", port=443),
