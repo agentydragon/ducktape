@@ -50,7 +50,7 @@ from finance.augur.sim.fixed_point import (
     quantity_to_quanta,
     rate_to_ppb,
 )
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, LotId, PropertyId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -82,10 +82,10 @@ QUANTUM = Decimal("0.01")
 QUANTA_PER_UNIT = 100
 ALICE = AgentId("alice")
 CHECKING = AccountId("checking")
-FEDERAL = "federal_us"
+FEDERAL = JurisdictionId("federal_us")
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 VTI_SCALE = quantity_scale_for_asset(VTI)
-ISSUER = "acme"
+ISSUER = IssuerId("acme")
 ACME = PrivateEquityAssetKey(issuer_id=IssuerId(ISSUER))
 ACME_ASSET_ID = AssetId("private_equity:acme")
 ACME_SCALE = quantity_scale_for_asset(ACME)

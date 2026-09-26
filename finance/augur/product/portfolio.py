@@ -19,7 +19,7 @@ from finance.augur.api.schemas import ApiModel
 from finance.augur.model.asset_key import AssetKey
 from finance.augur.product.wire import CurrencyQuanta
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, BondId, LotId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId, LotId, PortfolioId
 
 
 class ProductPublicSecurityLot(ApiModel):
@@ -57,7 +57,7 @@ class ProductBondPosition(ApiModel):
     account_id: AccountId
     account_label: str | None = None
     label: str | None = None
-    issuer_jurisdiction_id: str | None = None
+    issuer_jurisdiction_id: JurisdictionId | None = None
     face_value_quanta: CurrencyQuanta
     annual_coupon_rate: NonNegativeFloat
     coupon_period_months: NonNegativeInt

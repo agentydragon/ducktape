@@ -29,7 +29,7 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -63,7 +63,7 @@ ALICE, SELLER, LENDER, TENANT, COUNTY, IRS = (
     AgentId("irs"),
 )
 CHECKING = AccountId("checking")
-FEDERAL, CALIFORNIA = "federal_us", "california"
+FEDERAL, CALIFORNIA = JurisdictionId("federal_us"), JurisdictionId("california")
 
 LOCATION_ID = LocationId("loc")
 HOME_LOCATION_ID, RENTAL_LOCATION_ID = LocationId("home_loc"), LocationId("rental_loc")
@@ -172,7 +172,7 @@ class Situation:
     rollout_count: int = 1
     locations: tuple[PreparedLocation, ...] = LOCATIONS
     tax_policies: tuple[_PropertyTax, ...] = ()
-    jurisdiction_ids: tuple[str, ...] = ()
+    jurisdiction_ids: tuple[JurisdictionId, ...] = ()
     recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
     home_values: Mapping[str, Sequence[float]] = field(default_factory=dict)
 

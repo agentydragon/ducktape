@@ -28,7 +28,16 @@ from finance.augur.model.series import IndexSeriesKey, LocationId, SecurityKey
 from finance.augur.policy.cash_band import validate_band_bounds
 from finance.augur.sim.enums import IncomeCategory
 from finance.augur.sim.fixed_point import validate_currency_amount, validate_currency_quantum
-from finance.augur.sim.ids import AccountId, AgentId, BondId, LiabilityId, LotId, PortfolioId, PropertyId
+from finance.augur.sim.ids import (
+    AccountId,
+    AgentId,
+    BondId,
+    JurisdictionId,
+    LiabilityId,
+    LotId,
+    PortfolioId,
+    PropertyId,
+)
 from finance.augur.sim.tlh import TlhAssumptions
 
 type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
@@ -143,7 +152,7 @@ class InterestIncome(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     category: Literal[IncomeCategory.INTEREST] = IncomeCategory.INTEREST
-    issuer_jurisdiction_id: str | None = Field(
+    issuer_jurisdiction_id: JurisdictionId | None = Field(
         default=None,
         description=(
             "The taxing authority that issued the debt — `federal_us` for a Treasury, "
@@ -271,7 +280,7 @@ class BondHolding(BaseModel):
     # for a CA muni, `None` for a corporate issuer. Whether any given holder owes tax on the
     # coupon is a relation between this issuer and that holder's jurisdictions, never a
     # property of the bond: "in-state" is holder-relative.
-    issuer_jurisdiction_id: str | None = None
+    issuer_jurisdiction_id: JurisdictionId | None = None
     face_value: PositiveCurrencyAmount
     purchase_price: PositiveCurrencyAmount
     annual_coupon_rate: NonNegativeFloat
@@ -338,7 +347,7 @@ class DistributionTaxSlice(BaseModel):
     fraction: PositiveFloat
     # Same holder-relative meaning as `BondHolding.issuer_jurisdiction_id`: whether this slice
     # is taxable is a relation between the issuer and the holder's jurisdictions.
-    issuer_jurisdiction_id: str | None = None
+    issuer_jurisdiction_id: JurisdictionId | None = None
 
 
 class SecurityDistribution(BaseModel):
@@ -592,7 +601,7 @@ class TaxProfile(BaseModel):
 
     agent_id: AgentId
     filing_status: FilingStatus = FilingStatus.SINGLE
-    jurisdiction_ids: list[str] = Field(
+    jurisdiction_ids: list[JurisdictionId] = Field(
         description='Ordered list of taxing authorities — typically `["federal_us", "california"]` for a CA resident.'
     )
     tax_authority_agent_id: AgentId = Field(
@@ -875,8 +884,11 @@ class MortgageInterestDeductionPolicy(BaseModel):
             "tag improvement-tied HELOCs as `acquisition` if you want them deducted."
         ),
     )
-    per_jurisdiction_principal_cap: dict[str, CurrencyAmount] = Field(
-        default_factory=lambda: {"federal_us": Decimal(750_000), "california": Decimal(1_000_000)},
+    per_jurisdiction_principal_cap: dict[JurisdictionId, CurrencyAmount] = Field(
+        default_factory=lambda: {
+            JurisdictionId("federal_us"): Decimal(750_000),
+            JurisdictionId("california"): Decimal(1_000_000),
+        },
         description=(
             "Per-jurisdiction principal cap in USD. Federal post-TCJA caps acquisition "
             "debt at $750k; California's pre-TCJA $1M cap was preserved, so the two "

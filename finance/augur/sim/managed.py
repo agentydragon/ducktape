@@ -11,7 +11,7 @@ from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, DistributionOutcome, JournalEntry, Posting
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import gain_account
-from finance.augur.sim.ids import AccountId, AgentId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, PortfolioId
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import TlhPortfolioObservation
 from finance.augur.sim.prepared import PreparedDistribution, PreparedJurisdiction, PreparedTlhPortfolio
@@ -22,7 +22,7 @@ type Operation = Literal["modeled_realization", "contribution", "redemption", "d
 
 @dataclass(frozen=True)
 class InterestCredit:
-    issuer_jurisdiction_id: str | None
+    issuer_jurisdiction_id: JurisdictionId | None
     amount: int
 
 

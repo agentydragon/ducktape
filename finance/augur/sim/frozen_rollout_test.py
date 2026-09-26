@@ -16,7 +16,7 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -38,7 +38,7 @@ from finance.augur.sim.world import World
 QUANTUM = Decimal("0.01")
 CHECKING = AccountId("checking")
 PRIVATE = AccountId("private")
-FEDERAL = "federal_us"
+FEDERAL = JurisdictionId("federal_us")
 ALICE = AgentId("alice")
 VENDOR = AgentId("vendor")
 IRS = AgentId("irs")
@@ -49,7 +49,7 @@ TAX_YEAR_MONTHS = 12
 FAIL_MONTH = TAX_YEAR_MONTHS - 1
 
 PE_OWNER = AgentId("pe_owner")
-ISSUER = "acme"
+ISSUER = IssuerId("acme")
 PE_ASSET_ID = AssetId("private_equity:acme")
 PE_SCALE = quantity_scale_for_asset(PrivateEquityAssetKey(issuer_id=IssuerId(ISSUER)))
 PE_FREEZE_MONTH = 1

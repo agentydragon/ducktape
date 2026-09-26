@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Literal
 
-from finance.augur.model.series import PrivateEquityEventKindCode
+from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
 from finance.augur.sim import claims, observations, payments, private_equity, results
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import (
@@ -221,7 +221,7 @@ class World:
             self.bonds = HeldBonds((), self.market)
         self.bonds.hold(holding)
 
-    def _check_issuer(self, issuer: str) -> None:
+    def _check_issuer(self, issuer: IssuerId) -> None:
         """Every protocol channel on the path and in its range, a tender exactly where an opportunity is."""
         for channel, (minimum, maximum) in private_equity.CHANNEL_RANGES.items():
             if f"private_equity_{channel}:{issuer}" not in self.market.series:

@@ -8,7 +8,7 @@ import pytest_bazel
 from finance.augur.sim.actions import Action, LotSale, PayClaim, Sell
 from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.books import TaxLiabilityState
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.observations import Observation, TaxRecords
 from finance.augur.sim.prepared import PreparedHoldingPool, PreparedLot, PreparedRecurringTransfer, PreparedSeries
 from finance.augur.sim.results import Executed
@@ -171,7 +171,7 @@ def test_the_close_resets_the_year_and_posts_the_assessment_until_the_true_up_se
         (
             TaxLiabilityState(
                 agent_id=HOUSEHOLD,
-                jurisdiction_id="test_federal",
+                jurisdiction_id=JurisdictionId("test_federal"),
                 tax_year_end_month=11,
                 amount_owed=30_000,
                 active=True,

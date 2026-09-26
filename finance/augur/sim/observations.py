@@ -7,7 +7,7 @@ from pydantic import Field
 
 from finance.augur.sim.actions import ClaimId
 from finance.augur.sim.books import AccountRef, Record, TaxLiabilityState
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, LotId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, JurisdictionId, LotId, PortfolioId
 from finance.augur.sim.results import Receipt
 
 
@@ -45,7 +45,7 @@ class HeldBond(Record):
 
     bond_id: BondId
     account_id: AccountId
-    issuer_jurisdiction_id: str | None
+    issuer_jurisdiction_id: JurisdictionId | None
     face_value: int
     purchase_price: int
     coupon: Annotated[FixedCoupon | IndexedCoupon, Field(discriminator="kind")]

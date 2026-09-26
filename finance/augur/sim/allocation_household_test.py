@@ -18,7 +18,7 @@ from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, currency_amount_to_quanta, quantity_scale_for_asset
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import MAX_COUNT
@@ -50,7 +50,7 @@ ALICE = AgentId("alice")
 WORLD = AgentId("world")
 CHECKING = AccountId("checking")
 BROKERAGE = AccountId("brokerage")
-SYNTHETIC = "synthetic"
+SYNTHETIC = JurisdictionId("synthetic")
 TAX = Jurisdiction(
     jurisdiction_id=SYNTHETIC,
     level=JurisdictionLevel.FEDERAL,

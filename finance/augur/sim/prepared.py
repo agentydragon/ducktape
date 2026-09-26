@@ -9,7 +9,17 @@ from typing import Literal
 
 from finance.augur.model.series import LocationId
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, LiabilityId, LotId, PortfolioId, PropertyId
+from finance.augur.sim.ids import (
+    AccountId,
+    AgentId,
+    AssetId,
+    BondId,
+    JurisdictionId,
+    LiabilityId,
+    LotId,
+    PortfolioId,
+    PropertyId,
+)
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.scenario import TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
@@ -124,7 +134,7 @@ class PreparedBond:
     bond_id: BondId
     agent_id: AgentId
     account_id: AccountId
-    issuer_jurisdiction_id: str | None
+    issuer_jurisdiction_id: JurisdictionId | None
     face_value: int
     purchase_price: int
     coupon: PreparedFixedAmount | PreparedIndexedCoupon
@@ -136,7 +146,7 @@ class PreparedBond:
 @dataclass(frozen=True, kw_only=True)
 class PreparedDistributionSlice:
     fraction_ppb: int
-    issuer_jurisdiction_id: str | None
+    issuer_jurisdiction_id: JurisdictionId | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -150,7 +160,7 @@ class PreparedDistribution:
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedJurisdiction:
-    jurisdiction_id: str
+    jurisdiction_id: JurisdictionId
     level: JurisdictionLevel
 
 
@@ -158,7 +168,7 @@ class PreparedJurisdiction:
 class PreparedLocation:
     location_id: LocationId
     display_name: str
-    jurisdiction_ids: tuple[str, ...]
+    jurisdiction_ids: tuple[JurisdictionId, ...]
     annual_property_tax_rate_ppb: int
     annual_special_assessment: int
 
@@ -292,7 +302,7 @@ class _MortgageInterestDeduction:
     liability_id: LiabilityId
     owner_agent_id: AgentId
     debt_class: Literal["acquisition", "home_equity"]
-    per_jurisdiction_principal_cap: dict[str, int]
+    per_jurisdiction_principal_cap: dict[JurisdictionId, int]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -326,7 +336,7 @@ class _SaltDeduction:
     """
 
     profile_id: AgentId
-    federal_jurisdiction_id: str
+    federal_jurisdiction_id: JurisdictionId
     cap_schedule: tuple[_SaltCap, ...]
 
 

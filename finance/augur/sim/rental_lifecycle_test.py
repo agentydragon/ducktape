@@ -33,7 +33,7 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
-from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.observations import Observation
@@ -90,8 +90,8 @@ COUNTY = AgentId("county_assessor")
 ISSUER = AgentId("bond_issuer")
 ALICE = AgentId("alice")
 BOB = AgentId("bob")
-FEDERAL = "federal_us"
-CALIFORNIA = "california"
+FEDERAL = JurisdictionId("federal_us")
+CALIFORNIA = JurisdictionId("california")
 SF = LocationId("san_francisco")
 RENT = RentKey(location_id=LocationId("test_location"))
 HOME_VALUE = HomeValueKey(location_id=LocationId(SF))
@@ -336,7 +336,9 @@ def salt_cap(profile_id: AgentId, cap: Decimal | int) -> _SaltDeduction:
     )
 
 
-def taxpayer(agent_id: AgentId = OWNER, *, jurisdiction_ids: Sequence[str] = (FEDERAL, CALIFORNIA)) -> TaxProfile:
+def taxpayer(
+    agent_id: AgentId = OWNER, *, jurisdiction_ids: Sequence[JurisdictionId] = (FEDERAL, CALIFORNIA)
+) -> TaxProfile:
     return TaxProfile(
         agent_id=agent_id,
         filing_status=FilingStatus.SINGLE,
@@ -487,7 +489,9 @@ def cash(rollout: Rollout, agent_id: AgentId, month: int) -> float:
     return balance.balance / 100
 
 
-def breakdown(rollout: Rollout, *, month: int, jurisdiction: str, agent_id: AgentId = OWNER) -> dict[str, Any]:
+def breakdown(
+    rollout: Rollout, *, month: int, jurisdiction: JurisdictionId, agent_id: AgentId = OWNER
+) -> dict[str, Any]:
     """One taxpayer's year-end tax breakdown under one jurisdiction."""
 
     return one(

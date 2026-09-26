@@ -32,7 +32,7 @@ from finance.augur.model.series import LocationId, SecuritySymbol
 from finance.augur.model.state_space import StateSpaceProviderConfig
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from finance.augur.product.wire import MAX_HORIZON_MONTHS
-from finance.augur.sim.ids import AgentId, PropertyId
+from finance.augur.sim.ids import AgentId, JurisdictionId, PropertyId
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
@@ -113,7 +113,7 @@ class DistributionTaxShareConfig(ApiModel):
     """
 
     fraction: float = Field(gt=0.0, le=1.0)
-    issuer_jurisdiction_id: str | None = Field(
+    issuer_jurisdiction_id: JurisdictionId | None = Field(
         default=None,
         description=(
             "The taxing authority that issued the underlying debt — `federal_us` for the "

@@ -632,7 +632,7 @@ def _deterministic_dilution_factor(*, rate: float, horizon_months: int) -> np.nd
             annual_dilution_rate=rate,
             annual_dilution_rate_log_sigma=0.0,
             rollout_seeds=(7,),
-            issuer_id="acme",
+            issuer_id=IssuerId("acme"),
             rollout_count=1,
             horizon_months=horizon_months,
         )[0]
@@ -794,7 +794,7 @@ def _sample_dilution_paths(issuer: PrivateEquityRiskIssuerConfig, *, rollout_cou
         rollout_seeds=tuple(range(1, rollout_count + 1)),
         required_private_equity_issuers=frozenset({IssuerId("acme")}),
     )
-    return _sample_issuer("acme", issuer, request)
+    return _sample_issuer(IssuerId("acme"), issuer, request)
 
 
 def _drawn_rates(issuer: PrivateEquityRiskIssuerConfig, *, rollout_count: int) -> np.ndarray:
@@ -829,7 +829,7 @@ def _latent_coupled_mark(
         annual_dilution_rate=issuer.annual_dilution_rate,
         annual_dilution_rate_log_sigma=issuer.annual_dilution_rate_log_sigma,
         rollout_seeds=seeds,
-        issuer_id="acme",
+        issuer_id=IssuerId("acme"),
         rollout_count=rollout_count,
         horizon_months=horizon_months,
     )
@@ -934,7 +934,7 @@ def test_zero_rate_with_positive_sigma_yields_no_dilution_and_no_spread() -> Non
         annual_dilution_rate=0.0,
         annual_dilution_rate_log_sigma=0.5,
         rollout_seeds=tuple(range(1, rollout_count + 1)),
-        issuer_id="acme",
+        issuer_id=IssuerId("acme"),
         rollout_count=rollout_count,
         horizon_months=horizon,
     )

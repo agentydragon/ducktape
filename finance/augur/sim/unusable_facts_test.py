@@ -12,7 +12,13 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
-from finance.augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode, SecurityKey, SecuritySymbol
+from finance.augur.model.series import (
+    IssuerId,
+    PrivateEquityEventKindCode,
+    PrivateEquityRegimeCode,
+    SecurityKey,
+    SecuritySymbol,
+)
 from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.execution import compile_series
@@ -27,7 +33,7 @@ from finance.augur.sim.world import World
 QUANTUM = Decimal("0.01")
 ALICE = AgentId("alice")
 CHECKING = AccountId("checking")
-ACME = "acme"
+ACME = IssuerId("acme")
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 SCALE = quantity_scale_for_asset(VTI)
 HORIZON = 2

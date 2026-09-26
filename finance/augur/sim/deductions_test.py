@@ -27,7 +27,7 @@ from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
-from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -59,7 +59,7 @@ ALICE, PAYROLL, IRS, SELLER, BANK, COLLECTOR = (
     AgentId("sf_tax_collector"),
 )
 CHECKING = AccountId("checking")
-FEDERAL, CALIFORNIA = "federal_us", "california"
+FEDERAL, CALIFORNIA = JurisdictionId("federal_us"), JurisdictionId("california")
 
 LOCATION_ID = LocationId("san_francisco")
 MORTGAGE_ID = LiabilityId("sf_home_mortgage")
@@ -306,7 +306,7 @@ def run(case: Situation) -> Rollout:
     return one(batch.rollouts)
 
 
-def breakdown(rollout: Rollout, *, jurisdiction_id: str, year_index: int = 0) -> dict[str, Any]:
+def breakdown(rollout: Rollout, *, jurisdiction_id: JurisdictionId, year_index: int = 0) -> dict[str, Any]:
     """The year-end return one jurisdiction assessed, in the year that ends at month `12y + 11`."""
     assert rollout.trace is not None
     month = 12 * year_index + 11

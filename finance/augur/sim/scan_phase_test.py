@@ -23,7 +23,7 @@ from finance.augur.sim.fixed_point import (
     quantity_to_quanta,
     rate_to_ppb,
 )
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, LotId, PropertyId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -49,8 +49,8 @@ from finance.augur.sim.world import World
 QUANTUM = Decimal("0.01")
 ALICE = AgentId("alice")
 CHECKING = AccountId("checking")
-FEDERAL = "federal_us"
-CALIFORNIA = "california"
+FEDERAL = JurisdictionId("federal_us")
+CALIFORNIA = JurisdictionId("california")
 SP500 = SecurityKey(symbol=SP500_SYMBOL)
 SF = PreparedLocation(
     location_id=LocationId("sf"),
@@ -76,7 +76,7 @@ def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
 def world_for(
     *accounts: PreparedAccount,
     horizon_months: int,
-    jurisdiction_ids: tuple[str, ...] = (),
+    jurisdiction_ids: tuple[JurisdictionId, ...] = (),
     series: tuple[PreparedSeries, ...] = (),
 ) -> World:
     """An empty world holding the declared cash accounts and the tax vocabulary its taxpayers share."""
@@ -93,7 +93,7 @@ def world_for(
     return world
 
 
-def taxed_by(world: World, *jurisdiction_ids: str, prior_year_tax: Decimal = Decimal(0)) -> None:
+def taxed_by(world: World, *jurisdiction_ids: JurisdictionId, prior_year_tax: Decimal = Decimal(0)) -> None:
     world.track(
         TaxAuthority(
             compile_profile(

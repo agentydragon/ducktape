@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxProfile, PreparedTaxRules
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedSeries
 from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome
@@ -22,7 +22,7 @@ EXOGENOUS = AccountRef(agent_id=WORLD, account_id=AccountId("cash"))
 INCOME_SOURCES = (ORDINARY_INCOME, InterestIncome())
 
 
-def flat_rules(jurisdiction: str, rate: int) -> PreparedTaxRules:
+def flat_rules(jurisdiction: JurisdictionId, rate: int) -> PreparedTaxRules:
     return PreparedTaxRules(jurisdiction, (), False, (PreparedTaxBracket(None, rate),), (), 0, 300_000, 0)
 
 
@@ -35,7 +35,7 @@ def taxpayer(agent_id: AgentId) -> PreparedTaxProfile:
         tax_authority_account_id=AccountId("cash"),
         prior_year_tax=0,
         section_121_exclusion=0,
-        jurisdictions=(flat_rules("test_federal", 100_000_000),),
+        jurisdictions=(flat_rules(JurisdictionId("test_federal"), 100_000_000),),
     )
 
 

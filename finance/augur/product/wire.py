@@ -25,11 +25,11 @@ from finance.augur.api.schemas import (
     PositiveCurrencyAmount,
 )
 from finance.augur.model.asset_key import AssetKey
-from finance.augur.model.series import LocationId, SecuritySymbol
+from finance.augur.model.series import IssuerId, LocationId, SecuritySymbol
 from finance.augur.product.metrics import OutcomeBasis
 from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.fixed_point import validate_currency_quantum
-from finance.augur.sim.ids import AccountId, AgentId, PortfolioId, PropertyId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, PortfolioId, PropertyId
 
 
 class SpendIndex(StrEnum):
@@ -430,7 +430,7 @@ class TlhFinancialEffectEvent(_RolloutEventBase):
 
 class PrivateEquityMarkerEvent(_RolloutEventBase):
     kind: Literal["private_equity_event"] = "private_equity_event"
-    issuer_id: str
+    issuer_id: IssuerId
     asset: AssetKey
     asset_label: str | None = None
     event_kind: PrivateEquityEventKind
@@ -445,7 +445,7 @@ class PrivateEquityMarkerEvent(_RolloutEventBase):
 
 class PrivateEquityOpportunityEvent(_RolloutEventBase):
     kind: Literal["private_equity_opportunity"] = "private_equity_opportunity"
-    issuer_id: str
+    issuer_id: IssuerId
     asset: AssetKey
     asset_label: str | None = None
     event_kind: PrivateEquityEventKind
@@ -529,7 +529,7 @@ class PropertyMaintenancePaymentEvent(_RolloutEventBase):
 
 class TaxAccrualEvent(_RolloutEventBase):
     kind: Literal["tax_accrual"] = "tax_accrual"
-    jurisdiction_id: str
+    jurisdiction_id: JurisdictionId
     tax_year_end_month: NonNegativeInt
     ordinary_income_quanta: CurrencyQuanta
     ltcg_quanta: CurrencyQuanta

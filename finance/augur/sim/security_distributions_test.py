@@ -21,7 +21,7 @@ from finance.augur.sim.fixed_point import (
     quantity_to_quanta,
     rate_to_ppb,
 )
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -65,7 +65,7 @@ ALICE = AgentId("alice")
 IRS = AgentId("irs")
 CHECKING = AccountId("checking")
 BROKERAGE = AccountId("brokerage")
-FILED_IN = ("federal_us", "california")
+FILED_IN = (JurisdictionId("federal_us"), JurisdictionId("california"))
 
 
 def payout_levels(per_unit: Decimal) -> np.ndarray:

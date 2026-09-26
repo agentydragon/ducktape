@@ -6,6 +6,7 @@ from dataclasses import replace
 import pytest
 import pytest_bazel
 
+from finance.augur.sim.ids import JurisdictionId
 from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.prepared import _SaltCap, _SaltDeduction
 from finance.augur.sim.scenario import ORDINARY_INCOME
@@ -27,14 +28,17 @@ def test_year_close_nets_once_then_reassesses_federal_salt_and_resets() -> None:
         taxpayer(HOUSEHOLD),
         jurisdictions=tuple(
             replace(flat_rules(name, rate), max_capital_loss_ordinary_offset=300)
-            for name, rate in [("test_federal", 100_000_000), ("test_state", 200_000_000)]
+            for name, rate in [
+                (JurisdictionId("test_federal"), 100_000_000),
+                (JurisdictionId("test_state"), 200_000_000),
+            ]
         ),
     )
     books = accounting(taxpayers=(profile,))
     books.tax.salt_policies = (
         _SaltDeduction(
             profile_id=HOUSEHOLD,
-            federal_jurisdiction_id="test_federal",
+            federal_jurisdiction_id=JurisdictionId("test_federal"),
             cap_schedule=(_SaltCap(effective_year_index=0, cap=1000),),
         ),
     )

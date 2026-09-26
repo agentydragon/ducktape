@@ -22,7 +22,7 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.income_sources import income_source_sort_key
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedJurisdiction, PreparedTransfer
@@ -37,7 +37,7 @@ CHECKING = AccountId("checking")
 PAYER = AgentId("payer")
 IRS = AgentId("irs")
 # Every recipient is a California resident filing federally too.
-FILED_IN = ("federal_us", "california")
+FILED_IN = (JurisdictionId("federal_us"), JurisdictionId("california"))
 
 # 31 USC 3124 bars a state from taxing interest on federal obligations, so this source is
 # federally taxable and exempt in California — the split the ledger has to keep. An in-state

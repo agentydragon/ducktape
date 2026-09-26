@@ -16,7 +16,7 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PortfolioId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import position_value
@@ -43,7 +43,7 @@ SP500 = SecurityKey(symbol=SP500_SYMBOL)
 GAINCO = SecurityKey(symbol=SecuritySymbol("gainco"))
 BROKERAGE = AccountId("brokerage")
 CHECKING = AccountId("checking")
-FEDERAL = "federal_us"
+FEDERAL = JurisdictionId("federal_us")
 PARAMS = TlhAssumptions(
     peak_annual_yield=0.12,
     floor_annual_yield=0.004,

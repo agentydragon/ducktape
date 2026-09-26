@@ -66,6 +66,7 @@ py_test(
         ":tax",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:jurisdictions",
         "//finance/augur/sim:scenario",
         "@pypi//pytest",

@@ -15,7 +15,17 @@ import pytest_bazel
 from finance.augur.model.series import LocationId
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, LiabilityId, LotId, PortfolioId, PropertyId
+from finance.augur.sim.ids import (
+    AccountId,
+    AgentId,
+    AssetId,
+    BondId,
+    JurisdictionId,
+    LiabilityId,
+    LotId,
+    PortfolioId,
+    PropertyId,
+)
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -58,7 +68,7 @@ STOCK = AssetId("test-stock")
 LOT = LotId("test-lot")
 SCALE = 1000
 HORIZON = 2
-TAX_HOME = PreparedJurisdiction(jurisdiction_id="test-jurisdiction", level=JurisdictionLevel.STATE)
+TAX_HOME = PreparedJurisdiction(jurisdiction_id=JurisdictionId("test-jurisdiction"), level=JurisdictionLevel.STATE)
 LOCATION = PreparedLocation(
     location_id=LocationId("test-market"),
     display_name="Test market",
@@ -194,7 +204,7 @@ BOND = PreparedBond(
         (replace(BOND, coupon=PreparedFixedAmount(amount=-1)), "invalid bond terms"),
         (replace(BOND, coupon_period_months=5), "invalid bond terms"),
         (replace(BOND, coupon=PreparedIndexedCoupon(annual_rate_ppb=50_000_000)), "inflation"),
-        (replace(BOND, issuer_jurisdiction_id="test-unknown"), "unknown issuer"),
+        (replace(BOND, issuer_jurisdiction_id=JurisdictionId("test-unknown")), "unknown issuer"),
         (replace(BOND, account_id=AccountId("test-undeclared")), "unknown account"),
     ],
     ids=["non-par", "negative-coupon", "part-period", "missing-index", "unknown-issuer", "unknown-account"],
@@ -278,7 +288,14 @@ def test_a_distribution_pays_whoever_holds_the_security_not_a_cash_account() -> 
     ("slices", "match"),
     [
         ((PreparedDistributionSlice(fraction_ppb=400_000_000, issuer_jurisdiction_id=None),), "tax character"),
-        ((PreparedDistributionSlice(fraction_ppb=1_000_000_000, issuer_jurisdiction_id="test-unknown"),), "unknown"),
+        (
+            (
+                PreparedDistributionSlice(
+                    fraction_ppb=1_000_000_000, issuer_jurisdiction_id=JurisdictionId("test-unknown")
+                ),
+            ),
+            "unknown",
+        ),
         (
             (PreparedDistributionSlice(fraction_ppb=1_000_000_000, issuer_jurisdiction_id=TAX_HOME.jurisdiction_id),),
             "undeclared income",

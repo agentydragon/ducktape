@@ -18,6 +18,7 @@ from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import (
     HomeValueKey,
     InflationKey,
+    IssuerId,
     LevelSeriesKey,
     LocationId,
     RentKey,
@@ -37,7 +38,7 @@ from finance.augur.sim.fixed_point import (
     round_ppb,
     sampled_array_to_quanta,
 )
-from finance.augur.sim.ids import AccountId, AgentId, AssetId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId
 from finance.augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.prepared import (
@@ -199,7 +200,12 @@ def compile_series(
 
 
 def compile_private_equity_series(
-    issuer_ids: Sequence[str], bundle: PrivateEquityBundle, *, rollout_count: int, horizon_months: int, quantum: Decimal
+    issuer_ids: Sequence[IssuerId],
+    bundle: PrivateEquityBundle,
+    *,
+    rollout_count: int,
+    horizon_months: int,
+    quantum: Decimal,
 ) -> tuple[PreparedSeries, ...]:
     """The ten per-issuer private-equity channels, in the execution input's typed integer units.
 
@@ -244,7 +250,7 @@ def compile_private_equity_series(
 
 
 def compile_jurisdictions(
-    jurisdictions: Mapping[str, Jurisdiction],
+    jurisdictions: Mapping[JurisdictionId, Jurisdiction],
     *,
     bonds: Iterable[BondHolding],
     distributions: Iterable[SecurityDistribution],

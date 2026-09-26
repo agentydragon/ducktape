@@ -16,7 +16,7 @@ from finance.augur.sim.compiler.income_sources import income_source_sort_key
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, BondId
+from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -49,7 +49,7 @@ CPI_DOUBLING = [100.0] * 6 + [200.0] * (HORIZON + 1 - 6)
 CPI_FLAT = [100.0] * (HORIZON + 1)
 CPI_DEFLATING = [100.0] * 6 + [80.0] * (HORIZON + 1 - 6)
 
-TREASURY, MUNI, CORPORATE = "federal_us", "california", None
+TREASURY, MUNI, CORPORATE = JurisdictionId("federal_us"), JurisdictionId("california"), None
 
 
 def dated(
@@ -62,7 +62,7 @@ def dated(
     period: int,
     purchase: int = 0,
     maturity: int,
-    issuer: str | None = None,
+    issuer: JurisdictionId | None = None,
     indexed: bool = False,
 ) -> PreparedBond:
     """A bond bought at par; a nominal coupon is the annual rate's share of the face, rounded once."""
@@ -128,7 +128,7 @@ class Situation:
 
 def compose(case: Situation, rollout_id: int = 0) -> World:
     """Each issuer a bond names is a jurisdiction the world knows, whether or not anyone files in it."""
-    filed_in = ("federal_us", "california") if case.taxpayers else ()
+    filed_in = (JurisdictionId("federal_us"), JurisdictionId("california")) if case.taxpayers else ()
     issuers = {bond.issuer_jurisdiction_id for bond in case.bonds}
     rules = {id_: load_jurisdiction(id_) for id_ in {*filed_in, *issuers} if id_ is not None}
     world = World(
@@ -154,7 +154,7 @@ def compose(case: Situation, rollout_id: int = 0) -> World:
 
 def bond_case(
     *,
-    issuer: str | None = TREASURY,
+    issuer: JurisdictionId | None = TREASURY,
     indexed: bool = False,
     cpi: list[float] | None = None,
     is_taxed: bool = True,

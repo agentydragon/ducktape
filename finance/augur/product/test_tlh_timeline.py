@@ -17,7 +17,7 @@ from finance.augur.sim.actions import Contribute, DecisionActions, Liquidate, Wi
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.events import TlhOperation
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedJurisdiction, PreparedSeries, PreparedTlhPortfolio
@@ -31,7 +31,7 @@ from finance.augur.sim.world import World
 ASSET = AssetId("test-managed-index")
 # Money is counted in whole dollars here, so the stipulated $1 price is one quantum.
 QUANTUM = Decimal(1)
-FEDERAL = load_jurisdiction("federal_us")
+FEDERAL = load_jurisdiction(JurisdictionId("federal_us"))
 
 
 def compose(price: int) -> World:
@@ -42,7 +42,7 @@ def compose(price: int) -> World:
         ),
         horizon_months=1,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id="federal_us", level=FEDERAL.level),),
+        jurisdictions=(PreparedJurisdiction(jurisdiction_id=JurisdictionId("federal_us"), level=FEDERAL.level),),
     )
     for agent_id, balance in ((AgentId("owner"), 10), (AgentId("irs"), 0)):
         world.declare_account(
@@ -54,7 +54,7 @@ def compose(price: int) -> World:
         TaxAuthority(
             compile_profile(
                 TaxProfile(agent_id="owner", jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs"),
-                {"federal_us": FEDERAL},
+                {JurisdictionId("federal_us"): FEDERAL},
                 quantum=QUANTUM,
             )
         )

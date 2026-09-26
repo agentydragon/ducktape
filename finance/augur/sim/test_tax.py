@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AgentId, JurisdictionId
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.money import MAX_COUNT
 from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome
@@ -25,7 +25,7 @@ from finance.augur.sim.tax import (
 @pytest.fixture
 def federal() -> PreparedTaxRules:
     return PreparedTaxRules(
-        jurisdiction_id="test_federal",
+        jurisdiction_id=JurisdictionId("test_federal"),
         exempt_interest_from_levels=(JurisdictionLevel.STATE,),
         exempts_own_issue=False,
         ordinary_brackets=(
@@ -103,9 +103,9 @@ def test_income_retains_exempt_sources_and_resets_only_one_taxpayer(federal: Pre
     income.deduct_from_ordinary(AgentId("test_household"), 40)
     assert income.ordinary(AgentId("test_household")) == 60
     assert income.by_source[AgentId("test_household"), state_coupon] == 20
-    assert not taxes_interest_from(federal, "test_state", JurisdictionLevel.STATE)
+    assert not taxes_interest_from(federal, JurisdictionId("test_state"), JurisdictionLevel.STATE)
     assert taxes_interest_from(federal, None, None)
-    assert taxes_interest_from(federal, "test_unknown", None)
+    assert taxes_interest_from(federal, JurisdictionId("test_unknown"), None)
     income.reset(AgentId("test_household"))
     assert income.ordinary(AgentId("test_household")) == 0
     assert income.by_source[AgentId("test_household"), state_coupon] == 0

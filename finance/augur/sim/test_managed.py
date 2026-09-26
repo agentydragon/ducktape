@@ -9,7 +9,7 @@ import pytest_bazel
 from finance.augur.sim.actions import Withdraw
 from finance.augur.sim.books import EXTERNAL_BOUNDARY
 from finance.augur.sim.holdings import gain_account
-from finance.augur.sim.ids import AccountId, AssetId, PortfolioId
+from finance.augur.sim.ids import AccountId, AssetId, JurisdictionId, PortfolioId
 from finance.augur.sim.managed import ComponentEffects, InterestCredit, ManagedPortfolios, basis_account
 from finance.augur.sim.money import MIN_COUNT
 from finance.augur.sim.observations import TlhPortfolioObservation
@@ -126,7 +126,12 @@ def test_invalid_effects_and_overflow_leave_every_financial_book_unchanged(
     else:
         amount = 10 if case == 6 else -10
         effects = ComponentEffects(
-            opening, AccountId("checking"), amount, 0, 0, (InterestCredit("undeclared" if case == 6 else None, amount),)
+            opening,
+            AccountId("checking"),
+            amount,
+            0,
+            0,
+            (InterestCredit(JurisdictionId("undeclared") if case == 6 else None, amount),),
         )
     before = fingerprint(world)
     with pytest.raises(

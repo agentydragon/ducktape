@@ -9,7 +9,7 @@ import pytest_bazel
 
 from finance.augur.sim.actions import Action, Consume, DecisionActions, PayClaim
 from finance.augur.sim.books import AccountRef, BondState, Book
-from finance.augur.sim.ids import AccountId, AgentId, BondId
+from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId
 from finance.augur.sim.observations import Decision, FixedCoupon, IndexedCoupon
 from finance.augur.sim.results import BondSeries, Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
@@ -185,14 +185,16 @@ def pay_claims(batch: list[Decision]) -> list[DecisionActions]:
 @pytest.mark.parametrize(
     ("issuer", "federal", "state"), [(TREASURY, True, False), (MUNI, False, False), (CORPORATE, True, True)]
 )
-def test_existing_issuer_exemptions_survive_actor_capture(issuer: str | None, federal: bool, state: bool) -> None:
+def test_existing_issuer_exemptions_survive_actor_capture(
+    issuer: JurisdictionId | None, federal: bool, state: bool
+) -> None:
     [result] = execute(bond_case(issuer=issuer), pay_claims)
     assert result.stop is None
     taxes = {row.jurisdiction_id: row.total_tax for row in result.summary.tax_accruals}
-    assert (taxes["federal_us"] > 0) == federal
-    assert (taxes["california"] > 0) == state
+    assert (taxes[JurisdictionId("federal_us")] > 0) == federal
+    assert (taxes[JurisdictionId("california")] > 0) == state
     # One $20,000 first-year coupon less the supplied $14,600 deduction, at 10%.
-    assert taxes["federal_us"] == (54_000 if federal else 0)
+    assert taxes[JurisdictionId("federal_us")] == (54_000 if federal else 0)
 
 
 @pytest.mark.parametrize(
@@ -241,8 +243,8 @@ def test_indexed_accretion_income_is_preserved_without_claiming_final_period_cov
     [result] = execute(bond_case(indexed=True, cpi=[100.0] * 6 + [200.0] * 9), pay_claims, "forensic")
     first_year = [row for row in result.summary.tax_accruals if row.month == 11]
     taxes = {row.jurisdiction_id: row.total_tax for row in first_year}
-    assert taxes["federal_us"] > 0
-    assert taxes["california"] == 0
+    assert taxes[JurisdictionId("federal_us")] > 0
+    assert taxes[JurisdictionId("california")] == 0
     assert result.trace is not None
     assert result.trace.bond_cashflows is not None
     accretion = next(row for row in result.trace.bond_cashflows if row.month == 6)

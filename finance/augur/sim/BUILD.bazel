@@ -39,6 +39,7 @@ py_library(
     srcs = ["locations.py"],
     deps = [
         ":fixed_point",
+        ":ids",
         "//finance/augur/model:series",
         "@pypi//pydantic",
     ],
@@ -65,6 +66,7 @@ py_library(
     data = [":jurisdiction_data"],
     deps = [
         ":fixed_point",
+        ":ids",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -74,6 +76,7 @@ py_test(
     name = "jurisdictions_test",
     srcs = ["jurisdictions_test.py"],
     deps = [
+        ":ids",
         ":jurisdictions",
         "//:conftest",
         "//finance/augur:conftest",
@@ -160,6 +163,7 @@ py_library(
     name = "runtime",
     srcs = ["runtime.py"],
     deps = [
+        ":ids",
         ":jurisdictions",
         ":scenario",
     ],
@@ -593,6 +597,7 @@ py_test(
     name = "test_tax_year",
     srcs = ["test_tax_year.py"],
     deps = [
+        ":ids",
         ":ledger",
         ":prepared",
         ":scenario",

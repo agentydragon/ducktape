@@ -14,7 +14,7 @@ from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
-from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -36,7 +36,7 @@ CHECKING = AccountId("checking")
 SAN_FRANCISCO = PreparedLocation(
     location_id=LocationId("san_francisco"),
     display_name="San Francisco, CA",
-    jurisdiction_ids=("federal_us", "california"),
+    jurisdiction_ids=(JurisdictionId("federal_us"), JurisdictionId("california")),
     annual_property_tax_rate_ppb=rate_to_ppb(0.01180),
     annual_special_assessment=0,
 )
@@ -44,7 +44,7 @@ SAN_FRANCISCO = PreparedLocation(
 VALLEJO_MARE_ISLAND = PreparedLocation(
     location_id=LocationId("vallejo_mare_island"),
     display_name="Vallejo, CA — Mare Island",
-    jurisdiction_ids=("federal_us", "california"),
+    jurisdiction_ids=(JurisdictionId("federal_us"), JurisdictionId("california")),
     annual_property_tax_rate_ppb=rate_to_ppb(0.0115),
     annual_special_assessment=int(currency_amount_to_quanta(Decimal(2300), quantum=QUANTUM)),
 )

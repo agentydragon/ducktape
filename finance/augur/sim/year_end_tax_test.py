@@ -24,7 +24,7 @@ from finance.augur.sim.fixed_point import (
     quantity_to_quanta,
     round_currency_amount,
 )
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -46,7 +46,7 @@ from finance.augur.sim.world import World
 QUANTUM = Decimal("0.01")
 ALICE, PAYROLL, IRS, LANDLORD = AgentId("alice"), AgentId("payroll"), AgentId("irs"), AgentId("landlord")
 CHECKING = AccountId("checking")
-FEDERAL, CALIFORNIA = "federal_us", "california"
+FEDERAL, CALIFORNIA = JurisdictionId("federal_us"), JurisdictionId("california")
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 IXUS = SecurityKey(symbol=SecuritySymbol("ixus"))
 
@@ -136,7 +136,7 @@ class Situation:
 
     horizon_months: int
     accounts: tuple[PreparedAccount, ...]
-    jurisdiction_ids: tuple[str, ...] = (FEDERAL, CALIFORNIA)
+    jurisdiction_ids: tuple[JurisdictionId, ...] = (FEDERAL, CALIFORNIA)
     prior_year_tax: Decimal | int = 0
     recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
     lots: tuple[PreparedLot, ...] = ()

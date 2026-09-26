@@ -16,3 +16,4 @@ BondId = NewType("BondId", str)
 PropertyId = NewType("PropertyId", str)
 # A mortgage: the liability a financed purchase originates.
 LiabilityId = NewType("LiabilityId", str)
+JurisdictionId = NewType("JurisdictionId", str)

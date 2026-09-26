@@ -19,7 +19,7 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.observations import Decision
@@ -47,7 +47,7 @@ QUIET, TAXED = 0, 1
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 QUANTUM = Decimal("0.01")
-FEDERAL = "federal_us"
+FEDERAL = JurisdictionId("federal_us")
 
 
 @dataclass(frozen=True)

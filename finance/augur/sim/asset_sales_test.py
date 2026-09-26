@@ -19,7 +19,7 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.observations import Observation
@@ -78,7 +78,7 @@ def _lot(
     )
 
 
-def _taxed(*jurisdiction_ids: str) -> TaxProfile:
+def _taxed(*jurisdiction_ids: JurisdictionId) -> TaxProfile:
     """One single filer paying from `checking` to the `irs` agent; the ids are all it says about tax law."""
     return TaxProfile(
         agent_id=ALICE, jurisdiction_ids=list(jurisdiction_ids), tax_authority_agent_id="irs", prior_year_tax=Decimal(0)
@@ -297,7 +297,7 @@ def test_fifo_holding_period_classifies_each_disposition() -> None:
     case = _situation(
         [_lot(LotId("long"), 2, Decimal(40000), -12, asset=BTC), _lot(LotId("short"), 1, Decimal(40000), 2, asset=BTC)],
         {BTC: [Decimal(60000)] * 8},
-        tax_profiles=[_taxed("federal_us")],
+        tax_profiles=[_taxed(JurisdictionId("federal_us"))],
     )
     [rollout] = _run(case, lambda obs: [_sale(obs, Fraction(5, 2), asset=AssetId("btc"))] if obs.month == 6 else [])
     assert rollout.stop is None

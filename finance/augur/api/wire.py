@@ -15,7 +15,7 @@ from pydantic import Field, PositiveInt
 
 from finance.augur.api.local_regulation import LocalRegulation
 from finance.augur.api.schemas import ApiModel, NonNegativeCurrencyAmount, PositiveCurrencyAmount
-from finance.augur.model.series import LocationId
+from finance.augur.model.series import IssuerId, LocationId
 from finance.augur.product.wire import SpendIndex
 from finance.augur.sim.ids import PropertyId
 
@@ -114,7 +114,7 @@ class CalibrationInfo(ApiModel):
     picker; the catalog itself is fixed (no picker), so this carries no catalog id."""
 
     label: str = Field(description="Human label for the catalog (falls back to the scored issuers when unset).")
-    issuers: list[str] = Field(
+    issuers: list[IssuerId] = Field(
         default_factory=list, description="Private-equity issuer ids the catalog scores (e.g. `openai`)."
     )
 

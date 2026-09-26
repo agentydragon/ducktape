@@ -29,7 +29,7 @@ from finance.augur.sim.fixed_point import (
     quantity_to_quanta,
     rate_to_ppb,
 )
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -55,8 +55,8 @@ SPEND_SINK = AgentId("spend_sink")
 IRS = AgentId("irs")
 CHECKING = AccountId("checking")
 SAVINGS = AccountId("savings")
-FEDERAL = "federal_us"
-ISSUER = "acme"
+FEDERAL = JurisdictionId("federal_us")
+ISSUER = IssuerId("acme")
 ASSET_ID = AssetId("private_equity:acme")
 LOT_ID = LotId("acme_lot_a")
 ACME = PrivateEquityAssetKey(issuer_id=IssuerId(ISSUER))

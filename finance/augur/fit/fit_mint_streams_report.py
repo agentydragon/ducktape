@@ -24,10 +24,11 @@ from finance.augur.fit.private_equity import (
     ValuationObservation,
     load_price_observations_jsonl,
 )
+from finance.augur.model.series import IssuerId
 
 
 def _filter_by_issuer(
-    observations: list[PrivateEquityObservation], issuer_id: str
+    observations: list[PrivateEquityObservation], issuer_id: IssuerId
 ) -> tuple[list[PriceObservation], list[ValuationObservation]]:
     prices = [o for o in observations if isinstance(o, PriceObservation) and o.issuer_id == issuer_id]
     valuations = [o for o in observations if isinstance(o, ValuationObservation) and o.issuer_id == issuer_id]
@@ -104,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _paste_ready_yaml(posterior: BayesianMintStreamsPosterior, *, issuer_id: str) -> str:
+def _paste_ready_yaml(posterior: BayesianMintStreamsPosterior, *, issuer_id: IssuerId) -> str:
     """Emit the fitted parameters as a YAML snippet for `bayesian_mint_streams.private_equity.issuers.<id>`.
 
     Note that `current_mark_usd`, `current_valuation_usd`, and `shares_outstanding_initial`

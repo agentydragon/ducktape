@@ -3,7 +3,17 @@
 from pydantic import BaseModel, ConfigDict
 
 from finance.augur.model.series import LocationId
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, LiabilityId, LotId, PortfolioId, PropertyId
+from finance.augur.sim.ids import (
+    AccountId,
+    AgentId,
+    AssetId,
+    BondId,
+    JurisdictionId,
+    LiabilityId,
+    LotId,
+    PortfolioId,
+    PropertyId,
+)
 
 
 class Record(BaseModel):
@@ -58,7 +68,7 @@ class BondState(Record):
 
 class TaxLiabilityState(Record):
     agent_id: AgentId
-    jurisdiction_id: str
+    jurisdiction_id: JurisdictionId
     tax_year_end_month: int
     amount_owed: int
     active: bool
@@ -146,7 +156,7 @@ class TaxAccrual(Record):
     month: int
     cause_id: str
     agent_id: AgentId
-    jurisdiction_id: str
+    jurisdiction_id: JurisdictionId
     tax_year_end_month: int
     ordinary_income: int
     short_term_gain: int
@@ -192,7 +202,7 @@ class DistributionOutcome(Record):
     asset_id: AssetId
     slice_index: int
     fraction_ppb: int
-    issuer_jurisdiction_id: str | None
+    issuer_jurisdiction_id: JurisdictionId | None
     units: int | None
     amount: int
 
@@ -203,7 +213,7 @@ class BondCashflowOutcome(Record):
     bond_id: BondId
     agent_id: AgentId
     account_id: AccountId
-    issuer_jurisdiction_id: str | None
+    issuer_jurisdiction_id: JurisdictionId | None
     coupon: int
     accretion: int
     redemption: int
