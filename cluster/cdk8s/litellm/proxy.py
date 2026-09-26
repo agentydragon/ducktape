@@ -47,13 +47,14 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpecDeletionPolicy
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
+    Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on_many,
     kustomize_kustomization,
