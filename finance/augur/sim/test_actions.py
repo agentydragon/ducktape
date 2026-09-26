@@ -31,6 +31,7 @@ def test_observed_claim_request_roundtrip_loses_opaque_owner() -> None:
                 amount_due=10,
             ),
         ),
+        tax_records=None,
     )
     owner = object()
     [claim] = facts.claims

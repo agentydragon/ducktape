@@ -15,6 +15,7 @@ from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedDistribution,
@@ -181,6 +182,31 @@ def test_managed_opening_is_not_an_ordinary_lot_and_sale_follows_same_month_loss
     [gain] = rollout.summary.ending_book.capital_gains
     assert (gain.short_term_gain, gain.long_term_gain) == (-1, 1)
     assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in rollout.trace.journal)
+
+
+def first_observation(case: Situation) -> Observation:
+    live = session(case)
+    try:
+        batch = live.start()
+    finally:
+        live.close()
+    assert not isinstance(batch, Finished)
+    [decision] = batch
+    return decision.observation
+
+
+@pytest.mark.parametrize(("harvest", "short_term_gain"), [(True, -1), (False, 0)])
+def test_the_months_modeled_harvest_is_in_that_months_tax_records(harvest: bool, short_term_gain: int) -> None:
+    # The portfolio advances before the mail is posted: its statement and the tax records agree.
+    observation = first_observation(Situation(horizon=1, harvest=harvest))
+    [portfolio] = observation.tlh_portfolios
+    assert observation.tax_records is not None
+    assert (observation.tax_records.short_term_gain, observation.tax_records.long_term_gain) == (short_term_gain, 0)
+    assert portfolio.reported_tax_basis == COHORT.cost_basis + short_term_gain
+
+
+def test_an_untaxed_owner_has_no_tax_records() -> None:
+    assert first_observation(Situation(horizon=1, taxed=False)).tax_records is None
 
 
 def test_rejected_contribution_preserves_harvest_and_earlier_withdrawal_without_future_policy_calls() -> None:

@@ -1070,6 +1070,7 @@ class World:
             TlhStatement(month=self.month, portfolios=())
             if self.managed is None
             else self.managed.statement(actor, self.month),
+            self.accounting.tax_statement(actor, self.month),
             *dues,
             *self.previous_receipts,
         ]
