@@ -258,7 +258,7 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
 - `cdk8s import` names a multi-version CRD's _first listed_ version plainly and
   suffixes the others, regardless of which is the storage version: tofu-controller's
   `Terraform` is v1alpha1, the cluster's CRs are `TerraformV1Alpha2`
-  (`//cluster/cdk8s/crd_bindings/tofu_controller:test_terraform_import` pins it).
+  (`//cluster/cdk8s/providers/tofu_controller:test_terraform_import` pins it).
 
 ## Ecosystem (checked 2026-09-18)
 
@@ -420,7 +420,7 @@ first. **Confirmed, not theoretical**: this race deleted `ha-mcp`'s entire names
 self-heal; a `PersistentVolumeClaim` can permanently lose its volume (depends on
 `reclaimPolicy`) and won't auto-rebind to an orphaned `PersistentVolume`.
 
-Fix: `//cluster/cdk8s/crd_bindings/flux:kustomization`'s `KustomizationSpec` has
+Fix: `//cluster/cdk8s/providers/flux:kustomization`'s `KustomizationSpec` has
 `deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN`. Land in two changes:
 
 1. Set `deletionPolicy: Orphan` on the _old_ Kustomization(s) being folded away, nothing

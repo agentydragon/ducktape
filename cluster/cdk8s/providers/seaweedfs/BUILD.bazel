@@ -1,11 +1,11 @@
-# gazelle:resolve py seaweed_adminscript_crds //cluster/cdk8s/crd_bindings/seaweedfs:adminscript
-# gazelle:resolve py seaweed_bucket_crds //cluster/cdk8s/crd_bindings/seaweedfs:bucket
-# gazelle:resolve py seaweed_resourcereferencegrant_crds //cluster/cdk8s/crd_bindings/seaweedfs:resourcereferencegrant
-# gazelle:resolve py seaweed_s3credentials_crds //cluster/cdk8s/crd_bindings/seaweedfs:s3credentials
-# gazelle:resolve py seaweed_s3identity_crds //cluster/cdk8s/crd_bindings/seaweedfs:s3identity
-# gazelle:resolve py seaweed_s3policy_crds //cluster/cdk8s/crd_bindings/seaweedfs:s3policy
-# gazelle:resolve py seaweed_s3policybinding_crds //cluster/cdk8s/crd_bindings/seaweedfs:s3policybinding
-# gazelle:resolve py seaweed_seaweed_crds //cluster/cdk8s/crd_bindings/seaweedfs:seaweed
+# gazelle:resolve py seaweed_adminscript_crds //cluster/cdk8s/providers/seaweedfs:adminscript
+# gazelle:resolve py seaweed_bucket_crds //cluster/cdk8s/providers/seaweedfs:bucket
+# gazelle:resolve py seaweed_resourcereferencegrant_crds //cluster/cdk8s/providers/seaweedfs:resourcereferencegrant
+# gazelle:resolve py seaweed_s3credentials_crds //cluster/cdk8s/providers/seaweedfs:s3credentials
+# gazelle:resolve py seaweed_s3identity_crds //cluster/cdk8s/providers/seaweedfs:s3identity
+# gazelle:resolve py seaweed_s3policy_crds //cluster/cdk8s/providers/seaweedfs:s3policy
+# gazelle:resolve py seaweed_s3policybinding_crds //cluster/cdk8s/providers/seaweedfs:s3policybinding
+# gazelle:resolve py seaweed_seaweed_crds //cluster/cdk8s/providers/seaweedfs:seaweed
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 

@@ -1,5 +1,5 @@
-# gazelle:resolve py clickhouse_installation_crds //cluster/cdk8s/crd_bindings/clickhouse:clickhouseinstallation
-# gazelle:resolve py clickhouse_keeper_installation_crds //cluster/cdk8s/crd_bindings/clickhouse:clickhousekeeperinstallation
+# gazelle:resolve py clickhouse_installation_crds //cluster/cdk8s/providers/clickhouse:clickhouseinstallation
+# gazelle:resolve py clickhouse_keeper_installation_crds //cluster/cdk8s/providers/clickhouse:clickhousekeeperinstallation
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 
