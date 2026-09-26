@@ -425,7 +425,7 @@ class TlhFinancialEffectEvent(_RolloutEventBase):
     short_term_gain_quanta: CurrencyQuanta
     long_term_gain_quanta: CurrencyQuanta
     basis_change_quanta: CurrencyQuanta
-    interest_income_quanta: CurrencyQuanta
+    income_quanta: CurrencyQuanta
 
 
 class PrivateEquityMarkerEvent(_RolloutEventBase):

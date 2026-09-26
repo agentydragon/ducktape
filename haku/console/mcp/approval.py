@@ -57,7 +57,6 @@ from haku.console.mcp_config import (
     McpServerNotFoundError,
     NoCredential,
     OperatorConnectionCredential,
-    OperatorLoginIdentityCredential,
     _in_process_server,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
@@ -861,8 +860,7 @@ async def _metadata_degradation(
             if not await provider_store.is_connected(connection=connection, operator_id=operator_id):
                 return f"Connect your {connection} account in the console to use this server."
             return None
-        case OperatorLoginIdentityCredential() | NoCredential():
-            # The operator's identity token is required only at execution (backend_auth_for_operator).
+        case NoCredential():
             return None
 
 

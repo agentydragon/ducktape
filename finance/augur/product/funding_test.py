@@ -31,7 +31,14 @@ from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
-from finance.augur.sim.scenario import DistributionTaxSlice, FilingStatus, InitialLot, SecurityDistribution, TaxProfile
+from finance.augur.sim.scenario import (
+    DistributionTaxSlice,
+    FilingStatus,
+    InitialLot,
+    InterestIncome,
+    SecurityDistribution,
+    TaxProfile,
+)
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
@@ -325,7 +332,7 @@ def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim()
                 agent_id=ACTOR,
                 holding_account_id=BROKERAGE,
                 to_account_id=PRIMARY_ACCOUNT_ID,
-                tax_character=(DistributionTaxSlice(fraction=1),),
+                tax_character=(DistributionTaxSlice(fraction=1, income_category=InterestIncome()),),
             ),
         ),
     )

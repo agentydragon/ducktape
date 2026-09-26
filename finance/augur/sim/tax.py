@@ -11,13 +11,22 @@ from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AgentId, JurisdictionId
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, OrdinaryIncome, TransferIncomeCategory
+from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
+    InterestIncome,
+    OrdinaryIncome,
+    QualifiedDividendIncome,
+    TransferIncomeCategory,
+)
 
 
 @dataclass
 class TaxFacts:
     taxable_ordinary_income: int = 0
-    # The part of `taxable_ordinary_income` from sources `is_investment_income` selects.
+    # Outside capital-loss netting; stacked with net long-term gain where the rules have its brackets.
+    qualified_dividends: int = 0
+    # The part of `taxable_ordinary_income` and `qualified_dividends` from sources
+    # `is_investment_income` selects.
     investment_income: int = 0
     short_term_gain: int = 0
     long_term_gain: int = 0
@@ -45,6 +54,7 @@ class TaxAssessment:
     long_term_gain: int
     ordinary_loss_offset: int
     ordinary_taxable: int
+    # Net long-term gain plus qualified dividends: what the long-term capital-gain brackets rate.
     long_term_capital_gain_taxable: int
     ordinary_tax: int
     capital_gain_tax: int
@@ -109,7 +119,7 @@ def is_investment_income(source: TransferIncomeCategory) -> bool:
     """
     # TODO: give net rental income its own category and count it here (Form 8960 line 4a),
     # with the housing tax slice.
-    if isinstance(source, InterestIncome):
+    if isinstance(source, InterestIncome | QualifiedDividendIncome):
         return True
     if isinstance(source, OrdinaryIncome):
         return False
@@ -210,7 +220,8 @@ def assess(facts: TaxFacts, rules: PreparedTaxRules) -> TaxAssessment:
     ordinary = facts.taxable_ordinary_income
     if rules.section_1250_rate_ppb == 0:
         ordinary = checked_count(ordinary + facts.section_1250_recapture, "money addition")
-    total_taxable = _taxable(ordinary, gains.short_term, gains.long_term, gains.ordinary_offset, deduction)
+    preferential = checked_count(gains.long_term + facts.qualified_dividends, "money addition")
+    total_taxable = _taxable(ordinary, gains.short_term, preferential, gains.ordinary_offset, deduction)
     if rules.long_term_capital_gain_brackets:
         ordinary_taxable = _taxable(ordinary, gains.short_term, 0, gains.ordinary_offset, deduction)
         capital_taxable = checked_count(total_taxable - ordinary_taxable, "money subtraction")
@@ -232,7 +243,7 @@ def assess(facts: TaxFacts, rules: PreparedTaxRules) -> TaxAssessment:
     # Adjusted gross income (MAGI without foreign exclusions) and taxable income count recapture
     # at its ordinary amount, whether or not its own rate taxes it apart.
     gross = checked_count(facts.taxable_ordinary_income + facts.section_1250_recapture, "money addition")
-    adjusted_gross_income = _taxable(gross, gains.short_term, gains.long_term, gains.ordinary_offset, 0)
+    adjusted_gross_income = _taxable(gross, gains.short_term, preferential, gains.ordinary_offset, 0)
     # Form 8960 line 5a is the return's net gain, a net loss entering only as its allowed offset.
     # TODO: subtract Form 8960 line 9 deductions (investment interest, state income tax allocable
     # to NII); without them NIIT is overstated for a California resident.
@@ -251,7 +262,7 @@ def assess(facts: TaxFacts, rules: PreparedTaxRules) -> TaxAssessment:
         )
     surtax = 0
     if (surcharge := rules.taxable_income_surtax) is not None:
-        taxable_income = _taxable(gross, gains.short_term, gains.long_term, gains.ordinary_offset, deduction)
+        taxable_income = _taxable(gross, gains.short_term, preferential, gains.ordinary_offset, deduction)
         surtax = mul_div(
             max(0, taxable_income - surcharge.threshold),
             surcharge.rate_ppb,

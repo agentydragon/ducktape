@@ -361,8 +361,8 @@ def test_emissions_are_exactly_the_declared_keys() -> None:
         SecurityDistributionKey(symbol=BOND),
         SecurityKey(symbol=CASH),
         SecurityDistributionKey(symbol=CASH),
-        # Equity emits a price and no distribution: there is no qualified-dividend income
-        # category, so a dividend routed through the interest path would be overtaxed.
+        # Equity emits a total-return price and no distribution, which would count its
+        # dividends twice.
         SecurityKey(symbol=EQUITY),
     }
     assert model.emittable_private_equity_issuers() == frozenset()

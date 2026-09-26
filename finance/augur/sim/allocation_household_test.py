@@ -356,7 +356,9 @@ def test_empty_buyable_pool_pays_coupon_only_after_first_purchase() -> None:
                     holding_account_id=BROKERAGE,
                     asset_id=AssetId(STOCK.symbol),
                     to_account_id=CHECKING,
-                    tax_character=(PreparedDistributionSlice(fraction_ppb=1_000_000_000, issuer_jurisdiction_id=None),),
+                    tax_character=(
+                        PreparedDistributionSlice(fraction_ppb=1_000_000_000, income_category=InterestIncome()),
+                    ),
                 ),
             ),
             interest_sources=(InterestIncome(issuer_jurisdiction_id=None),),

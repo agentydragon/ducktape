@@ -112,6 +112,8 @@ class DistributionTaxShareConfig(ApiModel):
     exempt at the state level. The fractions come from the fund's own annual disclosure.
     """
 
+    # TODO: let a share declare qualified-dividend or ordinary character. The sim's
+    # `DistributionTaxSlice` takes any income category; this config reaches it only as interest.
     fraction: float = Field(gt=0.0, le=1.0)
     issuer_jurisdiction_id: JurisdictionId | None = Field(
         default=None,

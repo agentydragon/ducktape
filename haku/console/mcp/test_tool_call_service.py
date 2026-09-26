@@ -21,7 +21,6 @@ from haku.console.conftest import console_settings, write_config
 from haku.console.database_schema import Agent, AgentNameReservation, CredentialBinding, StaticCredential
 from haku.console.grants.principal import RequestPrincipal
 from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind
-from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp.approval import PostgresToolCallLedger
 from haku.console.mcp.execution import AgentMcpExecutionCaller, McpExecutionContext
@@ -43,7 +42,6 @@ from haku.console.mcp_config import (
     McpServerNotFoundError,
     NoCredential,
 )
-from haku.console.oauth.token_state import PostgresTokenStateStore
 from haku.console.recall_index_access import RecallIndexAccessPolicy
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
@@ -320,8 +318,6 @@ def _service(
     *,
     database_url: str,
     tmp_path: Path,
-    sessions: async_sessionmaker[AsyncSession],
-    identity_store: PostgresOperatorIdentityStore,
     ledger: PostgresToolCallLedger,
     publisher: _RecordingInvalidationPublisher,
     executor: _RecordingExecutor,
@@ -330,7 +326,6 @@ def _service(
     servers: list[dict[str, Any]] | None = None,
     in_process_servers: InProcessServers | None = None,
 ) -> ToolCallApplicationService:
-    token_states = PostgresTokenStateStore(sessions, operator_identity_store=identity_store)
     configured_servers = servers or [
         {
             "id": "operator-backend",
@@ -360,14 +355,6 @@ def _service(
         executor=executor,
         in_process_servers=in_process_servers or {},
         provider_store=tokens,
-        authentik_token_store=PostgresAuthentikOperatorTokenStore(
-            sessions,
-            operator_identity_store=identity_store,
-            token_states=token_states,
-            client_id="test-client",
-            client_secret="test-secret",
-            issuer="https://auth.test/application/o/haku-console/",
-        ),
         approval_notifier=notifier,
         gmail_client_provider=_no_gmail_client,
     )
@@ -377,8 +364,6 @@ def _service(
 def service(
     *,
     migrated_db_url: str,
-    migrated_sessions: async_sessionmaker[AsyncSession],
-    migrated_identity_store: PostgresOperatorIdentityStore,
     tmp_path: Path,
     ledger: _RecordingLedger,
     publisher: _RecordingInvalidationPublisher,
@@ -389,8 +374,6 @@ def service(
     return _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
-        sessions=migrated_sessions,
-        identity_store=migrated_identity_store,
         ledger=ledger,
         publisher=publisher,
         executor=executor,
@@ -444,8 +427,6 @@ async def test_recall_index_authorizer_denies_argument_escalation_before_submiss
     executor: _RecordingExecutor,
     ledger: _RecordingLedger,
     migrated_db_url: str,
-    migrated_identity_store: PostgresOperatorIdentityStore,
-    migrated_sessions: async_sessionmaker[AsyncSession],
     notifier: _RecordingApprovalNotifier,
     publisher: _RecordingInvalidationPublisher,
     tmp_path: Path,
@@ -466,8 +447,6 @@ async def test_recall_index_authorizer_denies_argument_escalation_before_submiss
     service = _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
-        sessions=migrated_sessions,
-        identity_store=migrated_identity_store,
         ledger=ledger,
         publisher=publisher,
         executor=executor,
@@ -652,8 +631,6 @@ async def test_pending_wait_uses_actor_scoped_event_invalidation(
 async def test_pending_wait_rereads_after_subscribing_before_waiting(
     *,
     migrated_db_url: str,
-    migrated_sessions: async_sessionmaker[AsyncSession],
-    migrated_identity_store: PostgresOperatorIdentityStore,
     tmp_path: Path,
     actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
@@ -667,8 +644,6 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
     service = _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
-        sessions=migrated_sessions,
-        identity_store=migrated_identity_store,
         ledger=ledger,
         publisher=publisher,
         executor=executor,
@@ -976,8 +951,6 @@ async def test_list_tool_calls_filters_by_auto_approved(
 async def test_auto_execution_finishes_before_best_effort_invalidation_publication(
     *,
     migrated_db_url: str,
-    migrated_sessions: async_sessionmaker[AsyncSession],
-    migrated_identity_store: PostgresOperatorIdentityStore,
     tmp_path: Path,
     actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
@@ -992,8 +965,6 @@ async def test_auto_execution_finishes_before_best_effort_invalidation_publicati
     service = _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
-        sessions=migrated_sessions,
-        identity_store=migrated_identity_store,
         ledger=ledger,
         publisher=publisher,
         executor=executor,
@@ -1013,8 +984,6 @@ async def test_auto_execution_finishes_before_best_effort_invalidation_publicati
 async def test_executor_cancellation_terminalizes_before_reraising(
     *,
     migrated_db_url: str,
-    migrated_sessions: async_sessionmaker[AsyncSession],
-    migrated_identity_store: PostgresOperatorIdentityStore,
     tmp_path: Path,
     actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
@@ -1029,8 +998,6 @@ async def test_executor_cancellation_terminalizes_before_reraising(
     service = _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
-        sessions=migrated_sessions,
-        identity_store=migrated_identity_store,
         ledger=ledger,
         publisher=publisher,
         executor=executor,
@@ -1051,8 +1018,6 @@ async def test_executor_cancellation_terminalizes_before_reraising(
 async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
     *,
     migrated_db_url: str,
-    migrated_sessions: async_sessionmaker[AsyncSession],
-    migrated_identity_store: PostgresOperatorIdentityStore,
     tmp_path: Path,
     actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
@@ -1064,8 +1029,6 @@ async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
     service = _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
-        sessions=migrated_sessions,
-        identity_store=migrated_identity_store,
         ledger=ledger,
         publisher=publisher,
         executor=executor,

@@ -180,10 +180,11 @@ investment income tax and the mortgage-interest deduction (itemized against the
 standard deduction, with the SALT cap) belong to it; charitable deductions do not.
 Future years hold current law flat, with brackets and thresholds fixed in nominal
 dollars, and estimated tax and the true-up are paid on schedule without penalties:
-explicit assumptions, not forecasts. The code does not yet cover this scope: fund
-distributions are taxed as interest, with no qualified-dividend character; NIIT's
-net investment income leaves out net rental income and the investment deductions
-IRS Form 8960 allows; the bundled tables are 2024 law; a taxpayer starts with no
+explicit assumptions, not forecasts. A distribution declared as qualified dividends is
+taxed at the federal long-term capital-gain rates and as ordinary income in California;
+the declaration is trusted without a holding-period test. The code does not yet cover
+this scope: NIIT's net investment income leaves out net rental income and the investment
+deductions IRS Form 8960 allows; the bundled tables are 2024 law; a taxpayer starts with no
 year-to-date income, gains or payments; the SALT cap has no income phase-out; and estimated payments are equal quarters of one
 aggregate prior-year amount rather than per-jurisdiction schedules.
 

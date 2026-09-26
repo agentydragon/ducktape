@@ -259,23 +259,11 @@ def _provider_store(token: str | None) -> Any:
     return _Store()
 
 
-def _unconsulted_store() -> Any:
-    """A token store the PROVIDER auth path must not consult — raises if the wrong mode reaches it."""
-
-    class _Unconsulted:
-        async def access_token_for(self, **kwargs: object) -> str | None:
-            raise AssertionError("token store consulted for a server whose auth mode ignores it")
-
-    return _Unconsulted()
-
-
 async def test_backend_auth_resolves_provider_connection() -> None:
     server = McpServerEntry(
         id="gmail", backend=InProcessBackend(credential=OperatorConnectionCredential(connection=GOOGLE_MAIL))
     )
-    token = await backend_auth_for_operator(
-        server=server, operator_id=uuid4(), provider_store=_provider_store("tok"), authentik_store=_unconsulted_store()
-    )
+    token = await backend_auth_for_operator(server=server, operator_id=uuid4(), provider_store=_provider_store("tok"))
     assert token == "tok"
 
 
@@ -284,12 +272,7 @@ async def test_backend_auth_raises_when_provider_unconnected() -> None:
         id="gmail", backend=InProcessBackend(credential=OperatorConnectionCredential(connection=GOOGLE_MAIL))
     )
     with pytest.raises(BackendAccountNotConnectedError):
-        await backend_auth_for_operator(
-            server=server,
-            operator_id=uuid4(),
-            provider_store=_provider_store(None),
-            authentik_store=_unconsulted_store(),
-        )
+        await backend_auth_for_operator(server=server, operator_id=uuid4(), provider_store=_provider_store(None))
 
 
 if __name__ == "__main__":

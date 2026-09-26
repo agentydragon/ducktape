@@ -20,11 +20,9 @@ from collections.abc import Sequence
 from typing import cast
 
 import jsii
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart
+from cdk8s import ApiObject, App, Chart
 from constructs import IValidation
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
-    KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
@@ -43,6 +41,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+
+from cluster.cdk8s.providers.flux.flux_kustomization import Kustomization
 
 NAMESPACE = "ducktape-flux"  # shared Flux namespace every generated Kustomization CR lives in
 SOPS_DECRYPTION = KustomizationSpecDecryption(
@@ -166,27 +166,27 @@ def flux_kustomization(
     return Kustomization(
         chart,
         name,
-        metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=metadata_annotations or None),
-        spec=KustomizationSpec(
-            source_ref=source_ref,
-            path=path,
-            interval=interval,
-            retry_interval=retry_interval,
-            timeout=timeout,
-            prune=prune,
-            wait=wait,
-            suspend=suspend,
-            deletion_policy=deletion_policy,
-            decryption=decryption,
-            depends_on=depends_on,
-            health_checks=health_checks,
-            health_check_exprs=health_check_exprs,
-            post_build=post_build,
-            target_namespace=target_namespace,
-            service_account_name=service_account_name,
-            images=images,
-            patches=patches,
-        ),
+        name=name,
+        namespace=namespace,
+        annotations=metadata_annotations or None,
+        source_ref=source_ref,
+        path=path,
+        interval=interval,
+        retry_interval=retry_interval,
+        timeout=timeout,
+        prune=prune,
+        wait=wait,
+        suspend=suspend,
+        deletion_policy=deletion_policy,
+        decryption=decryption,
+        depends_on=depends_on,
+        health_checks=health_checks,
+        health_check_exprs=health_check_exprs,
+        post_build=post_build,
+        target_namespace=target_namespace,
+        service_account_name=service_account_name,
+        images=images,
+        patches=patches,
     )
 
 
