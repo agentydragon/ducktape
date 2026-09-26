@@ -353,9 +353,9 @@ export function Sidebar({
           <Text fw={700} size="xs" tt="uppercase" c="dimmed">
             Threads
           </Text>
-          {/* Stub for UISHELL_NEWTHREAD_LANDING: the unscoped composer isn't built yet, so "+" sends
-              the operator to the Sandbox list to start one the existing way -- label says exactly
-              that rather than promising a composer that isn't there yet. */}
+          {/* The unscoped new-thread composer isn't built yet, so "+" sends the operator to the
+              Sandbox list to start one the existing way -- label says exactly that rather than
+              promising a composer that isn't there yet. */}
           <Tooltip label="New thread (via Sandboxes)" withArrow>
             <ActionIcon variant="light" aria-label="New thread (via Sandboxes)" onClick={() => goTo("/sandboxes")}>
               <IconPlus size={13} />
