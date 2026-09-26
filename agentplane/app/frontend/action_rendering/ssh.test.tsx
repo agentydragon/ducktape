@@ -41,6 +41,15 @@ describe("ssh exec arguments", () => {
     expect(container.textContent).not.toContain("Timeout");
   });
 
+  it("highlights the command as shell", async () => {
+    // syntax_highlight.test.ts checks the whole command survives highlighting; happy-dom, which this
+    // file runs in, drops the text ahead of the first token.
+    const command = 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"';
+    const container = await drawn(renderPreview(execArgumentsPreview, { ...ARGUMENTS, command }));
+    expect(container.querySelector("pre .hljs-string")?.textContent).toBe('"restarted at $(date -Is)"');
+    expect(container.querySelector("pre .hljs-string .hljs-subst")?.textContent).toBe("$(date -Is)");
+  });
+
   it("shows the timeout when the call sets one", async () => {
     const container = await drawn(renderPreview(execArgumentsPreview, { ...ARGUMENTS, timeout_seconds: 30 }));
     expect(container.textContent).toContain("Timeout 30 s");

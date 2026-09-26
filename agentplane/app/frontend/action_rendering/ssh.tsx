@@ -4,6 +4,7 @@ import { Badge, Button, Code, Group, Stack, Text } from "@mantine/core";
 import { type JSX, useState } from "react";
 import { z } from "zod";
 
+import { HighlightedCode } from "../syntax_highlight";
 import { definePreview, type ArgumentsPreview, type PreviewProps } from "./entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "./result_entry";
 
@@ -30,7 +31,8 @@ const execResult = z.strictObject({
 // Past this many lines, an output stream shows its first lines and a button for the rest.
 const COLLAPSED_LINES = 20;
 
-// Wrapped, so a long command or output line reads where it sits instead of scrolling sideways.
+// Wrapped, so a long output line reads where it sits instead of scrolling sideways, as the
+// highlighted command does.
 const WRAPPED = { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
 
 function ExecArguments({ args }: PreviewProps<z.infer<typeof execArguments>>): JSX.Element {
@@ -39,9 +41,7 @@ function ExecArguments({ args }: PreviewProps<z.infer<typeof execArguments>>): J
       <Text size="sm" fw={600} ff="monospace" style={{ overflowWrap: "anywhere" }}>
         {args.user}@{args.host}
       </Text>
-      <Code block style={WRAPPED}>
-        {args.command}
-      </Code>
+      <HighlightedCode text={args.command} language="bash" />
       {args.timeout_seconds != null && (
         <Text size="xs" c="dimmed">
           Timeout {args.timeout_seconds} s
@@ -71,7 +71,7 @@ function ExecResult({ result }: ResultPreviewProps<z.infer<typeof execResult>>):
   );
 }
 
-/** One output stream, as text, left out when empty. The server keeps only so many bytes of each,
+/** One output stream, as plain text, left out when empty. The server keeps only so many bytes of each,
  * and says when it dropped the rest. */
 function OutputStream({
   name,

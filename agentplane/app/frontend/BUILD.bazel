@@ -233,6 +233,7 @@ ts_library(
     deps = [
         ":action_rendering_entry",
         ":action_rendering_result_entry",
+        ":syntax_highlight",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -779,29 +780,55 @@ ts_library(
     ],
 )
 
-# json_view.tsx imports this for the bundler; esbuild resolves it beside the emitted json_view.js
-# and folds it into the SPA's stylesheet, so it travels as a dep of the library that imports it.
+# syntax_highlight.tsx imports this for the bundler; esbuild resolves it beside the emitted
+# syntax_highlight.js and folds it into the SPA's stylesheet, so it travels as a dep of the library
+# that imports it.
 js_library(
-    name = "json_view_css",
-    srcs = ["json_view.css"],
+    name = "syntax_highlight_css",
+    srcs = ["syntax_highlight.css"],
 )
 
-# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site.
+# The one highlight.js setup: its core build with the json and bash grammars, sanitized output, and
+# the token colours.
 ts_library(
-    name = "json_view",
+    name = "syntax_highlight",
     srcs = [
-        "json_view.tsx",
+        "syntax_highlight.tsx",
         # `declare module "*.css"` for the stylesheet import above.
         "css.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":json_view_css",
+        ":syntax_highlight_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/dompurify",
         "//:node_modules/@types/react",
         "//:node_modules/dompurify",
         "//:node_modules/highlight.js",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "syntax_highlight_test",
+    testonly = True,
+    srcs = ["syntax_highlight.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":syntax_highlight",
+        "//:node_modules/vitest",
+    ],
+)
+
+# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site.
+ts_library(
+    name = "json_view",
+    srcs = ["json_view.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":syntax_highlight",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
@@ -1208,10 +1235,13 @@ vitest_bin.vitest_test(
         ":settings_test",
         ":sidebar_test",
         ":stream_status_test",
+        ":syntax_highlight_test",
         ":thread_groups_test",
         ":thread_store_test",
         ":thread_title_test",
         "//:node_modules/happy-dom",
+        # syntax_highlight.test.ts runs in jsdom; see the note there.
+        "//:node_modules/jsdom",
         "//:node_modules/vitest",
     ],
 )

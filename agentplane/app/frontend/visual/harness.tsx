@@ -498,7 +498,7 @@ const SSH_EXEC_RESULT = {
   user: "test-user",
   exit_code: 2,
   stdout: [
-    "/srv/test-archive:",
+    "/home/test-user/test-archive:",
     "total 1536",
     ...Array.from({ length: 30 }, (_, index) => {
       const day = index + 1;
@@ -506,7 +506,7 @@ const SSH_EXEC_RESULT = {
     }),
     "",
   ].join("\n"),
-  stderr: "ls: cannot access '/srv/test-archive/test-missing': No such file or directory\n",
+  stderr: "ls: cannot access '/home/test-user/test-archive/test-missing': No such file or directory\n",
   stdout_truncated: false,
   stderr_truncated: false,
 };
@@ -544,7 +544,7 @@ const ACTIONS: ActionRequestView[] = [
     arguments: {
       host: "test-archive-host",
       user: "test-user",
-      command: "systemctl --user restart test-backup.service && systemctl --user status test-backup.service --no-pager",
+      command: 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"',
       timeout_seconds: 60,
     },
     title: "restart the test backup service",
@@ -566,7 +566,7 @@ const ACTIONS: ActionRequestView[] = [
     arguments: {
       host: "test-archive-host",
       user: "test-user",
-      command: "ls -l /srv/test-archive /srv/test-archive/test-missing",
+      command: 'ls -l "$HOME/test-archive" "$HOME/test-archive/test-missing"',
     },
     title: "list the test backup archive",
     description: null,
