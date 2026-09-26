@@ -7,6 +7,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
 
 
@@ -14,8 +15,8 @@ def _terms(*, principal: int = 40_000_000, rate: int = 60_000_000, months: int =
     return MortgageTerms(
         liability_id="loan",
         property_id="house",
-        borrower=AccountRef(agent_id="owner", account_id="cash"),
-        lender=AccountRef(agent_id="bank", account_id="payments"),
+        borrower=AccountRef(agent_id=AgentId("owner"), account_id=AccountId("cash")),
+        lender=AccountRef(agent_id=AgentId("bank"), account_id=AccountId("payments")),
         origination_month=0,
         origination_principal=principal,
         annual_interest_rate_ppb=rate,

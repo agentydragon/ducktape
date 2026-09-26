@@ -17,6 +17,7 @@ from finance.augur.sim.books import (
     TaxSettlementOutcome,
 )
 from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
+from finance.augur.sim.ids import AgentId, AssetId
 
 
 class RejectedAction(Record):
@@ -115,7 +116,7 @@ class CashSeries(Record):
 
 
 class HoldingSeries(CashSeries):
-    asset_id: str
+    asset_id: AssetId
 
 
 class BondSeries(CashSeries):
@@ -150,7 +151,7 @@ class UnpaidClaim(Record):
 class Summary(Record):
     """Opening plus observed closings only. Post-stop padding is not financial data."""
 
-    actor_id: str
+    actor_id: AgentId
     cash: list[CashSeries]
     public_holdings: list[HoldingSeries]
     bond_principal: list[BondSeries]

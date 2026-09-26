@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from finance.augur.sim.books import TaxAccrual
 from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 from finance.augur.sim.mortgage import Mortgage
 from finance.augur.sim.prepared import PreparedJurisdiction, _MortgageInterestDeduction, _SaltDeduction
@@ -38,7 +39,7 @@ class TaxBook:
     ) -> None:
         self.jurisdictions = tuple(jurisdictions)
         self.profiles: list[PreparedTaxProfile] = []
-        self.years: dict[str, TaxYear] = {}
+        self.years: dict[AgentId, TaxYear] = {}
         self.income = IncomeLedger(sources)
         self.salt_policies: tuple[_SaltDeduction, ...] = ()
         self.mortgage_interest_policies: tuple[_MortgageInterestDeduction, ...] = ()
@@ -60,7 +61,7 @@ class TaxBook:
         clone.mortgage_interest_policies = self.mortgage_interest_policies
         return clone
 
-    def gain(self, agent: str, amount: int, *, long_term: bool) -> None:
+    def gain(self, agent: AgentId, amount: int, *, long_term: bool) -> None:
         if agent not in self.years:
             return
         year = self.years[agent]
@@ -69,7 +70,7 @@ class TaxBook:
         else:
             year.short_term_gain = checked_count(year.short_term_gain + amount, "money addition")
 
-    def property_tax(self, agent: str, amount: int, rented_fraction: int) -> None:
+    def property_tax(self, agent: AgentId, amount: int, rented_fraction: int) -> None:
         rental = mul_div(amount, rented_fraction, MONEY_FACTOR_SCALE, "rental property tax deduction")
         owner = mul_div(amount, MONEY_FACTOR_SCALE - rented_fraction, MONEY_FACTOR_SCALE, "owner property tax")
         self.income.deduct_from_ordinary(agent, rental)
@@ -181,7 +182,7 @@ class TaxBook:
 
 
 def mortgage_interest_deduction(
-    policies: Sequence[_MortgageInterestDeduction], mortgages: Sequence[Mortgage], agent: str, jurisdiction: str
+    policies: Sequence[_MortgageInterestDeduction], mortgages: Sequence[Mortgage], agent: AgentId, jurisdiction: str
 ) -> int:
     numerator = 0
     by_id = {mortgage.terms.liability_id: mortgage for mortgage in mortgages}

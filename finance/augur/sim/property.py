@@ -9,6 +9,7 @@ from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, PropertyState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import gain_account
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
@@ -34,7 +35,7 @@ class Purchase:
     cause_id: str
     property_id: str
     location_id: str
-    buyer_agent_id: str
+    buyer_agent_id: AgentId
     purchase_price: int
     closing_cost: int
     adjusted_basis: int
@@ -58,7 +59,7 @@ class Sale:
 @dataclass(frozen=True)
 class Residence:
     month: int
-    agent_id: str
+    agent_id: AgentId
     property_id: str | None
     is_primary_residence: bool
 
@@ -83,10 +84,10 @@ class Origination:
     month: int
     cause_id: str
     liability_id: str
-    agent_id: str
-    payment_account_id: str
-    counterparty_agent_id: str
-    counterparty_account_id: str
+    agent_id: AgentId
+    payment_account_id: AccountId
+    counterparty_agent_id: AgentId
+    counterparty_account_id: AccountId
     property_id: str
     principal: int
     annual_interest_rate_ppb: int
@@ -95,7 +96,7 @@ class Origination:
 
 
 def asset_account(purchase: _PropertyPurchase) -> AccountRef:
-    return AccountRef(agent_id=purchase.buyer_agent_id, account_id=f"asset:property:{purchase.property_id}")
+    return AccountRef(agent_id=purchase.buyer_agent_id, account_id=AccountId(f"asset:property:{purchase.property_id}"))
 
 
 def principal(accounting: Accounting, purchase: _PropertyPurchase) -> int:
@@ -104,7 +105,9 @@ def principal(accounting: Accounting, purchase: _PropertyPurchase) -> int:
         return 0
     return checked_count(
         -accounting.ledger.balance(
-            AccountRef(agent_id=purchase.buyer_agent_id, account_id=f"liability:mortgage:{loan.liability_id}")
+            AccountRef(
+                agent_id=purchase.buyer_agent_id, account_id=AccountId(f"liability:mortgage:{loan.liability_id}")
+            )
         ),
         "money negation",
     )
@@ -205,7 +208,7 @@ class Housing:
 
 
 def _check_residence(
-    agent_id: str, property_id: str, month: int, purchases: Mapping[str, _PropertyPurchase], sold: Mapping[str, int]
+    agent_id: AgentId, property_id: str, month: int, purchases: Mapping[str, _PropertyPurchase], sold: Mapping[str, int]
 ) -> None:
     purchase = purchases.get(property_id)
     if purchase is None:
@@ -229,7 +232,7 @@ class Properties:
     def __init__(self, housing: Housing, accounting: Accounting) -> None:
         self.housing = housing
         self.properties: dict[str, Property] = {}
-        self.primary: dict[str, str | None] = {row.agent_id: row.property_id for row in housing.initial_residences}
+        self.primary: dict[AgentId, str | None] = {row.agent_id: row.property_id for row in housing.initial_residences}
         # This month's outcomes, cleared by `begin_month`; property state lives in `properties`.
         self.purchases: list[Purchase] = []
         self.sales: list[Sale] = []
@@ -242,10 +245,12 @@ class Properties:
                 asset_account(purchase),
                 gain_account(purchase.buyer_agent_id),
                 AccountRef(
-                    agent_id=purchase.buyer_agent_id, account_id=f"expense:property-basis:{purchase.property_id}"
+                    agent_id=purchase.buyer_agent_id,
+                    account_id=AccountId(f"expense:property-basis:{purchase.property_id}"),
                 ),
                 AccountRef(
-                    agent_id=purchase.seller_agent_id, account_id=f"equity:property-sale:{purchase.property_id}"
+                    agent_id=purchase.seller_agent_id,
+                    account_id=AccountId(f"equity:property-sale:{purchase.property_id}"),
                 ),
             ):
                 accounting.ledger.ensure_account(account)
@@ -259,7 +264,7 @@ class Properties:
                     (loan.lender_agent_id, "equity:mortgage-funding"),
                 ):
                     accounting.ledger.ensure_account(
-                        AccountRef(agent_id=agent, account_id=f"{prefix}:{loan.liability_id}")
+                        AccountRef(agent_id=agent, account_id=AccountId(f"{prefix}:{loan.liability_id}"))
                     )
 
     def begin_month(self) -> None:
@@ -414,7 +419,8 @@ class Properties:
             Posting(account=asset_account(purchase), amount=checked_count(-property_basis, "money negation")),
             Posting(
                 account=AccountRef(
-                    agent_id=purchase.buyer_agent_id, account_id=f"expense:property-basis:{purchase.property_id}"
+                    agent_id=purchase.buyer_agent_id,
+                    account_id=AccountId(f"expense:property-basis:{purchase.property_id}"),
                 ),
                 amount=writeoff,
             ),
@@ -425,19 +431,22 @@ class Properties:
                 [
                     Posting(
                         account=AccountRef(
-                            agent_id=purchase.buyer_agent_id, account_id=f"liability:mortgage:{loan.liability_id}"
+                            agent_id=purchase.buyer_agent_id,
+                            account_id=AccountId(f"liability:mortgage:{loan.liability_id}"),
                         ),
                         amount=payoff,
                     ),
                     Posting(
                         account=AccountRef(
-                            agent_id=loan.lender_agent_id, account_id=f"asset:mortgage-receivable:{loan.liability_id}"
+                            agent_id=loan.lender_agent_id,
+                            account_id=AccountId(f"asset:mortgage-receivable:{loan.liability_id}"),
                         ),
                         amount=checked_count(-payoff, "money negation"),
                     ),
                     Posting(
                         account=AccountRef(
-                            agent_id=loan.lender_agent_id, account_id=f"equity:mortgage-funding:{loan.liability_id}"
+                            agent_id=loan.lender_agent_id,
+                            account_id=AccountId(f"equity:mortgage-funding:{loan.liability_id}"),
                         ),
                         amount=payoff,
                     ),
@@ -483,7 +492,7 @@ class Properties:
             buyer = AccountRef(agent_id=purchase.buyer_agent_id, account_id=purchase.buyer_account_id)
             seller = AccountRef(agent_id=purchase.seller_agent_id, account_id=purchase.seller_account_id)
             clearing = AccountRef(
-                agent_id=purchase.seller_agent_id, account_id=f"equity:property-sale:{purchase.property_id}"
+                agent_id=purchase.seller_agent_id, account_id=AccountId(f"equity:property-sale:{purchase.property_id}")
             )
             postings = [
                 Posting(account=buyer, amount=checked_count(-stake, "money negation")),
@@ -500,20 +509,22 @@ class Properties:
                     [
                         Posting(
                             account=AccountRef(
-                                agent_id=purchase.buyer_agent_id, account_id=f"liability:mortgage:{loan.liability_id}"
+                                agent_id=purchase.buyer_agent_id,
+                                account_id=AccountId(f"liability:mortgage:{loan.liability_id}"),
                             ),
                             amount=checked_count(-debt, "money negation"),
                         ),
                         Posting(
                             account=AccountRef(
                                 agent_id=loan.lender_agent_id,
-                                account_id=f"asset:mortgage-receivable:{loan.liability_id}",
+                                account_id=AccountId(f"asset:mortgage-receivable:{loan.liability_id}"),
                             ),
                             amount=debt,
                         ),
                         Posting(
                             account=AccountRef(
-                                agent_id=loan.lender_agent_id, account_id=f"equity:mortgage-funding:{loan.liability_id}"
+                                agent_id=loan.lender_agent_id,
+                                account_id=AccountId(f"equity:mortgage-funding:{loan.liability_id}"),
                             ),
                             amount=checked_count(-debt, "money negation"),
                         ),

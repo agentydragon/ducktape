@@ -38,6 +38,7 @@ from finance.augur.product.wire import (
     TlhFinancialEffectEvent,
 )
 from finance.augur.sim.events import EventLog, TlhOperation
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.scenario import ObligationType
 
 _TAX_PAYMENT_OBLIGATION_TYPES = frozenset((ObligationType.ESTIMATED_TAX, ObligationType.TAX_TRUE_UP))
@@ -65,7 +66,7 @@ def project_product_rollout(
     metrics: ProductMetricArrays,
     *,
     rollout_id: int,
-    primary_agent_id: str,
+    primary_agent_id: AgentId,
     asset_label_by_id: dict[str, str],
 ) -> ProductRolloutProjection:
     """Project one original rollout ID present in both the metric and event results."""

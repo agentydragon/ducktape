@@ -13,7 +13,7 @@ from finance.augur.sim import capture, results
 from finance.augur.sim.actions import Action, DecisionActions
 from finance.augur.sim.agent import EconomicAgent, assemble
 from finance.augur.sim.books import AccountRef, TaxAccrual, TaxPaymentOutcome, TaxSettlementOutcome
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AgentId, AssetId
 from finance.augur.sim.observations import Decision, Observation
 from finance.augur.sim.world import Capture, World
 
@@ -32,7 +32,7 @@ class _Delegate(EconomicAgent):
 class _Record:
     """What `ActionSession` promises per path, read from world state after every step."""
 
-    def __init__(self, world: World, actor: str, mode: Capture) -> None:
+    def __init__(self, world: World, actor: AgentId, mode: Capture) -> None:
         self.world = world
         self.actor = actor
         self.mode = mode
@@ -41,7 +41,7 @@ class _Record:
             for account in world.accounting.declared
             if account.agent_id == actor
         ]
-        self.holdings: dict[tuple[AccountRef, str], list[int]] = {}
+        self.holdings: dict[tuple[AccountRef, AssetId], list[int]] = {}
         self.bond_terms = [] if world.bonds is None else [bond for bond in world.bonds.terms if bond.agent_id == actor]
         self.bonds = [
             results.BondSeries(
@@ -136,13 +136,13 @@ class ActionSession:
     preserving earlier effects; no retries or engine-selected rescue actions occur.
     """
 
-    def __init__(self, worlds: Mapping[int, World], actor: str, *, capture: Capture = "forensic") -> None:
+    def __init__(self, worlds: Mapping[int, World], actor: AgentId, *, capture: Capture = "forensic") -> None:
         """Own composed, unstarted worlds keyed by path id; each gets a delegate household for `actor`."""
         if not worlds:
             raise ValueError("a session needs at least one world")
         if capture not in ("summary", "dense", "forensic"):
             raise ValueError("capture must be summary, dense or forensic")
-        self._actor = AgentId(actor)
+        self._actor = actor
         self._month = 0
         self._started = False
         self._closed = False

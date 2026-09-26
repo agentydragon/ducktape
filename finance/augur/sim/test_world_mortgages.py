@@ -10,6 +10,7 @@ from finance.augur.sim.actions import ClaimId, PayClaim
 from finance.augur.sim.agent import assemble
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.capture import FinancialCapture
+from finance.augur.sim.ids import AccountId
 from finance.augur.sim.mortgage import Mortgage, MortgagePayment, MortgageTerms
 from finance.augur.sim.prepared import (
     PreparedLocation,
@@ -53,9 +54,9 @@ def case() -> Situation:
             property_id="test-home",
             location_id="test-market",
             buyer_agent_id=HOUSEHOLD,
-            buyer_account_id="checking",
+            buyer_account_id=AccountId("checking"),
             seller_agent_id=WORLD,
-            seller_account_id="cash",
+            seller_account_id=AccountId("cash"),
             purchase_price=100_000,
             down_payment=40_000,
             buyer_closing_cost=0,
@@ -64,7 +65,7 @@ def case() -> Situation:
             mortgage=_MortgageFinancing(
                 liability_id="test-mortgage",
                 lender_agent_id=WORLD,
-                lender_account_id="cash",
+                lender_account_id=AccountId("cash"),
                 principal=60_000,
                 annual_interest_rate_ppb=0,
                 term_months=60,
@@ -124,9 +125,9 @@ def composed(case: Situation, rollout: int = 0) -> World:
             _PropertyTax(
                 property_id="test-home",
                 owner_agent_id=HOUSEHOLD,
-                from_account_id="checking",
+                from_account_id=AccountId("checking"),
                 tax_authority_agent_id=WORLD,
-                tax_authority_account_id="cash",
+                tax_authority_account_id=AccountId("cash"),
                 annual_tax_rate_ppb=12_000_000,
                 start_month=3,
                 end_month=None,
@@ -186,7 +187,7 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
                 ["rent", "mortgage_payment", "property_tax"] if month == 3 else ["mortgage_payment", "property_tax"]
             )
             claim = next(claim for claim in observation.claims if claim.obligation_type == "mortgage_payment")
-            checking = world.account_balance(HOUSEHOLD, "checking")
+            checking = world.account_balance(HOUSEHOLD, AccountId("checking"))
             assert not [row for row in world.accounting.mortgage_payments if row.month == month]
             action = PayClaim(
                 request_id=1,
@@ -199,7 +200,7 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
             assert [row.liability_id for row in world.accounting.mortgage_payments if row.month == month] == [
                 "test-mortgage"
             ]
-            assert world.account_balance(HOUSEHOLD, "checking") == checking
+            assert world.account_balance(HOUSEHOLD, AccountId("checking")) == checking
             others = [other for other in observation.claims if other is not claim]
             for index, other in enumerate(others, start=1):
                 action = PayClaim(
@@ -225,7 +226,7 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
     assert financial.properties is not None
     sale = financial.properties.sales[0]
     assert (sale.mortgage_payoff, sale.net_cash_to_owner) == (58_000, 122_000)
-    assert world.account_balance(HOUSEHOLD, "savings") == 1000
+    assert world.account_balance(HOUSEHOLD, AccountId("savings")) == 1000
     assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in financial.journal)
 
 
@@ -255,7 +256,7 @@ def test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor(case: Situ
             world.close_books(failed=False, mortgages=[])
         sale = properties.sales[0]
         assert (sale.gross_proceeds, sale.net_cash_to_owner, sale.realized_gain) == (180_000, 180_000, 80_000)
-        assert world.account_balance(HOUSEHOLD, "checking") == 280_000
+        assert world.account_balance(HOUSEHOLD, AccountId("checking")) == 280_000
 
 
 @pytest.mark.parametrize("bad_payoff", ["missing", "inactive", "wrong_contract"])
@@ -306,9 +307,9 @@ def test_a_building_basis_rounds_in_the_engine_not_in_the_authoring() -> None:
                     property_id="test-home",
                     location_id="test-market",
                     buyer_agent_id=HOUSEHOLD,
-                    buyer_account_id="checking",
+                    buyer_account_id=AccountId("checking"),
                     seller_agent_id=WORLD,
-                    seller_account_id="cash",
+                    seller_account_id=AccountId("cash"),
                     purchase_price=10_001,
                     down_payment=10_001,
                     buyer_closing_cost=0,

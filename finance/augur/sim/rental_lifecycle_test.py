@@ -33,6 +33,7 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.observations import Observation
@@ -76,19 +77,19 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-CHECKING = "checking"
-OWNER = "owner"
-TENANT = "tenant"
-AGENCY = "property_management_agency"
-SELLER = "property_seller"
-LENDER = "lender"
-EMPLOYER = "employer"
-IRS = "irs"
-HOA = "hoa"
-COUNTY = "county_assessor"
-ISSUER = "bond_issuer"
-ALICE = "alice"
-BOB = "bob"
+CHECKING = AccountId("checking")
+OWNER = AgentId("owner")
+TENANT = AgentId("tenant")
+AGENCY = AgentId("property_management_agency")
+SELLER = AgentId("property_seller")
+LENDER = AgentId("lender")
+EMPLOYER = AgentId("employer")
+IRS = AgentId("irs")
+HOA = AgentId("hoa")
+COUNTY = AgentId("county_assessor")
+ISSUER = AgentId("bond_issuer")
+ALICE = AgentId("alice")
+BOB = AgentId("bob")
 FEDERAL = "federal_us"
 CALIFORNIA = "california"
 SF = "san_francisco"
@@ -110,11 +111,11 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def ref(agent_id: str) -> AccountRef:
+def ref(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
-def account(agent_id: str, balance: Decimal | int = 0) -> PreparedAccount:
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
     return PreparedAccount(account=ref(agent_id), opening_balance=money(balance))
 
 
@@ -144,8 +145,8 @@ def recurring_transfer(
     *,
     start_month: int,
     end_month: int | None,
-    payer: str,
-    payee: str,
+    payer: AgentId,
+    payee: AgentId,
     amount: PreparedAmount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
@@ -166,8 +167,8 @@ def scheduled_transfer(
     cause_id: str,
     *,
     month: int,
-    payer: str,
-    payee: str,
+    payer: AgentId,
+    payee: AgentId,
     amount: PreparedAmount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
@@ -189,8 +190,8 @@ def recurring_property_cashflow(
     property_id: str,
     start_month: int,
     end_month: int | None,
-    payer: str,
-    payee: str,
+    payer: AgentId,
+    payee: AgentId,
     amount: PreparedAmount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
@@ -213,8 +214,8 @@ def scheduled_property_cashflow(
     *,
     property_id: str,
     month: int,
-    payer: str,
-    payee: str,
+    payer: AgentId,
+    payee: AgentId,
     amount: PreparedAmount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
@@ -235,8 +236,8 @@ def dues(
     obligation_id: str,
     *,
     obligation_type: ObligationType,
-    payer: str,
-    payee: str,
+    payer: AgentId,
+    payee: AgentId,
     amount: PreparedAmount,
     end_month: int | None = None,
     property_id: str | None = None,
@@ -272,7 +273,7 @@ def financing(
 def purchase(
     property_id: str,
     *,
-    buyer: str = OWNER,
+    buyer: AgentId = OWNER,
     month: int = 0,
     price: Decimal | int = 500_000,
     rented_fraction: float = 0.0,
@@ -302,7 +303,7 @@ def purchase(
 
 
 def property_tax(
-    property_id: str, owner: str, *, rate: float | None = None, end_month: int | None = None
+    property_id: str, owner: AgentId, *, rate: float | None = None, end_month: int | None = None
 ) -> _PropertyTax:
     return _PropertyTax(
         property_id=property_id,
@@ -316,7 +317,7 @@ def property_tax(
     )
 
 
-def mortgage_interest_deduction(liability_id: str, owner: str) -> _MortgageInterestDeduction:
+def mortgage_interest_deduction(liability_id: str, owner: AgentId) -> _MortgageInterestDeduction:
     """Acquisition debt under the post-TCJA federal and preserved pre-TCJA California caps."""
 
     return _MortgageInterestDeduction(
@@ -335,7 +336,7 @@ def salt_cap(profile_id: str, cap: Decimal | int) -> _SaltDeduction:
     )
 
 
-def taxpayer(agent_id: str = OWNER, *, jurisdiction_ids: Sequence[str] = (FEDERAL, CALIFORNIA)) -> TaxProfile:
+def taxpayer(agent_id: AgentId = OWNER, *, jurisdiction_ids: Sequence[str] = (FEDERAL, CALIFORNIA)) -> TaxProfile:
     return TaxProfile(
         agent_id=agent_id,
         filing_status=FilingStatus.SINGLE,
@@ -417,7 +418,7 @@ def pay_claims(observation: Observation) -> list[Action]:
     ]
 
 
-def settle(world: World, payers: Sequence[str]) -> None:
+def settle(world: World, payers: Sequence[AgentId]) -> None:
     """A co-owner's own claims in the same world.
 
     One world decides for one agent, so a second taxpayer sharing it settles against the
@@ -441,7 +442,7 @@ def settle(world: World, payers: Sequence[str]) -> None:
             assert isinstance(receipt.outcome, Executed), receipt
 
 
-def run(situation: Situation, *, actor: str = OWNER, co_owners: Sequence[str] = ()) -> list[Rollout]:
+def run(situation: Situation, *, actor: AgentId = OWNER, co_owners: Sequence[AgentId] = ()) -> list[Rollout]:
     """Every path to the horizon, paying every claim the month raises."""
 
     worlds = {rollout_id: compose(situation, rollout_id) for rollout_id in range(situation.rollout_count)}
@@ -481,12 +482,12 @@ def book_at(rollout: Rollout, month: int) -> Book:
     return one(book for book in trace(rollout).books if book.month == month)
 
 
-def cash(rollout: Rollout, agent_id: str, month: int) -> float:
+def cash(rollout: Rollout, agent_id: AgentId, month: int) -> float:
     balance = one(row for row in book_at(rollout, month).balances if row.account == ref(agent_id))
     return balance.balance / 100
 
 
-def breakdown(rollout: Rollout, *, month: int, jurisdiction: str, agent_id: str = OWNER) -> dict[str, Any]:
+def breakdown(rollout: Rollout, *, month: int, jurisdiction: str, agent_id: AgentId = OWNER) -> dict[str, Any]:
     """One taxpayer's year-end tax breakdown under one jurisdiction."""
 
     return one(
@@ -1452,13 +1453,13 @@ class TestRentalIncomeTaxation:
         )
         situation = replace(
             base,
-            accounts=(*base.accounts, account(AGENCY), account("generic_payer")),
+            accounts=(*base.accounts, account(AGENCY), account(AgentId("generic_payer"))),
             recurring_transfers=(
                 recurring_transfer(
                     "generic_transfer",
                     start_month=0,
                     end_month=23,
-                    payer="generic_payer",
+                    payer=AgentId("generic_payer"),
                     payee=OWNER,
                     amount=generic_transfer * 100,
                 ),

@@ -29,6 +29,7 @@ from finance.augur.model.series import SecuritySymbol
 from finance.augur.product.metrics import OutcomeBasis
 from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.fixed_point import validate_currency_quantum
+from finance.augur.sim.ids import AccountId, AgentId, PortfolioId
 
 
 class SpendIndex(StrEnum):
@@ -90,7 +91,7 @@ class ManagedSleeveWeight(ApiModel):
     """
 
     kind: Literal["managed_portfolio"] = "managed_portfolio"
-    portfolio_id: str
+    portfolio_id: PortfolioId
     weight: NonNegativeInt
 
 
@@ -417,9 +418,9 @@ class TlhFinancialEffectEvent(_RolloutEventBase):
     kind: Literal["tlh_financial_effect"] = "tlh_financial_effect"
     amount_quanta: CurrencyQuanta = Field(description="Signed cash into household cash; contributions are negative.")
     cause_id: str
-    portfolio_id: str
-    account_id: str
-    cash_account_id: str | None = None
+    portfolio_id: PortfolioId
+    account_id: AccountId
+    cash_account_id: AccountId | None = None
     operation: TlhOperation
     short_term_gain_quanta: CurrencyQuanta
     long_term_gain_quanta: CurrencyQuanta
@@ -572,7 +573,7 @@ class SetPrimaryResidenceMarkerEvent(_RolloutEventBase):
     """A primary-residence assignment event fired this month."""
 
     kind: Literal["set_primary_residence"] = "set_primary_residence"
-    agent_id: str
+    agent_id: AgentId
     property_id: str | None
     is_primary_residence: bool
 

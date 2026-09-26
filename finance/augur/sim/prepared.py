@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.scenario import TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
@@ -21,9 +22,9 @@ class PreparedAccount:
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedHoldingPool:
-    agent_id: str
-    account_id: str
-    asset_id: str
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
     quantity_scale: int
 
 
@@ -101,10 +102,10 @@ class PreparedRecurringObligation(PreparedClaim):
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedLot:
-    lot_id: str
-    agent_id: str
-    account_id: str
-    asset_id: str
+    lot_id: LotId
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
     purchase_month: int
     quantity_scale: int
     units: int
@@ -120,8 +121,8 @@ class PreparedIndexedCoupon:
 @dataclass(frozen=True, kw_only=True)
 class PreparedBond:
     bond_id: str
-    agent_id: str
-    account_id: str
+    agent_id: AgentId
+    account_id: AccountId
     issuer_jurisdiction_id: str | None
     face_value: int
     purchase_price: int
@@ -139,10 +140,10 @@ class PreparedDistributionSlice:
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedDistribution:
-    agent_id: str
-    holding_account_id: str
-    asset_id: str
-    to_account_id: str
+    agent_id: AgentId
+    holding_account_id: AccountId
+    asset_id: AssetId
+    to_account_id: AccountId
     tax_character: tuple[PreparedDistributionSlice, ...]
 
 
@@ -165,18 +166,18 @@ class PreparedLocation:
 class _ScheduledSale:
     month: int
     cause_id: str
-    agent_id: str
-    account_id: str
-    asset_id: str
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
     units: int
-    proceeds_account_id: str
+    proceeds_account_id: AccountId
 
 
 @dataclass(frozen=True, kw_only=True)
 class _SecuritySleeveTarget:
     """Lots of one security across the policy's source accounts, traded in whole units at its quote."""
 
-    asset_id: str
+    asset_id: AssetId
     weight: int
     quantity_scale: int
 
@@ -185,7 +186,7 @@ class _SecuritySleeveTarget:
 class _ManagedSleeveTarget:
     """One managed portfolio, sized in money: it has a value but no units and no unit price."""
 
-    portfolio_id: str
+    portfolio_id: PortfolioId
     weight: int
 
 
@@ -194,9 +195,9 @@ type _SleeveTarget = _SecuritySleeveTarget | _ManagedSleeveTarget
 
 @dataclass(frozen=True, kw_only=True)
 class _AllocationPolicy:
-    agent_id: str
-    account_id: str
-    source_account_ids: tuple[str, ...]
+    agent_id: AgentId
+    account_id: AccountId
+    source_account_ids: tuple[AccountId, ...]
     sleeves: tuple[_SleeveTarget, ...]
     cash_floor: PreparedAmount
     cash_ceiling: PreparedAmount
@@ -207,17 +208,17 @@ class _AllocationPolicy:
 
 @dataclass(frozen=True, kw_only=True)
 class _TenderPolicy:
-    owner_agent_id: str
-    proceeds_account_id: str
+    owner_agent_id: AgentId
+    proceeds_account_id: AccountId
     liquid_net_worth_floor: PreparedAmount
 
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedTlhPortfolio:
-    portfolio_id: str
-    owner_agent_id: str
-    account_id: str
-    asset_id: str
+    portfolio_id: PortfolioId
+    owner_agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
     initial_cohorts: tuple[TlhOpeningCohort, ...]
     assumptions: TlhAssumptions
 
@@ -225,8 +226,8 @@ class PreparedTlhPortfolio:
 @dataclass(frozen=True, kw_only=True)
 class _MortgageFinancing:
     liability_id: str
-    lender_agent_id: str
-    lender_account_id: str
+    lender_agent_id: AgentId
+    lender_account_id: AccountId
     principal: int
     annual_interest_rate_ppb: int
     term_months: int
@@ -238,10 +239,10 @@ class _PropertyPurchase:
     cause_id: str
     property_id: str
     location_id: str
-    buyer_agent_id: str
-    buyer_account_id: str
-    seller_agent_id: str
-    seller_account_id: str
+    buyer_agent_id: AgentId
+    buyer_account_id: AccountId
+    seller_agent_id: AgentId
+    seller_account_id: AccountId
     purchase_price: int
     down_payment: int
     buyer_closing_cost: int
@@ -252,14 +253,14 @@ class _PropertyPurchase:
 
 @dataclass(frozen=True, kw_only=True)
 class _PrimaryResidence:
-    agent_id: str
+    agent_id: AgentId
     property_id: str
 
 
 @dataclass(frozen=True, kw_only=True)
 class _PrimaryResidenceEvent:
     month: int
-    agent_id: str
+    agent_id: AgentId
     property_id: str | None
 
 
@@ -288,7 +289,7 @@ class _PropertySale:
 @dataclass(frozen=True, kw_only=True)
 class _MortgageInterestDeduction:
     liability_id: str
-    owner_agent_id: str
+    owner_agent_id: AgentId
     debt_class: Literal["acquisition", "home_equity"]
     per_jurisdiction_principal_cap: dict[str, int]
 
@@ -296,10 +297,10 @@ class _MortgageInterestDeduction:
 @dataclass(frozen=True, kw_only=True)
 class _PropertyTax:
     property_id: str
-    owner_agent_id: str
-    from_account_id: str
-    tax_authority_agent_id: str
-    tax_authority_account_id: str
+    owner_agent_id: AgentId
+    from_account_id: AccountId
+    tax_authority_agent_id: AgentId
+    tax_authority_account_id: AccountId
     annual_tax_rate_ppb: int | None
     start_month: int
     end_month: int | None

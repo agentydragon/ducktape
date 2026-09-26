@@ -29,6 +29,7 @@ from finance.augur.sim.fixed_point import (
     quantity_to_quanta,
     rate_to_ppb,
 )
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -49,15 +50,15 @@ from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
 QUANTA_PER_UNIT = 100
-ALICE = "alice"
-SPEND_SINK = "spend_sink"
-IRS = "irs"
-CHECKING = "checking"
-SAVINGS = "savings"
+ALICE = AgentId("alice")
+SPEND_SINK = AgentId("spend_sink")
+IRS = AgentId("irs")
+CHECKING = AccountId("checking")
+SAVINGS = AccountId("savings")
 FEDERAL = "federal_us"
 ISSUER = "acme"
-ASSET_ID = "private_equity:acme"
-LOT_ID = "acme_lot_a"
+ASSET_ID = AssetId("private_equity:acme")
+LOT_ID = LotId("acme_lot_a")
 ACME = PrivateEquityAssetKey(issuer_id=IssuerId(ISSUER))
 SCALE = quantity_scale_for_asset(ACME)
 
@@ -66,7 +67,7 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def account(agent_id: str, account_id: str = CHECKING, balance: Decimal | int = 0) -> PreparedAccount:
+def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> PreparedAccount:
     return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=money(balance))
 
 

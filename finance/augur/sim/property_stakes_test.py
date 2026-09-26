@@ -29,7 +29,7 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -54,8 +54,15 @@ from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
 QUANTA_PER_UNIT = 100
-ALICE, SELLER, LENDER, TENANT, COUNTY, IRS = "alice", "property_seller", "lender", "tenant", "county", "irs"
-CHECKING = "checking"
+ALICE, SELLER, LENDER, TENANT, COUNTY, IRS = (
+    AgentId("alice"),
+    AgentId("property_seller"),
+    AgentId("lender"),
+    AgentId("tenant"),
+    AgentId("county"),
+    AgentId("irs"),
+)
+CHECKING = AccountId("checking")
 FEDERAL, CALIFORNIA = "federal_us", "california"
 
 LOCATION_ID = "loc"
@@ -95,11 +102,11 @@ MULTI_PROPERTY_LOCATIONS = (
 )
 
 
-def account(agent_id: str, balance: Decimal | int = 0) -> PreparedAccount:
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
     return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
 
 
-def financing(liability_id: str, lender: str, *, principal: int, annual_rate: float) -> _MortgageFinancing:
+def financing(liability_id: str, lender: AgentId, *, principal: int, annual_rate: float) -> _MortgageFinancing:
     return _MortgageFinancing(
         liability_id=liability_id,
         lender_agent_id=lender,
@@ -116,7 +123,7 @@ def purchase(
     location_id: str,
     *,
     month: int = 0,
-    seller: str = SELLER,
+    seller: AgentId = SELLER,
     price: int,
     down: int,
     closing: int = 0,
@@ -141,7 +148,7 @@ def purchase(
     )
 
 
-def property_tax(property_id: str, collector: str) -> _PropertyTax:
+def property_tax(property_id: str, collector: AgentId) -> _PropertyTax:
     """No rate of its own, so the authority charges the rate of the location the property sits in."""
     return _PropertyTax(
         property_id=property_id,
@@ -316,8 +323,8 @@ def home_and_rental_case() -> Situation:
         accounts=(
             account(ALICE, 1_500_000),
             account(TENANT),
-            account("seller"),
-            account("bank"),
+            account(AgentId("seller")),
+            account(AgentId("bank")),
             account(COUNTY),
             account(IRS),
         ),
@@ -341,16 +348,16 @@ def home_and_rental_case() -> Situation:
                     "buy-home",
                     "home",
                     HOME_LOCATION_ID,
-                    seller="seller",
+                    seller=AgentId("seller"),
                     price=500_000,
                     down=100_000,
-                    mortgage=financing("home-mortgage", "bank", principal=400_000, annual_rate=0.06),
+                    mortgage=financing("home-mortgage", AgentId("bank"), principal=400_000, annual_rate=0.06),
                 ),
                 purchase(
                     "buy-rental",
                     "rental",
                     RENTAL_LOCATION_ID,
-                    seller="seller",
+                    seller=AgentId("seller"),
                     price=RENTAL_PURCHASE_PRICE,
                     down=RENTAL_PURCHASE_PRICE,
                     rented_fraction=1.0,

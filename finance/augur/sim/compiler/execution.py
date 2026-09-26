@@ -36,6 +36,7 @@ from finance.augur.sim.fixed_point import (
     round_ppb,
     sampled_array_to_quanta,
 )
+from finance.augur.sim.ids import AccountId, AgentId, AssetId
 from finance.augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.prepared import (
@@ -109,10 +110,10 @@ class UnsupportedScenarioError(ValueError):
     """
 
 
-def _asset_id(asset: AssetKey) -> str:
+def _asset_id(asset: AssetKey) -> AssetId:
     """The execution input's flat asset identifier: a bare symbol, or the private-equity wire id."""
 
-    return asset.wire_id if isinstance(asset, PrivateEquityAssetKey) else str(asset.symbol)
+    return AssetId(asset.wire_id if isinstance(asset, PrivateEquityAssetKey) else asset.symbol)
 
 
 def _amount(amount: object, *, quantum: Decimal, context: str) -> PreparedAmount:
@@ -288,10 +289,10 @@ def compile_holding_pools(
 
     A lot's pool on a managed slot stays, so the world refuses the lot beside the portfolio.
     """
-    prepared: dict[tuple[str, str, str], PreparedHoldingPool] = {}
+    prepared: dict[tuple[AgentId, AccountId, AssetId], PreparedHoldingPool] = {}
     managed = {(p.owner_agent_id, p.account_id, _asset_id(p.asset)) for p in tlh_portfolios}
 
-    def add(agent_id: str, account_id: str, asset: AssetKey) -> None:
+    def add(agent_id: AgentId, account_id: AccountId, asset: AssetKey) -> None:
         asset_id = _asset_id(asset)
         prepared[agent_id, account_id, asset_id] = PreparedHoldingPool(
             agent_id=agent_id, account_id=account_id, asset_id=asset_id, quantity_scale=quantity_scale_for_asset(asset)

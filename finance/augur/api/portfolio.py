@@ -30,6 +30,7 @@ from pydantic import (
 from finance.augur.api.schemas import NonNegativeCurrencyAmount, PositiveCurrencyAmount
 from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
+from finance.augur.sim.ids import AccountId, AgentId, LotId
 from finance.augur.sim.scenario import (
     BondHolding,
     DistributionTaxSlice,
@@ -66,14 +67,14 @@ class HoldingKind(StrEnum):
 
 
 class PortfolioAccountConfig(PortfolioConfigModel):
-    account_id: str = Field(pattern=_ID_PATTERN)
-    owner_agent_id: str = Field(pattern=_ID_PATTERN)
+    account_id: AccountId = Field(pattern=_ID_PATTERN)
+    owner_agent_id: AgentId = Field(pattern=_ID_PATTERN)
     account_type: PortfolioAccountType = PortfolioAccountType.TAXABLE_BROKERAGE
     label: str | None = None
 
 
 class HoldingTaxLotConfig(PortfolioConfigModel):
-    lot_id: str = Field(pattern=_ID_PATTERN)
+    lot_id: LotId = Field(pattern=_ID_PATTERN)
     holding_period_months_at_start: NonNegativeInt
     quantity: PositiveFloat
     cost_basis: NonNegativeCurrencyAmount
@@ -92,7 +93,7 @@ class HoldingAssetKind(StrEnum):
 
 class _HoldingPositionBase(PortfolioConfigModel):
     position_id: str = Field(pattern=_ID_PATTERN)
-    account_id: str = Field(pattern=_ID_PATTERN)
+    account_id: AccountId = Field(pattern=_ID_PATTERN)
     label: str | None = None
     unit_value: PositiveCurrencyAmount
     lots: tuple[HoldingTaxLotConfig, ...] = Field(min_length=1)
@@ -179,7 +180,7 @@ class BondHoldingConfig(PortfolioConfigModel):
     """
 
     bond_id: str = Field(pattern=_ID_PATTERN)
-    account_id: str = Field(pattern=_ID_PATTERN)
+    account_id: AccountId = Field(pattern=_ID_PATTERN)
     label: str | None = None
     issuer_jurisdiction_id: str | None = Field(
         default=None,
@@ -309,7 +310,7 @@ class PortfolioConfig(PortfolioConfigModel):
         self,
         *,
         tax_character_by_symbol: Mapping[SecuritySymbol, tuple[DistributionTaxSlice, ...]],
-        payout_account_id: str,
+        payout_account_id: AccountId,
     ) -> tuple[SecurityDistribution, ...]:
         """One payout spec per held pool of a declared distributing security.
 
@@ -347,7 +348,7 @@ class PortfolioConfig(PortfolioConfigModel):
             )
         return tuple(pools.values())
 
-    def to_initial_bonds(self, *, coupon_account_id: str) -> tuple[BondHolding, ...]:
+    def to_initial_bonds(self, *, coupon_account_id: AccountId) -> tuple[BondHolding, ...]:
         """The bond mirror of `to_initial_lots`, with the same two conversions plus a routing.
 
         The owner comes through the CUSTODY account, not the bond — the account is the

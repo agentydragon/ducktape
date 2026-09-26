@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 from finance.augur.policy.sleeves import withdraw
 from finance.augur.sim.actions import DecisionActions, PayClaim
+from finance.augur.sim.ids import AccountId, AssetId
 from finance.augur.sim.observations import Claim, Decision
 
 
@@ -22,7 +23,7 @@ def full_payments(claims: Sequence[Claim]) -> list[PayClaim]:
 
 
 def fund_claims(
-    batch: list[Decision], *, targets: dict[tuple[str, str], int], cash_account_id: str
+    batch: list[Decision], *, targets: dict[tuple[AccountId, AssetId], int], cash_account_id: AccountId
 ) -> list[DecisionActions]:
     """Fund claims on the chosen cash account, then propose full payments in observed order.
 

@@ -21,6 +21,7 @@ from finance.augur.product.wire import HoldingSaleEvent, MonthlyExpenseEvent, Ro
 from finance.augur.sim.actions import Consume, DecisionActions
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.events import EventLog
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import PreparedAccount, PreparedBond
 from finance.augur.sim.results import Finished, PaymentRejection, PaymentRequestError, Rejected, Rollout
@@ -51,7 +52,7 @@ def _run(
     capture: Literal["summary", "dense", "forensic"],
     policy: Callable[[list[Decision]], list[DecisionActions]] = decide,
     *,
-    actor_id: str = HOUSEHOLD,
+    actor_id: AgentId = HOUSEHOLD,
 ) -> list[Rollout]:
     session = ActionSession({id_: worlds(id_) for id_ in ids}, actor_id, capture=capture)
     try:
@@ -64,7 +65,7 @@ def _run(
 
 
 def _metrics(
-    rollouts: list[Rollout], *, horizon_months: int = EXAMPLE_HORIZON, primary_agent_id: str = HOUSEHOLD
+    rollouts: list[Rollout], *, horizon_months: int = EXAMPLE_HORIZON, primary_agent_id: AgentId = HOUSEHOLD
 ) -> ProductMetricArrays:
     return metric_arrays(
         rollouts,
@@ -90,7 +91,9 @@ def _detail(rollouts: list[Rollout], column: int, *, horizon_months: int = EXAMP
 def _bonds(
     *bonds: PreparedBond,
     horizon_months: int,
-    accounts: tuple[PreparedAccount, ...] = checking((HOUSEHOLD, Decimal(0)), ("example-creditor", Decimal(0))),
+    accounts: tuple[PreparedAccount, ...] = checking(
+        (HOUSEHOLD, Decimal(0)), (AgentId("example-creditor"), Decimal(0))
+    ),
     cpi: list[list[float]] | None = None,
     rollout_count: int = 1,
 ) -> Compose:
@@ -186,8 +189,10 @@ def test_attempted_consumption_gap_does_not_duplicate_claims_or_invent_future_de
                         request_id=i,
                         cause_id=f"spend-{i}",
                         component_id="budget",
-                        from_account=AccountRef(agent_id="example-household", account_id="checking"),
-                        to_account=AccountRef(agent_id="example-creditor", account_id="checking"),
+                        from_account=AccountRef(
+                            agent_id=AgentId("example-household"), account_id=AccountId("checking")
+                        ),
+                        to_account=AccountRef(agent_id=AgentId("example-creditor"), account_id=AccountId("checking")),
                         amount=amount,
                     )
                     for i, amount in enumerate((2_000, 50_000, 1))
@@ -227,8 +232,10 @@ def test_malformed_consume_is_a_stop_not_a_monetary_shortfall(example: Compose, 
                         request_id=0,
                         cause_id="invalid",
                         component_id="budget",
-                        from_account=AccountRef(agent_id="example-household", account_id="checking"),
-                        to_account=AccountRef(agent_id="example-creditor", account_id="checking"),
+                        from_account=AccountRef(
+                            agent_id=AgentId("example-household"), account_id=AccountId("checking")
+                        ),
+                        to_account=AccountRef(agent_id=AgentId("example-creditor"), account_id=AccountId("checking")),
                         amount=invalid_amount,
                     )
                 ],
@@ -250,7 +257,7 @@ def test_malformed_consume_is_a_stop_not_a_monetary_shortfall(example: Compose, 
 def test_projection_rejects_mismatched_actor_and_duplicate_selection(example: Compose) -> None:
     rollouts = _run(example, [1], "summary")
     with pytest.raises(ValueError, match="result actor"):
-        _metrics(rollouts, primary_agent_id="example-creditor")
+        _metrics(rollouts, primary_agent_id=AgentId("example-creditor"))
     with pytest.raises(ValueError, match="unique selection"):
         _metrics(rollouts * 2)
 
@@ -273,7 +280,7 @@ def test_original_ids_own_columns_through_noncontiguous_selection(example: Compo
             events,
             subset,
             rollout_id=rollout_id,
-            primary_agent_id="example-household",
+            primary_agent_id=AgentId("example-household"),
             asset_label_by_id={"security:example-stock": "Stipulated stock"},
         )
         expected = _detail(source, rollout_id)
@@ -287,7 +294,11 @@ def test_original_ids_own_columns_through_noncontiguous_selection(example: Compo
     assert wrong_trace is not None
     with pytest.raises(ValueError, match="both metric and event"):
         project_product_rollout(
-            wrong_trace.events, subset, rollout_id=4, primary_agent_id="example-household", asset_label_by_id={}
+            wrong_trace.events,
+            subset,
+            rollout_id=4,
+            primary_agent_id=AgentId("example-household"),
+            asset_label_by_id={},
         )
     with pytest.raises(ValueError, match="unknown metric rollout IDs"):
         population.select((0,))
@@ -311,14 +322,14 @@ def test_eventless_trace_keeps_its_owner_and_rejects_another_paths_metrics() -> 
     assert events.rollout_ids == (7,)
     assert events.transfers.is_empty()
     detail = project_product_rollout(
-        events, population, rollout_id=7, primary_agent_id="example-household", asset_label_by_id={}
+        events, population, rollout_id=7, primary_agent_id=AgentId("example-household"), asset_label_by_id={}
     )
     assert detail.events == ()
     assert detail.rollout_id == 7
     assert detail.monthly_metric_arrays["cash_quanta"].tolist() == [1_000] * 3
     with pytest.raises(ValueError, match="both metric and event"):
         project_product_rollout(
-            events, population, rollout_id=2, primary_agent_id="example-household", asset_label_by_id={}
+            events, population, rollout_id=2, primary_agent_id=AgentId("example-household"), asset_label_by_id={}
         )
 
 
@@ -331,8 +342,8 @@ def test_product_net_worth_carries_indexed_bonds_at_indexed_principal() -> None:
     # Untaxed: tax on $1M accretion would stop this cash-constrained case first.
     for indexed, expected in ((True, 200_000_000), (False, 100_000_000)):
         worlds = partial(compose, bond_case(indexed=indexed, cpi=CPI_DOUBLING, is_taxed=False))
-        rollouts = _run(worlds, [0], "summary", _hold, actor_id="alice")
-        metrics = _metrics(rollouts, horizon_months=HORIZON, primary_agent_id="alice").metric_arrays()
+        rollouts = _run(worlds, [0], "summary", _hold, actor_id=AgentId("alice"))
+        metrics = _metrics(rollouts, horizon_months=HORIZON, primary_agent_id=AgentId("alice")).metric_arrays()
         assert rollouts[0].stop is None
         assert metrics["bond_value_quanta"][-1, 0] == expected
         assert metrics["net_worth_quanta"][-1, 0] == expected + metrics["cash_quanta"][-1, 0]
@@ -382,15 +393,15 @@ def test_bond_principal_totals_named_accounts_without_another_actors_holdings() 
                 maturity=1,
             )
             for actor, account, face in (
-                (HOUSEHOLD, "checking", 100),
-                (HOUSEHOLD, "savings", 75),
-                ("example-creditor", "checking", 999),
+                (HOUSEHOLD, AccountId("checking"), 100),
+                (HOUSEHOLD, AccountId("savings"), 75),
+                (AgentId("example-creditor"), AccountId("checking"), 999),
             )
         ),
         horizon_months=1,
         accounts=(
-            *checking((HOUSEHOLD, Decimal(0)), ("example-creditor", Decimal(0))),
-            PreparedAccount(account=AccountRef(agent_id=HOUSEHOLD, account_id="savings"), opening_balance=0),
+            *checking((HOUSEHOLD, Decimal(0)), (AgentId("example-creditor"), Decimal(0))),
+            PreparedAccount(account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("savings")), opening_balance=0),
         ),
     )
     rollouts = _run(worlds, [0], "summary", _hold)
@@ -417,8 +428,10 @@ def test_stopped_bond_marks_and_selected_replay_use_captured_cpi_not_future_valu
                         request_id=0,
                         cause_id="unfunded",
                         component_id="budget",
-                        from_account=AccountRef(agent_id="example-household", account_id="checking"),
-                        to_account=AccountRef(agent_id="example-creditor", account_id="checking"),
+                        from_account=AccountRef(
+                            agent_id=AgentId("example-household"), account_id=AccountId("checking")
+                        ),
+                        to_account=AccountRef(agent_id=AgentId("example-creditor"), account_id=AccountId("checking")),
                         amount=1,
                     )
                 ]

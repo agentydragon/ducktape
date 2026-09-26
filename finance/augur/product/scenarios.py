@@ -54,7 +54,7 @@ from finance.augur.sim.compiler.series import level_series_demand
 from finance.augur.sim.compiler.tax import PreparedTaxProfile, compile_income_sources, compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import round_currency_amount
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -117,33 +117,33 @@ from finance.augur.sim.scenario import (
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
 
-PRIMARY_ACCOUNT_ID = "checking"
-SPEND_SINK_AGENT_ID = "spend_sink"
-SPEND_SINK_ACCOUNT_ID = "checking"
+PRIMARY_ACCOUNT_ID = AccountId("checking")
+SPEND_SINK_AGENT_ID = AgentId("spend_sink")
+SPEND_SINK_ACCOUNT_ID = AccountId("checking")
 SPEND_OBLIGATION_ID = "monthly_spend"
-LANDLORD_AGENT_ID = "landlord"
-LANDLORD_ACCOUNT_ID = "checking"
+LANDLORD_AGENT_ID = AgentId("landlord")
+LANDLORD_ACCOUNT_ID = AccountId("checking")
 RENT_OBLIGATION_ID = "outside_rent"
-TAX_AUTHORITY_AGENT_ID = "tax_authority"
-TAX_AUTHORITY_ACCOUNT_ID = "checking"
-PROPERTY_SELLER_AGENT_ID = "property_seller"
-PROPERTY_SELLER_ACCOUNT_ID = "checking"
-MORTGAGE_LENDER_AGENT_ID = "mortgage_lender"
-MORTGAGE_LENDER_ACCOUNT_ID = "checking"
-HOA_AGENT_ID = "hoa"
-HOA_ACCOUNT_ID = "checking"
+TAX_AUTHORITY_AGENT_ID = AgentId("tax_authority")
+TAX_AUTHORITY_ACCOUNT_ID = AccountId("checking")
+PROPERTY_SELLER_AGENT_ID = AgentId("property_seller")
+PROPERTY_SELLER_ACCOUNT_ID = AccountId("checking")
+MORTGAGE_LENDER_AGENT_ID = AgentId("mortgage_lender")
+MORTGAGE_LENDER_ACCOUNT_ID = AccountId("checking")
+HOA_AGENT_ID = AgentId("hoa")
+HOA_ACCOUNT_ID = AccountId("checking")
 HOA_OBLIGATION_ID = "hoa_dues"
-INSURER_AGENT_ID = "insurer"
-INSURER_ACCOUNT_ID = "checking"
+INSURER_AGENT_ID = AgentId("insurer")
+INSURER_ACCOUNT_ID = AccountId("checking")
 INSURANCE_OBLIGATION_ID = "homeowners_insurance"
-MAINTENANCE_VENDOR_AGENT_ID = "maintenance_vendor"
-MAINTENANCE_VENDOR_ACCOUNT_ID = "checking"
+MAINTENANCE_VENDOR_AGENT_ID = AgentId("maintenance_vendor")
+MAINTENANCE_VENDOR_ACCOUNT_ID = AccountId("checking")
 MAINTENANCE_OBLIGATION_ID = "property_maintenance"
-TENANT_AGENT_ID = "tenant"
-TENANT_ACCOUNT_ID = "checking"
+TENANT_AGENT_ID = AgentId("tenant")
+TENANT_ACCOUNT_ID = AccountId("checking")
 RENTAL_INCOME_CAUSE_ID = "rental_income"
-PROPERTY_MANAGEMENT_AGENT_ID = "property_management_agency"
-PROPERTY_MANAGEMENT_ACCOUNT_ID = "checking"
+PROPERTY_MANAGEMENT_AGENT_ID = AgentId("property_management_agency")
+PROPERTY_MANAGEMENT_ACCOUNT_ID = AccountId("checking")
 MANAGEMENT_FEE_CAUSE_ID = "management_fee"
 LEASING_FEE_CAUSE_ID = "leasing_fee"
 
@@ -167,11 +167,11 @@ def sim_locations_from_config(locations: tuple[LocationConfig, ...]) -> dict[str
     }
 
 
-def resolve_primary_agent_id(augur_config: Config) -> str:
+def resolve_primary_agent_id(augur_config: Config) -> AgentId:
     return one(agent.actor_id for agent in augur_config.agents if agent.role == ActorRole.PRIMARY_OWNER)
 
 
-def initial_lots_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id: str) -> tuple[InitialLot, ...]:
+def initial_lots_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id: AgentId) -> tuple[InitialLot, ...]:
     lots = portfolio.to_initial_lots()
     unsupported_owner_ids = sorted({lot.agent_id for lot in lots if lot.agent_id != primary_agent_id})
     if unsupported_owner_ids:
@@ -182,7 +182,7 @@ def initial_lots_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id:
     return lots
 
 
-def initial_bonds_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id: str) -> tuple[BondHolding, ...]:
+def initial_bonds_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id: AgentId) -> tuple[BondHolding, ...]:
     bonds = portfolio.to_initial_bonds(coupon_account_id=PRIMARY_ACCOUNT_ID)
     unsupported_owner_ids = sorted({bond.agent_id for bond in bonds if bond.agent_id != primary_agent_id})
     if unsupported_owner_ids:
@@ -198,7 +198,7 @@ def security_distributions_from_portfolio(
     declarations: tuple[SecurityDistributionConfig, ...],
     *,
     tlh_portfolios: tuple[TlhPortfolioSpec, ...],
-    primary_agent_id: str,
+    primary_agent_id: AgentId,
 ) -> tuple[SecurityDistribution, ...]:
     """Payout specs for every held pool of a security the deployment declares as distributing.
 
@@ -287,7 +287,7 @@ class Situation:
 def build_situation(
     scenario_key: ScenarioKey,
     *,
-    primary_agent_id: str,
+    primary_agent_id: AgentId,
     initial_cash: Decimal,
     initial_lots: tuple[InitialLot, ...],
     properties_by_id: dict[str, Property],
@@ -472,7 +472,7 @@ def build_situation(
     return Situation(
         currency=currency,
         horizon_months=horizon_months,
-        household=AgentId(primary_agent_id),
+        household=primary_agent_id,
         level_series=level_series_demand(
             lots=initial_lots,
             tlh_portfolios=tlh_portfolios,
@@ -654,7 +654,7 @@ def _wire_property_expenses(
     scenario_key: ScenarioKey,
     *,
     property_: Property,
-    primary_agent_id: str,
+    primary_agent_id: AgentId,
     horizon_months: int,
     currency_quantum: Decimal,
 ) -> PropertyExpenseWiring:
@@ -791,7 +791,7 @@ def _wire_landlord_rental(
     purchase: PropertyPurchase,
     *,
     property_: Property,
-    primary_agent_id: str,
+    primary_agent_id: AgentId,
     horizon_months: int,
     currency_quantum: Decimal,
 ) -> LandlordRentalWiring:
@@ -1001,7 +1001,7 @@ def _sim_property_purchase(
     purchase: PropertyPurchase,
     property_: Property,
     *,
-    primary_agent_id: str,
+    primary_agent_id: AgentId,
     mortgage: SimMortgageFinancing | None,
     currency_quantum: Decimal,
 ) -> ScheduledPropertyPurchase:
@@ -1044,7 +1044,7 @@ def _monthly_spend_amount(scenario_key: ScenarioKey) -> Decimal | SeriesIndexedA
 def _target_allocation_policies_from_funding_policy(
     funding_policy: FundingPolicy,
     *,
-    primary_agent_id: str,
+    primary_agent_id: AgentId,
     initial_lots: tuple[InitialLot, ...],
     tlh_portfolios: tuple[TlhPortfolioSpec, ...],
 ) -> list[TargetAllocationPolicy]:
@@ -1113,7 +1113,7 @@ def _band_bound_amount(amount: Decimal, *, index_to_inflation: bool) -> Decimal 
 
 
 def _build_private_equity_tender_policies(
-    *, scenario_key: ScenarioKey, initial_lots: tuple[InitialLot, ...], primary_agent_id: str
+    *, scenario_key: ScenarioKey, initial_lots: tuple[InitialLot, ...], primary_agent_id: AgentId
 ) -> list[PrivateEquityTenderPolicy]:
     """Build the sim `PrivateEquityTenderPolicy` list from the wire's pe_tender_policy.
 

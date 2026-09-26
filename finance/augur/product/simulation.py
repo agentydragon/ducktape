@@ -9,6 +9,7 @@ from finance.augur.product.metric_composition import BASE_METRIC_NAMES
 from finance.augur.product.metrics import ProductMetricArrays, product_row
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput, event_log
 from finance.augur.sim.events import EventLog
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.scenario import Currency
 from finance.augur.sim.world import Capture, World
 
@@ -27,7 +28,7 @@ class WorldResult:
     events: EventLog | None = None
 
 
-def execute(worlds: Iterable[World], capture: Capture, primary_agent_id: str) -> tuple[WorldResult, ...]:
+def execute(worlds: Iterable[World], capture: Capture, primary_agent_id: AgentId) -> tuple[WorldResult, ...]:
     """Every path to its end: the household tracked on each world acts once a month on what it is told."""
     completed = []
     for world in worlds:
@@ -56,13 +57,13 @@ def project_events(completed: tuple[WorldResult, ...]) -> EventLog:
     return EventLog.concat(logs)
 
 
-def simulate_events(worlds: Iterable[World], primary_agent_id: str) -> EventLog:
+def simulate_events(worlds: Iterable[World], primary_agent_id: AgentId) -> EventLog:
     """Dense canonical frames without the forensic journal."""
     return project_events(execute(worlds, "dense", primary_agent_id))
 
 
 def simulate_product_metrics(
-    worlds: Iterable[World], *, horizon_months: int, currency: Currency, primary_agent_id: str
+    worlds: Iterable[World], *, horizon_months: int, currency: Currency, primary_agent_id: AgentId
 ) -> ProductMetricArrays:
     return project_product_metrics(
         execute(worlds, "summary", primary_agent_id), horizon_months=horizon_months, currency=currency

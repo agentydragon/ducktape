@@ -8,7 +8,7 @@ import pytest_bazel
 from finance.augur.sim.actions import Action, LotSale, PayClaim, Sell
 from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.books import TaxLiabilityState
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.observations import Observation, TaxRecords
 from finance.augur.sim.prepared import PreparedHoldingPool, PreparedLot, PreparedRecurringTransfer, PreparedSeries
 from finance.augur.sim.results import Executed
@@ -31,13 +31,13 @@ PRICE = 100_000
 HOUSEHOLD_WAGE, OTHER_WAGE = 50_000, 7_000
 
 
-def lot(id_: str, agent: AgentId, *, basis: int, purchase_month: int) -> PreparedLot:
+def lot(id_: LotId, agent: AgentId, *, basis: int, purchase_month: int) -> PreparedLot:
     """One unit of stock, worth `PRICE` on the flat path."""
     return PreparedLot(
         lot_id=id_,
         agent_id=agent,
-        account_id="checking",
-        asset_id="stock",
+        account_id=AccountId("checking"),
+        asset_id=AssetId("stock"),
         purchase_month=purchase_month,
         quantity_scale=10,
         units=10,
@@ -45,13 +45,13 @@ def lot(id_: str, agent: AgentId, *, basis: int, purchase_month: int) -> Prepare
     )
 
 
-def sale(agent: AgentId, lot_id: str) -> Sell:
+def sale(agent: AgentId, lot_id: LotId) -> Sell:
     return Sell(
         cause_id=f"sell-{lot_id}",
         agent_id=agent,
-        proceeds_account_id="checking",
-        asset_id="stock",
-        lots=(LotSale(account_id="checking", lot_id=lot_id, units=10),),
+        proceeds_account_id=AccountId("checking"),
+        asset_id=AssetId("stock"),
+        lots=(LotSale(account_id=AccountId("checking"), lot_id=lot_id, units=10),),
     )
 
 
@@ -99,10 +99,12 @@ def run(sales: Mapping[int, Sell], *, taxed: bool = True, other_trades: bool = T
     )
     for agent in (HOUSEHOLD, OTHER):
         world.declare_pool(
-            PreparedHoldingPool(agent_id=agent, account_id="checking", asset_id="stock", quantity_scale=10)
+            PreparedHoldingPool(
+                agent_id=agent, account_id=AccountId("checking"), asset_id=AssetId("stock"), quantity_scale=10
+            )
         )
-    world.hold(lot("loser", HOUSEHOLD, basis=1_000_000, purchase_month=-24))
-    world.hold(lot("winner", OTHER, basis=0, purchase_month=-2))
+    world.hold(lot(LotId("loser"), HOUSEHOLD, basis=1_000_000, purchase_month=-24))
+    world.hold(lot(LotId("winner"), OTHER, basis=0, purchase_month=-2))
     world.declare_flow(wage(HOUSEHOLD, HOUSEHOLD_WAGE))
     if other_trades:
         world.declare_flow(wage(OTHER, OTHER_WAGE))
@@ -110,7 +112,7 @@ def run(sales: Mapping[int, Sell], *, taxed: bool = True, other_trades: bool = T
     world.track(recorder)
     world.start()
     if other_trades:
-        assert isinstance(world.apply(OTHER, sale(OTHER, "winner"), 0), Executed)
+        assert isinstance(world.apply(OTHER, sale(OTHER, LotId("winner")), 0), Executed)
     while not world.finished:
         world.step()
     assert world.stop is None
@@ -125,7 +127,7 @@ def records(observation: Observation) -> TaxRecords:
 @pytest.fixture(scope="module")
 def seen() -> list[Observation]:
     """The household sells its long-term loser (basis 1,000,000 for 100,000) in month 1."""
-    _, observations = run({1: sale(HOUSEHOLD, "loser")})
+    _, observations = run({1: sale(HOUSEHOLD, LotId("loser"))})
     return observations
 
 
@@ -181,8 +183,8 @@ def test_the_close_resets_the_year_and_posts_the_assessment_until_the_true_up_se
 
 
 def test_another_actors_income_gains_and_assessment_are_not_visible() -> None:
-    busy, seen = run({1: sale(HOUSEHOLD, "loser")})
-    _, quiet = run({1: sale(HOUSEHOLD, "loser")}, other_trades=False)
+    busy, seen = run({1: sale(HOUSEHOLD, LotId("loser"))})
+    _, quiet = run({1: sale(HOUSEHOLD, LotId("loser"))}, other_trades=False)
     # The other actor's wages and short-term gain were assessed and its true-up is still owed.
     assert [(row.agent_id, row.amount_owed) for row in busy.book().tax_liabilities if row.amount_owed] == [
         (OTHER, (OTHER_WAGE * 12 + PRICE) // 10)

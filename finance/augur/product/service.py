@@ -59,6 +59,7 @@ from finance.augur.product.wire import (
     TerminalDistributionResponse,
 )
 from finance.augur.sim.external_series import materialize_sampled_exogenous
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.quantiles import currency_quantiles
@@ -72,7 +73,7 @@ class ProductService:
         *,
         portfolio: PortfolioConfig,
         initial_cash: Decimal | int | str,
-        primary_agent_id: str,
+        primary_agent_id: AgentId,
         security_distributions: tuple[SecurityDistributionConfig, ...] = (),
         tlh_portfolios: tuple[TlhPortfolioSpec, ...] = (),
         known_location_ids: Collection[str],

@@ -24,7 +24,7 @@ from finance.augur.sim.fixed_point import (
     quantity_to_quanta,
     round_currency_amount,
 )
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -44,8 +44,8 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-ALICE, PAYROLL, IRS, LANDLORD = "alice", "payroll", "irs", "landlord"
-CHECKING = "checking"
+ALICE, PAYROLL, IRS, LANDLORD = AgentId("alice"), AgentId("payroll"), AgentId("irs"), AgentId("landlord")
+CHECKING = AccountId("checking")
 FEDERAL, CALIFORNIA = "federal_us", "california"
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 IXUS = SecurityKey(symbol=SecuritySymbol("ixus"))
@@ -65,17 +65,17 @@ def wage(annual: int) -> Decimal:
     return round_currency_amount(Decimal(annual) / 12, quantum=QUANTUM)
 
 
-def account(agent_id: str, balance: Decimal | int = 0) -> PreparedAccount:
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
     return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
 
 
-def lot(lot_id: str, asset: SecurityKey, *, quantity: float, cost_basis: int, purchase_month: int) -> PreparedLot:
+def lot(lot_id: LotId, asset: SecurityKey, *, quantity: float, cost_basis: int, purchase_month: int) -> PreparedLot:
     scale = quantity_scale_for_asset(asset)
     return PreparedLot(
         lot_id=lot_id,
         agent_id=ALICE,
         account_id=CHECKING,
-        asset_id=str(asset.symbol),
+        asset_id=AssetId(asset.symbol),
         purchase_month=purchase_month,
         quantity_scale=scale,
         units=int(quantity_to_quanta(quantity, scale=scale)),
@@ -90,14 +90,14 @@ def sale(cause_id: str, asset: SecurityKey, *, month: int, quantity: float) -> _
         cause_id=cause_id,
         agent_id=ALICE,
         account_id=CHECKING,
-        asset_id=str(asset.symbol),
+        asset_id=AssetId(asset.symbol),
         units=int(quantity_to_quanta(quantity, scale=scale)),
         proceeds_account_id=CHECKING,
     )
 
 
 def monthly(
-    cause_id: str, payer: str, payee: str, amount: Decimal, *, income: bool, end_month: int | None = 11
+    cause_id: str, payer: AgentId, payee: AgentId, amount: Decimal, *, income: bool, end_month: int | None = 11
 ) -> PreparedRecurringTransfer:
     return PreparedRecurringTransfer(
         start_month=0,
@@ -118,7 +118,9 @@ def sell_into_cash(asset: SecurityKey) -> _AllocationPolicy:
         account_id=CHECKING,
         source_account_ids=(),
         sleeves=(
-            _SecuritySleeveTarget(asset_id=str(asset.symbol), weight=1, quantity_scale=quantity_scale_for_asset(asset)),
+            _SecuritySleeveTarget(
+                asset_id=AssetId(asset.symbol), weight=1, quantity_scale=quantity_scale_for_asset(asset)
+            ),
         ),
         cash_floor=0,
         cash_ceiling=0,
@@ -221,7 +223,7 @@ def book(rollout: Rollout, month: int) -> Book:
     return one(entry for entry in rollout.trace.books if entry.month == month)
 
 
-def cash(rollout: Rollout, agent_id: str, month: int) -> float:
+def cash(rollout: Rollout, agent_id: AgentId, month: int) -> float:
     account_ = AccountRef(agent_id=agent_id, account_id=CHECKING)
     return usd(one(row.balance for row in book(rollout, month).balances if row.account == account_))
 
@@ -236,7 +238,7 @@ def ordinary_income(rollout: Rollout, month: int) -> float:
     return usd(one(row.income for row in book(rollout, month).income if row.agent_id == ALICE))
 
 
-def units_remaining(rollout: Rollout, lot_id: str, month: int) -> float:
+def units_remaining(rollout: Rollout, lot_id: LotId, month: int) -> float:
     held = one(row for row in book(rollout, month).lots if row.lot_id == lot_id)
     return held.units_remaining / held.quantity_scale
 
@@ -326,7 +328,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
         Situation(
             horizon_months=12,
             accounts=(account(ALICE), account(PAYROLL), account(IRS)),
-            lots=(lot("alice_long_vti", VTI, quantity=100.0, cost_basis=8000, purchase_month=-24),),
+            lots=(lot(LotId("alice_long_vti"), VTI, quantity=100.0, cost_basis=8000, purchase_month=-24),),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),),
             scheduled_sales=(sale("alice_long_sale", VTI, month=6, quantity=100.0),),
             prices={VTI: [280.0] * 13},
@@ -366,7 +368,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
             horizon_months=13,
             accounts=(account(ALICE, 1000), account(PAYROLL), account(IRS)),
             prior_year_tax=4000,
-            lots=(lot("alice_long_vti", VTI, quantity=100.0, cost_basis=8000, purchase_month=-24),),
+            lots=(lot(LotId("alice_long_vti"), VTI, quantity=100.0, cost_basis=8000, purchase_month=-24),),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),),
             scheduled_sales=(sale("alice_long_sale", VTI, month=6, quantity=100.0),),
             prices={VTI: [280.0] * 14},
@@ -395,7 +397,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
     assert usd(sum(row.amount_owed for row in owed(rollout, 13))) == pytest.approx(0.0, abs=0.02)
 
     assert cash(rollout, ALICE, 13) == pytest.approx(71_015.42, abs=0.02)
-    assert units_remaining(rollout, "alice_long_vti", 13) == 0.0
+    assert units_remaining(rollout, LotId("alice_long_vti"), 13) == 0.0
 
 
 def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
@@ -414,8 +416,8 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
             accounts=(account(ALICE), account(PAYROLL), account(IRS)),
             jurisdiction_ids=(FEDERAL,),
             lots=(
-                lot("alice_long_vti", VTI, quantity=100.0, cost_basis=10000, purchase_month=-24),
-                lot("alice_short_ixus", IXUS, quantity=10.0, cost_basis=500, purchase_month=0),
+                lot(LotId("alice_long_vti"), VTI, quantity=100.0, cost_basis=10000, purchase_month=-24),
+                lot(LotId("alice_short_ixus"), IXUS, quantity=10.0, cost_basis=500, purchase_month=0),
             ),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),),
             scheduled_sales=(
@@ -455,7 +457,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability() 
             accounts=(account(ALICE), account(PAYROLL), account(LANDLORD), account(IRS)),
             jurisdiction_ids=(FEDERAL,),
             prior_year_tax=2000,
-            lots=(lot("alice_vti_seed", VTI, quantity=100.0, cost_basis=10000, purchase_month=-24),),
+            lots=(lot(LotId("alice_vti_seed"), VTI, quantity=100.0, cost_basis=10000, purchase_month=-24),),
             recurring_transfers=(
                 monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),
                 monthly("alice_rent", ALICE, LANDLORD, wage(50_000), income=False),
@@ -489,7 +491,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability() 
 
     assert cash(rollout, ALICE, 13) == pytest.approx(0.0, abs=0.02)
     # 100 - (5+5+5+25.16) = 59.84 units remaining.
-    assert units_remaining(rollout, "alice_vti_seed", 13) == pytest.approx(59.84, abs=0.02)
+    assert units_remaining(rollout, LotId("alice_vti_seed"), 13) == pytest.approx(59.84, abs=0.02)
     assert usd(sum(row.amount_owed for row in owed(rollout, 13))) == pytest.approx(0.0, abs=0.02)
     assert rollout.stop is None
 

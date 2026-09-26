@@ -14,6 +14,7 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedObligation
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
@@ -44,21 +45,24 @@ def early_claim_failure() -> Finished:
         world = World(
             MarketPath(series, rollout_id, rollout_count=2), horizon_months=2, income_sources=(ORDINARY_INCOME,)
         )
-        for name in ("retiree", "world"):
+        for name in (AgentId("retiree"), AgentId("world")):
             world.declare_account(
-                PreparedAccount(account=AccountRef(agent_id=name, account_id="checking"), opening_balance=0)
+                PreparedAccount(account=AccountRef(agent_id=name, account_id=AccountId("checking")), opening_balance=0)
             )
         world.declare_pool(
             PreparedHoldingPool(
-                agent_id="retiree", account_id="brokerage", asset_id=str(stock.symbol), quantity_scale=scale
+                agent_id=AgentId("retiree"),
+                account_id=AccountId("brokerage"),
+                asset_id=AssetId(stock.symbol),
+                quantity_scale=scale,
             )
         )
         world.hold(
             PreparedLot(
-                lot_id="test-bill-lot",
-                agent_id="retiree",
-                account_id="brokerage",
-                asset_id=str(stock.symbol),
+                lot_id=LotId("test-bill-lot"),
+                agent_id=AgentId("retiree"),
+                account_id=AccountId("brokerage"),
+                asset_id=AssetId(stock.symbol),
                 purchase_month=-24,
                 quantity_scale=scale,
                 units=int(quantity_to_quanta(1, scale=scale)),
@@ -71,8 +75,8 @@ def early_claim_failure() -> Finished:
                     month=0,
                     obligation_id="test-large-bill",
                     obligation_type=ObligationType.OUTSIDE_RENT,
-                    from_account=AccountRef(agent_id="retiree", account_id="checking"),
-                    to_account=AccountRef(agent_id="world", account_id="checking"),
+                    from_account=AccountRef(agent_id=AgentId("retiree"), account_id=AccountId("checking")),
+                    to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
                     amount_due=20_000,
                     property_id=None,
                     deduction_category=None,
@@ -83,7 +87,9 @@ def early_claim_failure() -> Finished:
         return world
 
     return run(
-        compose, SpendingPolicy(BatchPolicy(Parameters(400, 0, 0), 2), {("brokerage", str(stock.symbol)): 1}), [0, 1]
+        compose,
+        SpendingPolicy(BatchPolicy(Parameters(400, 0, 0), 2), {(AccountId("brokerage"), AssetId(stock.symbol)): 1}),
+        [0, 1],
     )
 
 

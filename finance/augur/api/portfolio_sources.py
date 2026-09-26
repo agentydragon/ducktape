@@ -28,6 +28,7 @@ from finance.augur.api.portfolio_source_config import (
     PlaidSp500ProxyGroupConfig,
 )
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey
+from finance.augur.sim.ids import AccountId
 from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
 from finance.plaid.db.read_model import (
     CurrentCashBalance,
@@ -288,7 +289,7 @@ def _merge_contributions(contributions: tuple[_PortfolioContribution, ...]) -> P
     accounts: list[PortfolioAccountConfig] = []
     holdings: list[HoldingPositionConfig] = []
     bonds: list[BondHoldingConfig] = []
-    account_ids: set[str] = set()
+    account_ids: set[AccountId] = set()
     for contribution in contributions:
         for account in contribution.accounts:
             if account.account_id in account_ids:

@@ -26,7 +26,7 @@ from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -49,8 +49,15 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-ALICE, PAYROLL, IRS, SELLER, BANK, COLLECTOR = "alice", "payroll", "irs", "seller", "bank", "sf_tax_collector"
-CHECKING = "checking"
+ALICE, PAYROLL, IRS, SELLER, BANK, COLLECTOR = (
+    AgentId("alice"),
+    AgentId("payroll"),
+    AgentId("irs"),
+    AgentId("seller"),
+    AgentId("bank"),
+    AgentId("sf_tax_collector"),
+)
+CHECKING = AccountId("checking")
 FEDERAL, CALIFORNIA = "federal_us", "california"
 
 LOCATION_ID = "san_francisco"
@@ -93,7 +100,7 @@ DEFAULT_SALT_SCHEDULE = (
 )
 
 
-def account(agent_id: str, balance: Decimal | int = 0) -> PreparedAccount:
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
     return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
 
 

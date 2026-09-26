@@ -24,6 +24,7 @@ from finance.augur.product.wire import (
     RolloutRequest,
     ScenarioKey,
 )
+from finance.augur.sim.ids import AgentId
 
 
 def _product(*, future_cpi: float = 10) -> ProductService:
@@ -38,7 +39,7 @@ def _product(*, future_cpi: float = 10) -> ProductService:
     return ProductService(
         portfolio=PortfolioConfig(),
         initial_cash=2000,
-        primary_agent_id="household",
+        primary_agent_id=AgentId("household"),
         known_location_ids=(),
         locations={},
         properties_by_id={},

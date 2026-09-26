@@ -21,7 +21,7 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.holdings import Disposition
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -39,9 +39,9 @@ BND = SecurityKey(symbol=SecuritySymbol("bnd"))
 QUANTUM = Decimal("0.01")
 HORIZON = 4
 PRICE = Decimal(100)
-ALICE = "alice"
-LANDLORD = "landlord"
-CHECKING = "checking"
+ALICE = AgentId("alice")
+LANDLORD = AgentId("landlord")
+CHECKING = AccountId("checking")
 # Weights default equal against a 9:1 holding, so stock is the overweight sleeve and every
 # raise has to come out of it first.
 STOCK_UNITS, BOND_UNITS = 900.0, 100.0
@@ -53,7 +53,7 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def ref(agent_id: str) -> AccountRef:
+def ref(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
@@ -80,13 +80,13 @@ class Situation:
     weights: tuple[int, int] = (1, 1)
 
 
-def lot(lot_id: str, asset: SecurityKey, quantity: float) -> PreparedLot:
+def lot(lot_id: LotId, asset: SecurityKey, quantity: float) -> PreparedLot:
     scale = quantity_scale_for_asset(asset)
     return PreparedLot(
         lot_id=lot_id,
         agent_id=ALICE,
         account_id=CHECKING,
-        asset_id=str(asset.symbol),
+        asset_id=AssetId(asset.symbol),
         purchase_month=0,
         quantity_scale=scale,
         units=int(quantity_to_quanta(quantity, scale=scale)),
@@ -111,7 +111,7 @@ def compose(case: Situation) -> World:
     world.declare_account(
         PreparedAccount(account=ref(LANDLORD), opening_balance=money(Decimal(case.income) * (HORIZON + 1)))
     )
-    lots = (lot("stock", VTI, case.stock_units), lot("bond", BND, case.bond_units))
+    lots = (lot(LotId("stock"), VTI, case.stock_units), lot(LotId("bond"), BND, case.bond_units))
     for holding in lots:
         world.declare_pool(
             PreparedHoldingPool(
@@ -161,7 +161,9 @@ def compose(case: Situation) -> World:
                     source_account_ids=(),
                     sleeves=tuple(
                         _SecuritySleeveTarget(
-                            asset_id=str(asset.symbol), weight=weight, quantity_scale=quantity_scale_for_asset(asset)
+                            asset_id=AssetId(asset.symbol),
+                            weight=weight,
+                            quantity_scale=quantity_scale_for_asset(asset),
                         )
                         for asset, weight in zip((VTI, BND), case.weights, strict=True)
                     ),

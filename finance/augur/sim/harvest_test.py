@@ -16,6 +16,7 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import position_value
@@ -36,12 +37,12 @@ from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-ALICE = "alice"
-IRS = "irs"
+ALICE = AgentId("alice")
+IRS = AgentId("irs")
 SP500 = SecurityKey(symbol=SP500_SYMBOL)
 GAINCO = SecurityKey(symbol=SecuritySymbol("gainco"))
-BROKERAGE = "brokerage"
-CHECKING = "checking"
+BROKERAGE = AccountId("brokerage")
+CHECKING = AccountId("checking")
 FEDERAL = "federal_us"
 PARAMS = TlhAssumptions(
     peak_annual_yield=0.12,
@@ -68,13 +69,15 @@ class Situation:
     extra_lots: tuple[PreparedLot, ...] = ()
 
 
-def _lot(lot_id: str, asset: SecurityKey, *, quantity: float, cost_basis: Decimal, purchase_month: int) -> PreparedLot:
+def _lot(
+    lot_id: LotId, asset: SecurityKey, *, quantity: float, cost_basis: Decimal, purchase_month: int
+) -> PreparedLot:
     scale = quantity_scale_for_asset(asset)
     return PreparedLot(
         lot_id=lot_id,
         agent_id=ALICE,
         account_id=BROKERAGE,
-        asset_id=str(asset.symbol),
+        asset_id=AssetId(asset.symbol),
         purchase_month=purchase_month,
         quantity_scale=scale,
         units=int(quantity_to_quanta(quantity, scale=scale)),
@@ -105,7 +108,7 @@ def situation(
         rollout_count=rollouts,
         horizon_months=horizon,
         sleeve=_lot(
-            "alice_sp500",
+            LotId("alice_sp500"),
             SP500,
             quantity=quantity,
             cost_basis=Decimal(str(quantity)) * cost_basis_per_unit,
@@ -158,7 +161,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         opening_price = world.market.value(f"security:{case.sleeve.asset_id}", 0)
         world.declare_portfolio(
             PreparedTlhPortfolio(
-                portfolio_id="alice-sp500",
+                portfolio_id=PortfolioId("alice-sp500"),
                 owner_agent_id=ALICE,
                 account_id=BROKERAGE,
                 asset_id=case.sleeve.asset_id,
@@ -228,7 +231,7 @@ def sell_lots(cause_id: str, asset: SecurityKey) -> Intent:
             cause_id=cause_id,
             agent_id=ALICE,
             proceeds_account_id=CHECKING,
-            asset_id=str(asset.symbol),
+            asset_id=AssetId(asset.symbol),
             lots=tuple(
                 LotSale(account_id=position.account_id, lot_id=position.lot_id, units=position.units)
                 for position in positions
@@ -331,7 +334,7 @@ def test_harvested_short_term_loss_offsets_realized_gain_lowering_tax() -> None:
     # Alice realizes a real short-term capital GAIN (a separate crypto-like lot sold at a profit) in
     # the same year she harvests SP500 losses. With harvesting on, the harvested ST loss nets against
     # that gain (§1211/§1212), lowering the year's tax vs the no-harvest baseline.
-    gain_lot = _lot("alice_gain", GAINCO, quantity=100.0, cost_basis=Decimal(10_000), purchase_month=-3)
+    gain_lot = _lot(LotId("alice_gain"), GAINCO, quantity=100.0, cost_basis=Decimal(10_000), purchase_month=-3)
     # SP500 sleeve drops then recovers so harvesting books meaningful losses through the year.
     levels = {
         SP500: [[1.0, 0.85, 0.85, 0.9, 0.9, 0.9, 0.95] + [0.95] * 7],

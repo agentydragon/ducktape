@@ -19,6 +19,7 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.compiler.execution import compile_holding_pools, compile_jurisdictions, compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
@@ -27,7 +28,7 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
 
-ACTOR = "test-owner"
+ACTOR = AgentId("test-owner")
 FIRST = SecurityKey(symbol="test-first")
 SECOND = SecurityKey(symbol="test-second")
 

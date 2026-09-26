@@ -32,6 +32,7 @@ from finance.augur.model.series import SecuritySymbol
 from finance.augur.model.state_space import StateSpaceProviderConfig
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from finance.augur.product.wire import MAX_HORIZON_MONTHS
+from finance.augur.sim.ids import AgentId
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
@@ -48,7 +49,7 @@ class AgentDefinition(ApiModel):
     Actor IDs are user-provided identity strings (e.g. "primary", "buyer").
     The role is a typed concept the policy / scenario engine consumes."""
 
-    actor_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    actor_id: AgentId = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str
     role: ActorRole
 

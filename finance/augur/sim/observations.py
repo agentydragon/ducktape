@@ -7,20 +7,21 @@ from pydantic import Field
 
 from finance.augur.sim.actions import ClaimId
 from finance.augur.sim.books import AccountRef, Record, TaxLiabilityState
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
 from finance.augur.sim.results import Receipt
 
 
 class HoldingPool(Record):
-    account_id: str
-    asset_id: str
+    account_id: AccountId
+    asset_id: AssetId
     quantity_scale: int
     price: int
 
 
 class PublicPosition(Record):
-    account_id: str
-    asset_id: str
-    lot_id: str
+    account_id: AccountId
+    asset_id: AssetId
+    lot_id: LotId
     purchase_month: int
     units: int
     quantity_scale: int
@@ -43,7 +44,7 @@ class HeldBond(Record):
     """Unredeemed contract: principal is carrying value, not tradable proceeds."""
 
     bond_id: str
-    account_id: str
+    account_id: AccountId
     issuer_jurisdiction_id: str | None
     face_value: int
     purchase_price: int
@@ -67,11 +68,11 @@ class Claim(ClaimId):
 class TlhPortfolioObservation(Record):
     """A managed portfolio at its mark: money and basis, no units or unit price."""
 
-    portfolio_id: str
-    owner_agent_id: str
-    account_id: str
+    portfolio_id: PortfolioId
+    owner_agent_id: AgentId
+    account_id: AccountId
     # The index whose level moves `value`; the portfolio is not a holding of it.
-    asset_id: str
+    asset_id: AssetId
     value: int
     reported_tax_basis: int
     # False at a zero index mark, where the portfolio refuses a contribution. Value and basis
@@ -112,12 +113,12 @@ class TaxRecords(Record):
 class Observation(Record):
     """Money uses currency quanta; CPI is current/origin, absent only if unmodeled."""
 
-    agent_id: str
+    agent_id: AgentId
     month: int
     cpi: tuple[int, int] | None
     cash: int
     public_holdings: int
-    accounts: tuple[tuple[str, int], ...]
+    accounts: tuple[tuple[AccountId, int], ...]
     holding_pools: tuple[HoldingPool, ...]
     public_positions: tuple[PublicPosition, ...]
     held_bonds: tuple[HeldBond, ...]

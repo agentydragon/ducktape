@@ -9,6 +9,7 @@ import pytest_bazel
 
 from finance.augur.sim.actions import Action, Consume, DecisionActions, PayClaim
 from finance.augur.sim.books import AccountRef, BondState, Book
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.observations import Decision, FixedCoupon, IndexedCoupon
 from finance.augur.sim.results import BondSeries, Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
@@ -32,7 +33,7 @@ def execute(
     capture: Literal["summary", "dense", "forensic"] = "summary",
     ids: list[int] | None = None,
 ) -> list[Rollout]:
-    session = ActionSession({id_: compose(case, id_) for id_ in ids or [0]}, "alice", capture=capture)
+    session = ActionSession({id_: compose(case, id_) for id_ in ids or [0]}, AgentId("alice"), capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -49,7 +50,7 @@ def held_bonds(book: Book) -> list[BondState]:
 
 def held_case(*, indexed: bool = False, future_cpi: float = 2.0, rollout_count: int = 1) -> Situation:
     return Situation(
-        accounts=checking(("alice", Decimal(0)), ("bob", Decimal(0)), ("world", Decimal(0))),
+        accounts=checking((AgentId("alice"), Decimal(0)), (AgentId("bob"), Decimal(0)), (AgentId("world"), Decimal(0))),
         bonds=tuple(
             dated(
                 f"{agent}-bond",
@@ -61,7 +62,7 @@ def held_case(*, indexed: bool = False, future_cpi: float = 2.0, rollout_count: 
                 maturity=2,
                 indexed=indexed,
             )
-            for agent in ("alice", "bob")
+            for agent in (AgentId("alice"), AgentId("bob"))
         ),
         horizon_months=3,
         series=cpi_series([[1.0, 2.0, future_cpi, future_cpi]] * rollout_count),
@@ -74,8 +75,8 @@ def consume(amount: int) -> Action:
         request_id=0,
         cause_id="bond-funded-spend",
         component_id="consumption",
-        from_account=AccountRef(agent_id="alice", account_id="checking"),
-        to_account=AccountRef(agent_id="world", account_id="checking"),
+        from_account=AccountRef(agent_id=AgentId("alice"), account_id=AccountId("checking")),
+        to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
         amount=amount,
     )
 
@@ -109,7 +110,7 @@ def test_owned_terms_coupon_before_spending_and_maturity_removal() -> None:
     assert result.trace is None
     assert result.summary.bond_principal == [
         BondSeries(
-            account=AccountRef(agent_id="alice", account_id="checking"),
+            account=AccountRef(agent_id=AgentId("alice"), account_id=AccountId("checking")),
             bond_id="alice-bond",
             values=[10_000, 10_000, 10_000, 0],
         )
@@ -200,11 +201,11 @@ def test_existing_issuer_exemptions_survive_actor_capture(issuer: str | None, fe
 )
 def test_fixed_coupon_rounds_once_and_funds_spending(face: int, rate: float, period: int, coupon: int) -> None:
     case = Situation(
-        accounts=checking(("alice", Decimal(0)), ("world", Decimal(0))),
+        accounts=checking((AgentId("alice"), Decimal(0)), (AgentId("world"), Decimal(0))),
         bonds=(
             dated(
                 "fixed-test",
-                agent_id="alice",
+                agent_id=AgentId("alice"),
                 face=face * QUANTUM,
                 annual_rate=rate,
                 period=period,

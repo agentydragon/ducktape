@@ -16,6 +16,7 @@ from finance.augur.sim.compiler.income_sources import income_source_sort_key
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -31,6 +32,7 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
+CHECKING = AccountId("checking")
 HORIZON = 14
 # Long enough to outlive the horizon, for the cases that are about coupons rather than
 # redemption.
@@ -53,8 +55,8 @@ TREASURY, MUNI, CORPORATE = "federal_us", "california", None
 def dated(
     bond_id: str,
     *,
-    agent_id: str,
-    account_id: str = "checking",
+    agent_id: AgentId,
+    account_id: AccountId = CHECKING,
     face: Decimal,
     annual_rate: float,
     period: int,
@@ -100,11 +102,11 @@ def cpi_series(paths: Sequence[Sequence[float]]) -> tuple[PreparedSeries, ...]:
     )
 
 
-def checking(*balances: tuple[str, Decimal]) -> tuple[PreparedAccount, ...]:
+def checking(*balances: tuple[AgentId, Decimal]) -> tuple[PreparedAccount, ...]:
     """Opening balances for agents holding one `checking` account each."""
     return tuple(
         PreparedAccount(
-            account=AccountRef(agent_id=agent_id, account_id="checking"),
+            account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")),
             opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
         )
         for agent_id, balance in balances
@@ -157,7 +159,7 @@ def bond_case(
     cpi: list[float] | None = None,
     is_taxed: bool = True,
     maturity: int = NEVER_MATURES,
-    account_id: str = "checking",
+    account_id: AccountId = CHECKING,
 ) -> Situation:
     """Alice holding one $1M 4% semiannual bond and $100k cash, and nothing else that moves money.
 
@@ -166,11 +168,11 @@ def bond_case(
     same month as a coupon and the two net against each other.
     """
     return Situation(
-        accounts=checking(("alice", Decimal(100_000)), ("irs", Decimal(0))),
+        accounts=checking((AgentId("alice"), Decimal(100_000)), (AgentId("irs"), Decimal(0))),
         bonds=(
             dated(
                 "rung",
-                agent_id="alice",
+                agent_id=AgentId("alice"),
                 account_id=account_id,
                 face=FACE,
                 annual_rate=NOMINAL_RATE,

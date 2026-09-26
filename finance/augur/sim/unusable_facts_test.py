@@ -19,14 +19,14 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.private_equity import compile_pe_channels
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedSeries, _ScheduledSale
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-ALICE = "alice"
-CHECKING = "checking"
+ALICE = AgentId("alice")
+CHECKING = AccountId("checking")
 ACME = "acme"
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 SCALE = quantity_scale_for_asset(VTI)
@@ -53,7 +53,7 @@ def money(amount: Decimal | int) -> int:
 def alice_holding(*series: PreparedSeries) -> World:
     """Alice's brokerage and checking accounts on a path carrying exactly `series`."""
     world = World(MarketPath(series, 0, rollout_count=1), horizon_months=HORIZON)
-    for account_id in (CHECKING, "brokerage"):
+    for account_id in (CHECKING, AccountId("brokerage")):
         world.declare_account(
             PreparedAccount(account=AccountRef(agent_id=ALICE, account_id=account_id), opening_balance=0)
         )
@@ -153,10 +153,10 @@ def test_a_private_equity_mark_is_required_at_the_terminal_snapshot_too() -> Non
     one worth refusing where the lot is declared.
     """
     lot = PreparedLot(
-        lot_id="acme_lot",
+        lot_id=LotId("acme_lot"),
         agent_id=ALICE,
         account_id=CHECKING,
-        asset_id=f"private_equity:{ACME}",
+        asset_id=AssetId(f"private_equity:{ACME}"),
         purchase_month=-36,
         quantity_scale=SCALE,
         units=int(quantity_to_quanta(100.0, scale=SCALE)),
@@ -180,14 +180,16 @@ def test_a_private_equity_mark_is_required_at_the_terminal_snapshot_too() -> Non
 def test_a_scheduled_sale_may_not_exceed_the_units_held() -> None:
     world = alice_holding(*vti_series(100.0, 100.0, 100.0))
     world.declare_pool(
-        PreparedHoldingPool(agent_id=ALICE, account_id="taxable", asset_id=str(VTI.symbol), quantity_scale=SCALE)
+        PreparedHoldingPool(
+            agent_id=ALICE, account_id=AccountId("taxable"), asset_id=AssetId(VTI.symbol), quantity_scale=SCALE
+        )
     )
     world.hold(
         PreparedLot(
-            lot_id="taxable_vti",
+            lot_id=LotId("taxable_vti"),
             agent_id=ALICE,
-            account_id="taxable",
-            asset_id=str(VTI.symbol),
+            account_id=AccountId("taxable"),
+            asset_id=AssetId(VTI.symbol),
             purchase_month=-12,
             quantity_scale=SCALE,
             units=int(quantity_to_quanta(5.0, scale=SCALE)),
@@ -203,8 +205,8 @@ def test_a_scheduled_sale_may_not_exceed_the_units_held() -> None:
                     month=1,
                     cause_id="oversell",
                     agent_id=ALICE,
-                    account_id="taxable",
-                    asset_id=str(VTI.symbol),
+                    account_id=AccountId("taxable"),
+                    asset_id=AssetId(VTI.symbol),
                     units=int(quantity_to_quanta(6.0, scale=SCALE)),
                     proceeds_account_id=CHECKING,
                 ),
@@ -228,7 +230,7 @@ def test_a_sleeve_price_that_is_not_a_price_is_refused(bad_price: float) -> None
 
     def declare() -> None:
         alice_holding(*vti_series(bad_price, bad_price, bad_price)).declare_pool(
-            PreparedHoldingPool(agent_id=ALICE, account_id=CHECKING, asset_id=str(VTI.symbol), quantity_scale=SCALE)
+            PreparedHoldingPool(agent_id=ALICE, account_id=CHECKING, asset_id=AssetId(VTI.symbol), quantity_scale=SCALE)
         )
 
     with pytest.raises(ValueError, match=r"(?i)(non-positive value|not finite|no finite level)"):
@@ -239,9 +241,9 @@ def test_an_admitted_sleeve_is_priced_at_the_quote_the_pool_carried() -> None:
     """The anchor for the refusal above: a real quote is admitted and is what the sleeve is worth."""
     world = alice_holding(*vti_series(100.0, 110.0, 120.0))
     world.declare_pool(
-        PreparedHoldingPool(agent_id=ALICE, account_id=CHECKING, asset_id=str(VTI.symbol), quantity_scale=SCALE)
+        PreparedHoldingPool(agent_id=ALICE, account_id=CHECKING, asset_id=AssetId(VTI.symbol), quantity_scale=SCALE)
     )
-    assert world.public_price(ALICE, str(VTI.symbol), 1) == money(110)
+    assert world.public_price(ALICE, AssetId(VTI.symbol), 1) == money(110)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from finance.augur.sim.actions import Contribute, DecisionActions, Liquidate, Wi
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.events import TlhOperation
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, PortfolioId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedJurisdiction, PreparedSeries, PreparedTlhPortfolio
@@ -27,7 +28,7 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
-ASSET = "test-managed-index"
+ASSET = AssetId("test-managed-index")
 # Money is counted in whole dollars here, so the stipulated $1 price is one quantum.
 QUANTUM = Decimal(1)
 FEDERAL = load_jurisdiction("federal_us")
@@ -43,9 +44,11 @@ def compose(price: int) -> World:
         income_sources=(ORDINARY_INCOME,),
         jurisdictions=(PreparedJurisdiction(jurisdiction_id="federal_us", level=FEDERAL.level),),
     )
-    for agent_id, balance in (("owner", 10), ("irs", 0)):
+    for agent_id, balance in ((AgentId("owner"), 10), (AgentId("irs"), 0)):
         world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id="checking"), opening_balance=balance)
+            PreparedAccount(
+                account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=balance
+            )
         )
     world.track(
         TaxAuthority(
@@ -58,9 +61,9 @@ def compose(price: int) -> World:
     )
     world.declare_portfolio(
         PreparedTlhPortfolio(
-            portfolio_id="managed",
-            owner_agent_id="owner",
-            account_id="checking",
+            portfolio_id=PortfolioId("managed"),
+            owner_agent_id=AgentId("owner"),
+            account_id=AccountId("checking"),
             asset_id=ASSET,
             initial_cohorts=(TlhOpeningCohort(value=100 * price, cost_basis=100, purchase_month_index=-24),),
             assumptions=TlhAssumptions(
@@ -77,7 +80,7 @@ def compose(price: int) -> World:
 
 @pytest.mark.parametrize("capture", ["dense", "forensic"])
 def test_tlh_cash_and_separate_realizations_reach_product_timeline(capture: Literal["dense", "forensic"]) -> None:
-    session = ActionSession({0: compose(price=1)}, "owner", capture=capture)
+    session = ActionSession({0: compose(price=1)}, AgentId("owner"), capture=capture)
     try:
         assert not isinstance(session.start(), Finished)
         result = session.advance(
@@ -88,16 +91,16 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(capture: Lite
                     [
                         Contribute(
                             cause_id="deposit",
-                            agent_id="owner",
-                            portfolio_id="managed",
-                            cash_account_id="checking",
+                            agent_id=AgentId("owner"),
+                            portfolio_id=PortfolioId("managed"),
+                            cash_account_id=AccountId("checking"),
                             amount=10,
                         ),
                         Withdraw(
                             cause_id="withdraw",
-                            agent_id="owner",
-                            portfolio_id="managed",
-                            cash_account_id="checking",
+                            agent_id=AgentId("owner"),
+                            portfolio_id=PortfolioId("managed"),
+                            cash_account_id=AccountId("checking"),
                             amount=100,
                         ),
                     ],
@@ -122,10 +125,14 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(capture: Lite
     projected = project_product_rollout(
         events,
         metric_arrays(
-            result.rollouts, primary_agent_id="owner", horizon_months=1, currency_code="USD", currency_quantum="1"
+            result.rollouts,
+            primary_agent_id=AgentId("owner"),
+            horizon_months=1,
+            currency_code="USD",
+            currency_quantum="1",
         ),
         rollout_id=0,
-        primary_agent_id="owner",
+        primary_agent_id=AgentId("owner"),
         asset_label_by_id={},
     )
     assert not any(isinstance(event, HoldingSaleEvent) for event in projected.events)
@@ -151,7 +158,7 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(capture: Lite
 
 def test_zero_cash_liquidation_is_still_a_redemption() -> None:
     # A statement at a zero mark reports every cohort at zero value, its basis intact.
-    session = ActionSession({0: compose(price=0)}, "owner", capture="dense")
+    session = ActionSession({0: compose(price=0)}, AgentId("owner"), capture="dense")
     try:
         assert not isinstance(session.start(), Finished)
         result = session.advance(
@@ -162,9 +169,9 @@ def test_zero_cash_liquidation_is_still_a_redemption() -> None:
                     [
                         Liquidate(
                             cause_id="close-worthless",
-                            agent_id="owner",
-                            portfolio_id="managed",
-                            cash_account_id="checking",
+                            agent_id=AgentId("owner"),
+                            portfolio_id=PortfolioId("managed"),
+                            cash_account_id=AccountId("checking"),
                         )
                     ],
                 )
