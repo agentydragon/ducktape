@@ -19,8 +19,9 @@ resource "authentik_provider_oauth2" "plaid_db_mcp" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://plaid-db.allegedly.works/auth/callback"
+      matching_mode     = "strict"
+      url               = "https://plaid-db.allegedly.works/auth/callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }

@@ -41,7 +41,6 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -54,6 +53,7 @@ from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cli-proxy-api"
 NAME = "cli-proxy-api"
@@ -119,13 +119,13 @@ def _data_claim(scope: Construct) -> None:
 def _config(scope: Construct) -> None:
     # CLIProxyAPI requires a single config file. ESO renders the API key from the
     # SOPS-managed client-key Secret, so this template remains safe to review and edit.
-    add_external_secret(
+    ExternalSecret(
         scope,
         "config",
         name=_CONFIG_SECRET,
         namespace=NAMESPACE,
         refresh="1h",
-        store=cluster_secret_store("kubernetes-cli-proxy-api-secret-store"),
+        store=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
         data=[remote_data("cli-proxy-api-client-key", "client-key", secret_key="client_key")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(

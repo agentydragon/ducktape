@@ -349,6 +349,7 @@ _TERMINAL_ACTION_STATE = {
 
 _SECRET_KEYS = frozenset(
     {
+        # keep-sorted start
         "accesstoken",
         "apikey",
         "authorization",
@@ -362,6 +363,7 @@ _SECRET_KEYS = frozenset(
         "secret",
         "setcookie",
         "token",
+        # keep-sorted end
     }
 )
 

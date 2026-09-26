@@ -48,7 +48,7 @@ const reactFiles = reactProjects.map((g) => `${g}/*.{ts,tsx}`);
 // bazel-out execution tree has none above it, so path.dirname(null) throws. Not
 // fixable via resolver config or the whole-program test path. A Prettier
 // import-sort plugin needs Nix+Bazel+pnpm wiring, so import
-// ordering is parked. See debug/eslint_import_order_bazel.md for the full investigation.
+// ordering is parked. See devinfra/debug/eslint_import_order_bazel.md for the full investigation.
 const importRules = {
   "import/first": "error",
   "import/order": "off",

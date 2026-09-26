@@ -21,11 +21,11 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMetadata,
 )
 
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ollama"
 _NAME = "ollama"
@@ -38,6 +38,8 @@ _DIRECT_TOKEN = "ollama-direct-token"
 # Both rendered by the hand-written kustomization.yaml's configMapGenerator.
 _AUTH_PROXY_CONFIG_MAP = "ollama-auth-proxy"
 _SCRIPTS_CONFIG_MAP = "gpt-oss-scripts"
+# Host inference experiments own the GPUs; retain models and routing for resumption.
+_PAUSED_FOR_HOST_EXPERIMENTS = True
 
 
 def _namespace(scope: Construct) -> None:
@@ -86,7 +88,7 @@ def _ollama_container() -> k8s.Container:
             k8s.EnvVar(name="NVIDIA_VISIBLE_DEVICES", value="all"),
             k8s.EnvVar(name="OLLAMA_KV_CACHE_TYPE", value="q8_0"),
             k8s.EnvVar(name="OLLAMA_FLASH_ATTENTION", value="1"),
-            k8s.EnvVar(name="OLLAMA_NUM_CTX", value="131072"),
+            k8s.EnvVar(name="OLLAMA_CONTEXT_LENGTH", value="131072"),
         ],
         resources=k8s.ResourceRequirements(
             requests={
@@ -133,7 +135,7 @@ def _deployment(scope: Construct) -> None:
             name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
         ),
         spec=k8s.DeploymentSpec(
-            replicas=1,
+            replicas=0 if _PAUSED_FOR_HOST_EXPERIMENTS else 1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=_LABELS),
             template=k8s.PodTemplateSpec(
@@ -275,14 +277,14 @@ def _direct_token(scope: Construct) -> None:
         metadata=metadata(_DIRECT_TOKEN, _NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    add_external_secret(
+    ExternalSecret(
         scope,
         "direct-token",
         name=_DIRECT_TOKEN,
         namespace=_NAMESPACE,
         # A direct-API credential is generated once, not periodically rotated.
         refresh="8760h",
-        data_from=[password_generator(generator.name)],
+        data_from=[DataFrom.from_password_generator(generator.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         template=ExternalSecretSpecTargetTemplate(
@@ -318,7 +320,8 @@ def chart(app: App) -> Chart:
         listener=None,
     )
     _rbac(chart)
-    _setup_job(chart)
+    if not _PAUSED_FOR_HOST_EXPERIMENTS:
+        _setup_job(chart)
     _direct_token(chart)
     return chart
 

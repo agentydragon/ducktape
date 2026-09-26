@@ -1,6 +1,6 @@
 """agent-rbac-base: the claude-sandbox namespace (its quota, limits, admin Role, bindings and
 janitor) and the shared agent-facing ClusterRoles other directories bind. Permissions and
-bindings: cluster/k8s/agents/agent-rbac-base/permissions.md.
+bindings: cluster/docs/agent_rbac.md.
 
 Every Role is a tier-2 `k8s.KubeRole`/`k8s.KubeClusterRole`: rules keep the exact grouping they
 are reviewed in.
@@ -27,12 +27,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 
 NAME = "agent-rbac-base"
 NAMESPACE = "claude-sandbox"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/agent-rbac-base"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/agent-rbac-base"
 
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 _READ = ["get", "list", "watch"]
@@ -107,15 +107,17 @@ def _add_sandbox(chart: Chart) -> None:
             k8s.PolicyRule(
                 api_groups=[""],
                 resources=[
-                    "pods",
-                    "pods/log",
-                    "pods/exec",
-                    "pods/attach",
-                    "services",
+                    # keep-sorted start
                     "configmaps",
-                    "secrets",
-                    "persistentvolumeclaims",
                     "events",
+                    "persistentvolumeclaims",
+                    "pods",
+                    "pods/attach",
+                    "pods/exec",
+                    "pods/log",
+                    "secrets",
+                    "services",
+                    # keep-sorted end
                 ],
                 verbs=["*"],
             ),

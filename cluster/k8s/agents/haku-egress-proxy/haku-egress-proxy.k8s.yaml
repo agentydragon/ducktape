@@ -232,6 +232,107 @@ spec:
     deletionPolicy: Retain
     name: haku-openclaw-spike-github-token
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: haku-openclaw-spike-proxy-config
+  namespace: haku-egress-proxy
+data:
+  iron.yaml: |
+    dns:
+      enabled: false
+    proxy:
+      tunnel_listen: :8181
+      upstream_response_header_timeout: 5m
+    tls:
+      mode: mitm
+      ca_cert: /ca/tls.crt
+      ca_key: /ca/tls.key
+    transforms:
+      - name: allowlist
+        config:
+          domains:
+            - api.anthropic.com
+            - api.github.com
+            - bcr.bazel.build
+            - cache.nixos.org
+            - channels.nixos.org
+            - code.forgejo.org
+            - codeload.github.com
+            - data.forgejo.org
+            - files.pythonhosted.org
+            - forgejo-http.forgejo
+            - ftp.gnu.org
+            - ghcr.io
+            - github.com
+            - haku.allegedly.works
+            - index.crates.io
+            - kubeapi.allegedly.works
+            - nixos.org
+            - nodejs.org
+            - objects.githubusercontent.com
+            - pkg-containers.githubusercontent.com
+            - pypi.org
+            - raw.githubusercontent.com
+            - registry.npmjs.org
+            - release-assets.githubusercontent.com
+            - releases.bazel.build
+            - snapshot.debian.org
+            - static.crates.io
+            - static.rust-lang.org
+      - name: secrets
+        config:
+          secrets:
+            - source:
+                type: env
+                var: CLAUDE_CODE_OAUTH_TOKEN
+              replace:
+                proxy_value: sk-ant-oat01-proxy-haku-openclaw-placeholder
+                match_headers:
+                  - Authorization
+              rules:
+                - host: api.anthropic.com
+            - source:
+                type: env
+                var: HAKU_GIT_PASSWORD
+              replace:
+                proxy_value: proxy-haku-forgejo-placeholder
+                match_headers:
+                  - Authorization
+              rules:
+                - host: forgejo-http.forgejo
+            - source:
+                type: env
+                var: HAKU_CONSOLE_TOKEN
+              replace:
+                proxy_value: proxy-haku-console-placeholder
+                match_headers:
+                  - Authorization
+              rules:
+                - host: haku.allegedly.works
+            - source:
+                type: env
+                var: GITHUB_TOKEN
+              replace:
+                proxy_value: proxy-github-placeholder
+                match_headers:
+                  - Authorization
+              rules:
+                - host: api.github.com
+                - host: github.com
+                - host: codeload.github.com
+            - source:
+                type: env
+                var: HAKU_KUBE_JWT
+              replace:
+                proxy_value: proxy-haku-kube-placeholder
+                match_headers:
+                  - Authorization
+              rules:
+                - host: kubeapi.allegedly.works
+    log:
+      level: info
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:

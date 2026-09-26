@@ -27,3 +27,4 @@ spec:
     kind: GitRepository
     name: ducktape
     namespace: ducktape-flux
+  storeReadablePlan: human

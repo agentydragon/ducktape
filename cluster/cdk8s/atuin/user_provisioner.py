@@ -15,7 +15,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "atuin-user-provisioner"
-OUTPUT_DIR = f"{GENERATED_ROOT}/atuin/user-provisioner"
+OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 _SCRIPT_CONFIG_MAP = f"{NAME}-script"
 _SCRIPT_DIR = "/scripts"
 _SCRIPT = textwrap.dedent(

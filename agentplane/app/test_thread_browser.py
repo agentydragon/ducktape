@@ -1459,6 +1459,35 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
         await page.unroute("**/sync/entities?*", terminal_shape_error)
 
 
+async def test_thread_says_it_is_reconnecting_while_electric_retries_a_dropped_connection(
+    thread_browser: ThreadBrowser,
+) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    dot = page.get_by_role("img", name="Reconnecting…", exact=True)
+    # The sidebar's connection indicator, naming the thread's own stream ("Threads" is the list's).
+    indicator = page.get_by_role("img", name=re.compile(r"\bThread: reconnecting since "))
+    await expect(dot).to_have_count(0)
+    await expect(indicator).to_have_count(0)
+
+    # The drop ends the live reads, and offline, every reconnect fails before an answer: Electric's
+    # client retries those without reporting an error. Both signs wait out the reconnect grace
+    # (`DEGRADED_AFTER_MS` in frontend/stream_status.tsx), which this timeout must exceed.
+    await page.context.set_offline(True)
+    await thread_browser.ingress.drop_connections()
+    await expect(dot).to_be_visible(timeout=15_000)
+    await expect(indicator).to_be_visible()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+
+    await page.context.set_offline(False)
+    # The client's next retry is at most its 32-second backoff cap away.
+    await expect(dot).to_have_count(0, timeout=35_000)
+    await expect(indicator).to_have_count(0)
+    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" and reconnected")))
+    await expect(page.get_by_text("Test retained prefix and reconnected", exact=True)).to_be_visible()
+
+
 async def test_ahead_snapshot_is_not_a_thread_or_effective_model(thread_browser: ThreadBrowser) -> None:
     page = thread_browser.page
     await expect(page.get_by_role("status")).to_have_text("Loading thread…")

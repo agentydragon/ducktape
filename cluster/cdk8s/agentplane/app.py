@@ -19,24 +19,13 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecNetworkPolicyManagement,
     SandboxTemplateSpecPodTemplate,
     SandboxTemplateSpecPodTemplateMetadata,
-    SandboxTemplateSpecPodTemplateSpec,
     SandboxTemplateSpecPodTemplateSpecContainers,
     SandboxTemplateSpecPodTemplateSpecContainersEnv,
     SandboxTemplateSpecPodTemplateSpecContainersPorts,
     SandboxTemplateSpecPodTemplateSpecContainersResources,
     SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits,
     SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests,
-    SandboxTemplateSpecPodTemplateSpecContainersSecurityContext,
-    SandboxTemplateSpecPodTemplateSpecContainersSecurityContextCapabilities,
     SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts,
-    SandboxTemplateSpecPodTemplateSpecImagePullSecrets,
-    SandboxTemplateSpecPodTemplateSpecSecurityContext,
-    SandboxTemplateSpecPodTemplateSpecSecurityContextSeccompProfile,
-    SandboxTemplateSpecPodTemplateSpecVolumes,
-    SandboxTemplateSpecPodTemplateSpecVolumesConfigMap,
-    SandboxTemplateSpecPodTemplateSpecVolumesProjected,
-    SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources,
-    SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken,
     SandboxTemplateSpecVolumeClaimTemplates,
     SandboxTemplateSpecVolumeClaimTemplatesMetadata,
     SandboxTemplateSpecVolumeClaimTemplatesPolicy,
@@ -72,9 +61,9 @@ from cdk8s_plus_34 import (
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
+from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
-from agentplane.egress import sidecar
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
     actions,
@@ -84,16 +73,13 @@ from cluster.cdk8s.agentplane import (
     electric,
     llm_ingress,
     node_scheduling,
+    sandbox_pod,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.forgejo_images import (
-    SECRET_NAME,
-    forgejo_images_creds_external_secret,
-    forgejo_images_creds_secret_ref,
-)
+from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
@@ -102,44 +88,19 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-# Mounted by the egress sidecar and no other container; every token under it is the Pod's own.
-_EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
-# Audiences the central proxy may substitute this Pod's identity for, and the file each is projected
-# to under `_EGRESS_TOKEN_DIR`. The volume and the sidecar's mapping are both rendered from this, so
-# neither can name a file the other does not project. The hop token is deliberately absent: it
-# carries the proxy's own audience, so it is not substitutable anywhere.
-_SUBSTITUTABLE_AUDIENCE_FILES = {egress.KUBERNETES_AUDIENCE: "kubernetes-token"}
-_NAME = "agentplane-app"
+NAME = "agentplane-app"
 _APP_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
 _RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner"
-_EGRESS_SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
-_CONTAINER_PORT = 8080
+CONTAINER_PORT = 8080
 _RUNNER_PORT = 7000
-_SIDECAR_LISTEN_PORT = 3128
-_LABELS = {"app.kubernetes.io/name": _NAME}
+_LABELS = {"app.kubernetes.io/name": NAME}
 _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
 _CONFIG_DIR = "/etc/agentplane"
 # Shared by the runner's --state-dir flag, its container volumeMount, and the
 # SandboxTemplate's own VolumeClaimTemplate -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
 _STATE_DIR = "/state"
-# Shared by the runner's egress-ca volumeMount and its pod-level volume -- Kubernetes
-# matches the two by this name.
-_EGRESS_CA_VOLUME_NAME = "egress-ca"
-
-_MITM_PROXY_URL = f"http://127.0.0.1:{_SIDECAR_LISTEN_PORT}"
-_PROXY_VAR_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
-_NO_PROXY_HOSTS = "127.0.0.1,localhost"
-_NO_PROXY_VAR_NAMES = ("NO_PROXY", "no_proxy")
-_CA_BUNDLE_PATH = "/etc/ssl/certs/ca-certificates.crt"
-_CA_BUNDLE_VAR_NAMES = (
-    "SSL_CERT_FILE",
-    "NODE_EXTRA_CA_CERTS",
-    "CURL_CA_BUNDLE",
-    "GIT_SSL_CAINFO",
-    "REQUESTS_CA_BUNDLE",
-)
 
 
 class App(Construct):
@@ -173,7 +134,7 @@ class App(Construct):
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the app
         # mounts its own token to call TokenReview as itself.
         app_service_account = ServiceAccount(
-            self, "serviceaccount-app", metadata=metadata(_NAME, namespace), automount_token=True
+            self, "serviceaccount-app", metadata=metadata(NAME, namespace), automount_token=True
         )
         # The runner Pods' identity, with no RBAC of its own.
         ServiceAccount(
@@ -189,13 +150,13 @@ class App(Construct):
             self,
             "token-reviewer",
             name=f"{namespace}-app-token-reviewer",
-            service_account_name=_NAME,
+            service_account_name=NAME,
             namespace=namespace,
         )
         Role(
             self,
             "role",
-            metadata=metadata(_NAME, namespace),
+            metadata=metadata(NAME, namespace),
             rules=[
                 # GET /sandboxes/templates lists them; a get-only Role 403'd the route (#7023).
                 RolePolicyRule(
@@ -235,7 +196,7 @@ class App(Construct):
             ],
         )
         RoleBinding(
-            self, "rolebinding", metadata=metadata(_NAME, namespace), role=Role.from_role_name(self, "role-ref", _NAME)
+            self, "rolebinding", metadata=metadata(NAME, namespace), role=Role.from_role_name(self, "role-ref", NAME)
         ).add_subjects(app_service_account)
 
     def _container_env(self) -> dict[str, EnvValue]:
@@ -286,7 +247,7 @@ class App(Construct):
             self,
             "deployment",
             metadata=metadata(
-                _NAME,
+                NAME,
                 namespace,
                 labels=_LABELS,
                 annotations={
@@ -326,12 +287,12 @@ class App(Construct):
                 sandbox_namespace=namespace,
                 runner_port=_RUNNER_PORT,
                 host="0.0.0.0",
-                port=_CONTAINER_PORT,
+                port=CONTAINER_PORT,
             ),
             env_variables=env,
-            ports=[ContainerPort(name="http", number=_CONTAINER_PORT, protocol=Protocol.TCP)],
-            readiness=http_probe("/readyz", port=_CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10),
-            liveness=http_probe("/healthz", port=_CONTAINER_PORT, initial_delay_seconds=20, period_seconds=30),
+            ports=[ContainerPort(name="http", number=CONTAINER_PORT, protocol=Protocol.TCP)],
+            readiness=http_probe("/readyz", port=CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10),
+            liveness=http_probe("/healthz", port=CONTAINER_PORT, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
@@ -352,9 +313,9 @@ class App(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, self.env.namespace, labels=_LABELS),
+            metadata=metadata(NAME, self.env.namespace, labels=_LABELS),
             selector=deployment,
-            ports=[ServicePort(name="http", port=_CONTAINER_PORT, target_port=_CONTAINER_PORT, protocol=Protocol.TCP)],
+            ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
         )
 
     def _add_http_route(self) -> None:
@@ -364,8 +325,8 @@ class App(Construct):
             "httproute",
             metadata=metadata(namespace, namespace),
             hostname=self.env.app.hostname,
-            backend=_NAME,
-            port=_CONTAINER_PORT,
+            backend=NAME,
+            port=CONTAINER_PORT,
             # A session stream stays attached for as long as the tab is open.
             timeout="3600s",
         )
@@ -400,9 +361,9 @@ class App(Construct):
         cilium.network_policy(
             self,
             "networkpolicy-app",
-            metadata=metadata(_NAME, namespace),
+            metadata=metadata(NAME, namespace),
             selector=_LABELS,
-            ingress=[cilium.ingress_from_gateway(_CONTAINER_PORT)],
+            ingress=[cilium.ingress_from_gateway(CONTAINER_PORT)],
             egress=[
                 dns_egress,
                 cilium.egress_to_entities("kube-apiserver"),
@@ -423,7 +384,7 @@ class App(Construct):
 
     def _add_pdb(self, min_available: int) -> None:
         add_pod_disruption_budget(
-            self, "pdb", name=_NAME, namespace=self.env.namespace, min_available=min_available, selector=_LABELS
+            self, "pdb", name=NAME, namespace=self.env.namespace, min_available=min_available, selector=_LABELS
         )
 
     def _runner_container(self) -> SandboxTemplateSpecPodTemplateSpecContainers:
@@ -434,18 +395,19 @@ class App(Construct):
         # value, NAME=value sets one. The routing vars are named rather than set, so the
         # container env below is where they are written once and everything in the Pod
         # agrees -- a harness child by this passthrough, anything else by inheritance.
-        harness_env = ["HOME", "PATH", *_PROXY_VAR_NAMES, *_NO_PROXY_VAR_NAMES, *_CA_BUNDLE_VAR_NAMES]
+        harness_env = ["HOME", "PATH", *(var.name for var in sandbox_pod.egress_env())]
         args = [
             "--state-dir",
             _STATE_DIR,
             "--listen",
             f"0.0.0.0:{_RUNNER_PORT}",
+            # Where the runner image (agentplane/runner/image.nix) links nixpkgs' harnesses.
             "--claude-binary",
-            "/usr/local/bin/claude",
+            "/bin/claude",
             "--anthropic-base-url",
             "$(LITELLM_URL)",
             "--codex-binary",
-            "/opt/codex/bin/codex",
+            "/bin/codex",
             "--openai-base-url",
             "$(LITELLM_URL)/v1",
         ]
@@ -455,31 +417,15 @@ class App(Construct):
             name="runner",
             image=f"{_RUNNER_IMAGE}:{_PLACEHOLDER_TAG}",
             args=args,
+            # The runner works in absolute paths. This is for a command exec'd in: the sandbox
+            # Actions' `runner` boxes start there unless the caller names a directory.
+            working_dir=_STATE_DIR,
             ports=[SandboxTemplateSpecPodTemplateSpecContainersPorts(name="runner", container_port=_RUNNER_PORT)],
-            security_context=SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(
-                allow_privilege_escalation=False,
-                capabilities=SandboxTemplateSpecPodTemplateSpecContainersSecurityContextCapabilities(drop=["ALL"]),
-            ),
+            security_context=sandbox_pod.workload_security_context(),
             env=[
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(name="LITELLM_URL", value=litellm_url),
-                # On the container and not just on the harness children the runner spawns: the
-                # CiliumNetworkPolicy lets this Pod reach DNS and the egress proxy and nothing
-                # else, so a process that does not know to use the proxy has no egress at all.
-                # Anything entering by another door -- `kubectl exec`, the sandbox Actions' exec,
-                # a debug shell -- is that kind of process. Both spellings, since clients disagree
-                # on case; NO_PROXY is loopback and nothing else.
-                *(
-                    SandboxTemplateSpecPodTemplateSpecContainersEnv(name=name, value=_MITM_PROXY_URL)
-                    for name in _PROXY_VAR_NAMES
-                ),
-                *(
-                    SandboxTemplateSpecPodTemplateSpecContainersEnv(name=name, value=_NO_PROXY_HOSTS)
-                    for name in _NO_PROXY_VAR_NAMES
-                ),
-                *(
-                    SandboxTemplateSpecPodTemplateSpecContainersEnv(name=name, value=_CA_BUNDLE_PATH)
-                    for name in _CA_BUNDLE_VAR_NAMES
-                ),
+                # On the container and not just on the harness children the runner spawns.
+                *sandbox_pod.egress_env(),
                 # Neither a workload token nor a LiteLLM key: the placeholder the
                 # agentplane-workload EgressCredential derives from its name. Central
                 # substitutes the sidecar-only projected token; the ingress replaces
@@ -506,137 +452,34 @@ class App(Construct):
                 SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
                     name=_STATE_VOLUME_NAME, mount_path=_STATE_DIR
                 ),
-                # Public roots + cluster root + the proxy's interception root, over
-                # the image's own bundle at the path every client falls back to. A
-                # subPath mount does not follow ConfigMap updates: a CA rotation
-                # reaches a sandbox at its next Pod.
-                SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
-                    name=_EGRESS_CA_VOLUME_NAME,
-                    mount_path=_CA_BUNDLE_PATH,
-                    sub_path=egress.CA_BUNDLE_KEY,
-                    read_only=True,
-                ),
-            ],
-        )
-
-    def _egress_sidecar_container(self) -> SandboxTemplateSpecPodTemplateSpecContainers:
-        namespace = self.env.namespace
-        return SandboxTemplateSpecPodTemplateSpecContainers(
-            name="egress-sidecar",
-            image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
-            env=[
-                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name=env_name(sidecar.Settings, "proxy_host"),
-                    value=f"agentplane-egress.{namespace}.svc.cluster.local",
-                ),
-                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name=env_name(sidecar.Settings, "proxy_port"), value=str(egress.PROXY_PORT)
-                ),
-                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name=env_name(sidecar.Settings, "listen_port"), value=str(_SIDECAR_LISTEN_PORT)
-                ),
-                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name=env_name(sidecar.Settings, "token_file"), value=f"{_EGRESS_TOKEN_DIR}/token"
-                ),
-                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name=env_name(sidecar.Settings, "audience_token_files"),
-                    value=json.dumps(
-                        {
-                            audience: f"{_EGRESS_TOKEN_DIR}/{file}"
-                            for audience, file in _SUBSTITUTABLE_AUDIENCE_FILES.items()
-                        }
-                    ),
-                ),
-            ],
-            security_context=SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(
-                allow_privilege_escalation=False,
-                capabilities=SandboxTemplateSpecPodTemplateSpecContainersSecurityContextCapabilities(drop=["ALL"]),
-            ),
-            resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
-                requests={
-                    "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("10m"),
-                    "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("32Mi"),
-                },
-                limits={"memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("128Mi")},
-            ),
-            volume_mounts=[
-                SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
-                    name="egress-token", mount_path=_EGRESS_TOKEN_DIR, read_only=True
-                )
+                *sandbox_pod.egress_mounts(),
             ],
         )
 
     def _add_sandbox_template(self) -> None:
         namespace = self.env.namespace
-        node_selector = (
-            {"topology.kubernetes.io/zone": self.env.app.runner_zone} if self.env.app.runner_zone is not None else None
-        )
-
         SandboxTemplate(
             self,
             "sandboxtemplate",
-            metadata=metadata("agentplane-runner", namespace),
+            metadata=metadata(
+                "agentplane-runner",
+                namespace,
+                # What the sandbox Actions tell an agent choosing among the templates they offer.
+                annotations={
+                    DESCRIPTION_ANNOTATION: (
+                        "The shared runner image, built to host an agent harness: the sandbox tools (git, "
+                        "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
+                    )
+                },
+            ),
             spec=SandboxTemplateSpec(
                 # The CiliumNetworkPolicy next to this construct is the runner's fence.
                 network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
                 volume_claim_templates_policy=SandboxTemplateSpecVolumeClaimTemplatesPolicy.OVERRIDES,
                 pod_template=SandboxTemplateSpecPodTemplate(
                     metadata=SandboxTemplateSpecPodTemplateMetadata(labels=_RUNNER_LABELS),
-                    spec=SandboxTemplateSpecPodTemplateSpec(
-                        containers=[self._runner_container(), self._egress_sidecar_container()],
-                        automount_service_account_token=False,
-                        image_pull_secrets=[SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=SECRET_NAME)],
-                        # With the rest of the namespace and with LiteLLM: a runner's
-                        # model calls and its hop to the app both stay inside the zone.
-                        node_selector=node_selector,
-                        service_account_name="agentplane-runner",
-                        termination_grace_period_seconds=60,
-                        security_context=SandboxTemplateSpecPodTemplateSpecSecurityContext(
-                            run_as_non_root=True,
-                            run_as_user=1000,
-                            run_as_group=1000,
-                            fs_group=1000,
-                            seccomp_profile=SandboxTemplateSpecPodTemplateSpecSecurityContextSeccompProfile(
-                                type="RuntimeDefault"
-                            ),
-                        ),
-                        volumes=[
-                            SandboxTemplateSpecPodTemplateSpecVolumes(
-                                name=_EGRESS_CA_VOLUME_NAME,
-                                config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(
-                                    name=self.env.egress.ca_secret_name
-                                ),
-                            ),
-                            # The Pod's identity, and to nobody else: this volume is mounted by
-                            # the egress sidecar alone, so no token here is readable from the
-                            # container an agent runs commands in. `token` proves the Pod to the
-                            # central proxy; each of the rest is the same account minted for a
-                            # destination's own audience, which the proxy substitutes where a rule
-                            # names that audience and which is useless at the proxy itself. All are
-                            # bound to this Pod and rotated by kubelet.
-                            SandboxTemplateSpecPodTemplateSpecVolumes(
-                                name="egress-token",
-                                projected=SandboxTemplateSpecPodTemplateSpecVolumesProjected(
-                                    sources=[
-                                        SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources(
-                                            service_account_token=SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken(
-                                                audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE,
-                                                expiration_seconds=600,
-                                                path="token",
-                                            )
-                                        ),
-                                        *(
-                                            SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources(
-                                                service_account_token=SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken(
-                                                    audience=audience, expiration_seconds=600, path=file
-                                                )
-                                            )
-                                            for audience, file in _SUBSTITUTABLE_AUDIENCE_FILES.items()
-                                        ),
-                                    ]
-                                ),
-                            ),
-                        ],
+                    spec=sandbox_pod.pod_spec(
+                        self.env, workload=self._runner_container(), service_account_name="agentplane-runner"
                     ),
                 ),
                 volume_claim_templates=[

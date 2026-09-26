@@ -94,8 +94,6 @@ from cluster.cdk8s.authentik import (
 )
 from cluster.cdk8s.cert_manager import (
     app as cert_manager_app,
-    cluster_ca as cert_manager_cluster_ca,
-    config as cert_manager_config,
     environment as cert_manager_environment,
     issuer_config as cert_manager_issuer_config,
     trust as cert_manager_trust,
@@ -166,7 +164,7 @@ from cluster.cdk8s.haku import (
     workloads as haku_workloads,
     workspaces as haku_workspaces,
 )
-from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations, runner as haku_ci_runner
+from cluster.cdk8s.haku_ci import runner as haku_ci_runner
 from cluster.cdk8s.home_assistant import (
     app as home_assistant_app,
     backup as home_assistant_backup,
@@ -274,8 +272,15 @@ def generate_manifests(root: Path) -> None:
     agent_workspaces.write_manifests(root)
     alloy_otlp_bearer.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
-    public_coder_proxy.write_manifests(root)
-    public_coder_sshpiper.write_manifests(root)
+    public_coder_proxy.write_manifests(
+        root,
+        app_namespace=public_coder_agent_config.NAMESPACE,
+        app_labels=public_coder_agent_config.LABELS,
+        aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key_selector,
+    )
+    public_coder_sshpiper.write_manifests(
+        root, app_namespace=public_coder_agent_config.NAMESPACE, app_labels=public_coder_agent_config.LABELS
+    )
     public_coder_backup.write_manifests(root)
     descheduler.write_manifests(root)
     kyverno_app.write_manifests(root)
@@ -384,8 +389,6 @@ def generate_manifests(root: Path) -> None:
     cert_manager_trust.write_manifests(root)
     cert_manager_issuer_config.write_manifests(root)
     cert_manager_environment.write_manifests(root)
-    cert_manager_config.write_manifests(root)
-    cert_manager_cluster_ca.write_manifests(root)
     external_secrets_config.write_manifests(root)
     external_secrets_operator.write_manifests(root)
     ducktape_flux.write_manifests(root)
@@ -408,7 +411,7 @@ def generate_manifests(root: Path) -> None:
     local_path_provisioner.write_manifests(root)
     goldilocks.write_manifests(root)
     headlamp.write_manifests(root)
-    proxmox_proxy.write_manifests(root)
+    proxmox_proxy.write_manifests(root, mesh)
     volsync.write_manifests(root)
     reloader.write_manifests(root)
     vpa.write_manifests(root)
@@ -507,7 +510,7 @@ def generate_manifests(root: Path) -> None:
     user_agentydragon_kustomization = user_agentydragon.user_agentydragon(flux_chart, user_agentydragon_artifact)
     valkey_artifact = artifact("valkey", valkey.OUTPUT_DIR)
     valkey_kustomization = valkey.valkey(flux_chart, valkey_artifact)
-    gaffer_private_source_flux_kustomizations.gaffer_private_source(
+    gaffer_private_source_kustomization = gaffer_private_source_flux_kustomizations.gaffer_private_source(
         flux_chart, flux_image_automation_ghcr_kustomization
     )
     kubevirt_artifact = artifact("kubevirt", kubevirt_app.OUTPUT_DIR)
@@ -636,12 +639,7 @@ def generate_manifests(root: Path) -> None:
     clickhouse_schema_kustomization = clickhouse_schema.clickhouse_schema(
         flux_chart, clickhouse_schema_artifact, root, clickhouse_kustomization
     )
-    cert_manager_environment_artifact = artifact(
-        "cert-manager-environment",
-        cert_manager_environment.OUTPUT_DIR,
-        f"{HAND_WRITTEN_ROOT}/cert-manager/config",
-        f"{HAND_WRITTEN_ROOT}/cert-manager/cluster-ca",
-    )
+    cert_manager_environment_artifact = artifact("cert-manager-environment", cert_manager_environment.OUTPUT_DIR)
     cert_manager_environment_kustomization = cert_manager_environment.cert_manager_environment(
         flux_chart,
         cert_manager_environment_artifact,
@@ -670,7 +668,8 @@ def generate_manifests(root: Path) -> None:
     proxmox_proxy.proxmox_proxy(flux_chart, proxmox_proxy_artifact, gateway_kustomization)
     kube_system_artifact = artifact("kube-system", kube_system.OUTPUT_DIR)
     kube_system.kube_system(flux_chart, kube_system_artifact, goldilocks_kustomization)
-    mitmproxy.agents_mitmproxy(flux_chart, root, cert_manager_trust_kustomization)
+    agents_mitmproxy_artifact = artifact("agents-mitmproxy", mitmproxy.OUTPUT_DIR)
+    mitmproxy.agents_mitmproxy(flux_chart, agents_mitmproxy_artifact, root, cert_manager_trust_kustomization)
     docker_ci_artifact = artifact("docker-ci", f"{HAND_WRITTEN_ROOT}/parked/docker-ci")
     parked_flux_kustomizations.docker_ci(
         flux_chart, docker_ci_artifact, cert_manager_environment_kustomization, claude_rbac_kustomization
@@ -682,6 +681,13 @@ def generate_manifests(root: Path) -> None:
     authentik_artifact = artifact("authentik", f"{HAND_WRITTEN_ROOT}/authentik")
     authentik_kustomization = authentik_flux_kustomizations.authentik(
         flux_chart, authentik_artifact, cnpg_kustomization, monitoring_crds_kustomization
+    )
+    gaffer_private_source_flux_kustomizations.gaffer_private_bridge(
+        flux_chart,
+        gaffer_private_source_kustomization,
+        authentik_kustomization,
+        gateway_kustomization,
+        cert_manager_issuer_config_kustomization,
     )
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
     dns_automation.dns_automation(
@@ -1001,7 +1007,7 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
     )
     haku_ci_artifact = artifact("haku-ci", haku_ci_runner.OUTPUT_DIR)
-    haku_ci_flux_kustomizations.haku_ci(flux_chart, haku_ci_artifact, keda_kustomization)
+    haku_ci_runner.haku_ci(flux_chart, haku_ci_artifact, keda_kustomization)
     flux_grafana_secrets_artifact = artifact("flux-grafana-secrets", flux_grafana_secrets.OUTPUT_DIR)
     flux_grafana_secrets.flux_grafana_secrets(
         flux_chart, flux_grafana_secrets_artifact, grafana_instance_kustomization, grafana_operator_kustomization
@@ -1137,7 +1143,7 @@ def generate_manifests(root: Path) -> None:
         forgejo_images_kustomization,
         seaweedfs_pr_visuals_bucket_kustomization,
     )
-    grocy_sf_artifact = artifact("grocy-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/app", grocy_app.BASE_DIR)
+    grocy_sf_artifact = artifact("grocy-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/app")
     grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
         flux_chart,
         grocy_sf_artifact,
@@ -1148,7 +1154,7 @@ def generate_manifests(root: Path) -> None:
         authentik_kustomization,
         volsync_kustomization,
     )
-    grocy_vallejo_artifact = artifact("grocy-vallejo", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/app", grocy_app.BASE_DIR)
+    grocy_vallejo_artifact = artifact("grocy-vallejo", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/app")
     grocy_vallejo_kustomization = grocy_flux_kustomizations.grocy_vallejo(
         flux_chart,
         grocy_vallejo_artifact,
@@ -1273,9 +1279,7 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
         cpap_sync_kustomization,
     )
-    grocy_mcp_sf_artifact = artifact(
-        "grocy-mcp-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR, grocy_mcp.SERVICEMONITOR_BASE_DIR
-    )
+    grocy_mcp_sf_artifact = artifact("grocy-mcp-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR)
     grocy_flux_kustomizations.grocy_mcp_sf(
         flux_chart,
         grocy_mcp_sf_artifact,
@@ -1295,10 +1299,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, grocy_sf_user_perms_artifact, forgejo_images_kustomization, grocy_sf_kustomization
     )
     grocy_mcp_vallejo_artifact = artifact(
-        "grocy-mcp-vallejo",
-        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp",
-        grocy_mcp.BASE_DIR,
-        grocy_mcp.SERVICEMONITOR_BASE_DIR,
+        "grocy-mcp-vallejo", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp", grocy_mcp.BASE_DIR
     )
     grocy_flux_kustomizations.grocy_mcp_vallejo(
         flux_chart,
@@ -1436,7 +1437,6 @@ def generate_manifests(root: Path) -> None:
     public_coder_agent_app_artifact = artifact(
         "public-coder-agent-app",
         f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app",
-        public_coder_devbox.NAMESPACE_OUTPUT_DIR,
         public_coder_proxy.OUTPUT_DIR,
         public_coder_sshpiper.OUTPUT_DIR,
     )
@@ -1611,6 +1611,7 @@ def generate_manifests(root: Path) -> None:
             matrix_app_artifact,
             matrix_user_provisioner_artifact,
             metrics_server_artifact,
+            agents_mitmproxy_artifact,
             monitoring_alloy_artifact,
             monitoring_alloy_otlp_bearer_token_tf_artifact,
             monitoring_cilium_artifact,

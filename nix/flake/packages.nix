@@ -2,6 +2,7 @@
   self,
   system,
   pkgs,
+  artifacts,
   ducktapePkgs,
   gafferPkgs,
   home-manager,
@@ -91,10 +92,22 @@ ducktapePkgs
   # Load:  docker load < result
   haku-sandbox-image = import ../../cluster/k8s/haku/workspaces/image { inherit pkgs; };
   # agentplane's sandbox image: a box's command-line tools, as one list
-  # (agentplane/sandbox_image/default.nix).
+  # (agentplane/images/sandbox.nix).
   # Build: nix build .#agentplane-sandbox-image
   # Load:  docker load < result
-  agentplane-sandbox-image = import ../../agentplane/sandbox_image { inherit pkgs; };
+  agentplane-sandbox-image = import ../../agentplane/images/sandbox.nix { inherit pkgs; };
+  # The build box's image: the sandbox image plus Bazel and its toolchain (agentplane/images/build.nix).
+  # Build: nix build .#agentplane-sandbox-build-image
+  # Load:  docker load < result
+  agentplane-sandbox-build-image = import ../../agentplane/images/build.nix { inherit pkgs; };
+  # agentplane's runner image: the sandbox image plus the released runner wheel and nixpkgs'
+  # Claude Code and Codex (agentplane/runner/image.nix).
+  # Build: nix build .#agentplane-runner-image
+  # Load:  docker load < result
+  agentplane-runner-image = import ../../agentplane/runner/image.nix {
+    inherit pkgs pkgsUnstable;
+    wheel = artifacts.agentplane-runner;
+  };
   # Parked Codex pod image experiment (plain Docker, no NixOS/systemd). Flake
   # output retained; see x/codex_pod_image/deploy/README.md for status.
   # Build: nix build .#codex-pod-image (currently fails at evaluation; see deployment README)

@@ -95,7 +95,7 @@ transfer, native steps and final JSON decoding. Input compilation is outside the
 profile; process memory includes preparation. These are not isolated native
 compute or heap measurements, and no cost budget or language verdict is inferred.
 Historical native-control measurements remain pinned to their measured commit in
-the [profiling investigation](../../../../debug/augur_python_policy_batches_20260909.md).
+the [profiling investigation](../../../../finance/augur/debug/augur_python_policy_batches_20260909.md).
 
 `compare_test` and `python_policy_test` run the actual study/profile CLIs with
 synthetic data, compare scalar/batch and compact/forensic outcomes, and exercise

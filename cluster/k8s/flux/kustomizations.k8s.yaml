@@ -1014,7 +1014,7 @@ spec:
       kind: Namespace
       name: claude-sandbox
   interval: 10m
-  path: ./cluster/k8s/agents/agent-rbac-base
+  path: ./cluster/generated/agents/agent-rbac-base
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -1383,7 +1383,7 @@ spec:
     - name: external-secrets-config
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/cert-manager/environment
+  path: ./cluster/generated/cert-manager/environment
   postBuild:
     substituteFrom:
       - kind: ConfigMap
@@ -1506,7 +1506,7 @@ spec:
     - name: gateway
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/proxmox-proxy
+  path: ./cluster/generated/proxmox-proxy
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1546,12 +1546,12 @@ spec:
     - name: cert-manager-trust
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/mitmproxy
+  path: ./cluster/generated/agents/mitmproxy
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
+    kind: ExternalArtifact
+    name: agents-mitmproxy
+    namespace: ducktape-flux
   timeout: 5m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -1632,6 +1632,32 @@ spec:
     namespace: ducktape-flux
   timeout: 10m0s
   wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Cross-repo bridge. Reconciles gaffer-private/k8s/ from the gaffer-private GitRepository -- entry point for every private app's flux-kustomization.yaml.
+  name: gaffer-private
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: gaffer-private-source
+      namespace: flux-system
+    - name: authentik
+      namespace: ducktape-flux
+    - name: gateway
+      namespace: ducktape-flux
+    - name: cert-manager-issuer-config
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./k8s
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: gaffer-private
+  timeout: 5m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -1765,7 +1791,7 @@ spec:
       name: buildbuddy-api-key
       namespace: flux-system
   interval: 10m
-  path: ./cluster/k8s/github-secrets-sync/secrets
+  path: ./cluster/k8s/github-secrets-sync-secrets
   prune: false
   retryInterval: 1m
   sourceRef:
@@ -1878,7 +1904,7 @@ spec:
     - name: user-agentydragon
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/generated/atuin/user-provisioner
+  path: ./cluster/generated/atuin-user-provisioner
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -2691,7 +2717,7 @@ spec:
     - name: loki
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/vector-talos-logs
+  path: ./cluster/generated/vector-talos-logs
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2973,7 +2999,7 @@ spec:
     - name: keda
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/haku-ci
+  path: ./cluster/generated/haku-ci
   prune: true
   retryInterval: 1m
   sourceRef:

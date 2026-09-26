@@ -1,5 +1,5 @@
 //! End-to-end coverage for `reads_member` member selectors through the **full
-//! lowering pipeline** (P4 step 2, X2 wiring). A `reads_member` member pins its
+//! lowering pipeline**. A `reads_member` member pins its
 //! target by the member it reads (`obj.X`) — "the function that reads
 //! `.uniqueId`", "the helper that reads `.id` off the codegen context" — instead
 //! of by the target's own minified name. This is the stable identity of the ~72

@@ -11,7 +11,6 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
@@ -21,7 +20,6 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -31,9 +29,10 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "github-secrets-sync-secrets"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/github-secrets-sync/secrets"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 _NAMESPACE = "flux-system"
 _CI_AGE_KEY_FILE = "ci-age-key.sops.yaml"
 
@@ -47,7 +46,7 @@ def _external_secret(
     source: str,
     template: ExternalSecretSpecTargetTemplate | None = None,
 ) -> ExternalSecret:
-    return add_external_secret(
+    return ExternalSecret(
         chart,
         id,
         name=name,

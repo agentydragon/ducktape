@@ -579,7 +579,7 @@ switch (probably a non-TB-certified USB-C dock).
 Sunshine → Moonlight (on atlas) over the existing iGPU → TB4 → KVM
 display path at 4K60. No desk rewiring needed; the direct-DP /
 monitor-dual-KVM option is shelved unless >60 Hz or VRR is ever
-wanted. Plan + post-reboot checklist: `debug/atlas/gpu-strategy.md`.
+wanted. Plan + post-reboot checklist: `debug/atlas/gpu_strategy.md`.
 
 **Note:** The Sunshine decision was superseded the same evening — see
 the next entry.
@@ -594,7 +594,7 @@ atlas rear USB-A. FV43U KVM Wizard bound: USB-B ↔ DP, USB-C ↔ USB-C.
 all-black (mutter cross-GPU copy failure — virtio-primary +
 nvidia-secondary compositor path). FV43U hub did not switch to USB-B
 (gated on target input having signal). Full session log:
-`debug/atlas/direct_display_bringup/README.md`.
+`nix/debug/wyrm2/direct_display_bringup/README.md`.
 
 ## 2026-07-05 — DP cable moved to 01:00.0; gaming path confirmed
 
@@ -604,7 +604,7 @@ eliminating cross-PCIe frame copies.
 
 **Observations.** Sway on seat-game, per-title gamescope, DP audio
 (via `01:00.1` passthrough), and Stellaris (Proton): all confirmed
-working. See `debug/atlas/direct_display_bringup/README.md`.
+working. See `nix/debug/wyrm2/direct_display_bringup/README.md`.
 
 ## 2026-09-04 — keyboard lost on KVM switch: passthrough pinned to a vacated atlas port
 

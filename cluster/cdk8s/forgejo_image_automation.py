@@ -52,6 +52,7 @@ _TAG_PATTERN = r"^devel-\d{14}-[0-9a-f]{7}$"
 # (`{"$imagepolicy": "flux-system:<name>:tag"}`), so renaming one is a coordinated change
 # across every directory that pins the image -- not a rename here.
 IMAGES = (
+    # keep-sorted start
     "agent-workspace",
     "agentplane-action-service",
     "agentplane-action-service-migrate",
@@ -64,6 +65,8 @@ IMAGES = (
     "agentplane-llm-ingress",
     "agentplane-oauth-fixture",
     "agentplane-runner",
+    "agentplane-sandbox",
+    "agentplane-sandbox-build",
     "aiquota-api",
     "airlock",
     "attic-jwt-rotation",
@@ -105,6 +108,7 @@ IMAGES = (
     "tana-firebase-resigner",
     "tana-litellm-proxy",
     "tana-mcp",
+    # keep-sorted end
 )
 
 # Repository path for the entries whose image is not named after their policy.

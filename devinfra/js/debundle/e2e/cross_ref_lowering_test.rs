@@ -1,5 +1,5 @@
 //! End-to-end coverage for `@Name` cross-reference member selectors through the
-//! **full lowering pipeline** (P4 step 1, X1 wiring). A `cross_ref` member pins
+//! **full lowering pipeline**. A `cross_ref` member pins
 //! its target by a relational edge to a separately-identified anchor member —
 //! "the function that references `@Anchor`", "the var-decl that aliases
 //! `@Anchor`" — instead of by the target's own minified name. These tests drive

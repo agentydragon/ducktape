@@ -62,8 +62,9 @@ mod visitors;
 use anonymous::ResolvedAnonymousStatement;
 use body_facts::{ModuleBodyFacts, collect_module_body_facts};
 use chunk_ast::{
-    ChunkAstAnalysis, TopLevelDecl, analyze_chunk_ast, binding_ids, binding_names, declaration_ids,
-    declaration_names, top_level_declaration_ids, top_level_declaration_names,
+    ChunkAstAnalysis, TopLevelDecl, analyze_chunk_ast, binding_declaration, binding_ids,
+    binding_names, declaration_ids, declaration_names, top_level_declaration_ids,
+    top_level_declaration_names,
 };
 use chunk_renames::collect_chunk_renames;
 use exports::{
@@ -238,6 +239,8 @@ pub struct MaterializeLogicalModulesOptions {
     pub config: spec::MaterializeLogicalModulesConfig,
     pub chunk_ids: Vec<String>,
     pub keep_going: bool,
+    /// See `pipeline::TransformRunOptions::list_template_identifiers`.
+    pub list_template_identifiers: bool,
     pub report_emission: ReportEmission,
 }
 
@@ -339,6 +342,7 @@ pub fn materialize_logical_modules(
                                 file: options.config.file.as_deref(),
                                 target_dir: &target_dir,
                                 keep_going: options.keep_going,
+                                list_template_identifiers: options.list_template_identifiers,
                                 report_emission: &options.report_emission,
                                 cross_module_purities: &cross_module_purities,
                                 vendor_import_oracle: vendor_import_oracle.as_ref(),

@@ -4,6 +4,6 @@ images:
   - name: git.allegedly.works/ducktape-ci/cpap-sync
     newTag: devel-20260924010607-5ce04fd # {"$imagepolicy": "flux-system:cpap-sync:tag"}
   - name: git.allegedly.works/ducktape-ci/cpap-gateway
-    newTag: devel-20260924092644-c5c2fd0 # {"$imagepolicy": "flux-system:cpap-gateway:tag"}
+    newTag: devel-20260925233015-f423c72 # {"$imagepolicy": "flux-system:cpap-gateway:tag"}
 configurations:
   - kustomizeconfig

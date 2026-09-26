@@ -1,6 +1,6 @@
 """cert-manager's environment: the Route 53 credentials its ACME DNS-01 solvers read,
-copied from external-creds, plus the ClusterIssuers and cluster CA from `config/base`
-and `cluster-ca/base`, which the directory's `kustomization.yaml` pulls in."""
+copied from external-creds, rendered beside the Let's Encrypt ClusterIssuers (`config`) and
+the cluster CA (`cluster_ca`)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCr
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
+from cluster.cdk8s.cert_manager import cluster_ca, config
 from cluster.cdk8s.flux import (
     CERT_MANAGER_ISSUER_SUBSTITUTION,
     Kustomization,
@@ -21,11 +21,12 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "cert-manager-environment"
 NAMESPACE = "cert-manager"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cert-manager/environment"
+OUTPUT_DIR = f"{GENERATED_ROOT}/cert-manager/environment"
 _ROUTE53_SECRET = "aws-route53-credentials"
 _ROUTE53_SOURCE = "aws-route53-cert-manager-credentials"
 
@@ -34,7 +35,7 @@ def chart(app: App) -> Chart:
     chart = Chart(app, "environment", disable_resource_name_hashes=True)
     # Consumer-owned identity for reading approved canonical credentials.
     k8s.KubeServiceAccount(chart, "reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=NAMESPACE))
-    add_external_secret(
+    ExternalSecret(
         chart,
         "route53-credentials",
         name=_ROUTE53_SECRET,
@@ -50,10 +51,17 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart, config.chart, config.issuers_chart, cluster_ca.chart)
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=["environment.k8s.yaml", "../config/base", "../cluster-ca/base"]),
+        kustomize_kustomization(
+            resources=[
+                "environment.k8s.yaml",
+                f"{config.ISSUERS_NAME}.k8s.yaml",
+                f"{config.NAME}.k8s.yaml",
+                f"{cluster_ca.NAME}.k8s.yaml",
+            ]
+        ),
     )
 
 

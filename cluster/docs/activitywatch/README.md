@@ -94,6 +94,10 @@ curl -H "Authorization: Bearer $AW_READ_TOKEN" \
   https://activitywatch-read.allegedly.works/api/0/buckets/
 ```
 
+agentplane-staging sandboxes hold no copy: their egress proxy substitutes the token for the
+`agentplane-credential-activitywatch-read` placeholder on the read route's API
+(`cluster/cdk8s/agentplane/egress_staging_credentials.py`).
+
 ## Storage Debt
 
 The durable store is one SQLite file on Proxmox-pinned node-local storage — an accepted
@@ -102,7 +106,7 @@ importers buffer locally and re-push through central downtime, and the central D
 rebuildable by re-importing from the devices' own aw-servers for whatever history they
 still hold.
 
-- The SQLite storage benchmark (#2959, `debug/sqlite_storage_bench/README.md`) ruled
+- The SQLite storage benchmark (#2959, `cluster/debug/sqlite_storage_bench/README.md`) ruled
   SeaweedFS CSI out for this store; moving off `local-path-proxmox` needs another
   validated target or a backup strategy. Until then, treat the central DB as node-local
   state that is rebuilt from the devices, not restored.

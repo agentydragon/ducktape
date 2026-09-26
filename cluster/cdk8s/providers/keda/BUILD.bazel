@@ -1,0 +1,33 @@
+# gazelle:ignore
+# gazelle:resolve py keda_scaledjob_crds //cluster/cdk8s/providers/keda:scaledjob
+# gazelle:resolve py keda_triggerauthentication_crds //cluster/cdk8s/providers/keda:triggerauthentication
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+load("//devinfra/python:defs.bzl", "py_library")
+
+cdk8s_import(
+    name = "scaledjob",
+    crd = "@keda_scaledjob_crd//file",
+    module_name = "keda_scaledjob_crds",
+    module_path = "sh/keda",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "triggerauthentication",
+    crd = "@keda_triggerauthentication_crd//file",
+    module_name = "keda_triggerauthentication_crds",
+    module_path = "sh/keda",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "trigger_authentication",
+    srcs = ["trigger_authentication.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":triggerauthentication",
+        "//cluster/cdk8s:metadata",
+        "@pypi//constructs",
+    ],
+)

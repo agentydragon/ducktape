@@ -1,8 +1,8 @@
 """Authentik itself, rendered into `cluster/k8s/authentik/app`: the Helm release, its host
 ConfigMap, the public HTTPRoute, the server's ingress policy and its PodMonitor.
 
-The hand-written `kustomization.yaml` there lists this file beside the SOPS Secrets and the
-`authentik-sso-blueprints` configMapGenerator over `blueprints/`.
+Also its `kustomization.yaml`, listing this file beside the hand-written SOPS Secrets and
+rendering every hand-written `blueprints/*.yaml` into the `authentik-sso-blueprints` ConfigMap.
 """
 
 from __future__ import annotations
@@ -39,16 +39,27 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.authentik import db
+from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "authentik"
 NAMESPACE = "authentik"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/app"
 _HOST_CONFIG_MAP = "authentik-host"
+_BLUEPRINTS_CONFIG_MAP = "authentik-sso-blueprints"
+_SOPS_SECRETS = (
+    "admin-password",
+    "secret-key",
+    "bootstrap-token",
+    "user-password",
+    "google-oauth",
+    "auragon-google-email",
+)
 _SERVER_LABELS = {"app.kubernetes.io/component": "server", "app.kubernetes.io/name": NAME}
 # Pod ports: 9000 (HTTP), 9443 (HTTPS), 9300 (metrics).
 _HTTP, _HTTPS, _METRICS = 9000, 9443, 9300
@@ -68,7 +79,7 @@ def _pod_env() -> dict[str, object]:
         "env": [
             {
                 "name": "AUTHENTIK_POSTGRESQL__PASSWORD",
-                "valueFrom": {"secretKeyRef": {"name": "authentik-db-app", "key": "password"}},
+                "valueFrom": {"secretKeyRef": {"name": db.CREDENTIALS_SECRET, "key": "password"}},
             }
         ],
     }
@@ -112,17 +123,17 @@ def _values() -> dict[str, object]:
     return {
         "global": {
             "deploymentAnnotations": {
-                "secret.reloader.stakater.com/reload": "authentik-db-app,authentik-user-password",
-                "configmap.reloader.stakater.com/reload": "authentik-sso-blueprints",
+                "secret.reloader.stakater.com/reload": f"{db.CREDENTIALS_SECRET},authentik-user-password",
+                "configmap.reloader.stakater.com/reload": _BLUEPRINTS_CONFIG_MAP,
             }
         },
         # The worker processes the blueprints natively from this ConfigMap.
-        "blueprints": {"configMaps": ["authentik-sso-blueprints"]},
+        "blueprints": {"configMaps": [_BLUEPRINTS_CONFIG_MAP]},
         "authentik": {
             # The empty secrets below arrive via envFrom (`_pod_env`) instead.
             "secret_key": "",
             "error_reporting": {"enabled": False},
-            "postgresql": {"host": f"{db.NAME}-rw", "name": "authentik", "user": "authentik", "password": ""},
+            "postgresql": {"host": f"{db.NAME}-rw", "name": db.DATABASE, "user": db.DATABASE, "password": ""},
             "redis": {"host": ""},
             "bootstrap": {"password": "", "token": ""},
         },
@@ -140,7 +151,7 @@ def _values() -> dict[str, object]:
             "startupProbe": {"failureThreshold": 120, "periodSeconds": 10},
             # /-/health/live/ returns 500 whenever PostgreSQL is unreachable, so the default
             # threshold turned every seconds-long DB blip into a ~90s reboot and 503s
-            # (debug/2026_06_claude_ai_connector_deauth.md). Ride out ~2min; readiness stays
+            # (cluster/debug/2026_06_claude_ai_connector_deauth.md). Ride out ~2min; readiness stays
             # fast so the pod leaves the Service at once. Outpost API calls regularly take 1s+,
             # hence the 10s timeouts.
             "livenessProbe": {"timeoutSeconds": 10, "periodSeconds": 15, "failureThreshold": 8},
@@ -316,3 +327,22 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
+    # The data dep packages exactly Bazel's glob of the directory, so a new blueprint is listed
+    # by regenerating.
+    blueprints = get_required_path(own_repo_rlocation(f"{OUTPUT_DIR}/blueprints"))
+    write_yaml(
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(
+            resources=[f"{NAME}.k8s.yaml", *(f"{secret}.sops.yaml" for secret in _SOPS_SECRETS)],
+            config_map_generator=[
+                ConfigMapArgs(
+                    name=_BLUEPRINTS_CONFIG_MAP,
+                    namespace=NAMESPACE,
+                    # The Helm values name the ConfigMap, and kustomize cannot rewrite a reference
+                    # inside a HelmRelease's values.
+                    options=GeneratorOptions(disable_name_suffix_hash=True),
+                    files=[f"blueprints/{path.name}" for path in sorted(blueprints.glob("*.yaml"))],
+                )
+            ],
+        ),
+    )

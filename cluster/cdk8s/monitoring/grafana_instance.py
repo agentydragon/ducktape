@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb, ClusterSpecBootstrapInitdbSecret
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
     HttpRouteSpec,
@@ -57,6 +58,9 @@ _NAME = "grafana"
 _NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/grafana-instance"
 _DB_NAME = "grafana-db-ovh"
+# The credentials CNPG generated for the retired `grafana-db`, which this cluster was cloned
+# from; the role's password came with the clone.
+_DB_CREDENTIALS_SECRET = "grafana-db-app"
 # The label the Grafana CR carries and every dashboard and datasource selects.
 _INSTANCE_LABELS = {"dashboards": _NAME}
 
@@ -70,6 +74,14 @@ def _database(chart: Chart) -> None:
         node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
         storage_class="local-path-ovh",
         size="2Gi",
+        # Created by pg_basebackup from the retired grafana-db, so this never initializes
+        # anything. It names the application database and role CNPG uses: the metrics
+        # exporter's default queries run against the database, and CNPG keeps the role's
+        # password in sync with the Secret Grafana also authenticates with. Without it CNPG
+        # defaults to `app`, which does not exist here.
+        initdb=ClusterSpecBootstrapInitdb(
+            database=_NAME, owner=_NAME, secret=ClusterSpecBootstrapInitdbSecret(name=_DB_CREDENTIALS_SECRET)
+        ),
     )
 
 
@@ -159,7 +171,7 @@ def _grafana(chart: Chart) -> None:
                                         _secret_env(
                                             "GF_SECURITY_ADMIN_PASSWORD", "grafana-admin-password", "admin-password"
                                         ),
-                                        _secret_env("GF_DATABASE_PASSWORD", "grafana-db-app", "password"),
+                                        _secret_env("GF_DATABASE_PASSWORD", _DB_CREDENTIALS_SECRET, "password"),
                                         _secret_env(
                                             "GF_AUTH_GENERIC_OAUTH_CLIENT_ID",
                                             "grafana-oidc-config",

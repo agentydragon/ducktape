@@ -317,7 +317,7 @@ fn one_place<'o, 's>(
     let mut truncated = false;
     for source in outcomes {
         match &source.outcome.outcome {
-            Outcome::NoMatch => {}
+            Outcome::NoMatch { .. } => {}
             Outcome::Resolved { owner, binding, .. } => {
                 places.push((
                     Candidate {
@@ -330,6 +330,7 @@ fn one_place<'o, 's>(
             Outcome::Ambiguous {
                 candidates,
                 truncated: more,
+                ..
             } => {
                 truncated |= more;
                 places.extend(
@@ -367,7 +368,7 @@ fn one_place<'o, 's>(
         ),
         (multiple, EntityIndex::AnonymousStatement(_)) => bail!(
             "module {module_path} anonymous statement selector matched {at_least}{} source \
-             statement groups; refine the selector:\n{match_source}",
+             statements; refine the selector:\n{match_source}",
             multiple.len(),
         ),
     }

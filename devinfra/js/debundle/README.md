@@ -70,103 +70,16 @@ The roots must be normalized relative paths and may not overlap. Several trees
 may scope to one chunk: their modules share the chunk, so no two may define the
 same module path, and their selectors resolve jointly (no two entities claim one
 place). Module paths in the compiled flat spec are relative to their tree's root,
-while `logical_modules` is keyed by chunk ID. The existing `binding_patches.yaml`
-stream applies to `main_chunk_id`.
+while `logical_modules` is keyed by chunk ID. The `binding_patches.yaml` stream
+applies to `main_chunk_id` only.
 
 (For other invocation shapes — flat spec, vendor package roots, etc. —
 see `docs/cli.md`.)
 
-## Bazel Integration
+## Bazel integration and profiling
 
-`pipeline.bzl` provides a Bazel rule for running `debundle run` as a normal
-build action:
-
-```python
-load("@ducktape//devinfra/js/debundle:pipeline.bzl", "debundle_pipeline")
-
-debundle_pipeline(
-    name = "debundle",
-    input_data = [
-        "//path/to:bundle_inputs",
-    ],
-    package_roots = {
-        "//:node_modules/react/dir": "react",
-        "//:node_modules/zod/dir": "zod",
-    },
-    spec_tree_inputs = [":spec_data"],
-    tree_config = "spec/spec_config.yaml",
-    # Target holding the chunk the spec reads. Its files' own root becomes
-    # the root `inputs.root` / `inputs.js_list_path` resolve against, so a
-    # committed chunk resolves against the execroot and a build-extracted
-    # one against bazel-bin -- no need to vendor the chunk into git.
-    tree_source_root = "//path/to:bundle_inputs",
-    tree_modules = "spec/modules",
-    tree_vendor_marks = "spec/sources/vendor/vendor_marks.yaml",
-)
-```
-
-The rule writes a tree artifact named `<target>.out` under `bazel-bin`. It
-declares the spec, input data, package roots, and debundler binary as Bazel
-inputs/tools, then runs the debundler from `BAZEL_BINDIR` so source-relative
-spec paths resolve the same way they do in ordinary builds. By default the rule
-uses `@ducktape//devinfra/js/debundle:debundle`; consumers can select a
-different binary at repo or command-line scope with:
-
-```sh
-bazel build //path/to:debundle \
-  --@ducktape//devinfra/js/debundle:debundler=@my_debundle_bin//file
-```
-
-The rule declares `@ducktape//devinfra/js/debundle:ortools_cpsat_solver` as an
-action tool and passes its execroot path to the debundler. The materializer uses
-that OR-Tools CP-SAT sidecar for global selector assignment. Consumers can
-override the solver tool with the matching label flag when needed.
-
-## Profiling
-
-`debundle_pipeline` creates the normal pipeline target plus local profiling
-sibling targets that reuse the exact same action command, inputs, package
-roots, working directory, and debundler binary.
-
-```python
-load(
-    "@ducktape//devinfra/js/debundle:pipeline.bzl",
-    "debundle_pipeline",
-)
-
-debundle_pipeline(
-    name = "debundle",
-    # Pipeline attrs...
-)
-```
-
-Generated targets:
-
-- `:debundle`
-- `:debundle_profile_time`
-- `:debundle_profile_perf`
-- `:debundle_profile_massif_heap`
-- `:debundle_profile_heaptrack`
-
-Profile actions are tagged `manual` and use local/no-remote/no-cache/no-sandbox
-execution requirements. Build them with full output downloads when remote
-execution is configured:
-
-```sh
-bazel build //path/to:debundle_profile_perf --remote_download_outputs=all
-```
-
-The standalone `perf_wrapper.sh` helper post-processes `perf` output for
-ad-hoc local runs:
-
-```sh
-PERF_RECORD_FREQ=49 \
-  devinfra/js/debundle/perf_wrapper.sh --output-dir /tmp/debundle-profile -- \
-  <debundler> run <debundle args...>
-```
-
-Save important runs under the consuming repo's `debug/perf/` directory with the
-captured command, stdout/stderr and profiler artifacts.
+`pipeline.bzl`'s `debundle_pipeline` runs `debundle run` as a build action and
+generates local profiling siblings: <docs/bazel_integration.md>.
 
 ## Comments
 
@@ -205,16 +118,16 @@ edit. Anything that must persist belongs in a schema field — `comment:`
 
 ## Conditionally-correct optimizations
 
-Two opt-in per-chunk analyses are sound only when the input avoids shapes that
+These opt-in per-chunk analyses are sound only when the input avoids shapes that
 defeat static reasoning; each checks its precondition per statement and falls
-back to the conservative path (<docs/design.md> → "Conditionally-correct
+back to the conservative path (`docs/design.md` → "Conditionally-correct
 optimizations"):
 
 - `chunk_analysis_options.<chunk_id>.dataflow_aware_s_chain`, with the
   author-trusted `trusted_dataflow_summaries` refinement, orders impure
-  statements by the cells they touch (<docs/design.md> → "Emission modes").
+  statements by the cells they touch (`docs/design.md` → "Emission modes").
 - `chunk_analysis_options.<chunk_id>.local_property_effects` makes
-  `X.prop = <pure-rhs>;` a local effect on `X` (<docs/design.md> → A10).
+  `X.prop = <pure-rhs>;` a local effect on `X` (`docs/design.md` → A10).
 
 ## Input-chunk admission checks
 
@@ -222,5 +135,5 @@ Every materialized chunk is screened for A1 (top-level `eval`), A3 (dynamic
 `import(...)`) and A5 (`import.meta`) before any quotient or lowering work
 (`stage_one/chunk_admission.rs`). Audited corpora disable individual checks per
 chunk with `chunk_analysis_options.<chunk>.admission_overrides`. Enforcement
-strength, override reporting and the unchecked residual: <docs/design.md> →
+strength, override reporting and the unchecked residual: `docs/design.md` →
 "Conditions on the input chunk".

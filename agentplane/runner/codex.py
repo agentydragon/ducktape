@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -37,6 +38,15 @@ _TURN_STATUSES: dict[wire.TurnStatus | str, event_pb2.TurnStatus] = {
 _OUTCOME_FIELDS = frozenset({"status", "aggregatedOutput", "exitCode", "durationMs", "processId"})
 
 
+@dataclass(frozen=True)
+class _TurnStart:
+    """The input a `turn/start` carries, and the model command whose effect its answer proves."""
+
+    command_id: str
+    text: str
+    model_change: tuple[str, str] | None
+
+
 class CodexAdapter(HarnessAdapter):
     def __init__(self, session: Session, launch: CodexLaunch) -> None:
         self.session = session
@@ -47,6 +57,8 @@ class CodexAdapter(HarnessAdapter):
         # Codex chooses the model in turn/start. A received ChangeModel remains here until a
         # subsequent user command actually starts a turn using it.
         self._pending_model_changes: list[tuple[str, str]] = []
+        # Sent `turn/start` requests by id, until `on_frame` translates Codex's answer.
+        self._turn_starts: dict[wire.RequestId, _TurnStart] = {}
 
     def command(self) -> list[str]:
         return scenarios.command(str(self.launch.binary), endpoint=self.launch.base_url)
@@ -89,35 +101,16 @@ class CodexAdapter(HarnessAdapter):
         return self._thread_id
 
     async def submit(self, command_id: str, text: str) -> None:
-        selected_change = await self._take_pending_model_change()
-        selected_model = selected_change[1] if selected_change is not None else self.session.record.model
-        # Handled in frame order, so the `turn/started` notification after this response starts the
-        # turn with the model the response selects.
-        async with self.session.ordered_reply():
-            receipt = await self.harness.start_turn(thread_id=self._thread_id, text=text, model=selected_model)
-            response, sequence = receipt.response, receipt.sequence
-            if response.error is not None or response.result is None:
-                reason = response.error.message if response.error is not None else "turn/start returned no result"
-                if selected_change is not None:
-                    await self.session._fail(selected_change[0], f"Codex did not select the requested model: {reason}")
-                await self.session._fail(command_id, reason)
-                return
-            if selected_change is not None:
-                # The native response proves Codex accepted the turn that selected this model. This,
-                # rather than command receipt or a guessed future boundary, is its causal effect.
-                await self.session.model_changed(*selected_change, sources=[sequence])
-            turn_id = wire.TurnResult.model_validate(response.result).turn.id
-            if turn_id != self.session.active_turn_id:
-                await self.session.emit(
-                    event_pb2.TurnStarted(turn_id=turn_id, model=self.session.record.model), sources=[sequence]
-                )
-            await self.session.confirm_user_message(
-                harness_message_id=turn_id,
-                text=text,
-                origin_command_ids=[command_id],
-                turn_id=turn_id,
-                sources=[sequence],
-            )
+        model_change = await self._take_pending_model_change()
+        model = model_change[1] if model_change is not None else self.session.record.model
+        request = self.harness.turn_start_request(thread_id=self._thread_id, text=text, model=model)
+        self._turn_starts[request.id] = _TurnStart(command_id, text, model_change)
+        try:
+            # `on_frame` records what the answer proves. Waiting for it keeps normal commands one
+            # turn/start at a time.
+            await self.harness.request(request)
+        finally:
+            self._turn_starts.pop(request.id, None)
 
     async def interrupt(self, turn_id: str) -> None:
         await self.harness.interrupt(thread_id=self._thread_id, turn_id=turn_id)
@@ -138,12 +131,15 @@ class CodexAdapter(HarnessAdapter):
         self._pending_model_changes = []
         for command_id, _ in superseded:
             await self.session._noop(
-                command_id, "superseded by a later model command before any Codex turn selected it"
+                command_id, "superseded by a later model command before any Codex turn selected it", sources=[]
             )
         return selected
 
     async def on_frame(self, frame: Frame, source_sequence: int) -> None:
+        sources = [source_sequence]
         match wire.parse_frame(frame):
+            case wire.Response() as response if response.id in self._turn_starts:
+                await self._turn_start_answered(self._turn_starts.pop(response.id), response, sources)
             case wire.ServerRequest(id=request_id, method=method):
                 # Approvals, user-input requests, and elicitations have no answer path here; a
                 # refusal keeps the turn moving instead of blocking it forever.
@@ -156,7 +152,7 @@ class CodexAdapter(HarnessAdapter):
             case wire.TurnStarted(params=params):
                 if params.turn.id != self.session.active_turn_id:
                     await self.session.emit(
-                        event_pb2.TurnStarted(turn_id=params.turn.id, model=self.session.record.model)
+                        event_pb2.TurnStarted(turn_id=params.turn.id, model=self.session.record.model), sources=sources
                     )
             case wire.TurnCompleted(params=params):
                 turn = params.turn
@@ -169,48 +165,88 @@ class CodexAdapter(HarnessAdapter):
                     )
                 else:
                     error = turn.error.message if turn.error is not None else ""
-                await self.session.turn_completed(turn.id, status, error)
+                await self.session.turn_completed(turn.id, status, error, sources=sources)
             case wire.ItemStarted(params=params):
-                await self._item_started(params.item)
+                await self._item_started(params.item, sources)
             case wire.ItemCompleted(params=params):
-                await self._item_completed(params.item)
+                await self._item_completed(params.item, sources)
             case wire.AgentMessageDelta(params=params) | wire.ReasoningSummaryTextDelta(params=params):
-                await self.session.emit(event_pb2.TextDelta(item_id=params.item_id, text=params.delta))
+                await self.session.emit(event_pb2.TextDelta(item_id=params.item_id, text=params.delta), sources=sources)
             case wire.CommandExecutionOutputDelta(params=params):
-                await self.session.emit(event_pb2.ToolOutputDelta(item_id=params.item_id, text=params.delta))
+                await self.session.emit(
+                    event_pb2.ToolOutputDelta(item_id=params.item_id, text=params.delta), sources=sources
+                )
 
-    async def _item_started(self, item: wire.Item) -> None:
+    async def _turn_start_answered(self, start: _TurnStart, response: wire.Response, sources: list[int]) -> None:
+        if response.error is not None or response.result is None:
+            reason = response.error.message if response.error is not None else "turn/start returned no result"
+            if start.model_change is not None:
+                await self.session._fail(
+                    start.model_change[0], f"Codex did not select the requested model: {reason}", sources=sources
+                )
+            await self.session._fail(start.command_id, reason, sources=sources)
+            return
+        if start.model_change is not None:
+            # The answer proves Codex accepted the turn that selected this model. This, rather than
+            # command receipt or a guessed future boundary, is its causal effect.
+            await self.session.model_changed(*start.model_change, sources=sources)
+        turn_id = wire.TurnResult.model_validate(response.result).turn.id
+        if turn_id != self.session.active_turn_id:
+            await self.session.emit(
+                event_pb2.TurnStarted(turn_id=turn_id, model=self.session.record.model), sources=sources
+            )
+        await self.session.confirm_user_message(
+            harness_message_id=turn_id,
+            text=start.text,
+            origin_command_ids=[start.command_id],
+            turn_id=turn_id,
+            sources=sources,
+        )
+
+    async def _item_started(self, item: wire.Item, sources: list[int]) -> None:
         if isinstance(item, wire.UserMessageItem):
             return
         if not await self.session.journal.remember_adapter_item(self._adapter_id, item.id):
             return
         match item:
             case wire.AgentMessageItem():
-                await self.session.emit(event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
+                await self.session.emit(
+                    event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT), sources=sources
+                )
             case wire.ReasoningItem():
-                await self.session.emit(event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_REASONING))
+                await self.session.emit(
+                    event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_REASONING), sources=sources
+                )
             case wire.CommandExecutionItem():
                 await self.session.emit(
-                    event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name=item.type)
+                    event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name=item.type),
+                    sources=sources,
                 )
                 arguments: dict[str, object] = {"command": item.command, "cwd": item.cwd}
-                await self.session.emit(event_pb2.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)))
+                await self.session.emit(
+                    event_pb2.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)), sources=sources
+                )
             case wire.UnknownItem():
                 await self.session.emit(
-                    event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name=item.type)
+                    event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name=item.type),
+                    sources=sources,
                 )
                 arguments = {key: value for key, value in _extras(item).items() if key not in _OUTCOME_FIELDS}
-                await self.session.emit(event_pb2.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)))
+                await self.session.emit(
+                    event_pb2.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)), sources=sources
+                )
 
-    async def _item_completed(self, item: wire.Item) -> None:
+    async def _item_completed(self, item: wire.Item, sources: list[int]) -> None:
         if isinstance(item, wire.UserMessageItem):
             return
-        await self._item_started(item)
+        await self._item_started(item, sources)
         match item:
             case wire.AgentMessageItem(text=text):
-                await self.session.emit(event_pb2.ItemCompleted(item_id=item.id, text=text))
+                await self.session.emit(event_pb2.ItemCompleted(item_id=item.id, text=text), sources=sources)
             case wire.ReasoningItem(summary=summary):
-                await self.session.emit(event_pb2.ItemCompleted(item_id=item.id, text="\n".join(summary)))
+                await self.session.emit(
+                    event_pb2.ItemCompleted(item_id=item.id, text="\n".join(summary)), sources=sources
+                )
             case wire.CommandExecutionItem():
                 await self.session.emit(
                     event_pb2.ItemCompleted(
@@ -219,7 +255,8 @@ class CodexAdapter(HarnessAdapter):
                             output=item.aggregated_output or "",
                             succeeded=item.status is wire.CommandExecutionStatus.COMPLETED,
                         ),
-                    )
+                    ),
+                    sources=sources,
                 )
             case wire.UnknownItem():
                 outcome = {key: value for key, value in _extras(item).items() if key in _OUTCOME_FIELDS}
@@ -229,7 +266,8 @@ class CodexAdapter(HarnessAdapter):
                         tool=event_pb2.ToolResult(
                             output=json.dumps(outcome), succeeded=outcome.get("status") == "completed"
                         ),
-                    )
+                    ),
+                    sources=sources,
                 )
 
 

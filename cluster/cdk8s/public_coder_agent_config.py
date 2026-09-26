@@ -13,8 +13,8 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import Namespace, k8s
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
@@ -26,7 +26,6 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s import external_creds, public_coder_proxy, public_coder_sshpiper
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator, remote_data
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, console_config, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -50,14 +49,27 @@ from cluster.cdk8s.openclaw_gateway import (
     session_memory_hook,
     trusted_proxy_gateway,
 )
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, remote_data
 
 _CODEX_BY_ID = {model.id: model for model in OPENCLAW_CODEX_MODELS}
 _DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-6-luna"]
 _TPM_CODEX_MODEL = _CODEX_BY_ID["gpt-6-astra"]
 _CONFIG_MAP_NAME = "public-coder-agent-config"
 _NAME = "public-coder-agent"
-_NAMESPACE = "public-coder-agent"
-_LABELS = {"app.kubernetes.io/name": _NAME}
+NAMESPACE = "public-coder-agent"
+LABELS = {"app.kubernetes.io/name": _NAME}
+_NAMESPACE_LABELS = {
+    "goldilocks.fairwinds.com/enabled": "true",
+    "goldilocks.fairwinds.com/vpa-update-mode": "auto",
+    "name": NAMESPACE,
+    "rbac.ducktape.io/agent-readable-metadata": "true",
+}
+_NAMESPACE_ANNOTATIONS = {
+    "description": (
+        "Second OpenClaw agent, egress-confined to a CONNECT proxy and reachable only through the Authentik proxy "
+        "outpost. Opens pull requests against public repositories as agentydragon-agent."
+    )
+}
 _IMAGE = "ghcr.io/agentydragon/openclaw:unset"
 _GATEWAY_PORT = 18789
 _HOME = "/home/openclaw"
@@ -270,7 +282,7 @@ def chart(app: App) -> Chart:
         app,
         chart_name=_CONFIG_MAP_NAME,
         configmap_name=_CONFIG_MAP_NAME,
-        namespace=_NAMESPACE,
+        namespace=NAMESPACE,
         data={"openclaw.json5": json5_config(config())},
     )
 
@@ -293,7 +305,7 @@ def kubeconfig_chart(app: App) -> Chart:
             }
         ],
         "contexts": [
-            {"name": "in-cluster", "context": {"cluster": "in-cluster", "namespace": _NAMESPACE, "user": "haku-agent"}}
+            {"name": "in-cluster", "context": {"cluster": "in-cluster", "namespace": NAMESPACE, "user": "haku-agent"}}
         ],
         "current-context": "in-cluster",
         # iron-proxy substitutes the original Haku Agent bearer only for the dedicated Haku
@@ -303,7 +315,7 @@ def kubeconfig_chart(app: App) -> Chart:
     k8s.KubeConfigMap(
         chart,
         "config",
-        metadata=k8s.ObjectMeta(name=_KUBECONFIG_CONFIG_MAP_NAME, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_KUBECONFIG_CONFIG_MAP_NAME, namespace=NAMESPACE),
         data={"config": yaml_config(kubeconfig)},
     )
     return chart
@@ -535,16 +547,16 @@ def _deployment(scope: Construct) -> None:
         scope,
         "deployment",
         metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
+            name=_NAME, namespace=NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}
         ),
         spec=k8s.DeploymentSpec(
             # Keep the replica count GitOps-owned; the worker-local state claim is selected by the
             # affinity and PVC declarations below.
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=LABELS),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=LABELS),
                 spec=k8s.PodSpec(
                     security_context=k8s.PodSecurityContext(fs_group=1000),
                     # Keep Public Coder on the worker class that serves its local state PVC; do
@@ -630,7 +642,7 @@ def _claims(scope: Construct) -> None:
         "state-v2",
         metadata=k8s.ObjectMeta(
             name=_STATE_CLAIM_NAME,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             annotations={
                 "description": (
                     "Worker-local replacement for the archived Public Coder OpenClaw state. "
@@ -670,7 +682,7 @@ def _claims(scope: Construct) -> None:
         "diagnostics",
         metadata=k8s.ObjectMeta(
             name=_DIAGNOSTICS_CLAIM_NAME,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             annotations={"description": "Heap snapshots and Node diagnostic reports for the OpenClaw gateway"},
         ),
         spec=k8s.PersistentVolumeClaimSpec(
@@ -688,9 +700,9 @@ def _service(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE),
         spec=k8s.ServiceSpec(
-            selector=_LABELS,
+            selector=LABELS,
             ports=[
                 k8s.ServicePort(
                     name="gateway", port=_GATEWAY_PORT, target_port=k8s.IntOrString.from_number(_GATEWAY_PORT)
@@ -718,9 +730,9 @@ def _network_policies(scope: Construct) -> None:
     k8s.KubeNetworkPolicy(
         scope,
         "egress",
-        metadata=k8s.ObjectMeta(name="public-coder-agent-egress", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="public-coder-agent-egress", namespace=NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=_LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=LABELS),
             policy_types=["Egress"],
             egress=[
                 # Scoped to kube-dns specifically: an unscoped port-53 rule lets the agent tunnel
@@ -731,13 +743,7 @@ def _network_policies(scope: Construct) -> None:
                     ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(53), protocol="UDP"), _tcp(53)],
                 ),
                 k8s.NetworkPolicyEgressRule(
-                    to=[
-                        k8s.NetworkPolicyPeer(
-                            pod_selector=k8s.LabelSelector(
-                                match_labels={"app.kubernetes.io/name": public_coder_proxy.NAME}
-                            )
-                        )
-                    ],
+                    to=[k8s.NetworkPolicyPeer(pod_selector=k8s.LabelSelector(match_labels=public_coder_proxy.LABELS))],
                     ports=[_tcp(public_coder_proxy.PROXY_PORT)],
                 ),
                 # `ssh devbox`. Deliberately the piper and not the devbox itself: without a route
@@ -746,11 +752,7 @@ def _network_policies(scope: Construct) -> None:
                 # argument as the proxy above.
                 k8s.NetworkPolicyEgressRule(
                     to=[
-                        k8s.NetworkPolicyPeer(
-                            pod_selector=k8s.LabelSelector(
-                                match_labels={"app.kubernetes.io/name": public_coder_sshpiper.NAME}
-                            )
-                        )
+                        k8s.NetworkPolicyPeer(pod_selector=k8s.LabelSelector(match_labels=public_coder_sshpiper.LABELS))
                     ],
                     ports=[_tcp(public_coder_sshpiper.PORT)],
                 ),
@@ -774,9 +776,9 @@ def _network_policies(scope: Construct) -> None:
     k8s.KubeNetworkPolicy(
         scope,
         "ingress",
-        metadata=k8s.ObjectMeta(name="public-coder-agent-ingress", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="public-coder-agent-ingress", namespace=NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=_LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=LABELS),
             policy_types=["Ingress"],
             ingress=[
                 k8s.NetworkPolicyIngressRule(
@@ -800,11 +802,11 @@ def _credentials(scope: Construct) -> None:
     #
     # Consumed by the **egress proxy**, not by the agent. The agent container holds only a
     # placeholder, which the proxy swaps for this value on requests bound for GitHub.
-    add_external_secret(
+    ExternalSecret(
         scope,
         "github-token",
         name=_GITHUB_TOKEN_NAME,
-        namespace=_NAMESPACE,
+        namespace=NAMESPACE,
         refresh="1h",
         store=external_creds.STORE,
         data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],
@@ -822,18 +824,18 @@ def _credentials(scope: Construct) -> None:
     generator = Password(
         scope,
         "gateway-password-generator",
-        metadata=metadata("public-coder-agent-gateway-password-generator", _NAMESPACE),
+        metadata=metadata("public-coder-agent-gateway-password-generator", NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    add_external_secret(
+    ExternalSecret(
         scope,
         "gateway-password",
         name=_GATEWAY_PASSWORD_NAME,
-        namespace=_NAMESPACE,
+        namespace=NAMESPACE,
         # A generated password is stable for the generator's lifetime. Avoid an automatic
         # rotation that would unnecessarily interrupt active sessions.
         refresh="8760h",
-        data_from=[password_generator(generator.name)],
+        data_from=[DataFrom.from_password_generator(generator.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         template=ExternalSecretSpecTargetTemplate(data={"password": "{{ .password }}"}),
@@ -859,7 +861,7 @@ def _rbac(scope: Construct) -> None:
         "reader",
         metadata=k8s.ObjectMeta(
             name=reader,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             annotations={"description": "Read-only diagnostic access for the public-coder access profile."},
         ),
         rules=[
@@ -913,7 +915,7 @@ def _rbac(scope: Construct) -> None:
         "reader-binding",
         metadata=k8s.ObjectMeta(
             name=reader,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             annotations={"description": "Binds public-coder and its Haku superset to the reader Role."},
         ),
         role_ref=_role_ref("Role", reader),
@@ -927,7 +929,7 @@ def _rbac(scope: Construct) -> None:
         "extended-diagnostics-reader",
         metadata=k8s.ObjectMeta(
             name=diagnostics,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             annotations={"description": "Read-only VolSync backup status for Haku and public-coder."},
         ),
         rules=[
@@ -941,7 +943,7 @@ def _rbac(scope: Construct) -> None:
         "extended-diagnostics-reader-binding",
         metadata=k8s.ObjectMeta(
             name=diagnostics,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             annotations={"description": "Binds Haku and public-coder to VolSync status."},
         ),
         role_ref=_role_ref("Role", diagnostics),
@@ -953,7 +955,7 @@ def _rbac(scope: Construct) -> None:
     k8s.KubeRole(
         scope,
         "agentplane-acceptance-operator-reader",
-        metadata=k8s.ObjectMeta(name=acceptance, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=acceptance, namespace=NAMESPACE),
         rules=[
             k8s.PolicyRule(
                 api_groups=[""],
@@ -966,7 +968,7 @@ def _rbac(scope: Construct) -> None:
     k8s.KubeRoleBinding(
         scope,
         "agentplane-acceptance-operator-reader-binding",
-        metadata=k8s.ObjectMeta(name=acceptance, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=acceptance, namespace=NAMESPACE),
         role_ref=_role_ref("Role", acceptance),
         subjects=[k8s.Subject(kind="Group", name=console_config.PUBLIC_CODER_GROUP, api_group=_RBAC_GROUP)],
     )
@@ -1048,6 +1050,28 @@ def _rbac(scope: Construct) -> None:
     )
 
 
+def namespace_chart(app: App) -> Chart:
+    """The namespace shared by the public-coder-agent components, and its `default` ServiceAccount.
+
+    The ServiceAccount carries the pull secret for ducktape-ci, a private tenant in the in-cluster
+    Forgejo registry; cluster/k8s/forgejo-images reflects `forgejo-images-creds` into this namespace.
+    Workloads that don't set their own imagePullSecrets (the devbox VM's containerDisk pull) need it.
+    """
+    chart = Chart(app, "namespace", disable_resource_name_hashes=True)
+    namespace = Namespace(
+        chart,
+        "namespace",
+        metadata=ApiObjectMetadata(name=NAMESPACE, labels=_NAMESPACE_LABELS, annotations=_NAMESPACE_ANNOTATIONS),
+    )
+    k8s.KubeServiceAccount(
+        chart,
+        "default-service-account",
+        metadata=k8s.ObjectMeta(name="default", namespace=namespace.name),
+        image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
+    )
+    return chart
+
+
 def app_chart(app: App) -> Chart:
     """The OpenClaw workload, its credentials, storage, network policy and RBAC."""
     workload = Chart(app, _NAME, disable_resource_name_hashes=True)
@@ -1061,4 +1085,6 @@ def app_chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app", chart, kubeconfig_chart, app_chart)
+    write_charts(
+        root, f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app", namespace_chart, chart, kubeconfig_chart, app_chart
+    )

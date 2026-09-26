@@ -4,8 +4,7 @@ iron-proxy credential substituter.
 
 Written beside other generated files in the same directory (the Namespace from
 agents/namespaces.py, the CiliumNetworkPolicies from egress_fences.py). Hand-written there:
-`kustomization.yaml` (its configMapGenerator renames the iron config into `iron.yaml`, and
-a patch renames a SOPS Secret), the iron config itself, the SOPS Secrets, and
+`kustomization.yaml` (a patch renames a SOPS Secret), the SOPS Secrets, and
 `image-pins/kustomization.yaml`, which overrides the iron-proxy placeholder tag via Flux's
 image-automation marker.
 """
@@ -53,12 +52,13 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
-from cluster.cdk8s import cilium, external_creds
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
+from cluster.cdk8s import cilium, egress_fences, external_creds
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "haku-egress-proxy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy"
@@ -327,12 +327,17 @@ def _mitmproxy(chart: Chart) -> None:
     )
 
 
-def _iron_proxy(
-    chart: Chart, name: str, *, description: str, config_map: str, port: int, env: list[k8s.EnvVar]
-) -> None:
+def _iron_proxy(chart: Chart, name: str, *, description: str, config: dict, port: int, env: list[k8s.EnvVar]) -> None:
     """An iron-proxy Deployment holding real credentials and substituting them for a sandbox's
-    placeholders, plus its Service."""
+    placeholders, its config, and its Service."""
     labels = {"app.kubernetes.io/name": name}
+    # No content-hash name suffix: `reloader.stakater.com/auto` rolls the proxy when this changes.
+    config_map = k8s.KubeConfigMap(
+        chart,
+        f"{name}-config",
+        metadata=k8s.ObjectMeta(name=f"{name}-config", namespace=NAME),
+        data={"iron.yaml": yaml_config(config)},
+    )
     k8s.KubeDeployment(
         chart,
         f"{name}-deployment",
@@ -380,9 +385,7 @@ def _iron_proxy(
                         )
                     ],
                     volumes=[
-                        # Rendered from the iron config by the hand-written kustomization's
-                        # configMapGenerator.
-                        k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=config_map)),
+                        k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=config_map.name)),
                         k8s.Volume(name="ca", secret=k8s.SecretVolumeSource(secret_name=_CA_SECRET)),
                     ],
                 ),
@@ -407,7 +410,7 @@ def _github_token(chart: Chart, name: str) -> None:
     """The agentydragon-agent GitHub PAT, consumed only by one iron-proxy here; its sandbox
     receives a non-secret placeholder that the proxy replaces in Authorization headers for
     exact GitHub hosts."""
-    add_external_secret(
+    ExternalSecret(
         chart,
         name,
         name=name,
@@ -418,6 +421,63 @@ def _github_token(chart: Chart, name: str) -> None:
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
+
+
+def _substitution(env: str, placeholder: str, *hosts: str) -> dict:
+    """An iron `secrets` entry: the value of `env` replaces `placeholder` in Authorization, on
+    `hosts` only. iron-proxy also substitutes inside base64 Basic authorization, which is how
+    git over HTTP carries a password."""
+    return {
+        "source": {"type": "env", "var": env},
+        "replace": {"proxy_value": placeholder, "match_headers": ["Authorization"]},
+        "rules": [{"host": host} for host in hosts],
+    }
+
+
+def _openclaw_spike_iron_config() -> dict:
+    return {
+        "dns": {"enabled": False},
+        "proxy": {
+            "tunnel_listen": ":8181",
+            # Forgejo generates a full-history Git pack before returning response headers. The
+            # default 30s cap aborts that request with HTTP 502, while shallow fetches finish in
+            # time. Keep a bounded but practical limit.
+            "upstream_response_header_timeout": "5m",
+        },
+        "tls": {"mode": "mitm", "ca_cert": "/ca/tls.crt", "ca_key": "/ca/tls.key"},
+        "transforms": [
+            # The L7 bound; the same tuple is the DNS half of the proxy's Cilium fence.
+            {"name": "allowlist", "config": {"domains": list(egress_fences.OPENCLAW_SPIKE_ALLOWLIST)}},
+            {
+                "name": "secrets",
+                "config": {
+                    "secrets": [
+                        _substitution(
+                            "CLAUDE_CODE_OAUTH_TOKEN",
+                            "sk-ant-oat01-proxy-haku-openclaw-placeholder",
+                            "api.anthropic.com",
+                        ),
+                        _substitution("HAKU_GIT_PASSWORD", "proxy-haku-forgejo-placeholder", "forgejo-http.forgejo"),
+                        _substitution("HAKU_CONSOLE_TOKEN", "proxy-haku-console-placeholder", "haku.allegedly.works"),
+                        _substitution(
+                            "GITHUB_TOKEN",
+                            "proxy-github-placeholder",
+                            "api.github.com",
+                            "github.com",
+                            "codeload.github.com",
+                        ),
+                        # An Authentik client_credentials JWT for the `haku` k8s group, minted and
+                        # rotated by agents/authentik-jwt-rotation. The apiserver derives
+                        # oidc-ksbx-groups:haku from it, so what this runtime may do in the
+                        # cluster is RBAC on that group -- this proxy only delivers the bearer,
+                        # it cannot tell `get pods` from `delete ns`.
+                        _substitution("HAKU_KUBE_JWT", "proxy-haku-kube-placeholder", "kubeapi.allegedly.works"),
+                    ]
+                },
+            },
+        ],
+        "log": {"level": "info"},
+    }
 
 
 def _openclaw_spike_proxy(chart: Chart) -> None:
@@ -431,7 +491,7 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
         description=(
             "Holds Haku OpenClaw spike credentials and substitutes placeholders only for exact destination hosts."
         ),
-        config_map="haku-openclaw-spike-proxy-config",
+        config=_openclaw_spike_iron_config(),
         port=8181,
         env=[
             _secret_env("CLAUDE_CODE_OAUTH_TOKEN", "haku-claude-oauth-token", "CLAUDE_CODE_OAUTH_TOKEN"),

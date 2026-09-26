@@ -39,41 +39,29 @@ A bug-reproducing fixture is the **smallest** input that still triggers the bug:
 strip every removable feature and use generic placeholder names (`a`, `mod_x`,
 `readable`) over upstream-flavored ones. A fixture that passes against
 `origin/devel` before the fix isn't testing the bug — drop it or move it to a
-separate PR documenting the invariant. If a bug genuinely can't be reproduced
-synthetically, say so in the PR body and add coverage at the next-coarsest level;
-bugs first seen against a private corpus should be minimized to synthetic e2e
-inputs so the regression test lands in public CI.
-
-## Verification
-
-- **Synthetic e2e fixtures** (`e2e/`) are the default regression corpus. Keep
-  them focused on one pipeline stage or bug class.
-
-When a bug only reproduces against a private corpus, document why and smoke-test
-that corpus after the synthetic regression test passes.
+separate PR documenting the invariant. Keep each fixture focused on one pipeline
+stage or bug class. Bugs first seen against a private corpus are minimized to
+synthetic e2e inputs so the regression test lands in public CI; if one genuinely
+can't be reproduced synthetically, say so in the PR body, add coverage at the
+next-coarsest level, and smoke-test that corpus.
 
 ## Performance Profiling
 
-Root `AGENTS.md` § Profiling applies. Locally: use the profile sibling targets from
-`debundle_pipeline` (see <README.md>) so the run shares the real Bazel action's spec
-paths and inputs; read `perf` captures per the artifact guide in <README.md>
-(`perf_record_stderr.txt` for progress markers, `perf_report_flat_symbols.txt` for
-self-cost, symbolized children report for callgraphs). For timed repros, stop the
+Use the `debundle_pipeline` profile sibling targets
+(<docs/bazel_integration.md> § Profiling) so the run shares the real Bazel action's
+spec paths and inputs. In `perf` captures, read `perf_record_stderr.txt` for
+progress markers, `perf_report_flat_symbols.txt` for self-cost, and the symbolized
+children report for callgraphs. For timed repros, stop the
 process on timeout and attach `gdb` to inspect live stacks; core-dump only when the
 state must outlive the process. Keep production telemetry coarse.
 
 ## Worktree discipline for parallel agents
 
-When multiple worker agents may simultaneously edit code here, **each works in its
-own git worktree** (the Agent tool's `isolation: "worktree"` does this); otherwise
-agents stomp each other's uncommitted changes in the shared tree. Symptoms of
-missed isolation: changes spanning multiple agents' files, "my work disappeared",
-`git status` showing another branch's files — bail out and re-dispatch with
-isolation rather than recovering from contamination. The orchestrator keeps the
-main worktree and never disturbs in-flight worker trees.
-
-This is a concurrency rule, not a requirement to create a new path for every round:
-once a worker has selected a worktree, it keeps using that path for the session.
+Dispatch parallel workers with the Agent tool's `isolation: "worktree"`. Symptoms
+of missed isolation: changes spanning multiple agents' files, "my work
+disappeared", `git status` showing another branch's files — bail out and
+re-dispatch with isolation rather than recovering from contamination. The
+orchestrator keeps the main worktree and never disturbs in-flight worker trees.
 
 ### Signing in worktrees
 

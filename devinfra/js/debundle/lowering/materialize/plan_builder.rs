@@ -9,7 +9,7 @@ use super::*;
 use analysis::OwnerId;
 use js_ast::body_index_for_statement_ordinal;
 use selector_outcome::{
-    Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
+    Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
 };
 use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector, Resolution};
 
@@ -58,6 +58,7 @@ pub(super) struct ChunkPlan {
 
 /// Per-explicit-request inputs the builder reads but does not own.
 pub(super) struct ExplicitRequestContext<'a> {
+    pub(super) body: &'a [ModuleItem],
     pub(super) declaration_by_name: &'a HashMap<Id, usize>,
     pub(super) chunk_top_level_mark: swc_common::Mark,
     pub(super) target_dir: &'a str,
@@ -134,7 +135,7 @@ pub(super) struct ChunkPlanBuilder {
 }
 
 impl ChunkPlanBuilder {
-    pub(super) fn new(fail_fast: bool) -> Self {
+    pub(super) fn new(fail_fast: bool, list_template_identifiers: bool) -> Self {
         Self {
             binding_assignment: HashMap::new(),
             anonymous_ordinal_assignment: BTreeMap::new(),
@@ -145,7 +146,7 @@ impl ChunkPlanBuilder {
             catalogue_index_by_name: HashMap::new(),
             deferred_binding_claims_by_name: HashMap::new(),
             duplicate_deferred_binding_names: BTreeSet::new(),
-            outcomes: OutcomeSink::new(fail_fast),
+            outcomes: OutcomeSink::new(fail_fast, list_template_identifiers),
         }
     }
 
@@ -177,6 +178,11 @@ impl ChunkPlanBuilder {
                     let duplicate = self.duplicate_claim_for(
                         existing_kind,
                         &member.binding,
+                        binding_declaration(
+                            ctx.body,
+                            ctx.declaration_by_name,
+                            &top_level_id(&member.binding, ctx.chunk_top_level_mark),
+                        )?,
                         ctx.chunk_id,
                         request,
                         member,
@@ -199,6 +205,11 @@ impl ChunkPlanBuilder {
                         member,
                         Outcome::DuplicateClaim {
                             binding: member.binding.clone(),
+                            declaration: binding_declaration(
+                                ctx.body,
+                                ctx.declaration_by_name,
+                                &top_level_id(&member.binding, ctx.chunk_top_level_mark),
+                            )?,
                             claimed_by: existing.clone(),
                         },
                     ))?;
@@ -430,6 +441,7 @@ impl ChunkPlanBuilder {
 
     /// Claims what `resolution` resolved of `selectors`, and records every
     /// other outcome.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn claim_resolution(
         &mut self,
         explicit_requests: &[LogicalRequest],
@@ -437,8 +449,10 @@ impl ChunkPlanBuilder {
         resolution: Resolution,
         chunk_top_level_mark: swc_common::Mark,
         chunk_id: &str,
+        body: &[ModuleItem],
         declaration_by_name: &HashMap<Id, usize>,
     ) -> Result<()> {
+        self.outcomes.list_templates(resolution.templates);
         // Recorded last, once every claim is in.
         let mut eliminated = Vec::new();
         for EntityOutcome {
@@ -486,11 +500,15 @@ impl ChunkPlanBuilder {
                         index,
                         chunk_top_level_mark,
                         chunk_id,
+                        body,
                         declaration_by_name,
                     )?;
                 }
             }
-            if matches!(resolved_by, ResolvedBy::Elimination { .. }) {
+            if matches!(
+                resolved_by,
+                ResolvedBy::Elimination { .. } | ResolvedBy::ReferencedBy { .. }
+            ) {
                 eliminated.push(outcome);
             }
         }
@@ -505,6 +523,7 @@ impl ChunkPlanBuilder {
         &self,
         existing_kind: &BindingKind,
         binding: &str,
+        declaration: Declaration,
         chunk_id: &str,
         request: &LogicalRequest,
         member: &MemberRequest,
@@ -531,6 +550,7 @@ impl ChunkPlanBuilder {
             member,
             Outcome::DuplicateClaim {
                 binding: binding.to_string(),
+                declaration,
                 claimed_by: EntityRef {
                     logical_module: logical_module_path(&self.module_plans[plan_index].id),
                     entity: export_name.map(Entity::Export),
@@ -591,6 +611,7 @@ impl ChunkPlanBuilder {
         index: usize,
         chunk_top_level_mark: swc_common::Mark,
         chunk_id: &str,
+        body: &[ModuleItem],
         declaration_by_name: &HashMap<Id, usize>,
     ) -> Result<()> {
         let binding_id = top_level_id(binding, chunk_top_level_mark);
@@ -618,8 +639,14 @@ impl ChunkPlanBuilder {
             ) {
                 bail!("{report}");
             }
-            let duplicate =
-                self.duplicate_claim_for(existing_kind, binding, chunk_id, request, member);
+            let duplicate = self.duplicate_claim_for(
+                existing_kind,
+                binding,
+                binding_declaration(body, declaration_by_name, &binding_id)?,
+                chunk_id,
+                request,
+                member,
+            );
             return self.record(duplicate);
         }
         // The residual sweep ran before chunk analysis (before this pass), so the target

@@ -20,7 +20,8 @@ bbr test //agentplane/egress/...
 - `identity.py`: the shared `workload_auth` resolver behind a proxied connection, translating a
   refused bearer into the `DenyReason` the client sees.
 - `upstream.py`: the admitted host resolved by the proxy, refused when it points anywhere not
-  globally reachable, and pinned so the dial goes to the address checked.
+  globally reachable, and pinned so the dial goes to the address checked — through
+  `PinnedDialEventLoop`, the event loop the proxy must run on, which answers the dial's own lookup.
 - `informer.py`: read-only list-and-watch of the four kinds into each replica’s `Index`.
 - `rules_api.py`: the agent-facing
   `agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` API and the narrow

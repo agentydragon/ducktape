@@ -16,6 +16,9 @@ KUBERNETES_POLICY = "kubernetes"
 GOOGLE_READONLY_POLICY = "google-readonly"
 GROCY_SF_READONLY_POLICY = "grocy-sf-readonly"
 HOME_ASSISTANT_READONLY_POLICY = "home-assistant-readonly"
+ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
+AIQUOTA_READ_POLICY = "aiquota-read"
+HAKU_MAILBOX_POLICY = "haku-mailbox"
 COINBASE_POLICY = "coinbase"
 
 

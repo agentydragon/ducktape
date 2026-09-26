@@ -22,11 +22,11 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cnpg, external_creds, forgejo_images
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "attic"
@@ -184,7 +184,7 @@ def _rotation(scope: Construct) -> None:
     )
     # The rotator's GitHub PAT, copied from the canonical external-creds source
     # (external_creds.py approves nix-cache as a consumer).
-    add_external_secret(
+    ExternalSecret(
         scope,
         "github-pat",
         name=_GITHUB_PAT_SECRET,

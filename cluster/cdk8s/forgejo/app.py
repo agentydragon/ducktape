@@ -41,13 +41,13 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.seaweedfs import s3
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/app"
@@ -119,13 +119,13 @@ def _metrics_token(scope: Construct) -> None:
         metadata=metadata(_METRICS_TOKEN, _NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    add_external_secret(
+    ExternalSecret(
         scope,
         "metrics-token",
         name=_METRICS_TOKEN,
         namespace=_NAMESPACE,
         refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[password_generator(generator.name)],
+        data_from=[DataFrom.from_password_generator(generator.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
@@ -241,7 +241,7 @@ def _values() -> dict[str, object]:
                 # replicas and needs no rebuildable filesystem state.
                 "indexer": {"ISSUE_INDEXER_TYPE": "db"},
                 # In-cluster CI (Forgejo Actions). Enables the server-side feature; a
-                # registered act_runner (cluster/k8s/haku-ci) executes workflows. Used so
+                # registered act_runner (cluster/cdk8s/haku_ci) executes workflows. Used so
                 # Haku can build its own UI image from haku-state source entirely
                 # in-cluster — haku-state may hold private operator data, so its builds must
                 # never go to BuildBuddy/RBE or any external CI. See haku/PLAN.md.

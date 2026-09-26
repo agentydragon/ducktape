@@ -152,7 +152,7 @@ class EgressAddon:
 
     def server_connect(self, data: server_hooks.ServerConnectionHookData) -> None:
         """Every dial goes to the address the gate checked, or nowhere."""
-        self._resolver.redirect(data.server)
+        self._resolver.dial(data.server)
 
     def responseheaders(self, flow: http.HTTPFlow) -> None:
         """Stream admitted responses instead of buffering them whole; a refusal has no body to stream."""

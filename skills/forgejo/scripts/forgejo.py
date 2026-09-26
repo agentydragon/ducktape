@@ -15,9 +15,10 @@ Subcommands:
   `None` and drops every row); duration is **run + queue** wall time (the runner is
   capacity-limited), so outliers are filtered by `--max-seconds`; and the endpoint
   ignores `limit`, returning the whole list under `workflow_runs` (slice client-side).
-- `logs` — a run's step logs, driven through the web UI endpoints (answers "why did this
+- `logs` — one job's step logs, driven through the web UI endpoints (answers "why did this
   run fail?"). Discovers the current UI endpoint shape from the run page instead of
-  hardcoding REST-like IDs, since this deployment has no REST log-download route.
+  hardcoding REST-like IDs, since this deployment has no REST log-download route. A run
+  with several jobs needs `--job`: the page opens on job 0, which is rarely the failing one.
 - `rerun` — re-run a whole run or one job through the run page's re-run route, since the
   REST API has no rerun endpoint either. The job list, the `{job}` route index (list
   position) and the `canRerun` flags come from the same page state the UI reads.
@@ -253,14 +254,13 @@ def fetch_run_page(client: httpx.Client, forgejo_url: str, owner: str, repo: str
 class RunPageState:
     actions_url: str
     run_index: str
-    job_index: str
     attempt: str
     initial_post_response: dict[str, Any]
 
-    def log_endpoint(self, forgejo_url: str) -> str:
+    def log_endpoint(self, forgejo_url: str, job_index: int) -> str:
         base = forgejo_url.rstrip("/")
         actions = self.actions_url if self.actions_url.startswith("/") else "/" + self.actions_url
-        return f"{base}{actions}/runs/{self.run_index}/jobs/{self.job_index}/attempt/{self.attempt}"
+        return f"{base}{actions}/runs/{self.run_index}/jobs/{job_index}/attempt/{self.attempt}"
 
 
 class _RunPageParser(HTMLParser):
@@ -284,7 +284,6 @@ def parse_run_page(run_html: str) -> RunPageState:
     required = {
         "data-actions-url": "actions URL",
         "data-run-index": "run index",
-        "data-job-index": "job index",
         "data-attempt-number": "attempt number",
         "data-initial-post-response": "initial post response",
     }
@@ -304,7 +303,6 @@ def parse_run_page(run_html: str) -> RunPageState:
     return RunPageState(
         actions_url=attrs["data-actions-url"],
         run_index=attrs["data-run-index"],
-        job_index=attrs["data-job-index"],
         attempt=attrs["data-attempt-number"],
         initial_post_response=initial,
     )
@@ -324,6 +322,48 @@ def run_page_session(args: argparse.Namespace) -> Iterator[tuple[httpx.Client, R
     # closing(), not `with client`: login() already opened the client with its first request.
     with contextlib.closing(login(args.forgejo_url, user, password, args.timeout)) as client:
         yield client, parse_run_page(fetch_run_page(client, args.forgejo_url, args.owner, args.repo, args.run_number))
+
+
+class RunJob(BaseModel):
+    """One entry of the page state's `state.run.jobs`; its list position is the `{job}` of
+    the web routes (`.../runs/{run}/jobs/{job}/...`), which is neither the task id nor the
+    UI job id."""
+
+    name: str
+    status: str
+    can_rerun: bool = Field(alias="canRerun", description="done, and the session may write Actions")
+
+
+class RunView(BaseModel):
+    link: str = Field(description="site-relative run link the UI's own re-run buttons post under")
+    can_rerun: bool = Field(alias="canRerun")
+    jobs: list[RunJob]
+
+
+def run_view(initial_post_response: dict[str, Any]) -> RunView:
+    return RunView.model_validate(initial_post_response["state"]["run"])
+
+
+def resolve_job(jobs: list[RunJob], selector: str) -> int:
+    """`selector` is a zero-based job index or an exact, unique job name."""
+    if selector.isdigit():
+        if int(selector) >= len(jobs):
+            raise SystemExit(f"job index {selector} out of range: the run has {len(jobs)} jobs")
+        return int(selector)
+    indexes = [i for i, job in enumerate(jobs) if job.name == selector]
+    if len(indexes) != 1:
+        raise SystemExit(f"job {selector!r} matches {len(indexes)} of {[job.name for job in jobs]}")
+    return indexes[0]
+
+
+def select_job(jobs: list[RunJob], selector: str | None) -> int:
+    """`resolve_job` when `selector` is given; otherwise the only job, never a guess among several."""
+    if selector is not None:
+        return resolve_job(jobs, selector)
+    if len(jobs) == 1:
+        return 0
+    listing = "\n".join(f"  {i}\t{job.status}\t{job.name}" for i, job in enumerate(jobs))
+    raise SystemExit(f"the run has {len(jobs)} jobs; pass --job with an index or name:\n{listing}")
 
 
 # ── logs ─────────────────────────────────────────────────────────────────────
@@ -354,13 +394,13 @@ def _walk_values(value: Any) -> Iterable[Any]:
             yield from _walk_values(child)
 
 
-def extract_steps(initial_post_response: dict[str, Any]) -> list[dict[str, Any]]:
-    state = initial_post_response.get("state")
+def extract_steps(response: dict[str, Any]) -> list[dict[str, Any]]:
+    state = response.get("state")
     if isinstance(state, dict):
         current_job = state.get("currentJob")
         if isinstance(current_job, dict) and _looks_like_steps(current_job.get("steps")):
             return list(current_job["steps"])
-    for value in _walk_values(initial_post_response):
+    for value in _walk_values(response):
         if _looks_like_steps(value):
             return list(value)
     return []
@@ -398,10 +438,16 @@ def parse_log_response(response_text: str) -> list[LogLine]:
     return list(iter_log_lines(parsed))
 
 
-def fetch_step_logs(client: httpx.Client, forgejo_url: str, state: RunPageState, step: int) -> list[LogLine]:
-    return parse_log_response(
-        _response_text(client.post(state.log_endpoint(forgejo_url), json=build_log_payload(step)))
-    )
+def fetch_job_state(client: httpx.Client, endpoint: str) -> dict[str, Any]:
+    """The job view with no step expanded; its `state.currentJob.steps` is this job's steps."""
+    parsed = json.loads(_response_text(client.post(endpoint, json={"logCursors": []})))
+    if not isinstance(parsed, dict):
+        raise ValueError("job state JSON was not an object")
+    return parsed
+
+
+def fetch_step_logs(client: httpx.Client, endpoint: str, step: int) -> list[LogLine]:
+    return parse_log_response(_response_text(client.post(endpoint, json=build_log_payload(step))))
 
 
 def _step_index(position: int, step: dict[str, Any]) -> str:
@@ -440,57 +486,26 @@ def _print_logs(lines: list[LogLine], timestamps: bool) -> None:
 
 def _configure_logs(parser: argparse.ArgumentParser) -> None:
     _configure_web_session(parser)
+    parser.add_argument("--job", help="zero-based job index or job name; required when the run has several jobs")
     parser.add_argument("--step", action="append", type=int, help="Step index to expand; repeatable")
-    parser.add_argument("--list-steps", action="store_true", help="List step indexes from the run page")
+    parser.add_argument("--list-steps", action="store_true", help="List the job's step indexes")
     parser.add_argument("--timestamps", action="store_true", help="Print timestamp<TAB>message")
     parser.set_defaults(func=_run_logs)
 
 
 def _run_logs(args: argparse.Namespace) -> int:
     with run_page_session(args) as (client, state):
+        endpoint = state.log_endpoint(
+            args.forgejo_url, select_job(run_view(state.initial_post_response).jobs, args.job)
+        )
         if args.list_steps or not args.step:
-            _print_steps(extract_steps(state.initial_post_response))
-            if not args.step:
-                return 0
-
-        for step in args.step:
-            _print_logs(fetch_step_logs(client, args.forgejo_url, state, step), args.timestamps)
+            _print_steps(extract_steps(fetch_job_state(client, endpoint)))
+        for step in args.step or []:
+            _print_logs(fetch_step_logs(client, endpoint, step), args.timestamps)
         return 0
 
 
 # ── rerun ────────────────────────────────────────────────────────────────────
-
-
-class RunJob(BaseModel):
-    """One entry of the page state's `state.run.jobs`; its list position is the `{job}` of
-    the web routes (`.../runs/{run}/jobs/{job}/...`), which is neither the task id nor the
-    UI job id."""
-
-    name: str
-    status: str
-    can_rerun: bool = Field(alias="canRerun", description="done, and the session may write Actions")
-
-
-class RunView(BaseModel):
-    link: str = Field(description="site-relative run link the UI's own re-run buttons post under")
-    can_rerun: bool = Field(alias="canRerun")
-    jobs: list[RunJob]
-
-
-def run_view(initial_post_response: dict[str, Any]) -> RunView:
-    return RunView.model_validate(initial_post_response["state"]["run"])
-
-
-def resolve_job(jobs: list[RunJob], selector: str) -> int:
-    """`selector` is a zero-based job index or an exact, unique job name."""
-    if selector.isdigit():
-        if int(selector) >= len(jobs):
-            raise SystemExit(f"job index {selector} out of range: the run has {len(jobs)} jobs")
-        return int(selector)
-    indexes = [i for i, job in enumerate(jobs) if job.name == selector]
-    if len(indexes) != 1:
-        raise SystemExit(f"job {selector!r} matches {len(indexes)} of {[job.name for job in jobs]}")
-    return indexes[0]
 
 
 def rerun_endpoint(forgejo_url: str, run_link: str, job_index: int | None) -> str:

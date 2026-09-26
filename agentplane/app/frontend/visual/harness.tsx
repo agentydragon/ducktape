@@ -39,6 +39,7 @@ import {
 import { electricLive, electricShape, electricSubset, routes, UNANSWERED } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
+import { streamRegistry } from "../stream_status";
 
 /** Resolved before any fixture is built: the scenario's fields are what the fixtures vary on. */
 function resolveScenario(): Scenario {
@@ -1342,9 +1343,11 @@ routes.push(
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
     (match, query, signal) =>
-      query.get("live") === "true"
-        ? electricLive(`visual-entities-${match[1]}`, undefined, signal)
-        : electricShape([], `visual-entities-${match[1]}`),
+      query.get("live") !== "true"
+        ? electricShape([], `visual-entities-${match[1]}`)
+        : scenario.sessionReplay === "reconnecting"
+          ? Response.json({ detail: "thread shape is temporarily unavailable" }, { status: 503 })
+          : electricLive(`visual-entities-${match[1]}`, undefined, signal),
   ],
   [
     "POST",
@@ -1465,10 +1468,15 @@ function watch(): WatchHealth {
   return scenario.wedgedWatch ? WEDGED : FRESH;
 }
 
-/** Live inventory and action streams remain EventSource; projected threads use Electric fetches above. */
+/** Live inventory and action streams remain EventSource; projected threads use Electric fetches above.
+ * A stream a scenario drops goes back to `CONNECTING`, as a browser's does when the network drops,
+ * and never reconnects. */
 class HarnessEventSource extends EventTarget {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
   readonly url: string;
-  readyState = 1;
+  readyState = HarnessEventSource.CONNECTING;
 
   constructor(url: string) {
     super();
@@ -1478,6 +1486,7 @@ class HarnessEventSource extends EventTarget {
   }
 
   private serve(url: URL): void {
+    this.readyState = HarnessEventSource.OPEN;
     if (url.pathname === "/live/threads") {
       const snapshot: ThreadsSnapshot = {
         sandboxes: SANDBOXES,
@@ -1486,13 +1495,13 @@ class HarnessEventSource extends EventTarget {
         watch: watch(),
       };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (scenario.sidebarSource === "disconnected") this.dispatchEvent(new Event("error"));
+      if (scenario.sidebarSource === "disconnected") this.drop();
       return;
     }
     if (url.pathname === "/live/sandboxes") {
       const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (scenario.inventoryDropped) this.dispatchEvent(new Event("error"));
+      if (scenario.inventoryDropped) this.drop();
       return;
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
@@ -1514,12 +1523,34 @@ class HarnessEventSource extends EventTarget {
     throw new Error(`Unexpected EventSource route: ${url.pathname}`);
   }
 
+  private drop(): void {
+    this.readyState = HarnessEventSource.CONNECTING;
+    this.dispatchEvent(new Event("error"));
+  }
+
   close(): void {
-    this.readyState = 2;
+    this.readyState = HarnessEventSource.CLOSED;
   }
 }
 
 window.EventSource = HarnessEventSource as unknown as typeof EventSource;
+
+// Under the frozen clock no stream is ever off for any time at all, so the registry's runs ahead of
+// it instead: a stream off since the scene began has been off this long when it renders.
+const { outageAge } = scenario;
+if (outageAge !== undefined) streamRegistry.now = () => Date.now() + outageAge;
+
+if (scenario.openConnectionStatus) {
+  // Focus opens the indicator's tooltip, as it does for a keyboard or touch reader. Every stream is
+  // off until its first frame, so the one to open is the indicator for a stream that has dropped.
+  const openStatus = new MutationObserver(() => {
+    const indicator = document.querySelector<HTMLElement>('[data-connection][aria-label*="reconnecting"]');
+    if (!indicator) return;
+    openStatus.disconnect();
+    indicator.focus();
+  });
+  openStatus.observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-label"] });
+}
 
 if (scenario.openDebug) {
   const openDebug = new MutationObserver(() => {

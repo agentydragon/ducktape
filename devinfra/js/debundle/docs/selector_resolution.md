@@ -13,8 +13,8 @@ per entity. Every command that resolves selectors calls it, directly or as
 | Caller                                                    | Chunks and entities                                                                                                                                                    | Uses the outcomes                                                                                       |
 | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `run` (`lowering/materialize/`)                           | every chunk, with every module of it (of every tree scoped to it), less what `run` claims itself: import-specifier pins, duplicate claims, pins on undeclared bindings | claims each resolved entity, records the rest (and elimination warnings) in `selector_diagnostics.json` |
-| `spec validate --spec`                                    | as `run` (it is a keep-going dry run)                                                                                                                                  | reports every non-`ok` outcome                                                                          |
-| `spec validate --source-file` (`cli/validate.rs`)         | one chunk file, with every module file                                                                                                                                 | reports every non-`ok` outcome                                                                          |
+| `spec validate --spec`                                    | as `run` (it is a keep-going dry run)                                                                                                                                  | reports every non-`ok` outcome and lists each matched template's free identifiers                       |
+| `spec validate --source-file` (`cli/validate.rs`)         | one chunk file, with every module file                                                                                                                                 | reports every non-`ok` outcome and lists each matched template's free identifiers                       |
 | `spec match-selector` (`match_selector.rs`)               | the probe alone                                                                                                                                                        | reports its outcome                                                                                     |
 | `synthesize-selectors` proof (`selector_codemod.rs`)      | the candidate selector alone                                                                                                                                           | proven only when `resolved_by: own_selector` at the intended declaration                                |
 | edit gate, `describe`, `peel` (`anonymous_resolution.rs`) | every chunk source the owner graph names, each with every module's `source_matches[]` and anonymous statements                                                         | an entity must resolve in one source and match in no other                                              |
@@ -39,7 +39,10 @@ The resolve is two halves, so `run` can do the first per chunk in parallel:
    (100, `selector_outcome.rs`) is `too_broad`, and a matcher error or a place
    with no owner (an import specifier declares none) is `invalid` — all before
    any solve. A name pin's places are the top-level declarations of its name
-   (of its kind); a pin with none is `no_match`.
+   (of its kind); a pin with none is `no_match`. A `bindings[]` local the
+   template uses without declaring (pinning by use site) is placed at each
+   non-import top-level declaration of the identifier it bound in that match;
+   a match where it bound none, or two identifiers, yields no row.
 3. **Program.** Name pins and relational selectors lower to relation atoms over
    chunk facts (`selector_ir_lowering`); candidates enter as one table of rows
    per entity. `all_different` spans every non-pin target of the chunk, with
@@ -92,6 +95,30 @@ deciding the entity. The sidecar reports which projected variables it had proven
 then; an entity all of whose variables are among them still resolves, and a
 conflict set found before the stop still stands.
 
+## Template references
+
+Every template row, member or anonymous statement, carries `free_bindings`: the
+chunk identifier each free template name bound throughout that match (a name
+that bound two identifiers is absent). Before the solve, the resolve classifies each free name
+(<../SPEC.md> § Matching) and narrows the entity's rows: a global must have
+bound itself, a name-pin reference the pinned name, and a reference to a
+projected `source_match` or relational entity must be present at all.
+
+`settle_references` then repeats to a fixpoint: a referenced entity whose rows
+all bind one name for that export filters its referencers' rows to that name
+directly. Only a reference to an entity still open reaches the solver, as a
+column of the referencer's candidate table over the referenced entity's binding
+variable (`projected_binding_variable`), so equality comes from the shared
+variable. Settling first keeps groups small: with a column for every reference,
+the largest downstream spec chained 9,055 targets into one request and the sidecar was
+killed for memory (2026-09-24). An entity whose rows all disagree with a
+reference is `conflict` with the entities referenced.
+
+After the solve, an entity that had several rows before its references narrowed
+them resolves `resolved_by: own_references` when exactly one row agrees with
+the solved bindings of the entities it references; otherwise elimination below
+decides.
+
 ## Resolved by elimination
 
 `all_different` can make a selector unique that is ambiguous on its own: its
@@ -99,8 +126,34 @@ other candidates are claimed by other selectors. After a solve, each unique
 `source_match` or anonymous-statement entity's candidate rows are filtered by dropping every row whose
 owner or binding another `all_different` target's solved value holds. When it
 had several rows and one survives, its outcome is `resolved` with
-`resolved_by: elimination` naming the claimers. Such a selector silently moves
-when a claimer is edited, so it should be anchored on its own.
+`resolved_by: elimination` naming the claimers. When several survive and it
+still resolved, a template that references it picked the place:
+`resolved_by: referenced_by` naming those referrers. Either selector silently
+moves when a claimer or referrer is edited, so it should be anchored on its
+own.
+
+## Nearest unclaimed
+
+Once a chunk's outcomes are recorded, each `no_match` template entity gets the
+top-level statements no entity of the chunk resolved to that its template comes
+closest to (`add_nearest_unclaimed`, scored by `source_match::fact_near_misses`,
+bounded by `NEAREST_UNCLAIMED_MIN_SCORE` and `NEAREST_UNCLAIMED_LIMIT`). It
+runs after the solve because "unclaimed" needs every entity's result; only a
+one-statement template that is not all holes is scored.
+
+## Differentiators
+
+Each `ambiguous` entity whose places are all listed then gets, per listed
+place, the best-ranked anchor that sets its statement apart
+(`add_differentiators`): a `ShapeIndex` built over just the listed places'
+statements reads off, by `ShapeIndex::distinguishing_feature`, a feature no
+other of them has — a literal, object key, class member, member-path call,
+declaration kind or arity; never a shape skeleton, which names no token, nor a
+volatile literal. A place with none is retried against the statements just
+before the other places, then just after. Places that share a statement never
+get one. The index covers at most `MAX_LISTED_CANDIDATES` statements per side,
+so the pass stays within the interactive budget; with `truncated`, an unlisted
+place might share the anchor, so none is given.
 
 ## Unsatisfiable programs
 
@@ -145,6 +198,19 @@ conflicting one, such as a relation anchored on it, loses that relation with it
 and may come out ambiguous. Only when the hard constraints alone are
 unsatisfiable does every target of the group come out `no_match`.
 
+## Landing a new relation
+
+1. Add the fact to `chunk_facts` if it is not derivable from what is there.
+   Extraction stays fail-closed.
+2. Lower it to a table over candidate ids in the resolve, with a compiled
+   encoding in `selector_constraint_model_builder`.
+3. Prove it through `debundle run` on a fixture whose chunk also exports and
+   uses the anchor, as <../e2e/cross_ref_lowering_test.rs> does: real graphs
+   model `export { … }` and side-effect statements as owners that reference
+   every binding they touch, which is the discriminating case bare fixtures miss.
+4. Document it in <selectors.md>: a selector kind that is not documented there
+   does not exist for authors.
+
 ## The shape matcher
 
 `source_match/chunk_resolver.rs` builds one per-chunk model and resolves many
@@ -172,10 +238,10 @@ resolved all 6,179 `source_match` selectors in 11.1s warmed; the native encoding
 took 7.1s for one, almost all of it model construction (the CP-SAT search of
 that request took 0.02s), and a whole spec timed out at 120s before reaching
 the solver. A finite-domain solver has no index over AST shape, so the encoding
-rebuilds what `selector_match::Index` already provides. Cross-selector
-references do not need it: they are relation atoms over chunk facts, and
-negation and counting (not expressible yet, <selectors.md> § Relational
-selectors) would be too. Measured `-c opt` on a 4-core host, 2026-09-17; the
+rebuilds what `selector_match::Index` already provides. Template references do
+not need it either: they share the referenced entity's binding variable
+(§ Template references), and negation and counting (not expressible yet,
+<selectors.md> § Relational selectors) would be relation atoms over chunk facts. Measured `-c opt` on a 4-core host, 2026-09-17; the
 ratio is the result.
 
 ### Rejected: binding free template names in the root frame
@@ -186,7 +252,7 @@ template. The root frame's bijection then rejects real templates that rename a
 declaration yet reference it by its chunk spelling: in
 `const wrap = () => use(q), readable = () => 1;` against the chunk's
 `const w = () => use(q), q = () => 1;`, the free `q` and the declared `readable`
-both need chunk `q`. On the Tana web spec that turned 16 resolved group bindings
+both need chunk `q`. On the largest downstream spec that turned 16 resolved group bindings
 into `no_match` (2026-09-24). Free names bind in their frame like any other
 reference; the matcher only records what each bound to, and reports a name that
 bound two different identifiers as unbound.

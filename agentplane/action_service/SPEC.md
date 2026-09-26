@@ -140,8 +140,10 @@ there is no periodic state-query fallback.
 
 The Action Service serves a generic MCP frontend in the same process, with the same catalog,
 admission, Decision, Execution, and receipt authority as its HTTP interface. Its fixed tools
-discover Actions, submit/cancel requests, read receipts, and page durable events; individual Actions are
-not mirrored into MCP tools. Catalog responses omit input schemas and full descriptions unless
+discover Actions, submit/cancel requests, read receipts and results, and page durable events; individual
+Actions are not mirrored into MCP tools. A result reads as the tool that ran answered, an MCP backend's own
+result exactly with every content block, and a request without one says what it is waiting on or why it
+has none. Catalog responses omit input schemas and full descriptions unless
 explicitly requested. Lists and wait durations are bounded, and backend configuration is never
 exposed.
 
@@ -198,5 +200,5 @@ whether it uses OAuth linkage or a mounted credential.
 Approved work remains durably unclaimed during temporary backend outages. Revoked authority
 still becomes terminal; removed Actions and incompatible schemas are not treated as outages.
 Execution pins one connection generation and never automatically replays an ambiguous call.
-A tool's own error output is one of its two valid answers and completes the Action; the caller receives it flagged as an error. Only unreachable backends and unknown outcomes fail an execution. Draining stops new claims and reconnects while keeping
+A tool's own error output is one of its two valid answers and completes the Action; the caller receives it flagged as an error. Either answer is kept whole: every content block the tool returned, including images, audio and resources, and its structured content. Only unreachable backends and unknown outcomes fail an execution. Draining stops new claims and reconnects while keeping
 in-flight execution leases and connections through bounded result persistence.

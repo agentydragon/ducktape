@@ -75,7 +75,7 @@ Source of truth: <../../cluster/cdk8s/haku/rbac.py>.
 
 Cluster-wide read-only object/status; logs+configmaps only in infra namespaces via
 per-namespace bindings (no secrets, no app-content namespaces).
-Source of truth: <../../cluster/k8s/agents/agent-rbac-base/README.md>.
+Source of truth: <../../cluster/docs/agent_rbac.md>.
 
 ### Kyverno `restrict-agent-gateway-routes`
 
@@ -91,7 +91,7 @@ own, so the Cilium `toFQDNs` policy is the whole fence (an L7 allowlist is what
 iron-proxy adds, and these pods are not on it yet). In-cluster and node-IP destinations
 (all of `*.allegedly.works`) are deliberately unfenced via `toEntities: cluster`; those
 services authenticate their own callers.
-Source of truth: <../../cluster/k8s/agents/haku-egress-proxy/>, <../../cluster/k8s/haku-ci/>.
+Source of truth: <../../cluster/k8s/agents/haku-egress-proxy/>, <../../cluster/cdk8s/haku_ci/>.
 
 ### Operator-source credentials reflected into `haku-sandbox`
 

@@ -69,6 +69,17 @@ repos:
       # Language-agnostic ordering for explicitly marked blocks. The binary is
       # in `preCommitPackages`, exposed as `.#precommit` for CI and included in
       # `devToolPackages` for Claude Code web.
+      #
+      # Blocks are opt-in, paired (`start`/`end` on their own lines, inside the
+      # block) and meant for lists that are sets: allowlists, path filters,
+      # package/command names, kustomize resources. Marking one is a claim that
+      # order carries no meaning, so don't mark argv, workflow steps, priorities,
+      # schema- or version-ordered sequences, or anything a generator owns --
+      # sort it in the generator, or leave it. Give a list a floor of ~6 entries:
+      # below that the markers cost more than the drift they catch. Blocks
+      # holding a YAML block scalar (`|-`) or an anchor need care -- a marker
+      # placed at an item's content indent is absorbed into the value, and
+      # prettier moves markers on anchored lines onto the key.
       - id: keep-sorted
         name: keep-sorted
         entry: keep-sorted
@@ -280,13 +291,10 @@ repos:
             cluster/k8s/agents/plaid-mcp/app/items\.yaml|
             cluster/k8s/agents/grocy-mcp/envoy\.yaml|
             cluster/k8s/agents/homeassistant-proxy/config\.yaml|
-            # act_runner config mounted via configMapGenerator, not a K8s manifest
-            cluster/k8s/haku-ci/config\.yaml|
             # OpenShell policy mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/agents/openshell/openclaw/policy\.yaml|
             # iron-proxy config mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/agents/public-coder-agent/proxy/codex-runner-iron\.yaml|
-            cluster/k8s/agents/haku-egress-proxy/openclaw-spike-iron\.yaml|
             cluster/k8s/litellm/app/(chatgpt-)?proxy-config\.yaml|
             cluster/k8s/litellm/tana/proxy-config\.yaml|
             haku/x/dispatch/deploy/workers-litellm-config\.yaml|

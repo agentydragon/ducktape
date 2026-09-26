@@ -7,7 +7,7 @@ runs FoxFlss + restarts ModemManager. Cooldown COOLDOWN_S between fires.
 Why this exists: MM only invokes fcc-unlock.d/<vid:pid> reactively on a narrow
 set of QMI/MBIM error codes. The SDX72 reports the generic "Cannot power-up:
 sotware radio switch is OFF" instead, which MM doesn't classify as FCC-locked,
-so the wired script never fires. See debug/rugged/hw/foxflss_wwan.md.
+so the wired script never fires. See nix/debug/rugged/hw/foxflss_wwan.md.
 """
 
 from __future__ import annotations

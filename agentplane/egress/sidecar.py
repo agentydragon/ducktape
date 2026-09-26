@@ -17,12 +17,15 @@ import asyncio
 import contextlib
 import logging
 import signal
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType, TracebackType
 from typing import Any, Self
 
+from aiohttp import web
+from more_itertools import one
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -32,6 +35,9 @@ REFUSED_HEADER = "x-agentplane-egress-sidecar"
 _MAX_HEAD_BYTES = 64 * 1024
 _PIPE_CHUNK = 64 * 1024
 PROJECTED_TOKEN_HEADER = "X-Agentplane-Workload-Token"
+READINESS_PATH = "/readyz"
+READINESS_HOST = "0.0.0.0"
+READINESS_PORT = 3129
 # Never forwarded from the client: both token headers are the sidecar's alone to set, and
 # Proxy-Connection is the pre-standard keep-alive hint some clients send a proxy. The workload's
 # own headers pass through this relay, so dropping the projected one here is what makes its
@@ -161,6 +167,11 @@ class SidecarRelay:
             raise RuntimeError("sidecar relay is not running")
         return int(self._server.sockets[0].getsockname()[1])
 
+    @property
+    def is_ready(self) -> bool:
+        """Whether the local listener that accepts workload proxy traffic is serving."""
+        return self._server is not None and self._server.is_serving()
+
     def _read_token(self) -> str | None:
         """The current hop token, or None when the projected file is missing, unreadable, or empty."""
         return _read_token_file(self._token_file)
@@ -225,6 +236,30 @@ class SidecarRelay:
             await _close(upstream_writer)
 
 
+_RELAY: web.AppKey[SidecarRelay] = web.AppKey("relay", SidecarRelay)
+
+
+async def _readyz(request: web.Request) -> web.Response:
+    ready = request.app[_RELAY].is_ready
+    return web.json_response({"ready": ready}, status=200 if ready else 503)
+
+
+@asynccontextmanager
+async def serve_readiness(relay: SidecarRelay, *, host: str, port: int) -> AsyncIterator[int]:
+    """Serve a non-sensitive kubelet endpoint separate from the loopback proxy listener."""
+    app = web.Application()
+    app[_RELAY] = relay
+    app.router.add_get(READINESS_PATH, _readyz)
+    runner = web.AppRunner(app, shutdown_timeout=5)
+    await runner.setup()
+    site = web.TCPSite(runner, host, port)
+    try:
+        await site.start()
+        yield int(one(runner.addresses)[1])
+    finally:
+        await runner.cleanup()
+
+
 class Settings(BaseSettings):
     """Each field is a `--flag` and an `AGENTPLANE_EGRESS_SIDECAR_*` environment variable."""
 
@@ -241,6 +276,8 @@ class Settings(BaseSettings):
     )
     listen_host: str = Field(default="127.0.0.1", description="Bind address; loopback, the runner's own Pod.")
     listen_port: int = Field(default=3128, description="Port the runner container's HTTP(S)_PROXY names.")
+    readiness_host: str = Field(default=READINESS_HOST, description="Bind address for the kubelet readiness endpoint.")
+    readiness_port: int = Field(default=READINESS_PORT, description="HTTP port serving /readyz.")
 
     def __init__(self, **values: Any) -> None:
         # BaseSettings fills required fields from its sources; spell that out because the mypy plugin
@@ -258,16 +295,27 @@ async def async_main(settings: Settings) -> None:
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
-    async with SidecarRelay(
+    relay = SidecarRelay(
         proxy_host=settings.proxy_host,
         proxy_port=settings.proxy_port,
         token_file=settings.token_file,
         audience_token_files=settings.audience_token_files,
         listen_host=settings.listen_host,
         listen_port=settings.listen_port,
-    ) as relay:
+    )
+    async with (
+        serve_readiness(relay, host=settings.readiness_host, port=settings.readiness_port) as readiness_port,
+        relay,
+    ):
         logger.info(
-            "relaying %s:%d -> %s:%d", settings.listen_host, relay.listen_port, settings.proxy_host, settings.proxy_port
+            "relaying %s:%d -> %s:%d; readiness on %s:%d%s",
+            settings.listen_host,
+            relay.listen_port,
+            settings.proxy_host,
+            settings.proxy_port,
+            settings.readiness_host,
+            readiness_port,
+            READINESS_PATH,
         )
         await stop.wait()
 

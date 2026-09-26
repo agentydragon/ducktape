@@ -5,7 +5,7 @@
 # gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor
 # gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/crd_bindings/prometheus_operator:prometheusrule
 # gazelle:resolve py cilium_crds //cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy
-# gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/crd_bindings/cnpg:cluster
+# gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/providers/cnpg:cluster
 # gazelle:resolve py gateway_api_crds //cluster/cdk8s/crd_bindings/gateway_api:httproute
 # gazelle:resolve py grafana_grafana_crds //cluster/cdk8s/crd_bindings/grafana_operator:grafana
 # gazelle:resolve py grafana_grafanadashboard_crds //cluster/cdk8s/crd_bindings/grafana_operator:grafanadashboard
@@ -212,6 +212,7 @@ py_library(
         "//cluster/cdk8s/crd_bindings/grafana_operator:grafana",
         "//cluster/cdk8s/crd_bindings/grafana_operator:grafanadashboard",
         "//cluster/cdk8s/crd_bindings/grafana_operator:grafanadatasource",
+        "//cluster/cdk8s/providers/cnpg:cluster",
         "@pypi//cdk8s",
     ],
 )

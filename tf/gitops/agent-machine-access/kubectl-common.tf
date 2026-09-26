@@ -44,16 +44,19 @@ resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
   #
   allowed_redirect_uris = [
     {
-      matching_mode = "regex"
-      url           = "^http://localhost:[0-9]+/callback$"
+      matching_mode     = "regex"
+      url               = "^http://localhost:[0-9]+/callback$"
+      redirect_uri_type = "authorization"
     },
     {
-      matching_mode = "strict"
-      url           = "https://kubectl-passthrough-mcp.allegedly.works/oauth/callback"
+      matching_mode     = "strict"
+      url               = "https://kubectl-passthrough-mcp.allegedly.works/oauth/callback"
+      redirect_uri_type = "authorization"
     },
     {
-      matching_mode = "strict"
-      url           = "https://agentplane-staging.allegedly.works/mcp-linkage/callback"
+      matching_mode     = "strict"
+      url               = "https://agentplane-staging.allegedly.works/mcp-linkage/callback"
+      redirect_uri_type = "authorization"
     },
   ]
 }

@@ -44,8 +44,6 @@ from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromExtract,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMergePolicy,
@@ -63,7 +61,6 @@ from kyverno_cleanuppolicy_crds.io.kyverno import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds, forgejo_images
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
@@ -75,6 +72,12 @@ from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    DataFrom,
+    ExternalSecret,
+    SecretStoreRef,
+    remote_data,
+)
 
 NAME = "haku-workspaces"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku/workspaces/app"
@@ -93,16 +96,14 @@ def _external_secrets(chart: Chart) -> None:
     # Reads through the wide flux-system store rather than the scoped one, unlike the sibling
     # proxies: haku-sandbox is on the flux-system store's allowlist regardless, for
     # alloy-otlp-bearer and haku-mail-token, so switching stores would narrow nothing.
-    add_external_secret(
+    ExternalSecret(
         chart,
         "forgejo-images-creds",
         name=forgejo_images.SECRET_NAME,
         namespace=NAMESPACE,
         refresh="1h",
-        store=cluster_secret_store("kubernetes-flux-system-secret-store"),
-        data_from=[
-            ExternalSecretSpecDataFrom(extract=ExternalSecretSpecDataFromExtract(key=forgejo_images.SECRET_NAME))
-        ],
+        store=SecretStoreRef.cluster("kubernetes-flux-system-secret-store"),
+        data_from=[DataFrom.from_extract(forgejo_images.SECRET_NAME)],
         template=ExternalSecretSpecTargetTemplate(
             type="kubernetes.io/dockerconfigjson", merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE
         ),
@@ -113,16 +114,16 @@ def _external_secrets(chart: Chart) -> None:
     # read this namespace, with no per-call approval. The egress-fence placeholder substitution on
     # the sandbox templates stays the path for pods behind the fence; this copy serves the runtimes
     # outside it (the Claude Code web home, hostexec-free reads) and haku-state's `haku aw` CLI.
-    add_external_secret(
+    ExternalSecret(
         chart,
         "activitywatch-read-token",
         name="activitywatch-read-token",
         namespace=NAMESPACE,
         refresh="1h",
-        store=cluster_secret_store("kubernetes-activitywatch-secret-store"),
+        store=SecretStoreRef.cluster("kubernetes-activitywatch-secret-store"),
         data=[remote_data("activitywatch-read-token", "token")],
     )
-    add_external_secret(
+    ExternalSecret(
         chart,
         "coinbase-api-credentials",
         name="coinbase-api-credentials",

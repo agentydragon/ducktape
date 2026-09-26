@@ -14,6 +14,7 @@
 //! `alpha_all` readable names that are free references rather than local
 //! binders.
 
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
@@ -119,6 +120,98 @@ pub struct Candidate {
     pub binding: Option<String>,
 }
 
+/// The top-level statement that declares a binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Declaration {
+    /// Index of the statement in the chunk body.
+    pub owner: usize,
+    pub kind: DeclarationKind,
+}
+
+/// The keyword a top-level binding is declared with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeclarationKind {
+    Function,
+    Class,
+    Var,
+    Let,
+    Const,
+    Using,
+    AwaitUsing,
+    Import,
+}
+
+impl DeclarationKind {
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Function => "function",
+            Self::Class => "class",
+            Self::Var => "var",
+            Self::Let => "let",
+            Self::Const => "const",
+            Self::Using => "using",
+            Self::AwaitUsing => "await using",
+            Self::Import => "import",
+        }
+    }
+}
+
+/// A top-level statement a selector does not match, with where it first
+/// diverges; higher `score` is closer.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct NearMiss {
+    /// Index of the statement in the chunk body.
+    pub owner: usize,
+    /// The bindings it declares.
+    pub bindings: Vec<String>,
+    pub score: usize,
+    pub reason: String,
+}
+
+impl NearMiss {
+    fn render(&self) -> String {
+        let declares = match self.bindings.as_slice() {
+            [] => String::new(),
+            bindings => format!(
+                " declaring {}",
+                bindings
+                    .iter()
+                    .map(|binding| format!("`{binding}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        };
+        format!(
+            "body[{}]{declares} (score {}): {}",
+            self.owner, self.score, self.reason
+        )
+    }
+}
+
+/// What sets one [`Outcome::Ambiguous`] candidate apart from the others it is
+/// listed with.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Differentiator {
+    /// The candidate's statement.
+    pub owner: usize,
+    /// The statement the anchor is in: `owner`, or the one just before or
+    /// after it when `owner` has none.
+    pub statement: usize,
+    pub anchor: String,
+}
+
+impl Differentiator {
+    fn render(&self) -> String {
+        let site = match self.statement.cmp(&self.owner) {
+            Ordering::Equal => String::new(),
+            Ordering::Less => format!(" in the preceding body[{}]", self.statement),
+            Ordering::Greater => format!(" in the following body[{}]", self.statement),
+        };
+        format!("body[{}] by its {}{site}", self.owner, self.anchor)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Outcome {
@@ -128,11 +221,21 @@ pub enum Outcome {
         binding: Option<String>,
         resolved_by: ResolvedBy,
     },
-    NoMatch,
+    NoMatch {
+        /// The unclaimed top-level statements closest to the selector, closest
+        /// first.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        nearest_unclaimed: Vec<NearMiss>,
+    },
     Ambiguous {
         candidates: Vec<Candidate>,
         /// More candidates exist than are listed.
         truncated: bool,
+        /// Each listed candidate some anchor sets apart from the other listed
+        /// ones, with that anchor. Empty when `truncated`: an unlisted
+        /// candidate may share it.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        differentiators: Vec<Differentiator>,
     },
     /// In an unsatisfiable core of the joint solve with `with`; the set need
     /// not be minimal.
@@ -146,6 +249,7 @@ pub enum Outcome {
     /// Resolved to `binding`, which `claimed_by` already claims.
     DuplicateClaim {
         binding: String,
+        declaration: Declaration,
         claimed_by: EntityRef,
     },
     /// The selector could not be evaluated: it does not parse, uses an
@@ -164,10 +268,20 @@ pub enum Outcome {
 #[serde(tag = "by", rename_all = "snake_case")]
 pub enum ResolvedBy {
     OwnSelector,
+    /// Several places match its selector, and exactly one of them agrees
+    /// with where the entities its template names (`references`) resolved.
+    OwnReferences {
+        references: Vec<EntityRef>,
+    },
     /// Unique only because `claimers` took its other candidates; it moves
     /// silently when one of them is edited.
     Elimination {
         claimers: Vec<EntityRef>,
+    },
+    /// Its selector matches several places; the templates of `referrers`,
+    /// which name it, pick one. It moves silently when one of them is edited.
+    ReferencedBy {
+        referrers: Vec<EntityRef>,
     },
 }
 
@@ -218,11 +332,17 @@ impl Serialize for OutcomeKind {
 impl Outcome {
     /// The outcome of a selector matched on its own, from every place it
     /// matched.
+    pub fn no_match() -> Self {
+        Self::NoMatch {
+            nearest_unclaimed: Vec::new(),
+        }
+    }
+
     pub fn from_matches(mut candidates: Vec<Candidate>) -> Self {
         candidates.sort();
         candidates.dedup();
         match candidates.len() {
-            0 => Self::NoMatch,
+            0 => Self::no_match(),
             1 => {
                 let Candidate { owner, binding } = candidates.remove(0);
                 Self::Resolved {
@@ -253,13 +373,14 @@ impl Outcome {
         Self::Ambiguous {
             candidates,
             truncated,
+            differentiators: Vec::new(),
         }
     }
 
     pub fn kind(&self) -> OutcomeKind {
         match self {
             Self::Resolved { .. } => OutcomeKind::Resolved,
-            Self::NoMatch => OutcomeKind::NoMatch,
+            Self::NoMatch { .. } => OutcomeKind::NoMatch,
             Self::Ambiguous { .. } => OutcomeKind::Ambiguous,
             Self::Conflict { .. } => OutcomeKind::Conflict,
             Self::TooBroad { .. } => OutcomeKind::TooBroad,
@@ -272,11 +393,11 @@ impl Outcome {
     pub fn severity(&self) -> Severity {
         match self {
             Self::Resolved {
-                resolved_by: ResolvedBy::OwnSelector,
+                resolved_by: ResolvedBy::OwnSelector | ResolvedBy::OwnReferences { .. },
                 ..
             } => Severity::Ok,
             Self::Resolved {
-                resolved_by: ResolvedBy::Elimination { .. },
+                resolved_by: ResolvedBy::Elimination { .. } | ResolvedBy::ReferencedBy { .. },
                 ..
             } => Severity::Warning,
             _ => Severity::Error,
@@ -287,7 +408,7 @@ impl Outcome {
     /// declarations (an anonymous statement).
     fn describe(&self, statements: bool) -> String {
         let places = if statements {
-            "top-level statement group"
+            "top-level statement"
         } else {
             "top-level declaration"
         };
@@ -303,26 +424,61 @@ impl Outcome {
                 });
                 match resolved_by {
                     ResolvedBy::OwnSelector => format!("resolved to {target}"),
+                    ResolvedBy::OwnReferences { references } => format!(
+                        "resolved through its references to {target}: only that match agrees \
+                         with {}",
+                        render_refs(references)
+                    ),
                     ResolvedBy::Elimination { claimers } => format!(
                         "resolved by elimination to {target}: its other matches are claimed by {}",
                         render_refs(claimers)
                     ),
+                    ResolvedBy::ReferencedBy { referrers } => format!(
+                        "resolved to {target} only because {} name it there; its selector alone \
+                         matches several places",
+                        render_refs(referrers)
+                    ),
                 }
             }
-            Self::NoMatch => format!("did not match any {places}"),
+            Self::NoMatch { nearest_unclaimed } if nearest_unclaimed.is_empty() => {
+                format!("did not match any {places}")
+            }
+            Self::NoMatch { nearest_unclaimed } => format!(
+                "did not match any {places}; nearest unclaimed: {}",
+                nearest_unclaimed
+                    .iter()
+                    .map(NearMiss::render)
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ),
             Self::Ambiguous {
                 candidates,
                 truncated,
-            } => format!(
-                "is ambiguous -- matched {}{} {places}s: {}",
-                if *truncated { "at least " } else { "" },
-                candidates.len(),
-                candidates
-                    .iter()
-                    .map(render_candidate)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+                differentiators,
+            } => {
+                let differentiated = match (truncated, differentiators.as_slice()) {
+                    (true, _) => String::new(),
+                    (false, []) => "; no candidate has an anchor the others lack".to_string(),
+                    (false, differentiators) => format!(
+                        "; set apart {}",
+                        differentiators
+                            .iter()
+                            .map(Differentiator::render)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                };
+                format!(
+                    "is ambiguous -- matched {}{} {places}s: {}{differentiated}",
+                    if *truncated { "at least " } else { "" },
+                    candidates.len(),
+                    candidates
+                        .iter()
+                        .map(render_candidate)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
             Self::Conflict { with } => format!(
                 "conflicts with {}: these selectors admit no joint assignment (the listed set \
                  need not be minimal)",
@@ -333,10 +489,13 @@ impl Outcome {
             }
             Self::DuplicateClaim {
                 binding,
+                declaration,
                 claimed_by,
             } => format!(
-                "binding {binding:?} is already claimed by {} as `{}`; each binding may belong to \
-                 exactly one logical module",
+                "binding {binding:?} (`{}` at body[{}]) is already claimed by {} as `{}`; each \
+                 binding may belong to exactly one logical module",
+                declaration.kind.keyword(),
+                declaration.owner,
                 claimed_by.logical_module,
                 match &claimed_by.entity {
                     Some(Entity::Export(name)) => name.as_str(),
@@ -465,10 +624,78 @@ impl Serialize for SelectorOutcome {
     }
 }
 
-/// A list of outcomes, serialized with a count per [`OutcomeKind`].
+/// What one free identifier of a template means (<../SPEC.md> § Matching).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum IdentifierMeaning {
+    /// Matches only where it is `entity`'s own binding.
+    Reference { entity: EntityRef },
+    /// Several other modules export the name: the template is `invalid`.
+    Ambiguous { modules: Vec<String> },
+    /// An unshadowed runtime global: matches only itself.
+    Global,
+    /// Alpha-renamed: matches any identifier.
+    Wildcard,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct FreeIdentifier {
+    pub name: String,
+    #[serde(flatten)]
+    pub meaning: IdentifierMeaning,
+}
+
+/// The free identifiers of one `source_match` template that matched in
+/// `chunk`, with what each means there.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct TemplateIdentifiers {
+    pub chunk: String,
+    pub logical_module: String,
+    /// The entities the template places: its member or anonymous statement,
+    /// or every binding of its `source_matches[]` entry.
+    pub entities: Vec<Entity>,
+    pub identifiers: Vec<FreeIdentifier>,
+}
+
+impl TemplateIdentifiers {
+    /// One line per reference and ambiguous name.
+    fn render_lines(&self, out: &mut String) {
+        let entities = self
+            .entities
+            .iter()
+            .map(|entity| match entity {
+                Entity::Export(name) => format!("`{name}`"),
+                Entity::AnonymousStatement(index) => format!("anonymous_statements[{index}]"),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        for identifier in &self.identifiers {
+            let meaning = match &identifier.meaning {
+                IdentifierMeaning::Wildcard | IdentifierMeaning::Global => continue,
+                IdentifierMeaning::Reference { entity } => {
+                    format!("references {}", render_refs(std::slice::from_ref(entity)))
+                }
+                IdentifierMeaning::Ambiguous { modules } => {
+                    format!("is ambiguous: exported by {}", modules.join(", "))
+                }
+            };
+            let _ = writeln!(
+                out,
+                "  - {}::{} {entities}: `{}` {meaning}",
+                self.chunk, self.logical_module, identifier.name
+            );
+        }
+    }
+}
+
+/// A list of outcomes, serialized with a count per [`OutcomeKind`], and
+/// optionally what each matched template's free identifiers mean.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct SelectorOutcomeReport {
     pub outcomes: Vec<SelectorOutcome>,
+    /// Filled only by `spec validate`.
+    #[serde(default)]
+    pub templates: Vec<TemplateIdentifiers>,
 }
 
 impl SelectorOutcomeReport {
@@ -483,6 +710,36 @@ impl SelectorOutcomeReport {
     /// A count line, then one [`SelectorOutcome::render_line`] per outcome,
     /// at most `limit` of them.
     pub fn render_text(&self, out: &mut String, limit: Option<usize>) {
+        if !self.templates.is_empty() {
+            let mut kinds = BTreeMap::<&str, usize>::new();
+            for identifier in self
+                .templates
+                .iter()
+                .flat_map(|template| &template.identifiers)
+            {
+                *kinds
+                    .entry(match identifier.meaning {
+                        IdentifierMeaning::Reference { .. } => "reference",
+                        IdentifierMeaning::Ambiguous { .. } => "ambiguous",
+                        IdentifierMeaning::Global => "global",
+                        IdentifierMeaning::Wildcard => "wildcard",
+                    })
+                    .or_insert(0) += 1;
+            }
+            let kinds = kinds
+                .into_iter()
+                .map(|(kind, count)| format!("{kind}={count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let _ = writeln!(
+                out,
+                "{} matched template(s) with free identifiers: {kinds}",
+                self.templates.len()
+            );
+            for template in &self.templates {
+                template.render_lines(out);
+            }
+        }
         if self.outcomes.is_empty() {
             out.push_str("No selector problems found.\n");
             return;
@@ -511,9 +768,14 @@ impl SelectorOutcomeReport {
 
 impl Serialize for SelectorOutcomeReport {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut report = serializer.serialize_struct("SelectorOutcomeReport", 2)?;
+        let mut report = serializer.serialize_struct("SelectorOutcomeReport", 3)?;
         report.serialize_field("counts", &self.counts())?;
         report.serialize_field("outcomes", &self.outcomes)?;
+        if self.templates.is_empty() {
+            report.skip_field("templates")?;
+        } else {
+            report.serialize_field("templates", &self.templates)?;
+        }
         report.end()
     }
 }

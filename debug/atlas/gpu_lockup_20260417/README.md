@@ -108,4 +108,4 @@ or GSP-RM logs (those would have been captured after the point where it hung).
 
 - <../wyrm_gpu_lockup.md> — prior GPU lockup investigation (Feb 2026)
 - <../black_screen_lockup.md> — host-level chipset/VFIO instability (resolved)
-- <../gpu-strategy.md> — GPU strategy overview
+- <../gpu_strategy.md> — GPU strategy overview

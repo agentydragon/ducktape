@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request, status
@@ -31,28 +31,39 @@ class Drain:
     def begin(self) -> None:
         self._begun.set()
 
-    async def until[T](self, source: AsyncIterator[T]) -> AsyncIterator[T]:
+    def until[T](self, source: AsyncIterator[T]) -> AsyncIterator[T]:
         """`source`'s items until the drain begins, which ends the stream wherever it is waiting -- a
         live view waiting out a quiet quarter-minute ends now, not at its next health frame."""
+        return until_done(source, self._begun.wait)
+
+
+async def until_done[T](source: AsyncIterator[T], stop: Callable[[], Awaitable[object]]) -> AsyncIterator[T]:
+    """`source`'s items until `stop()` is done, which ends the stream wherever it is waiting; what
+    `stop()` raises, the stream raises."""
+    stopped = asyncio.ensure_future(stop())
+    try:
         while True:
             next_item = asyncio.ensure_future(anext(source))
-            begun = asyncio.ensure_future(self._begun.wait())
             try:
-                await asyncio.wait({next_item, begun}, return_when=asyncio.FIRST_COMPLETED)
+                await asyncio.wait({next_item, stopped}, return_when=asyncio.FIRST_COMPLETED)
             finally:
-                begun.cancel()
                 if not next_item.done():
                     # Cancelling the pending `anext` throws into `source` at its await, which closes it.
                     next_item.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await next_item
             if next_item.cancelled():
+                if stopped.done():
+                    stopped.result()
                 return
             try:
                 item = next_item.result()
             except StopAsyncIteration:
                 return
             yield item
+    finally:
+        stopped.cancel()
+        await asyncio.wait({stopped})
 
 
 class DrainMiddleware:

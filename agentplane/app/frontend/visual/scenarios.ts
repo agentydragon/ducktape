@@ -31,13 +31,22 @@ export interface Scenario extends ScenarioOptions {
    * (UISHELL_MOBILE). */
   openMobileSidebar?: boolean;
   threadlessSandbox?: boolean;
+  /** `disconnected` drops the sidebar's own stream after its first snapshot; `database-disconnected`
+   * keeps it up but reports the server's database feed down. */
   sidebarSource?: "disconnected" | "database-disconnected";
   /** Drop the sandbox inventory stream after its first snapshot, leaving the sidebar's own stream
-   * up: the thread header's banner is the page saying so. */
+   * up. */
   inventoryDropped?: boolean;
+  /** How long, in ms, the streams this scenario drops have been down when it renders. Without it
+   * they have only just dropped, which shows nothing. */
+  outageAge?: number;
+  /** Focus the sidebar's connection indicator once it shows, which opens its tooltip. */
+  openConnectionStatus?: boolean;
   /** Exercise the production scope and Electric shape synchronization boundary. `unavailable`
-   * is a persistent initial service failure, unlike a retired epoch, whose 410 triggers a refresh. */
-  sessionReplay?: "catching-up" | "unavailable";
+   * is a persistent initial service failure, unlike a retired epoch, whose 410 triggers a refresh;
+   * `reconnecting` fails every live read of the thread's rows once they have loaded, which
+   * Electric's client retries. */
+  sessionReplay?: "catching-up" | "unavailable" | "reconnecting";
   /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
   interleavedEvents?: boolean;
   /** Open the chronological archive drawer, the native-frame inspection surface. */
@@ -181,13 +190,25 @@ export const SCENARIOS: Record<string, Scenario> = {
     sidebarSource: "database-disconnected",
     readySelectors: ['[role="alert"]'],
   },
+  // The sidebar's own stream down past the grace: the footer's spinner, its tooltip naming the stream.
+  threads_disconnected: {
+    element: "#app",
+    route: "/",
+    viewport: { width: 1200, height: 900 },
+    sidebarSource: "disconnected",
+    outageAge: 10_000,
+    openConnectionStatus: true,
+    readySelectors: ['[data-connection="degraded"]', "::-p-text(Threads: reconnecting since)"],
+    captureViewport: true,
+  },
   threads_disconnected_phone: {
     element: "#app",
     route: "/",
     viewport: PHONE,
     sidebarSource: "disconnected",
+    outageAge: 10_000,
     openMobileSidebar: true,
-    readySelectors: [".agentplane-sidebar-backdrop", '[role="alert"]'],
+    readySelectors: [".agentplane-sidebar-backdrop", '[data-connection="degraded"]'],
   },
   threads_watch_stale: {
     element: "#app",
@@ -393,12 +414,15 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ["::-p-text(Current availability unknown)", '[data-thread-anchor="34"]'],
     captureViewport: true,
   },
+  // The inventory the thread's controls wait on has been down a minute: the page's notice, and the
+  // sidebar's spinner gone amber.
   session_inventory_dropped: {
     element: "#app",
     route: SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
     inventoryDropped: true,
-    readySelectors: ["::-p-text(Not connected to the live stream)", '[data-thread-anchor="34"]'],
+    outageAge: 90_000,
+    readySelectors: ['[data-connection="stale"]', "::-p-text(may be out of date)", '[data-thread-anchor="34"]'],
     captureViewport: true,
   },
   session_inventory_dropped_phone: {
@@ -406,7 +430,8 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_ROUTE,
     viewport: PHONE,
     inventoryDropped: true,
-    readySelectors: ["::-p-text(Not connected to the live stream)", '[data-thread-anchor="34"]'],
+    outageAge: 90_000,
+    readySelectors: ["::-p-text(may be out of date)", '[data-thread-anchor="34"]'],
     captureViewport: true,
   },
   session_phone: {
@@ -574,6 +599,26 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 900 },
     sessionReplay: "unavailable",
     readySelectors: ['[role="alert"]'],
+  },
+  // The rows stay on screen while the client retries. Past the grace the composer's dot and the
+  // sidebar's spinner say so; a minute in, the page's notice says the rows may be behind.
+  session_sync_reconnecting: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    sessionReplay: "reconnecting",
+    outageAge: 10_000,
+    readySelectors: ['[aria-label="Reconnecting…"]', '[data-connection="degraded"]', '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_sync_reconnecting_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    sessionReplay: "reconnecting",
+    outageAge: 90_000,
+    readySelectors: ['[aria-label="Reconnecting…"]', "::-p-text(may be out of date)", '[data-thread-anchor="34"]'],
+    captureViewport: true,
   },
   // The existing nav/header chrome (its own decluttering is separately tracked) leaves little
   // vertical room at phone width, so the queued-input dot at the bottom falls off the page -- same

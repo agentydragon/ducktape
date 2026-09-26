@@ -21,12 +21,6 @@ resources:
 components:
   - ./image-pins
 
-configMapGenerator:
-  - name: haku-openclaw-spike-proxy-config
-    namespace: haku-egress-proxy
-    files:
-      - iron.yaml=openclaw-spike-iron.yaml
-
 patches:
   # CLEANUP(added 2026-08-29): the encrypted object keeps its historical inner name because the
   # SOPS document MAC covers metadata values — see the note in claude-code-oauth-token.sops.yaml.

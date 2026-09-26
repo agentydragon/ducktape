@@ -85,19 +85,21 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
     # depending on `@ducktape//finance/augur/rust` makes rules_rust cold-fetch rustc and its
     # crates.
     (
-        "releases.bazel.build",
+        # keep-sorted start
         "bcr.bazel.build",
-        "github.com",
         "codeload.github.com",
-        "objects.githubusercontent.com",
-        "release-assets.githubusercontent.com",
-        "raw.githubusercontent.com",
         "ftp.gnu.org",
-        "nodejs.org",
-        "snapshot.debian.org",
-        "static.rust-lang.org",
+        "github.com",
         "index.crates.io",
+        "nodejs.org",
+        "objects.githubusercontent.com",
+        "raw.githubusercontent.com",
+        "release-assets.githubusercontent.com",
+        "releases.bazel.build",
+        "snapshot.debian.org",
         "static.crates.io",
+        "static.rust-lang.org",
+        # keep-sorted end
     ),
     # Forgejo Actions: `uses:` actions from data.forgejo.org, act_runner + job-container images
     # from code.forgejo.org.
@@ -114,43 +116,44 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
     ("*.ankiweb.net",),
 )
 
-# openclaw-spike-iron.yaml's `allowlist` transform, which bounds that proxy at L7; the DNS rule
-# built from it is the fence's second layer. //cluster/validation:test_egress_allowlists keeps
-# the two equal until the iron config is generated from here too (cluster/cdk8s/TODO.md).
+# The openclaw spike proxy's iron `allowlist` transform (haku_egress_proxy.py), which bounds it
+# at L7; the DNS rule built from it is the fence's second layer.
 # forgejo-http.forgejo is listed for parity with the iron allowlist; it is never queried in that
 # form, since the search path resolves it as forgejo-http.forgejo.svc.cluster.local first.
 OPENCLAW_SPIKE_ALLOWLIST = (
+    # keep-sorted start
     "api.anthropic.com",
+    "api.github.com",
+    "bcr.bazel.build",
+    "cache.nixos.org",
+    "channels.nixos.org",
+    "code.forgejo.org",
+    "codeload.github.com",
+    "data.forgejo.org",
+    "files.pythonhosted.org",
+    "forgejo-http.forgejo",
+    "ftp.gnu.org",
+    "ghcr.io",
+    "github.com",
     "haku.allegedly.works",
+    "index.crates.io",
     # The kube-apiserver, via the terminate+re-encrypt Gateway route (kube-api-proxy/README.md).
     # A fence gaining this host is a privilege change: what its holder may do is decided by the
     # RBAC bound to the identity in its bearer token, not by this list.
     "kubeapi.allegedly.works",
-    "forgejo-http.forgejo",
-    "pypi.org",
-    "files.pythonhosted.org",
-    "registry.npmjs.org",
-    "cache.nixos.org",
     "nixos.org",
-    "channels.nixos.org",
-    "releases.bazel.build",
-    "bcr.bazel.build",
-    "api.github.com",
-    "github.com",
-    "codeload.github.com",
-    "objects.githubusercontent.com",
-    "release-assets.githubusercontent.com",
-    "raw.githubusercontent.com",
-    "ftp.gnu.org",
-    "static.rust-lang.org",
-    "index.crates.io",
-    "static.crates.io",
     "nodejs.org",
-    "snapshot.debian.org",
-    "code.forgejo.org",
-    "data.forgejo.org",
-    "ghcr.io",
+    "objects.githubusercontent.com",
     "pkg-containers.githubusercontent.com",
+    "pypi.org",
+    "raw.githubusercontent.com",
+    "registry.npmjs.org",
+    "release-assets.githubusercontent.com",
+    "releases.bazel.build",
+    "snapshot.debian.org",
+    "static.crates.io",
+    "static.rust-lang.org",
+    # keep-sorted end
 )
 
 # What the shared agents-mitmproxy, the claude-sandbox chokepoint, reaches on the public

@@ -122,6 +122,7 @@ py_library(
     srcs = ["proxy.py"],
     deps = [
         ":addon",
+        ":upstream",
         "@pypi//mitmproxy",
     ],
 )
@@ -131,6 +132,7 @@ py_library(
     srcs = ["resources.py"],
     visibility = [
         "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/validation:__pkg__",
     ],
     deps = [
@@ -151,6 +153,7 @@ py_library(
         ":informer",
         ":policy",
         ":resources",
+        ":upstream",
         "//agentplane:subjects",
         "//agentplane/testing:fake_apiserver",
         "//util:kubernetes",
@@ -320,6 +323,8 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
+        "@pypi//aiohttp",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],

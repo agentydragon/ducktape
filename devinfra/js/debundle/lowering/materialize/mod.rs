@@ -51,6 +51,7 @@ pub(super) struct ChunkContext<'a> {
     pub(super) file: Option<&'a str>,
     pub(super) target_dir: &'a str,
     pub(super) keep_going: bool,
+    pub(super) list_template_identifiers: bool,
     pub(super) report_emission: &'a ReportEmission,
     /// Program-level cross-module purity output; this chunk's entries land
     /// in `AnalysisHints::imported_purities` / `declared_pure_members`.
@@ -132,6 +133,7 @@ pub(super) fn prepare_logical_chunk(
         file,
         target_dir,
         keep_going,
+        list_template_identifiers,
         ..
     } = context;
     // The spec validator (`validate_transform_spec`) enforces that
@@ -185,11 +187,12 @@ pub(super) fn prepare_logical_chunk(
         .collect::<Vec<_>>();
     let residual_request = requests.iter().find(|request| request.residual).cloned();
 
-    let mut builder = ChunkPlanBuilder::new(!keep_going);
+    let mut builder = ChunkPlanBuilder::new(!keep_going, list_template_identifiers);
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
     let explicit_request_ctx = ExplicitRequestContext {
+        body: &runtime_ast.module.body,
         declaration_by_name: &ast_analysis.declaration_by_name,
         chunk_top_level_mark,
         target_dir,
@@ -337,6 +340,7 @@ pub(super) fn finish_logical_chunk(
         resolution,
         chunk_top_level_mark,
         chunk_id,
+        &runtime_ast.module.body,
         &declaration_by_name,
     )?;
     let structural_analysis = selectors.into_structural();

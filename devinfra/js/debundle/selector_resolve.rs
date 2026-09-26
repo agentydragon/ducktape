@@ -24,12 +24,14 @@ use selector_ir_lowering::{
     MemberSelectorLoweringContext, MemberSelectorProgramBuilder, MemberSelectorSpecRef,
 };
 use selector_outcome::{
-    Candidate, Entity, EntityRef, MAX_CANDIDATES_PER_SELECTOR, Outcome, Placement, ResolvedBy,
-    SelectorKind, SelectorOutcome,
+    Candidate, Differentiator, Entity, EntityRef, FreeIdentifier, IdentifierMeaning,
+    MAX_CANDIDATES_PER_SELECTOR, NearMiss, Outcome, Placement, ResolvedBy, SelectorKind,
+    SelectorOutcome, TemplateIdentifiers,
 };
 use selector_runtime::solve_global_selector_program;
+use shape_index::ShapeIndex;
 use source_match::ParsedSourceMatchSelector;
-use source_match::chunk_resolver::ChunkResolver;
+use source_match::chunk_resolver::{ChunkResolver, template_free_identifiers};
 use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec};
 use swc_ecma_ast::{ImportSpecifier, Module, ModuleDecl, ModuleItem};
 
@@ -49,6 +51,8 @@ pub struct Chunk<'m> {
 struct Places {
     owner_by_body: BTreeMap<usize, OwnerId>,
     owner_by_body_and_binding: BTreeMap<(usize, String), OwnerId>,
+    /// Each top-level binding name's declaring statements, with their kind.
+    declarations: BTreeMap<String, Vec<(OwnerId, StatementKind)>>,
 }
 
 /// One logical module's entities.
@@ -167,6 +171,9 @@ impl MemberSelector {
 #[derive(Debug, Clone, Default)]
 pub struct Resolution {
     pub outcomes: Vec<EntityOutcome>,
+    /// What each matched template's free identifiers mean,
+    /// for templates that have any.
+    pub templates: Vec<TemplateIdentifiers>,
 }
 
 #[derive(Debug, Clone)]
@@ -222,22 +229,202 @@ pub fn member_outcome(
 struct Projected {
     targets: Vec<SelectorTargetId>,
     rows: Vec<Vec<Place>>,
+    /// The entities its template names, each with the chunk identifier every
+    /// row bound at that name.
+    references: Vec<Reference>,
+    /// Distinct rows its selector matched before any reference narrowed them.
+    unreferenced_rows: usize,
 }
 
-impl Projected {
-    /// Without repeated rows: the matcher lists a place once per way the
-    /// template aligns with it.
-    fn deduped(mut self) -> Self {
-        let mut rows = Vec::with_capacity(self.rows.len());
-        for row in self.rows {
-            if !rows.contains(&row) {
-                rows.push(row);
+/// A spec entity a template names, as a column of the naming entity's rows.
+struct Reference {
+    entity: EntityRef,
+    /// The referenced entity's target; `None` for a name pin on an import,
+    /// which is not resolved.
+    target: Option<SelectorTargetId>,
+    values: Vec<String>,
+}
+
+/// A `source_match` entity's candidates, collected before any target is
+/// declared so that templates can name entities projected after them.
+struct Collected {
+    module_index: usize,
+    shape: CollectedShape,
+    /// The template's free identifiers.
+    free: BTreeSet<String>,
+    rows: Vec<CollectedRow>,
+}
+
+enum CollectedShape {
+    Member(usize),
+    Group(Group),
+    /// An anonymous statement, by its position in the module's list.
+    Anonymous(usize),
+}
+
+impl Collected {
+    /// The export each row place is claimed as, in place order.
+    fn export_names(&self, modules: &[SpecModule]) -> Vec<String> {
+        match &self.shape {
+            CollectedShape::Member(member_index) => {
+                vec![
+                    modules[self.module_index].members[*member_index]
+                        .export_name
+                        .clone(),
+                ]
             }
+            CollectedShape::Group(group) => group.exports_by_target.values().cloned().collect(),
+            CollectedShape::Anonymous(_) => Vec::new(),
         }
-        self.rows = rows;
-        self
+    }
+
+    fn member_indices(&self) -> Vec<usize> {
+        match &self.shape {
+            CollectedShape::Member(member_index) => vec![*member_index],
+            CollectedShape::Group(group) => group.members_by_target.values().copied().collect(),
+            CollectedShape::Anonymous(_) => Vec::new(),
+        }
+    }
+
+    /// The entities it places, as outcomes name them.
+    fn entities(&self, modules: &[SpecModule]) -> Vec<Entity> {
+        match &self.shape {
+            CollectedShape::Anonymous(position) => vec![Entity::AnonymousStatement(
+                modules[self.module_index].anonymous_statements[*position].index,
+            )],
+            _ => self
+                .export_names(modules)
+                .into_iter()
+                .map(Entity::Export)
+                .collect(),
+        }
     }
 }
+
+/// One candidate: a place per target, and what each free identifier bound.
+#[derive(Clone)]
+struct CollectedRow {
+    /// One per target; a member's names its binding, an anonymous
+    /// statement's none.
+    places: Vec<Place>,
+    free_bindings: BTreeMap<String, String>,
+}
+
+/// The spec entity a free template identifier names.
+#[derive(Clone)]
+enum Referent {
+    /// A projected `source_match` entity, by its index in the collection.
+    Projected(usize),
+    /// A name pin: its binding is the pinned name.
+    Pin {
+        module_index: usize,
+        member_index: usize,
+        name: String,
+    },
+    /// A member pinned by a relational selector: its binding is known only
+    /// in the solve.
+    Relational {
+        module_index: usize,
+        member_index: usize,
+    },
+    /// A `source_match` rejected before the solve. Its name stays a wildcard.
+    Unprojected,
+}
+
+/// Names that, unless the chunk declares or imports them at top level, are
+/// the runtime's globals. A free template identifier spelled like one
+/// matches only that spelling.
+const JS_GLOBALS: &[&str] = &[
+    "AbortController",
+    "Array",
+    "ArrayBuffer",
+    "Atomics",
+    "BigInt",
+    "Blob",
+    "Boolean",
+    "Buffer",
+    "DataView",
+    "Date",
+    "Error",
+    "EvalError",
+    "Event",
+    "EventTarget",
+    "FinalizationRegistry",
+    "Float32Array",
+    "Float64Array",
+    "FormData",
+    "Function",
+    "Headers",
+    "Infinity",
+    "Int16Array",
+    "Int32Array",
+    "Int8Array",
+    "Intl",
+    "JSON",
+    "Map",
+    "Math",
+    "NaN",
+    "Number",
+    "Object",
+    "Promise",
+    "Proxy",
+    "RangeError",
+    "ReferenceError",
+    "Reflect",
+    "RegExp",
+    "Request",
+    "Response",
+    "Set",
+    "SharedArrayBuffer",
+    "String",
+    "Symbol",
+    "SyntaxError",
+    "TextDecoder",
+    "TextEncoder",
+    "TypeError",
+    "URIError",
+    "URL",
+    "URLSearchParams",
+    "Uint16Array",
+    "Uint32Array",
+    "Uint8Array",
+    "Uint8ClampedArray",
+    "WeakMap",
+    "WeakRef",
+    "WeakSet",
+    "WebAssembly",
+    "atob",
+    "btoa",
+    "cancelAnimationFrame",
+    "clearInterval",
+    "clearTimeout",
+    "console",
+    "crypto",
+    "decodeURI",
+    "decodeURIComponent",
+    "document",
+    "encodeURI",
+    "encodeURIComponent",
+    "fetch",
+    "globalThis",
+    "isFinite",
+    "isNaN",
+    "localStorage",
+    "location",
+    "navigator",
+    "parseFloat",
+    "parseInt",
+    "performance",
+    "process",
+    "queueMicrotask",
+    "requestAnimationFrame",
+    "sessionStorage",
+    "setInterval",
+    "setTimeout",
+    "structuredClone",
+    "undefined",
+    "window",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Place {
@@ -299,8 +486,16 @@ impl<'m> Chunk<'m> {
             let mut places = Places {
                 owner_by_body: BTreeMap::new(),
                 owner_by_body_and_binding: BTreeMap::new(),
+                declarations: BTreeMap::new(),
             };
             for statement in &self.structural.per_statement {
+                for binding in &statement.declared {
+                    places
+                        .declarations
+                        .entry(binding.0.as_str().to_string())
+                        .or_default()
+                        .push((OwnerId(statement.ordinal.0), statement.kind));
+                }
                 let Some(body_idx) =
                     body_index_for_statement_ordinal(&self.module.body, statement.ordinal.0)
                 else {
@@ -413,8 +608,136 @@ pub fn solve(chunks: Vec<(&Chunk<'_>, &[SpecModule], Projection)>) -> Result<Vec
     chunks
         .into_iter()
         .zip(decided)
-        .map(|((chunk, modules, projection), result)| projection.record(chunk, modules, &result))
+        .map(|((chunk, modules, projection), result)| {
+            let mut resolution = projection.record(chunk, modules, &result)?;
+            add_nearest_unclaimed(chunk, modules, &mut resolution)?;
+            add_differentiators(chunk, &mut resolution);
+            Ok(resolution)
+        })
         .collect()
+}
+
+/// Near misses scoring below this are too far off to help a repair.
+const NEAREST_UNCLAIMED_MIN_SCORE: usize = 30;
+const NEAREST_UNCLAIMED_LIMIT: usize = 3;
+
+/// Gives each `no_match` template entity the top-level statements, among
+/// those no entity of the chunk claimed, that its template comes closest to.
+fn add_nearest_unclaimed(
+    chunk: &Chunk<'_>,
+    modules: &[SpecModule],
+    resolution: &mut Resolution,
+) -> Result<()> {
+    let claimed = resolution
+        .outcomes
+        .iter()
+        .filter_map(|entity| match &entity.outcome.outcome {
+            Outcome::Resolved { owner, .. } => Some(*owner),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let unclaimed = (0..chunk.module.body.len())
+        .filter(|body_idx| !claimed.contains(body_idx))
+        .collect::<Vec<_>>();
+    for entity in &mut resolution.outcomes {
+        let Outcome::NoMatch { nearest_unclaimed } = &mut entity.outcome.outcome else {
+            continue;
+        };
+        let module = &modules[entity.module];
+        let template = match entity.entity {
+            EntityIndex::Member(member_index) => match &module.members[member_index].selector {
+                MemberSelector::SourceMatch(parsed) => Some(parsed),
+                _ => None,
+            },
+            EntityIndex::AnonymousStatement(index) => module
+                .anonymous_statements
+                .iter()
+                .find(|statement| statement.index == index)
+                .map(|statement| &statement.selector),
+        };
+        let Some(template) = template else {
+            continue;
+        };
+        *nearest_unclaimed = source_match::fact_near_misses(
+            chunk.module,
+            template,
+            unclaimed.iter().copied(),
+            NEAREST_UNCLAIMED_MIN_SCORE,
+            NEAREST_UNCLAIMED_LIMIT,
+        )?
+        .into_iter()
+        .map(|near_miss| NearMiss {
+            owner: near_miss.body_idx,
+            bindings: near_miss.declared_bindings,
+            score: near_miss.score,
+            reason: near_miss.reason,
+        })
+        .collect();
+    }
+    Ok(())
+}
+
+/// Gives each `ambiguous` entity whose candidates are all listed the anchor
+/// that sets each candidate's statement apart from the other candidates':
+/// its own best distinguishing feature, else one the statement just before it
+/// has and the statements just before the others lack, else likewise after.
+/// Candidates sharing a statement get none.
+fn add_differentiators(chunk: &Chunk<'_>, resolution: &mut Resolution) {
+    let body = &chunk.module.body;
+    for entity in &mut resolution.outcomes {
+        let Outcome::Ambiguous {
+            candidates,
+            truncated: false,
+            differentiators,
+        } = &mut entity.outcome.outcome
+        else {
+            continue;
+        };
+        let mut owners = BTreeSet::new();
+        let mut shared = BTreeSet::new();
+        for candidate in candidates.iter() {
+            if !owners.insert(candidate.owner) {
+                shared.insert(candidate.owner);
+            }
+        }
+        let mut pending = owners.difference(&shared).copied().collect::<BTreeSet<_>>();
+        for offset in [0, -1, 1] {
+            if pending.is_empty() {
+                break;
+            }
+            let statements = owners
+                .iter()
+                .filter_map(|&owner| {
+                    let statement = owner
+                        .checked_add_signed(offset)
+                        .filter(|statement| *statement < body.len())?;
+                    Some((owner, statement))
+                })
+                .collect::<Vec<_>>();
+            let index = ShapeIndex::new(&Module {
+                span: Default::default(),
+                body: statements
+                    .iter()
+                    .map(|(_, statement)| body[*statement].clone())
+                    .collect(),
+                shebang: None,
+            });
+            for (item, &(owner, statement)) in statements.iter().enumerate() {
+                if !pending.contains(&owner) {
+                    continue;
+                }
+                if let Some(feature) = index.distinguishing_feature(item) {
+                    pending.remove(&owner);
+                    differentiators.push(Differentiator {
+                        owner,
+                        statement,
+                        anchor: feature.to_string(),
+                    });
+                }
+            }
+        }
+        differentiators.sort();
+    }
 }
 
 /// `result` of a program slice, with its targets named as in the whole
@@ -463,6 +786,7 @@ pub struct Projection {
     projected: Vec<Projected>,
     /// Each name pin's places: the declarations of its name, of its kind.
     pin_places: BTreeMap<SelectorTargetId, BTreeSet<Place>>,
+    templates: Vec<TemplateIdentifiers>,
 }
 
 impl Projection {
@@ -638,6 +962,7 @@ struct Resolve<'c, 'm> {
     members: BTreeMap<SelectorTargetId, (usize, usize)>,
     anonymous: Vec<(SelectorTargetId, usize, usize)>,
     projected: Vec<Projected>,
+    templates: Vec<TemplateIdentifiers>,
 }
 
 impl<'c, 'm> Resolve<'c, 'm> {
@@ -654,6 +979,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             members: BTreeMap::new(),
             anonymous: Vec::new(),
             projected: Vec::new(),
+            templates: Vec::new(),
         }
     }
 
@@ -689,17 +1015,40 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 }
             }
         }
+        let mut collected = Vec::new();
         for (module_index, module) in modules.iter().enumerate() {
             for position in 0..module.anonymous_statements.len() {
-                self.project_anonymous_statement(module_index, position);
+                match self.collect_anonymous(module_index, position) {
+                    Ok(entity) => collected.push(entity),
+                    Err(rejected) => {
+                        self.push_anonymous(module_index, position, rejected.outcome());
+                    }
+                }
             }
         }
         for (module_index, group) in groups {
-            self.project_group(module_index, group)?;
+            let members = group
+                .members_by_target
+                .values()
+                .copied()
+                .collect::<Vec<_>>();
+            match self.collect_group(module_index, group) {
+                Ok(entity) => collected.push(entity),
+                Err(rejected) => {
+                    let outcome = rejected.outcome();
+                    for member_index in members {
+                        self.push_member(module_index, member_index, outcome.clone());
+                    }
+                }
+            }
         }
         for (module_index, member_index) in source_matches {
-            self.project_member(module_index, member_index)?;
+            match self.collect_member(module_index, member_index) {
+                Ok(entity) => collected.push(entity),
+                Err(rejected) => self.push_member(module_index, member_index, rejected.outcome()),
+            }
         }
+        self.project_collected(collected)?;
         for (module_index, member_index) in constrained {
             let member = &modules[module_index].members[member_index];
             self.builder.lower_member_constraints_in_module_ref(
@@ -714,7 +1063,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         for (target, places) in &pin_places {
             if places.is_empty() {
                 let (module_index, member_index) = self.members[target];
-                self.push_member(module_index, member_index, Outcome::NoMatch);
+                self.push_member(module_index, member_index, Outcome::no_match());
             }
         }
         Ok(Projection {
@@ -725,6 +1074,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             anonymous: self.anonymous,
             projected: self.projected,
             pin_places,
+            templates: self.templates,
         })
     }
 
@@ -748,214 +1098,524 @@ impl<'c, 'm> Resolve<'c, 'm> {
         ));
     }
 
-    fn project_anonymous_statement(&mut self, module_index: usize, position: usize) {
+    fn collect_anonymous(
+        &self,
+        module_index: usize,
+        position: usize,
+    ) -> Result<Collected, Rejection> {
         let statement = &self.modules[module_index].anonymous_statements[position];
-        let logical_module = self.ids[module_index].clone();
+        let places = self.chunk.places();
+        let rows =
+            self.chunk
+                .matcher()
+                .anonymous_group_candidates_parsed(&self.ids[module_index], &statement.selector)
+                .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
+                .into_iter()
+                .map(|group| {
+                    let [body_idx] = group.body_indices.as_slice() else {
+                        bail!(
+                            "anonymous source_match candidate group has {} statements; projected \
+                         lowering currently supports one statement per anonymous claim",
+                            group.body_indices.len()
+                        );
+                    };
+                    let owner = places.owner_by_body.get(body_idx).copied().with_context(|| {
+                    format!(
+                        "anonymous source_match candidate at body index {body_idx} does not \
+                         map to an owner-graph node",
+                    )
+                })?;
+                    Ok(CollectedRow {
+                        places: vec![Place {
+                            owner,
+                            binding: None,
+                        }],
+                        free_bindings: group.free_bindings,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()
+                .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))?;
+        Ok(Collected {
+            module_index,
+            free: template_free_identifiers(&statement.selector),
+            shape: CollectedShape::Anonymous(position),
+            rows,
+        })
+    }
+
+    fn collect_group(&self, module_index: usize, group: Group) -> Result<Collected, Rejection> {
+        let (rows, free) =
+            self.collect_rows(module_index, &group.parsed, &group.exports_by_target)?;
+        Ok(Collected {
+            module_index,
+            free,
+            shape: CollectedShape::Group(group),
+            rows,
+        })
+    }
+
+    /// The candidate rows of `template` (without a target binding) claiming
+    /// the locals of `exports_by_target`, one place per local in key order,
+    /// and the template's free identifiers that are not claimed. A declared
+    /// local's place comes from the matcher. A free local pins by use site:
+    /// its place is the top-level declaration its identifier binds to in
+    /// that match, one row per declaring statement, and no row when it binds
+    /// nothing declared at top level or different identifiers in different
+    /// scopes.
+    fn collect_rows(
+        &self,
+        module_index: usize,
+        template: &ParsedSourceMatchSelector,
+        exports_by_target: &BTreeMap<String, String>,
+    ) -> Result<(Vec<CollectedRow>, BTreeSet<String>), Rejection> {
+        let places = self.chunk.places();
+        let matcher = self.chunk.matcher();
+        let logical_module = &self.ids[module_index];
+        let declared_names = template
+            .declared_binding_names()
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let (declared, used): (BTreeMap<_, _>, BTreeMap<_, _>) = exports_by_target
+            .iter()
+            .map(|(local, export)| (local.clone(), export.clone()))
+            .partition(|(local, _)| declared_names.contains(local));
+        let matched = if declared.is_empty() {
+            matcher
+                .anonymous_group_candidates_parsed(logical_module, template)
+                .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
+                .into_iter()
+                .map(|group| Ok((BTreeMap::new(), group.free_bindings)))
+                .collect::<Result<Vec<_>>>()
+        } else {
+            matcher
+                .member_group_candidates_parsed(logical_module, template, &declared)
+                .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
+                .into_iter()
+                .map(|candidate| {
+                    Ok((
+                        candidate
+                            .bindings
+                            .iter()
+                            .map(|(local, matched)| {
+                                Ok((local.clone(), member_place(places, matched)?))
+                            })
+                            .collect::<Result<BTreeMap<_, _>>>()?,
+                        candidate.free_bindings,
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()
+        }
+        .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))?;
+        let mut rows = Vec::new();
+        for (declared_places, free_bindings) in matched {
+            let mut partial = vec![declared_places];
+            for local in used.keys() {
+                let owners = free_bindings
+                    .get(local)
+                    .and_then(|name| places.declarations.get(name).map(|owners| (name, owners)))
+                    .into_iter()
+                    .flat_map(|(name, owners)| {
+                        owners
+                            .iter()
+                            .filter(|(_, kind)| *kind != StatementKind::Import)
+                            .map(move |(owner, _)| Place {
+                                owner: *owner,
+                                binding: Some(name.clone()),
+                            })
+                    })
+                    .collect::<Vec<_>>();
+                partial = partial
+                    .into_iter()
+                    .flat_map(|row| {
+                        owners.iter().map(move |place| {
+                            let mut row = row.clone();
+                            row.insert(local.clone(), place.clone());
+                            row
+                        })
+                    })
+                    .collect();
+            }
+            rows.extend(partial.into_iter().map(|row| CollectedRow {
+                places: row.into_values().collect(),
+                free_bindings: free_bindings.clone(),
+            }));
+        }
+        let free = template_free_identifiers(template)
+            .into_iter()
+            .filter(|name| !used.contains_key(name))
+            .collect();
+        Ok((rows, free))
+    }
+
+    fn collect_member(
+        &self,
+        module_index: usize,
+        member_index: usize,
+    ) -> Result<Collected, Rejection> {
+        let member = &self.modules[module_index].members[member_index];
+        let MemberSelector::SourceMatch(parsed) = &member.selector else {
+            unreachable!("only source_match members are collected");
+        };
+        if let Some(local) = &parsed.selector().target_binding {
+            let template = parsed.with_target_binding(None);
+            if !template.declared_binding_names().contains(local) {
+                let (rows, free) = self.collect_rows(
+                    module_index,
+                    &template,
+                    &BTreeMap::from([(local.clone(), member.export_name.clone())]),
+                )?;
+                return Ok(Collected {
+                    module_index,
+                    free,
+                    shape: CollectedShape::Member(member_index),
+                    rows,
+                });
+            }
+        }
         let places = self.chunk.places();
         let rows = self
             .chunk
             .matcher()
-            .anonymous_group_candidates_parsed(&logical_module, &statement.selector)
-            .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))
-            .and_then(|candidates| {
-                candidates
-                    .into_iter()
-                    .map(|group| {
-                        let [body_idx] = group.body_indices.as_slice() else {
-                            bail!(
-                                "anonymous source_match candidate group has {} statements; \
-                                 projected lowering currently supports one statement per \
-                                 anonymous claim",
-                                group.body_indices.len()
-                            );
-                        };
-                        places.owner_by_body.get(body_idx).copied().with_context(|| {
-                            format!(
-                                "anonymous source_match candidate at body index {body_idx} does \
-                                 not map to an owner-graph node",
-                            )
-                        })
-                    })
-                    .collect::<Result<Vec<_>>>()
-                    .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))
+            .member_candidates_parsed(&self.ids[module_index], parsed)
+            .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
+            .into_iter()
+            .map(|matched| {
+                Ok(CollectedRow {
+                    places: vec![member_place(places, &matched)?],
+                    free_bindings: matched.free_bindings,
+                })
             })
-            .and_then(Rejection::check_count);
-        match rows {
-            Ok(rows) => {
+            .collect::<Result<Vec<_>>>()
+            .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))?;
+        Ok(Collected {
+            module_index,
+            free: template_free_identifiers(parsed),
+            shape: CollectedShape::Member(member_index),
+            rows,
+        })
+    }
+
+    /// Declares and lowers every collected entity whose rows survive its
+    /// template's references: a free identifier naming an unshadowed global
+    /// keeps only rows that bound that spelling, one naming a spec entity only
+    /// rows that bound it consistently, and a name pin's only rows that bound
+    /// the pinned name. A reference to another projected entity becomes a
+    /// column of the row table on that entity's binding.
+    fn project_collected(&mut self, collected: Vec<Collected>) -> Result<()> {
+        let modules = self.modules;
+        let mut exports = BTreeMap::<&str, Vec<(usize, Referent)>>::new();
+        let mut projected_by_member = BTreeMap::new();
+        for (index, entity) in collected.iter().enumerate() {
+            for member_index in entity.member_indices() {
+                projected_by_member.insert((entity.module_index, member_index), index);
+            }
+        }
+        for (module_index, module) in modules.iter().enumerate() {
+            for (member_index, member) in module.members.iter().enumerate() {
+                let referent = match (
+                    &member.selector,
+                    projected_by_member.get(&(module_index, member_index)),
+                ) {
+                    (_, Some(index)) => Referent::Projected(*index),
+                    (MemberSelector::Binding(pin), None) => Referent::Pin {
+                        module_index,
+                        member_index,
+                        name: pin.name.clone(),
+                    },
+                    (MemberSelector::SourceMatch(_), None) => Referent::Unprojected,
+                    (_, None) => Referent::Relational {
+                        module_index,
+                        member_index,
+                    },
+                };
+                exports
+                    .entry(member.export_name.as_str())
+                    .or_default()
+                    .push((module_index, referent));
+            }
+        }
+        let shadowing = self
+            .chunk
+            .structural
+            .per_statement
+            .iter()
+            .flat_map(|statement| statement.declared.iter().map(|id| id.0.to_string()))
+            .chain(import_sources(self.chunk.module).into_keys())
+            .collect::<BTreeSet<_>>();
+
+        for (index, entity) in collected.iter().enumerate() {
+            let identifiers = entity
+                .free
+                .iter()
+                .map(|name| FreeIdentifier {
+                    name: name.clone(),
+                    meaning: match classify(name, entity.module_index, &exports, &shadowing) {
+                        Meaning::Reference(_, Referent::Projected(referenced))
+                            if referenced == index =>
+                        {
+                            IdentifierMeaning::Wildcard
+                        }
+                        Meaning::Reference(_, Referent::Unprojected) | Meaning::Wildcard => {
+                            IdentifierMeaning::Wildcard
+                        }
+                        Meaning::Reference(module_index, _) => IdentifierMeaning::Reference {
+                            entity: reference_entity(modules, name, module_index),
+                        },
+                        Meaning::Ambiguous(exporters) => IdentifierMeaning::Ambiguous {
+                            modules: module_paths(modules, &exporters),
+                        },
+                        Meaning::Global => IdentifierMeaning::Global,
+                    },
+                })
+                .collect::<Vec<_>>();
+            if !identifiers.is_empty() {
+                self.templates.push(TemplateIdentifiers {
+                    chunk: self.chunk.name.clone(),
+                    logical_module: modules[entity.module_index].path.clone(),
+                    entities: entity.entities(modules),
+                    identifiers,
+                });
+            }
+        }
+
+        // Each entity's rows narrowed by its references, or why it has none.
+        let mut narrowed = Vec::with_capacity(collected.len());
+        for (index, entity) in collected.iter().enumerate() {
+            narrowed.push(narrow_by_references(
+                index, entity, modules, &exports, &shadowing,
+            ));
+        }
+        let settled = settle_references(&collected, &mut narrowed, modules);
+        let mut targets_by_collected = BTreeMap::new();
+        for (index, (entity, narrowed)) in collected.iter().zip(&narrowed).enumerate() {
+            match narrowed {
+                Ok(_) => {
+                    targets_by_collected.insert(index, self.declare_collected(entity)?);
+                }
+                Err(rejection) => {
+                    if let CollectedShape::Anonymous(position) = entity.shape {
+                        self.push_anonymous(
+                            entity.module_index,
+                            position,
+                            rejection.clone().outcome(),
+                        );
+                    }
+                    for member_index in entity.member_indices() {
+                        self.push_member(
+                            entity.module_index,
+                            member_index,
+                            rejection.clone().outcome(),
+                        );
+                    }
+                }
+            }
+        }
+        let target_by_member = self
+            .members
+            .iter()
+            .map(|(target, member)| (*member, *target))
+            .collect::<BTreeMap<_, _>>();
+        for (index, (entity, narrowed)) in collected.into_iter().zip(narrowed).enumerate() {
+            let Ok(Narrowed {
+                rows,
+                unreferenced_rows,
+                references,
+            }) = narrowed
+            else {
+                continue;
+            };
+            let logical_module = self.ids[entity.module_index].clone();
+            let targets = targets_by_collected[&index].clone();
+            // A reference to a projected entity that survived is a column on
+            // that entity's binding; one to a pin only narrowed the rows.
+            let mut columns = Vec::new();
+            let mut column_names = Vec::new();
+            let mut referenced = Vec::new();
+            for (name, module_index, referent) in &references {
+                let target = match referent {
+                    Referent::Projected(collected_index) => {
+                        let Some(candidates) = targets_by_collected.get(collected_index) else {
+                            continue;
+                        };
+                        // A referent every row of which binds the same name
+                        // already narrowed these rows; only an open one
+                        // needs the solver.
+                        if !settled.contains_key(&(*collected_index, name.clone())) {
+                            columns.push(
+                                self.builder
+                                    .projected_binding_variable(&self.ids[*module_index], name),
+                            );
+                            column_names.push(name.clone());
+                        }
+                        candidates.iter().copied().find(|target| {
+                            let (_, member_index) = self.members[target];
+                            modules[*module_index].members[member_index].export_name == *name
+                        })
+                    }
+                    Referent::Pin {
+                        module_index,
+                        member_index,
+                        ..
+                    } => target_by_member
+                        .get(&(*module_index, *member_index))
+                        .copied(),
+                    Referent::Relational {
+                        module_index,
+                        member_index,
+                    } => {
+                        columns.push(
+                            self.builder
+                                .relational_binding_variable(&self.ids[*module_index], name),
+                        );
+                        column_names.push(name.clone());
+                        target_by_member
+                            .get(&(*module_index, *member_index))
+                            .copied()
+                    }
+                    Referent::Unprojected => continue,
+                };
+                referenced.push((name.clone(), *module_index, target));
+            }
+            // Rows without repeats, telling rows apart by their places and
+            // their column values.
+            let key = |at: usize| {
+                (
+                    &rows[at].places,
+                    column_names
+                        .iter()
+                        .map(|name| &rows[at].free_bindings[name])
+                        .collect::<Vec<_>>(),
+                )
+            };
+            let mut distinct = Vec::<usize>::new();
+            for at in 0..rows.len() {
+                if !distinct.iter().any(|seen| key(*seen) == key(at)) {
+                    distinct.push(at);
+                }
+            }
+            self.projected.push(Projected {
+                targets,
+                rows: distinct.iter().map(|at| rows[*at].places.clone()).collect(),
+                references: referenced
+                    .into_iter()
+                    .map(|(name, module_index, target)| Reference {
+                        entity: reference_entity(modules, &name, module_index),
+                        target,
+                        values: distinct
+                            .iter()
+                            .map(|at| rows[*at].free_bindings[&name].clone())
+                            .collect(),
+                    })
+                    .collect(),
+                unreferenced_rows,
+            });
+            let table = distinct
+                .iter()
+                .map(|at| {
+                    (
+                        rows[*at].places.clone(),
+                        column_names
+                            .iter()
+                            .map(|name| rows[*at].free_bindings[name].clone())
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            match &entity.shape {
+                CollectedShape::Member(member_index) => {
+                    let export_name =
+                        &modules[entity.module_index].members[*member_index].export_name;
+                    self.builder.lower_projected_source_match_candidates(
+                        &logical_module,
+                        export_name,
+                        &columns,
+                        table
+                            .into_iter()
+                            .map(|(places, referenced)| (bound(&places[0]), referenced))
+                            .collect(),
+                    );
+                }
+                CollectedShape::Group(group) => {
+                    self.builder.lower_projected_source_match_group_candidates(
+                        &logical_module,
+                        &group.exports_by_target,
+                        &columns,
+                        table
+                            .into_iter()
+                            .map(|(places, referenced)| {
+                                (places.iter().map(bound).collect(), referenced)
+                            })
+                            .collect(),
+                    );
+                }
+                CollectedShape::Anonymous(position) => {
+                    self.builder.lower_projected_anonymous_statement_candidates(
+                        &logical_module,
+                        modules[entity.module_index].anonymous_statements[*position].index,
+                        &columns,
+                        table
+                            .into_iter()
+                            .map(|(places, referenced)| (places[0].owner, referenced))
+                            .collect(),
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Declares `entity`'s targets, in row-place order.
+    fn declare_collected(&mut self, entity: &Collected) -> Result<Vec<SelectorTargetId>> {
+        let logical_module = self.ids[entity.module_index].clone();
+        let module = &self.modules[entity.module_index];
+        let mut targets = Vec::new();
+        match &entity.shape {
+            CollectedShape::Member(member_index) => {
+                let member = &module.members[*member_index];
+                let target = self.builder.declare_member_target_in_module_ref(
+                    &logical_module,
+                    &member.export_name,
+                    member.selector.spec_ref(),
+                )?;
+                self.members
+                    .insert(target, (entity.module_index, *member_index));
+                targets.push(target);
+            }
+            CollectedShape::Group(group) => {
+                for (target_binding, member_index) in &group.members_by_target {
+                    let member = &module.members[*member_index];
+                    let target = self
+                        .builder
+                        .declare_binding_group_member_target_in_module_ref(
+                            &logical_module,
+                            &member.export_name,
+                            target_binding,
+                            member.selector.spec_ref(),
+                        )?;
+                    self.members
+                        .insert(target, (entity.module_index, *member_index));
+                    targets.push(target);
+                }
+            }
+            CollectedShape::Anonymous(position) => {
                 let target = self
                     .builder
                     .declare_projected_anonymous_statement_target_in_module(
                         &logical_module,
-                        statement.index,
-                        rows.clone(),
+                        module.anonymous_statements[*position].index,
                     );
-                self.anonymous.push((target, module_index, position));
-                self.projected.push(
-                    Projected {
-                        targets: vec![target],
-                        rows: rows
-                            .into_iter()
-                            .map(|owner| {
-                                vec![Place {
-                                    owner,
-                                    binding: None,
-                                }]
-                            })
-                            .collect(),
-                    }
-                    .deduped(),
-                );
+                self.anonymous
+                    .push((target, entity.module_index, *position));
+                targets.push(target);
             }
-            Err(rejected) => self.push_anonymous(module_index, position, rejected.outcome()),
         }
-    }
-
-    fn project_group(&mut self, module_index: usize, group: Group) -> Result<()> {
-        let logical_module = self.ids[module_index].clone();
-        let places = self.chunk.places();
-        let rows = self
-            .chunk
-            .matcher()
-            .member_group_candidates_parsed(
-                &logical_module,
-                &group.parsed,
-                &group.exports_by_target,
-            )
-            .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))
-            .and_then(|candidates| {
-                candidates
-                    .into_iter()
-                    .map(|candidate| {
-                        candidate
-                            .bindings
-                            .iter()
-                            .map(|(target_binding, matched)| {
-                                member_place(places, matched)
-                                    .map(|place| (target_binding.clone(), place))
-                            })
-                            .collect::<Result<BTreeMap<_, _>>>()
-                    })
-                    .collect::<Result<Vec<_>>>()
-                    .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))
-            })
-            .and_then(Rejection::check_count);
-        let rows = match rows {
-            Ok(rows) => rows,
-            Err(rejected) => {
-                let outcome = rejected.outcome();
-                for member_index in group.members_by_target.values() {
-                    self.push_member(module_index, *member_index, outcome.clone());
-                }
-                return Ok(());
-            }
-        };
-        let mut targets = Vec::new();
-        for (target_binding, member_index) in &group.members_by_target {
-            let member = &self.modules[module_index].members[*member_index];
-            let target = self
-                .builder
-                .declare_binding_group_member_target_in_module_ref(
-                    &logical_module,
-                    &member.export_name,
-                    target_binding,
-                    member.selector.spec_ref(),
-                )?;
-            self.members.insert(target, (module_index, *member_index));
-            targets.push(target);
-        }
-        self.projected.push(
-            Projected {
-                targets,
-                rows: rows
-                    .iter()
-                    .map(|row| {
-                        row.values()
-                            .map(|(owner, binding)| Place {
-                                owner: *owner,
-                                binding: Some(binding.clone()),
-                            })
-                            .collect()
-                    })
-                    .collect(),
-            }
-            .deduped(),
-        );
-        self.builder.lower_projected_source_match_group_candidates(
-            &logical_module,
-            &group.exports_by_target,
-            rows,
-        );
-        Ok(())
-    }
-
-    fn project_member(&mut self, module_index: usize, member_index: usize) -> Result<()> {
-        let logical_module = self.ids[module_index].clone();
-        let member = &self.modules[module_index].members[member_index];
-        let MemberSelector::SourceMatch(parsed) = &member.selector else {
-            unreachable!("only source_match members are projected");
-        };
-        let places = self.chunk.places();
-        let rows = self
-            .chunk
-            .matcher()
-            .member_candidates_parsed(&logical_module, parsed)
-            .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))
-            .and_then(|candidates| {
-                candidates
-                    .iter()
-                    .map(|matched| member_place(places, matched))
-                    .collect::<Result<Vec<_>>>()
-                    .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))
-            })
-            .and_then(Rejection::check_count);
-        let rows = match rows {
-            Ok(rows) => rows,
-            Err(rejected) => {
-                self.push_member(module_index, member_index, rejected.outcome());
-                return Ok(());
-            }
-        };
-        let target = self.builder.declare_member_target_in_module_ref(
-            &logical_module,
-            &member.export_name,
-            member.selector.spec_ref(),
-        )?;
-        self.projected.push(
-            Projected {
-                targets: vec![target],
-                rows: rows
-                    .iter()
-                    .map(|(owner, binding)| {
-                        vec![Place {
-                            owner: *owner,
-                            binding: Some(binding.clone()),
-                        }]
-                    })
-                    .collect(),
-            }
-            .deduped(),
-        );
-        self.builder.lower_projected_source_match_candidates(
-            &logical_module,
-            &member.export_name,
-            rows,
-        );
-        self.members.insert(target, (module_index, member_index));
-        Ok(())
+        Ok(targets)
     }
 
     /// Each name pin's places: the top-level statements declaring its name,
     /// of its kind when it names one.
     fn pin_places(&self) -> BTreeMap<SelectorTargetId, BTreeSet<Place>> {
-        let mut declarations = BTreeMap::<&str, Vec<(OwnerId, StatementKind)>>::new();
-        for statement in &self.chunk.structural.per_statement {
-            for binding in &statement.declared {
-                declarations
-                    .entry(binding.0.as_str())
-                    .or_default()
-                    .push((OwnerId(statement.ordinal.0), statement.kind));
-            }
-        }
+        let declarations = &self.chunk.places().declarations;
         self.members
             .iter()
             .filter_map(|(target, (module_index, member_index))| {
@@ -1044,7 +1704,7 @@ impl Projection {
         modules: &[SpecModule],
         result: &SolverResult,
     ) -> Result<Resolution> {
-        let eliminated = self.eliminations(result);
+        let resolved_by = self.resolved_by(result);
         let Self {
             ids,
             program,
@@ -1052,6 +1712,7 @@ impl Projection {
             members,
             anonymous,
             pin_places,
+            templates,
             ..
         } = self;
         let module = chunk.module;
@@ -1060,7 +1721,7 @@ impl Projection {
                 Some(ClaimOutcome::Unique { claim }) => Outcome::Resolved {
                     owner: claim_candidate(module, claim)?.owner,
                     binding: None,
-                    resolved_by: resolved_by(&eliminated, target),
+                    resolved_by: how_resolved(&resolved_by, target),
                 },
                 Some(ClaimOutcome::Duplicate {
                     owner,
@@ -1097,7 +1758,7 @@ impl Projection {
                     Outcome::Resolved {
                         owner,
                         binding,
-                        resolved_by: resolved_by(&eliminated, target),
+                        resolved_by: how_resolved(&resolved_by, target),
                     }
                 }
                 Some(ClaimOutcome::Duplicate {
@@ -1125,14 +1786,18 @@ impl Projection {
                 outcome,
             ));
         }
-        Ok(Resolution { outcomes })
+        Ok(Resolution {
+            outcomes,
+            templates,
+        })
     }
 
-    /// The claimers of every target resolved by elimination: a projected
-    /// entity with several candidate rows of which exactly one survives
-    /// dropping every row whose owner or binding another exclusive target's
-    /// solved value holds.
-    fn eliminations(&self, result: &SolverResult) -> BTreeMap<SelectorTargetId, Vec<EntityRef>> {
+    /// How each resolved projected target was made unique, where not by its
+    /// own selector: of the rows that agree with the solved bindings of the
+    /// entities its template references, exactly one (by its references), or
+    /// exactly one no other exclusive target's solved claim takes (by
+    /// elimination).
+    fn resolved_by(&self, result: &SolverResult) -> BTreeMap<SelectorTargetId, ResolvedBy> {
         let mut exclusive = self
             .program
             .all_different
@@ -1151,31 +1816,86 @@ impl Projection {
                 exclusive.extend(entity.targets.iter().copied());
             }
         }
-        let mut eliminated = BTreeMap::new();
+        let solved_binding = |target: SelectorTargetId| match result.outcome_for(target) {
+            Some(ClaimOutcome::Unique { claim }) => claim.binding.as_deref(),
+            _ => None,
+        };
+        let mut resolved = BTreeMap::new();
         for entity in &self.projected {
-            if let Some(claimers) = elimination_claimers(entity, result, &exclusive) {
-                let claimers = target_entity_refs(&self.program, &claimers);
+            if entity.unreferenced_rows < 2
+                || !entity.targets.iter().all(|target| {
+                    matches!(
+                        result.outcome_for(*target),
+                        Some(ClaimOutcome::Unique { .. })
+                    )
+                })
+            {
+                continue;
+            }
+            let agreeing = (0..entity.rows.len())
+                .filter(|at| {
+                    entity.references.iter().all(|reference| {
+                        reference
+                            .target
+                            .and_then(solved_binding)
+                            .is_none_or(|binding| reference.values[*at] == binding)
+                    })
+                })
+                .map(|at| &entity.rows[at])
+                .collect::<Vec<_>>();
+            let distinct = agreeing.iter().collect::<BTreeSet<_>>().len();
+            let how = if !entity.references.is_empty() && distinct == 1 {
+                Some(ResolvedBy::OwnReferences {
+                    references: entity
+                        .references
+                        .iter()
+                        .map(|reference| reference.entity.clone())
+                        .collect(),
+                })
+            } else {
+                elimination_claimers(&agreeing, &entity.targets, result, &exclusive)
+                    .map(|claimers| ResolvedBy::Elimination {
+                        claimers: target_entity_refs(&self.program, &claimers),
+                    })
+                    .or_else(|| {
+                        // Several of its places survive every claim, yet it
+                        // resolved: a template naming it picked one.
+                        let referrers = self
+                            .projected
+                            .iter()
+                            .filter(|referrer| {
+                                referrer.references.iter().any(|reference| {
+                                    reference
+                                        .target
+                                        .is_some_and(|target| entity.targets.contains(&target))
+                                })
+                            })
+                            .flat_map(|referrer| referrer.targets.iter().copied())
+                            .collect::<BTreeSet<_>>();
+                        (!referrers.is_empty()).then(|| ResolvedBy::ReferencedBy {
+                            referrers: target_entity_refs(&self.program, &referrers),
+                        })
+                    })
+            };
+            if let Some(how) = how {
                 for target in &entity.targets {
-                    eliminated.insert(*target, claimers.clone());
+                    resolved.insert(*target, how.clone());
                 }
             }
         }
-        eliminated
+        resolved
     }
 }
 
-/// How `target`, resolved, was made unique, given the claimers of every
-/// target [`Projection::eliminations`] found.
-fn resolved_by(
-    eliminated: &BTreeMap<SelectorTargetId, Vec<EntityRef>>,
+/// How `target`, resolved, was made unique, given [`Projection::resolved_by`].
+fn how_resolved(
+    resolved_by: &BTreeMap<SelectorTargetId, ResolvedBy>,
     target: SelectorTargetId,
 ) -> ResolvedBy {
-    match eliminated.get(&target) {
-        Some(claimers) => ResolvedBy::Elimination {
-            claimers: claimers.clone(),
-        },
-        None => ResolvedBy::OwnSelector,
-    }
+    resolved_by
+        .get(&target)
+        .cloned()
+        .unwrap_or(ResolvedBy::OwnSelector)
 }
 
 /// The prefix of an `invalid` outcome whose matcher failed.
@@ -1184,9 +1904,11 @@ const MATCHER_ERROR: &str = "shape_matcher_error";
 const OWNER_MAPPING_ERROR: &str = "projection_owner_mapping_error";
 
 /// Why a `source_match` was rejected before the solve.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Rejection {
     NoCandidates,
+    /// Its matches all disagree with where these referenced entities are.
+    Conflict(Vec<EntityRef>),
     TooBroad(usize),
     Invalid(String),
 }
@@ -1214,17 +1936,236 @@ impl Rejection {
 
     fn outcome(self) -> Outcome {
         match self {
-            Self::NoCandidates => Outcome::NoMatch,
+            Self::NoCandidates => Outcome::no_match(),
+            Self::Conflict(with) => Outcome::Conflict { with },
             Self::TooBroad(count) => Outcome::too_broad(count),
             Self::Invalid(error) => Outcome::Invalid { error },
         }
     }
 }
 
-fn member_place(
-    places: &Places,
-    matched: &source_match::MemberBindingMatch,
-) -> Result<(OwnerId, String)> {
+/// A collected entity's rows once its template's references narrowed them.
+struct Narrowed {
+    rows: Vec<CollectedRow>,
+    /// Distinct rows before any spec-entity reference narrowed them.
+    unreferenced_rows: usize,
+    /// Each free identifier naming a spec entity: the name, the module that
+    /// exports it, and what it names.
+    references: Vec<(String, usize, Referent)>,
+}
+
+/// Classifies `entity`'s free identifiers and narrows its rows by them. A
+/// name exported in the entity's own module names that export; otherwise a
+/// name exported by exactly one module names it, and one exported by several
+/// is an authoring error. A name no module exports that spells a runtime
+/// global the chunk does not shadow matches only itself. Any other name
+/// stays a wildcard.
+fn narrow_by_references(
+    index: usize,
+    entity: &Collected,
+    modules: &[SpecModule],
+    exports: &BTreeMap<&str, Vec<(usize, Referent)>>,
+    shadowing: &BTreeSet<String>,
+) -> Result<Narrowed, Rejection> {
+    let mut globals = Vec::new();
+    let mut references = Vec::new();
+    for name in &entity.free {
+        match classify(name, entity.module_index, exports, shadowing) {
+            Meaning::Reference(_, Referent::Projected(referenced)) if referenced == index => {}
+            Meaning::Reference(module_index, referent) => {
+                references.push((name.clone(), module_index, referent));
+            }
+            Meaning::Ambiguous(exporters) => {
+                return Err(Rejection::Invalid(format!(
+                    "ambiguous_reference: template identifier `{name}` is exported by modules \
+                     {}; rename it in the template or rename one export",
+                    module_paths(modules, &exporters).join(", ")
+                )));
+            }
+            Meaning::Global => globals.push(name),
+            Meaning::Wildcard => {}
+        }
+    }
+    let candidates = entity
+        .rows
+        .iter()
+        .filter(|row| {
+            globals
+                .iter()
+                .all(|global| row.free_bindings.get(*global) == Some(*global))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let unreferenced_rows = candidates
+        .iter()
+        .map(|row| &row.places)
+        .collect::<BTreeSet<_>>()
+        .len();
+    // A referenced name the row does not report bound different chunk
+    // identifiers in different scopes of the match: no one entity.
+    let rows = candidates
+        .iter()
+        .filter(|row| {
+            references.iter().all(|(name, _, referent)| match referent {
+                Referent::Unprojected => true,
+                Referent::Pin { name: pinned, .. } => row.free_bindings.get(name) == Some(pinned),
+                Referent::Projected(_) | Referent::Relational { .. } => {
+                    row.free_bindings.contains_key(name)
+                }
+            })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if rows.is_empty() {
+        let with = references
+            .iter()
+            .filter(|(name, _, referent)| {
+                matches!(referent, Referent::Pin { name: pinned, .. }
+                    if candidates.iter().all(|row| row.free_bindings.get(name) != Some(pinned)))
+            })
+            .map(|(name, module_index, _)| reference_entity(modules, name, *module_index))
+            .collect::<Vec<_>>();
+        if !with.is_empty() {
+            return Err(Rejection::Conflict(with));
+        }
+    }
+    Ok(Narrowed {
+        rows: Rejection::check_count(rows)?,
+        unreferenced_rows,
+        references,
+    })
+}
+
+/// What a free template identifier of a template in module `module_index`
+/// means (<../SPEC.md> § Matching).
+enum Meaning {
+    /// The spec entity exported under that name, and the module exporting it.
+    Reference(usize, Referent),
+    /// Exported by these modules, none of them the template's own.
+    Ambiguous(Vec<usize>),
+    Global,
+    Wildcard,
+}
+
+fn classify(
+    name: &str,
+    module_index: usize,
+    exports: &BTreeMap<&str, Vec<(usize, Referent)>>,
+    shadowing: &BTreeSet<String>,
+) -> Meaning {
+    match exports.get(name).map(Vec::as_slice) {
+        Some(named) => match (
+            named.iter().find(|(exporter, _)| *exporter == module_index),
+            named,
+        ) {
+            (Some((exporter, referent)), _) | (None, [(exporter, referent)]) => {
+                Meaning::Reference(*exporter, referent.clone())
+            }
+            (None, several) => {
+                Meaning::Ambiguous(several.iter().map(|(exporter, _)| *exporter).collect())
+            }
+        },
+        None if JS_GLOBALS.contains(&name) && !shadowing.contains(name) => Meaning::Global,
+        None => Meaning::Wildcard,
+    }
+}
+
+fn module_paths(modules: &[SpecModule], indices: &[usize]) -> Vec<String> {
+    indices
+        .iter()
+        .map(|index| modules[*index].path.clone())
+        .collect()
+}
+
+/// Narrows every entity's rows by the references whose referent every one of
+/// its own rows already places at one binding, until nothing changes, and
+/// returns those settled bindings by (collected entity, export name). Only
+/// references to entities still open after this reach the solver, so
+/// entities referencing a settled one stay in small groups.
+fn settle_references(
+    collected: &[Collected],
+    narrowed: &mut [Result<Narrowed, Rejection>],
+    modules: &[SpecModule],
+) -> BTreeMap<(usize, String), String> {
+    loop {
+        let mut settled = BTreeMap::new();
+        for (index, (entity, narrowed)) in collected.iter().zip(narrowed.iter()).enumerate() {
+            let Ok(narrowed) = narrowed else {
+                continue;
+            };
+            for (position, export_name) in entity.export_names(modules).into_iter().enumerate() {
+                let bindings = narrowed
+                    .rows
+                    .iter()
+                    .map(|row| &row.places[position].binding)
+                    .collect::<BTreeSet<_>>();
+                if let [Some(binding)] = bindings.into_iter().collect::<Vec<_>>().as_slice() {
+                    settled.insert((index, export_name), binding.clone());
+                }
+            }
+        }
+        let mut changed = false;
+        for entry in narrowed.iter_mut() {
+            let Ok(narrowed) = entry else {
+                continue;
+            };
+            let Narrowed {
+                rows, references, ..
+            } = narrowed;
+            let agrees = |row: &CollectedRow, name: &String, referent: &Referent| match referent {
+                Referent::Projected(referenced) => settled
+                    .get(&(*referenced, name.clone()))
+                    .is_none_or(|binding| row.free_bindings.get(name) == Some(binding)),
+                _ => true,
+            };
+            let with = references
+                .iter()
+                .filter(|(name, _, referent)| !rows.iter().any(|row| agrees(row, name, referent)))
+                .map(|(name, module_index, _)| reference_entity(modules, name, *module_index))
+                .collect::<Vec<_>>();
+            let before = rows.len();
+            rows.retain(|row| {
+                references
+                    .iter()
+                    .all(|(name, _, referent)| agrees(row, name, referent))
+            });
+            if rows.len() != before {
+                changed = true;
+                if rows.is_empty() {
+                    *entry = Err(if with.is_empty() {
+                        Rejection::NoCandidates
+                    } else {
+                        Rejection::Conflict(with)
+                    });
+                }
+            }
+        }
+        if !changed {
+            return settled;
+        }
+    }
+}
+
+/// The spec entity `name` names in `modules[module_index]`.
+fn reference_entity(modules: &[SpecModule], name: &str, module_index: usize) -> EntityRef {
+    EntityRef {
+        logical_module: modules[module_index].path.clone(),
+        entity: Some(Entity::Export(name.to_string())),
+    }
+}
+
+/// A member place as the lowering takes it: its owner and binding.
+fn bound(place: &Place) -> (OwnerId, String) {
+    (
+        place.owner,
+        place
+            .binding
+            .clone()
+            .expect("a member's place names the binding it claims"),
+    )
+}
+
+fn member_place(places: &Places, matched: &source_match::MemberBindingMatch) -> Result<Place> {
     let binding = matched.binding.binding_name.clone();
     let owner = places
         .owner_by_body_and_binding
@@ -1237,7 +2178,10 @@ fn member_place(
                 matched.body_idx
             )
         })?;
-    Ok((owner, binding))
+    Ok(Place {
+        owner,
+        binding: Some(binding),
+    })
 }
 
 /// A module's `source_match` members grouped by shared template: members
@@ -1294,29 +2238,23 @@ fn source_match_groups(module: &SpecModule) -> Vec<Group> {
     groups.into_iter().map(|(_, group)| group).collect()
 }
 
-/// The targets whose solved claims made `entity` unique: `Some` when it had
-/// several candidate rows and exactly one survives dropping every row whose
-/// owner or binding another exclusive target's solved value holds. `exclusive`
-/// are the targets the solve keeps on distinct owners; a claim by any other
-/// target never took a row away.
+/// The targets whose solved claims made an entity unique: `Some` when it has
+/// several candidate `rows` and exactly one survives dropping every row whose
+/// owner or binding another exclusive target's solved value holds.
+/// `exclusive` are the targets the solve keeps on distinct owners; a claim by
+/// any other target never took a row away.
 fn elimination_claimers(
-    entity: &Projected,
+    rows: &[&Vec<Place>],
+    targets: &[SelectorTargetId],
     result: &SolverResult,
     exclusive: &BTreeSet<SelectorTargetId>,
 ) -> Option<BTreeSet<SelectorTargetId>> {
-    if entity.rows.len() < 2
-        || !entity.targets.iter().all(|target| {
-            matches!(
-                result.outcome_for(*target),
-                Some(ClaimOutcome::Unique { .. })
-            )
-        })
-    {
+    if rows.len() < 2 {
         return None;
     }
     let other_claims = exclusive
         .iter()
-        .filter(|target| !entity.targets.contains(target))
+        .filter(|target| !targets.contains(target))
         .filter_map(|target| match result.outcome_for(*target) {
             Some(ClaimOutcome::Unique { claim }) => Some((*target, claim)),
             _ => None,
@@ -1324,7 +2262,7 @@ fn elimination_claimers(
         .collect::<Vec<_>>();
     let mut survivors = 0;
     let mut claimers = BTreeSet::new();
-    for row in &entity.rows {
+    for row in rows {
         let takers = other_claims
             .iter()
             .filter(|(_, claim)| {
@@ -1365,7 +2303,7 @@ fn claim_outcome(
     outcome: &ClaimOutcome,
 ) -> Result<Outcome> {
     Ok(match outcome {
-        ClaimOutcome::NoMatch => Outcome::NoMatch,
+        ClaimOutcome::NoMatch => Outcome::no_match(),
         ClaimOutcome::Conflict { with } => Outcome::Conflict {
             with: target_entity_refs(program, with),
         },

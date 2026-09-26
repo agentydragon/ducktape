@@ -133,14 +133,17 @@ not for the web log endpoints. Start a temporary web session with the same crede
 Prefer the bundled helper when you need logs:
 
 ```bash
-# List step indexes from the run page.
+# List one job's step indexes (--job: name, or zero-based index in the run's job list).
 uv run skills/forgejo/scripts/forgejo.py logs \
-  --owner "$OWNER" --repo "$REPO" --run "$RUN_NUMBER" --list-steps
+  --owner "$OWNER" --repo "$REPO" --run "$RUN_NUMBER" --job "$JOB" --list-steps
 
 # Fetch one expanded step's log.
 uv run skills/forgejo/scripts/forgejo.py logs \
-  --owner "$OWNER" --repo "$REPO" --run "$RUN_NUMBER" --step "$STEP_INDEX"
+  --owner "$OWNER" --repo "$REPO" --run "$RUN_NUMBER" --job "$JOB" --step "$STEP_INDEX"
 ```
+
+Without `--job`, a run with more than one job is refused with its job list (index, status,
+name).
 
 The helper logs in, fetches the run page, parses the page-provided `data-*` attributes, and
 posts the UI's JSON cursor payload. If `uv run` picks a stripped system interpreter (the

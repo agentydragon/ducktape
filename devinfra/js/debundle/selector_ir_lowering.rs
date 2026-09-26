@@ -18,6 +18,14 @@ use spec::{
     MemberSelectorSpec,
 };
 
+/// A projected `source_match` candidate: its place and, per reference column,
+/// the chunk identifier its template bound there.
+pub type ProjectedRow = ((analysis::OwnerId, String), Vec<String>);
+
+/// A projected `source_matches[]` candidate: one place per target binding and,
+/// per reference column, the chunk identifier its template bound there.
+pub type ProjectedGroupRow = (Vec<(analysis::OwnerId, String)>, Vec<String>);
+
 /// Context shared by every member selector lowered for one logical module.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemberSelectorLoweringContext {
@@ -54,6 +62,12 @@ pub struct MemberSelectorProgramBuilder {
     context: MemberSelectorLoweringContext,
     program: SelectorProgram,
     owners_by_export: BTreeMap<(String, String), SelectorVariableId>,
+    /// The binding each projected `source_match` export declares, by
+    /// (logical module, export name).
+    projected_bindings: BTreeMap<(String, String), SelectorVariableId>,
+    /// Each projected anonymous statement's owner variable, by logical module
+    /// and statement index.
+    projected_anonymous_owners: BTreeMap<(String, usize), SelectorVariableId>,
     global_owner_by_export: BTreeMap<String, Option<SelectorVariableId>>,
     targeted_owners: BTreeMap<SelectorVariableId, String>,
     injective_targeted_owners: BTreeSet<SelectorVariableId>,
@@ -99,6 +113,8 @@ impl MemberSelectorProgramBuilder {
             context,
             program: SelectorProgram::default(),
             owners_by_export: BTreeMap::new(),
+            projected_bindings: BTreeMap::new(),
+            projected_anonymous_owners: BTreeMap::new(),
             global_owner_by_export: BTreeMap::new(),
             targeted_owners: BTreeMap::new(),
             injective_targeted_owners: BTreeSet::new(),
@@ -214,7 +230,6 @@ impl MemberSelectorProgramBuilder {
         &mut self,
         logical_module: impl Into<String>,
         statement_index: usize,
-        candidate_owners: Vec<analysis::OwnerId>,
     ) -> SelectorTargetId {
         let logical_module = logical_module.into();
         let owner = self.program.add_variable(
@@ -223,16 +238,8 @@ impl MemberSelectorProgramBuilder {
                 "{logical_module}::anonymous_statement.projected.{statement_index}"
             )),
         );
-        self.program.add_atom(SelectorAtom::ProjectedAllowedTuples {
-            variables: vec![owner],
-            rows: candidate_owners
-                .into_iter()
-                .map(|owner| vec![SelectorProjectedValue::Owner(owner)])
-                .collect(),
-            reason: format!(
-                "{logical_module}::anonymous_statement.source_match.projected.{statement_index}"
-            ),
-        });
+        self.projected_anonymous_owners
+            .insert((logical_module.clone(), statement_index), owner);
         self.injective_targeted_owners.insert(owner);
         self.program.add_target(
             self.context.chunk_id,
@@ -243,6 +250,37 @@ impl MemberSelectorProgramBuilder {
                 index: statement_index,
             },
         )
+    }
+
+    /// The candidate owners of an anonymous statement declared with
+    /// [`Self::declare_projected_anonymous_statement_target_in_module`], each
+    /// with the value of every `references` variable in that row.
+    pub fn lower_projected_anonymous_statement_candidates(
+        &mut self,
+        logical_module: &str,
+        statement_index: usize,
+        references: &[SelectorVariableId],
+        candidate_rows: Vec<(analysis::OwnerId, Vec<String>)>,
+    ) {
+        let owner = self.projected_anonymous_owners[&(logical_module.to_string(), statement_index)];
+        self.program.add_atom(SelectorAtom::ProjectedAllowedTuples {
+            variables: [owner]
+                .into_iter()
+                .chain(references.iter().copied())
+                .collect(),
+            rows: candidate_rows
+                .into_iter()
+                .map(|(owner, referenced)| {
+                    [SelectorProjectedValue::Owner(owner)]
+                        .into_iter()
+                        .chain(referenced.into_iter().map(SelectorProjectedValue::String))
+                        .collect()
+                })
+                .collect(),
+            reason: format!(
+                "{logical_module}::anonymous_statement.source_match.projected.{statement_index}"
+            ),
+        });
     }
 
     pub fn lower_member_constraints_in_module(
@@ -268,46 +306,96 @@ impl MemberSelectorProgramBuilder {
         self.lower_selector_atoms(logical_module, owner, selector)
     }
 
-    pub fn lower_projected_source_match_candidates(
+    /// The binding variable of projected `source_match` export `export_name`,
+    /// shared by its own candidate table and every template that references
+    /// it.
+    pub fn projected_binding_variable(
         &mut self,
         logical_module: &str,
         export_name: &str,
-        candidate_rows: Vec<(analysis::OwnerId, String)>,
-    ) {
-        let owner = self.owner_for_local_export(logical_module, export_name);
+    ) -> SelectorVariableId {
+        let key = (logical_module.to_string(), export_name.to_string());
+        if let Some(binding) = self.projected_bindings.get(&key) {
+            return *binding;
+        }
         let binding = self.program.add_variable(
             VariableDomain::String,
             Some(format!(
                 "{logical_module}::source_match.projected_binding.{export_name}"
             )),
         );
+        self.projected_bindings.insert(key, binding);
+        binding
+    }
+
+    /// The binding variable of export `export_name`, pinned by a relational
+    /// selector, for templates that reference it: the variable ranges over
+    /// the bindings its owner declares.
+    pub fn relational_binding_variable(
+        &mut self,
+        logical_module: &str,
+        export_name: &str,
+    ) -> SelectorVariableId {
+        let key = (logical_module.to_string(), export_name.to_string());
+        if let Some(binding) = self.projected_bindings.get(&key) {
+            return *binding;
+        }
+        let binding = self.projected_binding_variable(logical_module, export_name);
+        let owner = self.owner_for_local_export(logical_module, export_name);
+        self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: owner_term(owner),
+            binding: string_term(binding),
+        });
+        binding
+    }
+
+    /// Each row is a candidate place and, per `references` variable, the chunk
+    /// identifier the template bound at that reference.
+    pub fn lower_projected_source_match_candidates(
+        &mut self,
+        logical_module: &str,
+        export_name: &str,
+        references: &[SelectorVariableId],
+        candidate_rows: Vec<ProjectedRow>,
+    ) {
+        let owner = self.owner_for_local_export(logical_module, export_name);
+        let binding = self.projected_binding_variable(logical_module, export_name);
         self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: owner_term(owner),
             binding: string_term(binding),
         });
         self.program.add_atom(SelectorAtom::ProjectedAllowedTuples {
-            variables: vec![owner, binding],
+            variables: [owner, binding]
+                .into_iter()
+                .chain(references.iter().copied())
+                .collect(),
             rows: candidate_rows
                 .into_iter()
-                .map(|(owner, binding)| {
-                    vec![
+                .map(|((owner, binding), referenced)| {
+                    [
                         SelectorProjectedValue::Owner(owner),
                         SelectorProjectedValue::String(binding),
                     ]
+                    .into_iter()
+                    .chain(referenced.into_iter().map(SelectorProjectedValue::String))
+                    .collect()
                 })
                 .collect(),
             reason: format!("{logical_module}::source_match.projected.{export_name}"),
         });
     }
 
+    /// As [`Self::lower_projected_source_match_candidates`], for every
+    /// binding of one `source_matches[]` template: each row holds one place
+    /// per target binding, in `exports_by_target` order.
     pub fn lower_projected_source_match_group_candidates(
         &mut self,
         logical_module: &str,
         exports_by_target: &BTreeMap<String, String>,
-        candidate_rows: Vec<BTreeMap<String, (analysis::OwnerId, String)>>,
+        references: &[SelectorVariableId],
+        candidate_rows: Vec<ProjectedGroupRow>,
     ) {
         let mut variables = Vec::new();
-        let mut target_bindings = Vec::new();
         let injectivity_class = format!(
             "{logical_module}|source_matches.projected|{}",
             exports_by_target
@@ -316,40 +404,33 @@ impl MemberSelectorProgramBuilder {
                 .collect::<Vec<_>>()
                 .join(",")
         );
-        for (target_binding, export_name) in exports_by_target {
+        for export_name in exports_by_target.values() {
             let owner = self.owner_for_local_export(logical_module, export_name);
             self.owner_injectivity_classes
                 .insert(owner, injectivity_class.clone());
-            let binding = self.program.add_variable(
-                VariableDomain::String,
-                Some(format!(
-                    "{logical_module}::source_matches.projected_binding.{target_binding}"
-                )),
-            );
+            let binding = self.projected_binding_variable(logical_module, export_name);
             self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
                 owner: owner_term(owner),
                 binding: string_term(binding),
             });
             variables.push(owner);
             variables.push(binding);
-            target_bindings.push(target_binding.clone());
         }
+        variables.extend(references.iter().copied());
         self.program.add_atom(SelectorAtom::ProjectedAllowedTuples {
             variables,
             rows: candidate_rows
                 .into_iter()
-                .map(|row| {
-                    target_bindings
-                        .iter()
-                        .flat_map(|target_binding| {
-                            let (owner, binding) = row
-                                .get(target_binding)
-                                .expect("candidate rows should contain every group target");
+                .map(|(places, referenced)| {
+                    places
+                        .into_iter()
+                        .flat_map(|(owner, binding)| {
                             [
-                                SelectorProjectedValue::Owner(*owner),
-                                SelectorProjectedValue::String(binding.clone()),
+                                SelectorProjectedValue::Owner(owner),
+                                SelectorProjectedValue::String(binding),
                             ]
                         })
+                        .chain(referenced.into_iter().map(SelectorProjectedValue::String))
                         .collect::<Vec<_>>()
                 })
                 .collect(),

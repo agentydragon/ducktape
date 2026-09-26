@@ -108,7 +108,7 @@ common --@rules_python//python/config_settings:bootstrap_impl=script
 # Don't generate empty __init__.py stubs in runfiles. Fixes protobuf namespace
 # packages (google.*) and FreeCAD conda C extension shadowing repo-wide.
 # Must use the native flag, not the Starlark @rules_python//... config setting
-# (which is ignored in Bazel 8 — see debug/legacy-create-init-investigation.md).
+# (which is ignored in Bazel 8 — see devinfra/debug/legacy_create_init_investigation.md).
 common --incompatible_default_to_explicit_init_py
 
 # Quiet output mode — reduces progress spam for non-interactive contexts.
