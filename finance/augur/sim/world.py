@@ -82,13 +82,6 @@ type Capture = Literal["summary", "dense", "forensic"]
 _NO_REALIZATIONS = ModeledRealizations()
 
 
-def acting_agent(action: Action) -> str:
-    """The agent an action is requested on behalf of, for callers that route actions without a tracked agent."""
-    if isinstance(action, Transfer | PayClaim | Consume):
-        return action.from_account.agent_id
-    return action.agent_id
-
-
 class World:
     """One rollout's present state and the clock; nothing here is a history.
 
