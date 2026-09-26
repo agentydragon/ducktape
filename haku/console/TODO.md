@@ -134,9 +134,6 @@ together when that work resumes.
 
 ## Small cleanups
 
-- The comment above `_operator_auth_requires_canonical_public_origin` (`config.py`) describes an
-  optional standing Kubernetes authorization policy field that is not on `Settings` —
-  `kubernetes_authorization` is on `ConsoleConfigFile` in `mcp/config.py`. Delete the comment.
 - `approval_mode` (`ApprovalMode` in `haku/shared/haku/console/tool_calls.py`, mirrored on
   `mcp_approval.ToolMetadata`) conflates "which input-schema shape does the proxy tool advertise"
   (enveloped vs raw) with "does a call auto-approve". They happen to map roughly 1-1 today, but
