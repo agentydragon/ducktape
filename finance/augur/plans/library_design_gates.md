@@ -6,15 +6,9 @@ GWORLD and GMETRICS are decided below; neither is a new API specification. The
 
 ## Agreed direction
 
-The agreed cleanups still open are:
-
-1. Stop making `Scenario` / `PreparedScenario` / `CompiledRun` the mandatory way to
-   compose every financial experiment. Retain useful validation, quantization and
-   artifact import; an adapter must construct the same domain objects, not another
-   financial executor.
-2. Retire configured implicit-strategy orchestration consumer by consumer. Preserve
-   supported financial behavior and explicitly resolve differences from ordered
-   action execution before removing a reader.
+The agreed cleanup still open is to retire configured implicit-strategy
+orchestration consumer by consumer. Preserve supported financial behavior and
+explicitly resolve differences from ordered action execution before removing a reader.
 
 Do not expose arbitrary bookkeeping calls as the public API or install a universal
 component/plugin framework.
@@ -182,10 +176,6 @@ Today's callers, so the remaining work can be checked off:
   declares them onto one world per path, the `ConfiguredHousehold` tracked on it and
   `step()` to the horizon; it consults `configured_allocation.plan` for its sales, pays
   claims all or none per account and sizes exact purchases from what those leave.
-- **`Scenario`/`compile_run` authoring:** on the sim side only the tests of `compile_run`
-  itself and of the prepared-input file. Every sim, policy, product and experiment suite
-  composes its worlds, and the app lowers through the compiler's per-table pieces.
-  Leaves with RUN.
 
 ### Remaining work, in dependency order
 
@@ -195,7 +185,7 @@ parallel. Each node leaves this section when it lands.
 
 ```mermaid
 graph TD
-    RUN_GONE["RUN: delete CompiledRun, compile_run, from_run, validation.py"]
+    TLHCOHORT["TLHCOHORT: one public TLH cohort type"]
     OFFERS["OFFERS: Issuer, TenderOffer, Accept/Decline (GPE gate)"]
     DRAIN["DRAIN: emit/accept check on track(), per-month drain budget"]
     TAXCLOSE["TAXCLOSE: the tax year closes inside TaxAuthority"]
@@ -203,21 +193,17 @@ graph TD
     PROPERTY["PROPERTY: a tracked property component; rented share on tracked loans (GHOUSE)"]
     VECTOR["VECTOR: World gains a rollout axis; ActionSession and its delegates go"]
     OFFERS --> DRAIN
-    RUN_GONE --> VECTOR
 ```
 
-- **RUN.** `CompiledRun`, `PreparedScenario`, `compile_run`, `World.from_run`,
-  `ActionSession.from_run`, `MarketPath.from_run`, `sim/validation.py` and the
-  prepared-input file (`sim/artifacts.py`) are deleted with the tests whose subject
-  they are (`compiler/execution_test`'s `compile_run` cases, `artifacts_test`), and
-  with them the `Scenario` adapters over the compiler's per-table pieces
-  (`compile_tax`, `scenario_level_series_keys`, `collect_level_series_keys`,
-  `validate_series_indexed_amounts`); the prepared record types stay as the
-  declaration vocabulary. With the authored `scenario.TlhCohort` gone, `sim/tlh.py`'s
-  `TlhOpeningCohort` takes the name `TlhCohort` as the one public cohort (value at a
-  mark, cost basis, purchase month), which the Plaid source builds directly;
-  `_Cohort` stays private and uses the same `purchase_month_index` name. `SCHEMA`
-  closes here.
+- **TLHCOHORT.** `sim/tlh.py`'s `TlhOpeningCohort` becomes the one public `TlhCohort`
+  (value at a mark, cost basis, purchase month, in currency quanta) once
+  `TlhPortfolioSpec` stops carrying the authored decimal `scenario.TlhCohort`. Open:
+  the Plaid source that builds the spec knows `iso_currency_code` but no currency
+  quantum, while every other portfolio amount is quantized per request by the
+  compiler. Either the source quantizes, which needs a quantum at portfolio resolution
+  and a check against the request's, or the decimal cohort moves beside
+  `HoldingTaxLotConfig` in `api/portfolio.py` under a config name and only the sim
+  record is `TlhCohort`.
 - **OFFERS.** Gated on GPE: which compulsory events run without a tender policy, and
   when forced proceeds become spendable. Then `Issuer` emits `TenderOffer` and
   `ForcedRecovery` from the path's series, the household answers inside the month,

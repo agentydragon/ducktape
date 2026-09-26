@@ -102,7 +102,7 @@ Wide and narrow symmetry examples share one parameterized Python test.
 
 ## `rust/execution.rs`
 
-- [x] `money_crosses_the_wire_only_as_an_integer` → `sim/artifacts_test.py::test_file_decode_rejects_invalid_prepared_facts` and `sim/test_invocation.py::test_each_path_keeps_its_own_cpi_and_selected_replay_matches_the_population`
+- [x] `money_crosses_the_wire_only_as_an_integer` → `sim/test_invocation.py::test_each_path_keeps_its_own_cpi_and_selected_replay_matches_the_population` (the prepared-input file is deleted, so no money wire is left)
 
 ## `rust/ledger.rs`
 
@@ -147,8 +147,7 @@ Wide and narrow symmetry examples share one parameterized Python test.
 ## Retained coverage and evidence
 
 All 95 native declarations have Python counterparts above. Existing Python tests
-formerly under `rust/` are retained under `sim/`; artifact helpers live
-in `sim/artifacts.py`. The native source, extension, stubs and private codecs are
+formerly under `rust/` are retained under `sim/`. The native source, extension, stubs and private codecs are
 removed. This mapping preserves review traceability, not a second implementation.
 
 - Money properties and ledger/mortgage/TLH controls:

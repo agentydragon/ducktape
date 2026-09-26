@@ -10,11 +10,6 @@ The [roadmap's library cleanup slices](roadmap.md#committed-library-cleanups)
 are committed directions; composition and recording are decided in
 [the gate note](library_design_gates.md).
 
-- **SCHEMA:** the gate note's
-  [remaining-work graph](library_design_gates.md#remaining-work-in-dependency-order)
-  lists the prepared-scenario readers left to delete. Keep useful input validation,
-  exact quantization and reproducible artifacts; do not replace the giant input
-  schema with another equivalent bag.
 - **P12:** no new configured implicit strategies or experiment consumers.
 
 New domain capabilities wait only for their relevant existing financial/timing
