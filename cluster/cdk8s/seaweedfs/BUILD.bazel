@@ -87,7 +87,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/prometheus_operator:prometheusrule",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
