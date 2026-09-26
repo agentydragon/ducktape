@@ -38,3 +38,12 @@ is persisted.
 Every external Connection sees the same configured `direct_tools`, narrowed only by its
 ServiceAccount's policy. A client that should see a different set, or a workload that should see
 any, needs a per-caller selection, e.g. on the ServiceAccount or the Connection.
+
+## Direct tool calls rerun on a client retry
+
+`call_direct` (`mcp_frontend.py`) submits each call under a fresh `direct-<uuid>` idempotency key,
+and a policy approves it at admission, so a client that loses the response and calls again runs the
+Action again: a second sandbox from `create`, a second run of `exec`. Unlike a `request_action`
+caller, it holds no key to find the first request by. Options: take an optional caller key from the
+call's `_meta`, or answer a repeat of the same caller, Action and arguments within a short window
+with the first request, which would also absorb a deliberate identical repeat.
