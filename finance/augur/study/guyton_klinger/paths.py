@@ -93,11 +93,6 @@ def annual_windows(panel: AnnualPanel, *, start_years: Sequence[int], years: int
     )
 
 
-def sleeve_targets(weights: Mapping[Sleeve, int]) -> dict[tuple[AccountId, AssetId], int]:
-    """`policy.sleeves` targets keyed by each sleeve's brokerage pool."""
-    return {(BROKERAGE, AssetId(sleeve)): weights[sleeve] for sleeve in Sleeve}
-
-
 def compose_world(windows: AnnualWindows, rollout_id: int, *, wealth: Decimal, weights: Mapping[Sleeve, int]) -> World:
     """One window's books: `wealth` split by `weights` into sleeve lots, empty checking.
 
