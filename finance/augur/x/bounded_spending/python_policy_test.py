@@ -168,7 +168,7 @@ def test_post_cashflow_review_and_ordered_claim_prefix_are_explicit() -> None:
     def compose(rollout_id: int) -> World:
         world = _books(series, rollout_id, rollout_count=1, horizon_months=1, retiree_cash=10_000)
         # Arrives when the month opens, before the review, so the request counts it.
-        world.scheduled_transfers = (
+        world.declare_flow(
             PreparedTransfer(
                 month=0,
                 cause_id="current-income",
@@ -177,7 +177,7 @@ def test_post_cashflow_review_and_ordered_claim_prefix_are_explicit() -> None:
                 amount=10_000,
                 income_category=None,
                 deduction_category=None,
-            ),
+            )
         )
         world.track(
             Biller(

@@ -90,6 +90,7 @@ cluster/k8s/haku/workspaces/app/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/alloy-otlp-bearer/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/haku-openclaw-spike/backup/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/public-coder-agent/backup/kustomization.yaml linguist-generated=true
+cluster/k8s/home-assistant/app/kustomization.yaml linguist-generated=true
 cluster/k8s/home-assistant/backup/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/app/kustomization.yaml linguist-generated=true

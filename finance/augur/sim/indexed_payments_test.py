@@ -111,7 +111,7 @@ def _compose(
     if transfer is not None:
         # A counterparty's cashflow table, not an action: the world moves it in `prepare_month`,
         # before this month's claims are assembled.
-        world.recurring_transfers = (transfer,)
+        world.declare_flow(transfer)
     return world
 
 
@@ -170,7 +170,7 @@ def _cash(book: Book, agent_id: str) -> int:
 
 def test_series_indexed_amount_cannot_fire_before_base_month() -> None:
     amount = _indexed(Decimal(1000), base_month_index=1, adjustment_period_months=12)
-    with pytest.raises(ValueError, match="indexed payment precedes its base month"):
+    with pytest.raises(ValueError, match="before base month"):
         _run(_rent_worlds(amount, [[100.0, 110.0, 120.0]], horizon_months=2))
 
 
@@ -182,7 +182,7 @@ def test_series_indexed_amount_requires_external_series_coverage() -> None:
 
 def test_series_indexed_amount_rejects_zero_base_level() -> None:
     amount = _indexed(Decimal(1000), base_month_index=0, adjustment_period_months=12)
-    with pytest.raises(ZeroDivisionError):
+    with pytest.raises(ValueError, match="zero base level"):
         _run(_rent_worlds(amount, [[0.0, 100.0]], horizon_months=1))
 
 

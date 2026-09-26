@@ -1,24 +1,46 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # cdk8s-generated (cluster/cdk8s/home_assistant/app.py).
   - home-assistant.k8s.yaml
   - break-glass-credentials.sops.yaml
   - home-location.sops.yaml
 components:
   - ./image-pins
-generatorOptions:
-  disableNameSuffixHash: true
 configMapGenerator:
   - name: home-assistant-configuration
     namespace: home-assistant
     options:
-      # The configuration is mounted with subPath; a content hash forces the
-      # Deployment to restart when this file changes.
-      disableNameSuffixHash: false
+      disableNameSuffixHash: true
     files:
       - configuration.yaml=configuration.yaml.conf
   - name: home-assistant-caddy
     namespace: home-assistant
+    options:
+      disableNameSuffixHash: true
     files:
       - Caddyfile
+  - name: home-assistant-onboarding
+    namespace: home-assistant
+    literals:
+      - |
+        settings.yaml=endpoint:
+          url: http://home-assistant.home-assistant.svc.cluster.local:8123
+          client_id: https://home.allegedly.works/
+          redirect_uri: https://home.allegedly.works/
+        owner_username: ha-local-admin
+        owner_display_name: Home Assistant Local Administrator
+        http_config:
+          server_host:
+            - 127.0.0.1
+          server_port: 8124
+          cors_allowed_origins:
+            - https://cast.home-assistant.io
+          use_x_forwarded_for: true
+          trusted_proxies:
+            - 127.0.0.1/32
+          login_attempts_threshold: -1
+          ip_ban_enabled: true
+          ssl_profile: modern
+          use_x_frame_options: true
+        core_config:
+          time_zone: America/Los_Angeles

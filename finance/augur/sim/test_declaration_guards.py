@@ -2,8 +2,9 @@
 
 Every rejection here is the declaration's own: the path admits only dense series it can read, a
 pool admits only a quote that is a price, a lot needs the pool it sits in, a bond is bought at
-par, a distribution pays whoever holds the security, and a purchase names a location and a
-funded price.
+par, a distribution pays whoever holds the security once, a purchase names a location and a
+funded price and its lifecycle follows it, a cashflow or bill falls inside the horizon on an index
+the path carries, and an issuer's protocol path stays in range.
 """
 
 from dataclasses import replace
@@ -11,6 +12,7 @@ from dataclasses import replace
 import pytest
 import pytest_bazel
 
+from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
@@ -21,15 +23,25 @@ from finance.augur.sim.prepared import (
     PreparedDistributionSlice,
     PreparedFixedAmount,
     PreparedHoldingPool,
+    PreparedIndexedAmount,
     PreparedIndexedCoupon,
     PreparedJurisdiction,
     PreparedLocation,
     PreparedLot,
+    PreparedObligation,
+    PreparedPropertyCashflow,
+    PreparedRecurringTransfer,
     PreparedSeries,
     PreparedTlhPortfolio,
     PreparedTransfer,
     _MortgageFinancing,
+    _MortgageInterestDeduction,
+    _PrimaryResidence,
+    _PrimaryResidenceEvent,
     _PropertyPurchase,
+    _PropertySale,
+    _PropertyTax,
+    _RentedFraction,
 )
 from finance.augur.sim.property import Housing
 from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome
@@ -292,6 +304,16 @@ def test_a_zero_mark_is_valid_only_where_the_asset_is_held_exclusively_through_a
         composed(prices(0, 0, 0)).declare_pool(pool())
 
 
+def cpi(*levels: int) -> PreparedSeries:
+    return PreparedSeries(series_id="inflation", snapshots=len(levels), values=levels)
+
+
+def indexed(*, series_id: str = "inflation", base_month_index: int = 0) -> PreparedIndexedAmount:
+    return PreparedIndexedAmount(
+        base_amount=1, series_id=series_id, base_month_index=base_month_index, adjustment_period_months=1
+    )
+
+
 FLOW = PreparedTransfer(
     month=0,
     cause_id="test-transfer",
@@ -311,20 +333,295 @@ FLOW = PreparedTransfer(
             replace(FLOW, income_category=InterestIncome(issuer_jurisdiction_id=TAX_HOME.jurisdiction_id)),
             "undeclared income source",
         ),
+        (replace(FLOW, month=HORIZON), "outside the horizon"),
+        (
+            PreparedRecurringTransfer(
+                start_month=1,
+                end_month=0,
+                cause_id=FLOW.cause_id,
+                from_account=FLOW.from_account,
+                to_account=FLOW.to_account,
+                amount=FLOW.amount,
+                income_category=None,
+                deduction_category=None,
+            ),
+            "before start month",
+        ),
+        (
+            PreparedPropertyCashflow(
+                month=0,
+                property_id="test-unbought",
+                cause_id=FLOW.cause_id,
+                from_account=FLOW.from_account,
+                to_account=FLOW.to_account,
+                amount=FLOW.amount,
+                income_category=None,
+                deduction_category=None,
+            ),
+            "undeclared property",
+        ),
+        (replace(FLOW, amount=indexed(series_id="rent:test-nowhere")), "missing series"),
+        (replace(FLOW, amount=indexed(base_month_index=1)), "before base month"),
     ],
-    ids=["unknown-account", "undeclared-income"],
+    ids=[
+        "unknown-account",
+        "undeclared-income",
+        "outside-horizon",
+        "ends-before-it-starts",
+        "unbought-property",
+        "unsampled-index",
+        "before-base-month",
+    ],
 )
-def test_a_scheduled_flow_moves_declared_cash_from_a_declared_income_source(
-    invalid: PreparedTransfer, match: str
+def test_a_standing_flow_moves_declared_cash_from_a_declared_income_source_inside_the_horizon(
+    invalid: PreparedTransfer | PreparedRecurringTransfer, match: str
 ) -> None:
-    world = composed()
-    world.scheduled_transfers = (FLOW,)
+    world = composed(cpi(1, 1, 1))
+    world.declare_flow(FLOW)
     world.start()
     assert world.account_balance(HOLDER, CHECKING) == 1
-    stopped = composed()
-    stopped.scheduled_transfers = (invalid,)
     with pytest.raises(ValueError, match=match):
-        stopped.start()
+        composed(cpi(1, 1, 1)).declare_flow(invalid)
+
+
+def test_an_indexed_amount_needs_a_nonzero_base_level() -> None:
+    world = composed(cpi(1, 2, 2))
+    world.declare_flow(replace(FLOW, amount=indexed()))
+    with pytest.raises(ValueError, match="zero base level"):
+        composed(cpi(0, 1, 1)).declare_flow(replace(FLOW, amount=indexed()))
+
+
+def rented(month: int, property_id: str = PURCHASE.property_id) -> _RentedFraction:
+    return _RentedFraction(month=month, property_id=property_id, rented_fraction_ppb=500_000_000)
+
+
+@pytest.mark.parametrize(
+    ("housing", "match"),
+    [
+        (Housing(purchases=(PURCHASE, PURCHASE)), "duplicate property purchase"),
+        (Housing(purchases=(replace(PURCHASE, month=HORIZON),)), "outside the horizon"),
+        (Housing(purchases=(PURCHASE,), rented_fraction_events=(rented(1, "test-unbought"),)), "unknown property"),
+        (Housing(purchases=(PURCHASE,), rented_fraction_events=(rented(0),)), "strictly after its purchase"),
+        (
+            Housing(
+                purchases=(PURCHASE,),
+                sales=(_PropertySale(month=1, property_id=PURCHASE.property_id, closing_cost_ppb=0),) * 2,
+            ),
+            "multiple sales",
+        ),
+        (
+            Housing(
+                purchases=(PURCHASE,),
+                sales=(_PropertySale(month=1, property_id=PURCHASE.property_id, closing_cost_ppb=0),),
+                rented_fraction_events=(rented(1),),
+            ),
+            "frozen after sale",
+        ),
+        (
+            Housing(
+                purchases=(PURCHASE,),
+                initial_residences=(_PrimaryResidence(agent_id=COUNTERPARTY, property_id=PURCHASE.property_id),),
+            ),
+            "did not buy it",
+        ),
+        (
+            Housing(
+                purchases=(PURCHASE,),
+                initial_residences=(_PrimaryResidence(agent_id=HOLDER, property_id=PURCHASE.property_id),) * 2,
+            ),
+            "multiple initial primary residences",
+        ),
+        (
+            Housing(
+                purchases=(PURCHASE,),
+                residence_events=(_PrimaryResidenceEvent(month=HORIZON, agent_id=HOLDER, property_id=None),),
+            ),
+            "outside the horizon",
+        ),
+        (
+            Housing(
+                purchases=(PURCHASE,),
+                residence_events=(_PrimaryResidenceEvent(month=1, agent_id=HOLDER, property_id=None),) * 2,
+            ),
+            "multiple primary residence events",
+        ),
+        (
+            Housing(
+                purchases=(PURCHASE,),
+                residence_events=(_PrimaryResidenceEvent(month=1, agent_id="test-stranger", property_id=None),),
+            ),
+            "unknown agent",
+        ),
+    ],
+    ids=[
+        "duplicate-purchase",
+        "purchase-outside-horizon",
+        "event-on-unbought-property",
+        "event-at-purchase",
+        "two-sales",
+        "event-at-sale",
+        "residence-not-bought",
+        "two-initial-residences",
+        "residence-outside-horizon",
+        "two-residence-changes",
+        "unknown-resident",
+    ],
+)
+def test_housing_is_bought_inside_the_horizon_and_its_lifecycle_follows_the_purchase(
+    housing: Housing, match: str
+) -> None:
+    composed().declare_housing(
+        Housing(
+            purchases=(PURCHASE,),
+            rented_fraction_events=(rented(1),),
+            initial_residences=(_PrimaryResidence(agent_id=HOLDER, property_id=PURCHASE.property_id),),
+        ),
+        (),
+        (LOCATION,),
+    )
+    with pytest.raises(ValueError, match=match):
+        composed().declare_housing(housing, (), (LOCATION,))
+
+
+PROPERTY_TAX = _PropertyTax(
+    property_id=PURCHASE.property_id,
+    owner_agent_id=HOLDER,
+    from_account_id=CHECKING,
+    tax_authority_agent_id=COUNTERPARTY,
+    tax_authority_account_id=CHECKING,
+    annual_tax_rate_ppb=None,
+    start_month=0,
+    end_month=None,
+)
+
+
+@pytest.mark.parametrize(
+    ("policies", "match"),
+    [
+        ((replace(PROPERTY_TAX, property_id="test-unbought"),), "unknown property"),
+        ((replace(PROPERTY_TAX, owner_agent_id=COUNTERPARTY),), "not owed by the property's buyer"),
+        ((replace(PROPERTY_TAX, start_month=1, end_month=0),), "ends before it starts"),
+        ((PROPERTY_TAX, replace(PROPERTY_TAX, start_month=1)), "overlapping property tax policies"),
+    ],
+    ids=["unbought", "not-the-buyer", "ends-before-it-starts", "overlapping"],
+)
+def test_one_property_tax_policy_at_a_time_is_owed_by_the_buyer(policies: tuple[_PropertyTax, ...], match: str) -> None:
+    composed().declare_housing(Housing(purchases=(PURCHASE,)), (PROPERTY_TAX,), (LOCATION,))
+    with pytest.raises(ValueError, match=match):
+        composed().declare_housing(Housing(purchases=(PURCHASE,)), policies, (LOCATION,))
+
+
+def test_a_deduction_is_claimed_by_an_enrolled_taxpayer() -> None:
+    with pytest.raises(ValueError, match="names no taxpayer"):
+        composed().declare_deduction(
+            _MortgageInterestDeduction(
+                liability_id=LOAN.liability_id,
+                owner_agent_id=HOLDER,
+                debt_class="acquisition",
+                per_jurisdiction_principal_cap={},
+            )
+        )
+
+
+BILL = PreparedObligation(
+    month=0,
+    obligation_id="test-bill",
+    obligation_type="cash_spend",
+    from_account=ref(HOLDER),
+    to_account=ref(COUNTERPARTY),
+    amount_due=1,
+    property_id=None,
+    deduction_category=None,
+    deductible_fraction_ppb=0,
+)
+
+
+def test_a_bill_is_due_inside_the_horizon_on_an_index_the_path_carries() -> None:
+    composed().track(Biller(BILL))
+    with pytest.raises(ValueError, match="outside the horizon"):
+        composed().track(Biller(replace(BILL, month=HORIZON)))
+    with pytest.raises(ValueError, match="missing series"):
+        composed().track(Biller(replace(BILL, amount_due=indexed())))
+
+
+def test_a_holding_pays_out_through_one_distribution() -> None:
+    world = holding_stock(payout=payouts(0, 0, 0))
+    world.declare_distribution(DISTRIBUTION)
+    with pytest.raises(ValueError, match="duplicate distribution"):
+        world.declare_distribution(DISTRIBUTION)
+
+
+MANAGED = PreparedTlhPortfolio(
+    portfolio_id="test-managed",
+    owner_agent_id=HOLDER,
+    account_id=BROKERAGE,
+    asset_id=STOCK,
+    initial_cohorts=(TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-2),),
+    assumptions=FLAT,
+)
+
+
+def test_a_managed_portfolio_has_a_declared_owner_a_price_path_and_one_manager() -> None:
+    world = composed(prices(100, 100, 100))
+    world.declare_portfolio(MANAGED)
+    with pytest.raises(ValueError, match="another manager"):
+        world.declare_portfolio(replace(MANAGED, portfolio_id="test-second"))
+    with pytest.raises(ValueError, match="unknown owner"):
+        composed(prices(100, 100, 100)).declare_portfolio(replace(MANAGED, owner_agent_id="test-stranger"))
+    with pytest.raises(ValueError, match="missing security series"):
+        composed().declare_portfolio(MANAGED)
+
+
+ISSUER = "test-issuer"
+# A channel's level when nothing about the issuer is meant to happen.
+QUIET = {
+    "mark": 1,
+    "regime": 1,
+    "event_kind": 0,
+    "sale_opportunity": 0,
+    "sale_capacity": 0,
+    "eligible": 0,
+    "forced_sale": 0,
+    "liquidity_blocked": 0,
+    "forced_recovery": 0,
+    "company_valuation": 1,
+}
+
+
+def issuer_paths(**overrides: tuple[int, ...]) -> tuple[PreparedSeries, ...]:
+    return tuple(
+        PreparedSeries(
+            series_id=f"private_equity_{channel}:{ISSUER}",
+            snapshots=HORIZON + 1,
+            values=overrides.get(channel, (level,) * (HORIZON + 1)),
+        )
+        for channel, level in QUIET.items()
+    )
+
+
+def holding_private(*series: PreparedSeries) -> None:
+    world = composed(*series)
+    asset_id = f"private_equity:{ISSUER}"
+    world.declare_pool(PreparedHoldingPool(agent_id=HOLDER, account_id=BROKERAGE, asset_id=asset_id, quantity_scale=1))
+    world.hold(replace(lot(), asset_id=asset_id, quantity_scale=1))
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"regime": (1, 5, 1)}, "invalid regime value 5 at month 1"),
+        ({"sale_capacity": (0, 0, 1_000_000_001)}, "invalid sale_capacity value"),
+        ({"event_kind": (0, 1, 0)}, "tender event and a sale opportunity in different months"),
+    ],
+    ids=["unknown-regime", "capacity-above-one", "tender-without-opportunity"],
+)
+def test_an_issuer_protocol_path_stays_in_range_and_tenders_only_with_an_opportunity(
+    overrides: dict[str, tuple[int, ...]], match: str
+) -> None:
+    holding_private(*issuer_paths())
+    holding_private(*issuer_paths(event_kind=(0, 1, 0), sale_opportunity=(0, 1, 0)))
+    with pytest.raises(ValueError, match=match):
+        holding_private(*issuer_paths(**overrides))
 
 
 if __name__ == "__main__":

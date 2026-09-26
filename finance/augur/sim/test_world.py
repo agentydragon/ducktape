@@ -533,7 +533,8 @@ def composed(run: Situation, rollout: int = 0) -> World:
         world.declare_pool(pool)
     for lot in run.initial_lots:
         world.hold(lot)
-    world.scheduled_transfers = run.scheduled_transfers
+    for flow in run.scheduled_transfers:
+        world.declare_flow(flow)
     for obligation in run.obligations:
         world.track(Biller(obligation))
     return world

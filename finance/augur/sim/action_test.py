@@ -39,7 +39,7 @@ def compose(rollout_id: int, *, obligation_id: str = "one-cent-bill") -> World:
     )
     for account, balance in ((ALICE, Decimal("0.05")), (WORLD, Decimal(0))):
         world.declare_account(PreparedAccount(account=account, opening_balance=quanta(balance)))
-    world.scheduled_transfers = (
+    world.declare_flow(
         PreparedTransfer(
             month=0,
             cause_id="opening-contribution",
@@ -48,7 +48,7 @@ def compose(rollout_id: int, *, obligation_id: str = "one-cent-bill") -> World:
             amount=quanta(Decimal("0.02")),
             income_category=None,
             deduction_category=None,
-        ),
+        )
     )
     world.track(
         Biller(
