@@ -772,33 +772,6 @@ class OperatorLoginFlow(Base):
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class OperatorAuthentikToken(Base):
-    """The acting Operator's own Authentik OAuth token, captured at browser login (offline_access).
-
-    One row per Operator. The console self-refreshes the associated token state using the
-    operator-OIDC client (injected from Settings, never stored here); the ``hostexec`` server then
-    exchanges that access token for a short-lived per-host token. The shared token state's revision
-    guards a concurrent refresh/re-login.
-    """
-
-    __tablename__ = "operator_authentik_tokens"
-
-    operator_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    token_state_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
-    token_state: Mapped[OAuthTokenState] = relationship(cascade="all, delete-orphan", single_parent=True)
-
-    __table_args__ = (
-        UniqueConstraint("token_state_id", name="uq_operator_authentik_tokens_token_state_id"),
-        ForeignKeyConstraint(
-            ["token_state_id", "operator_id"],
-            ["oauth_token_states.token_state_id", "oauth_token_states.operator_id"],
-            name="fk_operator_authentik_tokens_token_state",
-            ondelete="CASCADE",
-        ),
-    )
-
-
 class PushSubscription(Base):
     """One browser Push API subscription an Operator has granted this console.
 
