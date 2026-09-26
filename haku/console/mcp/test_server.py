@@ -38,15 +38,7 @@ from haku.console.mcp.approval import DegradedReflection, ReflectionFailureStage
 from haku.console.mcp.guidance import SERVER_INSTRUCTIONS
 from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
-from haku.console.mcp_config import (
-    ConsoleConfigFile,
-    InProcessCredentialKind,
-    InProcessServerRegistration,
-    InProcessServers,
-    const_in_process_server,
-)
-from haku.console.oauth.provider_connection import ProviderConnected, ProviderConnectionStatusResponse
-from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
+from haku.console.mcp_config import ConsoleConfigFile, InProcessServers, const_in_process_server
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
@@ -57,12 +49,12 @@ from haku.console.tool_calls import (
     ToolCallRecord,
     ToolCallStatus,
 )
-from haku.console.tools import gmail as gmail_tools, google_calendar as calendar_tools
-from haku.console.tools.google_calendar_client import CalendarEvent
 from mcp_infra.persistence import PostgresPersistence
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_sync
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
+from x.google_mcp_server import gmail as gmail_tools, google_calendar as calendar_tools
+from x.google_mcp_server.google_calendar_client import CalendarEvent
 
 
 def _in_process_backend(credential: dict[str, Any]) -> dict[str, Any]:
@@ -225,13 +217,7 @@ async def harness(migrated_db_url: str, migrated_sessions, tmp_path: Path) -> As
                         "google_calendar": ["get_event", "list_events", "list_event_instances"],
                     },
                 },
-                {
-                    "id": "managed_gmail_labels",
-                    "type": "gmail_label_namespace",
-                    "server": "gmail",
-                    "label_prefix": "haku/",
-                },
-                {"id": "haku_v1", "type": "any_of", "policies": ["transparent_reads", "managed_gmail_labels"]},
+                {"id": "haku_v1", "type": "any_of", "policies": ["transparent_reads"]},
                 {"id": _MANUAL_POLICY_ID, "type": "never"},
             ],
             "access_profiles": [
@@ -252,7 +238,7 @@ async def harness(migrated_db_url: str, migrated_sessions, tmp_path: Path) -> As
         gmail_tools.GMAIL_SERVER_ID: const_in_process_server(gmail_tools.build_mcp(gmail_client)),
         calendar_tools.GOOGLE_CALENDAR_SERVER_ID: const_in_process_server(calendar_tools.build_mcp(calendar_client)),
     }
-    app = create_app(settings, gmail_client=gmail_client, in_process_servers=in_process)
+    app = create_app(settings, in_process_servers=in_process)
     operator_identity = await resolve_operator_identity(
         migrated_sessions, issuer=settings.operator_oidc.issuer, subject="42"
     )
@@ -1147,219 +1133,6 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
         assert "echo:hi" in str(got.structured_content["result"])
 
 
-async def test_tool_surface_tracks_each_operators_connected_servers(
-    migrated_db_url: str, migrated_sessions, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config_file = _write_console_config(
-        tmp_path / "operator-tools.yaml",
-        {
-            "static_agents": _STATIC_AGENTS,
-            "operator_connection_providers": {
-                "standin_provider": {"kind": "google", "client_id": "standin-client", "client_secret": "standin-secret"}
-            },
-            "operator_connections": {
-                "standin_account": {"display_name": "Standin", "provider": "standin_provider", "scopes": ["scope"]}
-            },
-            "mcp": {
-                "servers": {
-                    "standin": {
-                        "id": "standin",
-                        "backend": _in_process_backend(
-                            {"kind": "operator_connection", "connection": "standin_account"}
-                        ),
-                    }
-                }
-            },
-        },
-    )
-    settings = console_settings(migrated_db_url, config_file=config_file)
-    standin = _standin_server()
-    app = create_app(
-        settings,
-        in_process_servers={
-            "standin": InProcessServerRegistration(
-                builder=lambda _token: standin, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
-            )
-        },
-    )
-    operator_identity = await resolve_operator_identity(
-        migrated_sessions, issuer=settings.operator_oidc.issuer, subject="42"
-    )
-    other_operator_identity = await resolve_operator_identity(
-        migrated_sessions, issuer=settings.operator_oidc.issuer, subject="99"
-    )
-    connected = {operator_identity.operator_id}
-    other_operator_id = other_operator_identity.operator_id
-
-    async def is_connected(*, connection: str, operator_id: UUID) -> bool:
-        return operator_id in connected
-
-    monkeypatch.setattr(app.state.provider_connection_store, "is_connected", is_connected)
-
-    with serve_app_sync(app) as base:
-        async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-            assert "standin__echo" in {tool.name for tool in await client.list_tools()}
-            status = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
-            assert status.structured_content is not None
-            assert status.structured_content["server"]["state"]["status"] == "alive"
-            assert status.structured_content["server"]["server_id"] == "standin"
-        async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
-            assert "standin__echo" not in {tool.name for tool in await client.list_tools()}
-            status = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
-            assert status.structured_content is not None
-            assert status.structured_content["server"]["state"]["status"] == "degraded"
-            assert status.structured_content["server"]["state"]["failure_stage"] == "credential_resolution"
-            degraded_reason = status.structured_content["server"]["state"]["degraded_reason"]
-            assert "Connect your standin_account account" in degraded_reason
-            with pytest.raises(ToolError, match="MCP server 'standin' is unavailable"):
-                await client.call_tool("standin__echo", {"input": {"text": "no"}, "rationale": "test"})
-
-        connected.clear()
-        connected.add(other_operator_id)
-        await asyncio.gather(
-            app.state.mcp_catalogs.refresh_operator(operator_identity.operator_id),
-            app.state.mcp_catalogs.refresh_operator(other_operator_id),
-        )
-
-        async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-            assert "standin__echo" not in {tool.name for tool in await client.list_tools()}
-        async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
-            assert "standin__echo" in {tool.name for tool in await client.list_tools()}
-
-
-async def test_list_mcp_servers_passively_reports_persisted_connection_state(
-    migrated_db_url: str, tmp_path: Path
-) -> None:
-    config_file = _write_console_config(
-        tmp_path / "connection-status.yaml",
-        {
-            "static_agents": _STATIC_AGENTS,
-            "operator_connection_providers": {
-                "google": {"kind": "google", "client_id": "google-client", "client_secret": "google-secret"}
-            },
-            "operator_connections": {
-                "google_workspace": {"display_name": "Google Workspace", "provider": "google", "scopes": ["scope"]}
-            },
-            "mcp": {
-                "servers": {
-                    "gmail": {
-                        "id": "gmail",
-                        "backend": _in_process_backend(
-                            {"kind": "operator_connection", "connection": "google_workspace"}
-                        ),
-                    },
-                    "routine": {"id": "routine", "backend": _in_process_backend({"kind": "none"})},
-                }
-            },
-        },
-    )
-    settings = console_settings(migrated_db_url, config_file=config_file)
-    expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1)
-    connected_at = expires_at - datetime.timedelta(days=1)
-    provider_statuses = AsyncMock(
-        return_value=ProviderConnectionStatusResponse(
-            connections=[
-                ProviderConnected(
-                    connection="google_workspace",
-                    display_name="Google Workspace",
-                    provider=ProviderConnectionKind.GOOGLE,
-                    connected_at=connected_at,
-                    token_expires_at=None,
-                    scope="openid email",
-                )
-            ]
-        )
-    )
-    provider_store = Mock(list_statuses=provider_statuses)
-    refresh_provider = AsyncMock(side_effect=AssertionError("list_mcp_servers must not refresh provider OAuth"))
-    fetch_metadata = AsyncMock(side_effect=AssertionError("list_mcp_servers must not reflect an MCP server"))
-    provider_store.access_token_for = refresh_provider
-    dispatcher = Mock(metadata=fetch_metadata)
-    context = mcp_server_module.ConsoleMcpContext(
-        settings=settings, tool_calls=Mock(), provider_store=provider_store, dispatcher=dispatcher, catalogs=Mock()
-    )
-    actor = AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
-
-    response = await mcp_server_module._passive_server_connection_statuses(context, actor)
-
-    statuses = {server.server_id: server for server in response.servers}
-    assert statuses["gmail"].model_dump(mode="json") == {
-        "server_id": "gmail",
-        "backend": {
-            "kind": "in_process",
-            "credential": {"kind": "operator_connection", "connection": "google_workspace"},
-        },
-        "connection": {
-            "connection": "google_workspace",
-            "display_name": "Google Workspace",
-            "provider": "google",
-            "status": "connected",
-            "connected_at": connected_at.isoformat().replace("+00:00", "Z"),
-            "token_expires_at": None,
-            "scope": "openid email",
-        },
-    }
-    assert statuses["routine"].model_dump(mode="json") == {
-        "server_id": "routine",
-        "backend": {"kind": "in_process", "credential": {"kind": "none"}},
-        "connection": None,
-    }
-    serialized = response.model_dump_json()
-    assert "access_token" not in serialized
-    assert "refresh_token" not in serialized
-    assert '"client_id":' not in serialized
-    assert '"client_secret":' not in serialized
-    assert "google-secret" not in serialized
-    provider_statuses.assert_called_once()
-    refresh_provider.assert_not_awaited()
-    fetch_metadata.assert_not_awaited()
-
-
-async def test_cataloged_provider_without_oauth_client_is_reflected_as_unprovisioned(
-    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config_file = _write_console_config(
-        tmp_path / "unprovisioned-provider.yaml",
-        {
-            "static_agents": _STATIC_AGENTS,
-            "operator_connection_providers": {"google_calendar": {"kind": "google"}},
-            "operator_connections": {
-                "google_calendar": {
-                    "display_name": "Google Calendar",
-                    "provider": "google_calendar",
-                    "scopes": ["https://www.googleapis.com/auth/calendar.events"],
-                }
-            },
-            "mcp": {
-                "servers": {
-                    "google_calendar": {
-                        "id": "google_calendar",
-                        "backend": _in_process_backend(
-                            {"kind": "operator_connection", "connection": "google_calendar"}
-                        ),
-                    }
-                }
-            },
-        },
-    )
-    app = create_app(console_settings(migrated_db_url, config_file=config_file))
-
-    with serve_app_sync(app) as base:
-        async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-            listed = await client.call_tool("list_mcp_servers", {})
-            probed = await client.call_tool("get_mcp_server_status", {"server_id": "google_calendar"})
-
-    assert listed.structured_content is not None
-    connection = listed.structured_content["servers"][0]["connection"]
-    assert connection["status"] == "unprovisioned"
-    assert connection["display_name"] == "Google Calendar"
-    assert probed.structured_content is not None
-    assert probed.structured_content["connection"]["connection"] == connection
-    assert probed.structured_content["server"]["state"]["status"] == "degraded"
-    assert probed.structured_content["server"]["state"]["failure_stage"] == "credential_resolution"
-    assert "not provisioned" in probed.structured_content["server"]["state"]["degraded_reason"]
-
-
 async def test_get_mcp_server_status_includes_schemas_only_when_requested(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1498,7 +1271,6 @@ async def test_tool_dispatch_reads_only_target_server_snapshot(migrated_db_url: 
         mcp_server_module.ConsoleMcpContext(
             settings=settings,
             tool_calls=app.state.tool_call_service,
-            provider_store=app.state.provider_connection_store,
             dispatcher=app.state.mcp_dispatcher,
             catalogs=catalogs,
         ),
@@ -1539,7 +1311,6 @@ async def test_operator_proxy_advertises_and_dispatches_native_arguments(migrate
         mcp_server_module.ConsoleMcpContext(
             settings=settings,
             tool_calls=app.state.tool_call_service,
-            provider_store=app.state.provider_connection_store,
             dispatcher=app.state.mcp_dispatcher,
             catalogs=catalogs,
         ),
@@ -1582,7 +1353,6 @@ async def test_targeted_dispatch_reports_a_known_degraded_server(migrated_db_url
         mcp_server_module.ConsoleMcpContext(
             settings=settings,
             tool_calls=app.state.tool_call_service,
-            provider_store=app.state.provider_connection_store,
             dispatcher=app.state.mcp_dispatcher,
             catalogs=catalogs,
         ),

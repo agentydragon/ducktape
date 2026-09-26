@@ -43,22 +43,13 @@ from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.mcp.execution import McpExecutionContext, mcp_execution_request_meta
 from haku.console.mcp.reflection_cache import ReflectedCatalog, ReflectionCache, ReflectionCacheKey
 from haku.console.mcp.tool_call_service import (
-    BackendAccountNotConnectedError,
-    ProviderConnectionTokenStore,
     ToolCallApplicationService,
     ToolCallExecutionAuthorization,
     ToolCallNotFoundError,
     ToolCallPageCursor,
     ToolCallStateConflictError,
 )
-from haku.console.mcp_config import (
-    InProcessServers,
-    McpServerEntry,
-    McpServerNotFoundError,
-    NoCredential,
-    OperatorConnectionCredential,
-    _in_process_server,
-)
+from haku.console.mcp_config import InProcessServers, McpServerEntry, McpServerNotFoundError, _in_process_server
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     AgentToolCallCaller,
@@ -841,40 +832,7 @@ def _raise_tool_call_http_error(
     raise HTTPException(status_code=status_code, detail=str(error)) from error
 
 
-async def _metadata_degradation(
-    *, operator_id: UUID, server: McpServerEntry, provider_store: ProviderConnectionTokenStore
-) -> str | None:
-    """Why reflection cannot proceed for the acting operator, or None when it can.
-
-    Deviation from `backend_auth_for_operator` (which dispatches on the same variants): a
-    missing operator-linked account degrades reflection here rather than raising, and no token is
-    resolved — the implementation owns its schemas and `tools/list` invokes no backend operation.
-    """
-    match server.backend.credential:
-        case OperatorConnectionCredential(connection=connection):
-            if not await provider_store.is_provisioned(connection=connection):
-                return (
-                    f"OAuth client for {connection} is not provisioned on this console; "
-                    "see the console deployment README."
-                )
-            if not await provider_store.is_connected(connection=connection, operator_id=operator_id):
-                return f"Connect your {connection} account in the console to use this server."
-            return None
-        case NoCredential():
-            return None
-
-
-async def metadata_for_operator(
-    *,
-    operator_id: UUID,
-    server: McpServerEntry,
-    dispatcher: McpServerDispatcher,
-    provider_store: ProviderConnectionTokenStore,
-) -> ServerReflection:
-    if (
-        reason := await _metadata_degradation(operator_id=operator_id, server=server, provider_store=provider_store)
-    ) is not None:
-        return DegradedReflection(failure_stage=ReflectionFailureStage.CREDENTIAL_RESOLUTION, degraded_reason=reason)
+async def metadata_for_operator(*, server: McpServerEntry, dispatcher: McpServerDispatcher) -> ServerReflection:
     return await dispatcher.metadata(server)
 
 
@@ -931,8 +889,6 @@ async def decide_approval(
 ) -> ApprovalDecisionResponse:
     try:
         tool_call = await service.decide(tool_call_id=tool_call_id, decision=body, actor=actor)
-    except BackendAccountNotConnectedError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
     except (McpServerNotFoundError, ToolCallNotFoundError, ToolCallStateConflictError) as error:
         _raise_tool_call_http_error(error)
     return ApprovalDecisionResponse(tool_call=tool_call)

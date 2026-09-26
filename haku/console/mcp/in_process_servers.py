@@ -1,17 +1,14 @@
 """Canonical construction of haku-console's same-process MCP servers.
 
-The registry holds *builders* (`InProcessServers`): the gmail/google_calendar servers are
-built per execution from the acting Operator's Google access token, while routine and index
-are credential-free. Trusted caller context for the profile-scoped servers travels in MCP
-request metadata. See `execution.McpExecutionContext`.
+The registry holds *builders* (`InProcessServers`): routine and index are credential-free, built
+lazily from deploy-time collaborators. Trusted caller context for the profile-scoped servers
+travels in MCP request metadata. See `execution.McpExecutionContext`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-import haku.console.tools.gmail as gmail_tools
-import haku.console.tools.google_calendar as google_calendar_tools
 import haku.console.tools.grants as grants_tools
 import haku.console.tools.recall_index as recall_index_tools
 import haku.console.tools.routine as routine_tools
@@ -40,8 +37,7 @@ class SandboxServerConfig:
 class InProcessServerDependencies:
     """Runtime collaborators for the in-process servers.
 
-    gmail/google_calendar need none (built per call from the acting Operator's token); routine is
-    registered only when its launcher is configured.
+    routine is registered only when its launcher is configured.
     """
 
     routine_launcher: routine_tools.RoutineLauncher | None = None
@@ -65,18 +61,7 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
         dependencies.recall_access_profiles, configured_index_ids=dependencies.configured_recall_index_ids
     )
     in_process_access = InProcessServerAccessPolicy(dependencies.recall_access_profiles)
-    servers: InProcessServers = {
-        gmail_tools.GMAIL_SERVER_ID: InProcessServerRegistration(
-            builder=lambda token: gmail_tools.build_mcp(gmail_tools.build_gmail_client_from_token(token)),
-            credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION,
-        ),
-        google_calendar_tools.GOOGLE_CALENDAR_SERVER_ID: InProcessServerRegistration(
-            builder=lambda token: google_calendar_tools.build_mcp(
-                google_calendar_tools.build_calendar_client_from_token(token)
-            ),
-            credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION,
-        ),
-    }
+    servers: InProcessServers = {}
     if dependencies.routine_launcher is not None:
         servers[routine_tools.HAKU_ROUTINE_SERVER_ID] = const_in_process_server(
             routine_tools.build_mcp(dependencies.routine_launcher)

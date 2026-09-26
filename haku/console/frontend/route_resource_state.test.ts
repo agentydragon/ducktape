@@ -7,8 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as client from "./client";
 import { AgentEnrollmentPanel } from "./agent_enrollment_panel";
-import { OAuthResultPage } from "./oauth_result_page";
-import type { EnrollmentView, OAuthConnectionResult } from "./client";
+import type { EnrollmentView } from "./client";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -41,15 +40,6 @@ function enrollment(overrides: Partial<EnrollmentView> = {}): EnrollmentView {
     form_token: "form-token",
     ...overrides,
   };
-}
-
-function oauthResult(overrides: Partial<OAuthConnectionResult> = {}): OAuthConnectionResult {
-  return {
-    status: "success",
-    title: "Connected",
-    message: "The connection is ready.",
-    ...overrides,
-  } as OAuthConnectionResult;
 }
 
 function withProvider(element: ReturnType<typeof createElement>) {
@@ -87,10 +77,6 @@ function renderAgent(
       )
     )
   );
-}
-
-function renderOAuth(view: ReturnType<typeof mounted>, resultId: string) {
-  act(() => view.root.render(withProvider(createElement(OAuthResultPage, { key: resultId, resultId }))));
 }
 
 function agentNameValue(view: ReturnType<typeof mounted>): string | undefined {
@@ -177,71 +163,6 @@ describe("route resource identity", () => {
       await Promise.resolve();
     });
     expect(agentNameValue(view)).toBe("New interaction");
-
-    view.unmount();
-  });
-
-  it("remounts the OAuth result resource when resultId changes", async () => {
-    const first = deferred<OAuthConnectionResult>();
-    const second = deferred<OAuthConnectionResult>();
-    const consume = vi
-      .spyOn(client, "consumeOAuthConnectionResult")
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise);
-    const view = mounted();
-
-    renderOAuth(view, "result-one");
-    await vi.waitFor(() => expect(consume).toHaveBeenCalledWith("result-one"));
-
-    renderOAuth(view, "result-two");
-    await vi.waitFor(() => expect(consume).toHaveBeenCalledWith("result-two"));
-
-    await act(async () => {
-      first.resolve(oauthResult({ title: "First result", message: "First message" }));
-      await first.promise;
-      await Promise.resolve();
-    });
-    expect(view.container.textContent).not.toContain("First result");
-    expect(view.container.textContent).not.toContain("First message");
-
-    await act(async () => {
-      second.resolve(oauthResult({ title: "Second result", message: "Second message" }));
-      await second.promise;
-    });
-    expect(view.container.textContent).toContain("Second result");
-    expect(view.container.textContent).not.toContain("First result");
-
-    view.unmount();
-  });
-
-  it("does not carry an old OAuth error into a new result", async () => {
-    const first = deferred<OAuthConnectionResult>();
-    const second = deferred<OAuthConnectionResult>();
-    const consume = vi
-      .spyOn(client, "consumeOAuthConnectionResult")
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise);
-    const view = mounted();
-
-    renderOAuth(view, "result-one");
-    await vi.waitFor(() => expect(consume).toHaveBeenCalledWith("result-one"));
-
-    renderOAuth(view, "result-two");
-    expect(view.container.textContent).not.toContain("first result failed");
-    await vi.waitFor(() => expect(consume).toHaveBeenCalledWith("result-two"));
-
-    await act(async () => {
-      first.reject(new Error("first result failed"));
-      await first.promise.catch(() => undefined);
-      await Promise.resolve();
-    });
-    expect(view.container.textContent).not.toContain("first result failed");
-
-    await act(async () => {
-      second.resolve(oauthResult({ title: "Recovered result" }));
-      await second.promise;
-    });
-    expect(view.container.textContent).toContain("Recovered result");
 
     view.unmount();
   });

@@ -10,7 +10,6 @@ import { createRoot } from "react-dom/client";
 import { AgentNamesProvider } from "../agent_names";
 import { ApprovalsEmbedPage } from "../approvals_embed_page";
 import { HakuUiEmbed } from "../haku_ui_embed";
-import { OAuthResultView } from "../oauth_result_page";
 import type { ConsoleNavigationView, ConsoleView } from "../routing";
 import { ShellChrome, type ShellChromeProps } from "../shell_chrome";
 import { hakuTheme } from "../theme";
@@ -141,29 +140,6 @@ function sceneElement(scene: string) {
       return <SessionExpiringScene />;
     case "not-found":
       return <ConsoleScene view="notFound" />;
-    case "oauth-success":
-    case "oauth-success-mobile":
-      return (
-        <OAuthResultView
-          result={{
-            status: "success",
-            title: "Connected to Google Calendar",
-            message: "The account is now available in Haku Console.",
-          }}
-          onClose={noop}
-        />
-      );
-    case "oauth-error":
-      return (
-        <OAuthResultView
-          result={{
-            status: "error",
-            title: "Couldn't connect the account",
-            message: "The authorization request expired or was superseded by a newer attempt.",
-          }}
-          onClose={noop}
-        />
-      );
     default:
       return <ConsoleScene view="embed" />;
   }

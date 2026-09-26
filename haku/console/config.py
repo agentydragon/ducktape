@@ -229,18 +229,6 @@ class McpOAuthConfig(BaseModel):
         )
 
 
-class ProviderOAuthClientConfig(BaseModel):
-    """A pre-registered OAuth client for a per-Operator provider connection.
-
-    The console runs the authorization-code + PKCE flow with this client and self-refreshes
-    the resulting per-Operator tokens. The secret lives only in the haku-console namespace
-    (Haku cannot read it) and is never persisted to the database.
-    """
-
-    client_id: str
-    client_secret: SecretStr
-
-
 class WebPushConfig(BaseModel):
     """VAPID identity for Web Push notifications of pending approvals (RFC 8292).
 

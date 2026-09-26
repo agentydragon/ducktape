@@ -246,36 +246,6 @@ kind: PrometheusRule
 metadata:
   labels:
     release: kube-prometheus-stack
-  name: haku-console-connection-alerts
-  namespace: monitoring
-spec:
-  groups:
-    - name: haku-console-connections
-      rules:
-        - alert: HakuConsoleConnectionRefreshStale
-          annotations:
-            description: |
-              The OAuth refresh for provider connection {{ $labels.connection }} ({{ $labels.provider }}) has been failing continuously for {{ $value | humanizeDuration }}. Agents reading this connection are blind and scheduled runs will report their watches as skipped rather than failing. Fix: re-authorize the connection in the console's Settings → Connections. If it re-breaks immediately, the grant was revoked upstream rather than expired.
-            summary: haku-console connection {{ $labels.connection }} has been failing to refresh for {{ $value | humanizeDuration }}
-          expr: max by (namespace, connection, provider) (haku_console_connection_refresh_failure_age_seconds) > 7200
-          for: 15m
-          labels:
-            severity: warning
-        - alert: HakuConsoleConnectionRefreshStale
-          annotations:
-            description: |
-              {{ $labels.connection }} has not refreshed successfully in over 24 hours ({{ $value | humanizeDuration }}). Re-authorize it in the console's Settings → Connections.
-            summary: haku-console connection {{ $labels.connection }} dead for over a day
-          expr: max by (namespace, connection, provider) (haku_console_connection_refresh_failure_age_seconds) > 86400
-          for: 15m
-          labels:
-            severity: critical
----
-apiVersion: monitoring.coreos.com/v1
-kind: PrometheusRule
-metadata:
-  labels:
-    release: kube-prometheus-stack
   name: mcp-auth-alerts
   namespace: monitoring
 spec:

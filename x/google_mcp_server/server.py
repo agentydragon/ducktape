@@ -1,10 +1,12 @@
-"""Bearer-protected server exposing the Gmail/Calendar tools in `haku.console.tools` for agentplane.
+"""Bearer-protected server exposing the Gmail/Calendar tools for agentplane.
 
-Reuses those tool definitions (`haku.console.tools.gmail`, `.google_calendar`) as-is, against an
-agentplane-owned Google credential -- an Airlock-minted access token read once at startup.
-Reloader restarts this pod whenever the mounted token Secret rotates (the same mechanism
-ssh-mcp/ha-mcp already rely on for their own caller-facing bearer rotation), which keeps the held
-token within Airlock's refresh margin without any custom per-call refresh logic here.
+These tool definitions (`gmail`, `google_calendar`) formerly also backed haku-console's own
+in-process `gmail`/`google_calendar` MCP servers; that wiring (and its per-Operator OAuth
+account-linking) was decommissioned, leaving this server as their only caller, so they moved
+here. Runs against an agentplane-owned Google credential -- an Airlock-minted access token read
+once at startup. Reloader restarts this pod whenever the mounted token Secret rotates (the same
+mechanism ssh-mcp/ha-mcp already rely on for their own caller-facing bearer rotation), which keeps
+the held token within Airlock's refresh margin without any custom per-call refresh logic here.
 """
 
 from __future__ import annotations
@@ -23,8 +25,8 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp
 
-from haku.console.tools import gmail as gmail_tools, google_calendar as calendar_tools
 from mcp_infra.static_bearer import StaticBearerGuard
+from x.google_mcp_server import gmail as gmail_tools, google_calendar as calendar_tools
 
 logger = logging.getLogger(__name__)
 
