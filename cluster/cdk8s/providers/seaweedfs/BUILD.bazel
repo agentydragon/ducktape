@@ -8,6 +8,7 @@
 # gazelle:resolve py seaweed_seaweed_crds //cluster/cdk8s/providers/seaweedfs:seaweed
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 cdk8s_import(
     name = "adminscript",
@@ -71,4 +72,29 @@ cdk8s_import(
     module_name = "seaweed_seaweed_crds",
     module_path = "com/seaweedfs/seaweed",
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "s3",
+    srcs = ["s3.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/providers/seaweedfs:bucket",
+        "//cluster/cdk8s/providers/seaweedfs:s3identity",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_s3",
+    srcs = ["test_s3.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":s3",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
 )
