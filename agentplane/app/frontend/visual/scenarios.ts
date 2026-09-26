@@ -22,9 +22,8 @@ export interface Scenario extends ScenarioOptions {
   preselectReconnect?: boolean;
   /** Click the nav's Settings button once it mounts: the modal has no route of its own. */
   openSettings?: boolean;
-  /** Click the sandbox Status tab's Raw switch once it mounts: no URL param toggles it, unlike the
-   * tab itself. */
-  openRawStatus?: boolean;
+  /** Click the first Raw switch once it mounts: no URL param toggles one. */
+  openRaw?: boolean;
   /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
   openActionPolicySets?: boolean;
   /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own. */
@@ -61,6 +60,8 @@ export interface Scenario extends ScenarioOptions {
   /** Answer a command POST as the app does when a runner misses its admission deadline. Without
    * this it stays unanswered, like one queued behind the browser's connection limit. */
   commandAdmissionTimedOut?: boolean;
+  /** Fail the Action group listing, which says whether a stored result is an MCP `CallToolResult`. */
+  actionGroupsUnavailable?: boolean;
   failedTurn?: "before-content" | "after-content";
 }
 
@@ -252,17 +253,34 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 390, height: 1100 },
     readySelectors: ["details"],
   },
+  // The image is an MCP result drawn as the tool answered, which also waits on the Action groups.
   actions_history: {
     element: "#app",
     route: "/actions/history",
-    viewport: { width: 1200, height: 1400 },
-    readySelectors: ["details"],
+    viewport: { width: 1200, height: 1600 },
+    readySelectors: ["details", 'img[src^="data:image/"]'],
   },
   actions_history_phone: {
     element: "#app",
     route: "/actions/history",
-    viewport: { width: 390, height: 1400 },
-    readySelectors: ["details"],
+    viewport: { width: 390, height: 1900 },
+    readySelectors: ["details", 'img[src^="data:image/"]'],
+  },
+  // The MCP result's card switched to Raw: the stored CallToolResult, image data and all.
+  actions_history_raw: {
+    element: "#app",
+    route: "/actions/history",
+    viewport: { width: 1200, height: 1600 },
+    readySelectors: ["details", 'input[type="checkbox"]:checked'],
+    openRaw: true,
+  },
+  // Without the groups nothing says which results are MCP ones: each shows as its stored JSON.
+  actions_history_groups_unavailable: {
+    element: "#app",
+    route: "/actions/history",
+    viewport: { width: 1200, height: 1400 },
+    actionGroupsUnavailable: true,
+    readySelectors: ["details", '[role="alert"]'],
   },
 
   connections: {
@@ -335,7 +353,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 900 },
     outputName: "sandbox-status-raw",
     readySelectors: [".agentplane-hljs"],
-    openRawStatus: true,
+    openRaw: true,
   },
   sandbox_status_raw_phone: {
     element: "#app",
@@ -343,7 +361,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     outputName: "sandbox-status-raw-phone",
     readySelectors: [".agentplane-hljs"],
-    openRawStatus: true,
+    openRaw: true,
   },
   // The read-only action policy: both bindings, every set state, and the three lists.
   sandbox_policy: {
