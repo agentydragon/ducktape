@@ -112,6 +112,30 @@ fix is to accept the generated enum's own casing, not bypass the generated field
 cosmetic mismatch. Reach for `add_json_patch` only once you've confirmed the field
 truly isn't reachable from the constructor at all.
 
+## Build a Kubernetes quantity from `Cpu`/`Size`, never a hand-typed string
+
+A CRD-generated resources field (`<Kind>...ResourcesRequests`/`...ResourcesLimits`, or any
+other field typed as a Kubernetes `Quantity`) only takes its value through
+`.from_string(...)`/`.from_number(...)` — there is no way to hand it `cdk8s_plus_34`'s own
+`ContainerResources`/`CpuResources`/`MemoryResources` directly, since those are
+`cdk8s_plus_34.Container`'s own types, not the CRD's. That is not a reason to fall back to a
+literal string (`"50m"`, `"512Mi"`) at the call site: build the same value
+`cdk8s_plus_34.Container` builds internally (`container.ts`'s `_toKube()`), then hand the CRD's
+constructor the resulting string instead of one hand-typed by eye.
+
+- **CPU**: `cdk8s_plus_34.Cpu.millis(50).amount` — `amount` is a public field, already the exact
+  wire string (`Cpu.units(1).amount` gives `"1"`).
+- **Memory**: `cdk8s.Size.mebibytes(512)` normalizes to whole mebibytes the same way
+  `cdk8s_plus_34.Container` does — `f"{size.to_mebibytes()}Mi"`.
+- **Ephemeral storage**: the same, in whole gibibytes — `f"{size.to_gibibytes()}Gi"` (this repo's
+  own `EphemeralStorageResources` gotcha above is this exact rounding rule, one layer up).
+
+Constructing `cdk8s_plus_34.Container`'s own `resources=` keeps passing `Cpu`/`Size` objects
+straight through (`CpuResources(request=Cpu.millis(50))`, already the established pattern
+throughout this repo, e.g. `agentplane/actions.py`) — `Container` does the extraction above
+internally. A raw CRD field has no such internal step, so the wrapper does it once, explicitly,
+rather than a caller silently retyping `"50m"` by hand at every call site.
+
 ## Don't invent a mechanism cdk8s/Kubernetes doesn't already have
 
 `cluster/cdk8s/AGENTS.md`'s boundary rule binds here too: the vocabulary is Kubernetes, cdk8s, Flux and Kustomize objects plus plain Python values — no marker annotation, "provides" declaration, registry, or record type standing in for an object. If a wrapper's design seems to need one of those, stop and ask rather than ship it.
