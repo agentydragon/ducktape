@@ -146,11 +146,14 @@ is a useful prior; deployment-specific failures and slow trajectories are the
 questions this machine can answer. Preserve the capability-ceiling lane rather than
 spending the whole program optimizing one candidate.
 
-The operator reports being subjectively happy with Flash-Next during actual use.
-That is direct evidence about this program's goal, even though it is not a blinded
-quality score. Preserve that useful configuration as the reference, prioritize a
-reliable everyday/overnight workflow, and use small checks to investigate regressions
-or choose improvements. The interrupted benchmark is not a reason to reject it.
+The operator reports that Flash-Next **completed a long, real knowledge-management
+task reasonably in OpenCode, without obvious bugs or breakages**. This is a useful
+end-to-end agent outcome, not just a favorable impression. It is operator-reported,
+not an independently scored coding task; the exact session settings have not yet
+been captured. Preserve OpenCode as the reference client and prioritize making that
+working everyday/overnight workflow reliable. Use small checks to investigate
+regressions and choose improvements. The interrupted Harbor benchmark is not a
+reason to reject a model that already did useful work.
 
 Completed here:
 
@@ -217,6 +220,10 @@ either equivalence or collapse from 1/11.
 
 First session, roughly 2–4 hours of operator-free compute as a planning budget:
 
+- Capture the working OpenCode model/provider settings, effective context/output
+  limits, reasoning handling and compaction behavior. Keep a repeatable version of
+  that successful workflow as the primary integration reference; do not make
+  Agentplane integration a prerequisite.
 - Reuse the pinned Flash Q4 checkpoint and known working llama.cpp image on SSD,
   preserving about 8 GiB free on desktop GPU0 and a bounded host-memory budget.
   Refresh free RAM before choosing the cap; the old launch gate deliberately will
