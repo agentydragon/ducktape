@@ -73,8 +73,10 @@ class ReviewForeignClone:
 type ForeignCloneClassification = PrunableForeignClone | RetainedForeignClone | ReviewForeignClone
 
 
-def _find_repo_root(path: Path) -> Path | None:
-    """Walk up from `path` to the nearest ancestor (inclusive) that is a git repository root.
+def _find_repo_root(path: Path) -> tuple[Path, pygit2.Repository] | None:
+    """Walk up from `path` to the nearest ancestor (inclusive) that is a git repository root,
+    returning it already open — the caller needs an open repository next anyway (to compare
+    remotes), so this hands that handle over instead of making the caller reopen the same path.
 
     Covers a Bazel workspace that is a *subdirectory* of a clone — a vendored third_party
     checkout built as its own Bazel workspace but not its own git repo — by resolving it to
@@ -90,10 +92,10 @@ def _find_repo_root(path: Path) -> Path | None:
         if not (git_entry.is_file() or git_entry.is_dir()):
             continue
         try:
-            pygit2.Repository(os.fspath(candidate))
+            pg = pygit2.Repository(os.fspath(candidate))
         except pygit2.GitError:
             continue
-        return candidate
+        return candidate, pg
     return None
 
 
@@ -104,19 +106,23 @@ def discover_foreign_clones(candidate_workspaces: set[Path], *, known_paths: set
     `known_paths` (a worktree of `repo` itself) is never a foreign clone — that exclusion is
     what "foreign" means here.
     """
+    repo_remotes = git_repo.remote_urls(git_repo.open_repo(repo))
     roots: set[Path] = set()
     for workspace in sorted(candidate_workspaces):
         if workspace in known_paths:
             continue
         found = _find_repo_root(workspace)
-        if found is None or found in known_paths:
+        if found is None:
             continue
-        if not git_repo.shares_a_remote(found, repo):
+        candidate_path, pg = found
+        if candidate_path in known_paths:
+            continue
+        if not git_repo.remote_urls(pg) & repo_remotes:
             continue
         try:
-            roots.add(git_repo.main_worktree(found))
+            roots.add(git_repo.main_worktree(candidate_path))
         except (OSError, subprocess.CalledProcessError) as error:
-            logger.warning("cannot resolve the main worktree of candidate clone %s: %s", found, error)
+            logger.warning("cannot resolve the main worktree of candidate clone %s: %s", candidate_path, error)
     return sorted(roots)
 
 
@@ -138,7 +144,7 @@ def classify_foreign_clone(
     if not members:
         return ReviewForeignClone(empty, "git worktree list returned nothing")
     try:
-        main = git_repo.main_ref(root)
+        main = git_repo.main_ref(git_repo.open_repo(root))
     except GitError as error:
         return ReviewForeignClone(ForeignClone(root, members), str(error))
 

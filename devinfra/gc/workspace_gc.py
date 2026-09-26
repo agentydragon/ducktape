@@ -38,7 +38,6 @@ from typing import Annotated, Any
 
 import httpx
 import humanize
-import pygit2
 import typer
 from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TaskID, TextColumn
@@ -91,7 +90,7 @@ def _repo_slug(repo: Path) -> str | None:
     GitHub-specific and `origin`-specific on purpose — this only feeds the PR API call, unlike
     `git_repo.shares_a_remote`'s host-and-remote-agnostic match used to find foreign clones.
     """
-    pg = pygit2.Repository(os.fspath(repo))
+    pg = git_repo.open_repo(repo)
     try:
         url = pg.remotes["origin"].url
     except KeyError:
@@ -365,10 +364,11 @@ def _scan(
     workers: int,
     foreign_clone_roots: Sequence[Path] = (),
 ) -> WorkspaceScan:
+    pg = git_repo.open_repo(repo)
     return workspace_scan.scan_workspace(
         repo,
-        main=git_repo.main_ref(repo),
-        default_branch=git_repo.default_branch_name(repo),
+        main=git_repo.main_ref(pg),
+        default_branch=git_repo.default_branch_name(pg),
         pr_states=prs,
         active_path=_active_worktree(repo),
         output_user_root=output_user_root,
@@ -521,7 +521,7 @@ def run_bases(
             bases = workspace_scan.annotate_bases(
                 repo,
                 bases,
-                main=git_repo.main_ref(repo),
+                main=git_repo.main_ref(git_repo.open_repo(repo)),
                 pr_states=prs,
                 active_path=_active_worktree(repo),
                 workers=workers,

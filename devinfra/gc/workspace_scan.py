@@ -19,14 +19,11 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import os
 import subprocess
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-
-import pygit2
 
 from devinfra.gc import branch_gc, foreign_clone_gc, git_repo, output_base_gc, worktree_gc
 from devinfra.gc.branch_gc import BranchClassification, Holder, MainCheckout, PrunableBranch, RetainedBranch
@@ -53,7 +50,7 @@ class WorkspaceScan:
 
 def pr_branch_candidates(repo: Path) -> set[str]:
     """Branch names worth a GitHub PR lookup: every local branch plus any checked out."""
-    pg = pygit2.Repository(os.fspath(git_repo.main_worktree(repo)))
+    pg = git_repo.open_repo(git_repo.main_worktree(repo))
     names = set(branch_gc.local_branches(pg))
     names.update(wt.branch for wt in git_repo.list_worktrees(repo) if wt.branch)
     return names
@@ -170,7 +167,7 @@ def _classify_branches(
     progress: ProgressSink,
 ) -> list[BranchClassification]:
     def make_classify_one() -> Callable[[str], BranchClassification]:
-        pg = pygit2.Repository(os.fspath(main_path))
+        pg = git_repo.open_repo(main_path)
 
         def classify_one(name: str) -> BranchClassification:
             return branch_gc.classify_branch(
@@ -308,7 +305,7 @@ def scan_workspace(
     progress: ProgressSink = NULL_PROGRESS,
 ) -> WorkspaceScan:
     main_path = git_repo.main_worktree(repo)
-    pg = pygit2.Repository(os.fspath(main_path))
+    pg = git_repo.open_repo(main_path)
 
     linked = [wt for wt in git_repo.list_worktrees(repo) if wt.path != main_path]
     logger.info("Scanning %d linked worktrees", len(linked))

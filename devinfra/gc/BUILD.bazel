@@ -65,7 +65,6 @@ py_library(
         ":pull_request",
         ":scan_progress",
         ":worktree_gc",
-        "@pypi//pygit2",
     ],
 )
 
@@ -84,7 +83,6 @@ py_library(
         ":worktree_gc",
         "@pypi//httpx",
         "@pypi//humanize",
-        "@pypi//pygit2",
         "@pypi//rich",
         "@pypi//tabulate",
         "@pypi//typer",
