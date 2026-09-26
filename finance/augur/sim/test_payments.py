@@ -22,8 +22,8 @@ from finance.augur.sim.testing.accounting import (
     RECIPIENT,
     RESERVE,
     accounting,
-    prepared_books,
-    prepared_scenario,
+    opening,
+    taxpayer,
 )
 
 
@@ -208,17 +208,8 @@ def test_funded_group_does_not_rescue_a_source_that_was_unfunded_at_preflight(bo
 
 
 def test_estimates_and_true_up_settle_the_same_annual_liability() -> None:
-    scenario = prepared_scenario()
-    profile = replace(scenario.tax_profiles[0], prior_year_tax=400)
-    scenario = replace(
-        scenario,
-        tax_profiles=(profile,),
-        accounts=tuple(
-            replace(account, opening_balance=2000) if account.account == CASH else account
-            for account in scenario.accounts
-        ),
-    )
-    books = prepared_books(scenario)
+    profile = replace(taxpayer(HOUSEHOLD), prior_year_tax=400)
+    books = accounting(opening({CASH: 2000}), (profile,))
     authority = TaxAuthority(profile)
 
     def assessed(month: int) -> Claims:

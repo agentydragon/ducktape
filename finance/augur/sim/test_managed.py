@@ -6,60 +6,48 @@ from dataclasses import replace
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Withdraw
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.holdings import gain_account
 from finance.augur.sim.managed import ComponentEffects, InterestCredit, ManagedPortfolios, basis_account
 from finance.augur.sim.money import MIN_COUNT
 from finance.augur.sim.observations import TlhPortfolioObservation
-from finance.augur.sim.prepared import CompiledRun, PreparedLot, PreparedSeries, PreparedTlhPortfolio
-from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, prepared_books, prepared_scenario
+from finance.augur.sim.prepared import PreparedLot, PreparedSeries, PreparedTlhPortfolio
+from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, INCOME_SOURCES, accounting, world_on
 from finance.augur.sim.tlh import TlhAssumptions
 from finance.augur.sim.world import World
 
+PRICES = PreparedSeries(series_id="security:test_fund", snapshots=3, values=(100, 110, 120) * 2)
+
 
 @pytest.fixture
-def run() -> CompiledRun:
-    scenario = replace(
-        prepared_scenario(),
-        horizon_months=2,
-        tlh_portfolios=(
-            PreparedTlhPortfolio(
-                portfolio_id="managed",
-                owner_agent_id=HOUSEHOLD,
+def spec() -> PreparedTlhPortfolio:
+    return PreparedTlhPortfolio(
+        portfolio_id="managed",
+        owner_agent_id=HOUSEHOLD,
+        account_id="custody",
+        asset_id="test_fund",
+        quantity_scale=1,
+        # One unit bought at 80 and priced at 100 opens the component at value 100, basis 80.
+        initial_cohorts=(
+            PreparedLot(
+                lot_id="managed-opening",
+                agent_id=HOUSEHOLD,
                 account_id="custody",
                 asset_id="test_fund",
+                purchase_month=-1,
                 quantity_scale=1,
-                # One unit bought at 80 and priced at 100 opens the component at value 100, basis 80.
-                initial_cohorts=(
-                    PreparedLot(
-                        lot_id="managed-opening",
-                        agent_id=HOUSEHOLD,
-                        account_id="custody",
-                        asset_id="test_fund",
-                        purchase_month=-1,
-                        quantity_scale=1,
-                        units=1,
-                        basis=80,
-                    ),
-                ),
-                assumptions=TlhAssumptions(
-                    peak_annual_yield=0,
-                    floor_annual_yield=0,
-                    maturity_decay_exponent=1,
-                    drawdown_sensitivity=0,
-                    short_term_fraction=1,
-                ),
+                units=1,
+                basis=80,
             ),
         ),
-    )
-    return CompiledRun(
-        currency_code="USD",
-        currency_quantum="0.01",
-        rollout_count=2,
-        scenario=scenario,
-        series=(PreparedSeries(series_id="security:test_fund", snapshots=3, values=(100, 110, 120) * 2),),
+        assumptions=TlhAssumptions(
+            peak_annual_yield=0,
+            floor_annual_yield=0,
+            maturity_decay_exponent=1,
+            drawdown_sensitivity=0,
+            short_term_fraction=1,
+        ),
     )
 
 
@@ -75,13 +63,16 @@ def opening() -> TlhPortfolioObservation:
     )
 
 
+def composed(spec: PreparedTlhPortfolio, rollout_id: int) -> World:
+    """The portfolio held on one of the two price paths."""
+    world = world_on((PRICES,), horizon_months=2, rollout_id=rollout_id, rollout_count=2)
+    world.declare_portfolio(spec)
+    return world
+
+
 @pytest.fixture
-def world(run: CompiledRun) -> World:
-    return World.from_run(run, 0)
-
-
-def books(run: CompiledRun) -> Accounting:
-    return prepared_books(run.scenario)
+def world(spec: PreparedTlhPortfolio) -> World:
+    return composed(spec, 0)
 
 
 def fingerprint(world: World) -> tuple[object, ...]:
@@ -172,27 +163,26 @@ def test_distribution_cash_uses_interest_source_not_capital_gain_journal_account
 
 
 def test_withdrawal_receipt_does_not_recalculate_component_rounded_value(
-    run: CompiledRun, opening: TlhPortfolioObservation
+    spec: PreparedTlhPortfolio, opening: TlhPortfolioObservation
 ) -> None:
-    accounting = books(run)
-    managed = ManagedPortfolios(run.scenario.income_sources, run.scenario.jurisdictions)
-    [spec] = run.scenario.tlh_portfolios
-    managed.open(accounting, spec, opening.model_copy(update={"value": 2, "reported_tax_basis": 2}))
+    books = accounting()
+    managed = ManagedPortfolios(INCOME_SOURCES, ())
+    managed.open(books, spec, opening.model_copy(update={"value": 2, "reported_tax_basis": 2}))
     effects = ComponentEffects(opening.model_copy(update={"value": 0, "reported_tax_basis": 0}), "checking", 1, 0, -1)
     action = Withdraw(
         cause_id="redemption", agent_id=HOUSEHOLD, portfolio_id="managed", cash_account_id="checking", amount=1
     )
-    managed.settle(accounting, 0, HOUSEHOLD, "redemption", effects, operation="redemption", action=action)
+    managed.settle(books, 0, HOUSEHOLD, "redemption", effects, operation="redemption", action=action)
     assert managed.marks["managed"].value == 0
-    assert accounting.ledger.balance(CASH) == 101
-    assert accounting.tax.years[HOUSEHOLD].long_term_gain == -1
-    assert accounting.ledger.trial_balance() == 0
+    assert books.ledger.balance(CASH) == 101
+    assert books.tax.years[HOUSEHOLD].long_term_gain == -1
+    assert books.ledger.trial_balance() == 0
 
 
 def test_component_marks_keep_explicit_stop_marks_and_independent_books(
-    run: CompiledRun, opening: TlhPortfolioObservation
+    spec: PreparedTlhPortfolio, opening: TlhPortfolioObservation
 ) -> None:
-    stopped, live = World.from_run(run, 1), World.from_run(run, 0)
+    stopped, live = composed(spec, 1), composed(spec, 0)
     stopped.prepare_month(0, {}, {})
     stopped.assemble_claims([])
     stopped.managed_portfolios().mark([opening])
@@ -221,25 +211,24 @@ def test_component_marks_keep_explicit_stop_marks_and_independent_books(
 
 @pytest.mark.parametrize("case", ["duplicate", "mismatch"])
 def test_opening_a_component_requires_one_matching_observation_per_declared_portfolio(
-    run: CompiledRun, opening: TlhPortfolioObservation, case: str
+    spec: PreparedTlhPortfolio, opening: TlhPortfolioObservation, case: str
 ) -> None:
-    accounting = books(run)
-    managed = ManagedPortfolios(run.scenario.income_sources, run.scenario.jurisdictions)
-    [spec] = run.scenario.tlh_portfolios
+    books = accounting()
+    managed = ManagedPortfolios(INCOME_SOURCES, ())
     if case == "duplicate":
-        managed.open(accounting, spec, opening)
+        managed.open(books, spec, opening)
         with pytest.raises(ValueError, match="already open"):
-            managed.open(accounting, spec, opening)
+            managed.open(books, spec, opening)
     else:
         with pytest.raises(ValueError, match="unknown ownership"):
-            managed.open(accounting, spec, opening.model_copy(update={"account_id": "test_elsewhere"}))
+            managed.open(books, spec, opening.model_copy(update={"account_id": "test_elsewhere"}))
         assert not managed.specs
-    assert accounting.ledger.trial_balance() == 0
+    assert books.ledger.trial_balance() == 0
 
 
-def test_world_rejects_an_unselected_rollout(run: CompiledRun) -> None:
+def test_world_rejects_an_unselected_rollout(spec: PreparedTlhPortfolio) -> None:
     with pytest.raises(ValueError, match="rollout selection"):
-        World.from_run(run, 2)
+        composed(spec, 2)
 
 
 if __name__ == "__main__":

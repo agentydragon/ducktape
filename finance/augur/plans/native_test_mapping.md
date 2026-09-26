@@ -102,7 +102,7 @@ Wide and narrow symmetry examples share one parameterized Python test.
 
 ## `rust/execution.rs`
 
-- [x] `money_crosses_the_wire_only_as_an_integer` → `sim/test_invocation.py::{test_file_decode_rejects_invalid_prepared_facts,test_prepared_input_retains_original_path_cpi_and_selected_replay}`
+- [x] `money_crosses_the_wire_only_as_an_integer` → `sim/artifacts_test.py::test_file_decode_rejects_invalid_prepared_facts` and `sim/test_invocation.py::test_each_path_keeps_its_own_cpi_and_selected_replay_matches_the_population`
 
 ## `rust/ledger.rs`
 

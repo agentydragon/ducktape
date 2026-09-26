@@ -56,9 +56,9 @@ those worlds through the in-process
 in a Python monthly loop. Policies are ordinary Python functions; editing one
 requires no Rust rebuild. Current observations and ordered actions cross the
 existing extension in memory. There is no native example binary, per-month
-subprocess or second financial implementation. The sim-level tests of the
-prepared-input path itself run the same facts compiled into a `CompiledRun` by
-`sim/testing/example_run.py`.
+subprocess or second financial implementation. `sim/test_results.py` and
+`product/test_action_projection.py` drive the same `situation` and `compose`, so
+their values move with this example's facts.
 
 ## Cash-only opening
 
