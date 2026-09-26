@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import App, Chart, Size
+from cdk8s_plus_34 import Cpu
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecBootstrapInitdb,
     ClusterSpecBootstrapInitdbSecret,
@@ -75,10 +76,10 @@ def chart(app: App) -> Chart:
         # cap Postgres can trip over.
         resources=ClusterSpecResources(
             requests={
-                "cpu": ClusterSpecResourcesRequests.from_string("100m"),
-                "memory": ClusterSpecResourcesRequests.from_string("512Mi"),
+                "cpu": ClusterSpecResourcesRequests.from_string(Cpu.millis(100).amount),
+                "memory": ClusterSpecResourcesRequests.from_string(Size.mebibytes(512).as_string()),
             },
-            limits={"memory": ClusterSpecResourcesLimits.from_string("1Gi")},
+            limits={"memory": ClusterSpecResourcesLimits.from_string(Size.gibibytes(1).as_string())},
         ),
         # Application-user identity for CNPG's ongoing reconcile. NOT a re-initialization:
         # CNPG runs bootstrap exactly once, at cluster creation on empty PGDATA (this
