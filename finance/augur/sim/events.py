@@ -561,13 +561,3 @@ def _decode_frame(spec: FrameSpec, rows: list[dict[str, Any]]) -> pl.DataFrame:
                 f"and omitted {sorted(declared - present)}"
             )
     return pl.DataFrame(rows, schema=spec.schema)
-
-
-def decode_serialized_event_log(output: Mapping[str, Any]) -> EventLog:
-    """Decode canonical event frames at the simulator result boundary."""
-    ids = (
-        [rollout["rollout_id"] for rollout in output["rollouts"]]
-        if "rollouts" in output
-        else [output["financial"]["rollout_id"]]
-    )
-    return EventLog.from_serialized(output["event_frames"], rollout_ids=ids)

@@ -21,8 +21,7 @@ experiment consumers are added meanwhile.
 - Scheduled sales: `_ScheduledSale` (`sim/prepared.py`) is an input only the sim and
   product suites build; the configured household turns it into FIFO `Sell`s. Those
   suites move their sales to explicit actions, and the record goes with the household.
-  `Holdings.scheduled_sale` has no caller outside `sim/test_holdings.py`. Explicit
-  asset-sale and public-sale/tax controls remain the independent coverage.
+  Explicit asset-sale and public-sale/tax controls remain the independent coverage.
 - The PE issuer phase selects recovery, forced and tender lots with `Holdings.fifo`
   inside the world; PE's migration after GPE replaces that with explicit responses.
 - The product shell's zero weight means "never sell this holding", whereas a zero

@@ -633,7 +633,6 @@ py_test(
         ":actions",
         ":books",
         ":holdings",
-        ":market_path",
         ":money",
         ":prepared",
         "//:conftest",
