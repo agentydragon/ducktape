@@ -48,12 +48,12 @@ async def configure_core(client: HomeAssistantClient, core_config: CoreConfig) -
     wanted: dict[str, object] = {"time_zone": core_config.time_zone}
     if core_config.location is not None:
         wanted |= core_config.location.model_dump()
-    current = await client.websocket_command({"id": 1, "type": "get_config"})
+    current = await client.websocket_command({"type": "get_config"})
     if not isinstance(current, dict):
         raise TypeError(f"Home Assistant returned an invalid core config: {current!r}")
     if all(current.get(key) == value for key, value in wanted.items()):
         return
-    await client.websocket_command({"id": 1, "type": "config/core/update", **wanted})
+    await client.websocket_command({"type": "config/core/update", **wanted})
 
 
 async def onboard(client: HomeAssistantClient, settings: Settings) -> None:
