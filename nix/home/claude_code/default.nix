@@ -321,9 +321,7 @@
 let
   cfg = config.programs.claude-code;
   allowed = import ../allowed-commands.nix;
-
-  # Gmail MCP Server - pinned to specific commit for security
-  gmail-mcp-server = import ../../packages/gmail-mcp.nix { inherit pkgs lib; };
+  mcpServers = import ../mcp-servers.nix;
 
   # Helper to generate recursive file-read permissions for directories.
   # Read(path) rules cover every file-reading tool; Grep(path) and Glob(path)
@@ -557,34 +555,10 @@ in
       "rust-analyzer-lsp@claude-plugins-official"
     ];
 
-    mcpServers = {
-      "haku-console" = {
-        type = "http";
-        url = "https://haku.allegedly.works/mcp";
-      };
-
-      # Disabled - Tana MCP server now in cluster
-      # tana-local = {
-      #   type = "http";
-      #  url = "http://localhost:8262/mcp";
-      # };
-
-      # Gmail integration via MCP
-      # Setup: See nix/packages/gmail-mcp.nix for full instructions
-      # Quick start: gmail-mcp-auth (after configuring Google Cloud OAuth)
-      gmail = {
-        type = "stdio";
-        command = "${gmail-mcp-server}/bin/gmail-mcp";
-        args = [ ];
-      };
-
-      # SideroLabs (Talos/Omni) docs MCP server
-      # Uncomment to enable — provides search over Talos and Omni documentation.
-      # siderolabs = {
-      #   type = "http";
-      #   url = "https://docs.siderolabs.com/mcp";
-      # };
-    };
+    mcpServers = lib.mapAttrs (name: server: {
+      type = "http";
+      inherit (server) url;
+    }) mcpServers;
 
     settings = {
       theme = "dark";
@@ -709,12 +683,13 @@ in
           "MultiEdit"
           "Search"
           "Task"
-          "mcp__haku-console__*"
           # Domain-scoped WebFetch rules auto-approve sandbox network prompts for
           # known domains. Tradeoff: triggers --unshare-net, so Bazel commands must
           # use dangerouslyDisableSandbox: true. See docs/claude_code_sandbox.md.
           "WebSearch"
         ]
+        # Auto-approve every tool of every SSOT-configured MCP server.
+        ++ map (name: "mcp__${name}__*") (builtins.attrNames mcpServers)
         ++ allowedCommandPerms
         ++ mkWebFetchDomainPerms allowedWebFetchDomains
         ++ mkReadPerms alwaysAllowedReadDirs
@@ -733,9 +708,6 @@ in
     sopsFile = ../../../secrets/alloy-otlp-bearer-token.yaml;
     key = "token";
   };
-
-  # Add gmail-mcp-server to PATH for auth setup command
-  config.home.packages = [ gmail-mcp-server ];
 
   # Deploy skills and plugin cache.
   config.home.file =

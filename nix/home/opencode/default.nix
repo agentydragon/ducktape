@@ -1,8 +1,9 @@
 # OpenCode configuration (https://opencode.ai/docs/providers/).
 #
-# This module owns the shared defaults (skills, grocy MCP) plus a typed
-# `providers` extension point. Host-specific local-LLM wiring belongs in that
-# host's own config (e.g. nix/home/hosts/wyrm2-opencode.nix), which sets
+# This module owns the shared defaults (skills, MCP servers from
+# nix/home/mcp-servers.nix) plus a typed `providers` extension point.
+# Host-specific local-LLM wiring belongs in that host's own config (e.g.
+# nix/home/hosts/wyrm2-opencode.nix), which sets
 # `ducktape.opencode.providers.<name> = { ... }` — this module never needs to
 # know which host has which GPU.
 {
@@ -13,6 +14,7 @@
 }:
 let
   mkSkills = import ../skills.nix sharedSkillsArgs;
+  mcpServers = import ../mcp-servers.nix;
   cfg = config.ducktape.opencode;
 
   opencodeModelType = lib.types.submodule {
@@ -99,16 +101,10 @@ let
 
   opencodeConfig = stripNulls {
     "$schema" = "https://opencode.ai/config.json";
-    mcp = {
-      "grocy-sf" = {
-        type = "remote";
-        url = "https://grocy-mcp-sf.allegedly.works/mcp";
-      };
-      "grocy-vallejo" = {
-        type = "remote";
-        url = "https://grocy-mcp-vallejo.allegedly.works/mcp";
-      };
-    };
+    mcp = lib.mapAttrs (name: server: {
+      type = "remote";
+      inherit (server) url;
+    }) mcpServers;
     provider = cfg.providers;
   };
 in
