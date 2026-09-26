@@ -464,7 +464,6 @@ py_library(
         ":books",
         ":ledger",
         ":money",
-        ":mortgage",
         ":observations",
         ":prepared",
         ":scenario",
@@ -518,11 +517,8 @@ py_library(
         ":books",
         ":fixed_point",
         ":money",
-        ":mortgage",
-        ":prepared",
         ":scenario",
         ":tax",
-        "//finance/augur/sim/compiler:tax",
     ],
 )
 
@@ -568,13 +564,10 @@ py_test(
     name = "test_tax_year",
     srcs = ["test_tax_year.py"],
     deps = [
-        ":ledger",
-        ":prepared",
         ":scenario",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim/testing:accounting",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -947,7 +940,13 @@ py_library(
         ":actor",
         ":books",
         ":claims",
+        ":fixed_point",
         ":money",
+        ":mortgage",
+        ":prepared",
+        ":scenario",
+        ":tax",
+        ":tax_year",
         "//finance/augur/sim/compiler:tax",
     ],
 )
@@ -1655,6 +1654,22 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//numpy",
         "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_tax_authority",
+    srcs = ["test_tax_authority.py"],
+    deps = [
+        ":ledger",
+        ":prepared",
+        ":scenario",
+        ":tax_authority",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:accounting",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

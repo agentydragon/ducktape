@@ -37,13 +37,13 @@ reader migrations remain allowed. It does not block preserving supported behavio
   and track it on `World`. Keep one owner per financial fact.
 - Do not add product-specific counters/slabs to `World`; the app records in `product/`.
 
-| Unit    | Scope                                                                                                                                                                                                                                                                           | Immediate prerequisite and completion evidence                                                                                                    |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| COMPOSE | The remaining `World` slices in [the gate note's graph](library_design_gates.md#remaining-work-in-dependency-order): one public TLH cohort type; the offers slice and drain; the tax-year close in `TaxAuthority`; seasoned contracts and a tracked property; the rollout axis. | The gate note's graph; its offers slice waits on GPE and its seasoned-contract and property slices on GHOUSE. No replacement giant config schema. |
-| P12     | Retire configured strategy orchestration: the app's configured household, its allocation proposer and funding-policy lowering.                                                                                                                                                  | Continue independently landable slices on settled contracts; full P12 still needs HOUSING and PE for their readers.                               |
+| Unit    | Scope                                                                                                                                                                                                                                     | Immediate prerequisite and completion evidence                                                                                                    |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| COMPOSE | The remaining `World` slices in [the gate note's graph](library_design_gates.md#remaining-work-in-dependency-order): one public TLH cohort type; the offers slice and drain; seasoned contracts and a tracked property; the rollout axis. | The gate note's graph; its offers slice waits on GPE and its seasoned-contract and property slices on GHOUSE. No replacement giant config schema. |
+| P12     | Retire configured strategy orchestration: the app's configured household, its allocation proposer and funding-policy lowering.                                                                                                            | Continue independently landable slices on settled contracts; full P12 still needs HOUSING and PE for their readers.                               |
 
-The tax-year close and P12's public-portfolio slices can start now, in parallel;
-the rollout axis is postponed. Keep older financial capability branches scoped as below. No
+P12's public-portfolio slices can start now; the rollout axis is postponed. Keep older
+financial capability branches scoped as below. No
 dependency is introduced merely because files overlap or a rebase will be needed.
 
 ## Destination and stopping conditions
@@ -455,9 +455,9 @@ all the others to be solved first.
 
 ## Current dispatch and priorities
 
-1. **COMPOSE**: the tax-year close is ready now; the rollout axis is postponed until a
-   real large-N workload needs it; the TLH cohort type is postponed and waits on the
-   open question in its gate-note entry.
+1. **COMPOSE**: the rollout axis is postponed until a real large-N workload needs it;
+   the TLH cohort type is postponed and waits on the open question in its gate-note
+   entry; the offers and seasoned-contract/property slices wait on GPE and GHOUSE.
    **P12**'s public-portfolio reader slices proceed on settled contracts.
 2. **MA3** remains a runnable paired TLH comparison on the existing Python
    component/session. Continue **STUDY** consumers alongside cleanup. Scope GT/GS

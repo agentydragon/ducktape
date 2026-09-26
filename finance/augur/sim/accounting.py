@@ -18,9 +18,8 @@ from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.money import checked_count
-from finance.augur.sim.mortgage import Mortgage
 from finance.augur.sim.observations import TaxRecords
-from finance.augur.sim.prepared import PreparedAccount, PreparedJurisdiction
+from finance.augur.sim.prepared import PreparedAccount
 from finance.augur.sim.scenario import TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.tax_year import TaxBook
 
@@ -57,7 +56,7 @@ class AccountStatement(Statement):
 
 
 class TaxLiabilityStatement(Statement):
-    """The tax book's assessed liabilities, for the authority that collects them."""
+    """Assessed tax liabilities as settlement has left them, for the authority that collects them."""
 
     liabilities: tuple[TaxLiabilityState, ...]
 
@@ -76,12 +75,10 @@ class Accounting:
     them between months.
     """
 
-    def __init__(
-        self, income_sources: Sequence[TransferIncomeCategory], jurisdictions: Sequence[PreparedJurisdiction]
-    ) -> None:
+    def __init__(self, income_sources: Sequence[TransferIncomeCategory]) -> None:
         self.declared: tuple[AccountRef, ...] = ()
         self.ledger = Ledger(())
-        self.tax = TaxBook(income_sources, jurisdictions)
+        self.tax = TaxBook(income_sources)
         self.journal: list[JournalEntry] = []
         self.transfers: list[TransferOutcome] = []
         self.tax_accruals: list[TaxAccrual] = []
@@ -113,7 +110,7 @@ class Accounting:
 
     def enroll(self, profile: PreparedTaxProfile) -> None:
         """Take on a taxpayer: its year state, prepayment asset and the accounts its assessments post to."""
-        self.tax.enroll(profile)
+        self.tax.enroll(profile.agent_id)
         self.ledger.ensure_account(AccountRef(agent_id=profile.agent_id, account_id="asset:tax-prepayments"))
         self.ledger.ensure_account(
             AccountRef(agent_id=profile.tax_authority_agent_id, account_id="income:tax-payments")
@@ -232,41 +229,3 @@ class Accounting:
                 else None,
             )
         )
-
-    def close_tax_year(self, month: int, mortgages: Sequence[Mortgage]) -> None:
-        assessments = self.tax.assessments(month, mortgages)
-        # One group, so a bad jurisdiction does not commit the jurisdictions assessed before it.
-        self.apply_entries(
-            [
-                JournalEntry(
-                    month=month,
-                    cause_id=row.cause_id,
-                    postings=[
-                        Posting(
-                            account=AccountRef(agent_id=row.agent_id, account_id=f"expense:tax:{row.jurisdiction_id}"),
-                            amount=row.total_tax,
-                        ),
-                        Posting(
-                            account=AccountRef(
-                                agent_id=row.agent_id, account_id=f"liability:tax:{row.jurisdiction_id}"
-                            ),
-                            amount=checked_count(-row.total_tax, "money negation"),
-                        ),
-                    ],
-                )
-                for row in assessments
-                if row.total_tax
-            ]
-        )
-        self.tax_accruals.extend(assessments)
-        self.tax_liabilities.extend(
-            TaxLiabilityState(
-                agent_id=row.agent_id,
-                jurisdiction_id=row.jurisdiction_id,
-                tax_year_end_month=month,
-                amount_owed=row.total_tax,
-                active=True,
-            )
-            for row in assessments
-        )
-        self.tax.reset(assessments)

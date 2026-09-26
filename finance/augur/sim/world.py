@@ -124,7 +124,7 @@ class World:
         self.portfolios: dict[str, TlhPortfolio] = {}
         self.income_sources = tuple(income_sources)
         self.jurisdictions = tuple(jurisdictions)
-        self.accounting = Accounting(income_sources, jurisdictions)
+        self.accounting = Accounting(income_sources)
         self.holdings = Holdings()
         # Domains nothing declared, tracked or attached are absent, not empty.
         self.managed: ManagedPortfolios | None = None
@@ -478,15 +478,16 @@ class World:
     def declare_deduction(self, policy: _MortgageInterestDeduction | _SaltDeduction) -> None:
         """An itemized deduction an enrolled taxpayer claims when its tax year closes."""
         self._composing()
-        tax = self.accounting.tax
         if isinstance(policy, _MortgageInterestDeduction):
-            if policy.owner_agent_id not in tax.years:
-                raise ValueError(f"mortgage interest deduction for {policy.owner_agent_id!r} names no taxpayer")
-            tax.mortgage_interest_policies = (*tax.mortgage_interest_policies, policy)
+            label, claimant = "mortgage interest deduction", policy.owner_agent_id
         else:
-            if policy.profile_id not in tax.years:
-                raise ValueError(f"SALT deduction for {policy.profile_id!r} names no taxpayer")
-            tax.salt_policies = (*tax.salt_policies, policy)
+            label, claimant = "SALT deduction", policy.profile_id
+        authority = next(
+            (authority for authority in self.tax_authorities if authority.profile.agent_id == claimant), None
+        )
+        if authority is None:
+            raise ValueError(f"{label} for {claimant!r} names no taxpayer")
+        authority.declare_deduction(policy)
 
     def _due_months(
         self,
@@ -923,7 +924,16 @@ class World:
         active: set[str] = set()
         if self.properties is not None:
             self.properties.assign_residences(month)
-            paid_off = self.properties.lifecycle(self.accounting, self.market, month, mortgages)
+            paid_off = self.properties.lifecycle(
+                self.accounting,
+                self.market,
+                month,
+                mortgages,
+                {
+                    authority.profile.agent_id: authority.profile.section_121_exclusion
+                    for authority in self.tax_authorities
+                },
+            )
         if self.bonds is not None:
             self.bonds.advance(self.accounting, month)
         if self.distributions is not None:
@@ -1151,7 +1161,7 @@ class World:
         ]
 
     def close_books(self, *, failed: bool, mortgages: Sequence[Mortgage]) -> None:
-        """Accrue, close the tax year on a successful December, and advance the month counter."""
+        """Accrue, let each tax authority close a successful month, and advance the month counter."""
         if self.agents:
             for claim in self.claims.entries:
                 if not claim.paid:
@@ -1186,10 +1196,10 @@ class World:
         else:
             if self.properties is not None:
                 self.properties.accrue(self.accounting, self.month)
-            if (self.month + 1) % 12 == 0:
-                self.accounting.close_tax_year(self.month, mortgages)
-                if self.properties is not None:
-                    self.properties.reset_year()
+            for authority in self.tax_authorities:
+                authority.close_month(self.accounting, self.month, mortgages, self.jurisdictions)
+            if self.properties is not None and (self.month + 1) % 12 == 0:
+                self.properties.reset_year()
         self.month += 1
 
     def marks(self) -> list[observations.TlhPortfolioObservation]:
