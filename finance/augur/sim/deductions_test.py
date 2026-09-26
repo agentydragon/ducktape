@@ -223,8 +223,10 @@ def compose(case: Situation) -> World:
             )
         )
     )
-    world.accounting.tax.salt_policies = case.salt_policies
-    world.accounting.tax.mortgage_interest_policies = case.mortgage_interest_policies
+    for salt in case.salt_policies:
+        world.declare_deduction(salt)
+    for interest in case.mortgage_interest_policies:
+        world.declare_deduction(interest)
     world.declare_housing(
         Housing(
             purchases=(
@@ -254,7 +256,7 @@ def compose(case: Situation) -> World:
         ),
         (SAN_FRANCISCO,),
     )
-    world.recurring_transfers = (
+    world.declare_flow(
         PreparedRecurringTransfer(
             start_month=0,
             end_month=case.horizon_months - 1,
@@ -264,7 +266,7 @@ def compose(case: Situation) -> World:
             amount=money(round_currency_amount(Decimal(case.annual_w2_income) / 12, quantum=QUANTUM)),
             income_category=ORDINARY_INCOME,
             deduction_category=None,
-        ),
+        )
     )
     return world
 

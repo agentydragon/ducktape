@@ -118,7 +118,7 @@ def _compose(case: Situation, rollout_id: int) -> World:
     if case.wages:
         # Wages are the one cashflow an action cannot express: a bare actor transfer may not
         # declare tax character, so the payroll run is the scheduled table the world carries.
-        world.scheduled_transfers = (
+        world.declare_flow(
             PreparedTransfer(
                 month=0,
                 cause_id="wages",
@@ -127,7 +127,7 @@ def _compose(case: Situation, rollout_id: int) -> World:
                 amount=int(currency_amount_to_quanta(case.wages, quantum=QUANTUM)),
                 income_category=ORDINARY_INCOME,
                 deduction_category=None,
-            ),
+            )
         )
     return world
 

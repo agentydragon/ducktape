@@ -186,7 +186,8 @@ def compose(case: Situation, rollout_id: int) -> World:
         world.hold(holding)
     for distribution in case.distributions:
         world.declare_distribution(distribution)
-    world.scheduled_transfers = case.transfers
+    for flow in case.transfers:
+        world.declare_flow(flow)
     for obligation in case.claims:
         world.track(Biller(obligation))
     world.track(ConfiguredHousehold(AgentId(ALICE), case.policies, scheduled_sales=case.scheduled_sales))

@@ -10,6 +10,7 @@ from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, validate_currency_
 from finance.augur.sim.holdings import private_issuer
 from finance.augur.sim.money import is_quantity_scale
 from finance.augur.sim.prepared import CompiledRun, PreparedFixedAmount, PreparedIndexedCoupon, PreparedSeries
+from finance.augur.sim.private_equity import CHANNEL_RANGES
 from finance.augur.sim.scenario import InterestIncome
 
 
@@ -154,18 +155,7 @@ def validate(run: CompiledRun) -> None:
 
     issuers = {issuer for lot in scenario.initial_lots if (issuer := private_issuer(lot.asset_id)) is not None}
     for issuer in issuers:
-        for channel, minimum, maximum in (
-            ("mark", 0, (1 << 63) - 1),
-            ("regime", 1, 4),
-            ("event_kind", 0, 7),
-            ("sale_opportunity", 0, 1),
-            ("sale_capacity", 0, MONEY_FACTOR_SCALE),
-            ("eligible", 0, MONEY_FACTOR_SCALE),
-            ("forced_sale", 0, MONEY_FACTOR_SCALE),
-            ("liquidity_blocked", 0, 1),
-            ("forced_recovery", 0, (1 << 63) - 1),
-            ("company_valuation", 0, (1 << 63) - 1),
-        ):
+        for channel, (minimum, maximum) in CHANNEL_RANGES.items():
             path = require_series(f"private_equity_{channel}:{issuer}")
             for index, value in enumerate(path.values):
                 if not minimum <= value <= maximum:

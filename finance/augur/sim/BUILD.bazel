@@ -785,6 +785,7 @@ py_library(
         ":scenario",
         ":tax_authority",
         ":tlh",
+        "//finance/augur/model:series",
         "//finance/augur/sim/compiler:income_sources",
     ],
 )
@@ -798,6 +799,7 @@ py_library(
         ":holdings",
         ":money",
         ":prepared",
+        ":private_equity",
         ":scenario",
     ],
 )
@@ -1080,6 +1082,7 @@ py_test(
     name = "test_declaration_guards",
     srcs = ["test_declaration_guards.py"],
     deps = [
+        ":bills",
         ":books",
         ":jurisdictions",
         ":market_path",
