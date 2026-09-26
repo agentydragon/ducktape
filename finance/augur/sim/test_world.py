@@ -1,5 +1,6 @@
 """Actor-scoped financial execution, ordered request prefixes and canonical capture."""
 
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from itertools import pairwise
@@ -29,11 +30,11 @@ from finance.augur.sim.prepared import (
     PreparedRecurringObligation,
     PreparedSeries,
     PreparedTransfer,
-    _ScheduledSale,
 )
 from finance.augur.sim.results import ConsumptionTarget, Executed, Finished, Rejected, RejectedAction, UnpaidClaims
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, taxpayer, world_on
+from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import Capture, World
 
 
@@ -549,11 +550,11 @@ def session_for(run: Situation, rollout_ids: list[int], *, capture: Capture = "f
 
 
 def stepped(
-    run: Situation, mode: Literal["dense", "forensic"], *, rollout: int = 0, sales: tuple[_ScheduledSale, ...] = ()
+    run: Situation, mode: Literal["dense", "forensic"], *, rollout: int = 0, sales: Mapping[int, Sequence[Action]]
 ) -> FinancialOutput:
-    """One composed rollout to its horizon under a household that makes the scheduled sales."""
+    """One composed rollout to its horizon under a household that makes the scripted sales."""
     world = composed(run, rollout)
-    world.track(ConfiguredHousehold(HOUSEHOLD, (), scheduled_sales=sales))
+    world.track(Scripted(ConfiguredHousehold(HOUSEHOLD, ()), sales))
     capture = FinancialCapture(world, capture=mode)
     world.start()
     while not world.finished:
@@ -569,18 +570,6 @@ def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
 ) -> None:
     """`step` is open, decide, execute in order, close — and nothing else the phases do not do."""
     run = year_situation
-    sales = tuple(
-        _ScheduledSale(
-            month=0,
-            cause_id=f"sale-{lot.asset_id}",
-            agent_id=HOUSEHOLD,
-            account_id=lot.account_id,
-            asset_id=lot.asset_id,
-            units=20_000_000,
-            proceeds_account_id="checking",
-        )
-        for lot in run.initial_lots
-    )
     if stopped:
         run = replace(
             run,
@@ -588,10 +577,19 @@ def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
             obligations=(bill(1000), replace(bill(999_999), month=12)),
             series=tuple(replace(s, snapshots=16, values=(*s.values, 9000, 10_000)) for s in run.series),
         )
-        sales = (replace(sales[0], units=1_000_000),)
+    sales = tuple(
+        Sell(
+            cause_id=f"sale-{lot.asset_id}",
+            agent_id=HOUSEHOLD,
+            proceeds_account_id="checking",
+            asset_id=lot.asset_id,
+            lots=(LotSale(account_id=lot.account_id, lot_id=lot.lot_id, units=1_000_000 if stopped else 20_000_000),),
+        )
+        for lot in (run.initial_lots[:1] if stopped else run.initial_lots)
+    )
 
-    def household() -> ConfiguredHousehold:
-        return ConfiguredHousehold(HOUSEHOLD, (), scheduled_sales=sales)
+    def household() -> Scripted:
+        return Scripted(ConfiguredHousehold(HOUSEHOLD, ()), {0: sales})
 
     phased = composed(run)
     actor = household()
@@ -660,17 +658,17 @@ def test_transfer_and_fifo_sale_remain_balanced(mode: Literal["dense", "forensic
         ),
         series=(replace(run.series[0], values=(10_000, 15_000, 15_000, 10_000, 20_000, 20_000)),),
     )
-    sales = (
-        _ScheduledSale(
-            month=1,
-            cause_id="sell-stock",
-            agent_id=HOUSEHOLD,
-            account_id="checking",
-            asset_id="test_stock",
-            units=1_000_000,
-            proceeds_account_id="checking",
-        ),
-    )
+    sales = {
+        1: (
+            Sell(
+                cause_id="sell-stock",
+                agent_id=HOUSEHOLD,
+                proceeds_account_id="checking",
+                asset_id="test_stock",
+                lots=(LotSale(account_id="checking", lot_id="timing-stock", units=1_000_000),),
+            ),
+        )
+    }
     for index in range(2):
         expected = stepped(run, "forensic", rollout=index, sales=sales)
         financial = stepped(run, mode, rollout=index, sales=sales)

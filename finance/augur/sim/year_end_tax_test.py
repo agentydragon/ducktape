@@ -13,7 +13,7 @@ from more_itertools import one
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.policy.configured_household import ConfiguredHousehold
-from finance.augur.sim.actions import DecisionActions
+from finance.augur.sim.actions import DecisionActions, LotSale, Sell
 from finance.augur.sim.books import AccountRef, Book, TaxLiabilityState
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
@@ -34,13 +34,13 @@ from finance.augur.sim.prepared import (
     PreparedLot,
     PreparedRecurringTransfer,
     _AllocationPolicy,
-    _ScheduledSale,
     _SecuritySleeveTarget,
 )
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -83,16 +83,14 @@ def lot(lot_id: str, asset: SecurityKey, *, quantity: float, cost_basis: int, pu
     )
 
 
-def sale(cause_id: str, asset: SecurityKey, *, month: int, quantity: float) -> _ScheduledSale:
+def sale(cause_id: str, lot_id: str, asset: SecurityKey, *, quantity: float) -> Sell:
     scale = quantity_scale_for_asset(asset)
-    return _ScheduledSale(
-        month=month,
+    return Sell(
         cause_id=cause_id,
         agent_id=ALICE,
-        account_id=CHECKING,
-        asset_id=str(asset.symbol),
-        units=int(quantity_to_quanta(quantity, scale=scale)),
         proceeds_account_id=CHECKING,
+        asset_id=str(asset.symbol),
+        lots=(LotSale(account_id=CHECKING, lot_id=lot_id, units=int(quantity_to_quanta(quantity, scale=scale))),),
     )
 
 
@@ -138,7 +136,7 @@ class Situation:
     prior_year_tax: Decimal | int = 0
     recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
     lots: tuple[PreparedLot, ...] = ()
-    scheduled_sales: tuple[_ScheduledSale, ...] = ()
+    sales: Mapping[int, tuple[Sell, ...]] = field(default_factory=dict)
     policies: tuple[_AllocationPolicy, ...] = ()
     prices: Mapping[SecurityKey, Sequence[float]] = field(default_factory=dict)
 
@@ -197,8 +195,8 @@ def compose(case: Situation) -> World:
 
 
 def run(case: Situation) -> Rollout:
-    """Alice sells on schedule and on her band, then pays every due claim in full, in order."""
-    household = ConfiguredHousehold(AgentId(ALICE), case.policies, scheduled_sales=case.scheduled_sales)
+    """Alice makes her scripted sales, sells on her band, then pays every due claim in full, in order."""
+    household = Scripted(ConfiguredHousehold(AgentId(ALICE), case.policies), case.sales)
     session = ActionSession({0: compose(case)}, ALICE)
     try:
         batch = session.start()
@@ -328,7 +326,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
             accounts=(account(ALICE), account(PAYROLL), account(IRS)),
             lots=(lot("alice_long_vti", VTI, quantity=100.0, cost_basis=8000, purchase_month=-24),),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),),
-            scheduled_sales=(sale("alice_long_sale", VTI, month=6, quantity=100.0),),
+            sales={6: (sale("alice_long_sale", "alice_long_vti", VTI, quantity=100.0),)},
             prices={VTI: [280.0] * 13},
         )
     )
@@ -368,7 +366,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
             prior_year_tax=4000,
             lots=(lot("alice_long_vti", VTI, quantity=100.0, cost_basis=8000, purchase_month=-24),),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),),
-            scheduled_sales=(sale("alice_long_sale", VTI, month=6, quantity=100.0),),
+            sales={6: (sale("alice_long_sale", "alice_long_vti", VTI, quantity=100.0),)},
             prices={VTI: [280.0] * 14},
         )
     )
@@ -418,10 +416,12 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
                 lot("alice_short_ixus", IXUS, quantity=10.0, cost_basis=500, purchase_month=0),
             ),
             recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),),
-            scheduled_sales=(
-                sale("alice_long_sale", VTI, month=6, quantity=100.0),
-                sale("alice_short_sale", IXUS, month=6, quantity=10.0),
-            ),
+            sales={
+                6: (
+                    sale("alice_long_sale", "alice_long_vti", VTI, quantity=100.0),
+                    sale("alice_short_sale", "alice_short_ixus", IXUS, quantity=10.0),
+                )
+            },
             prices={VTI: [200.0] * 13, IXUS: [200.0] * 13},
         )
     )

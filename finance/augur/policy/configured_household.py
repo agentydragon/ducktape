@@ -11,44 +11,28 @@ from finance.augur.policy.configured_allocation import (
     plan,
 )
 from finance.augur.policy.funding import full_payments
-from finance.augur.sim.actions import Action, Buy, Contribute, Liquidate, LotSale, Sell, Withdraw
+from finance.augur.sim.actions import Action, Buy, Contribute, Liquidate, Sell, Withdraw
 from finance.augur.sim.agent import EconomicAgent
-from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.money import checked_count, mul_div, position_value
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import (
-    PreparedAmount,
-    PreparedFixedAmount,
-    _AllocationPolicy,
-    _ScheduledSale,
-    _SecuritySleeveTarget,
-)
+from finance.augur.sim.prepared import PreparedAmount, PreparedFixedAmount, _AllocationPolicy, _SecuritySleeveTarget
 from finance.augur.sim.world import World
 
 
 class ConfiguredHousehold(EconomicAgent):
-    """Sells on schedule and on the funding policies' terms, pays every due claim in full in observed order, then buys.
+    """Sells on the funding policies' terms, pays every due claim in full in observed order, then buys.
 
     The purchases are sized from the cash the sales leave less every due claim, so each order is
     exact against the cash the month will actually leave. A claim that cash cannot cover is
     rejected and stops the path, so a month with one buys nothing.
     """
 
-    def __init__(
-        self,
-        agent_id: AgentId,
-        policies: tuple[_AllocationPolicy, ...],
-        *,
-        scheduled_sales: tuple[_ScheduledSale, ...] = (),
-    ) -> None:
+    def __init__(self, agent_id: AgentId, policies: tuple[_AllocationPolicy, ...]) -> None:
         super().__init__(agent_id)
         if any(policy.agent_id != agent_id for policy in policies):
             raise ValueError("a funding policy belongs to the household that consults it")
-        if any(sale.agent_id != agent_id for sale in scheduled_sales):
-            raise ValueError("a scheduled sale belongs to the household that makes it")
         self.policies = policies
-        self.scheduled_sales = scheduled_sales
         # One lot-identity counter per (policy, sleeve), advanced only by an emitted Buy.
         self.lot_sequences: defaultdict[tuple[int, int], int] = defaultdict(int)
         # The CPI level of every month this household has seen, so an indexed band bound can be
@@ -56,18 +40,8 @@ class ConfiguredHousehold(EconomicAgent):
         self.cpi_levels: list[int] = []
 
     def check(self, world: World) -> None:
-        """Refuse policies and scheduled sales naming what `world` does not declare; call before tracking."""
+        """Refuse policies naming what `world` does not declare; call before tracking."""
         check_policies(world, self.policies)
-        pools = {(pool.agent_id, pool.account_id, pool.asset_id) for pool in world.holdings.pools}
-        for sale in self.scheduled_sales:
-            if not 0 <= sale.month < world.horizon_months:
-                raise ValueError(f"sale {sale.cause_id!r} has month {sale.month}, outside the horizon")
-            if AccountRef(agent_id=sale.agent_id, account_id=sale.proceeds_account_id) not in world.accounting.declared:
-                raise ValueError(f"sale {sale.cause_id!r} references an unknown proceeds account")
-            if (sale.agent_id, sale.account_id, sale.asset_id) not in pools:
-                raise ValueError(f"sale {sale.cause_id!r} references no holding pool")
-            if f"security:{sale.asset_id}" not in world.market.series:
-                raise ValueError(f'missing series "security:{sale.asset_id}"')
 
     def decide(self, observation: Observation) -> list[Action]:
         if observation.cpi is not None:
@@ -75,9 +49,7 @@ class ConfiguredHousehold(EconomicAgent):
                 raise ValueError("the household reads every month's CPI once, in order")
             self.cpi_levels.append(observation.cpi[0])
         prices = {pool.asset_id: pool.price for pool in observation.holding_pools}
-        actions: list[Action] = [
-            self._scheduled(sale, observation) for sale in self.scheduled_sales if sale.month == observation.month
-        ]
+        actions: list[Action] = []
         pending: list[PendingBuy | PendingContribution] = []
         for index, policy in enumerate(self.policies):
             proposal = plan(
@@ -130,34 +102,6 @@ class ConfiguredHousehold(EconomicAgent):
             cash[buy.cash_account_id] = checked_count(cash[buy.cash_account_id] - spent, "projected cash")
             orders.append(order)
         return orders
-
-    @staticmethod
-    def _scheduled(sale: _ScheduledSale, observation: Observation) -> Sell:
-        """The scheduled units from the oldest lots first."""
-        remaining = sale.units
-        lots = []
-        for position in sorted(
-            (
-                position
-                for position in observation.public_positions
-                if (position.account_id, position.asset_id) == (sale.account_id, sale.asset_id)
-            ),
-            key=lambda position: (position.purchase_month, position.lot_id),
-        ):
-            if remaining <= 0:
-                break
-            units = min(remaining, position.units)
-            lots.append(LotSale(account_id=position.account_id, lot_id=position.lot_id, units=units))
-            remaining -= units
-        if remaining > 0:
-            raise ValueError(f"scheduled sale {sale.cause_id!r} exceeds the units held")
-        return Sell(
-            cause_id=sale.cause_id,
-            agent_id=sale.agent_id,
-            proceeds_account_id=sale.proceeds_account_id,
-            asset_id=sale.asset_id,
-            lots=tuple(lots),
-        )
 
     def _bound(self, amount: PreparedAmount, observation: Observation) -> int:
         """A band bound as money this month; an indexed one rides the CPI level of its last reset."""
