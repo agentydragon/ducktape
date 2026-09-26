@@ -53,9 +53,9 @@ Aggregate outcomes declare their `OutcomeBasis`:
 - `observed_through_stop`: shortfall sums recorded unpaid demands through stop or
   completion for every path. Monthly shortfall includes the failure-event amount at
   snapshot `f+1`. It is amount due minus actually paid, including tax and contract
-  demands—not additional cash required to make a funding group payable, and not a
-  projection of future shortfalls. An all-or-none group can leave 1,100 unpaid while
-  retaining 1,000 cash. Another source-account group can still pay its claims.
+  demands—not additional cash required to make them payable, and not a projection
+  of future shortfalls. A rejected payment leaves its cash in place and the claims
+  after it unattempted, so a path can retain 400 cash while recording 500 unpaid.
   Common-action reporting also includes the valid attempted consumption gap;
   rejected discretionary consumption is not a new incurred liability.
 

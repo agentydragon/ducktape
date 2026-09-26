@@ -1,8 +1,24 @@
 """Optional sales-only funding of claims from one cash account; surplus cash stays idle."""
 
+from collections.abc import Sequence
+
 from finance.augur.policy.sleeves import withdraw
 from finance.augur.sim.actions import DecisionActions, PayClaim
-from finance.augur.sim.observations import Decision
+from finance.augur.sim.observations import Claim, Decision
+
+
+def full_payments(claims: Sequence[Claim]) -> list[PayClaim]:
+    """A full payment of every claim, in observed order."""
+    return [
+        PayClaim(
+            request_id=index + 1,
+            cause_id=claim.cause_id,
+            claim=claim,
+            from_account=claim.from_account,
+            amount=claim.amount_due,
+        )
+        for index, claim in enumerate(claims)
+    ]
 
 
 def fund_claims(
@@ -25,15 +41,6 @@ def fund_claims(
             amount=max(0, sum(claim.amount_due for claim in claims) - cash),
             cause_id=f"withdrawal-funding-{observation.month}",
         )
-        actions.extend(
-            PayClaim(
-                request_id=index + 1,
-                cause_id=claim.cause_id,
-                claim=claim,
-                from_account=claim.from_account,
-                amount=claim.amount_due,
-            )
-            for index, claim in enumerate(claims)
-        )
+        actions.extend(full_payments(claims))
         responses.append(DecisionActions(decision.rollout_id, observation.month, actions))
     return responses

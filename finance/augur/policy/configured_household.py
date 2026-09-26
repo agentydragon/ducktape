@@ -1,4 +1,4 @@
-"""The configured household: its policies' funding sales, the claims its cash covers, then its purchases."""
+"""The configured household: its policies' funding sales, full payment of its claims in order, then its purchases."""
 
 from collections import defaultdict
 
@@ -10,7 +10,8 @@ from finance.augur.policy.configured_allocation import (
     materialize_contribution,
     plan,
 )
-from finance.augur.sim.actions import Action, Buy, Contribute, Liquidate, LotSale, PayClaim, Sell, Withdraw
+from finance.augur.policy.funding import full_payments
+from finance.augur.sim.actions import Action, Buy, Contribute, Liquidate, LotSale, Sell, Withdraw
 from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AgentId
@@ -27,13 +28,11 @@ from finance.augur.sim.world import World
 
 
 class ConfiguredHousehold(EconomicAgent):
-    """Sells on schedule and on the funding policies' terms, pays each account's claims all or none, then buys.
+    """Sells on schedule and on the funding policies' terms, pays every due claim in full in observed order, then buys.
 
-    The sales come first and the claims are judged on the cash they leave: an account whose
-    month's claims exceed that pays none of them, so the month's shortfall is the whole due and
-    the path stops on it. The purchases come last and are sized from the same projection, less
-    the claims this batch decided to pay, so each order is exact against the cash the month will
-    actually leave.
+    The purchases are sized from the cash the sales leave less every due claim, so each order is
+    exact against the cash the month will actually leave. A claim that cash cannot cover is
+    rejected and stops the path, so a month with one buys nothing.
     """
 
     def __init__(
@@ -99,27 +98,13 @@ class ConfiguredHousehold(EconomicAgent):
         for action in actions:
             account, proceeds = self._proceeds(action, observation)
             cash[account] = checked_count(cash[account] + proceeds, "projected cash")
-        due: defaultdict[str, int] = defaultdict(int)
-        for claim in observation.claims:
-            due[claim.from_account.account_id] = checked_count(
-                due[claim.from_account.account_id] + claim.amount_due, "claims due"
-            )
-        payments = [
-            PayClaim(
-                request_id=index + 1,
-                cause_id=claim.cause_id,
-                claim=claim,
-                from_account=claim.from_account,
-                amount=claim.amount_due,
-            )
-            for index, claim in enumerate(observation.claims)
-            if cash[claim.from_account.account_id] >= due[claim.from_account.account_id]
-        ]
+        payments = full_payments(observation.claims)
         actions.extend(payments)
         for payment in payments:
             account = payment.from_account.account_id
             cash[account] = checked_count(cash[account] - payment.amount, "projected cash")
-        actions.extend(self._purchases(observation, pending, cash))
+        if all(cash[payment.from_account.account_id] >= 0 for payment in payments):
+            actions.extend(self._purchases(observation, pending, cash))
         return actions
 
     def _purchases(

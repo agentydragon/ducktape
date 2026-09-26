@@ -1,4 +1,4 @@
-"""Allocation funding, grouped claim settlement and exact purchases in one household's batch.
+"""Allocation funding, ordered claim payments and exact purchases in one household's batch.
 
 The tax schedule below is deliberately synthetic: 20% ordinary, 10% long-term,
 no deductions. Assertions pin accounting/timing, not statutory fidelity.
@@ -285,7 +285,8 @@ def test_zero_target_partial_raise_then_full_exit_and_later_tax_funding() -> Non
 
 
 @pytest.mark.parametrize("spending", [300, 500])
-def test_group_failure_does_not_undo_prior_funding_sales(spending: int) -> None:
+def test_rejected_payment_does_not_undo_prior_funding_sales_or_payments(spending: int) -> None:
+    """$100 cash and $1,000 of stock against $700 rent then `spending`: at $500 the rent is paid first."""
     case = base(single=True)
     [output] = run(
         replace(
@@ -299,8 +300,11 @@ def test_group_failure_does_not_undo_prior_funding_sales(spending: int) -> None:
     )
     funded = spending == 300
     assert sum(row.proceeds for row in output.dispositions) == (90_000 if funded else 100_000)
-    assert sum(row.amount_paid for row in output.obligations) == (100_000 if funded else 0)
-    assert (output.rollout_failures == []) == funded
+    assert [(row.amount_due, row.amount_paid) for row in output.obligations] == [
+        (70_000, 70_000),
+        (spending * 100, spending * 100 if funded else 0),
+    ]
+    assert output.failed_month == (None if funded else 0)
     assert output.months[-1].month == 1
 
 
