@@ -1164,12 +1164,13 @@ def test_a_sleeve_weight_naming_a_tlh_index_makes_its_portfolio_a_managed_source
     )
 
     policy = one(situation.funding_policies)
+    lot = one(situation.lots)
+    assert lot.lot_id == ordinary.lot_id
     assert [(sleeve.asset_id, sleeve.weight) for sleeve in policy.sleeves] == [
-        (index.wire_id, 3),
-        (ordinary.asset.wire_id, 1),
+        (one(situation.tlh_portfolios).asset_id, 3),
+        (lot.asset_id, 1),
     ]
     assert policy.source_account_ids == ("test_ordinary_brokerage", "test_managed_brokerage")
-    assert [lot.lot_id for lot in situation.lots] == [ordinary.lot_id]
 
 
 def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income(
