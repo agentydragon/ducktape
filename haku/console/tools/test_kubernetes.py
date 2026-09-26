@@ -132,7 +132,6 @@ def console(make_client: Callable[..., Any]) -> Iterator[_Console]:
         app = cast(FastAPI, client.app)
         sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
         grants = cast(GrantService, app.state.kubernetes_grants)
-        http_grants = app.state.http_grants
         sar = _FakeSubjectAccessReviews()
         authorization = KubernetesAuthorizationService(
             # The trusted in-process path never resolves a bearer; no sources states that.
@@ -143,7 +142,6 @@ def console(make_client: Callable[..., Any]) -> Iterator[_Console]:
                 ),
                 sar_client=sar,
                 kubernetes_grants=grants,
-                http_grants=http_grants,
             ),
         )
         assert client.portal is not None

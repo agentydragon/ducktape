@@ -1,8 +1,6 @@
-"""Integration tests for the unified ``grants`` MCP server over the real grant stores.
+"""Integration tests for the ``grants`` MCP server over the real Kubernetes grant store.
 
-One server fronts both grant domains (#4918): every verb routes a ``domain``-tagged payload to the
-per-domain PostgreSQL-backed grant service and tags the returned envelope. Assertions observe
-durable state — created rows, source provenance, principal applicability — across both domains,
+Assertions observe durable state — created rows, source provenance, principal applicability —
 rather than call forwarding.
 """
 
@@ -20,12 +18,10 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import Client
-from fastmcp.exceptions import ToolError
 from mcp.types import TextContent
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-import haku.console.grants.http.models as http_models
 import haku.console.grants.kubernetes.models as kubernetes_models
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
 from haku.console.conftest import (
@@ -38,10 +34,9 @@ from haku.console.conftest import (
 from haku.console.database_schema import Agent
 from haku.console.grants.catalog import ConfigFileGrantSource, DatabaseGrantSource, GrantCatalog
 from haku.console.grants.envelope import GrantStatus
-from haku.console.grants.http.service import GrantService as HttpGrantService
 from haku.console.grants.kubernetes.authorization import RequestAttributes, SubjectAccessReviewResult
 from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
-from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
+from haku.console.grants.kubernetes.service import GrantService
 from haku.console.grants.principal import (
     AccessProfileGrantPrincipal,
     AgentGrantPrincipal,
@@ -56,15 +51,7 @@ from haku.console.mcp.execution import (
     OperatorMcpExecutionCaller,
     mcp_execution_request_meta,
 )
-from haku.console.tools.grants import (
-    GrantDomain,
-    GrantsToolsService,
-    HttpGrantRequest,
-    HttpGrantView,
-    KubernetesGrantRequest,
-    KubernetesGrantView,
-    build_mcp,
-)
+from haku.console.tools.grants import GrantsToolsService, build_mcp
 from haku.console.tools.kubernetes import KubernetesAccessCheck, KubernetesToolsService
 from haku.grants.authorization import GrantSourceKind
 
@@ -77,19 +64,6 @@ _K8S_OTHER_SPEC = kubernetes_models.GrantSpec(
     scope=kubernetes_models.NamespacesGrantScope(namespaces={"other"}),
     rules=(kubernetes_models.Rule(api_groups={"apps"}, resources={"deployments"}, verbs={"patch"}),),
 )
-_HTTP_SPEC = http_models.GrantSpec(
-    origin=http_models.HttpOrigin(scheme=http_models.HttpScheme.HTTPS, host="grocy.example", port=443),
-    coverage=http_models.HttpRequestCoverage(methods=frozenset({http_models.HttpMethod.GET})),
-)
-
-
-def _kubernetes(spec: kubernetes_models.GrantSpec) -> KubernetesGrantRequest:
-    return KubernetesGrantRequest(domain=GrantDomain.KUBERNETES, spec=spec)
-
-
-def _http(spec: http_models.GrantSpec) -> HttpGrantRequest:
-    return HttpGrantRequest(domain=GrantDomain.HTTP, spec=spec)
-
 
 _CAN_I_REQUEST = RequestAttributes(
     resource_request=True,
@@ -120,7 +94,7 @@ class _FakeSubjectAccessReviews:
 
 @dataclass(frozen=True, slots=True)
 class _Console:
-    """One console app over a fresh migrated database, both grant stores wired into the server."""
+    """One console app over a fresh migrated database, its Kubernetes grant store wired into the server."""
 
     client: TestClient
     sessions: async_sessionmaker[AsyncSession]
@@ -180,12 +154,10 @@ def console(make_client: Callable[..., Any]) -> Iterator[_Console]:
     with make_client() as client:
         app = cast(FastAPI, client.app)
         sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
-        kubernetes_grants = cast(KubernetesGrantService, app.state.kubernetes_grants)
-        http_grants = cast(HttpGrantService, app.state.http_grants)
+        kubernetes_grants = cast(GrantService, app.state.kubernetes_grants)
         agents = cast(AgentEnrollmentService, app.state.agent_enrollment_service)
         catalog = GrantCatalog(
             kubernetes_grants=kubernetes_grants,
-            http_grants=http_grants,
             kubernetes_config=KubernetesAuthorizationConfig(
                 subjects_by_access_profile={DEFAULT_ACCESS_PROFILE_ID: _SUBJECT}
             ),
@@ -199,7 +171,6 @@ def console(make_client: Callable[..., Any]) -> Iterator[_Console]:
             sessions=sessions,
             service=GrantsToolsService(
                 kubernetes=kubernetes_grants,
-                http=http_grants,
                 catalog=catalog,
                 agents=agents,
                 can_i=KubernetesToolsService(authorization=authorization),
@@ -222,13 +193,10 @@ def test_server_exposes_exact_stable_tool_set_without_context_argument(console: 
     assert tools["whoami"].input_schema.get("properties", {}) == {}
     assert set(tools["create_grant"].input_schema["properties"]) == {"grants", "duration_seconds", "principal"}
     assert set(tools["list_grants"].input_schema["properties"]) == {"principal", "include_inactive"}
-    assert set(tools["get_grant"].input_schema["properties"]) == {"domain", "grant_id"}
+    assert set(tools["get_grant"].input_schema["properties"]) == {"grant_id"}
     # One end-grants tool: an Agent omits owner_agent_id (relinquishes its own); an Operator names it.
-    assert set(tools["revoke_grants"].input_schema["properties"]) == {"domain", "grant_ids", "reason", "owner_agent_id"}
+    assert set(tools["revoke_grants"].input_schema["properties"]) == {"grant_ids", "reason", "owner_agent_id"}
     assert set(tools["kubernetes_can_i"].input_schema["properties"]) == {"requests"}
-    # The create payload discriminates the two domains' capability specs by `domain`.
-    branches = tools["create_grant"].input_schema["properties"]["grants"]["items"]["oneOf"]
-    assert {branch["properties"]["domain"]["const"] for branch in branches} == {"kubernetes", "http"}
 
 
 def test_list_grants_resolves_self_and_named_subjects(console: _Console) -> None:
@@ -237,17 +205,17 @@ def test_list_grants_resolves_self_and_named_subjects(console: _Console) -> None
     async def exercise() -> None:
         (view,) = await console.service.create_grants(
             context=context,
-            requests=[_kubernetes(_K8S_SPEC)],
+            requests=[_K8S_SPEC],
             duration_seconds=600,
             principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
         self_grants = await console.service.list_grants(context=context, principal="self")
         assert [item.source.id for item in self_grants if isinstance(item.source, DatabaseGrantSource)] == [
-            view.grant.grant_id
+            view.grant_id
         ]
         all_grants = await console.service.list_grants(context=context)
         assert [item.source.id for item in all_grants if isinstance(item.source, DatabaseGrantSource)] == [
-            view.grant.grant_id
+            view.grant_id
         ]
         assert [grant.source.entry_id for grant in all_grants if isinstance(grant.source, ConfigFileGrantSource)] == [
             f"kubernetes-profile:{DEFAULT_ACCESS_PROFILE_ID}"
@@ -255,9 +223,7 @@ def test_list_grants_resolves_self_and_named_subjects(console: _Console) -> None
         named = await console.service.list_grants(
             context=context, principal=AgentGrantPrincipal(agent_id=console.agent_id)
         )
-        assert [item.source.id for item in named if isinstance(item.source, DatabaseGrantSource)] == [
-            view.grant.grant_id
-        ]
+        assert [item.source.id for item in named if isinstance(item.source, DatabaseGrantSource)] == [view.grant_id]
         profile_grants = await console.service.list_grants(
             context=context, principal=AccessProfileGrantPrincipal(access_profile_id=DEFAULT_ACCESS_PROFILE_ID)
         )
@@ -274,9 +240,9 @@ def test_agent_can_request_a_grant_for_any_access_profile(console: _Console) -> 
 
     async def exercise() -> None:
         (view,) = await console.service.create_grants(
-            context=context, requests=[_kubernetes(_K8S_SPEC)], duration_seconds=600, principal=principal
+            context=context, requests=[_K8S_SPEC], duration_seconds=600, principal=principal
         )
-        assert view.grant.principal == principal
+        assert view.principal == principal
 
     console.call(exercise)
 
@@ -287,20 +253,18 @@ def test_list_grants_includes_database_history_only_when_requested(console: _Con
     async def exercise() -> None:
         (view,) = await console.service.create_grants(
             context=context,
-            requests=[_kubernetes(_K8S_SPEC)],
+            requests=[_K8S_SPEC],
             duration_seconds=600,
             principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
-        await console.service.revoke_grants(
-            context=context, domain=GrantDomain.KUBERNETES, grant_ids=[view.grant.grant_id], reason=None
-        )
+        await console.service.revoke_grants(context=context, grant_ids=[view.grant_id], reason=None)
         scopes: tuple[GrantPrincipalInput | None, ...] = ("self", None, AgentGrantPrincipal(agent_id=console.agent_id))
         for principal in scopes:
             current = await console.service.list_grants(context=context, principal=principal)
             history = await console.service.list_grants(context=context, principal=principal, include_inactive=True)
             assert not [grant for grant in current if isinstance(grant.source, DatabaseGrantSource)]
             assert [grant.source.id for grant in history if isinstance(grant.source, DatabaseGrantSource)] == [
-                view.grant.grant_id
+                view.grant_id
             ]
         assert [
             grant.source.entry_id
@@ -371,109 +335,55 @@ def test_whoami_returns_the_callers_resolved_console_identity(console: _Console)
     console.call(exercise)
 
 
-def test_create_routes_each_domain_and_tags_the_returned_envelope(console: _Console) -> None:
+def test_create_grant_tags_the_returned_envelope(console: _Console) -> None:
     context = console.agent_context()
 
     async def exercise() -> None:
         (kubernetes_view,) = await console.service.create_grants(
             context=context,
-            requests=[_kubernetes(_K8S_SPEC)],
+            requests=[_K8S_SPEC],
             duration_seconds=600,
             principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
-        (http_view,) = await console.service.create_grants(
-            context=context,
-            requests=[_http(_HTTP_SPEC)],
-            duration_seconds=600,
-            principal=AgentGrantPrincipal(agent_id=console.agent_id),
-        )
-        assert isinstance(kubernetes_view, KubernetesGrantView)
-        assert kubernetes_view.domain is GrantDomain.KUBERNETES
-        assert kubernetes_view.grant.scope == _K8S_SPEC.scope
-        assert kubernetes_view.grant.rules == _K8S_SPEC.rules
-        assert kubernetes_view.grant.owner_agent_id == console.agent_id
-        assert kubernetes_view.grant.principal == AgentGrantPrincipal(agent_id=console.agent_id)
-        assert kubernetes_view.grant.source_tool_call_id == context.tool_call_id
-        assert isinstance(http_view, HttpGrantView)
-        assert http_view.domain is GrantDomain.HTTP
-        assert http_view.grant.spec == _HTTP_SPEC
-        assert http_view.grant.status is GrantStatus.ACTIVE
+        assert kubernetes_view.scope == _K8S_SPEC.scope
+        assert kubernetes_view.rules == _K8S_SPEC.rules
+        assert kubernetes_view.owner_agent_id == console.agent_id
+        assert kubernetes_view.principal == AgentGrantPrincipal(agent_id=console.agent_id)
+        assert kubernetes_view.source_tool_call_id == context.tool_call_id
 
-        # The catalog list surfaces both database grants through its domain coverage.
         listed = await console.service.list_grants(context=context)
         assert {
             (view.coverage.kind, view.source.id) for view in listed if isinstance(view.source, DatabaseGrantSource)
-        } == {("kubernetes_rules", kubernetes_view.grant.grant_id), ("http", http_view.grant.grant_id)}
-        kubernetes_grant = await console.service.get_grant(
-            context=context, domain=GrantDomain.KUBERNETES, grant_id=kubernetes_view.grant.grant_id
-        )
-        http_grant = await console.service.get_grant(
-            context=context, domain=GrantDomain.HTTP, grant_id=http_view.grant.grant_id
-        )
+        } == {("kubernetes_rules", kubernetes_view.grant_id)}
+        kubernetes_grant = await console.service.get_grant(context=context, grant_id=kubernetes_view.grant_id)
         assert kubernetes_grant in listed
-        assert http_grant in listed
 
     console.call(exercise)
 
 
-def test_create_rejects_a_call_that_straddles_domains(console: _Console) -> None:
-    context = console.agent_context()
-
-    async def exercise() -> None:
-        with pytest.raises(ToolError, match="single domain"):
-            await console.service.create_grants(
-                context=context,
-                requests=[_kubernetes(_K8S_SPEC), _http(_HTTP_SPEC)],
-                duration_seconds=600,
-                principal=AgentGrantPrincipal(agent_id=console.agent_id),
-            )
-        # Nothing was created in either domain.
-        assert not [
-            grant
-            for grant in await console.service.list_grants(context=context)
-            if isinstance(grant.source, DatabaseGrantSource)
-        ]
-
-    console.call(exercise)
-
-
-def test_release_routes_by_domain_and_ends_in_the_supplied_order(console: _Console) -> None:
+def test_release_ends_grants_in_the_supplied_order(console: _Console) -> None:
     context = console.agent_context()
 
     async def exercise() -> None:
         first, second = await console.service.create_grants(
             context=context,
-            requests=[_kubernetes(_K8S_SPEC), _kubernetes(_K8S_OTHER_SPEC)],
+            requests=[_K8S_SPEC, _K8S_OTHER_SPEC],
             duration_seconds=600,
             principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
         # An Agent caller's revoke_grants ends its own grants.
         released = await console.service.revoke_grants(
-            context=context,
-            domain=GrantDomain.KUBERNETES,
-            grant_ids=[second.grant.grant_id, first.grant.grant_id],
-            reason="probe complete",
+            context=context, grant_ids=[second.grant_id, first.grant_id], reason="probe complete"
         )
-        assert [view.grant.grant_id for view in released] == [second.grant.grant_id, first.grant.grant_id]
-        assert all(view.grant.status is GrantStatus.ENDED for view in released)
-        refetched = await console.service.get_grant(
-            context=context, domain=GrantDomain.KUBERNETES, grant_id=first.grant.grant_id
-        )
+        assert [view.grant_id for view in released] == [second.grant_id, first.grant_id]
+        assert all(view.status is GrantStatus.ENDED for view in released)
+        refetched = await console.service.get_grant(context=context, grant_id=first.grant_id)
         assert refetched.validity.status is GrantStatus.ENDED
 
     console.call(exercise)
 
 
-@pytest.mark.parametrize(
-    ("domain", "request_factory"),
-    [
-        pytest.param(GrantDomain.KUBERNETES, lambda: _kubernetes(_K8S_SPEC), id="kubernetes"),
-        pytest.param(GrantDomain.HTTP, lambda: _http(_HTTP_SPEC), id="http"),
-    ],
-)
-def test_revoke_is_operator_direct_and_scoped_to_owned_agents(
-    console: _Console, domain: GrantDomain, request_factory: Callable[[], KubernetesGrantRequest | HttpGrantRequest]
-) -> None:
+def test_revoke_is_operator_direct_and_scoped_to_owned_agents(console: _Console) -> None:
     agent_context = console.agent_context()
     # Resolved before entering the app's event loop: the portal cannot be re-entered from inside.
     operator_context = console.operator_context()
@@ -481,35 +391,30 @@ def test_revoke_is_operator_direct_and_scoped_to_owned_agents(
     async def exercise() -> None:
         (view,) = await console.service.create_grants(
             context=agent_context,
-            requests=[request_factory()],
+            requests=[_K8S_SPEC],
             duration_seconds=600,
             principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
-        grant_id = view.grant.grant_id
+        grant_id = view.grant_id
         # An Agent caller never names an owner: naming owner_agent_id is rejected, and omitting it
         # ends only its own grants.
         with pytest.raises(PermissionError, match="may not name owner_agent_id"):
             await console.service.revoke_grants(
-                context=agent_context, domain=domain, owner_agent_id=console.agent_id, grant_ids=[grant_id], reason="no"
+                context=agent_context, owner_agent_id=console.agent_id, grant_ids=[grant_id], reason="no"
             )
         # A foreign Operator does not see this Agent at all.
         with pytest.raises(LookupError):
             await console.service.revoke_grants(
                 context=_foreign_operator_context(),
-                domain=domain,
                 owner_agent_id=console.agent_id,
                 grant_ids=[grant_id],
                 reason="not yours",
             )
         (revoked,) = await console.service.revoke_grants(
-            context=operator_context,
-            domain=domain,
-            owner_agent_id=console.agent_id,
-            grant_ids=[grant_id],
-            reason="operator revoked",
+            context=operator_context, owner_agent_id=console.agent_id, grant_ids=[grant_id], reason="operator revoked"
         )
-        assert revoked.grant.status is GrantStatus.ENDED
-        assert revoked.grant.end_reason == "operator revoked"
+        assert revoked.status is GrantStatus.ENDED
+        assert revoked.end_reason == "operator revoked"
 
     console.call(exercise)
 
@@ -520,7 +425,7 @@ def test_revoke_is_operator_direct_and_scoped_to_owned_agents(
         pytest.param(
             lambda service: service.create_grants(
                 context=_foreign_operator_context(),
-                requests=[_kubernetes(_K8S_SPEC)],
+                requests=[_K8S_SPEC],
                 duration_seconds=60,
                 principal=AgentGrantPrincipal(agent_id=UUID(int=1)),
             ),
@@ -528,10 +433,7 @@ def test_revoke_is_operator_direct_and_scoped_to_owned_agents(
         ),
         pytest.param(lambda service: service.list_grants(context=_foreign_operator_context()), id="list"),
         pytest.param(
-            lambda service: service.get_grant(
-                context=_foreign_operator_context(), domain=GrantDomain.HTTP, grant_id=UUID(int=2)
-            ),
-            id="get",
+            lambda service: service.get_grant(context=_foreign_operator_context(), grant_id=UUID(int=2)), id="get"
         ),
     ],
 )

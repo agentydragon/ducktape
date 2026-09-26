@@ -30,21 +30,10 @@ const zRevokeGrantsArgs: z.ZodType<McpToolArgumentsFor<typeof GRANTS_SERVER_ID, 
 type CreateGrantArgs = z.infer<typeof zCreateGrantArgs>;
 type RevokeGrantsArgs = z.infer<typeof zRevokeGrantsArgs>;
 type CreateGrantItem = CreateGrantArgs["grants"][number];
-
-type KubernetesGrantItem = Extract<CreateGrantItem, { domain: "kubernetes" }>;
-type KubernetesGrantResult = Extract<
-  McpToolResultFor<typeof GRANTS_SERVER_ID, "create_grant">[number],
-  { domain: "kubernetes" }
->["grant"];
-type KubernetesGrantShape = KubernetesGrantItem["spec"] | Pick<KubernetesGrantResult, "scope" | "rules">;
+type CreateGrantResult = McpToolResultFor<typeof GRANTS_SERVER_ID, "create_grant">[number];
+type KubernetesGrantShape = CreateGrantItem | Pick<CreateGrantResult, "scope" | "rules">;
 type KubernetesGrantScope = KubernetesGrantShape["scope"];
 type KubernetesRule = KubernetesGrantShape["rules"][number];
-type HttpGrantItem = Extract<CreateGrantItem, { domain: "http" }>;
-type HttpGrantResult = Extract<
-  McpToolResultFor<typeof GRANTS_SERVER_ID, "create_grant">[number],
-  { domain: "http" }
->["grant"];
-type HttpGrantShape = HttpGrantItem["spec"] | HttpGrantResult["spec"];
 
 export function scopeLabel(scope: KubernetesGrantScope): string {
   switch (scope.kind) {
@@ -101,38 +90,6 @@ export function KubernetesGrantScopeAndRules({
   );
 }
 
-export function httpOriginLabel(origin: HttpGrantShape["origin"]): string {
-  return `${origin.scheme}://${origin.host}:${origin.port}`;
-}
-
-export function HttpGrantCoverage({ spec }: { spec: HttpGrantShape }): JSX.Element {
-  return (
-    <Stack gap={4}>
-      <Group gap={6}>
-        <PreviewTitle className="haku-shell-mono">{httpOriginLabel(spec.origin)}</PreviewTitle>
-        <PreviewBadge variant="light" color="teal">
-          {spec.coverage.methods.join(", ")}
-        </PreviewBadge>
-      </Group>
-      {spec.coverage.path_regex && (
-        <PreviewText span className="haku-shell-mono">
-          {spec.coverage.path_regex}
-        </PreviewText>
-      )}
-      {spec.credential_handle && <Field label="Credential">{spec.credential_handle}</Field>}
-    </Stack>
-  );
-}
-
-function GrantItemView({ item, variant }: { item: CreateGrantItem; variant: "compact" | "detailed" }): JSX.Element {
-  if (item.domain === "kubernetes") return <KubernetesGrantScopeAndRules spec={item.spec} variant={variant} />;
-  return <HttpGrantCoverage spec={item.spec} />;
-}
-
-function domainLabel(item: CreateGrantItem): string {
-  return item.domain === "kubernetes" ? "Kubernetes" : "HTTP egress";
-}
-
 function formatDuration(seconds: number): string {
   if (seconds % 3600 === 0) return `${seconds / 3600}h`;
   if (seconds % 60 === 0) return `${seconds / 60}m`;
@@ -151,13 +108,10 @@ function principalLabel(principal: CreateGrantArgs["principal"]): string {
 
 function CreateGrantPreview({ args, variant }: PreviewProps<CreateGrantArgs>) {
   const grants = variant === "compact" ? args.grants.slice(0, COMPACT_ITEM_LIMIT) : args.grants;
-  const domain = args.grants.length > 0 ? domainLabel(args.grants[0]) : "";
   return (
     <Stack gap="xs">
       <Group gap={6}>
-        <PreviewTitle>
-          {domain} {plural(args.grants.length, "grant")}
-        </PreviewTitle>
+        <PreviewTitle>Kubernetes {plural(args.grants.length, "grant")}</PreviewTitle>
         <PreviewBadge variant="outline">
           {args.duration_seconds == null ? "permanent" : `for ${formatDuration(args.duration_seconds)}`}
         </PreviewBadge>
@@ -165,7 +119,7 @@ function CreateGrantPreview({ args, variant }: PreviewProps<CreateGrantArgs>) {
       </Group>
       <Stack gap="xs">
         {grants.map((item, index) => (
-          <GrantItemView key={index} item={item} variant={variant} />
+          <KubernetesGrantScopeAndRules key={index} spec={item} variant={variant} />
         ))}
         <MoreLine count={args.grants.length - grants.length} />
       </Stack>
@@ -192,7 +146,6 @@ function RevokeGrantsPreview({ args, variant }: PreviewProps<RevokeGrantsArgs>) 
     <Stack gap="xs">
       <Group gap={6}>
         <PreviewTitle>{plural(args.grant_ids.length, "grant")}</PreviewTitle>
-        <PreviewBadge variant="light">{args.domain}</PreviewBadge>
         <PreviewBadge variant="outline">end</PreviewBadge>
       </Group>
       <GrantIdList ids={args.grant_ids} variant={variant} />

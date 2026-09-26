@@ -9,13 +9,11 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     ARRAY,
     BigInteger,
-    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
-    Integer,
     LargeBinary,
     Text,
     UniqueConstraint,
@@ -25,7 +23,6 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from haku.console.grants.envelope import GrantEnvelopeColumns, grant_envelope_table_args
-from haku.console.grants.http.models import HttpMethod, HttpMethods, HttpScheme
 from haku.console.grants.kubernetes.models import GrantScope, Rule
 from haku.console.identity.agent import (
     MAX_AGENT_DISPLAY_NAME_LENGTH,
@@ -39,7 +36,7 @@ from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.pydantic_column import PydanticColumn
 from haku.console.tool_calls import ToolCallStatus
-from util.sqlalchemy_types import StrEnumColumn, StringBackedStrEnumColumn, TextBackedStrEnumColumn
+from util.sqlalchemy_types import StrEnumColumn, StringBackedStrEnumColumn
 
 
 class Base(DeclarativeBase):
@@ -511,45 +508,6 @@ class KubernetesGrantRow(GrantEnvelopeColumns, Base):
 
     scope: Mapped[GrantScope] = mapped_column(PydanticColumn(GrantScope), nullable=False)
     rules: Mapped[list[Rule]] = mapped_column(PydanticColumn(list[Rule]), nullable=False)
-
-
-class HttpGrantRow(GrantEnvelopeColumns, Base):
-    """One Agent-owned, principal-scoped HTTP egress grant.
-
-    The envelope half of the row (`GrantEnvelopeColumns`) is shared with every grant domain.
-    The origin is three relational columns because a grant pins exactly ``(scheme, host, port)``;
-    ``methods``/``path_regex`` narrow requests at that origin. The domain canonicalizes and
-    validates coverage app-side (`grants.http.models`); Postgres holds only the relational
-    invariants. Status is derived, never stored (root STYLE.md § SQLAlchemy): the row records the
-    end fact — ``ended_at`` — and the envelope's ``derive_status`` computes
-    the vocabulary from them and the clock, so expiry needs no sweeper.
-    """
-
-    __tablename__ = "http_grants"
-    __table_args__ = (
-        *grant_envelope_table_args("http_grants"),
-        CheckConstraint(
-            "credential_handle IS NULL OR btrim(credential_handle) <> ''",
-            name="ck_http_grants_credential_handle_nonempty",
-        ),
-        Index("idx_http_grants_owner_expiry", "owner_agent_id", "expires_at"),
-        Index("idx_http_grants_agent_principal_expiry", "principal_agent_id", "expires_at"),
-        Index("idx_http_grants_access_profile_principal_expiry", "principal_access_profile_id", "expires_at"),
-    )
-
-    scheme: Mapped[HttpScheme] = mapped_column(TextBackedStrEnumColumn(HttpScheme), nullable=False)
-    host: Mapped[str] = mapped_column(Text, nullable=False)
-    port: Mapped[int] = mapped_column(Integer, nullable=False)
-    methods: Mapped[frozenset[HttpMethod]] = mapped_column(PydanticColumn(HttpMethods), nullable=False)
-    path_regex: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # The handle is an inert config-registry name; the credential value it resolves to lives in a
-    # deployment env reference and never enters Postgres.
-    credential_handle: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Capability flag: this grant may reach its origin even when the host resolves entirely into
-    # otherwise-prohibited (cluster-internal) address space. The flag only scopes the override to
-    # this grant's origin; a caller resolving addresses enforces the check itself. Defaults false
-    # server-side so any row inserted without it stays default-deny.
-    allow_prohibited_address: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
 
 
 class StaticCredential(Base):

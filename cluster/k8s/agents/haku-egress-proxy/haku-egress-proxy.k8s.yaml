@@ -43,9 +43,9 @@ spec:
   secretTemplate:
     annotations:
       reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager,haku-console
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager
       reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager,haku-console
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager
 ---
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
@@ -74,7 +74,6 @@ spec:
             - haku-sandbox
             - haku-openclaw-spike
             - haku-ci
-            - public-coder-agent
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -525,14 +524,6 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            k8s:app.kubernetes.io/name: haku-console
-            k8s:io.kubernetes.pod.namespace: haku-console
-      toPorts:
-        - ports:
-            - port: "8888"
               protocol: TCP
   endpointSelector:
     matchExpressions:
