@@ -4,8 +4,8 @@ import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
 import { type JSX, useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
-import { ActionRequests } from "./actions";
-import { ActionHistory } from "./actions_history";
+import { ActionRequests } from "./actions/requests";
+import { ActionHistory } from "./actions/history";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
 import { SandboxList } from "./sandboxes";

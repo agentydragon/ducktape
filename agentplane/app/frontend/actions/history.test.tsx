@@ -3,9 +3,6 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { stateLabel } from "./actions";
-import { ActionHistory } from "./actions_history";
-import { render, request, sshExec, unmountLast, type View } from "./actions_testing";
 import {
   actionService,
   type ActionGroupService,
@@ -14,6 +11,9 @@ import {
   type ActionService,
   type ActionState,
 } from "./client";
+import { ActionHistory } from "./history";
+import { stateLabel } from "./requests";
+import { render, request, sshExec, unmountLast, type View } from "./testing";
 
 /** The view reading its Action groups from `list` rather than the real `/action-groups`. */
 function historyOver(list: ActionGroupService["list"]): View {

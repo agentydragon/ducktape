@@ -2,7 +2,7 @@ import { Anchor, Badge, Code, Stack, Text } from "@mantine/core";
 import { type JSX, useMemo } from "react";
 import { z } from "zod";
 
-import { HighlightedText, JsonView, looksLikeJson } from "./json_view";
+import { HighlightedText, JsonView, looksLikeJson } from "../json_view";
 
 /** One block of a `CallToolResult`'s `content`, in the MCP wire shape of the kinds this view
  * draws. `unrecognized` holds any other block as stored: audio, a binary resource, an image whose

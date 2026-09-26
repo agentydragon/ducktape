@@ -4,7 +4,7 @@ import { Badge, Button, Code, Group, Stack, Text } from "@mantine/core";
 import { type JSX, useState } from "react";
 import { z } from "zod";
 
-import { HighlightedCode } from "../syntax_highlight";
+import { HighlightedCode } from "../../syntax_highlight";
 import { definePreview, type ArgumentsPreview, type PreviewProps } from "./entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "./result_entry";
 
