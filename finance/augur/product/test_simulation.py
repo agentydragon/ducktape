@@ -21,6 +21,7 @@ from finance.augur.product.simulation import (
     simulate_events,
     simulate_product_metrics,
 )
+from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.compiler.execution import (
     compile_accounts,
     compile_holding_pools,
@@ -37,7 +38,6 @@ from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_
 from finance.augur.sim.ids import AccountId, AgentId, AssetId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import _ScheduledSale
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
@@ -49,6 +49,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import Capture, World
 
 AGENT = AgentId("alice")
@@ -97,14 +98,18 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
         quantity=UNITS,
         cost_basis=Decimal(str(UNITS)) * LOT_BASIS,
     )
-    sale = _ScheduledSale(
-        month=SALE_MONTH,
+    sale = Sell(
         cause_id="sell-vti",
         agent_id=AGENT,
-        account_id=AccountId("checking"),
-        asset_id=AssetId(VTI.symbol),
-        units=int(quantity_to_quanta(UNITS, scale=quantity_scale_for_asset(VTI))),
         proceeds_account_id=AccountId("checking"),
+        asset_id=AssetId(VTI.symbol),
+        lots=(
+            LotSale(
+                account_id=AccountId("checking"),
+                lot_id=lot.lot_id,
+                units=int(quantity_to_quanta(UNITS, scale=quantity_scale_for_asset(VTI))),
+            ),
+        ),
     )
     profile = TaxProfile(agent_id=AGENT, jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs")
     jurisdictions = load_jurisdictions_for([profile])
@@ -139,9 +144,7 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
             world.declare_pool(pool)
         for held in compile_lots([lot], quantum=CURRENCY.quantum):
             world.hold(held)
-        household = ConfiguredHousehold(AgentId(AGENT), (), scheduled_sales=(sale,))
-        household.check(world)
-        world.track(household)
+        world.track(Scripted(ConfiguredHousehold(AgentId(AGENT), ()), {SALE_MONTH: (sale,)}))
         return world
 
     return lambda: [compose(rollout_id) for rollout_id in range(rollout_count)]
@@ -240,7 +243,7 @@ class TestConfigured:
             assert isinstance(frame, pl.DataFrame), f"{spec.name} is not a frame"
             assert frame.schema == spec.schema, f"{spec.name} does not match its declared schema"
 
-    def test_the_scheduled_sale_is_reported_as_a_disposition(self, run: Worlds) -> None:
+    def test_the_sale_is_reported_as_a_disposition(self, run: Worlds) -> None:
         """Proceeds and basis follow from the scenario, so every engine owes the same ones."""
 
         rows = simulate_events(run(), AGENT).lot_dispositions.filter(pl.col("month_index") == SALE_MONTH).to_dicts()

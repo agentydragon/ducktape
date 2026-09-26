@@ -1,4 +1,4 @@
-"""What a world does with facts it cannot use: an unpriceable sleeve, an oversold lot, a mark that is not a mark.
+"""What a world does with facts it cannot use: an unpriceable sleeve, a mark that is not a mark.
 
 Each refusal sits where the fact is declared or lowered, so nothing carries a number it cannot
 price into a month's arithmetic or into the terminal snapshot.
@@ -19,7 +19,6 @@ from finance.augur.model.series import (
     SecurityKey,
     SecuritySymbol,
 )
-from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.private_equity import compile_pe_channels
@@ -27,7 +26,7 @@ from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedSeries, _ScheduledSale
+from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedSeries
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -181,48 +180,6 @@ def test_a_private_equity_mark_is_required_at_the_terminal_snapshot_too() -> Non
     holder(*private_equity_series()).hold(lot)
     with pytest.raises(ValueError, match=r"(?i)invalid mark value"):
         holder(*private_equity_series(mark=(1, 1, -1))).hold(lot)
-
-
-def test_a_scheduled_sale_may_not_exceed_the_units_held() -> None:
-    world = alice_holding(*vti_series(100.0, 100.0, 100.0))
-    world.declare_pool(
-        PreparedHoldingPool(
-            agent_id=ALICE, account_id=AccountId("taxable"), asset_id=AssetId(VTI.symbol), quantity_scale=SCALE
-        )
-    )
-    world.hold(
-        PreparedLot(
-            lot_id=LotId("taxable_vti"),
-            agent_id=ALICE,
-            account_id=AccountId("taxable"),
-            asset_id=AssetId(VTI.symbol),
-            purchase_month=-12,
-            quantity_scale=SCALE,
-            units=int(quantity_to_quanta(5.0, scale=SCALE)),
-            basis=money(400),
-        )
-    )
-    world.track(
-        ConfiguredHousehold(
-            AgentId(ALICE),
-            (),
-            scheduled_sales=(
-                _ScheduledSale(
-                    month=1,
-                    cause_id="oversell",
-                    agent_id=ALICE,
-                    account_id=AccountId("taxable"),
-                    asset_id=AssetId(VTI.symbol),
-                    units=int(quantity_to_quanta(6.0, scale=SCALE)),
-                    proceeds_account_id=CHECKING,
-                ),
-            ),
-        )
-    )
-    world.start()
-    world.step()
-    with pytest.raises(ValueError, match=r"(?i)exceeds the units held"):
-        world.step()
 
 
 @pytest.mark.parametrize("bad_price", [0.0, -100.0, float("nan")], ids=["zero", "negative", "nonfinite"])

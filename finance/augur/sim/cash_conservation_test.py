@@ -7,7 +7,7 @@ nobody models. The rule below is that this move equals what the engine recorded 
 Disposals are why it is worth saying. When a sale credits proceeds with no matching debit, net
 worth stays correct — the lot leaves as the cash arrives — so every agent-facing number looks
 right while cash is minted from nothing. Each way of turning something into cash therefore
-gets its own case: a scheduled asset sale, a target-allocation sale, a private-equity tender,
+gets its own case: an explicit asset sale, a target-allocation sale, a private-equity tender,
 and a property sale. Each asserts the disposal actually fired, because a sale that never
 happened moves nothing and proves nothing.
 
@@ -20,7 +20,7 @@ month — is not stateable over these channels, because the external boundary is
 them. The engine's own counterpart is the double-entry journal it validates on every entry.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from decimal import Decimal
 
 import numpy as np
@@ -38,7 +38,7 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.policy.configured_household import ConfiguredHousehold
-from finance.augur.sim.actions import DecisionActions
+from finance.augur.sim.actions import Action, DecisionActions, LotSale, Sell
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.compiler.execution import compile_series
@@ -66,7 +66,6 @@ from finance.augur.sim.prepared import (
     _MortgageFinancing,
     _PropertyPurchase,
     _PropertySale,
-    _ScheduledSale,
     _SecuritySleeveTarget,
     _TenderPolicy,
 )
@@ -76,6 +75,7 @@ from finance.augur.sim.scenario import ORDINARY_INCOME, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.testing.issuer_protocol import at_month, issuer_protocol
+from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -160,11 +160,11 @@ def hold_vti(world: World, lot: PreparedLot) -> None:
 
 
 def run(
-    world: World, *, policies: tuple[_AllocationPolicy, ...] = (), scheduled_sales: tuple[_ScheduledSale, ...] = ()
+    world: World, *, policies: tuple[_AllocationPolicy, ...] = (), script: Mapping[int, Sequence[Action]] = {}
 ) -> Rollout:
-    """Alice sells on her schedule and her funding policy, then pays every due claim in full, in order."""
+    """Alice makes her scripted trades, sells on her funding policy, then pays every due claim in full, in order."""
 
-    household = ConfiguredHousehold(AgentId(ALICE), policies, scheduled_sales=scheduled_sales)
+    household = Scripted(ConfiguredHousehold(AgentId(ALICE), policies), script)
     session = ActionSession({0: world}, ALICE)
     try:
         batch = session.start()
@@ -213,7 +213,7 @@ def proceeds(rollout: Rollout, *, month: int) -> int:
     )
 
 
-def scheduled_sale_world() -> World:
+def security_sale_world() -> World:
     """The reported symptom, minimized: hold $500,000 of an asset, sell it for $750,000.
 
     Net worth is right either way — the lot leaves as the cash arrives — so the $250,000 gain
@@ -402,22 +402,28 @@ def declared(world: World) -> frozenset[AccountRef]:
     return frozenset(world.accounting.declared)
 
 
-def test_a_scheduled_sale_brings_in_exactly_its_proceeds() -> None:
-    world = scheduled_sale_world()
+def test_a_security_sale_brings_in_exactly_its_proceeds() -> None:
+    world = security_sale_world()
     accounts = declared(world)
     rollout = run(
         world,
-        scheduled_sales=(
-            _ScheduledSale(
-                month=SALE_MONTH,
-                cause_id="sell-vti",
-                agent_id=ALICE,
-                account_id=CHECKING,
-                asset_id=AssetId(VTI.symbol),
-                units=int(quantity_to_quanta(SALE_UNITS, scale=VTI_SCALE)),
-                proceeds_account_id=CHECKING,
-            ),
-        ),
+        script={
+            SALE_MONTH: (
+                Sell(
+                    cause_id="sell-vti",
+                    agent_id=ALICE,
+                    proceeds_account_id=CHECKING,
+                    asset_id=AssetId(VTI.symbol),
+                    lots=(
+                        LotSale(
+                            account_id=CHECKING,
+                            lot_id=LotId("bought"),
+                            units=int(quantity_to_quanta(SALE_UNITS, scale=VTI_SCALE)),
+                        ),
+                    ),
+                ),
+            )
+        },
     )
 
     assert proceeds(rollout, month=SALE_MONTH) == SALE_PROCEEDS_QUANTA

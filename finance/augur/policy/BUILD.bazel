@@ -71,7 +71,6 @@ py_library(
         ":cash_band_household",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:agent",
-        "//finance/augur/sim:books",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:observations",
         "//finance/augur/sim:prepared",

@@ -4,7 +4,8 @@ The tax schedule below is deliberately synthetic: 20% ordinary, 10% long-term,
 no deductions. Assertions pin accounting/timing, not statutory fidelity.
 """
 
-from dataclasses import dataclass, replace
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 import pytest
@@ -13,6 +14,7 @@ from more_itertools import one
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
@@ -35,11 +37,11 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
     PreparedTransfer,
     _AllocationPolicy,
-    _ScheduledSale,
     _SecuritySleeveTarget,
 )
 from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -159,7 +161,7 @@ class Situation:
     distributions: tuple[PreparedDistribution, ...] = ()
     claims: tuple[PreparedObligation | PreparedRecurringObligation, ...] = ()
     transfers: tuple[PreparedTransfer, ...] = ()
-    scheduled_sales: tuple[_ScheduledSale, ...] = ()
+    sales: Mapping[int, tuple[Sell, ...]] = field(default_factory=dict)
     interest_sources: tuple[InterestIncome, ...] = ()
     taxed: bool = True
     rollout_count: int = 1
@@ -194,7 +196,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         world.declare_flow(flow)
     for obligation in case.claims:
         world.track(Biller(obligation))
-    world.track(ConfiguredHousehold(AgentId(ALICE), case.policies, scheduled_sales=case.scheduled_sales))
+    world.track(Scripted(ConfiguredHousehold(AgentId(ALICE), case.policies), case.sales))
     return world
 
 
@@ -409,17 +411,20 @@ def test_fifo_across_two_policy_purchase_dates_preserves_basis_and_tax_character
                     deduction_category=None,
                 ),
             ),
-            scheduled_sales=(
-                _ScheduledSale(
-                    month=12,
-                    cause_id="fifo-sale",
-                    agent_id=ALICE,
-                    account_id=BROKERAGE,
-                    asset_id=AssetId(STOCK.symbol),
-                    units=3 * SCALE,
-                    proceeds_account_id=AccountId("proceeds"),
-                ),
-            ),
+            sales={
+                12: (
+                    Sell(
+                        cause_id="fifo-sale",
+                        agent_id=ALICE,
+                        proceeds_account_id=AccountId("proceeds"),
+                        asset_id=AssetId(STOCK.symbol),
+                        lots=(
+                            LotSale(account_id=BROKERAGE, lot_id=LotId("early_buy_p1_s0_0"), units=2 * SCALE),
+                            LotSale(account_id=BROKERAGE, lot_id=LotId("fund_buy_p0_s0_0"), units=1 * SCALE),
+                        ),
+                    ),
+                )
+            },
         )
     )
     assert [(row.purchase_month, row.units, row.basis, row.proceeds) for row in output.dispositions] == [

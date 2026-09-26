@@ -15,10 +15,6 @@ experiment consumers are added meanwhile.
   cash, zero targets/full exits, FIFO scoping and quantity scales. A newly required
   product-specific calculation needs a real Python consumer and independent financial
   checks; do not promote mixed-scale raw-quantity PE selection to a generic helper.
-- Scheduled sales: `_ScheduledSale` (`sim/prepared.py`) is an input only the sim and
-  product suites build; the configured household turns it into FIFO `Sell`s. Those
-  suites move their sales to explicit actions, and the record goes with the household.
-  Explicit asset-sale and public-sale/tax controls remain the independent coverage.
 - The PE issuer phase selects recovery, forced and tender lots with `Holdings.fifo`
   inside the world; PE's migration after GPE replaces that with explicit responses.
 
