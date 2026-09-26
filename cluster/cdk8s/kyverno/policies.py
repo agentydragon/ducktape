@@ -4,20 +4,16 @@ controllers so the policies here and elsewhere are admitted.
 One chart, and so one file, per policy: //cluster/validation/kyverno runs the
 `kyverno` CLI against each file alone. Fields the ClusterPolicy CRD leaves untyped
 (`preconditions`, `deny.conditions`, `patchStrategicMerge`, `generate.data`) are
-plain dicts. `validationFailureAction` is a JSON patch: the binding's enum collapses the
-CRD's `audit`/`Audit` spellings to the lowercase ones, and these policies use `Audit` and
-`Enforce`.
+plain dicts.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from kyverno_clusterpolicy_crds.io.kyverno import (
-    ClusterPolicy,
-    ClusterPolicySpec,
     ClusterPolicySpecRules,
     ClusterPolicySpecRulesExclude,
     ClusterPolicySpecRulesExcludeAny,
@@ -32,10 +28,7 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesMatchAnyResourcesSelectorMatchExpressions,
     ClusterPolicySpecRulesMatchAnySubjects,
     ClusterPolicySpecRulesMutate,
-    ClusterPolicySpecRulesValidate,
-    ClusterPolicySpecRulesValidateCel,
     ClusterPolicySpecRulesValidateCelExpressions,
-    ClusterPolicySpecRulesValidateDeny,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -43,6 +36,12 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.kyverno import proxy_injection
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.kyverno.cluster_policy import (
+    ClusterPolicy,
+    Validate,
+    ValidationFailureAction,
+    match_resources,
+)
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/policies"
 
@@ -67,10 +66,6 @@ def _annotations(
         "policies.kyverno.io/subject": subject,
         "policies.kyverno.io/description": description,
     }
-
-
-def _match(resources: ClusterPolicySpecRulesMatchAnyResources) -> ClusterPolicySpecRulesMatch:
-    return ClusterPolicySpecRulesMatch(any=[ClusterPolicySpecRulesMatchAny(resources=resources)])
 
 
 def require_gitops_chart(app: App) -> Chart:
@@ -99,7 +94,7 @@ def require_gitops_chart(app: App) -> Chart:
         # Stakater Reloader (triggers rolling restarts on secret changes)
         ("reloader-reloader", "kube-system"),
     ]
-    policy = ClusterPolicy(
+    ClusterPolicy(
         chart,
         "policy",
         metadata=ApiObjectMetadata(
@@ -115,53 +110,50 @@ def require_gitops_chart(app: App) -> Chart:
                 ),
             ),
         ),
-        spec=ClusterPolicySpec(
-            # background: false because this policy uses subjects for exclusions,
-            # which requires admission context (request.userInfo) not available in background scans
-            background=False,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="block-direct-workload-changes",
-                    match=_match(
-                        ClusterPolicySpecRulesMatchAnyResources(
-                            kinds=["Deployment", "StatefulSet", "DaemonSet"], operations=[_CREATE, _UPDATE]
-                        )
-                    ),
-                    exclude=ClusterPolicySpecRulesExclude(
-                        any=[
-                            *(
-                                ClusterPolicySpecRulesExcludeAny(
-                                    subjects=[
-                                        ClusterPolicySpecRulesExcludeAnySubjects(
-                                            kind="ServiceAccount", name=name, namespace=namespace
-                                        )
-                                    ]
-                                )
-                                for name, namespace in exempt_service_accounts
-                            ),
-                            # System namespaces
+        # background: false because this policy uses subjects for exclusions,
+        # which requires admission context (request.userInfo) not available in background scans
+        background=False,
+        # Start in Audit mode - change to Enforce after validation
+        validation_failure_action=ValidationFailureAction.AUDIT,
+        rules=[
+            ClusterPolicySpecRules(
+                name="block-direct-workload-changes",
+                match=match_resources(
+                    ClusterPolicySpecRulesMatchAnyResources(
+                        kinds=["Deployment", "StatefulSet", "DaemonSet"], operations=[_CREATE, _UPDATE]
+                    )
+                ),
+                exclude=ClusterPolicySpecRulesExclude(
+                    any=[
+                        *(
                             ClusterPolicySpecRulesExcludeAny(
-                                resources=ClusterPolicySpecRulesExcludeAnyResources(
-                                    namespaces=["kube-system", "kyverno", "flux-system"]
-                                )
-                            ),
-                        ]
-                    ),
-                    validate=ClusterPolicySpecRulesValidate(
-                        message=(
-                            "Direct resource creation/modification blocked. All changes must go through GitOps "
-                            "(commit to git repository). "
-                            "Resource: {{request.object.kind}}/{{request.object.metadata.name}} "
-                            "User: {{request.userInfo.username}}"
+                                subjects=[
+                                    ClusterPolicySpecRulesExcludeAnySubjects(
+                                        kind="ServiceAccount", name=name, namespace=namespace
+                                    )
+                                ]
+                            )
+                            for name, namespace in exempt_service_accounts
                         ),
-                        deny=ClusterPolicySpecRulesValidateDeny(),
-                    ),
-                )
-            ],
-        ),
+                        # System namespaces
+                        ClusterPolicySpecRulesExcludeAny(
+                            resources=ClusterPolicySpecRulesExcludeAnyResources(
+                                namespaces=["kube-system", "kyverno", "flux-system"]
+                            )
+                        ),
+                    ]
+                ),
+                validate=Validate.deny(
+                    message=(
+                        "Direct resource creation/modification blocked. All changes must go through GitOps "
+                        "(commit to git repository). "
+                        "Resource: {{request.object.kind}}/{{request.object.metadata.name}} "
+                        "User: {{request.userInfo.username}}"
+                    )
+                ).to_spec(),
+            )
+        ],
     )
-    # Start in Audit mode - change to Enforce after validation
-    policy.add_json_patch(JsonPatch.add("/spec/validationFailureAction", "Audit"))
     return chart
 
 
@@ -203,31 +195,29 @@ def default_revision_history_limit_chart(app: App) -> Chart:
                 ),
             ),
         ),
-        spec=ClusterPolicySpec(
-            admission=True,
-            background=False,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="default-revision-history-limit",
-                    match=_match(
-                        ClusterPolicySpecRulesMatchAnyResources(
-                            kinds=["Deployment", "StatefulSet", "DaemonSet"], operations=[_CREATE, _UPDATE]
-                        )
-                    ),
-                    preconditions={
-                        "all": [
-                            # Fire only when the field is unset (null coalesces to the -1 sentinel).
-                            {
-                                "key": "{{ request.object.spec.revisionHistoryLimit || `-1` }}",
-                                "operator": "Equals",
-                                "value": -1,
-                            }
-                        ]
-                    },
-                    mutate=ClusterPolicySpecRulesMutate(patch_strategic_merge={"spec": {"revisionHistoryLimit": 3}}),
-                )
-            ],
-        ),
+        admission=True,
+        background=False,
+        rules=[
+            ClusterPolicySpecRules(
+                name="default-revision-history-limit",
+                match=match_resources(
+                    ClusterPolicySpecRulesMatchAnyResources(
+                        kinds=["Deployment", "StatefulSet", "DaemonSet"], operations=[_CREATE, _UPDATE]
+                    )
+                ),
+                preconditions={
+                    "all": [
+                        # Fire only when the field is unset (null coalesces to the -1 sentinel).
+                        {
+                            "key": "{{ request.object.spec.revisionHistoryLimit || `-1` }}",
+                            "operator": "Equals",
+                            "value": -1,
+                        }
+                    ]
+                },
+                mutate=ClusterPolicySpecRulesMutate(patch_strategic_merge={"spec": {"revisionHistoryLimit": 3}}),
+            )
+        ],
     )
     return chart
 
@@ -257,17 +247,15 @@ def default_disable_service_links_chart(app: App) -> Chart:
                 ),
             ),
         ),
-        spec=ClusterPolicySpec(
-            admission=True,
-            background=False,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="default-disable-service-links",
-                    match=_match(ClusterPolicySpecRulesMatchAnyResources(kinds=["Pod"], operations=[_CREATE])),
-                    mutate=ClusterPolicySpecRulesMutate(patch_strategic_merge={"spec": {"enableServiceLinks": False}}),
-                )
-            ],
-        ),
+        admission=True,
+        background=False,
+        rules=[
+            ClusterPolicySpecRules(
+                name="default-disable-service-links",
+                match=match_resources(ClusterPolicySpecRulesMatchAnyResources(kinds=["Pod"], operations=[_CREATE])),
+                mutate=ClusterPolicySpecRulesMutate(patch_strategic_merge={"spec": {"enableServiceLinks": False}}),
+            )
+        ],
     )
     return chart
 
@@ -333,37 +321,35 @@ def default_vpa_requests_only_chart(app: App) -> Chart:
                 ),
             ),
         ),
-        spec=ClusterPolicySpec(
-            admission=True,
-            background=False,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="default-vpa-requests-only",
-                    match=_match(
-                        ClusterPolicySpecRulesMatchAnyResources(
-                            kinds=["Namespace"],
-                            operations=[_CREATE, _UPDATE],
-                            selector=ClusterPolicySpecRulesMatchAnyResourcesSelector(
-                                match_labels={"goldilocks.fairwinds.com/vpa-update-mode": "auto"}
-                            ),
-                        )
-                    ),
-                    mutate=ClusterPolicySpecRulesMutate(
-                        patch_strategic_merge={
-                            "metadata": {
-                                "annotations": {
-                                    # Add-if-absent: never overwrites a namespace's own policy.
-                                    "+(goldilocks.fairwinds.com/vpa-resource-policy)": (
-                                        '{"containerPolicies": [{"containerName": "*", '
-                                        '"controlledValues": "RequestsOnly"}]}'
-                                    )
-                                }
+        admission=True,
+        background=False,
+        rules=[
+            ClusterPolicySpecRules(
+                name="default-vpa-requests-only",
+                match=match_resources(
+                    ClusterPolicySpecRulesMatchAnyResources(
+                        kinds=["Namespace"],
+                        operations=[_CREATE, _UPDATE],
+                        selector=ClusterPolicySpecRulesMatchAnyResourcesSelector(
+                            match_labels={"goldilocks.fairwinds.com/vpa-update-mode": "auto"}
+                        ),
+                    )
+                ),
+                mutate=ClusterPolicySpecRulesMutate(
+                    patch_strategic_merge={
+                        "metadata": {
+                            "annotations": {
+                                # Add-if-absent: never overwrites a namespace's own policy.
+                                "+(goldilocks.fairwinds.com/vpa-resource-policy)": (
+                                    '{"containerPolicies": [{"containerName": "*", '
+                                    '"controlledValues": "RequestsOnly"}]}'
+                                )
                             }
                         }
-                    ),
-                )
-            ],
-        ),
+                    }
+                ),
+            )
+        ],
     )
     return chart
 
@@ -373,7 +359,7 @@ def restrict_agent_kustomization_patch_chart(app: App) -> Chart:
     kustomization_updates = ClusterPolicySpecRulesMatchAnyResources(
         kinds=["kustomize.toolkit.fluxcd.io/v1/Kustomization"], operations=[_UPDATE]
     )
-    policy = ClusterPolicy(
+    ClusterPolicy(
         chart,
         "policy",
         metadata=ApiObjectMetadata(
@@ -390,70 +376,65 @@ def restrict_agent_kustomization_patch_chart(app: App) -> Chart:
                 ),
             ),
         ),
-        spec=ClusterPolicySpec(
-            admission=True,
-            background=False,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="only-reconcile-annotation",
-                    match=ClusterPolicySpecRulesMatch(
-                        any=[
-                            ClusterPolicySpecRulesMatchAny(
-                                resources=kustomization_updates,
-                                subjects=[ClusterPolicySpecRulesMatchAnySubjects(kind="User", name="claude-code-web")],
-                            ),
-                            ClusterPolicySpecRulesMatchAny(
-                                resources=kustomization_updates,
-                                subjects=[
-                                    ClusterPolicySpecRulesMatchAnySubjects(
-                                        kind="Group", name="oidc-ksbx-groups:kubectl-sandbox-users"
-                                    )
-                                ],
-                            ),
-                        ]
-                    ),
-                    validate=ClusterPolicySpecRulesValidate(
-                        message=(
-                            "Agent service accounts may only patch the reconcile.fluxcd.io/requestedAt annotation. "
-                            "Changes to spec or other annotations are not permitted.\n"
+        admission=True,
+        background=False,
+        validation_failure_action=ValidationFailureAction.ENFORCE,
+        rules=[
+            ClusterPolicySpecRules(
+                name="only-reconcile-annotation",
+                match=ClusterPolicySpecRulesMatch(
+                    any=[
+                        ClusterPolicySpecRulesMatchAny(
+                            resources=kustomization_updates,
+                            subjects=[ClusterPolicySpecRulesMatchAnySubjects(kind="User", name="claude-code-web")],
                         ),
-                        cel=ClusterPolicySpecRulesValidateCel(
-                            expressions=[
-                                ClusterPolicySpecRulesValidateCelExpressions(
-                                    expression="object.spec == oldObject.spec",
-                                    message="Changes to spec are not permitted.",
-                                ),
-                                ClusterPolicySpecRulesValidateCelExpressions(
-                                    expression=(
-                                        "(!has(object.metadata.annotations) ||\n\n"
-                                        " object.metadata.annotations.all(k,\n"
-                                        "   k == 'reconcile.fluxcd.io/requestedAt' ||\n"
-                                        "   (has(oldObject.metadata.annotations) &&\n"
-                                        "    k in oldObject.metadata.annotations &&\n"
-                                        "    object.metadata.annotations[k] == oldObject.metadata.annotations[k])))\n"
-                                        "&& (!has(oldObject.metadata.annotations) ||\n\n"
-                                        " oldObject.metadata.annotations.all(k,\n"
-                                        "   k == 'reconcile.fluxcd.io/requestedAt' ||\n"
-                                        "   (has(object.metadata.annotations) &&\n"
-                                        "    k in object.metadata.annotations &&\n"
-                                        "    oldObject.metadata.annotations[k] == object.metadata.annotations[k])))\n"
-                                    ),
-                                    message="Only the reconcile.fluxcd.io/requestedAt annotation may be changed.",
-                                ),
-                            ]
+                        ClusterPolicySpecRulesMatchAny(
+                            resources=kustomization_updates,
+                            subjects=[
+                                ClusterPolicySpecRulesMatchAnySubjects(
+                                    kind="Group", name="oidc-ksbx-groups:kubectl-sandbox-users"
+                                )
+                            ],
                         ),
+                    ]
+                ),
+                validate=Validate.cel(
+                    message=(
+                        "Agent service accounts may only patch the reconcile.fluxcd.io/requestedAt annotation. "
+                        "Changes to spec or other annotations are not permitted.\n"
                     ),
-                )
-            ],
-        ),
+                    expressions=[
+                        ClusterPolicySpecRulesValidateCelExpressions(
+                            expression="object.spec == oldObject.spec", message="Changes to spec are not permitted."
+                        ),
+                        ClusterPolicySpecRulesValidateCelExpressions(
+                            expression=(
+                                "(!has(object.metadata.annotations) ||\n\n"
+                                " object.metadata.annotations.all(k,\n"
+                                "   k == 'reconcile.fluxcd.io/requestedAt' ||\n"
+                                "   (has(oldObject.metadata.annotations) &&\n"
+                                "    k in oldObject.metadata.annotations &&\n"
+                                "    object.metadata.annotations[k] == oldObject.metadata.annotations[k])))\n"
+                                "&& (!has(oldObject.metadata.annotations) ||\n\n"
+                                " oldObject.metadata.annotations.all(k,\n"
+                                "   k == 'reconcile.fluxcd.io/requestedAt' ||\n"
+                                "   (has(object.metadata.annotations) &&\n"
+                                "    k in object.metadata.annotations &&\n"
+                                "    oldObject.metadata.annotations[k] == object.metadata.annotations[k])))\n"
+                            ),
+                            message="Only the reconcile.fluxcd.io/requestedAt annotation may be changed.",
+                        ),
+                    ],
+                ).to_spec(),
+            )
+        ],
     )
-    policy.add_json_patch(JsonPatch.add("/spec/validationFailureAction", "Enforce"))
     return chart
 
 
 def restrict_agent_gateway_routes_chart(app: App) -> Chart:
     chart = _chart(app, "restrict-agent-gateway-routes")
-    policy = ClusterPolicy(
+    ClusterPolicy(
         chart,
         "policy",
         metadata=ApiObjectMetadata(
@@ -479,46 +460,43 @@ def restrict_agent_gateway_routes_chart(app: App) -> Chart:
                 ),
             ),
         ),
-        spec=ClusterPolicySpec(
-            admission=True,
-            # background: false because the policy scopes by namespace only (no subject
-            # match), so it does not need request.userInfo; admission-time enforcement is
-            # what matters for the GitOps + agent threat model.
-            background=False,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="deny-routes-in-agent-namespaces",
-                    match=_match(
-                        ClusterPolicySpecRulesMatchAnyResources(
-                            # Bare kind names (not Group/Version/Kind-pinned) so the deny matches
-                            # every served apiVersion — an agent can't evade by submitting a route
-                            # at v1beta1/v1alpha2 instead of v1. These kind names are unique to the
-                            # gateway.networking.k8s.io group, so no disambiguation is needed.
-                            kinds=["HTTPRoute", "GRPCRoute", "TLSRoute", "TCPRoute", "UDPRoute", "Gateway"],
-                            operations=[_CREATE, _UPDATE],
-                            namespaces=["claude-sandbox", "haku-sandbox"],
-                        )
-                    ),
-                    validate=ClusterPolicySpecRulesValidate(
-                        message=(
-                            "Gateway API routes and Gateways may not be created in agent sandbox namespaces. Public "
-                            "ingress is operator-owned: route through the Authentik proxy (HTTPRoutes in the "
-                            "`authentik` namespace) instead. "
-                            "Resource: {{request.object.kind}}/{{request.object.metadata.name}}"
-                        ),
-                        deny=ClusterPolicySpecRulesValidateDeny(),
-                    ),
-                )
-            ],
-        ),
+        admission=True,
+        # background: false because the policy scopes by namespace only (no subject
+        # match), so it does not need request.userInfo; admission-time enforcement is
+        # what matters for the GitOps + agent threat model.
+        background=False,
+        validation_failure_action=ValidationFailureAction.ENFORCE,
+        rules=[
+            ClusterPolicySpecRules(
+                name="deny-routes-in-agent-namespaces",
+                match=match_resources(
+                    ClusterPolicySpecRulesMatchAnyResources(
+                        # Bare kind names (not Group/Version/Kind-pinned) so the deny matches
+                        # every served apiVersion — an agent can't evade by submitting a route
+                        # at v1beta1/v1alpha2 instead of v1. These kind names are unique to the
+                        # gateway.networking.k8s.io group, so no disambiguation is needed.
+                        kinds=["HTTPRoute", "GRPCRoute", "TLSRoute", "TCPRoute", "UDPRoute", "Gateway"],
+                        operations=[_CREATE, _UPDATE],
+                        namespaces=["claude-sandbox", "haku-sandbox"],
+                    )
+                ),
+                validate=Validate.deny(
+                    message=(
+                        "Gateway API routes and Gateways may not be created in agent sandbox namespaces. Public "
+                        "ingress is operator-owned: route through the Authentik proxy (HTTPRoutes in the "
+                        "`authentik` namespace) instead. "
+                        "Resource: {{request.object.kind}}/{{request.object.metadata.name}}"
+                    )
+                ).to_spec(),
+            )
+        ],
     )
-    policy.add_json_patch(JsonPatch.add("/spec/validationFailureAction", "Enforce"))
     return chart
 
 
 def require_secret_store_conditions_chart(app: App) -> Chart:
     chart = _chart(app, "require-secret-store-conditions")
-    policy = ClusterPolicy(
+    ClusterPolicy(
         chart,
         "policy",
         metadata=ApiObjectMetadata(
@@ -543,59 +521,53 @@ def require_secret_store_conditions_chart(app: App) -> Chart:
                 ),
             ),
         ),
-        spec=ClusterPolicySpec(
-            admission=True,
-            # background: true so the Kyverno background controller also evaluates stores
-            # that already exist. Enforce only sees what is applied from here on, and an
-            # object that predates the policy and is never rewritten is never re-admitted —
-            # a background scan is the only thing that would report one. Nothing in CI
-            # checks this either; it is enforced here and nowhere else. The rule matches on
-            # kind alone and reads no request.userInfo, which is what makes background
-            # evaluation possible; the policies here that set background: false do so
-            # because they need admission-only context.
-            background=True,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="require-conditions",
-                    match=_match(
-                        ClusterPolicySpecRulesMatchAnyResources(
-                            kinds=["ClusterSecretStore"], operations=[_CREATE, _UPDATE]
-                        )
+        admission=True,
+        # background: true so the Kyverno background controller also evaluates stores
+        # that already exist. Enforce only sees what is applied from here on, and an
+        # object that predates the policy and is never rewritten is never re-admitted —
+        # a background scan is the only thing that would report one. Nothing in CI
+        # checks this either; it is enforced here and nowhere else. The rule matches on
+        # kind alone and reads no request.userInfo, which is what makes background
+        # evaluation possible; the policies here that set background: false do so
+        # because they need admission-only context.
+        background=True,
+        # Enforce: every ClusterSecretStore reaching this cluster now declares
+        # conditions, including `kubernetes-seaweedfs-secret-store`, which is applied
+        # from gaffer-private and was the last holdout (gaffer-private#383). A store
+        # that arrives without them is rejected at admission rather than merely
+        # reported, so the fence cannot be dropped by a manifest edit.
+        validation_failure_action=ValidationFailureAction.ENFORCE,
+        rules=[
+            ClusterPolicySpecRules(
+                name="require-conditions",
+                match=match_resources(
+                    ClusterPolicySpecRulesMatchAnyResources(kinds=["ClusterSecretStore"], operations=[_CREATE, _UPDATE])
+                ),
+                validate=Validate.deny(
+                    message=(
+                        "ClusterSecretStore must name the namespaces allowed to use it in "
+                        "spec.conditions[].namespaces; without at least one the store is readable from every "
+                        "namespace and the ESO ServiceAccount has cluster-wide secret read. "
+                        "Store: {{request.object.metadata.name}} (remoteNamespace "
+                        "{{request.object.spec.provider.kubernetes.remoteNamespace || 'n/a'}})."
                     ),
-                    validate=ClusterPolicySpecRulesValidate(
-                        message=(
-                            "ClusterSecretStore must name the namespaces allowed to use it in "
-                            "spec.conditions[].namespaces; without at least one the store is readable from every "
-                            "namespace and the ESO ServiceAccount has cluster-wide secret read. "
-                            "Store: {{request.object.metadata.name}} (remoteNamespace "
-                            "{{request.object.spec.provider.kubernetes.remoteNamespace || 'n/a'}})."
-                        ),
-                        deny=ClusterPolicySpecRulesValidateDeny(
-                            conditions={
-                                "any": [
-                                    # Flattened, so this covers an absent `conditions`, an empty list,
-                                    # a condition with no criteria, an empty `namespaces: []`, and a
-                                    # bare `namespaceSelector: {}` — which matches every namespace and
-                                    # is therefore the widest setting, not a fence.
-                                    {
-                                        "key": "{{ request.object.spec.conditions[].namespaces[] || `[]` | length(@) }}",
-                                        "operator": "Equals",
-                                        "value": 0,
-                                    }
-                                ]
+                    conditions={
+                        "any": [
+                            # Flattened, so this covers an absent `conditions`, an empty list,
+                            # a condition with no criteria, an empty `namespaces: []`, and a
+                            # bare `namespaceSelector: {}` — which matches every namespace and
+                            # is therefore the widest setting, not a fence.
+                            {
+                                "key": "{{ request.object.spec.conditions[].namespaces[] || `[]` | length(@) }}",
+                                "operator": "Equals",
+                                "value": 0,
                             }
-                        ),
-                    ),
-                )
-            ],
-        ),
+                        ]
+                    },
+                ).to_spec(),
+            )
+        ],
     )
-    # Enforce: every ClusterSecretStore reaching this cluster now declares
-    # conditions, including `kubernetes-seaweedfs-secret-store`, which is applied
-    # from gaffer-private and was the last holdout (gaffer-private#383). A store
-    # that arrives without them is rejected at admission rather than merely
-    # reported, so the fence cannot be dropped by a manifest edit.
-    policy.add_json_patch(JsonPatch.add("/spec/validationFailureAction", "Enforce"))
     return chart
 
 
@@ -654,25 +626,23 @@ def generate_agent_diagnostics_readers_chart(app: App) -> Chart:
                 ),
             ),
         ),
-        spec=ClusterPolicySpec(
-            background=True,
-            rules=[
-                # Either label grants the common metadata baseline. The logs label means
-                # metadata plus logs, so a namespace needs only one classification label.
-                ClusterPolicySpecRules(
-                    name="generate-agent-readable-metadata",
-                    match=ClusterPolicySpecRulesMatch(
-                        any=[namespaces_labeled(metadata_label), namespaces_labeled(logs_label)]
-                    ),
-                    generate=role_binding("agent-readable-metadata", "agent-readable-namespace-metadata"),
+        background=True,
+        rules=[
+            # Either label grants the common metadata baseline. The logs label means
+            # metadata plus logs, so a namespace needs only one classification label.
+            ClusterPolicySpecRules(
+                name="generate-agent-readable-metadata",
+                match=ClusterPolicySpecRulesMatch(
+                    any=[namespaces_labeled(metadata_label), namespaces_labeled(logs_label)]
                 ),
-                ClusterPolicySpecRules(
-                    name="generate-agent-readable-logs",
-                    match=ClusterPolicySpecRulesMatch(any=[namespaces_labeled(logs_label)]),
-                    generate=role_binding("agent-readable-logs", "agent-readable-namespace-logs"),
-                ),
-            ],
-        ),
+                generate=role_binding("agent-readable-metadata", "agent-readable-namespace-metadata"),
+            ),
+            ClusterPolicySpecRules(
+                name="generate-agent-readable-logs",
+                match=ClusterPolicySpecRulesMatch(any=[namespaces_labeled(logs_label)]),
+                generate=role_binding("agent-readable-logs", "agent-readable-namespace-logs"),
+            ),
+        ],
     )
     return chart
 
@@ -717,35 +687,33 @@ def ignore_cnpg_jobs_for_reloader_chart(app: App) -> Chart:
                 ),
             ),
         ),
-        spec=ClusterPolicySpec(
-            admission=True,
-            background=False,
-            mutate_existing_on_policy_update=False,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="exclude-cnpg-jobs-from-reloader",
-                    match=_match(
-                        ClusterPolicySpecRulesMatchAnyResources(
-                            kinds=["Job"],
-                            operations=[_CREATE],
-                            selector=ClusterPolicySpecRulesMatchAnyResourcesSelector(
-                                match_expressions=[
-                                    ClusterPolicySpecRulesMatchAnyResourcesSelectorMatchExpressions(
-                                        key="app.kubernetes.io/managed-by", operator="In", values=["cloudnative-pg"]
-                                    ),
-                                    ClusterPolicySpecRulesMatchAnyResourcesSelectorMatchExpressions(
-                                        key="cnpg.io/jobRole", operator="Exists"
-                                    ),
-                                ]
-                            ),
-                        )
-                    ),
-                    mutate=ClusterPolicySpecRulesMutate(
-                        patch_strategic_merge={"metadata": {"annotations": {"reloader.stakater.com/auto": "false"}}}
-                    ),
-                )
-            ],
-        ),
+        admission=True,
+        background=False,
+        mutate_existing_on_policy_update=False,
+        rules=[
+            ClusterPolicySpecRules(
+                name="exclude-cnpg-jobs-from-reloader",
+                match=match_resources(
+                    ClusterPolicySpecRulesMatchAnyResources(
+                        kinds=["Job"],
+                        operations=[_CREATE],
+                        selector=ClusterPolicySpecRulesMatchAnyResourcesSelector(
+                            match_expressions=[
+                                ClusterPolicySpecRulesMatchAnyResourcesSelectorMatchExpressions(
+                                    key="app.kubernetes.io/managed-by", operator="In", values=["cloudnative-pg"]
+                                ),
+                                ClusterPolicySpecRulesMatchAnyResourcesSelectorMatchExpressions(
+                                    key="cnpg.io/jobRole", operator="Exists"
+                                ),
+                            ]
+                        ),
+                    )
+                ),
+                mutate=ClusterPolicySpecRulesMutate(
+                    patch_strategic_merge={"metadata": {"annotations": {"reloader.stakater.com/auto": "false"}}}
+                ),
+            )
+        ],
     )
     return chart
 
