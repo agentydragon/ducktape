@@ -17,7 +17,7 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput, event_log
 from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxProfile
 from finance.augur.sim.events import EVENT_FRAME_SPECS
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
 from finance.augur.sim.observations import Observation
@@ -790,8 +790,8 @@ def loan(opening_principal: int | None = 6000) -> Mortgage:
     """One year at 12% on 6000: the level installment is 533."""
     return Mortgage(
         MortgageTerms(
-            liability_id="test-loan",
-            property_id="test-home",
+            liability_id=LiabilityId("test-loan"),
+            property_id=PropertyId("test-home"),
             borrower=CASH,
             lender=EXOGENOUS,
             origination_month=0,
@@ -810,7 +810,10 @@ def test_tracked_mortgage_is_serviced_from_the_ledger_through_payoff() -> None:
     world.track(mortgage)
     world.start()
     receivable = AccountRef(agent_id=WORLD, account_id=AccountId("asset:mortgage-receivable:test-loan"))
-    assert (world.mortgage_principal("test-loan"), world.accounting.ledger.balance(receivable)) == (6000, 6000)
+    assert (world.mortgage_principal(LiabilityId("test-loan")), world.accounting.ledger.balance(receivable)) == (
+        6000,
+        6000,
+    )
     principals, interest_ytd = [6000], []
     paid: list[tuple[int, int, int]] = []
     while not world.finished:
@@ -929,13 +932,17 @@ def test_an_unpaid_installment_stops_the_path_and_leaves_the_contract_open() -> 
     world.step()
     assert world.finished
     assert world.stop == UnpaidClaims(month=1, claims=[ClaimId(month=1, index=0)])
-    assert (mortgage.active, world.mortgage_principal("test-loan"), checking(world)) == (True, 6000, 10_000)
+    assert (mortgage.active, world.mortgage_principal(LiabilityId("test-loan")), checking(world)) == (
+        True,
+        6000,
+        10_000,
+    )
 
 
 def test_tracked_bills_name_a_declared_payer_and_no_property() -> None:
     world = composed(situation(), 0)
     with pytest.raises(ValueError, match="property"):
-        world.track(Biller(replace(rent().spec, property_id="test-home")))
+        world.track(Biller(replace(rent().spec, property_id=PropertyId("test-home"))))
     with pytest.raises(ValueError, match="unknown actor"):
         world.track(
             Biller(
@@ -979,7 +986,7 @@ def test_tracked_mortgages_open_the_ledger_once_before_the_world_starts() -> Non
         world.track(loan())
     world.start()
     with pytest.raises(ValueError, match="before starting"):
-        world.track(Mortgage(replace(loan().terms, liability_id="test-second"), 6000))
+        world.track(Mortgage(replace(loan().terms, liability_id=LiabilityId("test-second")), 6000))
     with pytest.raises(ValueError, match="servicing statement"):
         loan().handle(MonthOpened(month=0))
 

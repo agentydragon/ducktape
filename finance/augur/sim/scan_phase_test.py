@@ -10,7 +10,7 @@ from decimal import Decimal
 import numpy as np
 import pytest_bazel
 
-from finance.augur.model.series import SP500_SYMBOL, SecurityKey
+from finance.augur.model.series import SP500_SYMBOL, LocationId, SecurityKey
 from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
@@ -23,7 +23,7 @@ from finance.augur.sim.fixed_point import (
     quantity_to_quanta,
     rate_to_ppb,
 )
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -53,7 +53,7 @@ FEDERAL = "federal_us"
 CALIFORNIA = "california"
 SP500 = SecurityKey(symbol=SP500_SYMBOL)
 SF = PreparedLocation(
-    location_id="sf",
+    location_id=LocationId("sf"),
     display_name="SF",
     jurisdiction_ids=(FEDERAL, CALIFORNIA),
     annual_property_tax_rate_ppb=rate_to_ppb(0.0118),
@@ -295,7 +295,7 @@ def purchase(
     return _PropertyPurchase(
         month=month,
         cause_id="alice_buys_home",
-        property_id="home",
+        property_id=PropertyId("home"),
         location_id=SF.location_id,
         buyer_agent_id=ALICE,
         buyer_account_id=CHECKING,
@@ -333,7 +333,7 @@ def test_property_tax_accrues_only_once_the_property_is_held() -> None:
         Housing(purchases=(purchase(month=0, down_payment=500_000),)),
         (
             _PropertyTax(
-                property_id="home",
+                property_id=PropertyId("home"),
                 owner_agent_id=ALICE,
                 from_account_id=CHECKING,
                 tax_authority_agent_id=AgentId("county"),
@@ -365,7 +365,7 @@ def test_financed_purchase_originates_then_services_the_loan() -> None:
                     month=0,
                     down_payment=100_000,
                     mortgage=_MortgageFinancing(
-                        liability_id="alice_mortgage",
+                        liability_id=LiabilityId("alice_mortgage"),
                         lender_agent_id=AgentId("lender"),
                         lender_account_id=CHECKING,
                         principal=money(400_000),

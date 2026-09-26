@@ -16,7 +16,7 @@ from finance.augur.sim.compiler.income_sources import income_source_sort_key
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import AccountId, AgentId, BondId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -53,7 +53,7 @@ TREASURY, MUNI, CORPORATE = "federal_us", "california", None
 
 
 def dated(
-    bond_id: str,
+    bond_id: BondId,
     *,
     agent_id: AgentId,
     account_id: AccountId = CHECKING,
@@ -171,7 +171,7 @@ def bond_case(
         accounts=checking((AgentId("alice"), Decimal(100_000)), (AgentId("irs"), Decimal(0))),
         bonds=(
             dated(
-                "rung",
+                BondId("rung"),
                 agent_id=AgentId("alice"),
                 account_id=account_id,
                 face=FACE,

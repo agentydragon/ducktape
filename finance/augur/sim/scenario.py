@@ -24,11 +24,11 @@ from pydantic import (
 )
 
 from finance.augur.model.asset_key import AssetKey
-from finance.augur.model.series import IndexSeriesKey, SecurityKey
+from finance.augur.model.series import IndexSeriesKey, LocationId, SecurityKey
 from finance.augur.policy.cash_band import validate_band_bounds
 from finance.augur.sim.enums import IncomeCategory
 from finance.augur.sim.fixed_point import validate_currency_amount, validate_currency_quantum
-from finance.augur.sim.ids import AccountId, AgentId, LotId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, BondId, LiabilityId, LotId, PortfolioId, PropertyId
 from finance.augur.sim.tlh import TlhAssumptions
 
 type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
@@ -171,7 +171,7 @@ class ScheduledPropertyCashflow(BaseModel):
     """
 
     month: int
-    property_id: str
+    property_id: PropertyId
     cause_id: str
     from_agent_id: AgentId
     from_account_id: AccountId
@@ -187,7 +187,7 @@ class RecurringPropertyCashflow(BaseModel):
 
     start_month: int
     end_month: int | None = None
-    property_id: str
+    property_id: PropertyId
     cause_id: str
     from_agent_id: AgentId
     from_account_id: AccountId
@@ -238,7 +238,7 @@ class RecurringObligation(BaseModel):
     # When set, ties the obligation to a property; the engine uses
     # `current.property_rented_fraction[r, prop]` at settlement time to override the
     # compile-time `deductible_fraction` so mid-horizon lifecycle events take effect.
-    property_id: str | None = None
+    property_id: PropertyId | None = None
 
 
 class BondHolding(BaseModel):
@@ -261,7 +261,7 @@ class BondHolding(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    bond_id: str
+    bond_id: BondId
     agent_id: AgentId
     # No default: which account the coupons land in is a real decision, and a bond pointing
     # at an account that does not exist resolves to no slot at all — the coupon would be
@@ -617,7 +617,7 @@ class TaxProfile(BaseModel):
 class MortgageFinancing(BaseModel):
     """Mortgage terms attached to a property purchase."""
 
-    liability_id: str
+    liability_id: LiabilityId
     lender_agent_id: AgentId
     lender_account_id: AccountId = CHECKING
     principal: CurrencyAmount
@@ -635,7 +635,7 @@ class SetRentedFractionEvent(BaseModel):
 
     kind: Literal["set_rented_fraction"] = "set_rented_fraction"
     month: int
-    property_id: str
+    property_id: PropertyId
     rented_fraction: float = Field(ge=0.0, le=1.0)
 
 
@@ -648,7 +648,7 @@ class PrimaryResidenceAssignment(BaseModel):
     """
 
     agent_id: AgentId
-    property_id: str
+    property_id: PropertyId
 
 
 class SetPrimaryResidenceEvent(BaseModel):
@@ -657,7 +657,7 @@ class SetPrimaryResidenceEvent(BaseModel):
     kind: Literal["set_primary_residence"] = "set_primary_residence"
     month: int
     agent_id: AgentId
-    property_id: str | None
+    property_id: PropertyId | None
 
 
 class PropertySaleEvent(BaseModel):
@@ -683,7 +683,7 @@ class PropertySaleEvent(BaseModel):
 
     kind: Literal["property_sale"] = "property_sale"
     month: int
-    property_id: str
+    property_id: PropertyId
     closing_cost_pct: float = Field(ge=0.0, le=100.0)
 
 
@@ -699,7 +699,7 @@ class CapitalImprovementEvent(BaseModel):
 
     kind: Literal["capital_improvement"] = "capital_improvement"
     month: int
-    property_id: str
+    property_id: PropertyId
     amount: PositiveCurrencyAmount
     description: str = ""
 
@@ -726,8 +726,8 @@ class ScheduledPropertyPurchase(BaseModel):
 
     month: int
     cause_id: str
-    property_id: str
-    location_id: str
+    property_id: PropertyId
+    location_id: LocationId
     buyer_agent_id: AgentId
     buyer_account_id: AccountId
     seller_agent_id: AgentId
@@ -767,7 +767,7 @@ class PropertyTaxPolicy(BaseModel):
     is `None`, the rate comes from `Location.annual_property_tax_rate`.
     """
 
-    property_id: str
+    property_id: PropertyId
     owner_agent_id: AgentId
     from_account_id: AccountId = CHECKING
     tax_authority_agent_id: AgentId
@@ -861,7 +861,7 @@ class MortgageInterestDeductionPolicy(BaseModel):
     `max(itemized, standard)` before bracket-walking.
     """
 
-    liability_id: str
+    liability_id: LiabilityId
     owner_agent_id: AgentId
     debt_class: Literal["acquisition", "home_equity"] = Field(
         default="acquisition",

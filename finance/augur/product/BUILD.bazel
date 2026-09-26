@@ -77,6 +77,7 @@ py_library(
         "//finance/augur/api:schemas",
         "//finance/augur/api:wire",
         "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:locations",

@@ -9,11 +9,12 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
+from finance.augur.model.series import LocationId
 from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -33,7 +34,7 @@ ALICE, SELLER, BANK = AgentId("alice"), AgentId("seller"), AgentId("bank")
 CHECKING = AccountId("checking")
 
 SAN_FRANCISCO = PreparedLocation(
-    location_id="san_francisco",
+    location_id=LocationId("san_francisco"),
     display_name="San Francisco, CA",
     jurisdiction_ids=("federal_us", "california"),
     annual_property_tax_rate_ppb=rate_to_ppb(0.01180),
@@ -41,7 +42,7 @@ SAN_FRANCISCO = PreparedLocation(
 )
 # Mare Island (Vallejo) carries flat-USD CFD special assessments on top of the ad-valorem rate.
 VALLEJO_MARE_ISLAND = PreparedLocation(
-    location_id="vallejo_mare_island",
+    location_id=LocationId("vallejo_mare_island"),
     display_name="Vallejo, CA — Mare Island",
     jurisdiction_ids=("federal_us", "california"),
     annual_property_tax_rate_ppb=rate_to_ppb(0.0115),
@@ -69,8 +70,8 @@ def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
 
 def purchase(
     cause_id: str,
-    property_id: str,
-    location_id: str,
+    property_id: PropertyId,
+    location_id: LocationId,
     *,
     price: int,
     down: int,
@@ -95,7 +96,7 @@ def purchase(
     )
 
 
-def financing(liability_id: str, *, principal: int, annual_rate: float, term_months: int) -> _MortgageFinancing:
+def financing(liability_id: LiabilityId, *, principal: int, annual_rate: float, term_months: int) -> _MortgageFinancing:
     return _MortgageFinancing(
         liability_id=liability_id,
         lender_agent_id=BANK,
@@ -106,7 +107,7 @@ def financing(liability_id: str, *, principal: int, annual_rate: float, term_mon
     )
 
 
-def property_tax(property_id: str, collector: AgentId, *, annual_rate: float | None) -> _PropertyTax:
+def property_tax(property_id: PropertyId, collector: AgentId, *, annual_rate: float | None) -> _PropertyTax:
     return _PropertyTax(
         property_id=property_id,
         owner_agent_id=ALICE,
@@ -182,15 +183,17 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
             purchases=(
                 purchase(
                     "alice_buys_sf_home",
-                    "sf_home",
-                    "san_francisco",
+                    PropertyId("sf_home"),
+                    LocationId("san_francisco"),
                     price=500_000,
                     down=100_000,
                     closing=10_000,
-                    mortgage=financing("sf_home_mortgage", principal=400_000, annual_rate=0.06, term_months=360),
+                    mortgage=financing(
+                        LiabilityId("sf_home_mortgage"), principal=400_000, annual_rate=0.06, term_months=360
+                    ),
                 ),
             ),
-            tax_policies=(property_tax("sf_home", AgentId("sf_tax_collector"), annual_rate=0.012),),
+            tax_policies=(property_tax(PropertyId("sf_home"), AgentId("sf_tax_collector"), annual_rate=0.012),),
         )
     )
     assert rollout.trace is not None
@@ -235,7 +238,13 @@ def test_real_estate_purchase_requires_known_location() -> None:
                 horizon_months=1,
                 accounts=(account(ALICE, 600_000), account(SELLER)),
                 purchases=(
-                    purchase("alice_buys_typo_home", "typo_home", "san_francsico", price=500_000, down=500_000),
+                    purchase(
+                        "alice_buys_typo_home",
+                        PropertyId("typo_home"),
+                        LocationId("san_francsico"),
+                        price=500_000,
+                        down=500_000,
+                    ),
                 ),
             )
         )
@@ -247,8 +256,16 @@ def test_property_tax_falls_back_to_location_rate_when_policy_rate_unset() -> No
         Situation(
             horizon_months=2,
             accounts=(account(ALICE, 600_000), account(SELLER), account(AgentId("sf_tax_collector"))),
-            purchases=(purchase("alice_buys_sf_home", "sf_home", "san_francisco", price=500_000, down=500_000),),
-            tax_policies=(property_tax("sf_home", AgentId("sf_tax_collector"), annual_rate=None),),
+            purchases=(
+                purchase(
+                    "alice_buys_sf_home",
+                    PropertyId("sf_home"),
+                    LocationId("san_francisco"),
+                    price=500_000,
+                    down=500_000,
+                ),
+            ),
+            tax_policies=(property_tax(PropertyId("sf_home"), AgentId("sf_tax_collector"), annual_rate=None),),
         )
     )
     # SF: 500_000 * 0.01180 / 12 = 491.6666..., rounded to cents at the obligation boundary.
@@ -264,13 +281,15 @@ def test_property_tax_routes_flat_usd_special_assessment_from_location() -> None
             purchases=(
                 purchase(
                     "alice_buys_mare_island_home",
-                    "mare_island_home",
-                    "vallejo_mare_island",
+                    PropertyId("mare_island_home"),
+                    LocationId("vallejo_mare_island"),
                     price=500_000,
                     down=500_000,
                 ),
             ),
-            tax_policies=(property_tax("mare_island_home", AgentId("vallejo_tax_collector"), annual_rate=None),),
+            tax_policies=(
+                property_tax(PropertyId("mare_island_home"), AgentId("vallejo_tax_collector"), annual_rate=None),
+            ),
             locations=(VALLEJO_MARE_ISLAND,),
         )
     )

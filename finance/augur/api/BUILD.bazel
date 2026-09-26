@@ -67,7 +67,9 @@ py_library(
     deps = [
         ":local_regulation",
         ":schemas",
+        "//finance/augur/model:series",
         "//finance/augur/product:wire",
+        "//finance/augur/sim:ids",
         "@pypi//pydantic",
     ],
 )
@@ -218,6 +220,7 @@ py_library(
         ":config",
         ":wire",
         "//finance/augur/calibration:catalog",
+        "//finance/augur/model:series",
         "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pyyaml",
@@ -244,6 +247,7 @@ py_test(
         ":local_regulation",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/sim:ids",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -263,6 +267,7 @@ py_library(
         ":wire",
         "//finance/augur/model:independent",
         "//finance/augur/model:provider_config",
+        "//finance/augur/model:series",
         "//finance/augur/model:testing",
         "@pypi//fastapi",
         "@pypi//httpx",  # keep: fastapi.testclient requires httpx at runtime

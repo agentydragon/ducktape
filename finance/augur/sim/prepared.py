@@ -7,8 +7,9 @@ preserve existing consumers until their policies move to the common action sessi
 from dataclasses import dataclass
 from typing import Literal
 
+from finance.augur.model.series import LocationId
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, LiabilityId, LotId, PortfolioId, PropertyId
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.scenario import TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
@@ -69,12 +70,12 @@ class PreparedRecurringTransfer(PreparedFlow):
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedPropertyCashflow(PreparedTransfer):
-    property_id: str
+    property_id: PropertyId
 
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedRecurringPropertyCashflow(PreparedRecurringTransfer):
-    property_id: str
+    property_id: PropertyId
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -84,7 +85,7 @@ class PreparedClaim:
     from_account: AccountRef
     to_account: AccountRef
     amount_due: PreparedAmount
-    property_id: str | None
+    property_id: PropertyId | None
     deduction_category: TransferDeductionCategory | None
     deductible_fraction_ppb: int
 
@@ -120,7 +121,7 @@ class PreparedIndexedCoupon:
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedBond:
-    bond_id: str
+    bond_id: BondId
     agent_id: AgentId
     account_id: AccountId
     issuer_jurisdiction_id: str | None
@@ -155,7 +156,7 @@ class PreparedJurisdiction:
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedLocation:
-    location_id: str
+    location_id: LocationId
     display_name: str
     jurisdiction_ids: tuple[str, ...]
     annual_property_tax_rate_ppb: int
@@ -225,7 +226,7 @@ class PreparedTlhPortfolio:
 
 @dataclass(frozen=True, kw_only=True)
 class _MortgageFinancing:
-    liability_id: str
+    liability_id: LiabilityId
     lender_agent_id: AgentId
     lender_account_id: AccountId
     principal: int
@@ -237,8 +238,8 @@ class _MortgageFinancing:
 class _PropertyPurchase:
     month: int
     cause_id: str
-    property_id: str
-    location_id: str
+    property_id: PropertyId
+    location_id: LocationId
     buyer_agent_id: AgentId
     buyer_account_id: AccountId
     seller_agent_id: AgentId
@@ -254,27 +255,27 @@ class _PropertyPurchase:
 @dataclass(frozen=True, kw_only=True)
 class _PrimaryResidence:
     agent_id: AgentId
-    property_id: str
+    property_id: PropertyId
 
 
 @dataclass(frozen=True, kw_only=True)
 class _PrimaryResidenceEvent:
     month: int
     agent_id: AgentId
-    property_id: str | None
+    property_id: PropertyId | None
 
 
 @dataclass(frozen=True, kw_only=True)
 class _RentedFraction:
     month: int
-    property_id: str
+    property_id: PropertyId
     rented_fraction_ppb: int
 
 
 @dataclass(frozen=True, kw_only=True)
 class _CapitalImprovement:
     month: int
-    property_id: str
+    property_id: PropertyId
     amount: int
     description: str
 
@@ -282,13 +283,13 @@ class _CapitalImprovement:
 @dataclass(frozen=True, kw_only=True)
 class _PropertySale:
     month: int
-    property_id: str
+    property_id: PropertyId
     closing_cost_ppb: int
 
 
 @dataclass(frozen=True, kw_only=True)
 class _MortgageInterestDeduction:
-    liability_id: str
+    liability_id: LiabilityId
     owner_agent_id: AgentId
     debt_class: Literal["acquisition", "home_equity"]
     per_jurisdiction_principal_cap: dict[str, int]
@@ -296,7 +297,7 @@ class _MortgageInterestDeduction:
 
 @dataclass(frozen=True, kw_only=True)
 class _PropertyTax:
-    property_id: str
+    property_id: PropertyId
     owner_agent_id: AgentId
     from_account_id: AccountId
     tax_authority_agent_id: AgentId
@@ -324,7 +325,7 @@ class _SaltDeduction:
     they are paid.
     """
 
-    profile_id: str
+    profile_id: AgentId
     federal_jurisdiction_id: str
     cap_schedule: tuple[_SaltCap, ...]
 

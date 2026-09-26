@@ -7,7 +7,7 @@ from pydantic import Field
 
 from finance.augur.sim.actions import ClaimId
 from finance.augur.sim.books import AccountRef, Record, TaxLiabilityState
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, LotId, PortfolioId
 from finance.augur.sim.results import Receipt
 
 
@@ -43,7 +43,7 @@ class IndexedCoupon(Record):
 class HeldBond(Record):
     """Unredeemed contract: principal is carrying value, not tradable proceeds."""
 
-    bond_id: str
+    bond_id: BondId
     account_id: AccountId
     issuer_jurisdiction_id: str | None
     face_value: int

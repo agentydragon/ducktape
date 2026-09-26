@@ -7,14 +7,14 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
 
 
 def _terms(*, principal: int = 40_000_000, rate: int = 60_000_000, months: int = 360) -> MortgageTerms:
     return MortgageTerms(
-        liability_id="loan",
-        property_id="house",
+        liability_id=LiabilityId("loan"),
+        property_id=PropertyId("house"),
         borrower=AccountRef(agent_id=AgentId("owner"), account_id=AccountId("cash")),
         lender=AccountRef(agent_id=AgentId("bank"), account_id=AccountId("payments")),
         origination_month=0,
@@ -129,7 +129,7 @@ def test_rejected_or_mismatched_settlement_does_not_mutate_servicing_facts() -> 
     with pytest.raises(ValueError, match="settled principal"):
         mortgage.record_payment(payment, principal_after=40_000_000)
     assert mortgage.observe(40_000_000) == opening
-    foreign = replace(payment, terms=replace(payment.terms, liability_id="different-loan"))
+    foreign = replace(payment, terms=replace(payment.terms, liability_id=LiabilityId("different-loan")))
     with pytest.raises(ValueError, match="does not belong"):
         mortgage.record_payment(foreign, principal_after=39_960_180)
     assert mortgage.observe(40_000_000) == opening

@@ -41,7 +41,7 @@ from finance.augur.sim.distributions import Distributions
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.held_bonds import BondStatement, HeldBonds
 from finance.augur.sim.holdings import Holdings, private_issuer
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, PortfolioId, PropertyId
 from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, TlhStatement
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, is_quantity_scale, position_value
@@ -147,8 +147,8 @@ class World:
         # This month's settlement outcomes, cleared when the next month opens.
         self.obligations: list[payments.ObligationOutcome] = []
         self.payments: list[results.Payment] = []
-        self.mortgages: dict[str, Mortgage] = {}
-        self.mortgage_payments: dict[str, MortgagePayment] = {}
+        self.mortgages: dict[LiabilityId, Mortgage] = {}
+        self.mortgage_payments: dict[LiabilityId, MortgagePayment] = {}
         self.previous_receipts: list[results.Receipt] = []
         self.stop: results.Stop | None = None
         self.failed = False
@@ -422,7 +422,7 @@ class World:
         for series_id in {f"home_value:{purchase.location_id}" for purchase in housing.purchases}:
             if series_id in self.market.series:
                 self.market.require_prices(series_id)
-        taxed: dict[tuple[str, int], int] = {}
+        taxed: dict[tuple[PropertyId, int], int] = {}
         for index, policy in enumerate(tax_policies):
             owned = purchases.get(policy.property_id)
             if owned is None:
@@ -890,7 +890,7 @@ class World:
         key = AccountRef(agent_id=actor, account_id=account)
         return self.accounting.ledger.balance(key) if key in self.accounting.declared else None
 
-    def mortgage_principal(self, liability_id: str) -> int:
+    def mortgage_principal(self, liability_id: LiabilityId) -> int:
         """Outstanding principal from the ledger, for a tracked contract or a configured purchase's financing."""
         loan = self.mortgages.get(liability_id)
         if loan is not None:
@@ -914,20 +914,20 @@ class World:
             "money negation",
         )
 
-    def property_rented_fraction(self, property_id: str) -> int:
+    def property_rented_fraction(self, property_id: PropertyId) -> int:
         # A tracked contract's property is not a component yet, so none of it is rented out.
         property_ = None if self.properties is None else self.properties.properties.get(property_id)
         return 0 if property_ is None else property_.state.rented_fraction_ppb
 
     def prepare_month(
-        self, month: int, originations: Mapping[str, Mortgage], mortgages: Mapping[str, Mortgage]
-    ) -> tuple[list[str], list[str]]:
+        self, month: int, originations: Mapping[LiabilityId, Mortgage], mortgages: Mapping[LiabilityId, Mortgage]
+    ) -> tuple[list[LiabilityId], list[LiabilityId]]:
         if month != self.month or month >= self.horizon_months:
             raise ValueError("invalid financial month")
         self.claims = claims.Claims(month, [])
-        paid_off: list[str] = []
-        originated: list[str] = []
-        active: set[str] = set()
+        paid_off: list[LiabilityId] = []
+        originated: list[LiabilityId] = []
+        active: set[PropertyId] = set()
         if self.properties is not None:
             self.properties.assign_residences(month)
             paid_off = self.properties.lifecycle(self.accounting, self.market, month, mortgages)

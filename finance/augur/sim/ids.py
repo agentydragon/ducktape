@@ -12,3 +12,7 @@ AccountId = NewType("AccountId", str)
 AssetId = NewType("AssetId", str)
 LotId = NewType("LotId", str)
 PortfolioId = NewType("PortfolioId", str)
+BondId = NewType("BondId", str)
+PropertyId = NewType("PropertyId", str)
+# A mortgage: the liability a financed purchase originates.
+LiabilityId = NewType("LiabilityId", str)

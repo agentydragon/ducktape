@@ -21,7 +21,7 @@ from finance.augur.sim.books import AccountRef, Book, JournalEntry
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -42,7 +42,7 @@ ALICE = AgentId("alice")
 BOB = AgentId("bob")
 CHECKING = AccountId("checking")
 SF = PreparedLocation(
-    location_id="sf",
+    location_id=LocationId("sf"),
     display_name="San Francisco",
     jurisdiction_ids=(),
     annual_property_tax_rate_ppb=rate_to_ppb(0.0118),
@@ -78,7 +78,7 @@ def home_value(*paths: list[Decimal | int], horizon_months: int) -> tuple[Prepar
 
 def financing(*, borrower: str, principal: Decimal | int, annual_rate: float, term_months: int) -> _MortgageFinancing:
     return _MortgageFinancing(
-        liability_id=f"{borrower}-loan",
+        liability_id=LiabilityId(f"{borrower}-loan"),
         lender_agent_id=AgentId("bank"),
         lender_account_id=CHECKING,
         principal=money(principal),
@@ -99,7 +99,7 @@ def home(
     return _PropertyPurchase(
         month=month,
         cause_id=f"{buyer}-buys-home",
-        property_id=f"{buyer}-home",
+        property_id=PropertyId(f"{buyer}-home"),
         location_id=SF.location_id,
         buyer_agent_id=buyer,
         buyer_account_id=CHECKING,
@@ -245,7 +245,7 @@ def test_financed_purchase_and_first_installment_match_contract() -> None:
         ),
         tax_policies=(
             _PropertyTax(
-                property_id=f"{ALICE}-home",
+                property_id=PropertyId(f"{ALICE}-home"),
                 owner_agent_id=ALICE,
                 from_account_id=CHECKING,
                 tax_authority_agent_id=AgentId("county"),
@@ -294,7 +294,7 @@ def test_sale_pays_off_ledger_principal_before_the_sale_months_installment(
         sales=(
             _PropertySale(
                 month=5,
-                property_id=f"{ALICE}-home",
+                property_id=PropertyId(f"{ALICE}-home"),
                 closing_cost_ppb=rate_to_ppb(float(Decimal(closing_cost_pct) / 100)),
             ),
         ),
@@ -381,11 +381,15 @@ def test_paid_groups_update_entities_but_a_failed_year_end_does_not_reset_intere
     before = {loan.liability_id: loan for loan in previous.mortgages}
     after = {loan.liability_id: loan for loan in ending.mortgages}
     assert (world.failed_month is not None) == fail_year_end
-    assert after["bob-loan"].principal < before["bob-loan"].principal
+    assert after[LiabilityId("bob-loan")].principal < before[LiabilityId("bob-loan")].principal
     if fail_year_end:
-        assert after["alice-loan"].principal == before["alice-loan"].principal
-        assert after["alice-loan"].interest_paid_ytd == before["alice-loan"].interest_paid_ytd > 0
-        assert after["bob-loan"].interest_paid_ytd > before["bob-loan"].interest_paid_ytd
+        assert after[LiabilityId("alice-loan")].principal == before[LiabilityId("alice-loan")].principal
+        assert (
+            after[LiabilityId("alice-loan")].interest_paid_ytd
+            == before[LiabilityId("alice-loan")].interest_paid_ytd
+            > 0
+        )
+        assert after[LiabilityId("bob-loan")].interest_paid_ytd > before[LiabilityId("bob-loan")].interest_paid_ytd
     else:
         assert all(loan.interest_paid_ytd == 0 for loan in after.values())
     for id_, loan in after.items():

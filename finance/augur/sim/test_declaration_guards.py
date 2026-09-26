@@ -12,9 +12,10 @@ from dataclasses import replace
 import pytest
 import pytest_bazel
 
+from finance.augur.model.series import LocationId
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, LiabilityId, LotId, PortfolioId, PropertyId
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -59,7 +60,7 @@ SCALE = 1000
 HORIZON = 2
 TAX_HOME = PreparedJurisdiction(jurisdiction_id="test-jurisdiction", level=JurisdictionLevel.STATE)
 LOCATION = PreparedLocation(
-    location_id="test-market",
+    location_id=LocationId("test-market"),
     display_name="Test market",
     jurisdiction_ids=(),
     annual_property_tax_rate_ppb=0,
@@ -173,7 +174,7 @@ def test_a_pool_holds_one_opening_lot_per_purchase_month() -> None:
 
 # A par bond paying a fixed semiannual coupon over two whole periods.
 BOND = PreparedBond(
-    bond_id="test-bond",
+    bond_id=BondId("test-bond"),
     agent_id=HOLDER,
     account_id=CHECKING,
     issuer_jurisdiction_id=None,
@@ -207,7 +208,7 @@ def test_a_dated_bond_is_bought_at_par_over_whole_coupon_periods(invalid: Prepar
 PURCHASE = _PropertyPurchase(
     month=0,
     cause_id="test-purchase",
-    property_id="test-home",
+    property_id=PropertyId("test-home"),
     location_id=LOCATION.location_id,
     buyer_agent_id=HOLDER,
     buyer_account_id=CHECKING,
@@ -221,7 +222,7 @@ PURCHASE = _PropertyPurchase(
     mortgage=None,
 )
 LOAN = _MortgageFinancing(
-    liability_id="test-loan",
+    liability_id=LiabilityId("test-loan"),
     lender_agent_id=COUNTERPARTY,
     lender_account_id=CHECKING,
     principal=6,
@@ -364,7 +365,7 @@ FLOW = PreparedTransfer(
         (
             PreparedPropertyCashflow(
                 month=0,
-                property_id="test-unbought",
+                property_id=PropertyId("test-unbought"),
                 cause_id=FLOW.cause_id,
                 from_account=FLOW.from_account,
                 to_account=FLOW.to_account,
@@ -405,7 +406,7 @@ def test_an_indexed_amount_needs_a_nonzero_base_level() -> None:
         composed(cpi(0, 1, 1)).declare_flow(replace(FLOW, amount=indexed()))
 
 
-def rented(month: int, property_id: str = PURCHASE.property_id) -> _RentedFraction:
+def rented(month: int, property_id: PropertyId = PURCHASE.property_id) -> _RentedFraction:
     return _RentedFraction(month=month, property_id=property_id, rented_fraction_ppb=500_000_000)
 
 
@@ -414,7 +415,10 @@ def rented(month: int, property_id: str = PURCHASE.property_id) -> _RentedFracti
     [
         (Housing(purchases=(PURCHASE, PURCHASE)), "duplicate property purchase"),
         (Housing(purchases=(replace(PURCHASE, month=HORIZON),)), "outside the horizon"),
-        (Housing(purchases=(PURCHASE,), rented_fraction_events=(rented(1, "test-unbought"),)), "unknown property"),
+        (
+            Housing(purchases=(PURCHASE,), rented_fraction_events=(rented(1, PropertyId("test-unbought")),)),
+            "unknown property",
+        ),
         (Housing(purchases=(PURCHASE,), rented_fraction_events=(rented(0),)), "strictly after its purchase"),
         (
             Housing(
@@ -514,7 +518,7 @@ PROPERTY_TAX = _PropertyTax(
 @pytest.mark.parametrize(
     ("policies", "match"),
     [
-        ((replace(PROPERTY_TAX, property_id="test-unbought"),), "unknown property"),
+        ((replace(PROPERTY_TAX, property_id=PropertyId("test-unbought")),), "unknown property"),
         ((replace(PROPERTY_TAX, owner_agent_id=COUNTERPARTY),), "not owed by the property's buyer"),
         ((replace(PROPERTY_TAX, start_month=1, end_month=0),), "ends before it starts"),
         ((PROPERTY_TAX, replace(PROPERTY_TAX, start_month=1)), "overlapping property tax policies"),

@@ -17,7 +17,7 @@ from finance.augur.sim.books import (
 )
 from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.compiler.tax import PreparedTaxProfile
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.money import checked_count
 from finance.augur.sim.mortgage import Mortgage
@@ -41,10 +41,10 @@ class TransferOutcome:
 class MortgagePaymentOutcome:
     month: int
     cause_id: str
-    liability_id: str
+    liability_id: LiabilityId
     agent_id: AgentId
     counterparty_agent_id: AgentId
-    property_id: str
+    property_id: PropertyId
     from_account_id: AccountId
     to_account_id: AccountId
     interest: int

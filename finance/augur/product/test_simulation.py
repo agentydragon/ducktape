@@ -60,8 +60,8 @@ LOT_BASIS = Decimal(10_000)
 SALE_PRICE = Decimal(60_000)
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 
-LOCATION = "acceptance-town"
-HOME_VALUE = HomeValueKey(location_id=LocationId(LOCATION))
+LOCATION = LocationId("acceptance-town")
+HOME_VALUE = HomeValueKey(location_id=LOCATION)
 PROPERTY_SALE_MONTH = 12
 # Sampled levels that are not a whole number of cents. A level already on a cent reads the same
 # out of either representation, which is exactly what the property assertion has to rule out.

@@ -19,6 +19,7 @@ from finance.augur.model.series import (
     HomeValueKey,
     InflationKey,
     LevelSeriesKey,
+    LocationId,
     RentKey,
     SecurityDistributionKey,
     SecurityKey,
@@ -563,7 +564,7 @@ def compile_housing(
 
 
 def compile_locations(
-    purchases: Sequence[ScheduledPropertyPurchase], locations: Mapping[str, Location], *, quantum: Decimal
+    purchases: Sequence[ScheduledPropertyPurchase], locations: Mapping[LocationId, Location], *, quantum: Decimal
 ) -> tuple[PreparedLocation, ...]:
     """The locations the purchases buy in.
 

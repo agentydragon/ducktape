@@ -29,7 +29,7 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -65,8 +65,8 @@ ALICE, SELLER, LENDER, TENANT, COUNTY, IRS = (
 CHECKING = AccountId("checking")
 FEDERAL, CALIFORNIA = "federal_us", "california"
 
-LOCATION_ID = "loc"
-HOME_LOCATION_ID, RENTAL_LOCATION_ID = "home_loc", "rental_loc"
+LOCATION_ID = LocationId("loc")
+HOME_LOCATION_ID, RENTAL_LOCATION_ID = LocationId("home_loc"), LocationId("rental_loc")
 
 # The lifecycle case, in the units its expectations are derived in.
 LIFECYCLE_HORIZON = 36
@@ -85,7 +85,7 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def location(location_id: str, display_name: str, *, annual_rate: float) -> PreparedLocation:
+def location(location_id: LocationId, display_name: str, *, annual_rate: float) -> PreparedLocation:
     return PreparedLocation(
         location_id=location_id,
         display_name=display_name,
@@ -106,7 +106,7 @@ def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
     return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
 
 
-def financing(liability_id: str, lender: AgentId, *, principal: int, annual_rate: float) -> _MortgageFinancing:
+def financing(liability_id: LiabilityId, lender: AgentId, *, principal: int, annual_rate: float) -> _MortgageFinancing:
     return _MortgageFinancing(
         liability_id=liability_id,
         lender_agent_id=lender,
@@ -119,8 +119,8 @@ def financing(liability_id: str, lender: AgentId, *, principal: int, annual_rate
 
 def purchase(
     cause_id: str,
-    property_id: str,
-    location_id: str,
+    property_id: PropertyId,
+    location_id: LocationId,
     *,
     month: int = 0,
     seller: AgentId = SELLER,
@@ -148,7 +148,7 @@ def purchase(
     )
 
 
-def property_tax(property_id: str, collector: AgentId) -> _PropertyTax:
+def property_tax(property_id: PropertyId, collector: AgentId) -> _PropertyTax:
     """No rate of its own, so the authority charges the rate of the location the property sits in."""
     return _PropertyTax(
         property_id=property_id,
@@ -277,14 +277,14 @@ def two_property_case() -> Situation:
             purchases=(
                 purchase(
                     "buy-p1",
-                    "p1",
+                    PropertyId("p1"),
                     LOCATION_ID,
                     price=1_000_000,
                     down=200_000,
                     closing=30_000,
-                    mortgage=financing("p1-mortgage", LENDER, principal=800_000, annual_rate=0.06),
+                    mortgage=financing(LiabilityId("p1-mortgage"), LENDER, principal=800_000, annual_rate=0.06),
                 ),
-                purchase("buy-p2", "p2", LOCATION_ID, price=500_000, down=500_000, closing=10_000),
+                purchase("buy-p2", PropertyId("p2"), LOCATION_ID, price=500_000, down=500_000, closing=10_000),
             )
         ),
     )
@@ -301,14 +301,21 @@ def zero_stake_case() -> Situation:
                 # itself is fully funded.
                 purchase(
                     "buy-zero-stake",
-                    "zero-stake",
+                    PropertyId("zero-stake"),
                     LOCATION_ID,
                     month=1,
                     price=100_000,
                     down=0,
-                    mortgage=financing("zero-stake-mortgage", LENDER, principal=100_000, annual_rate=0.06),
+                    mortgage=financing(LiabilityId("zero-stake-mortgage"), LENDER, principal=100_000, annual_rate=0.06),
                 ),
-                purchase("buy-positive-stake", "positive-stake", LOCATION_ID, month=2, price=200_000, down=200_000),
+                purchase(
+                    "buy-positive-stake",
+                    PropertyId("positive-stake"),
+                    LOCATION_ID,
+                    month=2,
+                    price=200_000,
+                    down=200_000,
+                ),
             )
         ),
     )
@@ -346,16 +353,18 @@ def home_and_rental_case() -> Situation:
             purchases=(
                 purchase(
                     "buy-home",
-                    "home",
+                    PropertyId("home"),
                     HOME_LOCATION_ID,
                     seller=AgentId("seller"),
                     price=500_000,
                     down=100_000,
-                    mortgage=financing("home-mortgage", AgentId("bank"), principal=400_000, annual_rate=0.06),
+                    mortgage=financing(
+                        LiabilityId("home-mortgage"), AgentId("bank"), principal=400_000, annual_rate=0.06
+                    ),
                 ),
                 purchase(
                     "buy-rental",
-                    "rental",
+                    PropertyId("rental"),
                     RENTAL_LOCATION_ID,
                     seller=AgentId("seller"),
                     price=RENTAL_PURCHASE_PRICE,
@@ -363,16 +372,22 @@ def home_and_rental_case() -> Situation:
                     rented_fraction=1.0,
                 ),
             ),
-            sales=(_PropertySale(month=RENTAL_SALE_MONTH, property_id="rental", closing_cost_ppb=rate_to_ppb(0.06)),),
-            initial_residences=(_PrimaryResidence(agent_id=ALICE, property_id="home"),),
+            sales=(
+                _PropertySale(
+                    month=RENTAL_SALE_MONTH, property_id=PropertyId("rental"), closing_cost_ppb=rate_to_ppb(0.06)
+                ),
+            ),
+            initial_residences=(_PrimaryResidence(agent_id=ALICE, property_id=PropertyId("home")),),
             rented_fraction_events=(
-                _RentedFraction(month=12, property_id="rental", rented_fraction_ppb=rate_to_ppb(0.5)),
+                _RentedFraction(month=12, property_id=PropertyId("rental"), rented_fraction_ppb=rate_to_ppb(0.5)),
             ),
             capital_improvements=(
-                _CapitalImprovement(month=12, property_id="rental", amount=money(RENTAL_CAPEX), description="new roof"),
+                _CapitalImprovement(
+                    month=12, property_id=PropertyId("rental"), amount=money(RENTAL_CAPEX), description="new roof"
+                ),
             ),
         ),
-        tax_policies=(property_tax("home", COUNTY), property_tax("rental", COUNTY)),
+        tax_policies=(property_tax(PropertyId("home"), COUNTY), property_tax(PropertyId("rental"), COUNTY)),
         home_values={HOME_LOCATION_ID: flat_home, RENTAL_LOCATION_ID: rental_values},
     )
 

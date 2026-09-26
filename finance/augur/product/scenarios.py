@@ -54,7 +54,7 @@ from finance.augur.sim.compiler.series import level_series_demand
 from finance.augur.sim.compiler.tax import PreparedTaxProfile, compile_income_sources, compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import round_currency_amount
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import AccountId, AgentId, PropertyId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -154,7 +154,7 @@ def _amount(value: object) -> Decimal:
     return value if isinstance(value, Decimal) else Decimal(str(value))
 
 
-def sim_locations_from_config(locations: tuple[LocationConfig, ...]) -> dict[str, Location]:
+def sim_locations_from_config(locations: tuple[LocationConfig, ...]) -> dict[LocationId, Location]:
     return {
         loc.location_id: Location(
             location_id=loc.location_id,
@@ -290,8 +290,8 @@ def build_situation(
     primary_agent_id: AgentId,
     initial_cash: Decimal,
     initial_lots: tuple[InitialLot, ...],
-    properties_by_id: dict[str, Property],
-    locations: Mapping[str, Location],
+    properties_by_id: dict[PropertyId, Property],
+    locations: Mapping[LocationId, Location],
     initial_bonds: tuple[BondHolding, ...] = (),
     security_distributions: tuple[SecurityDistribution, ...] = (),
     tlh_portfolios: tuple[TlhPortfolioSpec, ...] = (),
@@ -602,7 +602,7 @@ def _schedule_e_split(rented_fraction: float) -> tuple[TransferDeductionCategory
     return ("ordinary", float(rented_fraction))
 
 
-def _sim_lifecycle_event(event: PropertyLifecycleEventWire, *, property_id: str) -> PropertyLifecycleEvent:
+def _sim_lifecycle_event(event: PropertyLifecycleEventWire, *, property_id: PropertyId) -> PropertyLifecycleEvent:
     """Translate one wire lifecycle event to its sim-side equivalent.
 
     Wire variants and sim variants are kept separate because the wire variants are scoped

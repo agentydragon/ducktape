@@ -9,7 +9,7 @@ import pytest_bazel
 
 from finance.augur.sim.actions import Action, Consume, DecisionActions, PayClaim
 from finance.augur.sim.books import AccountRef, BondState, Book
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import AccountId, AgentId, BondId
 from finance.augur.sim.observations import Decision, FixedCoupon, IndexedCoupon
 from finance.augur.sim.results import BondSeries, Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
@@ -53,7 +53,7 @@ def held_case(*, indexed: bool = False, future_cpi: float = 2.0, rollout_count: 
         accounts=checking((AgentId("alice"), Decimal(0)), (AgentId("bob"), Decimal(0)), (AgentId("world"), Decimal(0))),
         bonds=tuple(
             dated(
-                f"{agent}-bond",
+                BondId(f"{agent}-bond"),
                 agent_id=agent,
                 face=Decimal(100),
                 annual_rate=0.12,
@@ -111,7 +111,7 @@ def test_owned_terms_coupon_before_spending_and_maturity_removal() -> None:
     assert result.summary.bond_principal == [
         BondSeries(
             account=AccountRef(agent_id=AgentId("alice"), account_id=AccountId("checking")),
-            bond_id="alice-bond",
+            bond_id=BondId("alice-bond"),
             values=[10_000, 10_000, 10_000, 0],
         )
     ]
@@ -204,7 +204,7 @@ def test_fixed_coupon_rounds_once_and_funds_spending(face: int, rate: float, per
         accounts=checking((AgentId("alice"), Decimal(0)), (AgentId("world"), Decimal(0))),
         bonds=(
             dated(
-                "fixed-test",
+                BondId("fixed-test"),
                 agent_id=AgentId("alice"),
                 face=face * QUANTUM,
                 annual_rate=rate,

@@ -2,7 +2,8 @@
 
 from pydantic import BaseModel, ConfigDict
 
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
+from finance.augur.model.series import LocationId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, LiabilityId, LotId, PortfolioId, PropertyId
 
 
 class Record(BaseModel):
@@ -48,7 +49,7 @@ class SecurityLotState(Record):
 
 
 class BondState(Record):
-    bond_id: str
+    bond_id: BondId
     agent_id: AgentId
     account_id: AccountId
     principal: int
@@ -64,8 +65,8 @@ class TaxLiabilityState(Record):
 
 
 class PropertyState(Record):
-    property_id: str
-    location_id: str
+    property_id: PropertyId
+    location_id: LocationId
     owner_agent_id: AgentId
     purchase_month: int
     adjusted_basis: int
@@ -83,8 +84,8 @@ class PropertyState(Record):
 class MortgageState(Record):
     """Read-only capture combining the Python contract's servicing facts and ledger principal."""
 
-    liability_id: str
-    property_id: str
+    liability_id: LiabilityId
+    property_id: PropertyId
     agent_id: AgentId
     payment_account_id: AccountId
     counterparty_agent_id: AgentId
@@ -199,7 +200,7 @@ class DistributionOutcome(Record):
 class BondCashflowOutcome(Record):
     month: int
     cause_id: str
-    bond_id: str
+    bond_id: BondId
     agent_id: AgentId
     account_id: AccountId
     issuer_jurisdiction_id: str | None

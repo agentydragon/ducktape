@@ -19,7 +19,7 @@ from finance.augur.api.schemas import ApiModel
 from finance.augur.model.asset_key import AssetKey
 from finance.augur.product.wire import CurrencyQuanta
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, LotId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, BondId, LotId, PortfolioId
 
 
 class ProductPublicSecurityLot(ApiModel):
@@ -53,7 +53,7 @@ class ProductBondPosition(ApiModel):
     exact currency quanta, alongside coupon and maturity facts.
     """
 
-    bond_id: str
+    bond_id: BondId
     account_id: AccountId
     account_label: str | None = None
     label: str | None = None

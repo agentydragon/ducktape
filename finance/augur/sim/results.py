@@ -17,7 +17,7 @@ from finance.augur.sim.books import (
     TaxSettlementOutcome,
 )
 from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
-from finance.augur.sim.ids import AgentId, AssetId
+from finance.augur.sim.ids import AgentId, AssetId, BondId
 
 
 class RejectedAction(Record):
@@ -120,7 +120,7 @@ class HoldingSeries(CashSeries):
 
 
 class BondSeries(CashSeries):
-    bond_id: str
+    bond_id: BondId
 
 
 class PaymentTarget(Record):

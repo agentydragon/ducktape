@@ -39,6 +39,7 @@ py_library(
     srcs = ["locations.py"],
     deps = [
         ":fixed_point",
+        "//finance/augur/model:series",
         "@pypi//pydantic",
     ],
 )
@@ -52,6 +53,7 @@ py_test(
         ":locations",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/model:series",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
@@ -222,6 +224,7 @@ py_library(
     srcs = ["books.py"],
     deps = [
         ":ids",
+        "//finance/augur/model:series",
         "@pypi//pydantic",
     ],
 )
@@ -263,6 +266,7 @@ py_library(
         ":jurisdictions",
         ":scenario",
         ":tlh",
+        "//finance/augur/model:series",
     ],
 )
 
@@ -376,6 +380,7 @@ py_library(
         ":actor",
         ":books",
         ":fixed_point",
+        ":ids",
         ":money",
         ":observations",
     ],
@@ -754,6 +759,7 @@ py_library(
         ":money",
         ":mortgage",
         ":prepared",
+        "//finance/augur/model:series",
     ],
 )
 
@@ -876,6 +882,7 @@ py_test(
         ":world",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/model:series",
         "//finance/augur/sim/testing:accounting",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -1054,6 +1061,7 @@ py_test(
         ":world",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/model:series",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -1182,6 +1190,7 @@ py_test(
         ":world",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/model:series",
         "//finance/augur/policy:configured_household",
         "//finance/augur/sim/compiler:tax",
         "@pypi//more_itertools",
@@ -1423,6 +1432,7 @@ py_test(
         ":world",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/model:series",
         "//finance/augur/policy:configured_household",
         "@pypi//more_itertools",
         "@pypi//polars",

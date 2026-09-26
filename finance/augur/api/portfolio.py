@@ -30,7 +30,7 @@ from pydantic import (
 from finance.augur.api.schemas import NonNegativeCurrencyAmount, PositiveCurrencyAmount
 from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
-from finance.augur.sim.ids import AccountId, AgentId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, BondId, LotId
 from finance.augur.sim.scenario import (
     BondHolding,
     DistributionTaxSlice,
@@ -179,7 +179,7 @@ class BondHoldingConfig(PortfolioConfigModel):
     so a portfolio never mixes calendar dates with sim-relative indexes.
     """
 
-    bond_id: str = Field(pattern=_ID_PATTERN)
+    bond_id: BondId = Field(pattern=_ID_PATTERN)
     account_id: AccountId = Field(pattern=_ID_PATTERN)
     label: str | None = None
     issuer_jurisdiction_id: str | None = Field(

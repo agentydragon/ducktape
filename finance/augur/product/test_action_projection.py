@@ -21,7 +21,7 @@ from finance.augur.product.wire import HoldingSaleEvent, MonthlyExpenseEvent, Ro
 from finance.augur.sim.actions import Consume, DecisionActions
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.events import EventLog
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import AccountId, AgentId, BondId
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import PreparedAccount, PreparedBond
 from finance.augur.sim.results import Finished, PaymentRejection, PaymentRequestError, Rejected, Rollout
@@ -354,7 +354,8 @@ def test_redemption_replaces_principal_with_cash_without_changing_product_net_wo
     capture: Literal["summary", "dense", "forensic"],
 ) -> None:
     worlds = _bonds(
-        dated("test-note", agent_id=HOUSEHOLD, face=Decimal(100), annual_rate=0, period=1, maturity=1), horizon_months=2
+        dated(BondId("test-note"), agent_id=HOUSEHOLD, face=Decimal(100), annual_rate=0, period=1, maturity=1),
+        horizon_months=2,
     )
     rollouts = _run(worlds, [0], capture, _hold)
     assert rollouts[0].stop is None
@@ -384,7 +385,7 @@ def test_bond_principal_totals_named_accounts_without_another_actors_holdings() 
     worlds = _bonds(
         *(
             dated(
-                f"{actor}-{account}",
+                BondId(f"{actor}-{account}"),
                 agent_id=actor,
                 account_id=account,
                 face=Decimal(face),
@@ -413,7 +414,15 @@ def test_bond_principal_totals_named_accounts_without_another_actors_holdings() 
 
 def test_stopped_bond_marks_and_selected_replay_use_captured_cpi_not_future_values() -> None:
     worlds = _bonds(
-        dated("indexed-note", agent_id=HOUSEHOLD, face=Decimal(100), annual_rate=0, period=1, maturity=2, indexed=True),
+        dated(
+            BondId("indexed-note"),
+            agent_id=HOUSEHOLD,
+            face=Decimal(100),
+            annual_rate=0,
+            period=1,
+            maturity=2,
+            indexed=True,
+        ),
         horizon_months=3,
         cpi=[[1.0, 2.0, 99.0, 99.0], [1.0, 2.0, 3.0, 4.0]],
     )

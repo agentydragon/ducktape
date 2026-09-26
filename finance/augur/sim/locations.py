@@ -12,6 +12,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator
 
+from finance.augur.model.series import LocationId
 from finance.augur.sim.fixed_point import validate_currency_amount
 
 type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
@@ -28,7 +29,7 @@ class Location(BaseModel):
     residential parcel.
     """
 
-    location_id: str
+    location_id: LocationId
     display_name: str
     jurisdiction_ids: list[str]
     annual_property_tax_rate: float

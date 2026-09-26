@@ -50,7 +50,7 @@ from finance.augur.sim.fixed_point import (
     quantity_to_quanta,
     rate_to_ppb,
 )
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -102,7 +102,7 @@ TENDER_UNITS, TENDER_MARK = 100.0, Decimal(50)
 TENDER_PROCEEDS_QUANTA = int(TENDER_UNITS * int(TENDER_MARK)) * QUANTA_PER_UNIT
 
 PROPERTY_HORIZON, PROPERTY_SALE_MONTH, CAPEX_MONTH = 36, 24, 12
-PROPERTY_LOCATION_ID = "loc"
+PROPERTY_LOCATION_ID = LocationId("loc")
 PROPERTY_LOCATION = PreparedLocation(
     location_id=PROPERTY_LOCATION_ID,
     display_name="Loc",
@@ -360,7 +360,7 @@ def property_sale_world() -> World:
                 _PropertyPurchase(
                     month=0,
                     cause_id="buy-house",
-                    property_id="house",
+                    property_id=PropertyId("house"),
                     location_id=PROPERTY_LOCATION_ID,
                     buyer_agent_id=ALICE,
                     buyer_account_id=CHECKING,
@@ -372,7 +372,7 @@ def property_sale_world() -> World:
                     rented_fraction_ppb=0,
                     land_value_fraction_ppb=rate_to_ppb(0.2),
                     mortgage=_MortgageFinancing(
-                        liability_id="house-mortgage",
+                        liability_id=LiabilityId("house-mortgage"),
                         lender_agent_id=AgentId("bank"),
                         lender_account_id=CHECKING,
                         principal=money(400_000),
@@ -381,9 +381,15 @@ def property_sale_world() -> World:
                     ),
                 ),
             ),
-            sales=(_PropertySale(month=PROPERTY_SALE_MONTH, property_id="house", closing_cost_ppb=rate_to_ppb(0.06)),),
+            sales=(
+                _PropertySale(
+                    month=PROPERTY_SALE_MONTH, property_id=PropertyId("house"), closing_cost_ppb=rate_to_ppb(0.06)
+                ),
+            ),
             capital_improvements=(
-                _CapitalImprovement(month=CAPEX_MONTH, property_id="house", amount=money(30_000), description="roof"),
+                _CapitalImprovement(
+                    month=CAPEX_MONTH, property_id=PropertyId("house"), amount=money(30_000), description="roof"
+                ),
             ),
         ),
         (),
