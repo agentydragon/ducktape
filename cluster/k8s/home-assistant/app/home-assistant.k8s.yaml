@@ -218,35 +218,6 @@ spec:
   selector:
     app.kubernetes.io/name: home-assistant
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: home-assistant-onboarding
-  namespace: home-assistant
-data:
-  settings.yaml: |
-    endpoint:
-      url: http://home-assistant.home-assistant.svc.cluster.local:8123
-      client_id: https://home.allegedly.works/
-      redirect_uri: https://home.allegedly.works/
-    owner_username: ha-local-admin
-    owner_display_name: Home Assistant Local Administrator
-    http_config:
-      server_host:
-        - 127.0.0.1
-      server_port: 8124
-      cors_allowed_origins:
-        - https://cast.home-assistant.io
-      use_x_forwarded_for: true
-      trusted_proxies:
-        - 127.0.0.1/32
-      login_attempts_threshold: -1
-      ip_ban_enabled: true
-      ssl_profile: modern
-      use_x_frame_options: true
-    core_config:
-      time_zone: America/Los_Angeles
----
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -261,7 +232,6 @@ spec:
     metadata:
       annotations:
         home-assistant.allegedly.works/bootstrap-revision: "5"
-        home-assistant.allegedly.works/settings-sha256: 042e6ed6cdcdec3a3ece36ed770ac9969b7273ce59b0119d598a0d3f19047547
       labels:
         app.kubernetes.io/name: home-assistant-onboarding
     spec:
