@@ -48,6 +48,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
     COINBASE_POLICY,
     FORGEJO_HAKU_POLICY,
+    GITHUB_CLONE_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
@@ -474,7 +475,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         ],
     )
     # GitHub downloads with nothing substituted: a release asset or a tag archive, which is what a
-    # Bazel `http_archive` fetches, without the write-capable PAT `github-public` carries.
+    # Bazel `http_archive` fetches, without the write-capable PAT `github-agentydragon-agent` carries.
     EgressPolicy(
         scope,
         "egresspolicy-github-downloads",
@@ -489,6 +490,8 @@ def add_staging_action_policies(scope: Construct) -> None:
                         # Where `github.com/.../releases/download/...` redirects.
                         "objects.githubusercontent.com",
                         "release-assets.githubusercontent.com",
+                        # Raw file content off a ref, e.g. `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`.
+                        "raw.githubusercontent.com",
                     ],
                     methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.HEAD],
                 )
@@ -519,14 +522,11 @@ def add_staging_action_policies(scope: Construct) -> None:
     # sandbox signs with the key above.
     # `agentplane-testing` presents nothing either: the acceptance suite brings its own app token.
     # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
-    #
-    # TODO(github-egress): consider binding `github-public` here too. The ActionPolicyBinding below
-    # auto-approves GitHub *reads through the Action Service*, while a sandbox of the same caller
-    # has only `github-downloads`: GET and HEAD with no credential, so `git clone`, whose fetch
-    # POSTs to `git-upload-pack`, fails for a repository its caller can read through an Action.
-    # What stands in the way is `github-public`'s credential: the `agentydragon-agent` PAT is
-    # write-capable and substituted on GET and POST with no path limit, so binding it lets a
-    # sandbox push as that bot.
+    # `github-clone` presents nothing either: the anonymous smart-HTTP git protocol
+    # (GET+POST to github.com only, scoped to the `info/refs`/`git-upload-pack` paths), which
+    # is what closes the gap `github-downloads`'s GET/HEAD-only surface left: a sandbox of this
+    # caller's can now `git clone`/`fetch` a public repository without the write-capable
+    # `github-agentydragon-agent` PAT, which stays unbound here on purpose (egress.py).
     EgressBinding(
         scope,
         "egressbinding-claude-ai",
@@ -551,6 +551,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 COINBASE_POLICY,
                 _AGENTPLANE_TESTING_POLICY,
                 _GITHUB_DOWNLOADS_POLICY,
+                GITHUB_CLONE_POLICY,
             ],
         ),
     )

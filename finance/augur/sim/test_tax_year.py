@@ -9,12 +9,11 @@ import pytest_bazel
 from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.prepared import _SaltCap, _SaltDeduction
 from finance.augur.sim.scenario import ORDINARY_INCOME
-from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, flat_rules, prepared_books, prepared_scenario
+from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, accounting, flat_rules, taxpayer
 
 
 def test_a_copied_book_shares_no_year_or_income_row_with_the_original() -> None:
-    scenario = prepared_scenario()
-    book = prepared_books(scenario).tax
+    book = accounting().tax
     book.income.accrue(HOUSEHOLD, ORDINARY_INCOME, 100)
     clone = book.copy()
     clone.income.accrue(HOUSEHOLD, ORDINARY_INCOME, 50)
@@ -24,26 +23,21 @@ def test_a_copied_book_shares_no_year_or_income_row_with_the_original() -> None:
 
 
 def test_year_close_nets_once_then_reassesses_federal_salt_and_resets() -> None:
-    scenario = prepared_scenario()
     profile = replace(
-        scenario.tax_profiles[0],
+        taxpayer(HOUSEHOLD),
         jurisdictions=tuple(
             replace(flat_rules(name, rate), max_capital_loss_ordinary_offset=300)
             for name, rate in [("test_federal", 100_000_000), ("test_state", 200_000_000)]
         ),
     )
-    scenario = replace(
-        scenario,
-        tax_profiles=(profile,),
-        _federal_salt_deduction_policies=(
-            _SaltDeduction(
-                profile_id=HOUSEHOLD,
-                federal_jurisdiction_id="test_federal",
-                cap_schedule=(_SaltCap(effective_year_index=0, cap=1000),),
-            ),
+    books = accounting(taxpayers=(profile,))
+    books.tax.salt_policies = (
+        _SaltDeduction(
+            profile_id=HOUSEHOLD,
+            federal_jurisdiction_id="test_federal",
+            cap_schedule=(_SaltCap(effective_year_index=0, cap=1000),),
         ),
     )
-    books = prepared_books(scenario)
     books.tax.income.accrue(HOUSEHOLD, ORDINARY_INCOME, 10_000)
     books.tax.gain(HOUSEHOLD, -700, long_term=False)
     year = books.tax.years[HOUSEHOLD]
@@ -71,8 +65,7 @@ def test_year_close_nets_once_then_reassesses_federal_salt_and_resets() -> None:
 
 
 def test_year_close_rejection_keeps_income_carryovers_and_all_jurisdictions_uncommitted() -> None:
-    scenario = prepared_scenario()
-    books = prepared_books(scenario)
+    books = accounting()
     books.tax.income.accrue(HOUSEHOLD, ORDINARY_INCOME, 1000)
     books.ledger = Ledger(
         account for account in books.ledger.balances if account.account_id != "liability:tax:test_federal"

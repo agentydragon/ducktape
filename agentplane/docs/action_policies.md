@@ -37,8 +37,7 @@ need them, as `github_public_repository` did with its live visibility lookup.
 **A policy set is the shared unit** and the only thing a subject references; a one-off grant is a
 small set of its own. `autoApproveIf` auto-approves a matching request, `autoDenyIf` auto-denies
 one, `autoDenyUnless` auto-denies a request matching none of its policies; deny wins over approve,
-and a request matching nothing takes the human path. Only `autoApproveIf` decides today
-(`DENY_LISTS` in the [task DAG](../plans/task_dag.md)).
+and a request matching nothing takes the human path. Only `autoApproveIf` decides today.
 
 **A binding joins one subject to sets, by reference only.** A subject may have many bindings; the
 effective policy is the union of the unexpired bindings' sets. `expiresAt` makes an expired binding

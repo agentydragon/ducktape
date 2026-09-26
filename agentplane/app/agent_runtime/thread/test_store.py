@@ -72,8 +72,8 @@ async def test_threads_list_reflects_the_attached_feed_s_harness_state(
     store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
 ) -> None:
     """`list_threads`/`get_thread` expose `FeedState.attached.harness_state` per thread — the live
-    running/idle signal the sidebar's per-thread status dot reads (`agentplane/plans/task_dag.md`
-    `UISHELL_SIDEBAR`), not a value derived from the historical event log."""
+    running/idle signal the sidebar's per-thread status dot reads (`agentplane/app/README.md`
+    § Sidebar inventory updates), not a value derived from the historical event log."""
     thread = await event_logs.open("sb-1", "s-1", SPEC)
     running_attached = protocol_pb2.Attached(
         session_id="s-1", spec=SPEC, harness_state=protocol_pb2.HARNESS_STATE_RUNNING

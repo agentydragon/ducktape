@@ -4,29 +4,35 @@ from collections.abc import Callable
 from decimal import Decimal
 from typing import Literal
 
-import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import InflationKey
 from finance.augur.sim.actions import Action, Consume, DecisionActions, PayClaim
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.observations import Decision, FixedCoupon, IndexedCoupon
 from finance.augur.sim.results import BondSeries, Finished, Paid, RejectedAction, Rollout
-from finance.augur.sim.scenario import BondHolding, Currency
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.testing.bonds import CORPORATE, MUNI, TREASURY, bond_case
-from finance.augur.sim.testing.case import Case, scenario
-from finance.augur.sim.testing.fixtures import checking
+from finance.augur.sim.testing.bonds import (
+    CORPORATE,
+    MUNI,
+    QUANTUM,
+    TREASURY,
+    Situation,
+    bond_case,
+    checking,
+    compose,
+    cpi_series,
+    dated,
+)
 
 
 def execute(
-    case: Case,
+    case: Situation,
     policy: Callable[[list[Decision]], list[DecisionActions]],
     capture: Literal["summary", "dense", "forensic"] = "summary",
     ids: list[int] | None = None,
 ) -> list[Rollout]:
-    session = ActionSession.from_run(case.compiled_run, "alice", ids or [0], capture=capture)
+    session = ActionSession({id_: compose(case, id_) for id_ in ids or [0]}, "alice", capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -36,30 +42,25 @@ def execute(
         session.close()
 
 
-def held_case(*, indexed: bool = False, future_cpi: float = 2.0, rollout_count: int = 1) -> Case:
-    return Case(
-        scenario(
-            checking(("alice", Decimal(0)), ("bob", Decimal(0)), ("world", Decimal(0))),
-            horizon_months=3,
-            tax_profiles=[],
-            initial_bonds=[
-                BondHolding(
-                    bond_id=f"{agent}-bond",
-                    agent_id=agent,
-                    account_id="checking",
-                    face_value=Decimal(100),
-                    purchase_price=Decimal(100),
-                    annual_coupon_rate=0.12,
-                    coupon_period_months=1,
-                    purchase_month_index=-1,
-                    maturity_month_index=2,
-                    inflation_indexed=indexed,
-                )
-                for agent in ("alice", "bob")
-            ],
+def held_case(*, indexed: bool = False, future_cpi: float = 2.0, rollout_count: int = 1) -> Situation:
+    return Situation(
+        accounts=checking(("alice", Decimal(0)), ("bob", Decimal(0)), ("world", Decimal(0))),
+        bonds=tuple(
+            dated(
+                f"{agent}-bond",
+                agent_id=agent,
+                face=Decimal(100),
+                annual_rate=0.12,
+                period=1,
+                purchase=-1,
+                maturity=2,
+                indexed=indexed,
+            )
+            for agent in ("alice", "bob")
         ),
+        horizon_months=3,
+        series=cpi_series([[1.0, 2.0, future_cpi, future_cpi]] * rollout_count),
         rollout_count=rollout_count,
-        series={InflationKey(): np.tile([1.0, 2.0, future_cpi, future_cpi], (rollout_count, 1))},
     )
 
 
@@ -191,31 +192,20 @@ def test_existing_issuer_exemptions_survive_actor_capture(issuer: str | None, fe
     ("face", "rate", "period", "coupon"),
     [(600, 0.01, 1, 1), (180, 0.033333333, 1, 0), (1_250_627, 0.037, 5, 19_280), (600, 0.0, 1, 0)],
 )
-@pytest.mark.parametrize("quantum", [Decimal("0.01"), Decimal(1)])
-def test_compiled_fixed_coupon_funds_both_controls(
-    face: int, rate: float, period: int, coupon: int, quantum: Decimal
-) -> None:
-    case = Case(
-        scenario(
-            checking(("alice", Decimal(0)), ("world", Decimal(0))),
-            horizon_months=2 * period + 1,
-            currency=Currency(quantum=quantum),
-            initial_bonds=[
-                BondHolding(
-                    bond_id="fixed-test",
-                    agent_id="alice",
-                    account_id="checking",
-                    face_value=face * quantum,
-                    purchase_price=face * quantum,
-                    annual_coupon_rate=rate,
-                    coupon_period_months=period,
-                    purchase_month_index=0,
-                    maturity_month_index=2 * period,
-                )
-            ],
-            tax_profiles=[],
+def test_fixed_coupon_rounds_once_and_funds_spending(face: int, rate: float, period: int, coupon: int) -> None:
+    case = Situation(
+        accounts=checking(("alice", Decimal(0)), ("world", Decimal(0))),
+        bonds=(
+            dated(
+                "fixed-test",
+                agent_id="alice",
+                face=face * QUANTUM,
+                annual_rate=rate,
+                period=period,
+                maturity=2 * period,
+            ),
         ),
-        rollout_count=1,
+        horizon_months=2 * period + 1,
     )
 
     def spend(batch: list[Decision]) -> list[DecisionActions]:
