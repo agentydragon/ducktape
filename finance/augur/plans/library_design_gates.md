@@ -282,7 +282,11 @@ graph TD
   prepared record types stay as the declaration vocabulary.
   `configured_allocation.validate_prepared` and `prepared_allocation_test` go too:
   its guards on the funding policies move to a check against the composed world,
-  called where APP-COMPOSE tracks the household. `SCHEMA` closes here.
+  called where APP-COMPOSE tracks the household. With the authored `scenario.TlhCohort`
+  gone, `sim/tlh.py`'s `TlhOpeningCohort` takes the name `TlhCohort` as the one public
+  cohort (value at a mark, cost basis, purchase month), which the Plaid source builds
+  directly; `_Cohort` stays private and uses the same `purchase_month_index` name.
+  `SCHEMA` closes here.
 - **OFFERS.** Gated on GPE: which compulsory events run without a tender policy, and
   when forced proceeds become spendable. Then `Issuer` emits `TenderOffer` and
   `ForcedRecovery` from the path's series, the household answers inside the month,

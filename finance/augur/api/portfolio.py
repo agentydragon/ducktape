@@ -30,7 +30,13 @@ from pydantic import (
 from finance.augur.api.schemas import NonNegativeCurrencyAmount, PositiveCurrencyAmount
 from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
-from finance.augur.sim.scenario import BondHolding, DistributionTaxSlice, InitialLot, SecurityDistribution
+from finance.augur.sim.scenario import (
+    BondHolding,
+    DistributionTaxSlice,
+    InitialLot,
+    SecurityDistribution,
+    TlhPortfolioSpec,
+)
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
 
@@ -291,7 +297,7 @@ class PortfolioConfig(PortfolioConfigModel):
                 agent_id=account_by_id[position.account_id].owner_agent_id,
                 account_id=position.account_id,
                 asset=position.asset,
-                purchase_month_index=-int(lot.holding_period_months_at_start),
+                purchase_month_index=-lot.holding_period_months_at_start,
                 quantity=float(lot.quantity),
                 cost_basis=lot.cost_basis,
             )
@@ -369,11 +375,23 @@ class PortfolioConfig(PortfolioConfigModel):
                 annual_coupon_rate=bond.annual_coupon_rate,
                 coupon_period_months=bond.coupon_period_months,
                 inflation_indexed=bond.inflation_indexed,
-                purchase_month_index=-int(bond.holding_period_months_at_start),
-                maturity_month_index=int(bond.months_to_maturity_at_start),
+                purchase_month_index=-bond.holding_period_months_at_start,
+                maturity_month_index=bond.months_to_maturity_at_start,
             )
             for bond in self.bonds
         )
+
+
+@dataclass(frozen=True)
+class LabeledTlhPortfolio:
+    """A managed TLH portfolio and the name the product shows it under.
+
+    Not a `PortfolioConfig` holding: the portfolio is money-denominated and owns its cohorts,
+    so it has no unit price or lots, and nothing may also hold its (owner, account, asset) pool.
+    """
+
+    spec: TlhPortfolioSpec
+    label: str
 
 
 @dataclass(frozen=True)

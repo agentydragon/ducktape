@@ -102,7 +102,7 @@ class ProductService:
         self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._initial_bonds = initial_bonds_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._security_distributions = security_distributions_from_portfolio(
-            portfolio, security_distributions, primary_agent_id=primary_agent_id
+            portfolio, security_distributions, tlh_portfolios=tlh_portfolios, primary_agent_id=primary_agent_id
         )
         self._tlh_portfolios = tlh_portfolios
         self._asset_label_by_id = asset_label_by_series_id(portfolio)

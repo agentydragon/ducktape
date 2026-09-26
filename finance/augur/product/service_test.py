@@ -77,7 +77,16 @@ from finance.augur.product.wire import (
 from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.quantiles import currency_quantiles
-from finance.augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
+from finance.augur.sim.scenario import (
+    Agent,
+    InitialAccountBalance,
+    InitialLot,
+    Scenario,
+    SeriesIndexedAmount,
+    TlhCohort,
+    TlhPortfolioSpec,
+)
+from finance.augur.sim.tlh import TlhAssumptions
 
 
 @dataclass
@@ -1095,6 +1104,67 @@ def test_product_cash_band_sells_nothing_while_cash_sits_inside_it(product: serv
 
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense"]
     assert detail.rollout.monthly_metrics["cash_quanta"] == [_usd_quanta(value) for value in [250_000.0, 250_875.0]]
+
+
+def test_a_sleeve_weight_naming_a_tlh_index_makes_its_portfolio_a_managed_source(
+    augur_config: Config, catalog: CatalogResponse
+) -> None:
+    """The TLH portfolio is the only holder of its index, and still a sellable sleeve.
+
+    Its (account, asset) reaches the household's policy as a managed source, beside the
+    ordinary lots' accounts, and the opening book holds no lot of the index.
+    """
+
+    owner = resolve_primary_agent_id(augur_config)
+    index = SecurityKey(symbol=SecuritySymbol("test-index"))
+    ordinary = InitialLot(
+        lot_id="test-ordinary",
+        agent_id=owner,
+        account_id="test_ordinary_brokerage",
+        asset=SecurityKey(symbol=SecuritySymbol("test-other")),
+        purchase_month_index=-12,
+        quantity=10.0,
+        cost_basis=Decimal(1_000),
+    )
+    sim_scenario = build_scenario(
+        ScenarioKey(
+            model_id="current_model",
+            horizon_months=1,
+            monthly_spend=1_000,
+            spend_index="none",
+            funding_policy=FundingPolicy(
+                sleeve_weights=(
+                    SleeveWeight(symbol="test-index", weight=3),
+                    SleeveWeight(symbol="test-other", weight=1),
+                )
+            ),
+        ),
+        primary_agent_id=owner,
+        initial_cash=Decimal(1_000),
+        initial_lots=(ordinary,),
+        properties_by_id=catalog.properties_by_id,
+        tlh_portfolios=(
+            TlhPortfolioSpec(
+                portfolio_id="test-managed",
+                owner_agent_id=owner,
+                account_id="test_managed_brokerage",
+                asset=index,
+                initial_cohorts=[TlhCohort(value=Decimal(3_000), cost_basis=Decimal(3_000), purchase_month_index=-24)],
+                assumptions=TlhAssumptions(
+                    peak_annual_yield=0,
+                    floor_annual_yield=0,
+                    maturity_decay_exponent=1,
+                    drawdown_sensitivity=0,
+                    short_term_fraction=1,
+                ),
+            ),
+        ),
+    )
+
+    [policy] = sim_scenario.target_allocation_policies
+    assert [(sleeve.asset, sleeve.weight) for sleeve in policy.sleeves] == [(index, 3), (ordinary.asset, 1)]
+    assert policy.source_account_ids == ("test_ordinary_brokerage", "test_managed_brokerage")
+    assert sim_scenario.initial_lots == [ordinary]
 
 
 def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income(

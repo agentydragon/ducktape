@@ -58,7 +58,7 @@ class PlaidProxyHoldingPeriodBucket(ApiModel):
 
 
 class PlaidSp500ProxyGroupConfig(ApiModel):
-    """Map selected Plaid investment accounts into one Augur SP500 proxy position."""
+    """Map selected Plaid investment accounts into one Augur SP500 proxy position, or a TLH portfolio."""
 
     position_id: str = Field(pattern=_ID_PATTERN)
     portfolio_account_id: str = Field(pattern=_ID_PATTERN)
@@ -84,7 +84,9 @@ class PlaidSp500ProxyGroupConfig(ApiModel):
         default=None,
         description=(
             "Optional reduced-form TLH portfolio assumptions, including explicit loss character. "
-            "Imported broker basis initializes component-owned positions. Omit for ordinary holdings."
+            "When set, the group becomes a money-denominated managed portfolio seeded from the imported "
+            "broker value and basis, not a holding, so `unit_value` and `security_kind` do not apply. "
+            "Omit for an ordinary proxy holding."
         ),
     )
 

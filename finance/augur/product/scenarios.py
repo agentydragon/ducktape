@@ -11,7 +11,7 @@ from finance.augur.api.config import Config, LocationConfig, SecurityDistributio
 from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.api.wire import ActorRole, Property
 from finance.augur.model.asset_key import PrivateEquityAssetKey
-from finance.augur.model.series import InflationKey, IssuerId, LocationId, RentKey
+from finance.augur.model.series import InflationKey, IssuerId, LocationId, RentKey, SecurityKey
 from finance.augur.product.wire import (
     CapitalImprovementEventWire,
     CashFinancing,
@@ -144,24 +144,39 @@ def initial_bonds_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id
 
 
 def security_distributions_from_portfolio(
-    portfolio: PortfolioConfig, declarations: tuple[SecurityDistributionConfig, ...], *, primary_agent_id: str
+    portfolio: PortfolioConfig,
+    declarations: tuple[SecurityDistributionConfig, ...],
+    *,
+    tlh_portfolios: tuple[TlhPortfolioSpec, ...],
+    primary_agent_id: str,
 ) -> tuple[SecurityDistribution, ...]:
     """Payout specs for every held pool of a security the deployment declares as distributing.
 
     The two halves meet here and nowhere else: the deployment's list says WHAT a fund is made
     of (a fact about the instrument), the portfolio says WHERE it is held, and this function
-    knows the product's cash topology well enough to name the destination.
+    knows the product's cash topology well enough to name the destination. A TLH portfolio is
+    a pool of its own: the sim pays it on the portfolio's value, not on units.
     """
 
+    tax_character_by_symbol = {
+        declaration.symbol: tuple(
+            DistributionTaxSlice(fraction=share.fraction, issuer_jurisdiction_id=share.issuer_jurisdiction_id)
+            for share in declaration.tax_character
+        )
+        for declaration in declarations
+    }
     distributions = portfolio.to_security_distributions(
-        tax_character_by_symbol={
-            declaration.symbol: tuple(
-                DistributionTaxSlice(fraction=share.fraction, issuer_jurisdiction_id=share.issuer_jurisdiction_id)
-                for share in declaration.tax_character
-            )
-            for declaration in declarations
-        },
-        payout_account_id=PRIMARY_ACCOUNT_ID,
+        tax_character_by_symbol=tax_character_by_symbol, payout_account_id=PRIMARY_ACCOUNT_ID
+    ) + tuple(
+        SecurityDistribution(
+            asset=managed.asset,
+            agent_id=managed.owner_agent_id,
+            holding_account_id=managed.account_id,
+            to_account_id=PRIMARY_ACCOUNT_ID,
+            tax_character=tax_character_by_symbol[managed.asset.symbol],
+        )
+        for managed in tlh_portfolios
+        if isinstance(managed.asset, SecurityKey) and managed.asset.symbol in tax_character_by_symbol
     )
     unsupported_owner_ids = sorted({d.agent_id for d in distributions if d.agent_id != primary_agent_id})
     if unsupported_owner_ids:
@@ -175,6 +190,7 @@ def security_distributions_from_portfolio(
 def asset_label_by_series_id(portfolio: PortfolioConfig) -> dict[str, str]:
     # Keyed by the sim-frame wire id (matching the `asset_id` column on decoded sim event
     # frames) so sim events can be labeled; the wire id is derived from the typed `asset`.
+    # TLH portfolios need no entry: their events name the portfolio, never an asset.
     return {
         position.asset.wire_id: f"{position.label or position.display_symbol} ({position.display_symbol})"
         for position in portfolio.holdings
@@ -340,15 +356,7 @@ def build_scenario(
     return Scenario(
         currency=Currency(code=scenario_key.currency_code, quantum=scenario_key.currency_quantum),
         agents=agents,
-        initial_lots=[
-            lot
-            for lot in initial_lots
-            if not any(
-                (lot.agent_id, lot.account_id, lot.asset)
-                == (portfolio.owner_agent_id, portfolio.account_id, portfolio.asset)
-                for portfolio in tlh_portfolios
-            )
-        ],
+        initial_lots=list(initial_lots),
         initial_bonds=list(initial_bonds),
         security_distributions=list(security_distributions),
         initial_cash=initial_balances,
@@ -375,7 +383,10 @@ def build_scenario(
             )
         ],
         target_allocation_policies=_target_allocation_policies_from_funding_policy(
-            scenario_key.funding_policy, primary_agent_id=primary_agent_id, initial_lots=initial_lots
+            scenario_key.funding_policy,
+            primary_agent_id=primary_agent_id,
+            initial_lots=initial_lots,
+            tlh_portfolios=tlh_portfolios,
         ),
         tlh_portfolios=list(tlh_portfolios),
         horizon_months=horizon_months,
@@ -866,21 +877,29 @@ def _monthly_spend_amount(scenario_key: ScenarioKey) -> Decimal | SeriesIndexedA
 
 
 def _target_allocation_policies_from_funding_policy(
-    funding_policy: FundingPolicy, *, primary_agent_id: str, initial_lots: tuple[InitialLot, ...]
+    funding_policy: FundingPolicy,
+    *,
+    primary_agent_id: str,
+    initial_lots: tuple[InitialLot, ...],
+    tlh_portfolios: tuple[TlhPortfolioSpec, ...],
 ) -> list[TargetAllocationPolicy]:
     """Lower the wire's cash band + weights to the sim's target-allocation policy.
 
     Zero-weight entries are the product UI's explicit "never sell" exclusion, not the sim's
     sellable zero-target sleeve. Drop them before constructing the sim portfolio. A weight
     naming nothing held is dropped too, so a saved target can outlive the position it mentions.
+    A TLH portfolio's index is a sleeve like any held security; the policy draws on its account
+    as a managed source.
 
     No sleeves left means no policy at all: the owner never auto-sells, and an unaffordable
     obligation is ruin. That is the honest reading of an empty target — there is no holding it
     is willing to give up — and it is why the wire has no "derive it for me" sentinel.
     """
 
-    sellable = [lot.asset for lot in initial_lots if not isinstance(lot.asset, PrivateEquityAssetKey)]
-    held_by_symbol = {asset.symbol: asset for asset in sellable}
+    holders = [
+        (lot.account_id, lot.asset) for lot in initial_lots if not isinstance(lot.asset, PrivateEquityAssetKey)
+    ] + [(managed.account_id, managed.asset) for managed in tlh_portfolios if isinstance(managed.asset, SecurityKey)]
+    held_by_symbol = {asset.symbol: asset for _, asset in holders}
     sleeves = [
         SleeveTarget(asset=held_by_symbol[sleeve.symbol], weight=sleeve.weight)
         for sleeve in funding_policy.sleeve_weights
@@ -895,7 +914,7 @@ def _target_allocation_policies_from_funding_policy(
             rebalancing=CashflowOnly(),
             agent_id=primary_agent_id,
             account_id=PRIMARY_ACCOUNT_ID,
-            source_account_ids=tuple(dict.fromkeys(lot.account_id for lot in initial_lots if lot.asset in targeted)),
+            source_account_ids=tuple(dict.fromkeys(account_id for account_id, asset in holders if asset in targeted)),
             sleeves=sleeves,
             cash_floor=_band_bound_amount(
                 funding_policy.cash_floor, index_to_inflation=funding_policy.cash_band_index_to_inflation
