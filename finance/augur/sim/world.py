@@ -416,6 +416,12 @@ class World:
             raise ValueError(f"TLH pool {(spec.owner_agent_id, spec.account_id, spec.asset_id)!r} has another manager")
         if f"security:{spec.asset_id}" not in self.market.series:
             raise ValueError(f"missing security series for TLH portfolio {spec.portfolio_id!r}")
+        # A managed index may be marked at zero (see `declare_pool`), never below it.
+        for month, price in enumerate(self.market.path(f"security:{spec.asset_id}")):
+            if price < 0:
+                raise ValueError(
+                    f"TLH portfolio {spec.portfolio_id!r}: index price must be nonnegative, got {price} at month {month}"
+                )
         portfolio = TlhPortfolio(
             spec.assumptions,
             TlhOpening(month=-1, price=self.market.value(f"security:{spec.asset_id}", 0), cohorts=spec.initial_cohorts),
