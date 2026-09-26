@@ -21,12 +21,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from grafana_grafanadashboard_crds.org.integreatly.grafana import (
-    GrafanaDashboard,
-    GrafanaDashboardSpec,
-    GrafanaDashboardSpecConfigMapRef,
-    GrafanaDashboardSpecInstanceSelector,
-)
+from grafana_grafanadashboard_crds.org.integreatly.grafana import GrafanaDashboardSpecConfigMapRef
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -41,6 +36,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/github-exporter"
 _NAMESPACE = "monitoring"
@@ -287,11 +283,9 @@ def chart(app: App) -> Chart:
         chart,
         "dashboard",
         metadata=metadata("github-exporter", _NAMESPACE),
-        spec=GrafanaDashboardSpec(
-            folder="GitHub",
-            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
-            config_map_ref=GrafanaDashboardSpecConfigMapRef(name="github-exporter-dashboard", key="dashboard.json"),
-        ),
+        instance_selector_labels={"dashboards": "grafana"},
+        folder="GitHub",
+        config_map_ref=GrafanaDashboardSpecConfigMapRef(name="github-exporter-dashboard", key="dashboard.json"),
     )
     return chart
 

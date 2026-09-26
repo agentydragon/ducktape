@@ -30,8 +30,8 @@ transaction costs, defaults, inflation, and interest on cash are absent.
   set to zero to match the experiment's start-before-first-coupon convention.
   Comparison with a dated arm therefore changes coupon timing and rollover
   frequency as well as valuation. It does not isolate one source of disagreement.
-- `run.py` composes each spending cell straight onto `World`s, one per path, with
-  no `Scenario`: a `Situation` holds the compiled unit-price and coupon series
+- `run.py` composes each spending cell straight onto `World`s, one per path: a
+  `Situation` holds the compiled unit-price and coupon series
   every path shares, and `compose(case, rollout_id)` declares the checking
   accounts, the strategy lot, its coupon distribution and the annual claims.
   `ActionSession` then drives those worlds from Python. The shared

@@ -28,15 +28,16 @@ from finance.augur.sim.compiler.execution import (
     compile_jurisdictions,
     compile_locations,
     compile_lots,
-    compile_scheduled_sale,
     compile_series,
 )
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.prepared import _ScheduledSale
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
@@ -44,7 +45,6 @@ from finance.augur.sim.scenario import (
     InitialAccountBalance,
     InitialLot,
     PropertySaleEvent,
-    ScheduledAssetSale,
     ScheduledPropertyPurchase,
     TaxProfile,
 )
@@ -97,13 +97,13 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
         quantity=UNITS,
         cost_basis=Decimal(str(UNITS)) * LOT_BASIS,
     )
-    sale = ScheduledAssetSale(
+    sale = _ScheduledSale(
         month=SALE_MONTH,
         cause_id="sell-vti",
         agent_id=AGENT,
-        source_account_id="checking",
-        asset=VTI,
-        quantity=UNITS,
+        account_id="checking",
+        asset_id=str(VTI.symbol),
+        units=int(quantity_to_quanta(UNITS, scale=quantity_scale_for_asset(VTI))),
         proceeds_account_id="checking",
     )
     profile = TaxProfile(agent_id=AGENT, jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs")
@@ -135,11 +135,11 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
         ):
             world.declare_account(account)
         world.track(TaxAuthority(compile_profile(profile, jurisdictions, quantum=CURRENCY.quantum)))
-        for pool in compile_holding_pools(pools=(), lots=[lot], policies=(), tlh_portfolios=()):
+        for pool in compile_holding_pools(lots=[lot], policies=(), tlh_portfolios=()):
             world.declare_pool(pool)
         for held in compile_lots([lot], quantum=CURRENCY.quantum):
             world.hold(held)
-        household = ConfiguredHousehold(AgentId(AGENT), (), scheduled_sales=(compile_scheduled_sale(sale),))
+        household = ConfiguredHousehold(AgentId(AGENT), (), scheduled_sales=(sale,))
         household.check(world)
         world.track(household)
         return world

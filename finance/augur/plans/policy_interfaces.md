@@ -4,18 +4,19 @@ Target design for the remaining migration and gates in [the roadmap](roadmap.md)
 The composition decision is recorded in [the gate note](library_design_gates.md):
 a coordinating `World` over tracked components whose `step()` opens the month,
 drains a deterministic queue of typed messages and closes; each tracked
-`EconomicAgent`'s `decide` handles month-opened once per month with its inbox. GMETRICS is still open; these sketches
-do not finalize a metrics collector. Preserve the settled economic action contract.
+`EconomicAgent`'s `decide` handles month-opened once per month with its inbox. Under
+GMETRICS, decided in the same note, every caller records what it wants between
+steps. Preserve the settled economic action contract.
 Reuse the common `ActionSession` and its single batch contract. Public requests
-already belong to `sim/actions.py`, current facts to `sim/observations.py`, and
-lifecycle to `sim/session.py`; there is no public native wrapper counterpart.
+already belong to `sim/actions.py`, current facts to `sim/observations.py`, the
+month to `sim/world.py` and batch lifecycle to `sim/session.py`.
 The richer types below are sketches, not additional API declarations. Extend
 existing domain types only for a supported consumer.
 
 The boundary is economic agency: a policy sees information available to its actor
 and requests actions that actor could take. The environment owns contracts,
 execution and consequences. **Python owns the outer loop for every consumer**, including
-the app as it migrates. Financial execution is Python-owned. The World coordinates
+the app. Financial execution is Python-owned. The World coordinates
 all participating economic objects and enforces cross-object invariants; the
 experiment owns the loop around `World.step()`.
 Rule-driven brokers, lenders and tax authorities suffice; this does not require a
@@ -136,8 +137,8 @@ actor/month. Terminal results retain the action and reason that stopped a path.
 The calling experiment owns the outer monthly loop in Python: start the session,
 dispatch observations to policies, submit their responses, repeat until
 finished. An optional Python `run(...)` helper uses the same session when custom
-orchestration is unnecessary; the app must migrate its remaining configured
-consumers to the agreed interface. The sketch does not require retaining this
+orchestration is unnecessary; P12 moves the app's configured household to an
+ordinary policy. The sketch does not require retaining this
 exact Session/World class split. Under the current contract, `advance` owns financial time evolution between
 decisions: calendar/event ordering, accruals, settlement and taxes. The caller does not
 reimplement those rules or advance past unanswered decision opportunities.
@@ -238,16 +239,12 @@ The [paired TLH study](managed_portfolio.md) remains future work. Tax-aware rule
 additionally need the CAP tax-observation slice above; fixed investor-flow
 controls do not.
 
-## Measurement ownership remains a design gate
+## Measurement ownership
 
-Experiment-authored per-step extraction, such as appending selected account
-balances to a metrics list, is a candidate rather than a finalized API. Optional
-recorders/observers and hybrids are also candidates under GMETRICS. A coordinating
-World may provide consistent observation points without owning every metric.
-Financial correctness, taxes and visible failed/unpaid outcomes cannot depend on
-whether a metrics collector was installed. RECORD implements the selected design;
-CAP can still add a concrete missing factual view without waiting for a collector
-framework. See the gate note for timing, scope, copy-safety and comparison evidence.
+GMETRICS is decided in [the gate note](library_design_gates.md): every caller
+records what it wants between steps, with no observer, collector or event bus.
+Financial correctness, taxes and visible failed/unpaid outcomes do not depend on
+what a caller records. CAP can still add a concrete missing factual view.
 
 ## Acceptance and remaining choices
 
@@ -282,16 +279,13 @@ use this same session, not a second policy interface.
 
 P12 migrates the remaining configured Python consumers to common actions/results
 and removes implicit public-portfolio strategy, preserving required existing
-housing/PE capabilities. The app and legacy acceptance
-readers remain. Their configured allocation proposer is Python-owned and reuses
-shared sleeve helpers; retiring its implicit schema/orchestration is distinct from
-moving the strategy's implementation. The remaining `engine.rs::simulate*`
-configured helpers are test-only, not a second public driver.
-ACCEPT moves supported consumers to the common session. Existing Python funding, common
-reporting and held-bond capture are reused, not reimplemented. New `product/`
-features are deferred; its remaining adapter work must simplify existing behavior
-or retire legacy execution. The roadmap names the narrow
-committed-purchase and private-equity timing gates for complete app cutover.
+housing/PE capabilities. The app's configured household remains. Its configured
+allocation proposer is Python-owned and reuses shared sleeve helpers; retiring its
+implicit schema/orchestration is distinct from moving the strategy's implementation.
+Existing Python funding, common reporting and held-bond capture are reused, not
+reimplemented. New `product/` features are deferred; its remaining adapter work must
+simplify existing behavior or retire its configured strategy. The roadmap names the
+narrow committed-purchase and private-equity timing gates for complete P12 retirement.
 Configured source-account claim grouping is all-or-none; each migration must test
 and explain timing/funding differences rather than hide them in a compatibility
 runner. GP gates only the additional product/multi-actor semantics a slice needs.

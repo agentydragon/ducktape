@@ -6,7 +6,7 @@ from collections.abc import Iterable
 
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.money import mul_div
-from finance.augur.sim.prepared import CompiledRun, PreparedAmount, PreparedFixedAmount, PreparedSeries
+from finance.augur.sim.prepared import PreparedAmount, PreparedFixedAmount, PreparedSeries
 
 
 class MarketStatement(Statement):
@@ -32,10 +32,6 @@ class MarketPath:
                     f"series {row.series_id!r} has invalid shape; expected {rollout_count} x {row.snapshots}"
                 )
             self.series[row.series_id] = row
-
-    @classmethod
-    def from_run(cls, run: CompiledRun, rollout_id: int) -> MarketPath:
-        return cls(run.series, rollout_id, rollout_count=run.rollout_count)
 
     def value(self, series_id: str, month: int) -> int:
         series = self.series[series_id]

@@ -15,9 +15,7 @@ from finance.augur.sim.agent import EconomicAgent, assemble
 from finance.augur.sim.books import AccountRef, TaxAccrual, TaxPaymentOutcome, TaxSettlementOutcome
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.observations import Decision, Observation
-from finance.augur.sim.prepared import CompiledRun
-from finance.augur.sim.validation import validate
-from finance.augur.sim.world import Capture, World, validate_actor
+from finance.augur.sim.world import Capture, World
 
 
 class _Delegate(EconomicAgent):
@@ -155,28 +153,6 @@ class ActionSession:
             world._track(delegate)
             self._delegates[rollout_id] = delegate
         self._records = {id_: _Record(world, actor, capture) for id_, world in self._paths.items()}
-
-    @classmethod
-    def from_run(
-        cls, run: CompiledRun, actor: str, rollout_ids: list[int], *, capture: Capture = "forensic"
-    ) -> ActionSession:
-        """The import adapter: one world per selected path of a prepared run, validated first."""
-        if not isinstance(run, CompiledRun):
-            raise TypeError("execution requires a CompiledRun, not serialized input")
-        if (
-            not rollout_ids
-            or len(set(rollout_ids)) != len(rollout_ids)
-            or any(
-                not isinstance(id_, int) or isinstance(id_, bool) or not 0 <= id_ < run.rollout_count
-                for id_ in rollout_ids
-            )
-        ):
-            raise ValueError("selected rollout IDs must be unique, nonempty and in range")
-        if capture not in ("summary", "dense", "forensic"):
-            raise ValueError("capture must be summary, dense or forensic")
-        validate_actor(run, actor)
-        validate(run)
-        return cls({rollout_id: World.from_run(run, rollout_id) for rollout_id in rollout_ids}, actor, capture=capture)
 
     def _active(self) -> dict[int, World]:
         return {id_: path for id_, path in self._paths.items() if not path.finished}

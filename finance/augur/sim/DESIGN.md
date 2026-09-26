@@ -7,14 +7,12 @@ submit ordered actions for many paths at once.
 
 ## Preparation and dependencies
 
-`Scenario` describes actors, accounts, holdings, contracts and path bindings.
-`compile_run` in <compiler/execution.py> resolves those inputs into the typed `CompiledRun`
-defined in <prepared.py>.
-It does not fetch market evidence, fit a model or load tax law independently.
-Prepared records own exact monetary terms, quantized market paths and variable-length
-resolved tax rules. Sessions and metadata readers consume these facts directly;
-the file boundary privately serializes them without retaining a parallel
-document or original authoring objects. File decoding returns the same typed records.
+The authored records in <scenario.py> describe holdings, contracts, cashflows and
+policies in exact decimals. The compiler's per-table pieces in <compiler/> lower them
+into the records defined in <prepared.py>; preparation does not fetch market evidence,
+fit a model or load tax law independently. Prepared records own exact monetary terms,
+quantized market paths and variable-length resolved tax rules; a world declares them
+directly and keeps no authoring objects.
 
 `sim/` owns declarations, execution, and common books/results. Preparation does not depend on the executor.
 `model/` and `fit/` sample and fit; `policy/` contains proposal helpers.
@@ -37,10 +35,7 @@ Each declaration refuses what it cannot execute where it is declared: an unknown
 account, a missing or unusable series, a cashflow outside the horizon, a lifecycle
 event before its purchase. The compiler's per-table pieces (`compile_lots`,
 `compile_housing`, `compile_recurring_obligation`, …) lower authored records into
-the prepared records these declarations take. An authored `Scenario` reaches the
-same world through the import adapter, `compile_run` then
-`World.from_run(run, rollout_id)`, which declares and tracks what the prepared
-scenario describes.
+the prepared records these declarations take.
 
 The batch form drives one such world per selected path:
 

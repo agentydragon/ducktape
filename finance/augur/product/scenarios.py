@@ -474,7 +474,6 @@ def build_situation(
         horizon_months=horizon_months,
         household=AgentId(primary_agent_id),
         level_series=level_series_demand(
-            pools=(),
             lots=initial_lots,
             tlh_portfolios=tlh_portfolios,
             bonds=initial_bonds,
@@ -484,7 +483,6 @@ def build_situation(
                 *(cashflow.amount for cashflow in recurring_property_cashflows),
                 *(obligation.amount_due for obligation in recurring_obligations),
             ),
-            sales=(),
             policies=funding_policies,
             tender_policies=tender_policies,
             purchases=scheduled_property_purchases,
@@ -500,9 +498,7 @@ def build_situation(
         ),
         accounts=compile_accounts(initial_balances, quantum=quantum),
         tax_profile=compile_profile(profile, jurisdictions, quantum=quantum),
-        pools=compile_holding_pools(
-            pools=(), lots=initial_lots, policies=funding_policies, tlh_portfolios=tlh_portfolios
-        ),
+        pools=compile_holding_pools(lots=initial_lots, policies=funding_policies, tlh_portfolios=tlh_portfolios),
         lots=compile_lots(initial_lots, quantum=quantum),
         tlh_portfolios=tuple(compile_tlh_portfolio(portfolio, quantum=quantum) for portfolio in tlh_portfolios),
         bonds=tuple(compile_bond(bond, quantum=quantum) for bond in initial_bonds),

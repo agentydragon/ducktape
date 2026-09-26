@@ -45,7 +45,7 @@ Use a new directory. It retains `policies.json`, `paths.json`, and compact
 selected `*.trace-N.json` actor results with detailed traces; replay re-composes the
 situation with fresh policy memory on the original path IDs. There is no
 execution-input artifact: the situation is code (`situation.py:compose` on the Trinity
-paths), declared onto each path's `World` without a `Scenario`.
+paths), declared onto each path's `World`.
 
 Every result has a summary containing observed account cash/public marks, exact
 ending books, canonical tax/payment records and precise stop reasons. No post-stop

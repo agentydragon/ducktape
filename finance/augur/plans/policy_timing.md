@@ -2,8 +2,9 @@
 
 Scoped timing contract and remaining **GP** choices in [the landing plan](roadmap.md).
 The Python spending example exercises the common [actor-facing interface](policy_interfaces.md).
-Cases A/B retain configured-runner accounting controls while those consumers migrate;
-they no longer use an executable spending callback.
+Cases A/B are accounting controls on the configured household
+(`policy/configured_household.py`) until P12 retires it; they use no executable
+spending callback.
 
 ## Name the cashflows, not just “spending”
 
