@@ -62,7 +62,12 @@ from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.main import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, container_security, database, llm_ingress, node_scheduling
-from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_PUBLIC_POLICY, KUBERNETES_POLICY, PACKAGES_POLICY
+from cluster.cdk8s.agentplane.app_settings import (
+    BASIC_POLICY,
+    GITHUB_AGENTYDRAGON_AGENT_POLICY,
+    KUBERNETES_POLICY,
+    PACKAGES_POLICY,
+)
 from cluster.cdk8s.agentplane.egress_credentials import GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
@@ -295,8 +300,8 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
     )
     EgressPolicy(
         scope,
-        "egresspolicy-github-public",
-        metadata=ApiObjectMetadata(name=GITHUB_PUBLIC_POLICY, namespace=namespace),
+        "egresspolicy-github-agentydragon-agent",
+        metadata=ApiObjectMetadata(name=GITHUB_AGENTYDRAGON_AGENT_POLICY, namespace=namespace),
         spec=EgressPolicySpec(
             rules=[
                 EgressPolicySpecRules(
