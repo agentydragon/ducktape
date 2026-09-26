@@ -45,7 +45,7 @@ def chart(app: App) -> Chart:
             _group("oidc-ksbx-groups:agent-box-codex"),
             # claude-ai: the principal for Connections enrolled from the Claude.ai MCP connector
             # (cluster/cdk8s/agentplane/actions_staging_policies.py), and every sandbox stamped
-            # for it (agentplane/docs/sandbox_actions.md). Secret-free cluster diagnostics here;
+            # for it (agentplane/action_service/sandbox/README.md). Secret-free cluster diagnostics here;
             # the agent-readable namespace readers (cluster/cdk8s/kyverno/policies.py's
             # generate-agent-diagnostics-readers) add metadata and pod logs where a namespace opts in.
             k8s.Subject(kind="ServiceAccount", name="claude-ai", namespace="agentplane-staging"),

@@ -39,7 +39,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
-from agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAction
+from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
 from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.agentplane import app as app_component, egress, testing
 from cluster.cdk8s.agentplane.app_settings import (

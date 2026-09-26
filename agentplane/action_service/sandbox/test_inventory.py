@@ -16,9 +16,13 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio.client import ApiException
 
-from agentplane.sandbox_actions.binding import DESCRIPTION_ANNOTATION, SandboxExecutorBinding
-from agentplane.sandbox_actions.inventory import DEFAULT_CONTAINER_ANNOTATION, SandboxActionError, SandboxInventory
-from agentplane.sandbox_actions.models import READY_CONDITION
+from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION, SandboxExecutorBinding
+from agentplane.action_service.sandbox.inventory import (
+    DEFAULT_CONTAINER_ANNOTATION,
+    SandboxActionError,
+    SandboxInventory,
+)
+from agentplane.action_service.sandbox.models import READY_CONDITION
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import CommandResult
 from mcp_infra.exec.models import Exited

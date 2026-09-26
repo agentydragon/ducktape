@@ -17,9 +17,10 @@ from agentplane.action_service.catalog import ActionCatalog, McpExecutorBinding
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.mcp_linkage import McpLinkageAuthority
 from agentplane.action_service.models import Executor
-from agentplane.action_service.sandbox_executor import SandboxExecutor, actions
-from agentplane.sandbox_actions.binding import SandboxExecutorBinding
-from agentplane.sandbox_actions.inventory import SandboxClients
+from agentplane.action_service.sandbox.actions import actions
+from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.executor import SandboxExecutor
+from agentplane.action_service.sandbox.inventory import SandboxClients
 
 
 @asynccontextmanager
