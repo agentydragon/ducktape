@@ -16,14 +16,17 @@ this PR. Record private facts downstream; publish generic supported cases here.
       downstream.
 - [x] **Filing unit and residence.** Federal + California, single filer, US
       residence, fixed throughout.
-- [x] **Investable products.** Equity funds (e.g. VT, VXUS), municipal bonds and
-      funds, direct bonds, and simulated TLH direct indexing (a Wealthfront-style
+- [x] **Investable products.** Equity funds (e.g. VT, VXUS), US Treasury bond
+      funds, municipal bonds and funds (e.g. California munis), direct bonds, and
+      simulated TLH direct indexing (a Wealthfront-style
       managed portfolio, `sim/tlh.py`). Qualified dividends and NIIT are in scope:
       they materially affect these equity funds and a high-income year. A
       total-return equity index is a tax-free study proxy, not a distributing
       taxable fund.
-- [ ] **Account treatment for these products.** Specify account tax treatment,
-      reinvestment, sale-lot selection and fees.
+- [x] **Account treatment for these products.** Taxable accounts only; no
+      retirement-account regime. Sales select lots FIFO. Distributions are paid as
+      cash; reinvesting them is the household policy's choice. Trading fees and
+      fund expense ratios are out of scope for now (see Later).
 - [x] **Other material income/deductions.** The federal and California
       mortgage-interest deduction is in scope for a plausible mortgage: itemized
       versus standard deduction, the SALT cap interaction and federal/California
@@ -54,7 +57,7 @@ statutory variations are covered. Source paths below are relative to Augur.
 | Opening tax state                 | `TaxProfile` supplies an aggregate `prior_year_tax`; `TaxBook.enroll` (`sim/tax_year.py`) starts income, gain/carryover and payment state empty. No opening YTD/carryover import surface.                                                                | The current year's year-to-date income, realized gains and estimated/withheld payments, so the coming true-up is a cash claim within the horizon. Same continuation started before versus after a synthetic taxable sale, including a brought-forward loss; no tax reset or duplicated sale.                                                                              |
 | Ordinary income, gains and losses | `sim/tax.py` and `sim/public_sales_test.py` cover ordinary/LTCG stacking, deduction interaction, netting and carryforward. Lot dates/classification are monthly; capital-loss state is shared across jurisdictions.                                      | Compare statutory holding-period boundaries, mixed short/long gains/losses, multi-year loss use, and different federal/state opening carryovers where applicable. A test of the engine against itself is insufficient.                                                                                                                                                    |
 | Equity/fund distributions         | `SecurityDistribution` routes issuer-character slices as interest; income is `OrdinaryIncome` or `InterestIncome`. Equity samplers emit total-return prices. Qualified dividends and distinct fund capital-gain/return-of-capital processing are absent. | Compatible price-return plus payout amounts for the equity funds in scope, qualification/holding-period cases, federal qualified-dividend versus California ordinary treatment, reinvestment basis and no double-counted return. Either implement other payout kinds these funds need or reject those products.                                                           |
-| Treasury/muni interest            | Direct interest and configured distribution slices apply issuer exemptions; `sim/{income_sources,security_distributions,bond}_test.py` exercise them.                                                                                                    | Federal, California and out-of-state treatment for the muni funds and bonds actually held. Fund-level eligibility and annual tax reporting are not derivable solely from a constituent issuer's name.                                                                                                                                                                     |
+| Treasury/muni interest            | Direct interest and configured distribution slices apply issuer exemptions; `sim/{income_sources,security_distributions,bond}_test.py` exercise them.                                                                                                    | Federal, California and out-of-state treatment for the muni funds and bonds actually held; Treasury fund interest is federally taxable and California-exempt only when the fund qualifies. Fund-level eligibility and annual tax reporting are not derivable solely from a constituent issuer's name.                                                                     |
 | High-income taxes                 | `PreparedTaxRules` has no NIIT fields; the California YAML explicitly defers its additional high-income tax.                                                                                                                                             | Single-filer NIIT below/across/above the threshold, with muni interest excluded; California's 1% surcharge above $1M (current California law). These are acceptance blockers for affected reports, not optional “later refinements.”                                                                                                                                      |
 | Payments versus liabilities       | `sim/tax_authority.py` emits equal first-three installments from one aggregate prior-year target, then Q4/true-up after the year closes. This is functioning payment machinery, not full federal/CA safe-harbor support.                                 | Per-jurisdiction estimated-payment schedules (federal equal quarters, California's unequal installment proportions) and the true-up, with the selected safe-harbor rule only as it sets the estimate amounts, including large one-off gains and payments funded by further taxable sales. No penalty or interest modeling.                                                |
 | Itemization and housing           | Mortgage interest, SALT cap schedules, rental deductions/depreciation and sale exclusions/recapture have existing code/tests. Their presence does not establish complete current-year eligibility, phase-outs or passive-loss treatment.                 | Required: a single filer's federal and California mortgage-interest deduction, itemized versus standard, with the SALT cap (including its current-law income phase-out) and each jurisdiction's acquisition-debt limit, plus the existing rental cases, purchase/sale dates and federal/state differences. Preserve working housing mechanics while adding missing rules. |
@@ -67,6 +70,8 @@ statutory variations are covered. Source paths below are relative to Augur.
       calendar/law-year slice (judged low significance).
 - [ ] Charitable gifts: out of scope for now; scope their federal/California
       deduction before any experiment that includes them.
+- [ ] Trading fees and fund expense ratios: out of scope for now; model them
+      before comparing products whose costs differ materially.
 
 ### Existing indexed-bond coverage check
 
@@ -139,7 +144,7 @@ statute cases remain controls. Recheck the prior tax-engine evaluation's current
 coverage/licensing before choosing an external oracle; do not select a new runtime
 backend merely because an annual calculator is useful for comparison.
 
-GT's scope is recorded above; account treatment and BOND's conventions remain
-open. GT closes when they are decided, every relevant gap maps to a bounded
+GT's scope is recorded above; BOND's conventions remain open. GT closes when they
+are decided, every relevant gap maps to a bounded
 implementation/acceptance case, and exclusions are explicit. TAX closes only when
 those cases pass through canonical execution.
