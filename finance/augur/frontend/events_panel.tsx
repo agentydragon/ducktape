@@ -28,7 +28,7 @@ export function SelectedRolloutEventsPanel({
 
   useEffect(() => {
     if (selectedEventMonthIndex == null) return;
-    groupRefs.current.get(selectedEventMonthIndex)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    groupRefs.current.get(selectedEventMonthIndex)?.scrollIntoView({ block: "nearest" });
   }, [selectedEventMonthIndex, groups]);
 
   if (!selectedSummary) return null;
