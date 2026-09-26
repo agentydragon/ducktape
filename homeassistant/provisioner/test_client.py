@@ -58,7 +58,7 @@ async def test_websocket_command_authenticates_and_executes(endpoint: HomeAssist
     async with httpx2.AsyncClient(transport=ASGIWebSocketTransport(home_assistant)) as http_client:
         client = HomeAssistantClient(http_client, endpoint)
         client._access_token = "access-token"
-        result = await client.websocket_command({"id": 1, "type": "http/config"})
+        result = await client.websocket_command({"type": "http/config"})
 
     assert received_messages == [{"type": "auth", "access_token": "access-token"}, {"id": 1, "type": "http/config"}]
     assert result == {"ok": True}

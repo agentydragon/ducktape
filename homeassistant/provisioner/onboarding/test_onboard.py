@@ -202,7 +202,7 @@ async def test_configure_http_is_idempotent(monkeypatch, home_assistant_client, 
 
     await configure_http(home_assistant_client, settings.http_config, settings.owner_username, "secret-password")
 
-    assert calls == [{"id": 1, "type": "http/config"}]
+    assert calls == [{"type": "http/config"}]
 
 
 async def test_configure_http_restarts_and_promotes(monkeypatch, home_assistant_client, settings):
@@ -235,9 +235,9 @@ async def test_configure_http_restarts_and_promotes(monkeypatch, home_assistant_
     await configure_http(home_assistant_client, settings.http_config, settings.owner_username, "secret-password")
 
     assert calls == [
-        ("bootstrap-token", {"id": 1, "type": "http/config"}),
-        ("bootstrap-token", {"id": 1, "type": "http/config/configure", "config": settings.http_config.model_dump()}),
-        ("refreshed-token", {"id": 1, "type": "http/config/promote"}),
+        ("bootstrap-token", {"type": "http/config"}),
+        ("bootstrap-token", {"type": "http/config/configure", "config": settings.http_config.model_dump()}),
+        ("refreshed-token", {"type": "http/config/promote"}),
     ]
 
 

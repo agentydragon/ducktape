@@ -20,7 +20,7 @@ def _config_without_metadata(config: object) -> dict[str, object]:
 async def configure_http(client: HomeAssistantClient, http_config: HttpConfig, username: str, password: str) -> None:
     """Converge Home Assistant's UI-managed HTTP settings through its admin API."""
     wanted = http_config.model_dump()
-    current = await client.websocket_command({"id": 1, "type": "http/config"})
+    current = await client.websocket_command({"type": "http/config"})
     if not isinstance(current, dict):
         raise TypeError(f"Home Assistant returned an invalid HTTP config response: {current!r}")
     stable = _config_without_metadata(current.get("stable"))
@@ -29,10 +29,10 @@ async def configure_http(client: HomeAssistantClient, http_config: HttpConfig, u
     if stable == wanted and pending is None:
         return
     if pending_config == wanted and current.get("active_config_type") == "pending":
-        await client.websocket_command({"id": 1, "type": "http/config/promote"})
+        await client.websocket_command({"type": "http/config/promote"})
         return
 
-    result = await client.websocket_command({"id": 1, "type": "http/config/configure", "config": wanted})
+    result = await client.websocket_command({"type": "http/config/configure", "config": wanted})
     if not isinstance(result, dict) or not isinstance(result.get("restart"), bool):
         raise TypeError(f"Home Assistant returned an invalid HTTP configure response: {result!r}")
     if not result["restart"]:
@@ -40,7 +40,7 @@ async def configure_http(client: HomeAssistantClient, http_config: HttpConfig, u
 
     await client.wait_until_ready()
     await client.login(username, password)
-    await client.websocket_command({"id": 1, "type": "http/config/promote"})
+    await client.websocket_command({"type": "http/config/promote"})
 
 
 async def onboard(client: HomeAssistantClient, settings: Settings) -> None:
