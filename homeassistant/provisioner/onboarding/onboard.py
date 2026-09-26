@@ -57,33 +57,26 @@ async def configure_core(client: HomeAssistantClient, core_config: CoreConfig) -
 
 
 async def onboard(client: HomeAssistantClient, settings: Settings) -> None:
-    """Create the owner if necessary and finish all onboarding steps."""
+    """Finish whichever onboarding steps are pending, creating the owner if that is one of them, then
+    converge the HTTP and core settings."""
     password = settings.owner_password.get_secret_value()
-    completed = await client.wait_until_ready()
-    required_steps = frozenset(OnboardingStep)
-    if completed is None or completed >= required_steps:
-        await client.login(settings.owner_username, password)
-        await configure_http(client, settings.http_config, settings.owner_username, password)
-        await configure_core(client, settings.core_config)
-        print("Home Assistant onboarding is already complete")
-        return
-
-    if OnboardingStep.USER in completed:
-        await client.login(settings.owner_username, password)
-    else:
+    pending = await client.wait_until_ready()
+    if OnboardingStep.USER in pending:
         await client.create_owner(settings.owner_display_name, settings.owner_username, password)
-    if OnboardingStep.CORE_CONFIG not in completed:
+    else:
+        await client.login(settings.owner_username, password)
+    if OnboardingStep.CORE_CONFIG in pending:
         await client.request_json("/api/onboarding/core_config", data={})
-    if OnboardingStep.INTEGRATION not in completed:
+    if OnboardingStep.INTEGRATION in pending:
         await client.request_json(
             "/api/onboarding/integration",
             data={"client_id": settings.endpoint.client_id, "redirect_uri": settings.endpoint.redirect_uri},
         )
-    if OnboardingStep.ANALYTICS not in completed:
+    if OnboardingStep.ANALYTICS in pending:
         await client.request_json("/api/onboarding/analytics", data={})
     await configure_http(client, settings.http_config, settings.owner_username, password)
     await configure_core(client, settings.core_config)
-    print("Home Assistant onboarding is complete")
+    print(f"Home Assistant onboarding is complete; steps this run did: {', '.join(sorted(pending)) or 'none'}")
 
 
 async def async_main(settings: Settings) -> None:
