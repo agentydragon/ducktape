@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-import numpy as np
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
@@ -12,14 +11,11 @@ from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.sim.actions import Action, Contribute, DecisionActions, Liquidate, Withdraw
 from finance.augur.sim.books import AccountRef, TlhPortfolioState
-from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
-    CompiledRun,
     PreparedAccount,
     PreparedDistribution,
     PreparedDistributionSlice,
@@ -307,7 +303,7 @@ def test_model_defect_closes_session_instead_of_becoming_a_rejected_action(monke
 
 
 def _scenario(*, horizon: int) -> Scenario:
-    """The same managed sleeve as an authored scenario, for the prepared-input path below."""
+    """The same managed sleeve as an authored scenario, whose schema the last test checks."""
     return Scenario(
         agents=[Agent(agent_id=OWNER), Agent(agent_id=IRS)],
         initial_cash=[
@@ -330,25 +326,10 @@ def _scenario(*, horizon: int) -> Scenario:
     )
 
 
-def _projection_run(prices: tuple[float, ...]) -> CompiledRun:
-    """`metric_arrays` reads a `CompiledRun`, so this one assertion keeps the prepared-input path."""
-    horizon = len(prices) - 1
-    return compile_run(
-        _scenario(horizon=horizon),
-        rollout_count=1,
-        external_series=ExternalSeriesContext.from_level_blocks(
-            [(ASSET, np.asarray([prices], dtype=np.float64))], rollout_count=1, horizon_months=horizon
-        ),
-        jurisdictions={FEDERAL: load_jurisdiction(FEDERAL)},
-        locations={},
-    )
-
-
 @pytest.mark.parametrize("capture", ["summary", "dense", "forensic"])
 @pytest.mark.parametrize("reject", [False, True])
 def test_closing_marks_and_product_projection_do_not_advance_the_model_early(capture: Capture, reject: bool) -> None:
-    run = _projection_run((1.0, 2.0))
-    live = ActionSession.from_run(run, OWNER, [0], capture=capture)
+    live = session(Situation(horizon=1, prices=(1, 2)), capture=capture)
     try:
         live.start()
         actions: list[Action] = (
@@ -369,7 +350,9 @@ def test_closing_marks_and_product_projection_do_not_advance_the_model_early(cap
     assert portfolio.value == (100 if reject else 200)
     assert portfolio.reported_tax_basis == 99
     assert rollout.summary.ending_book.capital_gains[0].short_term_gain == -1
-    metrics = metric_arrays(run, result.rollouts, primary_agent_id=OWNER)
+    metrics = metric_arrays(
+        result.rollouts, primary_agent_id=OWNER, horizon_months=1, currency_code="USD", currency_quantum="1"
+    )
     assert metrics.base_series[1][:, 0].tolist() == [100, 100 if reject else 200]
 
 

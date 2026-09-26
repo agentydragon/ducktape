@@ -73,6 +73,7 @@ from finance.augur.product.wire import (
     SetRentedFractionEventWire,
     SleeveWeight,
 )
+from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.product_metrics import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.sim.quantiles import currency_quantiles
@@ -85,7 +86,6 @@ from finance.augur.sim.scenario import (
     TlhCohort,
     TlhPortfolioSpec,
 )
-from finance.augur.sim.testing.case import Case
 from finance.augur.sim.tlh import TlhAssumptions
 
 
@@ -301,9 +301,13 @@ def test_product_metrics_fail_when_holding_price_series_is_missing() -> None:
         tax_profiles=[],
         horizon_months=1,
     )
-    case = Case(scenario=scenario, rollout_count=1, paths=ExternalSeriesContext())
     with pytest.raises(ValueError, match="security:missing"):
-        simulate_product_metrics(case.compiled_run, primary_agent_id="agent_a")
+        simulate_product_metrics(
+            compile_run(
+                scenario, rollout_count=1, external_series=ExternalSeriesContext(), jurisdictions={}, locations={}
+            ),
+            primary_agent_id="agent_a",
+        )
 
 
 def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(

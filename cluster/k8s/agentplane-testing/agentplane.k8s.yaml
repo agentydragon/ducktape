@@ -104,7 +104,8 @@ data:
         template: agentplane-runner
         policies:
           - basic
-          - github-public
+          - github-agentydragon-agent
+          - github-clone
         thread_preset: public-coder-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
@@ -1342,7 +1343,7 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
-  name: github-public
+  name: github-agentydragon-agent
   namespace: agentplane-testing
 spec:
   rules:
@@ -1356,6 +1357,24 @@ spec:
         - POST
       credentialRef:
         name: github-pat
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: github-clone
+  namespace: agentplane-testing
+spec:
+  rules:
+    - hosts:
+        - github.com
+      methods:
+        - GET
+        - POST
+      paths:
+        - /*/*.git/info/refs
+        - /*/*.git/git-upload-pack
+        - /*/*/info/refs
+        - /*/*/git-upload-pack
 ---
 apiVersion: v1
 kind: ConfigMap

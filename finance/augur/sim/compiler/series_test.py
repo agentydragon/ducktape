@@ -6,8 +6,31 @@ import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityKey
 from finance.augur.sim.compiler.series import scenario_level_series_keys
-from finance.augur.sim.scenario import Agent, HoldingPool, InitialAccountBalance, Scenario
-from finance.augur.sim.testing.bonds import bond_scenario
+from finance.augur.sim.scenario import Agent, BondHolding, HoldingPool, InitialAccountBalance, Scenario
+
+
+def bond_scenario(*, indexed: bool) -> Scenario:
+    """An investor holding one dated bond and nothing priced."""
+    return Scenario(
+        agents=[Agent(agent_id="test-investor")],
+        initial_cash=[InitialAccountBalance(agent_id="test-investor", account_id="cash", balance="100")],
+        initial_bonds=[
+            BondHolding(
+                bond_id="test-bond",
+                agent_id="test-investor",
+                account_id="cash",
+                face_value=100,
+                purchase_price=100,
+                annual_coupon_rate=0.04,
+                coupon_period_months=6,
+                purchase_month_index=0,
+                maturity_month_index=12,
+                inflation_indexed=indexed,
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=14,
+    )
 
 
 def test_an_indexed_bond_demands_an_inflation_path() -> None:

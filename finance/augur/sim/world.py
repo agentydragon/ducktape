@@ -250,6 +250,12 @@ class World:
         self._composing()
         if not is_quantity_scale(pool.quantity_scale):
             raise ValueError("invalid holding pool quantity scale")
+        if any(
+            (declared.agent_id, declared.account_id, declared.asset_id)
+            == (pool.agent_id, pool.account_id, pool.asset_id)
+            for declared in self.holdings.pools
+        ):
+            raise ValueError("duplicate holding pool declaration")
         if private_issuer(pool.asset_id) is None:
             if f"security:{pool.asset_id}" not in self.market.series:
                 raise ValueError(f"missing public security series for {pool.asset_id!r}")

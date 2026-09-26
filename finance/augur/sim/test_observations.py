@@ -1,7 +1,6 @@
 """Independent actor mark, lot rounding, current-book and payer-scope controls."""
 
-from dataclasses import replace
-from unittest.mock import patch
+from dataclasses import dataclass, replace
 
 import pytest
 import pytest_bazel
@@ -11,9 +10,8 @@ from finance.augur.sim.agent import assemble
 from finance.augur.sim.claims import Claim, Claims
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import CompiledRun, PreparedHoldingPool, PreparedLot, PreparedSeries
+from finance.augur.sim.prepared import PreparedHoldingPool, PreparedLot, PreparedSeries
 from finance.augur.sim.results import Executed
-from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.accounting import (
     CASH,
     EXOGENOUS,
@@ -22,56 +20,51 @@ from finance.augur.sim.testing.accounting import (
     RECIPIENT,
     RESERVE,
     WORLD,
-    prepared_scenario,
+    opening,
+    world_on,
 )
 from finance.augur.sim.world import World
 
+POOLS = tuple(
+    PreparedHoldingPool(agent_id=actor, account_id=account, asset_id=asset, quantity_scale=10)
+    for actor, account, asset in (
+        (HOUSEHOLD, "checking", "stock"),
+        (HOUSEHOLD, "checking", "second"),
+        (HOUSEHOLD, "savings", "stock"),
+        (OTHER, "checking", "stock"),
+    )
+)
+
+
+@dataclass(frozen=True)
+class Scoped:
+    """Lots across both household accounts and another actor's, on one path of prices and CPI."""
+
+    lots: tuple[PreparedLot, ...]
+    series: tuple[PreparedSeries, ...]
+
 
 @pytest.fixture
-def scoped() -> CompiledRun:
-    base = prepared_scenario()
-    lots = tuple(
-        PreparedLot(
-            lot_id=id_,
-            agent_id=actor,
-            account_id=account,
-            asset_id=asset,
-            purchase_month=-24,
-            quantity_scale=10,
-            units=units,
-            basis=0,
-        )
-        for id_, actor, account, asset, units in (
-            ("half-a", HOUSEHOLD, "checking", "stock", 5),
-            ("half-b", HOUSEHOLD, "checking", "stock", 5),
-            ("second", HOUSEHOLD, "checking", "second", 4),
-            ("reserve", HOUSEHOLD, "savings", "stock", 5),
-            ("other-actor", OTHER, "checking", "stock", 1000),
-        )
-    )
-    pools = tuple(
-        PreparedHoldingPool(agent_id=actor, account_id=account, asset_id=asset, quantity_scale=10)
-        for actor, account, asset in (
-            (HOUSEHOLD, "checking", "stock"),
-            (HOUSEHOLD, "checking", "second"),
-            (HOUSEHOLD, "savings", "stock"),
-            (OTHER, "checking", "stock"),
-        )
-    )
-    return CompiledRun(
-        currency_code="USD",
-        currency_quantum="0.01",
-        rollout_count=1,
-        scenario=replace(
-            base,
-            horizon_months=3,
-            tax_profiles=(),
-            initial_lots=lots,
-            holding_pools=pools,
-            accounts=tuple(
-                replace(a, opening_balance={CASH: 100, RESERVE: 900, RECIPIENT: 5000}.get(a.account, 0))
-                for a in base.accounts
-            ),
+def scoped() -> Scoped:
+    return Scoped(
+        lots=tuple(
+            PreparedLot(
+                lot_id=id_,
+                agent_id=actor,
+                account_id=account,
+                asset_id=asset,
+                purchase_month=-24,
+                quantity_scale=10,
+                units=units,
+                basis=0,
+            )
+            for id_, actor, account, asset, units in (
+                ("half-a", HOUSEHOLD, "checking", "stock", 5),
+                ("half-b", HOUSEHOLD, "checking", "stock", 5),
+                ("second", HOUSEHOLD, "checking", "second", 4),
+                ("reserve", HOUSEHOLD, "savings", "stock", 5),
+                ("other-actor", OTHER, "checking", "stock", 1000),
+            )
         ),
         series=tuple(
             PreparedSeries(series_id=id_, snapshots=4, values=values)
@@ -84,8 +77,19 @@ def scoped() -> CompiledRun:
     )
 
 
-def world_for(run: CompiledRun) -> World:
-    world = World.from_run(run, 0)
+def composed(case: Scoped) -> World:
+    world = world_on(
+        case.series, horizon_months=3, accounts=opening({CASH: 100, RESERVE: 900, RECIPIENT: 5000}), taxpayers=()
+    )
+    for pool in POOLS:
+        world.declare_pool(pool)
+    for lot in case.lots:
+        world.hold(lot)
+    return world
+
+
+def world_for(case: Scoped) -> World:
+    world = composed(case)
     world.start()
     return world
 
@@ -109,7 +113,7 @@ def household_wealth(world: World) -> tuple[int, int]:
     return cash, world.holding_value(HOUSEHOLD, world.mark_month)
 
 
-def test_scoped_observations_match_output_at_same_marks_and_round_each_lot(scoped: CompiledRun) -> None:
+def test_scoped_observations_match_output_at_same_marks_and_round_each_lot(scoped: Scoped) -> None:
     world = world_for(scoped)
     wealth = [household_wealth(world)]
     for month, value in enumerate((4, 8, 11)):
@@ -141,7 +145,7 @@ def test_scoped_observations_match_output_at_same_marks_and_round_each_lot(scope
     assert [cash for cash, _ in wealth] == [1000] * 4
 
 
-def observations(run: CompiledRun) -> list[Observation]:
+def observations(run: Scoped) -> list[Observation]:
     world = world_for(run)
     seen = []
     for _ in range(3):
@@ -150,7 +154,7 @@ def observations(run: CompiledRun) -> list[Observation]:
     return seen
 
 
-def test_actor_books_do_not_read_future_prices_or_cpi(scoped: CompiledRun) -> None:
+def test_actor_books_do_not_read_future_prices_or_cpi(scoped: Scoped) -> None:
     changed = replace(
         scoped, series=tuple(replace(s, values=(*s.values[:2], *(v * 2 for v in s.values[2:]))) for s in scoped.series)
     )
@@ -160,14 +164,8 @@ def test_actor_books_do_not_read_future_prices_or_cpi(scoped: CompiledRun) -> No
     assert before[2].cpi != after[2].cpi
 
 
-def test_actor_books_follow_partial_sales_and_hide_exhausted_lots(scoped: CompiledRun) -> None:
-    run = replace(
-        scoped,
-        scenario=replace(
-            scoped.scenario,
-            initial_lots=(replace(scoped.scenario.initial_lots[0], basis=7), *scoped.scenario.initial_lots[1:]),
-        ),
-    )
+def test_actor_books_follow_partial_sales_and_hide_exhausted_lots(scoped: Scoped) -> None:
+    run = replace(scoped, lots=(replace(scoped.lots[0], basis=7), *scoped.lots[1:]))
     world = world_for(run)
     dispositions = []
     for month in range(3):
@@ -204,17 +202,15 @@ def test_actor_books_follow_partial_sales_and_hide_exhausted_lots(scoped: Compil
     assert [(d.units, d.basis) for d in dispositions] == [(2, 3), (3, 4), (5, 0)]
 
 
-def test_actor_books_reject_unpriced_public_positions_before_inspection(scoped: CompiledRun) -> None:
+def test_actor_books_reject_unpriced_public_positions_before_inspection(scoped: Scoped) -> None:
     invalid = replace(scoped, series=tuple(s for s in scoped.series if s.series_id != "security:second"))
-    with patch("finance.augur.sim.session.World") as world:
-        with pytest.raises(ValueError, match="security:second"):
-            ActionSession.from_run(invalid, HOUSEHOLD, [0])
-        world.assert_not_called()
+    with pytest.raises(ValueError, match="missing public security series for 'second'"):
+        composed(invalid)
     with pytest.raises(ValueError, match="unknown actor"):
         world_for(scoped).open_mail(AgentId("absent-actor"))
 
 
-def test_claim_views_keep_assembled_amount_identity_and_payer_scope(scoped: CompiledRun) -> None:
+def test_claim_views_keep_assembled_amount_identity_and_payer_scope(scoped: Scoped) -> None:
     world = world_for(scoped)
     world.claims = Claims(
         3,
