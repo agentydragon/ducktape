@@ -272,7 +272,7 @@ py_library(
         ":staging_config",
         ":testing",
         "//agentplane/action_service/policies:resources",
-        "//agentplane/action_service/sandbox:executor",
+        "//agentplane/action_service/sandbox:actions",
         "//agentplane/crds:actionpolicybinding",
         "//agentplane/crds:actionpolicyset",
         "//agentplane/crds:egressbinding",

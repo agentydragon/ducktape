@@ -18,8 +18,9 @@ from pydantic import JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionState
+from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
-from agentplane.action_service.sandbox.executor import SandboxAction, SandboxExecutor, actions
+from agentplane.action_service.sandbox.executor import SandboxExecutor
 from agentplane.action_service.sandbox.inventory import ForeignSandboxError, SandboxActionError
 from agentplane.action_service.sandbox.models import READY_CONDITION, SandboxCondition, SandboxInfo
 from agentplane.action_service.service import ExecutionOutcomeUnknownError
@@ -252,15 +253,6 @@ async def test_a_template_comes_back_as_the_object_itself(executor: SandboxExecu
     result = await executor.execute(_request(SandboxAction.GET_TEMPLATE, {"template": TEMPLATE}), LEASE)
     assert result.state is ExecutionState.SUCCEEDED
     assert result.result == {"metadata": {"name": TEMPLATE}, "spec": TEMPLATE_SPEC}
-
-
-def test_the_offered_actions_name_the_offered_templates() -> None:
-    """create's own description is where an agent learns which templates exist, and naming one that
-    is not offered is the likeliest way to get create wrong."""
-    offered = actions(BINDING, {TEMPLATE: "the test box"})
-    assert set(offered) == set(SandboxAction)
-    assert '"test-template": "the test box"' in offered[SandboxAction.CREATE].description
-    assert offered[SandboxAction.EXEC].input_schema["additionalProperties"] is False
 
 
 if __name__ == "__main__":

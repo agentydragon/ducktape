@@ -454,6 +454,7 @@ py_library(
         ":mcp_executor",
         ":mcp_linkage",
         ":models",
+        "//agentplane/action_service/sandbox:actions",
         "//agentplane/action_service/sandbox:binding",
         "//agentplane/action_service/sandbox:executor",
         "//agentplane/action_service/sandbox:inventory",
