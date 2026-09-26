@@ -29,9 +29,9 @@ as its slices land; the [roadmap](roadmap.md) owns cross-component dependencies.
 
 ## Desired experiment shell
 
-**Sketch only.** Imports below exist; `load_history`, `annual_paths`,
-`compose_world`, `annual_actions` and `Memory` are proposed ordinary study-local
-code, not new library APIs. The small module split is evidence/path preparation,
+**Sketch only.** Imports below exist; `load_history`, `annual_paths` and
+`compose_world` are proposed ordinary study-local code, not new library APIs;
+<../study/guyton_klinger/policy.py> supplies `Policy`, `annual_actions` and `Memory`. The small module split is evidence/path preparation,
 annual policy, and run/report. Configuration names the resolved conventions.
 
 ```python
@@ -88,9 +88,8 @@ the executor adds nothing. Fresh memory and the same paths drive selected replay
 1. **Annual evidence/path consumer:** named panel loader and explicit windows;
    same CLI accepts a generated placeholder panel in CI. Hand-check one full
    year, final-year mark and earning cash. No published-rate assertion yet.
-2. **Complete annual policy:** settle ORDER/PORTFOLIO/OPENING, add spending and
-   PMR together with actual session receipts. If split, label the spending-only
-   control as such. Reuse/extract only the proposal pieces this consumer needs.
+2. **Wire the annual policy:** drive <../study/guyton_klinger/policy.py> from the
+   slice-1 runner and CLI, opening at its targets, and carry its year records.
 3. **Historical report:** retain original/reordered path identity, source and
    unconditional spending metrics; run the pinned sourced panel and explain
    substitutions/discrepancies. Keep source acquisition separate from offline CI.
@@ -111,12 +110,7 @@ Use a fine declared quantity scale and currency quantum; bound/report proxy
 rounding rather than altering these independent arithmetic expectations. All
 three are explicit annual controls, not claims of GK rule/table reproduction.
 
-Later policy controls: strict equality and
-just-over/under guardrails; negative investment return versus withdrawal-induced
-wealth decline; no inflation catch-up; one 10% adjustment, not repeated rescue;
-the 15-year cutoff; overweight positive/negative sleeves and funding-source order;
-nonoverlapping lot reservations; cash return and no double-counted payouts;
-unfunded consumption retaining successful sales; exact exhaustion versus $1
+Later controls: cash return and no double-counted payouts; exact exhaustion versus $1
 terminal success; failed-path exclusion from source medians but inclusion of
 known paid zeros in observed populations; and the real
 CLI on the same tiny panel. Use independently calculated amounts, not snapshots

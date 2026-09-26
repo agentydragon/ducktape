@@ -1,0 +1,34 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "policy",
+    srcs = ["policy.py"],
+    deps = [
+        "//finance/augur/policy:sleeves",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:observations",
+    ],
+)
+
+py_test(
+    name = "test_policy",
+    srcs = ["test_policy.py"],
+    deps = [
+        ":policy",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:session",
+        "//finance/augur/sim:world",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

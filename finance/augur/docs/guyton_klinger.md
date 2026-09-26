@@ -120,6 +120,36 @@ mixed fund/index history. A taxable personal extension needs actual price/payout
 character and tax coverage and is not the paper replication. No source claim of
 complete statutory treatment follows from these studies.
 
+### Policy readings of the three-sleeve adaptation
+
+<../study/guyton_klinger/policy.py> pins one reading of ORDER, PORTFOLIO and
+OPENING for the declared cash/bond/single-equity adaptation. The faithful-label
+decisions above stay open.
+
+- **ORDER.** Scale last year's withdrawal by the preceding year's CPI ratio;
+  deflation lowers it, since the freeze text names only increases. The freeze
+  withholds an increase when the preceding year's investment return was
+  negative and the inflated amount exceeds `w0 * V`. At most one guardrail then
+  tests that candidate against `V`; its result is next year's basis. The rate
+  tested is thus the rate that would be taken, and inflation applies once.
+  Investment return compares the next opening wealth with the settled wealth
+  just after the withdrawal, so a withdrawal is never a loss and a 0% year is
+  not negative. The basis stays exact; each payment rounds half up to the
+  currency quantum.
+- **PORTFOLIO.** A sleeve's overweight is its value above its target share of
+  `V`, at the review's prices before any trade, and counts only if the sleeve's
+  unit price rose over the preceding year: GK2006's "asset classes", so bonds
+  sweep too. Funding: rising-overweight equity, rising-overweight bonds,
+  checking then the cash sleeve, remaining bonds, remaining equity, FIFO lots
+  within a sleeve, each unit reserved once. A losing sleeve therefore funds only
+  after cash and bonds run out. After the withdrawal, what funding left of the
+  rising sleeves' excess sells into the cash sleeve; nothing is bought back.
+- **OPENING.** Targets cover all opening wealth, without G2004's first-withdrawal
+  reserve, which GK2006 Table 1 does not restate. Year 0 has no prior-year
+  returns, so nothing is overweight and the first withdrawal comes from cash.
+  Capital preservation applies at zero-based year index `t < years - 15`: in 30
+  years, the first 15 withdrawals.
+
 ## Outputs that make comparisons meaningful
 
 GK2006 success requires at least $1 at the terminal horizon, not merely completion
