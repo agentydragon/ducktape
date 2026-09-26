@@ -30,7 +30,7 @@ from finance.augur.sim.prepared import (
     PreparedRecurringObligation,
     PreparedRecurringTransfer,
     _AllocationPolicy,
-    _SleeveTarget,
+    _SecuritySleeveTarget,
 )
 from finance.augur.sim.world import World
 
@@ -160,7 +160,7 @@ def compose(case: Situation) -> World:
                     account_id=CHECKING,
                     source_account_ids=(),
                     sleeves=tuple(
-                        _SleeveTarget(
+                        _SecuritySleeveTarget(
                             asset_id=str(asset.symbol), weight=weight, quantity_scale=quantity_scale_for_asset(asset)
                         )
                         for asset, weight in zip((VTI, BND), case.weights, strict=True)

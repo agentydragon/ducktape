@@ -16,18 +16,24 @@ from finance.augur.policy.configured_allocation import (
 from finance.augur.sim.actions import Buy, Contribute, Liquidate, Sell, Withdraw
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.observations import Claim, Observation, PublicPosition, TlhPortfolioObservation
-from finance.augur.sim.prepared import _AllocationPolicy, _SleeveTarget
+from finance.augur.sim.prepared import _AllocationPolicy, _ManagedSleeveTarget, _SecuritySleeveTarget, _SleeveTarget
 
 
-def _policy(*, weights: tuple[int, ...] = (1,), scale: int = 1, drift: int | None = None) -> _AllocationPolicy:
+def _policy(
+    *, weights: tuple[int, ...] = (1,), scale: int = 1, drift: int | None = None, managed: bool = False
+) -> _AllocationPolicy:
+    """Sleeve `i` holds `asset-i`; with `managed`, sleeve 0 is the managed portfolio instead."""
+    targets: list[_SleeveTarget] = [
+        _SecuritySleeveTarget(asset_id=f"asset-{index}", weight=weight, quantity_scale=scale)
+        for index, weight in enumerate(weights)
+    ]
+    if managed:
+        targets[0] = _ManagedSleeveTarget(portfolio_id="managed", weight=weights[0])
     return _AllocationPolicy(
         agent_id="owner",
         account_id="cash",
         source_account_ids=("first", "second"),
-        sleeves=tuple(
-            _SleeveTarget(asset_id=f"asset-{index}", weight=weight, quantity_scale=scale)
-            for index, weight in enumerate(weights)
-        ),
+        sleeves=tuple(targets),
         cash_floor=0,
         cash_ceiling=0,
         cause_id_prefix="fund",
@@ -94,6 +100,7 @@ def _lot(
 
 
 def _managed(value: int, *, accepts_contributions: bool = True) -> TlhPortfolioObservation:
+    """A portfolio in the first source account, pegged to the index `asset-0` also names."""
     return TlhPortfolioObservation(
         portfolio_id="managed",
         owner_agent_id="owner",
@@ -123,15 +130,15 @@ def test_a_managed_sleeve_plans_money_not_units_and_clamps_to_cash() -> None:
     managed = (_managed(100),)
     proposal = plan(
         _observation(cash=100, due=70, portfolios=managed),
-        _policy(),
+        _policy(managed=True),
         policy_index=2,
         floor=0,
         ceiling=0,
-        prices={"asset-0": 7},
+        prices={},
     )
     [pending] = proposal.buys
     assert isinstance(pending, PendingContribution)
-    # All 30 unreserved quanta; whole units at a price of 7 would have bought only 28.
+    # All 30 unreserved quanta, with no quote to round them to units against.
     assert pending.wanted_amount == 30
     contribution = materialize_contribution(_observation(cash=7, portfolios=managed), pending)
     assert isinstance(contribution, Contribute)
@@ -196,11 +203,11 @@ def test_zero_target_exit_includes_zero_mark_units_and_a_worthless_managed_sleev
     managed = _observation(portfolios=(_managed(0, accepts_contributions=False),))
     proposal = plan(
         managed,
-        _policy(weights=(0, 1), drift=0),
+        _policy(weights=(0, 1), drift=0, managed=True),
         policy_index=0,
         floor=0,
         ceiling=0,
-        prices={"asset-0": 0, "asset-1": 1},
+        prices={"asset-1": 1},
     )
     assert isinstance(proposal.sales[0], Liquidate)
 
@@ -208,8 +215,8 @@ def test_zero_target_exit_includes_zero_mark_units_and_a_worthless_managed_sleev
 @pytest.mark.parametrize("cash", [0, 100])
 def test_a_worthless_managed_index_takes_no_contribution_and_has_nothing_to_withdraw(cash: int) -> None:
     observation = _observation(cash=cash, portfolios=(_managed(0, accepts_contributions=False),))
-    assert plan(observation, _policy(), policy_index=0, floor=0, ceiling=0, prices={"asset-0": 0}).buys == []
-    raised = plan(observation, _policy(), policy_index=0, floor=200, ceiling=200, prices={"asset-0": 0})
+    assert plan(observation, _policy(managed=True), policy_index=0, floor=0, ceiling=0, prices={}).buys == []
+    raised = plan(observation, _policy(managed=True), policy_index=0, floor=200, ceiling=200, prices={})
     assert raised.sales == []
     assert raised.buys == []
 
@@ -218,11 +225,11 @@ def test_an_empty_portfolio_that_accepts_money_takes_the_surplus() -> None:
     """Value and basis alone cannot tell this portfolio from the worthless one above."""
     proposal = plan(
         _observation(cash=100, portfolios=(_managed(0),)),
-        _policy(),
+        _policy(managed=True),
         policy_index=0,
         floor=0,
         ceiling=0,
-        prices={"asset-0": 7},
+        prices={},
     )
     [pending] = proposal.buys
     assert isinstance(pending, PendingContribution)
@@ -232,16 +239,41 @@ def test_an_empty_portfolio_that_accepts_money_takes_the_surplus() -> None:
 def test_a_managed_withdrawal_is_the_money_the_band_raises() -> None:
     raised = plan(
         _observation(cash=100, portfolios=(_managed(500),)),
-        _policy(),
+        _policy(managed=True),
         policy_index=0,
         floor=200,
         ceiling=200,
-        prices={"asset-0": 7},
+        prices={},
     )
     [sale] = raised.sales
     assert isinstance(sale, Withdraw)
     assert sale.amount == 100
     assert raised.buys == []
+
+
+def test_lots_of_an_index_and_a_portfolio_pegged_to_it_are_separate_sleeves() -> None:
+    """The $15 of `asset-0` lots and the $500 portfolio on the same index are weighed apart.
+
+    Merged, they would be one $515 sleeve; apart, the equal-weight raise of $100 comes entirely
+    from the overweight portfolio, and the lots are not sold.
+    """
+    raised = plan(
+        _observation(cash=100, lots=(_lot(),), portfolios=(_managed(500),)),
+        replace(
+            _policy(),
+            sleeves=(
+                _ManagedSleeveTarget(portfolio_id="managed", weight=1),
+                _SecuritySleeveTarget(asset_id="asset-0", weight=1, quantity_scale=1),
+            ),
+        ),
+        policy_index=0,
+        floor=200,
+        ceiling=200,
+        prices={"asset-0": 3},
+    )
+    [sale] = raised.sales
+    assert isinstance(sale, Withdraw)
+    assert (sale.portfolio_id, sale.amount) == ("managed", 100)
 
 
 def test_cashflow_only_and_deposit_do_not_trigger_zero_target_drift() -> None:
@@ -260,7 +292,9 @@ def test_cashflow_only_and_deposit_do_not_trigger_zero_target_drift() -> None:
         prices={"asset-0": 3, "asset-1": 3},
     )
     assert deposit.sales == []
-    assert [buy.asset_id for buy in deposit.buys] == ["asset-1"]
+    [pending] = deposit.buys
+    assert isinstance(pending, PendingBuy)
+    assert pending.asset_id == "asset-1"
     no_purchases = plan(
         _observation(cash=10),
         replace(_policy(), allow_purchases=False),

@@ -452,3 +452,30 @@ py_library(
         "@pypi//numpy",
     ],
 )
+
+py_test(
+    name = "test_managed_sleeve_e2e",
+    size = "medium",
+    srcs = ["test_managed_sleeve_e2e.py"],
+    data = [
+        "//finance/augur/api:public_fixture_config",
+        "//finance/augur/api:public_fixture_properties",
+    ],
+    deps = [
+        ":conftest",
+        ":scenarios",
+        ":service",
+        ":wire",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/api:config",
+        "//finance/augur/api:wire",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:tlh",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

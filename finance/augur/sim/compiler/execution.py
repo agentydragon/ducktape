@@ -70,6 +70,7 @@ from finance.augur.sim.prepared import (
     PreparedTransfer,
     _AllocationPolicy,
     _CapitalImprovement,
+    _ManagedSleeveTarget,
     _MortgageFinancing,
     _MortgageInterestDeduction,
     _PrimaryResidence,
@@ -81,7 +82,7 @@ from finance.augur.sim.prepared import (
     _SaltCap,
     _SaltDeduction,
     _ScheduledSale,
-    _SleeveTarget,
+    _SecuritySleeveTarget,
     _TenderPolicy,
 )
 from finance.augur.sim.property import Housing
@@ -110,6 +111,7 @@ from finance.augur.sim.scenario import (
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     SecurityDistribution,
+    SecuritySleeveTarget,
     SeriesIndexedAmount,
     SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
@@ -332,7 +334,8 @@ def compile_holding_pools(
     for policy in policies:
         account_id = policy.source_account_ids[0] if policy.source_account_ids else policy.account_id
         for sleeve in policy.sleeves:
-            add(policy.agent_id, account_id, sleeve.asset)
+            if isinstance(sleeve, SecuritySleeveTarget):
+                add(policy.agent_id, account_id, sleeve.asset)
     return tuple(prepared.values())
 
 
@@ -420,11 +423,13 @@ def compile_allocation_policy(policy: TargetAllocationPolicy, *, quantum: Decima
         account_id=policy.account_id,
         source_account_ids=tuple(policy.source_account_ids),
         sleeves=tuple(
-            _SleeveTarget(
+            _SecuritySleeveTarget(
                 asset_id=_asset_id(sleeve.asset),
                 weight=int(sleeve.weight),
                 quantity_scale=quantity_scale_for_asset(sleeve.asset),
             )
+            if isinstance(sleeve, SecuritySleeveTarget)
+            else _ManagedSleeveTarget(portfolio_id=sleeve.portfolio_id, weight=int(sleeve.weight))
             for sleeve in policy.sleeves
         ),
         cash_floor=_amount(

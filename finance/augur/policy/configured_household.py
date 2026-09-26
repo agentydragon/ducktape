@@ -16,7 +16,13 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.money import checked_count, mul_div, position_value
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import PreparedAmount, PreparedFixedAmount, _AllocationPolicy, _ScheduledSale
+from finance.augur.sim.prepared import (
+    PreparedAmount,
+    PreparedFixedAmount,
+    _AllocationPolicy,
+    _ScheduledSale,
+    _SecuritySleeveTarget,
+)
 from finance.augur.sim.world import World
 
 
@@ -81,7 +87,11 @@ class ConfiguredHousehold(EconomicAgent):
                 policy_index=index,
                 floor=self._bound(policy.cash_floor, observation),
                 ceiling=self._bound(policy.cash_ceiling, observation),
-                prices={sleeve.asset_id: prices[sleeve.asset_id] for sleeve in policy.sleeves},
+                prices={
+                    sleeve.asset_id: prices[sleeve.asset_id]
+                    for sleeve in policy.sleeves
+                    if isinstance(sleeve, _SecuritySleeveTarget)
+                },
             )
             actions.extend(proposal.sales)
             pending.extend(proposal.buys)

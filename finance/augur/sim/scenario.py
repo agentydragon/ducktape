@@ -554,8 +554,8 @@ class ScheduledAssetSale(BaseModel):
     proceeds_account_id: str
 
 
-class SleeveTarget(BaseModel):
-    """One sleeve of a target allocation: an asset and its relative weight.
+class SecuritySleeveTarget(BaseModel):
+    """One sleeve of a target allocation: a security's lots in the source accounts, and its relative weight.
 
     Weights are integers and only their RATIOS matter — `(3, 1)` and `(30, 10)` are the same
     policy. A fraction would be derivable from the weights, so storing fractions would store
@@ -566,6 +566,22 @@ class SleeveTarget(BaseModel):
     weight: NonNegativeInt = Field(
         description="Relative target weight; zero keeps the sleeve sellable but receives no deposits."
     )
+
+
+class ManagedSleeveTarget(BaseModel):
+    """One sleeve of a target allocation: a managed TLH portfolio, sized in money, and its relative weight.
+
+    The portfolio is not its index: it has a value but no units or unit price, and lots of the
+    index it tracks are a separate sleeve.
+    """
+
+    portfolio_id: str
+    weight: NonNegativeInt = Field(
+        description="Relative target weight; zero keeps the sleeve sellable but receives no deposits."
+    )
+
+
+type SleeveTarget = SecuritySleeveTarget | ManagedSleeveTarget
 
 
 class CashflowOnly(BaseModel):
@@ -674,12 +690,15 @@ class TargetAllocationPolicy(BaseModel):
             )
         if not any(sleeve.weight > 0 for sleeve in self.sleeves):
             raise ValueError("target-allocation policy requires at least one positive sleeve weight")
-        assets = [sleeve.asset for sleeve in self.sleeves]
-        if len(set(assets)) != len(assets):
-            duplicated = sorted({str(asset) for asset in assets if assets.count(asset) > 1})
+        named = [
+            str(sleeve.asset) if isinstance(sleeve, SecuritySleeveTarget) else f"portfolio {sleeve.portfolio_id}"
+            for sleeve in self.sleeves
+        ]
+        if len(set(named)) != len(named):
+            duplicated = sorted({name for name in named if named.count(name) > 1})
             raise ValueError(
                 f"target-allocation policy for {self.agent_id}/{self.account_id} names {duplicated} "
-                "more than once; an asset weighted twice is counted twice and skews every target"
+                "more than once; a sleeve weighted twice is counted twice and skews every target"
             )
         # Band ordering is checked on the CONFIGURED amounts because per-month values may be
         # CPI-indexed, hence traced, and a traced value cannot drive a raise. Indexing scales

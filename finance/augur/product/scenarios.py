@@ -18,6 +18,7 @@ from finance.augur.product.wire import (
     CapitalImprovementEventWire,
     CashFinancing,
     FundingPolicy,
+    ManagedSleeveWeight,
     MortgageFinancing,
     PropertyLifecycleEventWire,
     PropertyPurchase,
@@ -88,6 +89,7 @@ from finance.augur.sim.scenario import (
     FixedAmount,
     InitialAccountBalance,
     InitialLot,
+    ManagedSleeveTarget,
     MortgageFinancing as SimMortgageFinancing,
     MortgageInterestDeductionPolicy,
     ObligationType,
@@ -101,6 +103,7 @@ from finance.augur.sim.scenario import (
     ScheduledPropertyCashflow,
     ScheduledPropertyPurchase,
     SecurityDistribution,
+    SecuritySleeveTarget,
     SeriesIndexedAmount,
     SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
@@ -1052,35 +1055,43 @@ def _target_allocation_policies_from_funding_policy(
     """Lower the wire's cash band + weights to the sim's target-allocation policy.
 
     Zero-weight entries are the product UI's explicit "never sell" exclusion, not the sim's
-    sellable zero-target sleeve. Drop them before constructing the sim portfolio. A weight
-    naming nothing held is dropped too, so a saved target can outlive the position it mentions.
-    A TLH portfolio's index is a sleeve like any held security; the policy draws on its account
-    as a managed source.
+    sellable zero-target sleeve. Drop them before constructing the sim portfolio. A security
+    weight naming nothing held is dropped too, so a saved target can outlive the position it
+    mentions. A managed weight names a TLH portfolio, whose account the policy then draws on;
+    a portfolio the owner does not hold is refused, since a portfolio id is not a symbol a
+    later snapshot could hold again.
 
     No sleeves left means no policy at all: the owner never auto-sells, and an unaffordable
     obligation is ruin. That is the honest reading of an empty target — there is no holding it
     is willing to give up — and it is why the wire has no "derive it for me" sentinel.
     """
 
-    holders = [
-        (lot.account_id, lot.asset) for lot in initial_lots if not isinstance(lot.asset, PrivateEquityAssetKey)
-    ] + [(managed.account_id, managed.asset) for managed in tlh_portfolios if isinstance(managed.asset, SecurityKey)]
-    held_by_symbol = {asset.symbol: asset for _, asset in holders}
-    sleeves = [
-        SleeveTarget(asset=held_by_symbol[sleeve.symbol], weight=sleeve.weight)
-        for sleeve in funding_policy.sleeve_weights
-        if sleeve.weight > 0 and sleeve.symbol in held_by_symbol
-    ]
+    holders = [(lot.account_id, lot.asset) for lot in initial_lots if not isinstance(lot.asset, PrivateEquityAssetKey)]
+    held_by_symbol = {asset.symbol: asset for _, asset in holders if isinstance(asset, SecurityKey)}
+    managed_by_id = {managed.portfolio_id: managed for managed in tlh_portfolios}
+    sleeves: list[SleeveTarget] = []
+    for sleeve in funding_policy.sleeve_weights:
+        if isinstance(sleeve, ManagedSleeveWeight):
+            if sleeve.portfolio_id not in managed_by_id:
+                raise ValueError(f"sleeve weights name unknown TLH portfolio {sleeve.portfolio_id!r}")
+            if sleeve.weight > 0:
+                sleeves.append(ManagedSleeveTarget(portfolio_id=sleeve.portfolio_id, weight=sleeve.weight))
+        elif sleeve.weight > 0 and sleeve.symbol in held_by_symbol:
+            sleeves.append(SecuritySleeveTarget(asset=held_by_symbol[sleeve.symbol], weight=sleeve.weight))
     if not sleeves:
         return []
-    targeted = {sleeve.asset for sleeve in sleeves}
+    # Lot accounts in holding order, which is the order their FIFO sales walk, then the portfolios'.
+    targeted = {sleeve.asset for sleeve in sleeves if isinstance(sleeve, SecuritySleeveTarget)}
+    sources = [account_id for account_id, asset in holders if asset in targeted] + [
+        managed_by_id[sleeve.portfolio_id].account_id for sleeve in sleeves if isinstance(sleeve, ManagedSleeveTarget)
+    ]
     return [
         TargetAllocationPolicy(
             allow_purchases=False,
             rebalancing=CashflowOnly(),
             agent_id=primary_agent_id,
             account_id=PRIMARY_ACCOUNT_ID,
-            source_account_ids=tuple(dict.fromkeys(account_id for account_id, asset in holders if asset in targeted)),
+            source_account_ids=tuple(dict.fromkeys(sources)),
             sleeves=sleeves,
             cash_floor=_band_bound_amount(
                 funding_policy.cash_floor, index_to_inflation=funding_policy.cash_band_index_to_inflation
