@@ -1,8 +1,8 @@
-"""Drive composed annual windows through a caller's batch policy, and the offline CLI.
+"""Drive composed annual windows through the Guyton-Klinger policy, and the offline CLI.
 
-The CLI opens every window at the adaptation targets and runs <policy.py>'s rules, a fresh
-`Policy` for the population and another for the selected trace replay. `records.json` carries each path's
-per-year intentions; paid amounts are the receipts' in `outcomes.json`.
+Every window opens at the adaptation targets. The CLI runs a fresh <policy.py> `Policy` for
+the population and another for the selected trace replay; `records.json` carries each path's
+per-year intentions, and paid amounts are the receipts' in `outcomes.json`.
 
     bbr run //finance/augur/study/guyton_klinger:run_bin -- --synthetic --years 30 \\
       --initial-wealth 1000000 --initial-rate 0.05 --output-dir /tmp/gk --trace-rollout 2
