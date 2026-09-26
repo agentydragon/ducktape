@@ -25,34 +25,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cert_manager_crds.io.cert_manager import (
-    Certificate,
-    CertificateSpec,
-    CertificateSpecIssuerRef,
-    CertificateSpecPrivateKey,
-    CertificateSpecPrivateKeyAlgorithm,
-    CertificateSpecSecretTemplate,
-)
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from trust_manager_crds.io.cert_manager.trust import (
-    Bundle,
-    BundleSpec,
-    BundleSpecSources,
-    BundleSpecSourcesSecret,
-    BundleSpecTarget,
-    BundleSpecTargetConfigMap,
-    BundleSpecTargetConfigMapMetadata,
-    BundleSpecTargetNamespaceSelector,
-    BundleSpecTargetNamespaceSelectorMatchExpressions,
-)
 
 from cluster.cdk8s import cilium, external_creds, public_coder_devbox
+from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
@@ -126,61 +108,16 @@ def _ca(scope: Construct) -> None:
     ECDSA P-256 is deliberate and fine: iron-proxy accepts an ECDSA root and mints working leaves
     from it, verified against the pinned image.
     """
-    root_ca = "public-coder-agent-proxy-root-ca"
-    Certificate(
-        scope,
-        "root-ca",
-        metadata=metadata(root_ca, NAMESPACE),
-        spec=CertificateSpec(
-            is_ca=True,
-            common_name=root_ca,
-            secret_name=_CA_SECRET_NAME,
-            duration="87600h",  # 10 years
-            renew_before="8760h",  # 1 year
-            private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256),
-            secret_template=CertificateSpecSecretTemplate(
-                annotations={
-                    "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                    "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "cert-manager",
-                    "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                    "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "cert-manager",
-                }
-            ),
-            issuer_ref=CertificateSpecIssuerRef(name="cluster-ca-bootstrap", kind="ClusterIssuer"),
-        ),
-    )
     # Public roots + cluster root + this proxy's interception root, published into the agent
     # namespace so its TLS clients accept intercepted connections.
-    Bundle(
+    interception_root_ca(
         scope,
-        "trust-bundle",
-        metadata=ApiObjectMetadata(name="public-coder-agent-proxy-ca-cert"),
-        spec=BundleSpec(
-            sources=[
-                BundleSpecSources(use_default_c_as=True),
-                BundleSpecSources(secret=BundleSpecSourcesSecret(name="cluster-root-ca-secret", key="ca.crt")),
-                BundleSpecSources(secret=BundleSpecSourcesSecret(name=_CA_SECRET_NAME, key="tls.crt")),
-            ],
-            target=BundleSpecTarget(
-                config_map=BundleSpecTargetConfigMap(
-                    key="ca-certificates.crt",
-                    metadata=BundleSpecTargetConfigMapMetadata(
-                        annotations={
-                            "description": (
-                                "Trust bundle for public-coder-agent HTTPS traffic intercepted by its egress proxy"
-                            )
-                        }
-                    ),
-                ),
-                namespace_selector=BundleSpecTargetNamespaceSelector(
-                    match_expressions=[
-                        BundleSpecTargetNamespaceSelectorMatchExpressions(
-                            key="kubernetes.io/metadata.name", operator="In", values=[NAMESPACE]
-                        )
-                    ]
-                ),
-            ),
-        ),
+        name="public-coder-agent-proxy-root-ca",
+        namespace=NAMESPACE,
+        secret_name=_CA_SECRET_NAME,
+        bundle_name="public-coder-agent-proxy-ca-cert",
+        description="Trust bundle for public-coder-agent HTTPS traffic intercepted by its egress proxy",
+        target_namespaces=(NAMESPACE,),
     )
 
 
