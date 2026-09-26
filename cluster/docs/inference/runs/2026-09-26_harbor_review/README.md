@@ -32,8 +32,24 @@ agent's compaction support/configuration, context trigger, output reserve and er
 policy, and exercise it on a disposable short trajectory. Harbor orchestration and
 the selected agent's history-management policy are different layers.
 
+Installed Harbor is **0.23.0**; the representative trial records Mini-SWE **2.4.6**.
+Harbor's `harbor/trial/trial.py` selects the task agent timeout unless overridden
+(`_compute_agent_timeout_sec`, line 1436) and enforces it with `asyncio.wait_for`
+(line 554). A provider exception can end the agent earlier than that deadline.
+The representative saved Mini-SWE config has `wall_time_limit_seconds=0`; that is
+not the enclosing Harbor deadline. Its 139-message saved trajectory has no
+compaction marker, which is not proof of the worker's internal policy.
+
+The installed Harbor context-error regex in `harbor/agents/installed/base.py:492`
+recognizes other provider phrasings, but not the observed "request ... exceeds the
+available context size" wording. That explains the unhelpful generic nonzero-exit
+classification; recognizing the error would not itself provide compaction or
+allow the run to continue. Source paths are relative to
+`~/.local/share/uv/tools/harbor/lib/python3.12/site-packages/`, inspected September 26.
+
 The saved aggregate counters are 36,399,090 input tokens, 35,719,420 cached input
-tokens (~98.1%), and 1,326,739 output tokens. At the separately measured ~30 tokens/s,
+tokens (~98.1%), and 1,326,739 output tokens. Summing the per-trial records
+reproduces these aggregate counters. At the separately measured ~30 tokens/s,
 the recorded output alone represents ~12.3 hours of decoding. This is illustrative
 arithmetic, not a measured server-time breakdown: context-dependent speed varies,
 and these harness counters have not been independently reconciled with server logs.
