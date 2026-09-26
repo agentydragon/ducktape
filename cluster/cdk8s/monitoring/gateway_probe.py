@@ -15,7 +15,9 @@ from __future__ import annotations
 from enum import StrEnum
 from pathlib import Path
 
+import yaml
 from cdk8s import App, Chart
+from cdk8s_plus_34 import k8s
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitor,
     PodMonitorSpec,
@@ -32,18 +34,28 @@ from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.fleet_rules import add_fleet_rules
+from cluster.cdk8s.flux import (
+    ConfigMapArgs,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    kustomize_kustomization,
+)
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.monitoring import stack
 from cluster.scripts.nebula_mesh import Mesh
 
 NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/gateway-probe"
 _NAME = "gateway-probe"
+_LABELS = {"app.kubernetes.io/name": _NAME}
 _JOB = f"{NAMESPACE}/{_NAME}"
+_PORT_NAME = "http"
+_PORT = 9115
+_CONFIG_DIR = "/etc/blackbox_exporter"
+_CONFIG_FILE = "blackbox.yml"
 _MODULE = "gateway_tls"
 _GATEWAY_PORT = 443
 # Any name under the Gateway's wildcard listener selects its certificate; this one also has a route.
@@ -58,49 +70,107 @@ class Dial(StrEnum):
 
 
 _OWN_NODE_DIALS = f"{Dial.OWN_PUBLIC}|{Dial.OWN_NEBULA}"
-
-
-def _values(nodes: list[str]) -> dict[str, object]:
-    return {
-        "kind": "DaemonSet",
-        "nameOverride": _NAME,
-        "fullnameOverride": _NAME,
-        "config": {
-            "modules": {
-                _MODULE: {
-                    "prober": "tcp",
-                    "timeout": "5s",
-                    "tcp": {
-                        "preferred_ip_protocol": "ip4",
-                        "tls": True,
-                        # The question is whether the handshake completes, not whose certificate
-                        # answers: the Gateway's issuer may be Let's Encrypt staging.
-                        "tls_config": {"server_name": _SERVER_NAME, "insecure_skip_verify": True},
-                    },
-                }
-            }
-        },
-        # Exactly the nodes public DNS resolves to (tf/gitops/dns-records).
-        "affinity": {
-            "nodeAffinity": {
-                "requiredDuringSchedulingIgnoredDuringExecution": {
-                    "nodeSelectorTerms": [
-                        {"matchExpressions": [{"key": "kubernetes.io/hostname", "operator": "In", "values": nodes}]}
-                    ]
-                }
-            }
-        },
-        "tolerations": [{"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}],
-        "podSecurityContext": {"seccompProfile": {"type": "RuntimeDefault"}},
-        "resources": {"requests": {"cpu": "10m", "memory": "32Mi"}, "limits": {"memory": "64Mi"}},
+_CONFIG = {
+    "modules": {
+        _MODULE: {
+            "prober": "tcp",
+            "timeout": "5s",
+            "tcp": {
+                "preferred_ip_protocol": "ip4",
+                "tls": True,
+                # The question is whether the handshake completes, not whose certificate answers:
+                # the Gateway's issuer may be Let's Encrypt staging.
+                "tls_config": {"server_name": _SERVER_NAME, "insecure_skip_verify": True},
+            },
+        }
     }
+}
+_CONFIG_MAP = ConfigMapArgs(
+    name=f"{_NAME}-config", namespace=NAMESPACE, literals=[f"{_CONFIG_FILE}={yaml.safe_dump(_CONFIG)}"]
+)
+
+
+def _daemon_set(scope: Chart, nodes: list[str]) -> None:
+    k8s.KubeDaemonSet(
+        scope,
+        "daemonset",
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=_LABELS),
+        spec=k8s.DaemonSetSpec(
+            selector=k8s.LabelSelector(match_labels=_LABELS),
+            template=k8s.PodTemplateSpec(
+                metadata=k8s.ObjectMeta(labels=_LABELS),
+                spec=k8s.PodSpec(
+                    # Exactly the nodes public DNS resolves to (tf/gitops/dns-records).
+                    affinity=k8s.Affinity(
+                        node_affinity=k8s.NodeAffinity(
+                            required_during_scheduling_ignored_during_execution=k8s.NodeSelector(
+                                node_selector_terms=[
+                                    k8s.NodeSelectorTerm(
+                                        match_expressions=[
+                                            k8s.NodeSelectorRequirement(
+                                                key="kubernetes.io/hostname", operator="In", values=nodes
+                                            )
+                                        ]
+                                    )
+                                ]
+                            )
+                        )
+                    ),
+                    tolerations=[
+                        k8s.Toleration(
+                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
+                        )
+                    ],
+                    automount_service_account_token=False,
+                    # The image sets no USER, so it would otherwise run as root.
+                    security_context=k8s.PodSecurityContext(
+                        run_as_user=65534,
+                        run_as_group=65534,
+                        run_as_non_root=True,
+                        seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
+                    ),
+                    containers=[
+                        k8s.Container(
+                            name="blackbox-exporter",
+                            image=(
+                                "quay.io/prometheus/blackbox-exporter:v0.28.0"
+                                "@sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc"
+                            ),
+                            args=[f"--config.file={_CONFIG_DIR}/{_CONFIG_FILE}"],
+                            ports=[k8s.ContainerPort(name=_PORT_NAME, container_port=_PORT)],
+                            readiness_probe=k8s.Probe(
+                                http_get=k8s.HttpGetAction(
+                                    path="/-/healthy", port=k8s.IntOrString.from_string(_PORT_NAME)
+                                ),
+                                period_seconds=10,
+                            ),
+                            security_context=k8s.SecurityContext(
+                                allow_privilege_escalation=False,
+                                read_only_root_filesystem=True,
+                                capabilities=k8s.Capabilities(drop=["ALL"]),
+                            ),
+                            volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True)],
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("10m"),
+                                    "memory": k8s.Quantity.from_string("32Mi"),
+                                },
+                                limits={"memory": k8s.Quantity.from_string("64Mi")},
+                            ),
+                        )
+                    ],
+                    volumes=[k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP.name))],
+                ),
+            ),
+        ),
+    )
 
 
 def _endpoint(
     dial: Dial, targets: list[PodMonitorSpecPodMetricsEndpointsRelabelings], params: dict[str, list[str]]
 ) -> PodMonitorSpecPodMetricsEndpoints:
     return PodMonitorSpecPodMetricsEndpoints(
-        port="http",
+        port=_PORT_NAME,
         path="/probe",
         params={"module": [_MODULE], **params},
         interval="30s",
@@ -175,27 +245,13 @@ def chart(app: App, mesh: Mesh) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     public_nodes = mesh.public_kubernetes_nodes()
     nodes = sorted(public_nodes)
-    helm_release(
-        chart,
-        _NAME,
-        NAMESPACE,
-        repository=stack.HELM_REPOSITORY_SOURCE_REF,
-        chart="prometheus-blackbox-exporter",
-        version="11.19.1",
-        interval="30m",
-        chart_interval="12h",
-        install=RETRY_FAILED_INSTALL,
-        values=_values(nodes),
-        description="Per-node blackbox_exporter dialling its own node's Gateway listener (gateway_probe.py).",
-    )
+    _daemon_set(chart, nodes)
     PodMonitor(
         chart,
         "pod-monitor",
         metadata=metadata(_NAME, NAMESPACE),
         spec=PodMonitorSpec(
-            selector=PodMonitorSpecSelector(
-                match_labels={"app.kubernetes.io/name": _NAME, "app.kubernetes.io/instance": _NAME}
-            ),
+            selector=PodMonitorSpecSelector(match_labels=_LABELS),
             pod_metrics_endpoints=[
                 _own_node_endpoint(
                     Dial.OWN_PUBLIC, {name: f"{h.public_ip}:{_GATEWAY_PORT}" for name, h in public_nodes.items()}
@@ -213,24 +269,28 @@ def chart(app: App, mesh: Mesh) -> Chart:
         metadata=metadata(_NAME, NAMESPACE, labels={"release": "kube-prometheus-stack"}),
         spec=PrometheusRuleSpec(groups=[PrometheusRuleSpecGroups(name=_NAME, rules=_rules(nodes))]),
     )
+    add_fleet_rules(chart)
     return chart
 
 
 def write_manifests(root: Path, mesh: Mesh) -> None:
     write_charts(root, OUTPUT_DIR, lambda app: chart(app, mesh))
+    write_yaml(
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(
+            namespace=NAMESPACE, resources=[f"{_NAME}.k8s.yaml"], config_map_generator=[_CONFIG_MAP]
+        ),
+    )
 
 
 def gateway_probe(
-    flux_chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    monitoring_crds: Kustomization,
-    monitoring_stack: Kustomization,
+    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
         "monitoring-gateway-probe",
         artifact,
         timeout="5m",
-        # the PodMonitor and PrometheusRule CRDs; the prometheus-community HelmRepository
-        depends_on=flux_kustomization_depends_on_many(monitoring_crds, monitoring_stack),
+        # the PodMonitor and PrometheusRule CRDs
+        depends_on=[flux_kustomization_depends_on(monitoring_crds)],
     )

@@ -808,6 +808,26 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: monitoring-gateway-probe
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: monitoring-crds
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/monitoring/gateway-probe
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: monitoring-gateway-probe
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: monitoring-rules
   namespace: ducktape-flux
 spec:
@@ -2084,28 +2104,6 @@ spec:
     name: monitoring-stack
     namespace: ducktape-flux
   timeout: 10m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: monitoring-gateway-probe
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: monitoring-crds
-      namespace: ducktape-flux
-    - name: monitoring-stack
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/monitoring/gateway-probe
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: monitoring-gateway-probe
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

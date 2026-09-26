@@ -547,6 +547,8 @@ def generate_manifests(root: Path) -> None:
     cilium_monitoring.cilium_monitoring(flux_chart, monitoring_cilium_artifact, monitoring_crds_kustomization)
     monitoring_etcd_artifact = artifact("monitoring-etcd", etcd.OUTPUT_DIR)
     etcd.etcd_monitoring(flux_chart, monitoring_etcd_artifact, root, mesh, monitoring_crds_kustomization)
+    monitoring_gateway_probe_artifact = artifact("monitoring-gateway-probe", gateway_probe.OUTPUT_DIR)
+    gateway_probe.gateway_probe(flux_chart, monitoring_gateway_probe_artifact, monitoring_crds_kustomization)
     monitoring_rules_artifact = artifact("monitoring-rules", monitoring_rules.OUTPUT_DIR)
     monitoring_rules.monitoring_rules(flux_chart, monitoring_rules_artifact, monitoring_crds_kustomization)
     grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
@@ -800,17 +802,13 @@ def generate_manifests(root: Path) -> None:
         github_secrets_sync_secrets_kustomization,
     )
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
-    monitoring_stack_kustomization = monitoring_stack.monitoring_stack(
+    monitoring_stack.monitoring_stack(
         flux_chart,
         monitoring_stack_artifact,
         monitoring_namespace_kustomization,
         monitoring_crds_kustomization,
         ntfy_kustomization,
         external_secrets_config_kustomization,
-    )
-    monitoring_gateway_probe_artifact = artifact("monitoring-gateway-probe", gateway_probe.OUTPUT_DIR)
-    gateway_probe.gateway_probe(
-        flux_chart, monitoring_gateway_probe_artifact, monitoring_crds_kustomization, monitoring_stack_kustomization
     )
     claude_sandbox_secrets_artifact = artifact("claude-sandbox-secrets", claude_sandbox_secrets.OUTPUT_DIR)
     claude_sandbox_secrets.claude_sandbox_secrets(

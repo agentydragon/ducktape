@@ -299,10 +299,9 @@ py_library(
     srcs = ["gateway_probe.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":stack",
+        "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor",
@@ -310,5 +309,7 @@ py_library(
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//pyyaml",
     ],
 )
