@@ -48,7 +48,7 @@ UNREPRESENTABLE_FIELDS = [
 
 @pytest.mark.parametrize(("attr", "error_name"), UNREPRESENTABLE_FIELDS)
 def test_unrepresentable_field_raises(attr: str, error_name: str):
-    rule = FilterRule(**{attr: "x"}, trash=True)
+    rule = FilterRule.model_validate({attr: "x", "trash": True})
 
     with pytest.raises(ValueError, match=error_name):
         normalize_yaml_rule(rule)
@@ -67,7 +67,7 @@ COMPOUND_FIELDS = [
 
 @pytest.mark.parametrize(("attr", "error_name"), COMPOUND_FIELDS)
 def test_compound_condition_raises(attr: str, error_name: str):
-    rule = FilterRule(**{attr: CompoundCondition(any=["a@example.com", "b@example.com"])})
+    rule = FilterRule.model_validate({attr: CompoundCondition(any=["a@example.com", "b@example.com"])})
 
     with pytest.raises(ValueError, match=f"'{error_name}'"):
         normalize_yaml_rule(rule)

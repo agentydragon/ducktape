@@ -34,7 +34,7 @@ class BindMount(BaseModel, frozen=True):
             raise ValueError(f"Invalid bind mount spec '{spec}'. Use host:container[:mode].")
         host, container = parts[0], parts[1]
         mode = parts[2] if len(parts) == 3 else "rw"
-        return cls(host_path=Path(host).resolve(), container_path=Path(container), mode=mode)
+        return cls.model_validate({"host_path": Path(host).resolve(), "container_path": Path(container), "mode": mode})
 
     @classmethod
     def parse_binds(cls, values: list[str]) -> list[BindMount]:

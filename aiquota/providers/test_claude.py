@@ -5,6 +5,7 @@ import httpx
 import pytest
 import pytest_bazel
 import respx
+from pydantic import SecretStr
 
 from aiquota.models import FetchSuccess
 from aiquota.providers.claude import (
@@ -68,7 +69,9 @@ def test_raw_usage_fixture_preserves_provider_windows() -> None:
 async def test_explicit_token_is_read_only_and_never_refreshed(tmp_path: Path) -> None:
     path = tmp_path / "credentials.json"
     path.write_text('{"claudeAiOauth":{"accessToken":"expired", "refreshToken":"refresh", "expiresAt":0}}')
-    provider = ClaudeProvider(ClaudeSettings(credentials_path=path, access_token="placeholder"), provider_client())
+    provider = ClaudeProvider(
+        ClaudeSettings(credentials_path=path, access_token=SecretStr("placeholder")), provider_client()
+    )
 
     with respx.mock(assert_all_called=False) as mock:
         post_route = mock.post(TOKEN_URL).mock(side_effect=AssertionError("read-only provider must not refresh"))
@@ -87,7 +90,7 @@ async def test_explicit_token_is_read_only_and_never_refreshed(tmp_path: Path) -
 
 async def test_management_api_uses_claude_auth_index_and_does_not_use_legacy_token() -> None:
     provider = ClaudeProvider(
-        ClaudeSettings(access_token="legacy-placeholder"),
+        ClaudeSettings(access_token=SecretStr("legacy-placeholder")),
         provider_client(),
         CLIProxyAPIManagementClient("http://cliproxy.test/v0/management", "management-key", provider_client()),
     )

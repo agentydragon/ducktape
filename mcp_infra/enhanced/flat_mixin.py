@@ -2,7 +2,7 @@ import inspect
 import logging
 from collections.abc import Callable
 from types import UnionType
-from typing import Annotated, Any, Union, get_args, get_origin, get_type_hints
+from typing import Annotated, Any, Union, cast, get_args, get_origin, get_type_hints
 
 from fastmcp.server import FastMCP
 from mcp.types import ToolAnnotations
@@ -178,7 +178,8 @@ class FlatModelMixin(FastMCP):
             # Create FlatTool directly with original function
             tool: FlatTool[InputModelT, OutputT] = FlatTool(
                 fn=fn,
-                input_model=model_in,
+                # Runtime-resolved from fn's payload annotation, i.e. InputModelT (_EmptyModel when fn takes none).
+                input_model=cast(type[InputModelT], model_in),
                 name=name or fn.__name__,
                 title=title,
                 description=description or inspect.getdoc(fn),
