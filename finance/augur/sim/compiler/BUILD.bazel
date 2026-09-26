@@ -102,6 +102,7 @@ py_library(
         "//finance/augur/sim:jurisdictions",
         "//finance/augur/sim:locations",
         "//finance/augur/sim:prepared",
+        "//finance/augur/sim:property",
         "//finance/augur/sim:scenario",
         "@pypi//jaxtyping",
         "@pypi//numpy",
