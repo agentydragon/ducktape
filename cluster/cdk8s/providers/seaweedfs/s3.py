@@ -136,10 +136,58 @@ def _grant_cluster_reference(
         grant.add(kind)
 
 
+def _identity_credentials(
+    scope: Construct,
+    id: str,
+    *,
+    identity_name: str,
+    cluster_name: str,
+    cluster_namespace: str,
+    namespace: str,
+    secret: str,
+    key_fields: SecretKeyFields | None,
+    secret_namespace: str | None,
+    description: str | None,
+) -> S3Credentials:
+    """Shared by `Identity.credentials()`/`IdentityRef.credentials()`: a key for
+    `identity_name`, mirrored into Secret `secret`. A same-namespace Secret is created and
+    owned by the operator; one in `secret_namespace` must already exist and be granted
+    (`secret_grant`). `key_fields=None` keeps `accessKey`/`secretKey`."""
+    _grant_cluster_reference(
+        scope,
+        namespace=namespace,
+        kind="S3Credentials",
+        name=identity_name,
+        cluster_name=cluster_name,
+        cluster_namespace=cluster_namespace,
+    )
+    return S3Credentials(
+        scope,
+        id,
+        metadata=metadata(identity_name, namespace, annotations=_description(description)),
+        spec=S3CredentialsSpec(
+            seaweed_ref=S3CredentialsSpecSeaweedRef(
+                name=cluster_name, namespace=_seaweed_ref_namespace(namespace, cluster_namespace)
+            ),
+            identity_ref=S3CredentialsSpecIdentityRef(name=identity_name),
+            secret_ref=S3CredentialsSpecSecretRef(
+                name=secret,
+                namespace=secret_namespace,
+                access_key_field=key_fields.access_key if key_fields else None,
+                secret_key_field=key_fields.secret_key if key_fields else None,
+            ),
+            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
+        ),
+    )
+
+
 class IdentityRef(Construct):
     """An IAM identity this chart does not declare: another Kustomization's `Identity`, or
     one that predates the operator. `cluster_name`/`cluster_namespace` identify the Seaweed
-    cluster this identity, and any `S3Credentials` minted for it, reference."""
+    cluster this identity, and any `S3Credentials` minted for it, reference. Construct via
+    `Identity.from_identity_name(...)`, not directly -- this class exists only as the type a
+    caller who doesn't own the `Identity` needs, following cdk8s-plus's own `Secret`/
+    `ImportedSecret` split (`Secret.from_secret_name(...)`)."""
 
     def __init__(self, scope: Construct, id: str, *, name: str, cluster_name: str, cluster_namespace: str) -> None:
         super().__init__(scope, id)
@@ -157,40 +205,26 @@ class IdentityRef(Construct):
         secret_namespace: str | None = None,
         description: str | None = None,
     ) -> S3Credentials:
-        """A key for this identity, mirrored into Secret `secret`. A same-namespace Secret is
-        created and owned by the operator; one in `secret_namespace` must already exist and
-        be granted (`secret_grant`). `key_fields=None` keeps `accessKey`/`secretKey`."""
-        _grant_cluster_reference(
-            self,
-            namespace=namespace,
-            kind="S3Credentials",
-            name=self.name,
-            cluster_name=self._cluster_name,
-            cluster_namespace=self._cluster_namespace,
-        )
-        # Beside this construct rather than under it, so objects render in call order.
-        return S3Credentials(
+        """Same as `Identity.credentials()`."""
+        # Beside `self._scope` rather than under `self`, so objects render in call order.
+        return _identity_credentials(
             self._scope,
             f"{self.node.id}-credentials-{namespace}",
-            metadata=metadata(self.name, namespace, annotations=_description(description)),
-            spec=S3CredentialsSpec(
-                seaweed_ref=S3CredentialsSpecSeaweedRef(
-                    name=self._cluster_name, namespace=_seaweed_ref_namespace(namespace, self._cluster_namespace)
-                ),
-                identity_ref=S3CredentialsSpecIdentityRef(name=self.name),
-                secret_ref=S3CredentialsSpecSecretRef(
-                    name=secret,
-                    namespace=secret_namespace,
-                    access_key_field=key_fields.access_key if key_fields else None,
-                    secret_key_field=key_fields.secret_key if key_fields else None,
-                ),
-                reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-            ),
+            identity_name=self.name,
+            cluster_name=self._cluster_name,
+            cluster_namespace=self._cluster_namespace,
+            namespace=namespace,
+            secret=secret,
+            key_fields=key_fields,
+            secret_namespace=secret_namespace,
+            description=description,
         )
 
 
-class Identity(IdentityRef):
-    """Declares the S3Identity claiming IAM name `name`."""
+class Identity(Construct):
+    """Declares the S3Identity claiming IAM name `name`. `cluster_name`/`cluster_namespace`
+    identify the Seaweed cluster it belongs to, and any `S3Credentials` minted for it,
+    reference."""
 
     def __init__(
         self,
@@ -203,8 +237,12 @@ class Identity(IdentityRef):
         cluster_namespace: str,
         description: str | None = None,
     ) -> None:
-        super().__init__(scope, id, name=name, cluster_name=cluster_name, cluster_namespace=cluster_namespace)
-        S3Identity(
+        super().__init__(scope, id)
+        self.name = name
+        self._scope = scope
+        self._cluster_name = cluster_name
+        self._cluster_namespace = cluster_namespace
+        self._resource = S3Identity(
             self,
             "Resource",
             metadata=metadata(name, namespace, annotations=_description(description)),
@@ -223,6 +261,40 @@ class Identity(IdentityRef):
             cluster_name=cluster_name,
             cluster_namespace=cluster_namespace,
         )
+
+    def credentials(
+        self,
+        *,
+        namespace: str,
+        secret: str,
+        key_fields: SecretKeyFields | None,
+        secret_namespace: str | None = None,
+        description: str | None = None,
+    ) -> S3Credentials:
+        """A key for this identity, mirrored into Secret `secret`. A same-namespace Secret is
+        created and owned by the operator; one in `secret_namespace` must already exist and
+        be granted (`secret_grant`). `key_fields=None` keeps `accessKey`/`secretKey`."""
+        # Beside `self._scope` rather than under `self`, so objects render in call order.
+        return _identity_credentials(
+            self._scope,
+            f"{self.node.id}-credentials-{namespace}",
+            identity_name=self.name,
+            cluster_name=self._cluster_name,
+            cluster_namespace=self._cluster_namespace,
+            namespace=namespace,
+            secret=secret,
+            key_fields=key_fields,
+            secret_namespace=secret_namespace,
+            description=description,
+        )
+
+    @staticmethod
+    def from_identity_name(
+        scope: Construct, id: str, *, name: str, cluster_name: str, cluster_namespace: str
+    ) -> IdentityRef:
+        """References an S3Identity this chart does not declare: another Kustomization's
+        `Identity`, or one that predates the operator."""
+        return IdentityRef(scope, id, name=name, cluster_name=cluster_name, cluster_namespace=cluster_namespace)
 
 
 class Bucket(Construct):
@@ -270,15 +342,17 @@ class Bucket(Construct):
             cluster_namespace=cluster_namespace,
         )
 
-    def grant(self, user: IdentityRef | str, *actions: BucketSpecAccessActions) -> None:
+    def grant(self, user: IdentityRef | Identity | str, *actions: BucketSpecAccessActions) -> None:
         """Adds a `spec.access` entry for an identity or a plain IAM user name (`anonymous`)."""
-        entry = BucketSpecAccess(user=user.name if isinstance(user, IdentityRef) else user, actions=list(actions))
+        entry = BucketSpecAccess(
+            user=user.name if isinstance(user, (IdentityRef, Identity)) else user, actions=list(actions)
+        )
         self._resource.add_json_patch(
             JsonPatch.add("/spec/access/-", entry) if self._has_access else JsonPatch.add("/spec/access", [entry])
         )
         self._has_access = True
 
-    def grant_read_write(self, user: IdentityRef | str) -> None:
+    def grant_read_write(self, user: IdentityRef | Identity | str) -> None:
         self.grant(
             user,
             BucketSpecAccessActions.READ,
@@ -287,7 +361,7 @@ class Bucket(Construct):
             BucketSpecAccessActions.TAGGING,
         )
 
-    def grant_read(self, user: IdentityRef | str) -> None:
+    def grant_read(self, user: IdentityRef | Identity | str) -> None:
         self.grant(user, BucketSpecAccessActions.READ, BucketSpecAccessActions.LIST)
 
 
