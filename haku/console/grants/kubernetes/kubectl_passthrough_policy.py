@@ -16,7 +16,7 @@ def _make_req(
     api_group: str,
     version: str,
     resource: str,
-    namespace: str | None = None,
+    namespace: str = "",
     name: str | None = None,
     cluster_scoped: bool = False,
     subresource: str | None = None,

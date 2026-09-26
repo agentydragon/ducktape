@@ -46,6 +46,7 @@ from haku.console.mcp_config import (
     const_in_process_server,
 )
 from haku.console.oauth.provider_connection import ProviderConnected, ProviderConnectionStatusResponse
+from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
@@ -1261,7 +1262,7 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
                 ProviderConnected(
                     connection="google_workspace",
                     display_name="Google Workspace",
-                    provider="google",
+                    provider=ProviderConnectionKind.GOOGLE,
                     connected_at=connected_at,
                     token_expires_at=None,
                     scope="openid email",
