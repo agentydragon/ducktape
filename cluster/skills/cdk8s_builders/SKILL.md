@@ -62,6 +62,20 @@ Check whether this repo already has a class doing this for another CRD and match
 
 Confirming the incremental shape only answers _whether_ to reach for `add_json_patch` on a later call — it says nothing about _what_ to patch with. The patch's value is still bound by the same typed-constructs rule as everything else on this page: build it from the CRD's generated struct for that field, never a raw dict, and check for that struct before assuming one doesn't exist (a well-typed, fixed-shape schema field almost always has one, even for an item appended one at a time rather than supplied all at once in the constructor).
 
+### `add_json_patch`, not `Lazy` — the mechanism itself doesn't transfer from cdk8s-plus
+
+`container.mount()`'s actual mechanism isn't a patch at all, and no cdk8s-plus class ever calls `add_json_patch` on itself (`grep -rn addJsonPatch src/*.ts` across the whole `cdk8s-plus` package: zero hits). Every one of its own mutable-after-construction classes (`Deployment`, `Role`, `ConfigMap`, `Namespace`, `PersistentVolumeClaim`, `RoleBinding`, ...) instead passes `Lazy.any({produce: () => this._toKube()})` as the entire `spec=` argument at construction time; a method like `mount()` just pushes onto a private array, and the real spec is built once, lazily, at synth, always from the latest state — nothing is ever patched after the fact.
+
+A Python wrapper cannot use that mechanism, and this isn't a style preference: passing `cdk8s.Lazy.any(...)` as `spec=` to a jsii-generated construct, from Python, raises immediately —
+
+```text
+TypeError: type of argument spec must be one of (<Kind>Spec, Dict[str, Any], NoneType); got cdk8s.Lazy instead
+```
+
+verified directly against this repo's own generated `ResourceReferenceGrant` CRD binding. cdk8s-plus's `Lazy.any({produce: ...})` call happens entirely inside its own compiled TypeScript — `new k8s.KubeDeployment(this, 'Resource', {spec: Lazy.any(...)})` never crosses the jsii language boundary, so it's never subject to a check that only fires when _Python_ code calls _into_ jsii. A Python wrapper constructing any `<Kind>` always crosses that boundary, and jsii's Python runtime (`typeguard`) enforces the declared argument type strictly at that exact crossing, rejecting anything that isn't the real generated dataclass, a plain dict, or `None`.
+
+So `add_json_patch` on a mutation method isn't an approximation of cdk8s-plus's pattern chosen for convenience — it's the only mechanism a Python wrapper can reach for at all, once a value must grow after the object is already in the tree. This is a genuine cross-language constraint on every Python cdk8s author, not a gap in this repo's own wrappers to keep researching a way around.
+
 ## Derive a shared identity once, don't ask two objects to agree on a string
 
 Where a wrapper builds two objects (or two parts of one object) that must reference each other by a value with no Kubernetes meaning of its own — a workload's own pod-template labels and its own selector, a generated name a sibling resource must also carry — derive that value once from the construct's own identity and write it everywhere it's needed, rather than a user-supplied string or a hand-rolled hash either side could get subtly wrong. cdk8s's own `Names` helper (`Names.to_label_value(construct)`, `.to_dns_label(scope, extra=[...])`) is the exact primitive `cdk8s_plus_34`'s `Workload` base class uses to keep a resource's selector and its own pod template's labels from ever drifting apart, and it reappears wherever cdk8s-plus needs a stable name with no other natural source (aggregated `ClusterRole` label keys, an auto-generated `Volume` name). Two objects that must agree on a value belong on one shared derivation, never on two independently-typed string constants.
