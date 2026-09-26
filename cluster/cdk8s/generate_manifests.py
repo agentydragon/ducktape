@@ -164,7 +164,7 @@ from cluster.cdk8s.haku import (
     workloads as haku_workloads,
     workspaces as haku_workspaces,
 )
-from cluster.cdk8s.haku_ci import flux_kustomizations as haku_ci_flux_kustomizations, runner as haku_ci_runner
+from cluster.cdk8s.haku_ci import runner as haku_ci_runner
 from cluster.cdk8s.home_assistant import (
     app as home_assistant_app,
     backup as home_assistant_backup,
@@ -194,6 +194,7 @@ from cluster.cdk8s.monitoring import (
     alloy_otlp_bearer_token,
     cilium_monitoring,
     flux_kustomizations as monitoring_flux_kustomizations,
+    gateway_probe,
     grafana_helmrepository,
     grafana_instance,
     grafana_operator,
@@ -345,6 +346,7 @@ def generate_manifests(root: Path) -> None:
     vm_images_publisher_publisher.write_manifests(root)
     grafana_operator.write_manifests(root)
     cilium_monitoring.write_manifests(root)
+    gateway_probe.write_manifests(root, mesh)
     monitoring_rules.write_manifests(root)
     monitoring_stack.write_manifests(root)
     alloy.write_manifests(root)
@@ -510,7 +512,7 @@ def generate_manifests(root: Path) -> None:
     user_agentydragon_kustomization = user_agentydragon.user_agentydragon(flux_chart, user_agentydragon_artifact)
     valkey_artifact = artifact("valkey", valkey.OUTPUT_DIR)
     valkey_kustomization = valkey.valkey(flux_chart, valkey_artifact)
-    gaffer_private_source_flux_kustomizations.gaffer_private_source(
+    gaffer_private_source_kustomization = gaffer_private_source_flux_kustomizations.gaffer_private_source(
         flux_chart, flux_image_automation_ghcr_kustomization
     )
     kubevirt_artifact = artifact("kubevirt", kubevirt_app.OUTPUT_DIR)
@@ -545,6 +547,8 @@ def generate_manifests(root: Path) -> None:
     cilium_monitoring.cilium_monitoring(flux_chart, monitoring_cilium_artifact, monitoring_crds_kustomization)
     monitoring_etcd_artifact = artifact("monitoring-etcd", etcd.OUTPUT_DIR)
     etcd.etcd_monitoring(flux_chart, monitoring_etcd_artifact, root, mesh, monitoring_crds_kustomization)
+    monitoring_gateway_probe_artifact = artifact("monitoring-gateway-probe", gateway_probe.OUTPUT_DIR)
+    gateway_probe.gateway_probe(flux_chart, monitoring_gateway_probe_artifact, monitoring_crds_kustomization)
     monitoring_rules_artifact = artifact("monitoring-rules", monitoring_rules.OUTPUT_DIR)
     monitoring_rules.monitoring_rules(flux_chart, monitoring_rules_artifact, monitoring_crds_kustomization)
     grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
@@ -681,6 +685,13 @@ def generate_manifests(root: Path) -> None:
     authentik_artifact = artifact("authentik", f"{HAND_WRITTEN_ROOT}/authentik")
     authentik_kustomization = authentik_flux_kustomizations.authentik(
         flux_chart, authentik_artifact, cnpg_kustomization, monitoring_crds_kustomization
+    )
+    gaffer_private_source_flux_kustomizations.gaffer_private_bridge(
+        flux_chart,
+        gaffer_private_source_kustomization,
+        authentik_kustomization,
+        gateway_kustomization,
+        cert_manager_issuer_config_kustomization,
     )
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
     dns_automation.dns_automation(
@@ -1000,7 +1011,7 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
     )
     haku_ci_artifact = artifact("haku-ci", haku_ci_runner.OUTPUT_DIR)
-    haku_ci_flux_kustomizations.haku_ci(flux_chart, haku_ci_artifact, keda_kustomization)
+    haku_ci_runner.haku_ci(flux_chart, haku_ci_artifact, keda_kustomization)
     flux_grafana_secrets_artifact = artifact("flux-grafana-secrets", flux_grafana_secrets.OUTPUT_DIR)
     flux_grafana_secrets.flux_grafana_secrets(
         flux_chart, flux_grafana_secrets_artifact, grafana_instance_kustomization, grafana_operator_kustomization
@@ -1609,6 +1620,7 @@ def generate_manifests(root: Path) -> None:
             monitoring_alloy_otlp_bearer_token_tf_artifact,
             monitoring_cilium_artifact,
             monitoring_etcd_artifact,
+            monitoring_gateway_probe_artifact,
             monitoring_loki_artifact,
             monitoring_mimir_artifact,
             monitoring_rules_artifact,

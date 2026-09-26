@@ -1,4 +1,4 @@
-# The runner image: the sandbox image's definition (<../sandbox_image/default.nix>) plus the runner,
+# The runner image: the sandbox image's definition (<../images/sandbox.nix>) plus the runner,
 # installed from its released wheel (the `agentplane-runner` pin in nix/artifact-pins.json), and
 # nixpkgs' Claude Code and Codex. Published as agentplane-runner by
 # .github/workflows/agentplane-runner-image.yml and run by the agentplane-runner SandboxTemplate
@@ -38,7 +38,7 @@ let
     pythonImportsCheck = [ "agentplane.runner.main" ];
   };
 in
-import ../sandbox_image {
+import ../images/sandbox.nix {
   inherit pkgs;
   name = "agentplane-runner";
   extraPaths = [

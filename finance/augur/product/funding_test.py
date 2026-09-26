@@ -4,6 +4,7 @@ Tests use stipulated prices/indexes and, where stated, a synthetic flat tax sche
 The configured product runner remains a separate cutover caller, not a fallback here.
 """
 
+from dataclasses import dataclass
 from decimal import Decimal
 
 import numpy as np
@@ -12,28 +13,27 @@ import pytest_bazel
 
 from finance.augur.model.series import InflationKey, LevelSeriesKey, RentKey, SecurityDistributionKey, SecurityKey
 from finance.augur.product.funding import Policy
-from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, TAX_AUTHORITY_AGENT_ID, build_scenario
-from finance.augur.product.wire import FundingPolicy, ScenarioKey, SleeveWeight, SpendIndex
-from finance.augur.sim.compiler.execution import compile_run
+from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, TAX_AUTHORITY_AGENT_ID, Situation, build_situation
+from finance.augur.product.wire import FundingPolicy, ScenarioKey, SecuritySleeveWeight, SleeveWeight, SpendIndex
+from finance.augur.sim.bills import Biller
+from finance.augur.sim.compiler.execution import compile_holding_pools, compile_jurisdictions, compile_series
+from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.ids import AccountId, AgentId, LotId
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
+from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
-from finance.augur.sim.scenario import (
-    DistributionTaxSlice,
-    FilingStatus,
-    InitialLot,
-    Scenario,
-    SecurityDistribution,
-    TaxProfile,
-)
+from finance.augur.sim.scenario import DistributionTaxSlice, FilingStatus, InitialLot, SecurityDistribution, TaxProfile
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.world import World
 
-ACTOR = "test-owner"
+ACTOR = AgentId("test-owner")
 FIRST = SecurityKey(symbol="test-first")
 SECOND = SecurityKey(symbol="test-second")
 
 
-def lot(id_: str, account: str, asset: SecurityKey, quantity: Decimal, month: int = -24) -> InitialLot:
+def lot(id_: LotId, account: AccountId, asset: SecurityKey, quantity: Decimal, month: int = -24) -> InitialLot:
     return InitialLot(
         lot_id=id_,
         agent_id=ACTOR,
@@ -45,7 +45,16 @@ def lot(id_: str, account: str, asset: SecurityKey, quantity: Decimal, month: in
     )
 
 
-def product_scenario(
+@dataclass(frozen=True)
+class Product:
+    """The app's situation for one request, and the opening lots the Python policy reads."""
+
+    situation: Situation
+    lots: tuple[InitialLot, ...]
+    distributions: tuple[SecurityDistribution, ...]
+
+
+def product_situation(
     config: FundingPolicy,
     *,
     lots: tuple[InitialLot, ...],
@@ -54,8 +63,9 @@ def product_scenario(
     rent: Decimal = Decimal(0),
     spend_index: SpendIndex = SpendIndex.NONE,
     horizon: int = 1,
-) -> Scenario:
-    scenario = build_scenario(
+    distributions: tuple[SecurityDistribution, ...] = (),
+) -> Product:
+    situation = build_situation(
         ScenarioKey(
             model_id="stipulated-policy-control",
             horizon_months=horizon,
@@ -69,36 +79,62 @@ def product_scenario(
         initial_cash=cash,
         initial_lots=lots,
         properties_by_id={},
+        locations={},
+        security_distributions=distributions,
     )
-    # Exercise product-authored claims with explicit Python decisions. Full service cutover
-    # removes the configured policy at its real caller once housing/PE/harvest support lands.
-    return scenario.model_copy(update={"target_allocation_policies": [], "tax_profiles": []})
+    return Product(situation=situation, lots=lots, distributions=distributions)
 
 
 def run(
-    scenario: Scenario,
+    product: Product,
     config: FundingPolicy,
     series: dict[LevelSeriesKey, np.ndarray],
     *,
-    jurisdictions: dict[str, Jurisdiction] | None = None,
+    tax: tuple[TaxProfile, Jurisdiction] | None = None,
 ) -> Rollout:
-    prepared = compile_run(
-        scenario,
-        rollout_count=1,
-        external_series=ExternalSeriesContext.from_level_blocks(
-            list(series.items()), rollout_count=1, horizon_months=int(scenario.horizon_months)
+    """The product's accounts, holdings and claims with explicit Python decisions in place of its household.
+
+    Untaxed unless `tax` names a profile and its rule; the configured funding policy is not consulted.
+    """
+    situation = product.situation
+    jurisdictions = {} if tax is None else {tax[1].jurisdiction_id: tax[1]}
+    world = World(
+        MarketPath(
+            compile_series(
+                ExternalSeriesContext.from_level_blocks(
+                    list(series.items()), rollout_count=1, horizon_months=situation.horizon_months
+                ),
+                rollout_count=1,
+                horizon_months=situation.horizon_months,
+                currency_quantum=situation.currency.quantum,
+            ),
+            0,
+            rollout_count=1,
         ),
-        jurisdictions=jurisdictions or {},
-        locations={},
+        horizon_months=situation.horizon_months,
+        income_sources=situation.income_sources,
+        jurisdictions=compile_jurisdictions(jurisdictions, bonds=(), distributions=product.distributions),
     )
+    for account in situation.accounts:
+        world.declare_account(account)
+    if tax is not None:
+        world.track(TaxAuthority(compile_profile(tax[0], jurisdictions, quantum=situation.currency.quantum)))
+    for pool in compile_holding_pools(lots=product.lots):
+        world.declare_pool(pool)
+    for held in situation.lots:
+        world.hold(held)
+    for distribution in situation.distributions:
+        world.declare_distribution(distribution)
+    for obligation in situation.obligations:
+        world.track(Biller(obligation))
     policy = Policy(
         config,
         actor_id=ACTOR,
         cash_account_id=PRIMARY_ACCOUNT_ID,
-        initial_lots=tuple(scenario.initial_lots),
-        currency_quantum=scenario.currency.quantum,
+        initial_lots=product.lots,
+        currency_quantum=situation.currency.quantum,
     )
-    session = ActionSession(prepared, ACTOR, [0])
+    session = ActionSession({0: world}, ACTOR)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -110,19 +146,22 @@ def run(
 
 def test_symbol_weight_is_not_repeated_per_account_and_fifo_is_account_scoped() -> None:
     config = FundingPolicy(
-        sleeve_weights=(SleeveWeight(symbol=FIRST.symbol, weight=1), SleeveWeight(symbol=SECOND.symbol, weight=1))
+        sleeve_weights=(
+            SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),
+            SecuritySleeveWeight(symbol=SECOND.symbol, weight=1),
+        )
     )
-    scenario = product_scenario(
+    product = product_situation(
         config,
         spend=Decimal(100),
         lots=(
-            lot("first-new", "preferred", FIRST, Decimal("0.7"), -6),
-            lot("first-old", "preferred", FIRST, Decimal("0.3"), -12),
-            lot("globally-oldest", "later", FIRST, Decimal(1), -36),
-            lot("second", "preferred", SECOND, Decimal(1)),
+            lot(LotId("first-new"), AccountId("preferred"), FIRST, Decimal("0.7"), -6),
+            lot(LotId("first-old"), AccountId("preferred"), FIRST, Decimal("0.3"), -12),
+            lot(LotId("globally-oldest"), AccountId("later"), FIRST, Decimal(1), -36),
+            lot(LotId("second"), AccountId("preferred"), SECOND, Decimal(1)),
         ),
     )
-    result = run(scenario, config, {asset: np.full((1, 2), 100.0) for asset in (FIRST, SECOND)})
+    result = run(product, config, {asset: np.full((1, 2), 100.0) for asset in (FIRST, SECOND)})
     # FIRST totals $200 versus SECOND $100. A $100 withdrawal comes entirely from FIRST,
     # emptying the preferred account despite the older lot in the later account.
     assert result.trace is not None
@@ -140,10 +179,12 @@ def test_refill_to_ceiling_inclusive_band_and_surplus_never_invested(cash: int, 
         cash_floor=260,
         cash_ceiling=280,
         cash_band_index_to_inflation=False,
-        sleeve_weights=(SleeveWeight(symbol=FIRST.symbol, weight=1),),
+        sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),),
     )
-    scenario = product_scenario(config, cash=Decimal(cash), lots=(lot("fund", "brokerage", FIRST, Decimal(10)),))
-    result = run(scenario, config, {FIRST: np.full((1, 2), 100.0)})
+    product = product_situation(
+        config, cash=Decimal(cash), lots=(lot(LotId("fund"), AccountId("brokerage"), FIRST, Decimal(10)),)
+    )
+    result = run(product, config, {FIRST: np.full((1, 2), 100.0)})
     assert result.trace is not None
     assert result.trace.events.lot_dispositions.get_column("proceeds_quanta").sum() == raised * 100
     assert result.summary.cash[0].values == [cash * 100, ending * 100]
@@ -151,21 +192,22 @@ def test_refill_to_ceiling_inclusive_band_and_surplus_never_invested(cash: int, 
 
 
 @pytest.mark.parametrize(
-    "weights", [(), (SleeveWeight(symbol=FIRST.symbol, weight=0),), (SleeveWeight(symbol="absent", weight=1),)]
+    "weights",
+    [(), (SecuritySleeveWeight(symbol=FIRST.symbol, weight=0),), (SecuritySleeveWeight(symbol="absent", weight=1),)],
 )
 def test_empty_excluded_or_unheld_targets_allow_cash_payments_but_never_sell(weights: tuple[SleeveWeight, ...]) -> None:
     # Indexed nonzero bounds still need no CPI when sales are disabled, matching app semantics.
     config = FundingPolicy(cash_floor=100, cash_ceiling=200, sleeve_weights=weights)
-    scenario = product_scenario(
+    product = product_situation(
         config,
         cash=Decimal(50),
         spend=Decimal(30),
         rent=Decimal(40),
         horizon=2,
-        lots=(lot("keep", "brokerage", FIRST, Decimal(10)),),
+        lots=(lot(LotId("keep"), AccountId("brokerage"), FIRST, Decimal(10)),),
     )
     result = run(
-        scenario, config, {FIRST: np.full((1, 3), 100.0), RentKey(location_id="test-location"): np.ones((1, 3))}
+        product, config, {FIRST: np.full((1, 3), 100.0), RentKey(location_id="test-location"): np.ones((1, 3))}
     )
     assert result.trace is not None
     assert result.trace.events.lot_dispositions.is_empty()
@@ -179,14 +221,20 @@ def test_empty_excluded_or_unheld_targets_allow_cash_payments_but_never_sell(wei
 
 def test_zero_weight_excludes_from_sales_and_target_denominator_even_on_exhaustion() -> None:
     config = FundingPolicy(
-        sleeve_weights=(SleeveWeight(symbol=FIRST.symbol, weight=0), SleeveWeight(symbol=SECOND.symbol, weight=1))
+        sleeve_weights=(
+            SecuritySleeveWeight(symbol=FIRST.symbol, weight=0),
+            SecuritySleeveWeight(symbol=SECOND.symbol, weight=1),
+        )
     )
-    scenario = product_scenario(
+    product = product_situation(
         config,
         spend=Decimal(150),
-        lots=(lot("keep", "brokerage", FIRST, Decimal(10)), lot("sell", "brokerage", SECOND, Decimal(1))),
+        lots=(
+            lot(LotId("keep"), AccountId("brokerage"), FIRST, Decimal(10)),
+            lot(LotId("sell"), AccountId("brokerage"), SECOND, Decimal(1)),
+        ),
     )
-    result = run(scenario, config, {asset: np.full((1, 2), 100.0) for asset in (FIRST, SECOND)})
+    result = run(product, config, {asset: np.full((1, 2), 100.0) for asset in (FIRST, SECOND)})
     assert result.trace is not None
     sales = result.trace.events.lot_dispositions
     assert sales.select("lot_id", "proceeds_quanta").rows() == [("sell", 10_000)]
@@ -198,22 +246,22 @@ def test_monthly_cpi_band_rounds_original_bound_once() -> None:
     config = FundingPolicy(
         cash_floor=Decimal("0.01"),
         cash_ceiling=Decimal("0.01"),
-        sleeve_weights=(SleeveWeight(symbol=FIRST.symbol, weight=1),),
+        sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),),
     )
-    scenario = product_scenario(
-        config, spend=Decimal("0.01"), horizon=3, lots=(lot("fund", "brokerage", FIRST, Decimal(10)),)
+    product = product_situation(
+        config, spend=Decimal("0.01"), horizon=3, lots=(lot(LotId("fund"), AccountId("brokerage"), FIRST, Decimal(10)),)
     )
-    result = run(scenario, config, {FIRST: np.full((1, 4), 100.0), InflationKey(): np.array([[3.0, 4.0, 5.0, 99.0]])})
+    result = run(product, config, {FIRST: np.full((1, 4), 100.0), InflationKey(): np.array([[3.0, 4.0, 5.0, 99.0]])})
     assert result.summary.cash[0].values == [0, 1, 1, 2]
     assert result.trace is not None
     assert result.trace.events.lot_dispositions.get_column("proceeds_quanta").to_list() == [2, 1, 2]
     with pytest.raises(ValueError, match="requires a supplied CPI"):
-        run(scenario, config, {FIRST: np.full((1, 4), 100.0)})
+        run(product, config, {FIRST: np.full((1, 4), 100.0)})
 
 
 def test_product_spend_tracks_monthly_cpi_but_rent_resets_only_annually() -> None:
     config = FundingPolicy()
-    scenario = product_scenario(
+    product = product_situation(
         config,
         cash=Decimal(1000),
         spend=Decimal(1),
@@ -230,7 +278,7 @@ def test_product_spend_tracks_monthly_cpi_but_rent_resets_only_annually() -> Non
     rent[:, 0] = 1
     rent[:, 12] = 2
     rent[:, 13:] = 8
-    result = run(scenario, config, {InflationKey(): cpi, RentKey(location_id="test-location"): rent})
+    result = run(product, config, {InflationKey(): cpi, RentKey(location_id="test-location"): rent})
     payments = result.summary.payments
     assert [
         row.receipt.amount_paid
@@ -246,10 +294,7 @@ def test_product_spend_tracks_monthly_cpi_but_rent_resets_only_annually() -> Non
 
 
 def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim() -> None:
-    config = FundingPolicy(sleeve_weights=(SleeveWeight(symbol=FIRST.symbol, weight=1),))
-    scenario = product_scenario(
-        config, spend=Decimal(50), horizon=13, lots=(lot("fund", "brokerage", FIRST, Decimal(20)),)
-    )
+    config = FundingPolicy(sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),))
     rule = Jurisdiction(
         jurisdiction_id="test-flat",
         level=JurisdictionLevel.FEDERAL,
@@ -258,34 +303,34 @@ def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim()
         standard_deduction={FilingStatus.SINGLE: Decimal(0)},
         max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
     )
-    scenario = scenario.model_copy(
-        update={
-            "tax_profiles": [
-                TaxProfile(
-                    agent_id=ACTOR,
-                    jurisdiction_ids=[rule.jurisdiction_id],
-                    tax_authority_agent_id=TAX_AUTHORITY_AGENT_ID,
-                    prior_year_tax=Decimal(0),
-                )
-            ],
-            "security_distributions": [
-                SecurityDistribution(
-                    asset=FIRST,
-                    agent_id=ACTOR,
-                    holding_account_id="brokerage",
-                    to_account_id=PRIMARY_ACCOUNT_ID,
-                    tax_character=(DistributionTaxSlice(fraction=1),),
-                )
-            ],
-        }
+    product = product_situation(
+        config,
+        spend=Decimal(50),
+        horizon=13,
+        lots=(lot(LotId("fund"), AccountId("brokerage"), FIRST, Decimal(20)),),
+        distributions=(
+            SecurityDistribution(
+                asset=FIRST,
+                agent_id=ACTOR,
+                holding_account_id="brokerage",
+                to_account_id=PRIMARY_ACCOUNT_ID,
+                tax_character=(DistributionTaxSlice(fraction=1),),
+            ),
+        ),
+    )
+    profile = TaxProfile(
+        agent_id=ACTOR,
+        jurisdiction_ids=[rule.jurisdiction_id],
+        tax_authority_agent_id=TAX_AUTHORITY_AGENT_ID,
+        prior_year_tax=Decimal(0),
     )
     coupons = np.zeros((1, 14))
     coupons[:, 0] = 2
     result = run(
-        scenario,
+        product,
         config,
         {FIRST: np.full((1, 14), 100.0), SecurityDistributionKey(symbol=FIRST.symbol): coupons},
-        jurisdictions={rule.jurisdiction_id: rule},
+        tax=(profile, rule),
     )
     assert result.trace is not None
     sales = result.trace.events.lot_dispositions

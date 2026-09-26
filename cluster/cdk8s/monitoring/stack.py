@@ -268,10 +268,10 @@ def _values() -> dict[str, object]:
         "cleanPrometheusOperatorObjectNames": True,
         "defaultRules": {
             "create": True,
-            # This is a wyrm2-only volume for host-local Colibri/model data, not
+            # This is a wyrm2-only volume for host-local model data, not
             # storage used by Kubernetes workloads. Kubernetes filesystem alerts
             # should not care about it; node-exporter still exposes its raw metrics.
-            "node": {"fsSelector": 'fstype!="",mountpoint!="/var/lib/colibri"'},
+            "node": {"fsSelector": 'fstype!="",mountpoint!="/var/lib/llm-models-ssd"'},
             # Forked into cluster/cdk8s/monitoring/rules.py so
             # roaming laptops (iguana/rugged) can be excluded by taint. Denying these two by
             # alertname in the route below would also have silenced them for the

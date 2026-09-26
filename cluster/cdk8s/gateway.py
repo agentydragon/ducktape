@@ -17,28 +17,17 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecParentRefs,
     HttpRouteSpecRules,
     HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesFilters,
-    HttpRouteSpecRulesFiltersRequestRedirect,
     HttpRouteSpecRulesFiltersRequestRedirectScheme,
     HttpRouteSpecRulesFiltersRequestRedirectStatusCode,
-    HttpRouteSpecRulesFiltersResponseHeaderModifier,
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
-    HttpRouteSpecRulesFiltersType,
-    HttpRouteSpecRulesMatches,
-    HttpRouteSpecRulesMatchesPath,
-    HttpRouteSpecRulesMatchesPathType,
     HttpRouteSpecRulesTimeouts,
 )
 from gateway_api_gateway_crds.io.k8s.networking.gateway import (
     Gateway,
     GatewaySpec,
-    GatewaySpecListeners,
     GatewaySpecListenersAllowedRoutes,
     GatewaySpecListenersAllowedRoutesNamespaces,
     GatewaySpecListenersAllowedRoutesNamespacesFrom,
-    GatewaySpecListenersTls,
-    GatewaySpecListenersTlsCertificateRefs,
-    GatewaySpecListenersTlsMode,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -51,6 +40,8 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter, RouteMatch
+from cluster.cdk8s.providers.gateway_api.listener import Listener, ListenerTls
 
 _NAME = "cluster-gateway"
 _NAMESPACE = "gateway-system"
@@ -89,24 +80,15 @@ def https_route(
             hostnames=[hostname],
             rules=[
                 HttpRouteSpecRules(
-                    matches=[
-                        HttpRouteSpecRulesMatches(
-                            path=HttpRouteSpecRulesMatchesPath(type=HttpRouteSpecRulesMatchesPathType.EXACT, value=path)
-                        )
-                        for path in paths
-                    ]
-                    or None,
+                    matches=[RouteMatch.path_exact(path).to_spec() for path in paths] or None,
                     filters=[
-                        HttpRouteSpecRulesFilters(
-                            type=HttpRouteSpecRulesFiltersType.RESPONSE_HEADER_MODIFIER,
-                            response_header_modifier=HttpRouteSpecRulesFiltersResponseHeaderModifier(
-                                set=[
-                                    HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
-                                        name="Strict-Transport-Security", value="max-age=31536000"
-                                    )
-                                ]
-                            ),
-                        )
+                        RouteFilter.response_header_modifier(
+                            set=[
+                                HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
+                                    name="Strict-Transport-Security", value="max-age=31536000"
+                                )
+                            ]
+                        ).to_spec()
                     ]
                     if hsts
                     else None,
@@ -139,29 +121,21 @@ def chart(app: App) -> Chart:
         spec=GatewaySpec(
             gateway_class_name="cilium",
             listeners=[
-                GatewaySpecListeners(
+                Listener.https(
                     name=HTTPS_LISTENER,
                     hostname="*.allegedly.works",
                     port=443,
-                    protocol="HTTPS",
-                    tls=GatewaySpecListenersTls(
-                        mode=GatewaySpecListenersTlsMode.TERMINATE,
-                        certificate_refs=[GatewaySpecListenersTlsCertificateRefs(name="wildcard-allegedly-works-tls")],
-                    ),
+                    tls=ListenerTls.terminate("wildcard-allegedly-works-tls"),
                     allowed_routes=all_namespaces,
-                ),
-                GatewaySpecListeners(
+                ).to_spec(),
+                Listener.https(
                     name="https-apex",
                     hostname="allegedly.works",
                     port=443,
-                    protocol="HTTPS",
-                    tls=GatewaySpecListenersTls(
-                        mode=GatewaySpecListenersTlsMode.TERMINATE,
-                        certificate_refs=[GatewaySpecListenersTlsCertificateRefs(name="apex-allegedly-works-tls")],
-                    ),
+                    tls=ListenerTls.terminate("apex-allegedly-works-tls"),
                     allowed_routes=all_namespaces,
-                ),
-                GatewaySpecListeners(name=_HTTP_LISTENER, port=80, protocol="HTTP", allowed_routes=all_namespaces),
+                ).to_spec(),
+                Listener.http(name=_HTTP_LISTENER, port=80, allowed_routes=all_namespaces).to_spec(),
             ],
         ),
     )
@@ -174,13 +148,10 @@ def chart(app: App) -> Chart:
             rules=[
                 HttpRouteSpecRules(
                     filters=[
-                        HttpRouteSpecRulesFilters(
-                            type=HttpRouteSpecRulesFiltersType.REQUEST_REDIRECT,
-                            request_redirect=HttpRouteSpecRulesFiltersRequestRedirect(
-                                scheme=HttpRouteSpecRulesFiltersRequestRedirectScheme.HTTPS,
-                                status_code=HttpRouteSpecRulesFiltersRequestRedirectStatusCode.VALUE_301,
-                            ),
-                        )
+                        RouteFilter.request_redirect(
+                            scheme=HttpRouteSpecRulesFiltersRequestRedirectScheme.HTTPS,
+                            status_code=HttpRouteSpecRulesFiltersRequestRedirectStatusCode.VALUE_301,
+                        ).to_spec()
                     ]
                 )
             ],

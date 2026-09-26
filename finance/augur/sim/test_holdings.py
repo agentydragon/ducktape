@@ -1,7 +1,7 @@
 """Exact selections, residual basis and all-or-none cash/lot/tax trade accounting."""
 
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 import pytest
 import pytest_bazel
@@ -10,28 +10,18 @@ from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Buy, LotSale, Sell
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting
 from finance.augur.sim.holdings import Holdings
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.ids import AccountId, AssetId, LotId
 from finance.augur.sim.money import MAX_COUNT
-from finance.augur.sim.prepared import (
-    CompiledRun,
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedLot,
-    PreparedScenario,
-    PreparedSeries,
-    _ScheduledSale,
-)
-from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, prepared_scenario
+from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot
+from finance.augur.sim.testing.accounting import ACCOUNTS, CASH, EXOGENOUS, HOUSEHOLD, accounting, taxpayer
 
-BROKERAGE = AccountRef(agent_id=HOUSEHOLD, account_id="brokerage")
+BROKERAGE = AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("brokerage"))
 
 
 @dataclass
 class Books:
-    scenario: PreparedScenario
     accounting: Accounting
     holdings: Holdings
-    market: MarketPath
 
     def snapshot(self) -> tuple[object, ...]:
         return (
@@ -45,87 +35,65 @@ class Books:
 
 @pytest.fixture
 def books() -> Books:
-    base = prepared_scenario()
-    scenario = replace(
-        base,
-        accounts=(*base.accounts, PreparedAccount(account=BROKERAGE, opening_balance=0)),
-        tax_profiles=(base.tax_profiles[0],),
-        holding_pools=(
-            PreparedHoldingPool(agent_id=HOUSEHOLD, account_id="brokerage", asset_id="test_fund", quantity_scale=10),
+    accounting_ = accounting((*ACCOUNTS, PreparedAccount(account=BROKERAGE, opening_balance=0)), (taxpayer(HOUSEHOLD),))
+    holdings = Holdings()
+    holdings.declare_pool(
+        accounting_,
+        PreparedHoldingPool(
+            agent_id=HOUSEHOLD, account_id=AccountId("brokerage"), asset_id=AssetId("test_fund"), quantity_scale=10
         ),
-        initial_lots=tuple(
+    )
+    for month, id_, basis in [(-12, "old", 17), (0, "new", 32)]:
+        holdings.hold(
+            accounting_,
             PreparedLot(
-                lot_id=id_,
+                lot_id=LotId(id_),
                 agent_id=HOUSEHOLD,
-                account_id="brokerage",
-                asset_id="test_fund",
+                account_id=AccountId("brokerage"),
+                asset_id=AssetId("test_fund"),
                 purchase_month=month,
                 quantity_scale=10,
                 units=10,
                 basis=basis,
-            )
-            for month, id_, basis in [(-12, "old", 17), (0, "new", 32)]
-        ),
-    )
-    accounting = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources)
-    holdings = Holdings(scenario, accounting)
-    market = MarketPath(
-        CompiledRun(
-            currency_code="USD",
-            currency_quantum="0.01",
-            rollout_count=1,
-            scenario=scenario,
-            series=(PreparedSeries(series_id="security:test_fund", snapshots=26, values=(10,) * 26),),
-        ),
-        0,
-    )
-    return Books(scenario, accounting, holdings, market)
+            ),
+        )
+    return Books(accounting_, holdings)
 
 
-def sale(lot: str, units: int) -> Sell:
+def sale(lot: LotId, units: int) -> Sell:
     return Sell(
         cause_id="sale",
         agent_id=HOUSEHOLD,
-        proceeds_account_id="checking",
-        asset_id="test_fund",
-        lots=(LotSale(account_id="brokerage", lot_id=lot, units=units),),
+        proceeds_account_id=AccountId("checking"),
+        asset_id=AssetId("test_fund"),
+        lots=(LotSale(account_id=AccountId("brokerage"), lot_id=lot, units=units),),
     )
 
 
 def both_lots() -> Sell:
-    return sale("old", 10).model_copy(update={"lots": (*sale("old", 10).lots, *sale("new", 10).lots)})
+    return sale(LotId("old"), 10).model_copy(
+        update={"lots": (*sale(LotId("old"), 10).lots, *sale(LotId("new"), 10).lots)}
+    )
 
 
 def purchase() -> Buy:
     return Buy(
         cause_id="purchase",
         agent_id=HOUSEHOLD,
-        cash_account_id="checking",
-        holding_account_id="brokerage",
-        asset_id="test_fund",
-        lot_id="bought",
+        cash_account_id=AccountId("checking"),
+        holding_account_id=AccountId("brokerage"),
+        asset_id=AssetId("test_fund"),
+        lot_id=LotId("bought"),
         quantity_scale=10,
         units=15,
     )
 
 
-def scheduled(units: int) -> _ScheduledSale:
-    return _ScheduledSale(
-        month=0,
-        cause_id="sale",
-        agent_id=HOUSEHOLD,
-        account_id="brokerage",
-        asset_id="test_fund",
-        units=units,
-        proceeds_account_id="checking",
-    )
-
-
 def test_exact_selection_is_not_fifo_and_full_lot_basis_reconciles(books: Books) -> None:
-    books.holdings.sell(books.accounting, 0, sale("new", 3), price=10)
+    books.holdings.sell(books.accounting, 0, sale(LotId("new"), 3), price=10)
     assert books.holdings.lots[0].units_remaining == 10
     assert books.holdings.dispositions[0].basis == 10
-    books.holdings.sell(books.accounting, 0, sale("new", 7), price=10)
+    books.holdings.sell(books.accounting, 0, sale(LotId("new"), 7), price=10)
     assert books.holdings.lots[1].units_remaining == books.holdings.lots[1].basis_remaining == 0
     assert books.holdings.dispositions[1].basis == 22
     assert sum(row.proceeds for row in books.holdings.dispositions) == 10
@@ -175,13 +143,10 @@ def test_rejected_total_cashouts_leave_lots_cash_tax_and_capture_unchanged(books
     assert books.snapshot() == before
 
 
-def test_fifo_scheduled_sale_matches_the_same_explicit_selection(books: Books) -> None:
-    other = deepcopy(books)
+def test_fifo_selection_sells_the_oldest_lot_first(books: Books) -> None:
     selected = books.holdings.fifo([1, 0], 13)
     assert selected[0].lot_id == "old"
-    books.holdings.sell(books.accounting, 0, sale("old", 13).model_copy(update={"lots": selected}), price=10)
-    other.holdings.scheduled_sale(other.accounting, other.market, scheduled(13))
-    assert books.snapshot() == other.snapshot()
+    books.holdings.sell(books.accounting, 0, sale(LotId("old"), 13).model_copy(update={"lots": selected}), price=10)
     assert [(row.lot_id, row.units, row.basis) for row in books.holdings.dispositions] == [
         ("old", 10, 17),
         ("new", 3, 10),
@@ -192,7 +157,7 @@ def test_fifo_scheduled_sale_matches_the_same_explicit_selection(books: Books) -
 
 @pytest.mark.parametrize("case", range(10))
 def test_invalid_exact_lot_requests_leave_every_book_unchanged(books: Books, case: int) -> None:
-    request = sale("old", 3)
+    request = sale(LotId("old"), 3)
     selection = request.lots[0]
     changes: list[dict[str, object]] = [
         {"lots": (selection.model_copy(update={"lot_id": "absent"}),)},
@@ -234,13 +199,13 @@ def test_overflow_after_first_lot_or_jurisdiction_cannot_partially_commit(books:
 
 
 def test_purchase_posts_cash_and_basis_then_joins_future_exact_sales(books: Books) -> None:
-    books.holdings.buy(books.scenario, books.accounting, 0, purchase(), price=10)
+    books.holdings.buy(books.accounting, 0, purchase(), price=10)
     lot = books.holdings.lots[2]
     assert lot.units_remaining == lot.basis_remaining == 15
     assert lot.spec.purchase_month == 0
-    assert lot.snapshot().asset_id == "security:test_fund"
+    assert lot.snapshot().asset_id == "test_fund"
     assert books.accounting.ledger.balance(CASH) == 85
-    books.holdings.sell(books.accounting, 0, sale("bought", 15), price=20)
+    books.holdings.sell(books.accounting, 0, sale(LotId("bought"), 15), price=20)
     assert books.holdings.dispositions[0].realized_gain == 15
     assert books.accounting.ledger.trial_balance() == 0
 
@@ -263,14 +228,14 @@ def test_invalid_or_unfunded_purchase_does_not_create_lot_or_debit_cash(
 ) -> None:
     before = books.snapshot()
     with pytest.raises((ValueError, OverflowError), match=r"purchase|holding pool|unknown declared|overflow"):
-        books.holdings.buy(books.scenario, books.accounting, 0, purchase().model_copy(update=changes), price=10)
+        books.holdings.buy(books.accounting, 0, purchase().model_copy(update=changes), price=10)
     assert books.snapshot() == before
 
 
 def test_oversell_is_rejected_before_any_disposition(books: Books) -> None:
     before = books.snapshot()
     with pytest.raises(ValueError, match="exceeds available"):
-        books.holdings.scheduled_sale(books.accounting, books.market, scheduled(21))
+        books.holdings.fifo([1, 0], 21)
     assert books.snapshot() == before
 
 

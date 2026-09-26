@@ -23,12 +23,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategyName,
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
 
 from cluster.cdk8s import cilium, cnpg
 from cluster.cdk8s.gateway import https_route
@@ -36,6 +30,8 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gatus"
 _NAME = "gatus"
@@ -149,16 +145,16 @@ def _network_policies(scope: Construct) -> None:
     #
     # Uses CiliumNetworkPolicy because standard K8s NetworkPolicy cannot match Cilium
     # Gateway API traffic (reserved:ingress identity via hostNetwork Envoy).
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "ingress",
         metadata=metadata("gatus-ingress", _NAMESPACE),
         selector=_LABELS,
         ingress=[
             # Cilium Gateway API (reserved:ingress identity) → Gatus
-            cilium.ingress_from_gateway(_PORT),
+            IngressRule.from_gateway(_PORT),
             # Prometheus → Gatus (ServiceMonitor scraping)
-            cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_PORT]),
+            IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_PORT]),
         ],
     )
     # Route Gatus's DNS through Cilium's DNS proxy, so its queries are observable
@@ -170,7 +166,7 @@ def _network_policies(scope: Construct) -> None:
     # policy, and a policy enforces. This one is written to enforce nothing — an
     # egress rule flips the endpoint to default-deny, so the second rule has to
     # re-admit everything Gatus reaches.
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "dns-visibility",
         metadata=metadata("gatus-dns-visibility", _NAMESPACE),
@@ -215,10 +211,8 @@ def chart(app: App) -> Chart:
         chart,
         "service-monitor",
         metadata=metadata(_NAME, _NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-            endpoints=[ServiceMonitorSpecEndpoints(port="http", path="/metrics")],
-        ),
+        selector=_LABELS,
+        endpoints=[Endpoint.plain(port="http")],
     )
     return chart
 

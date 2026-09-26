@@ -1,42 +1,36 @@
-"""Typed financial capture and external artifact projection, separate from live books."""
+"""A world's month-scoped outcomes copied as the caller steps it, and their columnar event frames."""
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Literal
 
 import polars as pl
-from pydantic import TypeAdapter
 
 from finance.augur.sim import private_equity
 from finance.augur.sim.accounting import MortgagePaymentOutcome, TransferOutcome
 from finance.augur.sim.books import (
-    AccountBalance,
     BondCashflowOutcome,
-    BondState,
     Book,
     DistributionOutcome,
     JournalEntry,
-    MortgageState,
-    PropertyState,
     TaxAccrual,
-    TaxLiabilityState,
     TaxPaymentOutcome,
     TaxSettlementOutcome,
 )
 from finance.augur.sim.events import EVENT_FRAMES, EventLog
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import Disposition
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.managed import FinancialEffect
-from finance.augur.sim.observations import TlhPortfolioObservation
 from finance.augur.sim.payments import ObligationOutcome
 from finance.augur.sim.property import CapitalImprovement, Origination, Purchase, RentedFraction, Residence, Sale
-from finance.augur.sim.world import Capture, World
+from finance.augur.sim.world import World
 
 
 @dataclass(frozen=True)
 class Failure:
     month: int
     cause_id: str
-    agent_id: str
+    agent_id: AgentId
     deficit: int
     obligation_id: str
     obligation_type: str
@@ -46,29 +40,47 @@ class Failure:
 
 
 @dataclass(frozen=True)
+class PropertyOutcomes:
+    """The housing domain's outcomes, present exactly when the world declares housing."""
+
+    purchases: list[Purchase]
+    primary_residence_events: list[Residence]
+    rented_fraction_events: list[RentedFraction]
+    capital_improvements: list[CapitalImprovement]
+    sales: list[Sale]
+    mortgage_originations: list[Origination]
+
+
+@dataclass(frozen=True)
+class PrivateEquityOutcomes:
+    events: list[private_equity.ProtocolEvent]
+    opportunities: list[private_equity.Opportunity]
+
+
+@dataclass(frozen=True)
 class FinancialOutput:
+    """A world's recorded outcomes; a domain the world does not have is `None`, not empty.
+
+    `tlh_financial_effects` needs a managed portfolio, `bond_cashflows` a held bond and
+    `distributions` a declared distribution or managed portfolio.
+    """
+
     rollout_id: int
     months: list[Book]
     journal: list[JournalEntry]
     transfers: list[TransferOutcome]
     dispositions: list[Disposition]
-    tlh_financial_effects: list[FinancialEffect]
-    private_equity_events: list[private_equity.ProtocolEvent]
-    private_equity_opportunities: list[private_equity.Opportunity]
     obligations: list[ObligationOutcome]
     tax_accruals: list[TaxAccrual]
     tax_payments: list[TaxPaymentOutcome]
     tax_settlements: list[TaxSettlementOutcome]
-    bond_cashflows: list[BondCashflowOutcome]
-    distributions: list[DistributionOutcome]
-    property_purchases: list[Purchase]
-    primary_residence_events: list[Residence]
-    property_rented_fraction_events: list[RentedFraction]
-    capital_improvements: list[CapitalImprovement]
-    property_sales: list[Sale]
-    mortgage_originations: list[Origination]
     mortgage_payments: list[MortgagePaymentOutcome]
     failed_month: int | None
+    tlh_financial_effects: list[FinancialEffect] | None = None
+    private_equity: PrivateEquityOutcomes | None = None
+    bond_cashflows: list[BondCashflowOutcome] | None = None
+    distributions: list[DistributionOutcome] | None = None
+    properties: PropertyOutcomes | None = None
 
     @property
     def rollout_failures(self) -> list[Failure]:
@@ -88,87 +100,29 @@ class FinancialOutput:
             if row.failure_active
         ]
 
-    def export(self) -> dict[str, Any]:
-        payload: dict[str, Any] = _FINANCIAL_OUTPUT.dump_python(self, mode="json", by_alias=True)
-        for channel in ("transfers", "obligations"):
-            for row in payload[channel]:
-                row["from"] = row.pop("from_account")
-                row["to"] = row.pop("to_account")
-        payload["rollout_failures"] = _FAILURES.dump_python(self.rollout_failures, mode="json")
-        return payload
-
-
-_FINANCIAL_OUTPUT = TypeAdapter(FinancialOutput)
-_FAILURES = TypeAdapter(list[Failure])
-
-
-@dataclass(frozen=True)
-class ConfiguredSummary:
-    rollout_id: int
-    ending_balances: list[AccountBalance]
-    ending_bonds: list[BondState]
-    ending_properties: list[PropertyState]
-    ending_mortgages: list[MortgageState]
-    ending_tax_liabilities: list[TaxLiabilityState]
-    ending_tlh_portfolios: list[TlhPortfolioObservation]
-    journal_entry_count: int
-    disposition_count: int
-    private_equity_event_count: int
-    private_equity_opportunity_count: int
-    tax_accrual_count: int
-    tax_payment_count: int
-    tax_settlement_count: int
-    bond_cashflow_count: int
-    distribution_count: int
-    property_purchase_count: int
-    primary_residence_event_count: int
-    property_rented_fraction_event_count: int
-    capital_improvement_count: int
-    property_sale_count: int
-    mortgage_payment_count: int
-    failed_month: int | None
-
-    def export(self) -> dict[str, Any]:
-        payload: dict[str, Any] = _CONFIGURED_SUMMARY.dump_python(self, mode="json")
-        return payload
-
-
-_CONFIGURED_SUMMARY = TypeAdapter(ConfiguredSummary)
-
-
-@dataclass(frozen=True)
-class WorldResult:
-    """The configured runner's per-path record: the app's projections read this, never the world."""
-
-    rollout_id: int
-    financial: FinancialOutput | None
-    events: EventLog | None
-    configured_summary: ConfiguredSummary | None
-    product_metrics: list[tuple[int, int, int, int, int, int, int]]
-
 
 class FinancialCapture:
     """Copy one world's month-scoped outcomes into a `FinancialOutput` as the caller steps it.
 
-    The world keeps nothing past the current month; this is the configured runner's and the
-    batch session's own record. `summary` keeps counts only, `dense` keeps everything but the
-    journal, `forensic` keeps the journal too.
+    The world keeps nothing past the current month; this is the caller's record. `dense` keeps
+    everything but the journal, `forensic` keeps the journal too.
     """
 
-    def __init__(self, world: World, *, capture: Capture) -> None:
+    def __init__(self, world: World, *, capture: Literal["dense", "forensic"]) -> None:
         self.world = world
         self.capture = capture
-        self.months: list[Book] = [world.book()] if capture != "summary" else []
+        self.months: list[Book] = [world.book()]
         self.journal: list[JournalEntry] = []
         self.transfers: list[TransferOutcome] = []
         self.dispositions: list[Disposition] = []
-        self.tlh_financial_effects: list[FinancialEffect] = []
-        self.private_equity_events: list[private_equity.ProtocolEvent] = []
-        self.private_equity_opportunities: list[private_equity.Opportunity] = []
         self.obligations: list[ObligationOutcome] = []
         self.tax_accruals: list[TaxAccrual] = []
         self.tax_payments: list[TaxPaymentOutcome] = []
         self.tax_settlements: list[TaxSettlementOutcome] = []
+        self.mortgage_payments: list[MortgagePaymentOutcome] = []
+        self.tlh_financial_effects: list[FinancialEffect] = []
+        self.private_equity_events: list[private_equity.ProtocolEvent] = []
+        self.private_equity_opportunities: list[private_equity.Opportunity] = []
         self.bond_cashflows: list[BondCashflowOutcome] = []
         self.distributions: list[DistributionOutcome] = []
         self.property_purchases: list[Purchase] = []
@@ -177,122 +131,71 @@ class FinancialCapture:
         self.capital_improvements: list[CapitalImprovement] = []
         self.property_sales: list[Sale] = []
         self.mortgage_originations: list[Origination] = []
-        self.mortgage_payments: list[MortgagePaymentOutcome] = []
-        self.journal_entry_count = 0
-        self.disposition_count = 0
-        self.private_equity_event_count = 0
-        self.private_equity_opportunity_count = 0
-        self.tax_accrual_count = 0
-        self.tax_payment_count = 0
-        self.tax_settlement_count = 0
-        self.bond_cashflow_count = 0
-        self.distribution_count = 0
-        self.property_purchase_count = 0
-        self.primary_residence_event_count = 0
-        self.property_rented_fraction_event_count = 0
-        self.capital_improvement_count = 0
-        self.property_sale_count = 0
-        self.mortgage_payment_count = 0
 
     def record(self) -> None:
         """Call after the world closes a month and before the next one opens."""
         world = self.world
         accounting = world.accounting
-        properties = world.properties
-        distributions = [*world.distributions.outcomes, *world.managed.distributions]
-        self.journal_entry_count += len(accounting.journal)
-        self.disposition_count += len(world.holdings.dispositions)
-        self.private_equity_event_count += len(world.private_equity.events)
-        self.private_equity_opportunity_count += len(world.private_equity.opportunities)
-        self.tax_accrual_count += len(accounting.tax_accruals)
-        self.tax_payment_count += len(accounting.tax_payments)
-        self.tax_settlement_count += len(accounting.tax_settlements)
-        self.bond_cashflow_count += len(world.bonds.cashflows)
-        self.distribution_count += len(distributions)
-        self.property_purchase_count += len(properties.purchases)
-        self.primary_residence_event_count += len(properties.residences)
-        self.property_rented_fraction_event_count += len(properties.rented_fractions)
-        self.capital_improvement_count += len(properties.improvements)
-        self.property_sale_count += len(properties.sales)
-        self.mortgage_payment_count += len(accounting.mortgage_payments)
-        if self.capture == "summary":
-            return
         self.months.append(world.book())
         if self.capture == "forensic":
             self.journal.extend(accounting.journal)
         self.transfers.extend(accounting.transfers)
         self.dispositions.extend(world.holdings.dispositions)
-        self.tlh_financial_effects.extend(world.managed.effects)
-        self.private_equity_events.extend(world.private_equity.events)
-        self.private_equity_opportunities.extend(world.private_equity.opportunities)
         self.obligations.extend(world.obligations)
         self.tax_accruals.extend(accounting.tax_accruals)
         self.tax_payments.extend(accounting.tax_payments)
         self.tax_settlements.extend(accounting.tax_settlements)
-        self.bond_cashflows.extend(world.bonds.cashflows)
-        self.distributions.extend(distributions)
-        self.property_purchases.extend(properties.purchases)
-        self.primary_residence_events.extend(properties.residences)
-        self.property_rented_fraction_events.extend(properties.rented_fractions)
-        self.capital_improvements.extend(properties.improvements)
-        self.property_sales.extend(properties.sales)
-        self.mortgage_originations.extend(properties.originations)
         self.mortgage_payments.extend(accounting.mortgage_payments)
+        if world.managed is not None:
+            self.tlh_financial_effects.extend(world.managed.effects)
+        if world.private_equity is not None:
+            self.private_equity_events.extend(world.private_equity.events)
+            self.private_equity_opportunities.extend(world.private_equity.opportunities)
+        if world.bonds is not None:
+            self.bond_cashflows.extend(world.bonds.cashflows)
+        if world.distributions is not None:
+            self.distributions.extend(world.distributions.outcomes)
+        if world.managed is not None:
+            self.distributions.extend(world.managed.distributions)
+        properties = world.properties
+        if properties is not None:
+            self.property_purchases.extend(properties.purchases)
+            self.primary_residence_events.extend(properties.residences)
+            self.property_rented_fraction_events.extend(properties.rented_fractions)
+            self.capital_improvements.extend(properties.improvements)
+            self.property_sales.extend(properties.sales)
+            self.mortgage_originations.extend(properties.originations)
 
-    def financial(self) -> FinancialOutput | None:
-        if self.capture == "summary":
-            return None
+    def financial(self) -> FinancialOutput:
+        world = self.world
         return FinancialOutput(
-            rollout_id=self.world.rollout_id,
+            rollout_id=world.rollout_id,
             months=self.months,
             journal=self.journal,
             transfers=self.transfers,
             dispositions=self.dispositions,
-            tlh_financial_effects=self.tlh_financial_effects,
-            private_equity_events=self.private_equity_events,
-            private_equity_opportunities=self.private_equity_opportunities,
             obligations=self.obligations,
             tax_accruals=self.tax_accruals,
             tax_payments=self.tax_payments,
             tax_settlements=self.tax_settlements,
-            bond_cashflows=self.bond_cashflows,
-            distributions=self.distributions,
-            property_purchases=self.property_purchases,
-            primary_residence_events=self.primary_residence_events,
-            property_rented_fraction_events=self.property_rented_fraction_events,
-            capital_improvements=self.capital_improvements,
-            property_sales=self.property_sales,
-            mortgage_originations=self.mortgage_originations,
             mortgage_payments=self.mortgage_payments,
-            failed_month=self.world.failed_month,
-        )
-
-    def configured_summary(self) -> ConfiguredSummary:
-        book = self.world.book()
-        return ConfiguredSummary(
-            rollout_id=self.world.rollout_id,
-            ending_balances=book.balances,
-            ending_bonds=book.bonds,
-            ending_properties=book.properties,
-            ending_mortgages=book.mortgages,
-            ending_tax_liabilities=book.tax_liabilities,
-            ending_tlh_portfolios=list(self.world.managed.marks.values()),
-            journal_entry_count=self.journal_entry_count,
-            disposition_count=self.disposition_count,
-            private_equity_event_count=self.private_equity_event_count,
-            private_equity_opportunity_count=self.private_equity_opportunity_count,
-            tax_accrual_count=self.tax_accrual_count,
-            tax_payment_count=self.tax_payment_count,
-            tax_settlement_count=self.tax_settlement_count,
-            bond_cashflow_count=self.bond_cashflow_count,
-            distribution_count=self.distribution_count,
-            property_purchase_count=self.property_purchase_count,
-            primary_residence_event_count=self.primary_residence_event_count,
-            property_rented_fraction_event_count=self.property_rented_fraction_event_count,
-            capital_improvement_count=self.capital_improvement_count,
-            property_sale_count=self.property_sale_count,
-            mortgage_payment_count=self.mortgage_payment_count,
-            failed_month=self.world.failed_month,
+            failed_month=world.failed_month,
+            tlh_financial_effects=None if world.managed is None else self.tlh_financial_effects,
+            private_equity=None
+            if world.private_equity is None
+            else PrivateEquityOutcomes(self.private_equity_events, self.private_equity_opportunities),
+            bond_cashflows=None if world.bonds is None else self.bond_cashflows,
+            distributions=None if world.distributions is None and world.managed is None else self.distributions,
+            properties=None
+            if world.properties is None
+            else PropertyOutcomes(
+                purchases=self.property_purchases,
+                primary_residence_events=self.primary_residence_events,
+                rented_fraction_events=self.property_rented_fraction_events,
+                capital_improvements=self.capital_improvements,
+                sales=self.property_sales,
+                mortgage_originations=self.mortgage_originations,
+            ),
         )
 
 
@@ -364,7 +267,8 @@ def event_log(output: FinancialOutput) -> EventLog:
             schema=EVENT_FRAMES.tlh_financial_effects.schema,
         )
     frames["private_equity_events"] = EVENT_FRAMES.private_equity_events.schema.to_frame()
-    if output.private_equity_events:
+    private_equity_events = [] if output.private_equity is None else output.private_equity.events
+    if private_equity_events:
         frames["private_equity_events"] = pl.DataFrame(
             [
                 {
@@ -381,12 +285,13 @@ def event_log(output: FinancialOutput) -> EventLog:
                     "liquidity_blocked": row.liquidity_blocked,
                     "forced_recovery_cashout_quanta": row.forced_recovery_cashout,
                 }
-                for row in output.private_equity_events
+                for row in private_equity_events
             ],
             schema=EVENT_FRAMES.private_equity_events.schema,
         )
     frames["private_equity_opportunities"] = EVENT_FRAMES.private_equity_opportunities.schema.to_frame()
-    if output.private_equity_opportunities:
+    private_equity_opportunities = [] if output.private_equity is None else output.private_equity.opportunities
+    if private_equity_opportunities:
         frames["private_equity_opportunities"] = pl.DataFrame(
             [
                 {
@@ -410,7 +315,7 @@ def event_log(output: FinancialOutput) -> EventLog:
                     "target_units": row.target_units / row.quantity_scale,
                     "proceeds_quanta": row.proceeds,
                 }
-                for row in output.private_equity_opportunities
+                for row in private_equity_opportunities
             ],
             schema=EVENT_FRAMES.private_equity_opportunities.schema,
         )
@@ -475,7 +380,8 @@ def event_log(output: FinancialOutput) -> EventLog:
             schema=EVENT_FRAMES.rollout_failures.schema,
         )
     frames["property_purchases"] = EVENT_FRAMES.property_purchases.schema.to_frame()
-    if output.property_purchases:
+    property_purchases = [] if output.properties is None else output.properties.purchases
+    if property_purchases:
         frames["property_purchases"] = pl.DataFrame(
             [
                 {
@@ -491,12 +397,13 @@ def event_log(output: FinancialOutput) -> EventLog:
                     "stake_contribution_quanta": row.stake_contribution,
                     "equity_ledger_quanta": row.equity_ledger,
                 }
-                for row in output.property_purchases
+                for row in property_purchases
             ],
             schema=EVENT_FRAMES.property_purchases.schema,
         )
     frames["mortgage_originations"] = EVENT_FRAMES.mortgage_originations.schema.to_frame()
-    if output.mortgage_originations:
+    mortgage_originations = [] if output.properties is None else output.properties.mortgage_originations
+    if mortgage_originations:
         frames["mortgage_originations"] = pl.DataFrame(
             [
                 {
@@ -514,7 +421,7 @@ def event_log(output: FinancialOutput) -> EventLog:
                     "term_months": row.term_months,
                     "monthly_payment_quanta": row.monthly_payment,
                 }
-                for row in output.mortgage_originations
+                for row in mortgage_originations
             ],
             schema=EVENT_FRAMES.mortgage_originations.schema,
         )
@@ -541,7 +448,8 @@ def event_log(output: FinancialOutput) -> EventLog:
             schema=EVENT_FRAMES.mortgage_payments.schema,
         )
     frames["set_primary_residence_events"] = EVENT_FRAMES.set_primary_residence_events.schema.to_frame()
-    if output.primary_residence_events:
+    primary_residence_events = [] if output.properties is None else output.properties.primary_residence_events
+    if primary_residence_events:
         frames["set_primary_residence_events"] = pl.DataFrame(
             [
                 {
@@ -551,12 +459,13 @@ def event_log(output: FinancialOutput) -> EventLog:
                     "property_id": row.property_id,
                     "is_primary_residence": row.is_primary_residence,
                 }
-                for row in output.primary_residence_events
+                for row in primary_residence_events
             ],
             schema=EVENT_FRAMES.set_primary_residence_events.schema,
         )
     frames["set_rented_fraction_events"] = EVENT_FRAMES.set_rented_fraction_events.schema.to_frame()
-    if output.property_rented_fraction_events:
+    property_rented_fraction_events = [] if output.properties is None else output.properties.rented_fraction_events
+    if property_rented_fraction_events:
         frames["set_rented_fraction_events"] = pl.DataFrame(
             [
                 {
@@ -565,12 +474,13 @@ def event_log(output: FinancialOutput) -> EventLog:
                     "property_id": row.property_id,
                     "rented_fraction": row.rented_fraction_ppb / MONEY_FACTOR_SCALE,
                 }
-                for row in output.property_rented_fraction_events
+                for row in property_rented_fraction_events
             ],
             schema=EVENT_FRAMES.set_rented_fraction_events.schema,
         )
     frames["capital_improvement_events"] = EVENT_FRAMES.capital_improvement_events.schema.to_frame()
-    if output.capital_improvements:
+    capital_improvements = [] if output.properties is None else output.properties.capital_improvements
+    if capital_improvements:
         frames["capital_improvement_events"] = pl.DataFrame(
             [
                 {
@@ -580,12 +490,13 @@ def event_log(output: FinancialOutput) -> EventLog:
                     "amount_quanta": row.amount,
                     "description": row.description,
                 }
-                for row in output.capital_improvements
+                for row in capital_improvements
             ],
             schema=EVENT_FRAMES.capital_improvement_events.schema,
         )
     frames["property_sale_events"] = EVENT_FRAMES.property_sale_events.schema.to_frame()
-    if output.property_sales:
+    property_sales = [] if output.properties is None else output.properties.sales
+    if property_sales:
         frames["property_sale_events"] = pl.DataFrame(
             [
                 {
@@ -600,7 +511,7 @@ def event_log(output: FinancialOutput) -> EventLog:
                     "section_121_exclusion_quanta": row.section_121_exclusion,
                     "long_term_capital_gain_quanta": row.long_term_capital_gain,
                 }
-                for row in output.property_sales
+                for row in property_sales
             ],
             schema=EVENT_FRAMES.property_sale_events.schema,
         )

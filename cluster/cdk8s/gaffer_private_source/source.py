@@ -1,8 +1,9 @@
 """The private companion monorepo's GitRepository, and the `gaffer-images`
 ImageUpdateAutomation that commits image-tag bumps back to it.
 
-Hand-written beside the generated output: `bridge.yaml`, the Flux Kustomization that
-reconciles `gaffer-private/k8s/` from this source.
+The `gaffer-private` bridge Flux Kustomization that reconciles `gaffer-private/k8s/`
+from this source is a node in the central chart (`flux_kustomizations.gaffer_private_bridge`).
+Only this directory's `kustomization.yaml` stays hand-written beside the generated output.
 """
 
 from __future__ import annotations

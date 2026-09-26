@@ -22,6 +22,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from agentplane.action_service.sandbox.actions import SandboxAction
 from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.agentplane import actions, command_sandbox, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
@@ -38,22 +39,23 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.external_secrets.external_secret import (
-    add_external_secret,
-    cluster_secret_store,
-    password_generator,
-    remote_data,
-)
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    DataFrom,
+    ExternalSecret,
+    SecretStoreRef,
+    remote_data,
+)
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
 
 _NAMESPACE = "agentplane-staging"
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _AUTHENTIK = "https://auth.allegedly.works"
-_ACTIONS_OIDC_APP = f"{_AUTHENTIK}/application/o/agentplane-actions"
+_ACTIONS_OIDC_APP = f"{_AUTHENTIK}/application/o/agentplane-staging-actions"
 # The push services web-push subscriptions may target: both the Action Service's own
 # allowlist and its egress rule, so the policy cannot drift from what the app accepts.
 _WEB_PUSH_ALLOWED_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.com")
@@ -93,14 +95,14 @@ _OIDC_SESSION_SECRET = "agentplane-staging-session-secret"
 # from operators: the same Authentik application.
 _FEDERATION_TARGET = {
     "issuer": f"{_ACTIONS_OIDC_APP}/",
-    "audience": "agentplane-actions",
+    "audience": "agentplane-staging-actions",
     "jwks_uri": f"{_ACTIONS_OIDC_APP}/jwks/",
 }
 _ACTION_FEDERATION = {
     "mode": "exchange",
     "service_url": f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions.CONTAINER_PORT}",
     "token_endpoint": f"{_AUTHENTIK}/application/o/token/",
-    "login_jwks_uri": f"{_AUTHENTIK}/application/o/agentplane/jwks/",
+    "login_jwks_uri": f"{_AUTHENTIK}/application/o/agentplane-staging/jwks/",
     "target": _FEDERATION_TARGET,
     "scope": "openid",
 }
@@ -190,31 +192,14 @@ _ACTIONS_SETTINGS = {
                 "kind": "sandbox",
                 "description": "Stamped and exec'd by this service, as the caller, in its own namespace.",
                 "namespace": _NAMESPACE,
-                "environments": {
-                    "sandbox": {
-                        "template": command_sandbox.NAME,
-                        "container": command_sandbox.CONTAINER,
-                        "default_cwd": command_sandbox.HOME,
-                        "description": (
-                            "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, "
-                            "kubectl and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, "
-                            "and no volume: files last as long as the box's Pod."
-                        ),
-                    },
-                    # The integration app's runner template, for a caller that wants the harnesses
-                    # or a state volume that survives its Pod.
-                    "runner": {
-                        "template": "agentplane-runner",
-                        "container": "runner",
-                        "default_cwd": "/state",
-                        "description": (
-                            "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, "
-                            "ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
-                        ),
-                    },
-                },
-                "default_environment": "sandbox",
+                # Each describes itself in the annotation the sandbox Actions read. The integration app's
+                # runner template is offered for a caller that wants the harnesses or a state volume
+                # that survives its Pod.
+                "templates": [command_sandbox.NAME, command_sandbox.BUILD_NAME, "agentplane-runner"],
             },
+            # claude.ai and Claude Code reach these as MCP tools of their own, where `sandbox-self`
+            # auto-approves them for the Connection's claude-ai account.
+            "direct_tools": sorted(SandboxAction),
         },
         "ssh": {
             "title": "SSH",
@@ -313,7 +298,7 @@ ENV = Environment(
     egress=EgressProps(ca_secret_name="agentplane-egress-ca", credentials_namespace=STAGING_NAMESPACE),
     app=AppProps(
         hostname=_HOSTNAME,
-        oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane/",
+        oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
         reach_incluster_authentik=True,
         runner_zone="hil-ovh",
         oidc_session_secret_name=_OIDC_SESSION_SECRET,
@@ -345,26 +330,26 @@ ENV = Environment(
             BearerMcpMount(name="google-mcp", secret_name=_GOOGLE_MCP_BEARER_SECRET, secret_key="bearer-token"),
         ],
         extra_egress=[
-            cilium.egress_to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
-            cilium.egress_to(cilium.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
-            cilium.egress_to(cilium.endpoint_labels("ha-mcp", "ha-mcp"), 8765),
-            cilium.egress_to(cilium.endpoint_labels("tana-mcp", "tana-mcp"), 8263),
-            cilium.egress_to(cilium.endpoint_labels("google-mcp", "google-mcp"), 8080),
+            EgressRule.to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
+            EgressRule.to_endpoints(cilium.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
+            EgressRule.to_endpoints(cilium.endpoint_labels("ha-mcp", "ha-mcp"), 8765),
+            EgressRule.to_endpoints(cilium.endpoint_labels("tana-mcp", "tana-mcp"), 8263),
+            EgressRule.to_endpoints(cilium.endpoint_labels("google-mcp", "google-mcp"), 8080),
             # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
-            # resolver fetches /application/o/agentplane-actions/jwks/ over HTTPS.
+            # resolver fetches /application/o/agentplane-staging-actions/jwks/ over HTTPS.
             cilium.egress_via_gateway("auth.allegedly.works"),
             # GitHub MCP discovery advertises github.com as its OAuth authorization server.
-            cilium.egress_to_fqdns("api.githubcopilot.com", "github.com"),
+            EgressRule.to_fqdns("api.githubcopilot.com", "github.com"),
             # `github_public_repository` policies confirm a repository is public with an
             # unauthenticated GitHub REST call (agentplane/action_service/github_policy/visibility.py); no credential
             # rides this path.
-            cilium.egress_to_fqdns("api.github.com"),
+            EgressRule.to_fqdns("api.github.com"),
             # The Kubernetes MCP server uses the public Gateway/remote-node path.
             cilium.egress_via_gateway("kubectl-passthrough-mcp.allegedly.works"),
             # Grocy SF's MCP server (OAuth discovery, DCR, and the linked /mcp calls) is the
             # same public Gateway path.
             cilium.egress_via_gateway("grocy-mcp-sf.allegedly.works"),
-            cilium.egress_to(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
+            EgressRule.to_endpoints(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
         ],
     ),
 )
@@ -376,7 +361,7 @@ def chart(app: App) -> Chart:
     reader = ServiceAccount(
         chart, "external-creds-reader", metadata=metadata("external-creds-reader", _NAMESPACE), automount_token=False
     )
-    add_external_secret(
+    ExternalSecret(
         chart,
         "tana-pat-external-secret",
         name=_TANA_MCP_BEARER_SECRET,
@@ -410,13 +395,13 @@ def chart(app: App) -> Chart:
         )
     # The GitHub App's pre-registered OAuth client, whose SOPS source stays in haku-console
     # (cluster/k8s/haku/console/README.md): the id rides an env var, the secret a mounted file.
-    add_external_secret(
+    ExternalSecret(
         chart,
         "github-mcp-client-external-secret",
         name=_GITHUB_MCP_CLIENT_SECRET,
         namespace=_NAMESPACE,
         refresh="1h",
-        store=cluster_secret_store(
+        store=SecretStoreRef.cluster(
             single_secret_store(
                 chart,
                 "agentplane-staging-github-mcp-client",
@@ -453,13 +438,13 @@ def _add_session_secret(scope: Chart) -> None:
         metadata=metadata(_OIDC_SESSION_SECRET, _NAMESPACE),
         spec=PasswordSpec(length=64, digits=16, symbols=0, no_upper=False, allow_repeat=True),
     )
-    add_external_secret(
+    ExternalSecret(
         scope,
         "session-external-secret",
         name=_OIDC_SESSION_SECRET,
         namespace=_NAMESPACE,
         refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[password_generator(_OIDC_SESSION_SECRET)],
+        data_from=[DataFrom.from_password_generator(_OIDC_SESSION_SECRET)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"session-secret": "{{ .password }}"}),

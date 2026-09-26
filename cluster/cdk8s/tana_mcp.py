@@ -13,33 +13,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import App, Chart, Size
+from cdk8s_plus_34 import Cpu, k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
-from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
-    PrometheusRule,
-    PrometheusRuleSpec,
-    PrometheusRuleSpecGroups,
-    PrometheusRuleSpecGroupsRules,
-    PrometheusRuleSpecGroupsRulesExpr,
-)
 
 from cluster.cdk8s import external_creds
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/tana-mcp"
@@ -383,72 +372,58 @@ def _facade(chart: Chart) -> None:
         chart,
         "facade-servicemonitor",
         metadata=metadata(_FACADE, _NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=_FACADE_LABELS),
-            endpoints=[ServiceMonitorSpecEndpoints(port="metrics", path="/metrics", scrape_timeout="10s")],
-        ),
+        selector=_FACADE_LABELS,
+        endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     PrometheusRule(
         chart,
         "facade-prometheusrule",
         metadata=metadata(_FACADE, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        spec=PrometheusRuleSpec(
-            groups=[
-                PrometheusRuleSpecGroups(
-                    name=_FACADE,
-                    rules=[
-                        # The facade can be "up" (process healthy) while serving zero tools
-                        # because the upstream Tana MCP rejects the server-held PAT. These
-                        # alerts fire on that condition — the recurring failure that silently
-                        # leaves claude.ai with no Tana tools.
-                        PrometheusRuleSpecGroupsRules(
-                            alert="TanaMcpFacadeUpstreamDown",
-                            expr=PrometheusRuleSpecGroupsRulesExpr.from_string("mcp_facade_upstream_up == 0"),
-                            for_="5m",
-                            labels={"severity": "warning"},
-                            annotations={
-                                "summary": "MCP facade {{ $labels.facade }} cannot reach its upstream",
-                                "description": (
-                                    "The upstream tools/list probe for facade {{ $labels.facade }} has been failing for >5m. Clients see no "
-                                    "tools. For Tana this usually means the desktop renderer is rejecting the PAT (validateToken); check the "
-                                    "firebase-resigner logs and the tana-mcp pod sign-in.\n"
-                                ),
-                            },
+        groups=[
+            group(
+                _FACADE,
+                [
+                    # The facade can be "up" (process healthy) while serving zero tools
+                    # because the upstream Tana MCP rejects the server-held PAT. These
+                    # alerts fire on that condition — the recurring failure that silently
+                    # leaves claude.ai with no Tana tools.
+                    Rule.alert(
+                        "TanaMcpFacadeUpstreamDown",
+                        "mcp_facade_upstream_up == 0",
+                        for_="5m",
+                        labels={"severity": "warning"},
+                        summary="MCP facade {{ $labels.facade }} cannot reach its upstream",
+                        description=(
+                            "The upstream tools/list probe for facade {{ $labels.facade }} has been failing for >5m. Clients see no "
+                            "tools. For Tana this usually means the desktop renderer is rejecting the PAT (validateToken); check the "
+                            "firebase-resigner logs and the tana-mcp pod sign-in.\n"
                         ),
-                        PrometheusRuleSpecGroupsRules(
-                            alert="TanaMcpFacadeNoTools",
-                            expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
-                                "mcp_facade_upstream_up == 1 and mcp_facade_upstream_tools == 0"
-                            ),
-                            for_="5m",
-                            labels={"severity": "warning"},
-                            annotations={
-                                "summary": "MCP facade {{ $labels.facade }} reachable but exposes zero tools",
-                                "description": (
-                                    "Facade {{ $labels.facade }} reached its upstream but it advertised no tools for >5m. The upstream MCP "
-                                    "server is up but empty.\n"
-                                ),
-                            },
+                    ),
+                    Rule.alert(
+                        "TanaMcpFacadeNoTools",
+                        "mcp_facade_upstream_up == 1 and mcp_facade_upstream_tools == 0",
+                        for_="5m",
+                        labels={"severity": "warning"},
+                        summary="MCP facade {{ $labels.facade }} reachable but exposes zero tools",
+                        description=(
+                            "Facade {{ $labels.facade }} reached its upstream but it advertised no tools for >5m. The upstream MCP "
+                            "server is up but empty.\n"
                         ),
-                        PrometheusRuleSpecGroupsRules(
-                            alert="TanaMcpFacadeProbeStale",
-                            expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
-                                "time() - mcp_facade_upstream_last_success_timestamp_seconds > 600"
-                            ),
-                            for_="5m",
-                            labels={"severity": "warning"},
-                            annotations={
-                                "summary": "MCP facade {{ $labels.facade }} has no recent successful probe",
-                                "description": (
-                                    "No successful upstream probe for facade {{ $labels.facade }} in >10m (probe loop wedged or upstream "
-                                    "persistently failing).\n"
-                                ),
-                            },
+                    ),
+                    Rule.alert(
+                        "TanaMcpFacadeProbeStale",
+                        "time() - mcp_facade_upstream_last_success_timestamp_seconds > 600",
+                        for_="5m",
+                        labels={"severity": "warning"},
+                        summary="MCP facade {{ $labels.facade }} has no recent successful probe",
+                        description=(
+                            "No successful upstream probe for facade {{ $labels.facade }} in >10m (probe loop wedged or upstream "
+                            "persistently failing).\n"
                         ),
-                    ],
-                )
-            ]
-        ),
+                    ),
+                ],
+            )
+        ],
     )
 
 
@@ -476,7 +451,7 @@ def chart(app: App) -> Chart:
         ),
         automount_service_account_token=False,
     )
-    add_external_secret(
+    ExternalSecret(
         chart,
         "tana-pat",
         name=_PAT_SECRET,
@@ -517,12 +492,12 @@ def chart(app: App) -> Chart:
         name=_VALKEY,
         namespace=_NAMESPACE,
         description="Replacement OVH Valkey for Tana MCP facade OAuth state",
-        memory_request="64Mi",
-        cpu_limit="200m",
-        memory_limit="128Mi",
+        memory_request=Size.mebibytes(64),
+        cpu_limit=Cpu.millis(200),
+        memory_limit=Size.mebibytes(128),
         max_memory_percent_of_limit=None,
         storage_class="local-path-ovh",
-        storage_size="1Gi",
+        storage_size=Size.gibibytes(1),
     )
     return chart
 

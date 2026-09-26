@@ -223,6 +223,59 @@ console.log(a(), b());
     );
 }
 
+/// `Widget` matches two identical classes on its own; only the template of
+/// `DefaultWidget`, which constructs one of them, makes it unique. That is as
+/// fragile as elimination, so it warns and names the referrer.
+#[test]
+fn entity_unique_only_through_a_referrer_warns() {
+    let fixture = || {
+        FixtureOpts::new(
+            r#"class a {
+  open() {
+    return 1;
+  }
+}
+class b {
+  open() {
+    return 1;
+  }
+}
+const c = new a(1);
+console.log(c.open(), new b().open());
+"#,
+            vec![
+                logical_module(
+                    "widgets/widget",
+                    &[Member::source_alpha(
+                        "Widget",
+                        "class Widget {\n  open() {\n    STMT_LIST;\n  }\n}",
+                    )],
+                ),
+                logical_module(
+                    "widgets/default",
+                    &[Member::source_alpha("DefaultWidget", DEFAULT_WIDGET)],
+                ),
+            ],
+        )
+    };
+    let fixture_run = run_fixture(fixture());
+    let outcomes = read_selector_outcomes(&fixture_run.report_root);
+    let widget = find_outcome(&outcomes, "resolved", "Widget");
+    assert_eq!(widget["severity"], "warning", "{widget:#}");
+    assert_eq!(
+        widget["outcome"]["resolved_by"],
+        json!({
+            "by": "referenced_by",
+            "referrers": [{"logical_module": "widgets/default", "entity": {"export": "DefaultWidget"}}],
+        }),
+        "{widget:#}"
+    );
+    assert_eq!(widget["outcome"]["binding"], "a", "{widget:#}");
+
+    let validate = validate_json(fixture());
+    assert_eq!(validate["outcomes"], json!([widget]), "{validate:#}");
+}
+
 /// `Widget` is exported by two modules and the template's own module exports
 /// neither, so which entity it names is undefined.
 #[test]

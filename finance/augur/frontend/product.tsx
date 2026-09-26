@@ -37,7 +37,7 @@ import {
   selectedRolloutMetricRows,
   selectedRolloutEvents,
   visibleMetricOptions,
-  sellableSecurities,
+  sellableSleeves,
 } from "./data_helpers";
 
 function RolloutResultsPanel({
@@ -308,7 +308,7 @@ export function ProductProjectionWorkspace({
   // An unedited target allocation is seeded from these rows, so a request built before the
   // portfolio arrives would ask for a no-target scenario (never auto-sells, so ruin) and get a
   // fan the user never asked for. The fetch effects below wait for it rather than showing that.
-  const sellable = useMemo(() => (portfolio ? sellableSecurities(portfolio) : null), [portfolio]);
+  const sellable = useMemo(() => (portfolio ? sellableSleeves(portfolio) : null), [portfolio]);
   const projectionRequestEntries = useMemo(
     () =>
       chartScenarios.map((entry) => ({

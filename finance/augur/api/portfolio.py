@@ -30,7 +30,14 @@ from pydantic import (
 from finance.augur.api.schemas import NonNegativeCurrencyAmount, PositiveCurrencyAmount
 from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
-from finance.augur.sim.scenario import BondHolding, DistributionTaxSlice, InitialLot, SecurityDistribution
+from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId, LotId
+from finance.augur.sim.scenario import (
+    BondHolding,
+    DistributionTaxSlice,
+    InitialLot,
+    SecurityDistribution,
+    TlhPortfolioSpec,
+)
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
 
@@ -60,14 +67,14 @@ class HoldingKind(StrEnum):
 
 
 class PortfolioAccountConfig(PortfolioConfigModel):
-    account_id: str = Field(pattern=_ID_PATTERN)
-    owner_agent_id: str = Field(pattern=_ID_PATTERN)
+    account_id: AccountId = Field(pattern=_ID_PATTERN)
+    owner_agent_id: AgentId = Field(pattern=_ID_PATTERN)
     account_type: PortfolioAccountType = PortfolioAccountType.TAXABLE_BROKERAGE
     label: str | None = None
 
 
 class HoldingTaxLotConfig(PortfolioConfigModel):
-    lot_id: str = Field(pattern=_ID_PATTERN)
+    lot_id: LotId = Field(pattern=_ID_PATTERN)
     holding_period_months_at_start: NonNegativeInt
     quantity: PositiveFloat
     cost_basis: NonNegativeCurrencyAmount
@@ -86,7 +93,7 @@ class HoldingAssetKind(StrEnum):
 
 class _HoldingPositionBase(PortfolioConfigModel):
     position_id: str = Field(pattern=_ID_PATTERN)
-    account_id: str = Field(pattern=_ID_PATTERN)
+    account_id: AccountId = Field(pattern=_ID_PATTERN)
     label: str | None = None
     unit_value: PositiveCurrencyAmount
     lots: tuple[HoldingTaxLotConfig, ...] = Field(min_length=1)
@@ -172,10 +179,10 @@ class BondHoldingConfig(PortfolioConfigModel):
     so a portfolio never mixes calendar dates with sim-relative indexes.
     """
 
-    bond_id: str = Field(pattern=_ID_PATTERN)
-    account_id: str = Field(pattern=_ID_PATTERN)
+    bond_id: BondId = Field(pattern=_ID_PATTERN)
+    account_id: AccountId = Field(pattern=_ID_PATTERN)
     label: str | None = None
-    issuer_jurisdiction_id: str | None = Field(
+    issuer_jurisdiction_id: JurisdictionId | None = Field(
         default=None,
         description=(
             "The taxing authority that issued the debt — `federal_us` for a Treasury, "
@@ -291,7 +298,7 @@ class PortfolioConfig(PortfolioConfigModel):
                 agent_id=account_by_id[position.account_id].owner_agent_id,
                 account_id=position.account_id,
                 asset=position.asset,
-                purchase_month_index=-int(lot.holding_period_months_at_start),
+                purchase_month_index=-lot.holding_period_months_at_start,
                 quantity=float(lot.quantity),
                 cost_basis=lot.cost_basis,
             )
@@ -303,7 +310,7 @@ class PortfolioConfig(PortfolioConfigModel):
         self,
         *,
         tax_character_by_symbol: Mapping[SecuritySymbol, tuple[DistributionTaxSlice, ...]],
-        payout_account_id: str,
+        payout_account_id: AccountId,
     ) -> tuple[SecurityDistribution, ...]:
         """One payout spec per held pool of a declared distributing security.
 
@@ -341,7 +348,7 @@ class PortfolioConfig(PortfolioConfigModel):
             )
         return tuple(pools.values())
 
-    def to_initial_bonds(self, *, coupon_account_id: str) -> tuple[BondHolding, ...]:
+    def to_initial_bonds(self, *, coupon_account_id: AccountId) -> tuple[BondHolding, ...]:
         """The bond mirror of `to_initial_lots`, with the same two conversions plus a routing.
 
         The owner comes through the CUSTODY account, not the bond — the account is the
@@ -369,11 +376,23 @@ class PortfolioConfig(PortfolioConfigModel):
                 annual_coupon_rate=bond.annual_coupon_rate,
                 coupon_period_months=bond.coupon_period_months,
                 inflation_indexed=bond.inflation_indexed,
-                purchase_month_index=-int(bond.holding_period_months_at_start),
-                maturity_month_index=int(bond.months_to_maturity_at_start),
+                purchase_month_index=-bond.holding_period_months_at_start,
+                maturity_month_index=bond.months_to_maturity_at_start,
             )
             for bond in self.bonds
         )
+
+
+@dataclass(frozen=True)
+class LabeledTlhPortfolio:
+    """A managed TLH portfolio and the name the product shows it under.
+
+    Not a `PortfolioConfig` holding: the portfolio is money-denominated and owns its cohorts,
+    so it has no unit price or lots, and nothing may also hold its (owner, account, asset) pool.
+    """
+
+    spec: TlhPortfolioSpec
+    label: str
 
 
 @dataclass(frozen=True)

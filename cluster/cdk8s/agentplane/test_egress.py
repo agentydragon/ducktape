@@ -8,16 +8,21 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
+from agentplane.egress import sidecar
 from cluster.cdk8s.agentplane import testing
 from cluster.cdk8s.agentplane.app_settings import (
+    ACTIVITYWATCH_READ_POLICY,
+    AIQUOTA_READ_POLICY,
     BASIC_POLICY,
     FORGEJO_HAKU_POLICY,
-    GITHUB_PUBLIC_POLICY,
+    GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
+    HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
+from util.settings_contract import env_name
 
 # What a workload token may reach on the Actions service: the MCP endpoint, its schema and
 # the action-group/request API. The operator API (/v1/operator/*) and the OAuth endpoints
@@ -44,7 +49,9 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
 ) -> None:
     manifests = agentplane_manifests[testing.ENV.namespace]
     github = one(
-        doc for doc in manifests if doc["kind"] == "EgressPolicy" and doc["metadata"]["name"] == GITHUB_PUBLIC_POLICY
+        doc
+        for doc in manifests
+        if doc["kind"] == "EgressPolicy" and doc["metadata"]["name"] == GITHUB_AGENTYDRAGON_AGENT_POLICY
     )
     github_rule = one(github["spec"]["rules"])
     assert "codeload.github.com" in github_rule["hosts"]
@@ -56,7 +63,15 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
     assert not any(
         doc["kind"] in {"EgressCredential", "EgressPolicy"}
         and doc["metadata"]["name"]
-        in {FORGEJO_HAKU_POLICY, GOOGLE_READONLY_POLICY, GROCY_SF_READONLY_POLICY, HOME_ASSISTANT_READONLY_POLICY}
+        in {
+            FORGEJO_HAKU_POLICY,
+            GOOGLE_READONLY_POLICY,
+            GROCY_SF_READONLY_POLICY,
+            HOME_ASSISTANT_READONLY_POLICY,
+            ACTIVITYWATCH_READ_POLICY,
+            AIQUOTA_READ_POLICY,
+            HAKU_MAILBOX_POLICY,
+        }
         for doc in manifests
     )
 
@@ -94,6 +109,24 @@ def test_environments_do_not_share_cluster_scoped_bundles(
             name = doc["metadata"]["name"]
             assert name not in owners, f"Bundle {name} is owned by both {owners.get(name)} and {namespace}"
             owners[name] = namespace
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_sandbox_sidecars_gate_readiness_on_the_loopback_listener(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    templates = [doc for doc in agentplane_manifests[namespace] if doc["kind"] == "SandboxTemplate"]
+    assert templates
+    for template in templates:
+        containers = template["spec"]["podTemplate"]["spec"]["containers"]
+        egress_sidecar = one(container for container in containers if container["name"] == "egress-sidecar")
+        env = {variable["name"]: variable["value"] for variable in egress_sidecar["env"]}
+        assert env[env_name(sidecar.Settings, "readiness_host")] == sidecar.READINESS_HOST
+        readiness_port = int(env[env_name(sidecar.Settings, "readiness_port")])
+        probe = egress_sidecar["readinessProbe"]["httpGet"]
+        assert probe["port"] == readiness_port == sidecar.READINESS_PORT
+        assert probe["path"] == sidecar.READINESS_PATH
+        assert "livenessProbe" not in egress_sidecar
 
 
 if __name__ == "__main__":

@@ -37,11 +37,12 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.ssh_mcp.config import (
     BEARER_SECRET_KEY,
     BEARER_SECRET_NAME,
@@ -74,13 +75,13 @@ def _bearer_credentials(scope: Construct) -> None:
         metadata=metadata(BEARER_SECRET_NAME, NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    add_external_secret(
+    ExternalSecret(
         scope,
         "bearer-external-secret",
         name=BEARER_SECRET_NAME,
         namespace=NAMESPACE,
         refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[password_generator(BEARER_SECRET_NAME)],
+        data_from=[DataFrom.from_password_generator(BEARER_SECRET_NAME)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(type="Opaque", data={BEARER_SECRET_KEY: "{{ .password }}"}),
     )
@@ -101,10 +102,10 @@ def _egress(mesh: Mesh, config: SshMcpConfig) -> list[CiliumNetworkPolicySpecEgr
         cilium.dns_egress(),
         # Cluster nodes use Cilium's host/remote-node identities. A CIDR rule does not
         # select their Nebula IPs unless policy-cidr-match-mode:nodes is enabled.
-        cilium.egress_to_entities("host", "remote-node", ports=[22]),
+        EgressRule.to_entities(Entity.HOST, Entity.REMOTE_NODE, ports=[22]),
         # The devbox is an ordinary pod, while non-Kubernetes Nebula peers need to be
         # selected by CIDR. Their membership and addresses come from nebula-mesh.json.
-        cilium.egress_to(cilium.endpoint_labels("public-coder-agent", "public-coder-devbox"), 22),
+        EgressRule.to_endpoints(cilium.endpoint_labels("public-coder-agent", "public-coder-devbox"), 22),
     ]
     external_ips = [
         f"{mesh.hosts[hostname].nebula_ip}/32"
@@ -112,7 +113,7 @@ def _egress(mesh: Mesh, config: SshMcpConfig) -> list[CiliumNetworkPolicySpecEgr
         if mesh.hosts[hostname].role == "non-k8s"
     ]
     if external_ips:
-        rules.append(cilium.egress_to_cidrs(*external_ips, ports=[22]))
+        rules.append(EgressRule.to_cidrs(*external_ips, ports=[22]))
     return rules
 
 
@@ -213,13 +214,13 @@ class SshMcp(Construct):
         )
 
     def _add_network_policy(self, config: SshMcpConfig, mesh: Mesh) -> None:
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "network-policy",
             metadata=metadata(NAME, NAMESPACE),
             selector=LABELS,
             ingress=[
-                cilium.ingress_from(
+                IngressRule.from_endpoints(
                     cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[HTTP_PORT]
                 )
             ],

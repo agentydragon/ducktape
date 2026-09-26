@@ -228,10 +228,29 @@ live workload validation and egress substitution; OAuth does not grant an operat
 | `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                                         |
 | `get_action_policy`          | The effective policy of a `target`: `"self"` (default) or a named Sandbox or ServiceAccount; its bindings, the sets that resolved, the three lists (`policy_view.py`). |
 | `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both.                      |
-| `request_action`             | The existing request envelope under `request`, validated as on HTTP; a key this caller already used is refused.                                                        |
+| `request_action`             | The request envelope under `request`, validated as on HTTP; a used key is refused. Answers like `get_action_result`, or `respond_with: receipt`.                       |
 | `get_action_request`         | One own-caller receipt by exactly one of `request_id` or `idempotency_key`; the key lookup recovers a submission whose response was lost.                              |
+| `get_action_result`          | The outcome as the tool that ran answered, named and waited on like `get_action_request`; see below.                                                                   |
 | `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                                             |
 | `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                                                  |
+
+Every tool that returns a wide model takes `include_fields` as a **pure allowlist over every
+top-level field of that model** (top-level only, never a dotted path into a nested one), defaulting
+to a curated compact list rather than `None`, so the default is visible directly in the tool's own
+schema instead of living only in prose: the catalog reads (`get_action`/`list_actions`) default to
+neither `input_schema` nor `description`; `get_action_policy` defaults to `subject`/`synced`/
+`bindings`, widened by naming `auto_approve_if`/`auto_deny_if`/`auto_deny_unless`; and
+`get_action_request`/`cancel_action_request`, and `request_action` under `respond_with: receipt`,
+default to `id`/`state`/`version`/
+`created_at`/`updated_at` on the receipt -- `state` alone already distinguishes
+pending/allowed/denied/dispatching/running/succeeded/failed/cancelled without naming `execution` --
+widened by naming `input` (the submitted `idempotency_key`/`action`/`arguments`/`title`/
+`description`, echoed back as one unit), `origin`, `correlation`, `caller`, `external_grant`,
+`decision`, or `execution`. Naming only the wide fields you want **replaces** the default rather
+than adding to it, so keeping the compact fields alongside a widened one means naming both.
+`cancel_action_request`'s nested `request` is gated the same way, under its own `include_fields`.
+An unrecognized name in any `include_fields` fails the call rather than being ignored, and so does
+a `request_action` `include_fields` without `respond_with: receipt`.
 
 `cancel_action_request(request_id)` explicitly withdraws an own-caller request before dispatch
 claim, without a version parameter. It returns the canonical outcome (`cancelled`,
@@ -239,17 +258,46 @@ claim, without a version parameter. It returns the canonical outcome (`cancelled
 executor. The cancelled receipt stays readable by request ID or submission key. It is independent
 of cancelling or disconnecting a wait.
 
-Both submission and receipt reads accept `wait_seconds` (0–30, default 0) and `wait_until`
-(`decision` or `terminal`, default terminal). Waits use commit notifications rather than periodic
-queries. A deadline returns a receipt, not a cancellation. On an ambiguous response, reuse the
-original request/key; transport or notification failure must not prompt a new Action. Workload
-authorization is revalidated after a bounded wait, before returning data. The generic MCP tool
-schemas never expand the dynamic Action catalog, and no Action output-schema metadata is added.
+`get_action_result` returns an outcome as the tool that ran answered (`tool_results.py`): an MCP
+group's stored `CallToolResult` exactly, every content block included, and a sandbox result the way
+FastMCP presents a returned model, the object as structured content and as one JSON text block, so
+a nonzero exit is not an error result. A request still waiting on its decision or execution says so
+as an ordinary result; a denied, cancelled, failed or unknown one is an error result carrying the
+decision's note or reason, or the executor's error. `request_action` answers the same way once its
+wait ends unless asked for its receipt, so an Action a policy approves comes back as its tool's own
+answer from the one call. A receipt's `execution` has its state, error and timing but no result.
+
+Submission, receipt and result reads take one shared `wait` object (`wait_seconds`, 0–30 default 0;
+`wait_until`, `decision` or `terminal` default terminal) rather than two flat parameters each.
+Waits use commit notifications rather than periodic queries. A deadline returns a receipt, not a
+cancellation. On an ambiguous response, reuse the original request/key; transport or notification
+failure must not prompt a new Action. Workload authorization is revalidated after a bounded wait,
+before returning data. The generic MCP tool schemas never expand the dynamic Action catalog, and no
+Action output-schema metadata is added.
 
 Workflow: list identifiers, fetch one input schema if needed, submit once, then wait/read the
 request ID or resume events. Discovery/read failures cannot submit anything; a wrong caller sees
 the same not-found response as an absent request. Discovery projects no executor configuration,
 group descriptions, or hidden schemas through nested payloads.
+
+### Direct tools
+
+A group's `direct_tools` names Actions an external Connection also gets as MCP tools of their own
+(`direct_tools.py`), named `<group>__<action>` with the Action's schema, description, title and
+annotations (mirrored from an MCP backend's `tools/list`, declared by the sandbox roster). Each
+request lists them for a caller whose bearer is a Connection grant, keeping only those an
+`autoApproveIf` policy of its bindings names (`policy_evaluation.auto_approvable`); a workload
+bearer sees none. A group offering them must not have `__` in its key, and a sandbox group's names
+must be in its roster at startup.
+
+A call submits through `ActionService.submit_decided` with a server-minted idempotency key and the
+title `Direct tool call`. If no provider decides it, nothing is persisted and the call answers an
+error naming each policy's reason (`UndecidedRequestError`) and pointing at `request_action`. A
+decided call waits up to 30 seconds and answers through `tool_results.py`, as `get_action_result`
+does, so an unfinished one names its request to keep waiting on. A configured name the caller's
+policy does not cover still resolves, so it is refused with a reason rather than unknown. Listing
+is per request with no `tools/list_changed`: a client holding an older list only meets refusals,
+and `request_action` reaches any Action whatever the list says.
 
 ## Action catalog
 
@@ -289,7 +337,7 @@ streamable-HTTP config below, whose `tools/list` refreshes child Actions and who
 rechecks the live schema. A `SandboxExecutorBinding` becomes a `SandboxExecutor`, code-owned rather
 than supervised: its roster is its own models, so it is offered from the moment configuration
 validates rather than after a handshake, and it needs Kubernetes access or startup fails
-([sandbox Actions](../docs/sandbox_actions.md)). Echo is only an explicitly injected test executor,
+([sandbox Actions](sandbox/README.md)). Echo is only an explicitly injected test executor,
 never a production default or factory option.
 
 An empty catalog starts with no offered actions. An explicitly configured missing/non-file YAML
@@ -415,8 +463,9 @@ auth: none # or `oauth` with `server_id`, or `static_bearer` with `bearer_file`
 
 HTTP uses the pinned FastMCP `StreamableHttpTransport` and MCP session implementation, including
 JSON/SSE responses and session shutdown. Both transports use the same catalog refresh, live schema
-validation, safe tool-error mapping, and ambiguous-call failure path; a failed `tools/call` transport
-exchange is not retried. HTTP config rejects userinfo, URL queries/fragments, launch fields, and
+validation, result recording, and ambiguous-call failure path; a failed `tools/call` transport
+exchange is not retried. The Execution's `result` is the tool's `CallToolResult` in MCP wire shape
+(`content` blocks of every type, `structuredContent`, `isError`, `_meta`), tool errors included. HTTP config rejects userinfo, URL queries/fragments, launch fields, and
 header settings. `auth: none` sends no credentials. `auth: oauth` names a configured `mcp_servers`
 linkage through `server_id`; `from_group_with_linkage` attaches an `httpx` auth hook that resolves
 that linkage's current access token on every request, and the group stays unavailable until the
@@ -437,7 +486,7 @@ destination records the actual token issuer and subject, not a shared BFF identi
 environments set `AGENTPLANE_ACTIONS_OPERATOR_OIDC` from the `operator-oidc` key of their
 `agentplane-action-federation` ConfigMap (built from the `action_federation`/`operator_oidc`
 dicts in `cluster/cdk8s/generate_manifests.py`); staging
-targets the Authentik `agentplane-actions` provider. See
+targets the Authentik `agentplane-staging-actions` provider. See
 [`../docs/operator_federation.md`](../docs/operator_federation.md) for settings and test evidence.
 
 ## Action live updates and approval Web Push

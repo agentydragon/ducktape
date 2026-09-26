@@ -27,11 +27,15 @@ Policy = Annotated[
 ]
 
 
+def lists(policy: Policy, action: ActionIdentity) -> bool:
+    return action.name in policy.actions.get(action.group, frozenset())
+
+
 async def evaluate(
     policy: Policy, action: ActionIdentity, arguments: Mapping[str, JsonValue], visibility: RepositoryVisibilityService
 ) -> Matched | NotMatched:
     """The Action must be listed, and the kind's own test must pass."""
-    if action.name not in policy.actions.get(action.group, frozenset()):
+    if not lists(policy, action):
         return NotMatched(f"{action.group}/{action.name} is not listed")
     match policy:
         case exact_actions.ExactActions():

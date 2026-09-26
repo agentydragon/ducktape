@@ -5,8 +5,9 @@
 
 use debundle_e2e_support::{
     FixtureOpts, Member, assert_fail_fast_stops_at_first_outcome, find_outcome, logical_module,
-    logical_module_with_anon_alpha, read_selector_outcomes, run_dry_run_fixture,
-    run_dry_run_rejection_fixture, run_spec_validate, write_validate_fixture_spec,
+    logical_module_with_anon, logical_module_with_anon_alpha, read_selector_outcomes,
+    run_dry_run_fixture, run_dry_run_rejection_fixture, run_spec_validate,
+    write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -298,6 +299,111 @@ fn no_match_without_a_near_statement_lists_none() {
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let widget = find_outcome(&outcomes, "no_match", "Widget");
     assert_eq!(widget["outcome"], json!({"kind": "no_match"}), "{widget:#}");
+}
+
+/// `alpha` and `beta` differ in their own literal; `gamma` and `delta` are
+/// identical, so only the statement before each sets it apart.
+const DIFFERENTIATED: &str = r#"function alpha() {
+  return format("first");
+}
+function beta() {
+  return format("second");
+}
+const marker = "gamma-marker";
+function gamma() {
+  return format("same");
+}
+function delta() {
+  return format("same");
+}
+function format(value) {
+  return value.trim();
+}
+console.log(alpha(), beta(), gamma(), delta(), marker);
+"#;
+
+fn differentiated_fixture() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        DIFFERENTIATED,
+        vec![logical_module(
+            "formatters/any",
+            &[Member::source_alpha(
+                "AnyFormatter",
+                "function f() {\n  return format(EXPR);\n}",
+            )],
+        )],
+    )
+}
+
+/// An `ambiguous` template names, per candidate, the anchor that sets it apart
+/// from the other candidates: its own when it has one, else one in an
+/// adjacent statement.
+#[test]
+fn ambiguous_lists_each_candidates_differentiator() {
+    let rejected = run_dry_run_rejection_fixture(differentiated_fixture());
+    let outcomes = read_selector_outcomes(&rejected.report_root);
+    let any = find_outcome(&outcomes, "ambiguous", "AnyFormatter");
+    assert_eq!(
+        any["outcome"]["differentiators"],
+        json!([
+            {"owner": 0, "statement": 0, "anchor": "string literal \"first\""},
+            {"owner": 1, "statement": 1, "anchor": "string literal \"second\""},
+            {"owner": 3, "statement": 2, "anchor": "string literal \"gamma-marker\""},
+            {"owner": 4, "statement": 3, "anchor": "string literal \"same\""},
+        ]),
+        "{any:#}"
+    );
+    assert!(
+        rejected.stderr.contains(
+            "set apart body[0] by its string literal \"first\", body[1] by its string literal \
+             \"second\", body[3] by its string literal \"gamma-marker\" in the preceding body[2], \
+             body[4] by its string literal \"same\" in the preceding body[3]"
+        ),
+        "{}",
+        rejected.stderr
+    );
+
+    let validate = validate_json(differentiated_fixture());
+    assert_eq!(validate["outcomes"], json!([any]), "{validate:#}");
+}
+
+/// Candidates alike in themselves and in their neighbors have no
+/// differentiator, and the report says so.
+#[test]
+fn ambiguous_without_a_differentiator_says_so() {
+    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
+        r#"noop();
+work("same");
+noop();
+work("same");
+noop();
+function noop() {}
+function work(value) {
+  return value;
+}
+"#,
+        vec![logical_module_with_anon(
+            "effects/work",
+            &[],
+            &["work(\"same\");"],
+        )],
+    ));
+    let outcomes = read_selector_outcomes(&rejected.report_root);
+    let [work] = outcomes.as_slice() else {
+        panic!("one ambiguous outcome: {outcomes:#?}");
+    };
+    assert_eq!(
+        work["outcome"],
+        json!({"kind": "ambiguous", "candidates": [{"owner": 1}, {"owner": 3}], "truncated": false}),
+        "{work:#}"
+    );
+    assert!(
+        rejected
+            .stderr
+            .contains("no candidate has an anchor the others lack"),
+        "{}",
+        rejected.stderr
+    );
 }
 
 fn validate_json(opts: FixtureOpts<'_>) -> Value {

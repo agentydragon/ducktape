@@ -13,39 +13,10 @@ py_library(
 )
 
 py_library(
-    name = "updates",
-    srcs = ["updates.py"],
-    deps = [
-        "//agentplane/app:changes",
-        "@pypi//asyncpg",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_updates",
-    size = "medium",
-    srcs = ["test_updates.py"],
-    deps = [
-        ":ingestion",
-        ":updates",
-        "//:conftest",
-        "//agentplane/app:conftest",
-        "//agentplane/app/agent_runtime/events:event_log",
-        "//agentplane/app/agent_runtime/events:ingestion_lease",
-        "//agentplane/app/agent_runtime/thread:store",
-        "//agentplane/protocol:event_pb2",
-        "@pypi//protobuf",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "ingestion",
     srcs = ["ingestion.py"],
     deps = [
-        ":updates",
+        "//agentplane/app:database_updates",
         "//agentplane/app:inventory",
         "//agentplane/app/agent_runtime/events:event_log",
         "//agentplane/app/agent_runtime/events:ingestion_lease",
@@ -68,9 +39,9 @@ py_test(
     deps = [
         ":ingestion",
         ":models",
-        ":updates",
         "//:conftest",
         "//agentplane/app:conftest",
+        "//agentplane/app:database_updates",
         "//agentplane/app/agent_runtime/events:event_log",
         "//agentplane/app/agent_runtime/events:ingestion_lease",
         "//agentplane/app/agent_runtime/thread:store",

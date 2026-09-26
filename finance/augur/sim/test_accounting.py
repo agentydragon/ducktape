@@ -8,6 +8,7 @@ import pytest_bazel
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Transfer
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting
+from finance.augur.sim.ids import AccountId
 from finance.augur.sim.money import MAX_COUNT, MIN_COUNT
 from finance.augur.sim.scenario import ORDINARY_INCOME, TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RECIPIENT, RESERVE, accounting
@@ -65,8 +66,8 @@ def test_actors_cannot_overdraw_or_impersonate_another_source_or_classify_tax(
         {"amount": 0},
         {"amount": -1},
         {"from_account": EXOGENOUS},
-        {"from_account": AccountRef(agent_id=HOUSEHOLD, account_id="missing")},
-        {"to_account": AccountRef(agent_id=RECIPIENT.agent_id, account_id="missing")},
+        {"from_account": AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("missing"))},
+        {"to_account": AccountRef(agent_id=RECIPIENT.agent_id, account_id=AccountId("missing"))},
         {"cause_id": ""},
         {},
     ]

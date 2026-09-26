@@ -11,7 +11,8 @@ from typing import Any
 import numpy as np
 import polars as pl
 
-from finance.augur.model.asset_key import AssetKey, parse_asset_key
+from finance.augur.model.asset_key import AssetKey
+from finance.augur.product.metrics import ProductMetricArrays
 from finance.augur.product.wire import (
     ROLLOUT_EVENT_KIND_ORDER,
     CapitalImprovementMarkerEvent,
@@ -37,7 +38,8 @@ from finance.augur.product.wire import (
     TlhFinancialEffectEvent,
 )
 from finance.augur.sim.events import EventLog, TlhOperation
-from finance.augur.sim.product_metrics import ProductMetricArrays
+from finance.augur.sim.holdings import asset_key
+from finance.augur.sim.ids import AgentId, AssetId
 from finance.augur.sim.scenario import ObligationType
 
 _TAX_PAYMENT_OBLIGATION_TYPES = frozenset((ObligationType.ESTIMATED_TAX, ObligationType.TAX_TRUE_UP))
@@ -65,8 +67,8 @@ def project_product_rollout(
     metrics: ProductMetricArrays,
     *,
     rollout_id: int,
-    primary_agent_id: str,
-    asset_label_by_id: dict[str, str],
+    primary_agent_id: AgentId,
+    asset_labels: dict[AssetKey, str],
 ) -> ProductRolloutProjection:
     """Project one original rollout ID present in both the metric and event results."""
 
@@ -111,11 +113,11 @@ def project_product_rollout(
         ]
 
     def asset_of(row: dict[str, Any]) -> AssetKey:
-        return parse_asset_key(row["asset_id"])
+        return asset_key(AssetId(row["asset_id"]))
 
-    holding_sales: dict[tuple[int, str], dict[str, Any]] = {}
+    holding_sales: dict[tuple[int, AssetKey], dict[str, Any]] = {}
     for row in rows(events.lot_dispositions, agent_id=primary_agent_id):
-        key = (row["month_index"], row["asset_id"])
+        key = (row["month_index"], asset_of(row))
         total = holding_sales.setdefault(key, {"units": 0.0, "proceeds": 0, "basis": 0})
         total["units"] += row["units_sold"]
         total["proceeds"] += row["proceeds_quanta"]
@@ -134,13 +136,15 @@ def project_product_rollout(
             HoldingSaleEvent(
                 month_index=month,
                 amount_quanta=_quanta(total["proceeds"]),
-                asset=parse_asset_key(asset_id),
-                asset_label=asset_label_by_id.get(asset_id),
+                asset=asset,
+                asset_label=asset_labels.get(asset),
                 units=total["units"],
                 proceeds_quanta=_quanta(total["proceeds"]),
                 cost_basis_quanta=_quanta(total["basis"]),
             )
-            for (month, asset_id), total in sorted(holding_sales.items())
+            for (month, asset), total in sorted(
+                holding_sales.items(), key=lambda item: (item[0][0], item[0][1].wire_id)
+            )
         ),
         *(
             TlhFinancialEffectEvent(
@@ -186,7 +190,7 @@ def project_product_rollout(
                 amount_quanta=_quanta(row["mark_quanta"]),
                 issuer_id=row["issuer_id"],
                 asset=asset_of(row),
-                asset_label=asset_label_by_id.get(row["asset_id"]),
+                asset_label=asset_labels.get(asset_of(row)),
                 event_kind=row["event_kind"],
                 regime=row["regime"],
                 mark_quanta=_quanta(row["mark_quanta"]),
@@ -204,7 +208,7 @@ def project_product_rollout(
                 amount_quanta=_quanta(row["proceeds_quanta"]),
                 issuer_id=row["issuer_id"],
                 asset=asset_of(row),
-                asset_label=asset_label_by_id.get(row["asset_id"]),
+                asset_label=asset_labels.get(asset_of(row)),
                 event_kind=row["event_kind"],
                 regime=row["regime"],
                 outcome=row["outcome"],

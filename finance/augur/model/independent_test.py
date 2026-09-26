@@ -55,14 +55,6 @@ def example_config() -> IndependentProviderConfig:
                     }
                 },
             },
-            "private_equity_marks": {
-                "private_equity_x": {
-                    "kind": "gbm",
-                    "initial_value": 50.0,
-                    "monthly_log_return_mu": 0.0015629326,
-                    "monthly_log_return_sigma": 0.1010362971,
-                }
-            },
         }
     )
 
@@ -109,14 +101,12 @@ def test_independent_provider_config_roundtrips_through_discriminated_union(
 
 def test_realized_model_keeps_role_structure(example_config: IndependentProviderConfig) -> None:
     # The runtime model holds level specs as the role sub-groups (same shape
-    # as config / the sampled bundle), not a flattened opaque key map. The config-only
-    # `private_equity_marks` sibling travels separately as `pe_marks`.
+    # as config / the sampled bundle), not a flattened opaque key map.
     model = example_config.realize_model()
     assert model.index_series.inflation is not None
     assert set(model.asset_prices.security) == {"SPY"}
     assert set(model.property_values.home_value) == {"san_francisco_ca"}
     assert set(model.index_series.rent) == {"san_francisco_ca"}
-    assert set(model.pe_marks) == {"private_equity_x"}
     # The level series surface as typed LevelSeriesKeys, one per series across all roles.
     # Through `emittable_level_keys`, which is the only thing that ever asked: this provider
     # is per-series independent, so it has no factor basis to expose and no longer pretends to.

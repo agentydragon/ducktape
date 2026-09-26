@@ -12,10 +12,10 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds, terraform
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.scripts import nebula_mesh
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/dns-automation"
@@ -31,7 +31,7 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     k8s.KubeServiceAccount(
         chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=_NAMESPACE)
     )
-    add_external_secret(
+    ExternalSecret(
         chart,
         "credentials",
         name=_CREDENTIALS_SECRET,

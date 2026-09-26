@@ -32,11 +32,13 @@ import {
   type SandboxView,
   type ThreadView,
 } from "./client";
-import { ActionPolicySection } from "./action_policy";
+import { ActionPolicySection } from "./actions/policy";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
+import { RawSwitch } from "./raw_switch";
+import { StaleNotice } from "./stream_status";
 import { HarnessState, SessionSpecSchema, type SessionSummary } from "../../runner/protocol_pb";
 
 const HARNESSES: { value: Harness; label: string }[] = [
@@ -87,7 +89,7 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
     <Stack gap="xs">
       <Group>
         <Title order={4}>Status</Title>
-        <Switch label="Raw" checked={raw} onChange={(e) => setRaw(e.currentTarget.checked)} />
+        <RawSwitch raw={raw} onChange={setRaw} />
       </Group>
       {raw ? (
         <JsonView value={sandbox} />
@@ -166,7 +168,7 @@ export function SandboxPage({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
 
-  const live = useLive<SandboxSnapshot>(liveSandboxUrl(name, includeArchived));
+  const live = useLive<SandboxSnapshot>(liveSandboxUrl(name, includeArchived), `Sandbox ${name}`);
   const sandbox: SandboxView | null = live.snapshot?.sandbox ?? null;
   const threads = live.snapshot?.threads ?? [];
   // The store's copy of each session's thread, which outlives the runner's own list.
@@ -326,6 +328,7 @@ export function SandboxPage({
           </Group>
         )}
       </Group>
+      <StaleNotice streams={[live.stream]} />
       <LiveStatus live={live} />
       {confirmingDelete && (
         <ConfirmDelete

@@ -21,12 +21,17 @@ export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({
 // of the app does the authenticating, since then no request of ours is ever answered 401. While
 // the login navigation is in flight the document is being replaced, so the request never settles:
 // the page keeps its loading state instead of flashing the 401 it cannot act on.
-api.use({
-  onResponse({ response }) {
-    if (response.status === 401 && redirectToLogin()) return new Promise<never>(() => {});
-    return response;
-  },
-});
+function unlessLoggedOut(response: Response): Response | Promise<never> {
+  if (response.status === 401 && redirectToLogin()) return new Promise<never>(() => {});
+  return response;
+}
+
+api.use({ onResponse: ({ response }) => unlessLoggedOut(response) });
+
+/** `fetch` under `api`'s 401 policy, for the app's own routes that do not go through `api`. */
+export async function fetchWithLogin(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  return unlessLoggedOut(await fetch(input, init));
+}
 
 export type SandboxView = components["schemas"]["SandboxView"];
 export type NewSandbox = components["schemas"]["NewSandbox"];
@@ -41,20 +46,11 @@ export type ObservationPage = components["schemas"]["ObservationPage"];
 export type ArchivedObservationEntry = components["schemas"]["ArchivedObservationEntry"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
-export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
-export type ActionPolicyUnavailable = components["schemas"]["ActionPolicyUnavailable"];
-export type ActionPolicyBindingView = components["schemas"]["ActionPolicyBindingView"];
-export type ActionPolicySetView = components["schemas"]["ActionPolicySetView"];
-export type EffectivePolicyView = components["schemas"]["EffectivePolicyView"];
-export type ReadyConditionView = components["schemas"]["ReadyConditionView"];
 export type SandboxPresetView = components["schemas"]["SandboxPresetView"];
 export type ThreadDefaults = components["schemas"]["ThreadDefaults"];
 export type Harness = components["schemas"]["Harness"];
 export type ModelCatalog = Record<Harness, string[]>;
 export type Decision = components["schemas"]["Decision"];
-export type ActionRequestView = components["schemas"]["ActionRequestView"];
-export type ActionState = components["schemas"]["ActionState"];
-export type Verdict = components["schemas"]["Verdict"];
 export type Connection = components["schemas"]["Connection"];
 export type CallerServiceAccount = components["schemas"]["ServiceAccountRef"];
 
@@ -244,42 +240,6 @@ export const mcpLinkageService: McpLinkageService = {
   },
 };
 
-export type ActionGroupView = components["schemas"]["ActionGroupView"];
-
-export interface ActionGroupService {
-  list(): Promise<ActionGroupView[]>;
-}
-
-export const actionGroupService: ActionGroupService = {
-  async list() {
-    const { data, error, response } = await api.GET("/action-groups");
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
-};
-
-export interface ActionService {
-  list(): Promise<ActionRequestView[]>;
-  decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView>;
-}
-
-export const actionService: ActionService = {
-  async list(): Promise<ActionRequestView[]> {
-    const { data, error, response } = await api.GET("/actions");
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
-
-  async decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView> {
-    const { data, error, response } = await api.POST("/actions/{request_id}/decision", {
-      params: { path: { request_id: request.id } },
-      body: { verdict, expected_version: request.version, idempotency_key: crypto.randomUUID(), decision_note: null },
-    });
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
-};
-
 export function httpError(response: Response, error: unknown): string {
   return `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}: ${displayableError(error)}`;
 }
@@ -357,7 +317,7 @@ export function eventsUrl(threadId: string): string {
  */
 export async function threadScope(threadId: string, signal?: AbortSignal): Promise<ThreadScope | null> {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/scope`, window.location.href);
-  const response = await fetch(url, { signal });
+  const response = await fetchWithLogin(url, { signal });
   if (response.status === 204) return null;
   if (!response.ok) throw new Error(`Thread scope failed with ${response.status}`);
   return (await response.json()) as ThreadScope;

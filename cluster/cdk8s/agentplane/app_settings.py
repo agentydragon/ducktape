@@ -9,13 +9,17 @@ _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 # The EgressPolicy objects egress creates in every environment, named here
 # because the presets bind them.
 BASIC_POLICY = "basic"
-GITHUB_PUBLIC_POLICY = "github-public"
+GITHUB_AGENTYDRAGON_AGENT_POLICY = "github-agentydragon-agent"
+GITHUB_CLONE_POLICY = "github-clone"
 FORGEJO_HAKU_POLICY = "forgejo-haku"
 PACKAGES_POLICY = "packages"
 KUBERNETES_POLICY = "kubernetes"
 GOOGLE_READONLY_POLICY = "google-readonly"
 GROCY_SF_READONLY_POLICY = "grocy-sf-readonly"
 HOME_ASSISTANT_READONLY_POLICY = "home-assistant-readonly"
+ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
+AIQUOTA_READ_POLICY = "aiquota-read"
+HAKU_MAILBOX_POLICY = "haku-mailbox"
 COINBASE_POLICY = "coinbase"
 
 
@@ -36,6 +40,11 @@ def settings(
         # App-owned launch-form presets. The browser expands one into editable concrete
         # template, policy, bootstrap, and SessionSpec fields; neither a Sandbox CR nor a
         # runner receives a preset name.
+        # TODO: add a thread_preset defaulting to the wyrm2-local
+        # ollama/{oai-chat,olm-chat}/qwen3.8-flash-next-q4-128k route (model_rosters.py)
+        # once it's verified serving. Harness undecided -- HARNESS_CLAUDE (Anthropic
+        # Messages) vs HARNESS_CODEX (Responses) -- pick whichever tool-call/reasoning
+        # translation the model actually behaves better under; test both before choosing.
         "thread_presets": {
             _THREAD_PRESET_PUBLIC_CODER_CODEX: {
                 "title": "Public coder / Codex",
@@ -53,7 +62,7 @@ def settings(
             "public-coder": {
                 "title": "Public coder",
                 "template": "agentplane-runner",
-                "policies": [BASIC_POLICY, GITHUB_PUBLIC_POLICY],
+                "policies": [BASIC_POLICY, GITHUB_AGENTYDRAGON_AGENT_POLICY, GITHUB_CLONE_POLICY],
                 **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
                 "thread_preset": _THREAD_PRESET_PUBLIC_CODER_CODEX,
                 "bootstrap": (

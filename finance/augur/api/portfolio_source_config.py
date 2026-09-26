@@ -11,6 +11,7 @@ from pydantic import Field, NonNegativeInt, model_validator
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.portfolio import HoldingKind, PortfolioAccountType, PortfolioConfig, PositiveCurrencyAmount
 from finance.augur.api.schemas import ApiModel
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.tlh import TlhAssumptions
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
@@ -58,11 +59,11 @@ class PlaidProxyHoldingPeriodBucket(ApiModel):
 
 
 class PlaidSp500ProxyGroupConfig(ApiModel):
-    """Map selected Plaid investment accounts into one Augur SP500 proxy position."""
+    """Map selected Plaid investment accounts into one Augur SP500 proxy position, or a TLH portfolio."""
 
     position_id: str = Field(pattern=_ID_PATTERN)
-    portfolio_account_id: str = Field(pattern=_ID_PATTERN)
-    owner_agent_id: str = Field(pattern=_ID_PATTERN)
+    portfolio_account_id: AccountId = Field(pattern=_ID_PATTERN)
+    owner_agent_id: AgentId = Field(pattern=_ID_PATTERN)
     plaid_account_ids: tuple[str, ...] = Field(min_length=1)
     account_type: PortfolioAccountType = PortfolioAccountType.TAXABLE_BROKERAGE
     account_label: str | None = None
@@ -84,7 +85,9 @@ class PlaidSp500ProxyGroupConfig(ApiModel):
         default=None,
         description=(
             "Optional reduced-form TLH portfolio assumptions, including explicit loss character. "
-            "Imported broker basis initializes component-owned positions. Omit for ordinary holdings."
+            "When set, the group becomes a money-denominated managed portfolio seeded from the imported "
+            "broker value and basis, not a holding, so `unit_value` and `security_kind` do not apply. "
+            "Omit for an ordinary proxy holding."
         ),
     )
 

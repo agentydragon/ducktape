@@ -264,7 +264,6 @@ Current Augur alignment:
 - Ordered actor-policy programs group enabled actor policies.
 - Row-level `SimulationPolicyDecision` records decisions such as monthly spend,
   public-stock sale, private-equity sale, and partner contribution.
-- The roadmap explicitly calls for ordered actor policy programs.
 
 Gap:
 
@@ -292,8 +291,6 @@ Current Augur alignment:
   separate from policy decisions.
 - `PrivateEquitySaleDecision`, `SellPrivateEquityAction`, and
   private-equity sale ledger rows are distinct.
-- The roadmap already says private-equity tender availability should be an
-  exogenous opportunity plus actor policy, not a manual sale request.
 
 Gap:
 

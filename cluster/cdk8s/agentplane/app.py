@@ -14,8 +14,6 @@ from typing import cast
 from urllib.parse import urlsplit
 
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
-    SandboxTemplate,
-    SandboxTemplateSpec,
     SandboxTemplateSpecNetworkPolicyManagement,
     SandboxTemplateSpecPodTemplate,
     SandboxTemplateSpecPodTemplateMetadata,
@@ -61,6 +59,7 @@ from cdk8s_plus_34 import (
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
+from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
 from cluster.cdk8s import cilium
@@ -83,17 +82,19 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-_NAME = "agentplane-app"
+NAME = "agentplane-app"
 _APP_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
 _RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner"
-_CONTAINER_PORT = 8080
+CONTAINER_PORT = 8080
 _RUNNER_PORT = 7000
-_LABELS = {"app.kubernetes.io/name": _NAME}
+_LABELS = {"app.kubernetes.io/name": NAME}
 _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
 _CONFIG_DIR = "/etc/agentplane"
 # Shared by the runner's --state-dir flag, its container volumeMount, and the
@@ -133,7 +134,7 @@ class App(Construct):
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the app
         # mounts its own token to call TokenReview as itself.
         app_service_account = ServiceAccount(
-            self, "serviceaccount-app", metadata=metadata(_NAME, namespace), automount_token=True
+            self, "serviceaccount-app", metadata=metadata(NAME, namespace), automount_token=True
         )
         # The runner Pods' identity, with no RBAC of its own.
         ServiceAccount(
@@ -149,13 +150,13 @@ class App(Construct):
             self,
             "token-reviewer",
             name=f"{namespace}-app-token-reviewer",
-            service_account_name=_NAME,
+            service_account_name=NAME,
             namespace=namespace,
         )
         Role(
             self,
             "role",
-            metadata=metadata(_NAME, namespace),
+            metadata=metadata(NAME, namespace),
             rules=[
                 # GET /sandboxes/templates lists them; a get-only Role 403'd the route (#7023).
                 RolePolicyRule(
@@ -195,7 +196,7 @@ class App(Construct):
             ],
         )
         RoleBinding(
-            self, "rolebinding", metadata=metadata(_NAME, namespace), role=Role.from_role_name(self, "role-ref", _NAME)
+            self, "rolebinding", metadata=metadata(NAME, namespace), role=Role.from_role_name(self, "role-ref", NAME)
         ).add_subjects(app_service_account)
 
     def _container_env(self) -> dict[str, EnvValue]:
@@ -246,7 +247,7 @@ class App(Construct):
             self,
             "deployment",
             metadata=metadata(
-                _NAME,
+                NAME,
                 namespace,
                 labels=_LABELS,
                 annotations={
@@ -286,12 +287,12 @@ class App(Construct):
                 sandbox_namespace=namespace,
                 runner_port=_RUNNER_PORT,
                 host="0.0.0.0",
-                port=_CONTAINER_PORT,
+                port=CONTAINER_PORT,
             ),
             env_variables=env,
-            ports=[ContainerPort(name="http", number=_CONTAINER_PORT, protocol=Protocol.TCP)],
-            readiness=http_probe("/readyz", port=_CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10),
-            liveness=http_probe("/healthz", port=_CONTAINER_PORT, initial_delay_seconds=20, period_seconds=30),
+            ports=[ContainerPort(name="http", number=CONTAINER_PORT, protocol=Protocol.TCP)],
+            readiness=http_probe("/readyz", port=CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10),
+            liveness=http_probe("/healthz", port=CONTAINER_PORT, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
@@ -312,9 +313,9 @@ class App(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, self.env.namespace, labels=_LABELS),
+            metadata=metadata(NAME, self.env.namespace, labels=_LABELS),
             selector=deployment,
-            ports=[ServicePort(name="http", port=_CONTAINER_PORT, target_port=_CONTAINER_PORT, protocol=Protocol.TCP)],
+            ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
         )
 
     def _add_http_route(self) -> None:
@@ -324,8 +325,8 @@ class App(Construct):
             "httproute",
             metadata=metadata(namespace, namespace),
             hostname=self.env.app.hostname,
-            backend=_NAME,
-            port=_CONTAINER_PORT,
+            backend=NAME,
+            port=CONTAINER_PORT,
             # A session stream stays attached for as long as the tab is open.
             timeout="3600s",
         )
@@ -335,7 +336,7 @@ class App(Construct):
         assert server_name is not None, f"OIDC issuer has no hostname: {self.env.app.oidc_issuer!r}"
         rules = [cilium.egress_via_gateway(server_name)]
         if self.env.app.reach_incluster_authentik:
-            rules.append(cilium.egress_to(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=[server_name]))
+            rules.append(EgressRule.to_endpoints(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=[server_name]))
         return rules
 
     def _add_network_policy(self) -> None:
@@ -343,38 +344,40 @@ class App(Construct):
         dns_egress = cilium.dns_egress()
         # Runner Pods reach DNS and the egress proxy's listener, which the sidecar
         # relays to; port 7000 is open only to Pods in this namespace.
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "networkpolicy-runner",
             metadata=metadata("agentplane-runner", namespace),
             selector=_RUNNER_LABELS,
-            ingress=[cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": namespace}, ports=[_RUNNER_PORT])],
+            ingress=[IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": namespace}, ports=[_RUNNER_PORT])],
             egress=[
                 dns_egress,
-                cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-egress"), egress.PROXY_PORT),
+                EgressRule.to_endpoints(cilium.endpoint_labels(namespace, "agentplane-egress"), egress.PROXY_PORT),
             ],
         )
         # The app takes browser traffic straight from the gateway and reaches DNS, the
         # API server, the OIDC provider, the runner Pods, the egress proxy's admin
         # port, the Action Service, and the trajectory store.
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "networkpolicy-app",
-            metadata=metadata(_NAME, namespace),
+            metadata=metadata(NAME, namespace),
             selector=_LABELS,
-            ingress=[cilium.ingress_from_gateway(_CONTAINER_PORT)],
+            ingress=[IngressRule.from_gateway(CONTAINER_PORT)],
             egress=[
                 dns_egress,
-                cilium.egress_to_entities("kube-apiserver"),
+                EgressRule.to_entities(Entity.KUBE_APISERVER),
                 *self._oidc_egress_rules(),
-                cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-runner"), _RUNNER_PORT),
-                cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-egress"), egress.ADMIN_PORT),
+                EgressRule.to_endpoints(cilium.endpoint_labels(namespace, "agentplane-runner"), _RUNNER_PORT),
+                EgressRule.to_endpoints(cilium.endpoint_labels(namespace, "agentplane-egress"), egress.ADMIN_PORT),
                 # Separate BFF/operator transport boundary. The Action Service
                 # still requires its own configured operator authenticator;
                 # network reachability grants no review authority.
-                cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-actions"), actions.CONTAINER_PORT),
-                cilium.egress_to(cilium.endpoint_labels(namespace, electric.NAME), electric.PORT),
-                cilium.egress_to(
+                EgressRule.to_endpoints(
+                    cilium.endpoint_labels(namespace, "agentplane-actions"), actions.CONTAINER_PORT
+                ),
+                EgressRule.to_endpoints(cilium.endpoint_labels(namespace, electric.NAME), electric.PORT),
+                EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,
                 ),
@@ -383,7 +386,7 @@ class App(Construct):
 
     def _add_pdb(self, min_available: int) -> None:
         add_pod_disruption_budget(
-            self, "pdb", name=_NAME, namespace=self.env.namespace, min_available=min_available, selector=_LABELS
+            self, "pdb", name=NAME, namespace=self.env.namespace, min_available=min_available, selector=_LABELS
         )
 
     def _runner_container(self) -> SandboxTemplateSpecPodTemplateSpecContainers:
@@ -394,13 +397,7 @@ class App(Construct):
         # value, NAME=value sets one. The routing vars are named rather than set, so the
         # container env below is where they are written once and everything in the Pod
         # agrees -- a harness child by this passthrough, anything else by inheritance.
-        harness_env = [
-            "HOME",
-            "PATH",
-            *sandbox_pod.PROXY_VAR_NAMES,
-            *sandbox_pod.NO_PROXY_VAR_NAMES,
-            *sandbox_pod.CA_BUNDLE_VAR_NAMES,
-        ]
+        harness_env = ["HOME", "PATH", *(var.name for var in sandbox_pod.egress_env())]
         args = [
             "--state-dir",
             _STATE_DIR,
@@ -422,6 +419,9 @@ class App(Construct):
             name="runner",
             image=f"{_RUNNER_IMAGE}:{_PLACEHOLDER_TAG}",
             args=args,
+            # The runner works in absolute paths. This is for a command exec'd in: the sandbox
+            # Actions' `runner` boxes start there unless the caller names a directory.
+            working_dir=_STATE_DIR,
             ports=[SandboxTemplateSpecPodTemplateSpecContainersPorts(name="runner", container_port=_RUNNER_PORT)],
             security_context=sandbox_pod.workload_security_context(),
             env=[
@@ -454,7 +454,7 @@ class App(Construct):
                 SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
                     name=_STATE_VOLUME_NAME, mount_path=_STATE_DIR
                 ),
-                sandbox_pod.egress_ca_mount(),
+                *sandbox_pod.egress_mounts(),
             ],
         )
 
@@ -463,36 +463,42 @@ class App(Construct):
         SandboxTemplate(
             self,
             "sandboxtemplate",
-            metadata=metadata("agentplane-runner", namespace),
-            spec=SandboxTemplateSpec(
-                # The CiliumNetworkPolicy next to this construct is the runner's fence.
-                network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
-                volume_claim_templates_policy=SandboxTemplateSpecVolumeClaimTemplatesPolicy.OVERRIDES,
-                pod_template=SandboxTemplateSpecPodTemplate(
-                    metadata=SandboxTemplateSpecPodTemplateMetadata(labels=_RUNNER_LABELS),
-                    spec=sandbox_pod.pod_spec(
-                        self.env, workload=self._runner_container(), service_account_name="agentplane-runner"
-                    ),
+            name="agentplane-runner",
+            namespace=namespace,
+            # What the sandbox Actions tell an agent choosing among the templates they offer.
+            annotations={
+                DESCRIPTION_ANNOTATION: (
+                    "The shared runner image, built to host an agent harness: the sandbox tools (git, "
+                    "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
+                )
+            },
+            # The CiliumNetworkPolicy next to this construct is the runner's fence.
+            network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
+            volume_claim_templates_policy=SandboxTemplateSpecVolumeClaimTemplatesPolicy.OVERRIDES,
+            pod_template=SandboxTemplateSpecPodTemplate(
+                metadata=SandboxTemplateSpecPodTemplateMetadata(labels=_RUNNER_LABELS),
+                spec=sandbox_pod.pod_spec(
+                    self.env, workload=self._runner_container(), service_account_name="agentplane-runner"
                 ),
-                volume_claim_templates=[
-                    SandboxTemplateSpecVolumeClaimTemplates(
-                        metadata=SandboxTemplateSpecVolumeClaimTemplatesMetadata(name=_STATE_VOLUME_NAME),
-                        spec=SandboxTemplateSpecVolumeClaimTemplatesSpec(
-                            # The bulk tier, and the only one a sandbox can have: OVH's
-                            # `tier=ssd` nodes are control-plane, and a sandbox is not
-                            # getting that toleration. Node-local, so a sandbox does
-                            # not outlive its node -- which is what a sandbox is for.
-                            storage_class_name="local-path-ovh-hdd",
-                            access_modes=["ReadWriteOnce"],
-                            resources=SandboxTemplateSpecVolumeClaimTemplatesSpecResources(
-                                requests={
-                                    "storage": SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests.from_string(
-                                        "10Gi"
-                                    )
-                                }
-                            ),
-                        ),
-                    )
-                ],
             ),
+            volume_claim_templates=[
+                SandboxTemplateSpecVolumeClaimTemplates(
+                    metadata=SandboxTemplateSpecVolumeClaimTemplatesMetadata(name=_STATE_VOLUME_NAME),
+                    spec=SandboxTemplateSpecVolumeClaimTemplatesSpec(
+                        # The bulk tier, and the only one a sandbox can have: OVH's
+                        # `tier=ssd` nodes are control-plane, and a sandbox is not
+                        # getting that toleration. Node-local, so a sandbox does
+                        # not outlive its node -- which is what a sandbox is for.
+                        storage_class_name="local-path-ovh-hdd",
+                        access_modes=["ReadWriteOnce"],
+                        resources=SandboxTemplateSpecVolumeClaimTemplatesSpecResources(
+                            requests={
+                                "storage": SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests.from_string(
+                                    "10Gi"
+                                )
+                            }
+                        ),
+                    ),
+                )
+            ],
         )

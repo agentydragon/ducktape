@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
@@ -14,6 +13,7 @@ import pytest
 import pytest_bazel
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -25,11 +25,11 @@ from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import create_app
-from agentplane.app.conftest import Replica
+from agentplane.app.conftest import Replica, stored_login
 from agentplane.app.database import connect
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
@@ -46,7 +46,13 @@ from agentplane.app.live import (
     live_threads,
 )
 from agentplane.app.oidc import OIDCSettings
-from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.operator_sessions import (
+    LoginTokens,
+    OperatorSession,
+    OperatorSessionStore,
+    RequestSession,
+    SessionRow,
+)
 from agentplane.app.presets import Harness
 from agentplane.app.shutdown import Drain
 from agentplane.app.testing.kubernetes import (
@@ -158,8 +164,9 @@ async def test_the_sandbox_stream_asks_the_service_again_only_when_a_policy_obje
     assert asked == [runner, runner, runner, other]
 
 
-def _request(app: FastAPI, session: dict[str, object]) -> Request:
-    """A request as the session middleware hands it on: the login's own dict under `user`."""
+def _request(app: FastAPI, login: OperatorSession, row: SessionRow) -> Request:
+    """A request as the session middleware hands it on: its session holding the login, and the row
+    it came from."""
     return Request(
         {
             "type": "http",
@@ -167,7 +174,7 @@ def _request(app: FastAPI, session: dict[str, object]) -> Request:
             "path": "/live/sandboxes/runner-1",
             "headers": [],
             "app": app,
-            "session": {"user": session},
+            "state": {"request_session": RequestSession({}, login, row)},
         }
     )
 
@@ -181,7 +188,12 @@ def _request(app: FastAPI, session: dict[str, object]) -> Request:
     ],
 )
 async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
-    app: FastAPI, action_policy: ActionPolicyInventory, caller: CallerIdentity, configured: bool, code: str
+    app: FastAPI,
+    action_policy: ActionPolicyInventory,
+    operator_sessions: OperatorSessionStore,
+    caller: CallerIdentity,
+    configured: bool,
+    code: str,
 ) -> None:
     """The failure the route would answer with, as a frame variant a tab can show: a token caller
     is not an operator, an app without federation has nobody to ask as, and a session whose token
@@ -193,6 +205,8 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
         session_secret="test-only-session-secret",
         public_base_url="http://test-app.invalid",
     )
+    # An app with a login, whose session middleware `_request` stands in for.
+    app.state.oidc = oidc
     app.state.operator_actions = (
         FederatedOperatorActions(
             DirectFederationSettings(
@@ -211,16 +225,20 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
         if configured
         else None
     )
-    session: dict[str, object] = {
-        "issuer": oidc.issuer,
-        "subject": "test-operator-subject",
-        "username": "test-operator",
-        "access_token": "test-not-a-jwt",
-        "expires_at": time.time() + 600,
-    }
+    login = OperatorSession(
+        issuer=oidc.issuer,
+        subject="test-operator-subject",
+        username="test-operator",
+        tokens=LoginTokens(
+            access_token=SecretStr("test-not-a-jwt"),
+            expires_at=datetime.now(UTC) + timedelta(minutes=10),
+            refresh_token=None,
+        ),
+    )
+    row = await stored_login(operator_sessions, login)
 
     frame = await action_policy_frame(
-        _request(app, session), caller, action_policy, ServiceAccountRef(namespace=NAMESPACE, name="runner-1")
+        _request(app, login, row), caller, action_policy, ServiceAccountRef(namespace=NAMESPACE, name="runner-1")
     )
 
     assert frame == ActionPolicyUnavailable(code=code)
@@ -276,14 +294,14 @@ def app(
     runs, and the document comes from the signatures -- so the engine here never connects."""
     engine = connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
     event_logs, content = EventLogStore(engine), ContentStore(engine)
-    thread_updates = ThreadUpdates(engine.url)
+    database_updates = DatabaseUpdates(engine.url)
     runners = Runners(live_index, port=1)
     bridge = RunnerBridge(
         runners=runners,
         event_logs=event_logs,
         content=content,
         ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
-        thread_changes=thread_updates.changes,
+        thread_changes=database_updates.changes[Channel.THREADS],
     )
     return create_app(
         inventory,
@@ -297,7 +315,7 @@ def app(
         reviewer=reviewer,
         event_logs=event_logs,
         content=content,
-        thread_updates=thread_updates,
+        database_updates=database_updates,
         operator_sessions=OperatorSessionStore(engine),
     )
 
@@ -318,10 +336,14 @@ async def _next_threads(stream: AsyncIterator[str | bytes | memoryview]) -> Thre
 
 
 async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_changes(
-    seeded: LiveIndex, store: ThreadStore, event_logs: EventLogStore, replica: Replica, thread_updates: ThreadUpdates
+    seeded: LiveIndex,
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    replica: Replica,
+    database_updates: DatabaseUpdates,
 ) -> None:
     drain = Drain()
-    response = await live_threads(index=seeded, store=replica.store, updates=thread_updates, shutdown=drain)
+    response = await live_threads(index=seeded, store=replica.store, updates=database_updates, shutdown=drain)
     stream = aiter(response.body_iterator)
     try:
         async with asyncio.timeout(10):
@@ -358,10 +380,10 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
 
 
 async def test_global_thread_stream_reports_listener_loss_then_rereads_after_reconnect(
-    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, thread_updates: ThreadUpdates, db_url: str
+    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, database_updates: DatabaseUpdates, db_url: str
 ) -> None:
     drain = Drain()
-    response = await live_threads(index=seeded, store=replica.store, updates=thread_updates, shutdown=drain)
+    response = await live_threads(index=seeded, store=replica.store, updates=database_updates, shutdown=drain)
     stream = aiter(response.body_iterator)
     engine = create_async_engine(db_url)
     try:
@@ -371,7 +393,7 @@ async def test_global_thread_stream_reports_listener_loss_then_rereads_after_rec
                 await connection.execute(
                     text(
                         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                        "WHERE datname = current_database() AND application_name = 'agentplane-thread-updates'"
+                        "WHERE datname = current_database() AND application_name = 'agentplane-database-updates'"
                     )
                 )
             assert not (await _next_threads(stream)).updates_connected

@@ -24,10 +24,12 @@ use selector_ir_lowering::{
     MemberSelectorLoweringContext, MemberSelectorProgramBuilder, MemberSelectorSpecRef,
 };
 use selector_outcome::{
-    Candidate, Entity, EntityRef, FreeIdentifier, IdentifierMeaning, MAX_CANDIDATES_PER_SELECTOR,
-    NearMiss, Outcome, Placement, ResolvedBy, SelectorKind, SelectorOutcome, TemplateIdentifiers,
+    Candidate, Differentiator, Entity, EntityRef, FreeIdentifier, IdentifierMeaning,
+    MAX_CANDIDATES_PER_SELECTOR, NearMiss, Outcome, Placement, ResolvedBy, SelectorKind,
+    SelectorOutcome, TemplateIdentifiers,
 };
 use selector_runtime::solve_global_selector_program;
+use shape_index::ShapeIndex;
 use source_match::ParsedSourceMatchSelector;
 use source_match::chunk_resolver::{ChunkResolver, template_free_identifiers};
 use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec};
@@ -609,6 +611,7 @@ pub fn solve(chunks: Vec<(&Chunk<'_>, &[SpecModule], Projection)>) -> Result<Vec
         .map(|((chunk, modules, projection), result)| {
             let mut resolution = projection.record(chunk, modules, &result)?;
             add_nearest_unclaimed(chunk, modules, &mut resolution)?;
+            add_differentiators(chunk, &mut resolution);
             Ok(resolution)
         })
         .collect()
@@ -672,6 +675,69 @@ fn add_nearest_unclaimed(
         .collect();
     }
     Ok(())
+}
+
+/// Gives each `ambiguous` entity whose candidates are all listed the anchor
+/// that sets each candidate's statement apart from the other candidates':
+/// its own best distinguishing feature, else one the statement just before it
+/// has and the statements just before the others lack, else likewise after.
+/// Candidates sharing a statement get none.
+fn add_differentiators(chunk: &Chunk<'_>, resolution: &mut Resolution) {
+    let body = &chunk.module.body;
+    for entity in &mut resolution.outcomes {
+        let Outcome::Ambiguous {
+            candidates,
+            truncated: false,
+            differentiators,
+        } = &mut entity.outcome.outcome
+        else {
+            continue;
+        };
+        let mut owners = BTreeSet::new();
+        let mut shared = BTreeSet::new();
+        for candidate in candidates.iter() {
+            if !owners.insert(candidate.owner) {
+                shared.insert(candidate.owner);
+            }
+        }
+        let mut pending = owners.difference(&shared).copied().collect::<BTreeSet<_>>();
+        for offset in [0, -1, 1] {
+            if pending.is_empty() {
+                break;
+            }
+            let statements = owners
+                .iter()
+                .filter_map(|&owner| {
+                    let statement = owner
+                        .checked_add_signed(offset)
+                        .filter(|statement| *statement < body.len())?;
+                    Some((owner, statement))
+                })
+                .collect::<Vec<_>>();
+            let index = ShapeIndex::new(&Module {
+                span: Default::default(),
+                body: statements
+                    .iter()
+                    .map(|(_, statement)| body[*statement].clone())
+                    .collect(),
+                shebang: None,
+            });
+            for (item, &(owner, statement)) in statements.iter().enumerate() {
+                if !pending.contains(&owner) {
+                    continue;
+                }
+                if let Some(feature) = index.distinguishing_feature(item) {
+                    pending.remove(&owner);
+                    differentiators.push(Differentiator {
+                        owner,
+                        statement,
+                        anchor: feature.to_string(),
+                    });
+                }
+            }
+        }
+        differentiators.sort();
+    }
 }
 
 /// `result` of a program slice, with its targets named as in the whole
@@ -1787,11 +1853,29 @@ impl Projection {
                         .collect(),
                 })
             } else {
-                elimination_claimers(&agreeing, &entity.targets, result, &exclusive).map(
-                    |claimers| ResolvedBy::Elimination {
+                elimination_claimers(&agreeing, &entity.targets, result, &exclusive)
+                    .map(|claimers| ResolvedBy::Elimination {
                         claimers: target_entity_refs(&self.program, &claimers),
-                    },
-                )
+                    })
+                    .or_else(|| {
+                        // Several of its places survive every claim, yet it
+                        // resolved: a template naming it picked one.
+                        let referrers = self
+                            .projected
+                            .iter()
+                            .filter(|referrer| {
+                                referrer.references.iter().any(|reference| {
+                                    reference
+                                        .target
+                                        .is_some_and(|target| entity.targets.contains(&target))
+                                })
+                            })
+                            .flat_map(|referrer| referrer.targets.iter().copied())
+                            .collect::<BTreeSet<_>>();
+                        (!referrers.is_empty()).then(|| ResolvedBy::ReferencedBy {
+                            referrers: target_entity_refs(&self.program, &referrers),
+                        })
+                    })
             };
             if let Some(how) = how {
                 for target in &entity.targets {

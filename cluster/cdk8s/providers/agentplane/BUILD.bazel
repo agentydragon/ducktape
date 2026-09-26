@@ -1,0 +1,95 @@
+# Generic, cluster-topology-free cdk8s wrapper constructors for Agentplane's own CRDs
+# (cluster/k8s/agentplane-crds/crd-*.yaml). These CRDs are first-party (unlike every other
+# provider under cluster/cdk8s/providers/), so their cdk8s_import declarations stay colocated
+# with their authoritative YAML source under //agentplane/crds -- see that package's BUILD.bazel
+# header -- and this package only depends on those targets.
+
+# gazelle:resolve py agentplane_actionpolicyset_crds //agentplane/crds:actionpolicyset
+# gazelle:resolve py agentplane_actionpolicybinding_crds //agentplane/crds:actionpolicybinding
+# gazelle:resolve py agentplane_egresspolicy_crds //agentplane/crds:egresspolicy
+# gazelle:resolve py agentplane_egresscredential_crds //agentplane/crds:egresscredential
+# gazelle:resolve py agentplane_egressbinding_crds //agentplane/crds:egressbinding
+
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "egress_policy",
+    srcs = ["egress_policy.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//agentplane/crds:egresspolicy",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "egress_credential",
+    srcs = ["egress_credential.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//agentplane/crds:egresscredential",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_egress_credential",
+    srcs = ["test_egress_credential.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":egress_credential",
+        "//:conftest",
+        "//agentplane/crds:egresscredential",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "egress_binding",
+    srcs = ["egress_binding.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//agentplane/crds:egressbinding",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "action_policy_set",
+    srcs = ["action_policy_set.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//agentplane/crds:actionpolicyset",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_action_policy_set",
+    srcs = ["test_action_policy_set.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":action_policy_set",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "action_policy_binding",
+    srcs = ["action_policy_binding.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//agentplane/crds:actionpolicybinding",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)

@@ -1,37 +1,28 @@
 """Owned, resolved simulation facts: exact money/quantity counts and supplied paths.
 
-Preparation constructs these records directly. Native and file codecs serialize
-them at I/O; no mutable wire document is retained. Underscored configured records
+The declaration vocabulary a composed world takes. Underscored configured records
 preserve existing consumers until their policies move to the common action session.
 """
 
 from dataclasses import dataclass
-from typing import Annotated, Literal
+from typing import Literal
 
-from pydantic import BeforeValidator, Field, PlainSerializer
-
+from finance.augur.model.series import LocationId
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.income_sources import income_source_wire_id
-from finance.augur.sim.compiler.tax import PreparedTaxProfile
+from finance.augur.sim.ids import (
+    AccountId,
+    AgentId,
+    AssetId,
+    BondId,
+    JurisdictionId,
+    LiabilityId,
+    LotId,
+    PortfolioId,
+    PropertyId,
+)
 from finance.augur.sim.jurisdictions import JurisdictionLevel
-from finance.augur.sim.scenario import InterestIncome, OrdinaryIncome, TransferDeductionCategory, TransferIncomeCategory
-from finance.augur.sim.tlh import TlhAssumptions
-
-
-def _income_source(value: object) -> TransferIncomeCategory:
-    if isinstance(value, OrdinaryIncome | InterestIncome):
-        return value
-    if value == "ordinary":
-        return OrdinaryIncome()
-    if isinstance(value, str) and value.startswith("interest:"):
-        issuer = value.removeprefix("interest:")
-        return InterestIncome(issuer_jurisdiction_id=None if issuer == "corporate" else issuer)
-    raise ValueError("income source must be ordinary or interest:<issuer>")
-
-
-type _SerializedIncome = Annotated[
-    TransferIncomeCategory, BeforeValidator(_income_source), PlainSerializer(income_source_wire_id, return_type=str)
-]
+from finance.augur.sim.scenario import TransferDeductionCategory, TransferIncomeCategory
+from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -42,9 +33,9 @@ class PreparedAccount:
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedHoldingPool:
-    agent_id: str
-    account_id: str
-    asset_id: str
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
     quantity_scale: int
 
 
@@ -69,10 +60,10 @@ type PreparedAmount = int | PreparedFixedAmount | PreparedIndexedAmount
 @dataclass(frozen=True, kw_only=True)
 class PreparedFlow:
     cause_id: str
-    from_account: Annotated[AccountRef, Field(alias="from")]
-    to_account: Annotated[AccountRef, Field(alias="to")]
+    from_account: AccountRef
+    to_account: AccountRef
     amount: PreparedAmount
-    income_category: _SerializedIncome | None
+    income_category: TransferIncomeCategory | None
     deduction_category: TransferDeductionCategory | None
 
 
@@ -89,22 +80,22 @@ class PreparedRecurringTransfer(PreparedFlow):
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedPropertyCashflow(PreparedTransfer):
-    property_id: str
+    property_id: PropertyId
 
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedRecurringPropertyCashflow(PreparedRecurringTransfer):
-    property_id: str
+    property_id: PropertyId
 
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedClaim:
     obligation_id: str
     obligation_type: str
-    from_account: Annotated[AccountRef, Field(alias="from")]
-    to_account: Annotated[AccountRef, Field(alias="to")]
+    from_account: AccountRef
+    to_account: AccountRef
     amount_due: PreparedAmount
-    property_id: str | None
+    property_id: PropertyId | None
     deduction_category: TransferDeductionCategory | None
     deductible_fraction_ppb: int
 
@@ -122,10 +113,10 @@ class PreparedRecurringObligation(PreparedClaim):
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedLot:
-    lot_id: str
-    agent_id: str
-    account_id: str
-    asset_id: str
+    lot_id: LotId
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
     purchase_month: int
     quantity_scale: int
     units: int
@@ -140,10 +131,10 @@ class PreparedIndexedCoupon:
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedBond:
-    bond_id: str
-    agent_id: str
-    account_id: str
-    issuer_jurisdiction_id: str | None
+    bond_id: BondId
+    agent_id: AgentId
+    account_id: AccountId
+    issuer_jurisdiction_id: JurisdictionId | None
     face_value: int
     purchase_price: int
     coupon: PreparedFixedAmount | PreparedIndexedCoupon
@@ -155,87 +146,55 @@ class PreparedBond:
 @dataclass(frozen=True, kw_only=True)
 class PreparedDistributionSlice:
     fraction_ppb: int
-    issuer_jurisdiction_id: str | None
+    issuer_jurisdiction_id: JurisdictionId | None
 
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedDistribution:
-    agent_id: str
-    holding_account_id: str
-    asset_id: str
-    to_account_id: str
+    agent_id: AgentId
+    holding_account_id: AccountId
+    asset_id: AssetId
+    to_account_id: AccountId
     tax_character: tuple[PreparedDistributionSlice, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedJurisdiction:
-    jurisdiction_id: str
+    jurisdiction_id: JurisdictionId
     level: JurisdictionLevel
 
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedLocation:
-    location_id: str
+    location_id: LocationId
     display_name: str
-    jurisdiction_ids: tuple[str, ...]
+    jurisdiction_ids: tuple[JurisdictionId, ...]
     annual_property_tax_rate_ppb: int
     annual_special_assessment: int
 
 
 @dataclass(frozen=True, kw_only=True)
-class _ScheduledSale:
-    month: int
-    cause_id: str
-    agent_id: str
-    account_id: str
-    asset_id: str
-    units: int
-    proceeds_account_id: str
-
-
-@dataclass(frozen=True, kw_only=True)
-class _SleeveTarget:
-    asset_id: str
-    weight: int
-    quantity_scale: int
-
-
-@dataclass(frozen=True, kw_only=True)
-class _AllocationPolicy:
-    agent_id: str
-    account_id: str
-    source_account_ids: tuple[str, ...]
-    sleeves: tuple[_SleeveTarget, ...]
-    cash_floor: PreparedAmount
-    cash_ceiling: PreparedAmount
-    cause_id_prefix: str
-    allow_purchases: bool
-    rebalance_tolerance_ppb: int | None
-
-
-@dataclass(frozen=True, kw_only=True)
 class _TenderPolicy:
-    owner_agent_id: str
-    proceeds_account_id: str
+    owner_agent_id: AgentId
+    proceeds_account_id: AccountId
     liquid_net_worth_floor: PreparedAmount
 
 
 @dataclass(frozen=True, kw_only=True)
 class PreparedTlhPortfolio:
-    portfolio_id: str
-    owner_agent_id: str
-    account_id: str
-    asset_id: str
-    quantity_scale: int
-    initial_cohorts: tuple[PreparedLot, ...]
+    portfolio_id: PortfolioId
+    owner_agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
+    initial_cohorts: tuple[TlhOpeningCohort, ...]
     assumptions: TlhAssumptions
 
 
 @dataclass(frozen=True, kw_only=True)
 class _MortgageFinancing:
-    liability_id: str
-    lender_agent_id: str
-    lender_account_id: str
+    liability_id: LiabilityId
+    lender_agent_id: AgentId
+    lender_account_id: AccountId
     principal: int
     annual_interest_rate_ppb: int
     term_months: int
@@ -245,12 +204,12 @@ class _MortgageFinancing:
 class _PropertyPurchase:
     month: int
     cause_id: str
-    property_id: str
-    location_id: str
-    buyer_agent_id: str
-    buyer_account_id: str
-    seller_agent_id: str
-    seller_account_id: str
+    property_id: PropertyId
+    location_id: LocationId
+    buyer_agent_id: AgentId
+    buyer_account_id: AccountId
+    seller_agent_id: AgentId
+    seller_account_id: AccountId
     purchase_price: int
     down_payment: int
     buyer_closing_cost: int
@@ -261,28 +220,28 @@ class _PropertyPurchase:
 
 @dataclass(frozen=True, kw_only=True)
 class _PrimaryResidence:
-    agent_id: str
-    property_id: str
+    agent_id: AgentId
+    property_id: PropertyId
 
 
 @dataclass(frozen=True, kw_only=True)
 class _PrimaryResidenceEvent:
     month: int
-    agent_id: str
-    property_id: str | None
+    agent_id: AgentId
+    property_id: PropertyId | None
 
 
 @dataclass(frozen=True, kw_only=True)
 class _RentedFraction:
     month: int
-    property_id: str
+    property_id: PropertyId
     rented_fraction_ppb: int
 
 
 @dataclass(frozen=True, kw_only=True)
 class _CapitalImprovement:
     month: int
-    property_id: str
+    property_id: PropertyId
     amount: int
     description: str
 
@@ -290,25 +249,25 @@ class _CapitalImprovement:
 @dataclass(frozen=True, kw_only=True)
 class _PropertySale:
     month: int
-    property_id: str
+    property_id: PropertyId
     closing_cost_ppb: int
 
 
 @dataclass(frozen=True, kw_only=True)
 class _MortgageInterestDeduction:
-    liability_id: str
-    owner_agent_id: str
+    liability_id: LiabilityId
+    owner_agent_id: AgentId
     debt_class: Literal["acquisition", "home_equity"]
-    per_jurisdiction_principal_cap: dict[str, int]
+    per_jurisdiction_principal_cap: dict[JurisdictionId, int]
 
 
 @dataclass(frozen=True, kw_only=True)
 class _PropertyTax:
-    property_id: str
-    owner_agent_id: str
-    from_account_id: str
-    tax_authority_agent_id: str
-    tax_authority_account_id: str
+    property_id: PropertyId
+    owner_agent_id: AgentId
+    from_account_id: AccountId
+    tax_authority_agent_id: AgentId
+    tax_authority_account_id: AccountId
     annual_tax_rate_ppb: int | None
     start_month: int
     end_month: int | None
@@ -322,54 +281,19 @@ class _SaltCap:
 
 @dataclass(frozen=True, kw_only=True)
 class _SaltDeduction:
-    profile_id: str
-    federal_jurisdiction_id: str
+    """Federal SALT itemized deduction (Schedule A) for one enrolled taxpayer.
+
+    Each of the profile's jurisdictions other than `federal_jurisdiction_id` contributes the
+    income tax it accrued this calendar year, alongside property tax paid; the total is capped
+    by the latest `cap_schedule` entry in effect (year index 0-based from the horizon's start;
+    an empty schedule is uncapped) and stacks with mortgage interest. Not modeled: the AGI
+    phase-out of the cap, the sales-tax election, and deducting prior-year true-ups in the year
+    they are paid.
+    """
+
+    profile_id: AgentId
+    federal_jurisdiction_id: JurisdictionId
     cap_schedule: tuple[_SaltCap, ...]
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedScenario:
-    """Initial books, due cashflows and resolved rules; configured strategies stay private."""
-
-    horizon_months: int
-    accounts: tuple[PreparedAccount, ...]
-    holding_pools: tuple[PreparedHoldingPool, ...]
-    jurisdictions: tuple[PreparedJurisdiction, ...]
-    locations: tuple[PreparedLocation, ...]
-    scheduled_transfers: tuple[PreparedTransfer, ...]
-    recurring_transfers: tuple[PreparedRecurringTransfer, ...]
-    scheduled_property_cashflows: tuple[PreparedPropertyCashflow, ...]
-    recurring_property_cashflows: tuple[PreparedRecurringPropertyCashflow, ...]
-    obligations: tuple[PreparedObligation, ...]
-    recurring_obligations: tuple[PreparedRecurringObligation, ...]
-    initial_lots: tuple[PreparedLot, ...]
-    initial_bonds: tuple[PreparedBond, ...]
-    tax_profiles: tuple[PreparedTaxProfile, ...]
-    income_sources: tuple[_SerializedIncome, ...]
-    distributions: tuple[PreparedDistribution, ...]
-    _scheduled_sales: Annotated[tuple[_ScheduledSale, ...], Field(alias="scheduled_sales")]
-    _target_allocation_policies: Annotated[tuple[_AllocationPolicy, ...], Field(alias="target_allocation_policies")]
-    _private_equity_tender_policies: Annotated[tuple[_TenderPolicy, ...], Field(alias="private_equity_tender_policies")]
-    tlh_portfolios: tuple[PreparedTlhPortfolio, ...]
-    _scheduled_property_purchases: Annotated[tuple[_PropertyPurchase, ...], Field(alias="scheduled_property_purchases")]
-    _initial_primary_residences: Annotated[tuple[_PrimaryResidence, ...], Field(alias="initial_primary_residences")]
-    _primary_residence_events: Annotated[tuple[_PrimaryResidenceEvent, ...], Field(alias="primary_residence_events")]
-    _property_rented_fraction_events: Annotated[
-        tuple[_RentedFraction, ...], Field(alias="property_rented_fraction_events")
-    ]
-    _capital_improvement_events: Annotated[tuple[_CapitalImprovement, ...], Field(alias="capital_improvement_events")]
-    _property_sales: Annotated[tuple[_PropertySale, ...], Field(alias="property_sales")]
-    _mortgage_interest_deduction_policies: Annotated[
-        tuple[_MortgageInterestDeduction, ...], Field(alias="mortgage_interest_deduction_policies")
-    ]
-    _property_tax_policies: Annotated[tuple[_PropertyTax, ...], Field(alias="property_tax_policies")]
-    _federal_salt_deduction_policies: Annotated[
-        tuple[_SaltDeduction, ...], Field(alias="federal_salt_deduction_policies")
-    ]
-
-    @property
-    def has_property_purchases(self) -> bool:
-        return bool(self._scheduled_property_purchases)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -379,15 +303,3 @@ class PreparedSeries:
     series_id: str
     snapshots: int
     values: tuple[int, ...]
-
-
-@dataclass(frozen=True, kw_only=True)
-class CompiledRun:
-    """The sole prepared authority; source declarations and wire documents are not retained."""
-
-    currency_code: str
-    currency_quantum: str
-    rollout_count: int
-    scenario: PreparedScenario
-    series: tuple[PreparedSeries, ...]
-    _schema_version: Annotated[Literal[15], Field(alias="schema_version")] = 15

@@ -5,7 +5,7 @@ set -eu
 # busybox ash supports `set -o pipefail` since 1.34.
 set -o pipefail
 # Sizes are the model-layer size from the ollama registry manifest.
-# Total ~116 GB; PVC `llm-models` is 200Gi.
+# Total ~228 GB; PVC `llm-models` is 350Gi (cluster/cdk8s/ollama/app.py).
 #
 # We hit `/api/pull` directly instead of using `ollama pull` because the CLI
 # emits a CR-redrawn TTY progress bar that is unreadable in `kubectl logs`.
@@ -52,3 +52,8 @@ pull gpt-oss:20b        # 13.8 GB
 pull gpt-oss:120b       # 65.4 GB
 pull gemma4:31b-it-q8_0 # 33.8 GB
 pull qwen3-embedding:4b # 2.5 GB
+# TODO: verify once up — tested standalone via a hand-tuned llama.cpp docker container
+# (same Unsloth UD-Q4_K_XL GGUF, --fit-target/--cache-type-*/--split-mode flags) but not
+# yet confirmed to load/serve correctly through ollama's automatic GPU-offload heuristics
+# for this MoE architecture (125B total / 6B active params).
+pull metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL # 112 GB

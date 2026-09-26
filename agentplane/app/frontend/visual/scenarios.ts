@@ -22,19 +22,24 @@ export interface Scenario extends ScenarioOptions {
   preselectReconnect?: boolean;
   /** Click the nav's Settings button once it mounts: the modal has no route of its own. */
   openSettings?: boolean;
-  /** Click the sandbox Status tab's Raw switch once it mounts: no URL param toggles it, unlike the
-   * tab itself. */
-  openRawStatus?: boolean;
+  /** Flip every Raw switch as it mounts: no URL param toggles one. */
+  openRaw?: boolean;
   /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
   openActionPolicySets?: boolean;
-  /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own
-   * (UISHELL_MOBILE). */
+  /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own. */
   openMobileSidebar?: boolean;
   threadlessSandbox?: boolean;
+  /** `disconnected` drops the sidebar's own stream after its first snapshot; `database-disconnected`
+   * keeps it up but reports the server's database feed down. */
   sidebarSource?: "disconnected" | "database-disconnected";
   /** Drop the sandbox inventory stream after its first snapshot, leaving the sidebar's own stream
-   * up: the thread header's banner is the page saying so. */
+   * up. */
   inventoryDropped?: boolean;
+  /** How long, in ms, the streams this scenario drops have been down when it renders. Without it
+   * they have only just dropped, which shows nothing. */
+  outageAge?: number;
+  /** Focus the sidebar's connection indicator once it shows, which opens its tooltip. */
+  openConnectionStatus?: boolean;
   /** Exercise the production scope and Electric shape synchronization boundary. `unavailable`
    * is a persistent initial service failure, unlike a retired epoch, whose 410 triggers a refresh;
    * `reconnecting` fails every live read of the thread's rows once they have loaded, which
@@ -55,6 +60,8 @@ export interface Scenario extends ScenarioOptions {
   /** Answer a command POST as the app does when a runner misses its admission deadline. Without
    * this it stays unanswered, like one queued behind the browser's connection limit. */
   commandAdmissionTimedOut?: boolean;
+  /** Fail the Action group listing, which says whether a stored result is an MCP `CallToolResult`. */
+  actionGroupsUnavailable?: boolean;
   failedTurn?: "before-content" | "after-content";
 }
 
@@ -142,7 +149,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ['[aria-label="Chronological observations"]'],
     captureViewport: true,
   },
-  // The sidebar's landing state (UISHELL_SIDEBAR): every group state icon (running, pending,
+  // The sidebar's landing state: every group state icon (running, pending,
   // suspended, deleted) and the struck-through read-only group, with no thread open yet.
   threads: {
     element: "#app",
@@ -151,7 +158,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ["a.agentplane-sidebar-group-name"],
   },
   threads_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "threads-phone" },
-  // The phone-width sidebar drawer opened over the landing view (UISHELL_MOBILE): the hamburger,
+  // The phone-width sidebar drawer opened over the landing view: the hamburger,
   // the backdrop, and the same group/thread list the desktop sidebar shows.
   threads_phone_drawer: {
     element: "#app",
@@ -183,13 +190,25 @@ export const SCENARIOS: Record<string, Scenario> = {
     sidebarSource: "database-disconnected",
     readySelectors: ['[role="alert"]'],
   },
+  // The sidebar's own stream down past the grace: the footer's spinner, its tooltip naming the stream.
+  threads_disconnected: {
+    element: "#app",
+    route: "/",
+    viewport: { width: 1200, height: 900 },
+    sidebarSource: "disconnected",
+    outageAge: 10_000,
+    openConnectionStatus: true,
+    readySelectors: ['[data-connection="degraded"]', "::-p-text(Threads: reconnecting since)"],
+    captureViewport: true,
+  },
   threads_disconnected_phone: {
     element: "#app",
     route: "/",
     viewport: PHONE,
     sidebarSource: "disconnected",
+    outageAge: 10_000,
     openMobileSidebar: true,
-    readySelectors: [".agentplane-sidebar-backdrop", '[role="alert"]'],
+    readySelectors: [".agentplane-sidebar-backdrop", '[data-connection="degraded"]'],
   },
   threads_watch_stale: {
     element: "#app",
@@ -209,7 +228,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
   // The launch form with a preset picked through the URL and the sets dropdown opened by the
   // harness, so the shot carries the namespace's options beside the pre-filled pick. `/sandboxes`,
-  // not `/`: UISHELL_SIDEBAR moved the Sandbox list off the landing route.
+  // not `/`: the landing route is the threads view.
   new_sandbox: {
     element: "#app",
     route: "/sandboxes?preset=public-coder",
@@ -234,17 +253,44 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 390, height: 1100 },
     readySelectors: ["details"],
   },
+  // Each pending card that draws anything other than its JSON switched to Raw.
+  actions_raw: {
+    element: "#app",
+    route: "/actions",
+    viewport: { width: 1200, height: 1100 },
+    readySelectors: ["details", 'input[type="checkbox"]:checked'],
+    openRaw: true,
+  },
+  // The image is an MCP result drawn as the tool answered, which also waits on the Action groups.
+  // Each history viewport is tall enough to keep the last card in frame.
   actions_history: {
     element: "#app",
     route: "/actions/history",
-    viewport: { width: 1200, height: 1400 },
-    readySelectors: ["details"],
+    viewport: { width: 1200, height: 2560 },
+    readySelectors: ["details", 'img[src^="data:image/"]'],
   },
   actions_history_phone: {
     element: "#app",
     route: "/actions/history",
-    viewport: { width: 390, height: 1400 },
-    readySelectors: ["details"],
+    viewport: { width: 390, height: 3200 },
+    readySelectors: ["details", 'img[src^="data:image/"]'],
+  },
+  // Each card that draws anything other than its JSON switched to Raw: the stored arguments and
+  // CallToolResult, image data and all.
+  actions_history_raw: {
+    element: "#app",
+    route: "/actions/history",
+    viewport: { width: 1200, height: 3720 },
+    readySelectors: ["details", 'input[type="checkbox"]:checked'],
+    openRaw: true,
+  },
+  // Without the groups nothing says which results are MCP ones: each shows as its stored JSON.
+  actions_history_groups_unavailable: {
+    element: "#app",
+    route: "/actions/history",
+    viewport: { width: 1200, height: 3760 },
+    actionGroupsUnavailable: true,
+    readySelectors: ["details", '[role="alert"]'],
   },
 
   connections: {
@@ -265,13 +311,13 @@ export const SCENARIOS: Record<string, Scenario> = {
   mcp_servers: {
     element: "#app",
     route: "/mcp-servers",
-    viewport: { width: 1200, height: 1400 },
+    viewport: { width: 1200, height: 1480 },
     readySelectors: ["[data-mcp-server]"],
   },
   mcp_servers_phone: {
     element: "#app",
     route: "/mcp-servers",
-    viewport: { width: 390, height: 1950 },
+    viewport: { width: 390, height: 2040 },
     readySelectors: ["[data-mcp-server]"],
   },
 
@@ -317,7 +363,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 900 },
     outputName: "sandbox-status-raw",
     readySelectors: [".agentplane-hljs"],
-    openRawStatus: true,
+    openRaw: true,
   },
   sandbox_status_raw_phone: {
     element: "#app",
@@ -325,7 +371,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     outputName: "sandbox-status-raw-phone",
     readySelectors: [".agentplane-hljs"],
-    openRawStatus: true,
+    openRaw: true,
   },
   // The read-only action policy: both bindings, every set state, and the three lists.
   sandbox_policy: {
@@ -395,12 +441,15 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ["::-p-text(Current availability unknown)", '[data-thread-anchor="34"]'],
     captureViewport: true,
   },
+  // The inventory the thread's controls wait on has been down a minute: the page's notice, and the
+  // sidebar's spinner gone amber.
   session_inventory_dropped: {
     element: "#app",
     route: SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
     inventoryDropped: true,
-    readySelectors: ["::-p-text(Not connected to the live stream)", '[data-thread-anchor="34"]'],
+    outageAge: 90_000,
+    readySelectors: ['[data-connection="stale"]', "::-p-text(may be out of date)", '[data-thread-anchor="34"]'],
     captureViewport: true,
   },
   session_inventory_dropped_phone: {
@@ -408,7 +457,8 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_ROUTE,
     viewport: PHONE,
     inventoryDropped: true,
-    readySelectors: ["::-p-text(Not connected to the live stream)", '[data-thread-anchor="34"]'],
+    outageAge: 90_000,
+    readySelectors: ["::-p-text(may be out of date)", '[data-thread-anchor="34"]'],
     captureViewport: true,
   },
   session_phone: {
@@ -577,14 +627,15 @@ export const SCENARIOS: Record<string, Scenario> = {
     sessionReplay: "unavailable",
     readySelectors: ['[role="alert"]'],
   },
-  // The rows stay on screen while the client retries; the banner and the composer's dot say they may
-  // be behind.
+  // The rows stay on screen while the client retries. Past the grace the composer's dot and the
+  // sidebar's spinner say so; a minute in, the page's notice says the rows may be behind.
   session_sync_reconnecting: {
     element: "#app",
     route: SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
     sessionReplay: "reconnecting",
-    readySelectors: ['[data-thread-reconnecting="true"]', '[data-thread-anchor="34"]'],
+    outageAge: 10_000,
+    readySelectors: ['[aria-label="Reconnecting…"]', '[data-connection="degraded"]', '[data-thread-anchor="34"]'],
     captureViewport: true,
   },
   session_sync_reconnecting_phone: {
@@ -592,7 +643,8 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_ROUTE,
     viewport: PHONE,
     sessionReplay: "reconnecting",
-    readySelectors: ['[data-thread-reconnecting="true"]', '[data-thread-anchor="34"]'],
+    outageAge: 90_000,
+    readySelectors: ['[aria-label="Reconnecting…"]', "::-p-text(may be out of date)", '[data-thread-anchor="34"]'],
     captureViewport: true,
   },
   // The existing nav/header chrome (its own decluttering is separately tracked) leaves little

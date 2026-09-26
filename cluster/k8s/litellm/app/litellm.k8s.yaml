@@ -120,6 +120,21 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+      - model_name: ollama/oai-chat/qwen3.8-flash-next-q4-128k
+        litellm_params:
+          model: openai/metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL
+          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+          api_key: ollama
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/olm-chat/qwen3.8-flash-next-q4-128k
+        litellm_params:
+          model: ollama/metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL
+          api_base: http://ollama.ollama.svc.cluster.local:11434
+        model_info:
+          mode: chat
+          supports_function_calling: true
       - model_name: ollama/olm-embed/qwen3-embedding-4b
         litellm_params:
           model: ollama/qwen3-embedding:4b
@@ -392,6 +407,102 @@ data:
         litellm_params:
           model: anthropic/claude-haiku-4-5-20251001
           api_key: os.environ/ANTHROPIC_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: antigravity/ant-messages/claude-opus-4-6-thinking
+        litellm_params:
+          model: anthropic/claude-opus-4-6-thinking
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: antigravity/ant-messages/claude-sonnet-4-6
+        litellm_params:
+          model: anthropic/claude-sonnet-4-6
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: antigravity/ant-messages/gemini-3.6-flash-high
+        litellm_params:
+          model: anthropic/gemini-3.6-flash-high
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: antigravity/ant-messages/gemini-3.7-flash-high
+        litellm_params:
+          model: anthropic/gemini-3.7-flash-high
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: antigravity/ant-messages/gemini-3.8-flash-high
+        litellm_params:
+          model: anthropic/gemini-3.8-flash-high
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: antigravity/ant-messages/gemini-3-flash
+        litellm_params:
+          model: anthropic/gemini-3-flash
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: antigravity/ant-messages/gemini-3.1-flash-image
+        litellm_params:
+          model: anthropic/gemini-3.1-flash-image
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: antigravity/ant-messages/gemini-pro-agent
+        litellm_params:
+          model: anthropic/gemini-pro-agent
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: antigravity/ant-messages/gemini-3.1-pro-low
+        litellm_params:
+          model: anthropic/gemini-3.1-pro-low
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: antigravity/ant-messages/gpt-oss-120b-medium
+        litellm_params:
+          model: anthropic/gpt-oss-120b-medium
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: antigravity/ant-messages/gemini-3.1-flash-lite
+        litellm_params:
+          model: anthropic/gemini-3.1-flash-lite
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: antigravity/ant-messages/gemini-3.5-flash-lite
+        litellm_params:
+          model: anthropic/gemini-3.5-flash-lite
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
         model_info:
           mode: chat
           supports_function_calling: true

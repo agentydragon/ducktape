@@ -7,7 +7,7 @@ path is **xrdp + Xfce over Nebula** (PR #3431, live on wyrm2): headless, pre-log
 no auto-login, firewall-restricted to the `nebula1` trusted interface. Connect with
 `xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu`, or the "wyrm2 (RDP)" desktop
 entry on rugged (PR #3435). Full RCA + security model + connection steps in
-`debug/atlas/remote-desktop-wyrm2.md`.
+`nix/debug/wyrm2/remote_desktop_wyrm2.md`.
 
 Later options (not now): Sunshine/Moonlight (passwordless after one-time pairing,
 GPU/gaming, but needs a logged-in seat0 session); Guacamole via Authentik RAC

@@ -85,7 +85,7 @@ resource "kubernetes_secret" "cheap_experiments" {
 
 resource "litellm_key" "agentplane_staging" {
   key_alias       = "agentplane-staging"
-  models          = concat(var.model_allowlists.oai_lane_models, var.model_allowlists.claude_client_models)
+  models          = concat(var.model_allowlists.oai_lane_models, var.model_allowlists.claude_client_models, var.model_allowlists.antigravity_client_models, var.model_allowlists.ollama_chat_client_models)
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
@@ -104,7 +104,7 @@ resource "kubernetes_secret" "agentplane_staging" {
     name      = "litellm-key-agentplane-staging"
     namespace = "agentplane-staging"
     annotations = {
-      description = "Server-held OpenAI and Claude subscription key for Agentplane staging; never mounted into runner Pods"
+      description = "Server-held key for OpenAI/Claude subscription and local Ollama chat routes in Agentplane staging; never mounted into runner Pods"
     }
   }
 
@@ -162,15 +162,16 @@ resource "kubernetes_secret" "codex_pod" {
 resource "litellm_key" "public_coder_agent" {
   key_alias = "public-coder-agent"
   # Codex subscription models on both wire surfaces, the Gemini chat lineup,
-  # plus embeddings. Both subscription wire surfaces remain allowlisted because
-  # this shared key serves Responses-lane OpenClaw/Console consumers and clients
-  # that still use the Anthropic Messages lane.
+  # the full Antigravity lineup, plus embeddings. Both subscription wire surfaces
+  # remain allowlisted because this shared key serves Responses-lane
+  # OpenClaw/Console consumers and clients that still use the Anthropic Messages lane.
   # Embeddings ride along because OpenClaw's memory index needs a backend and
   # this agent has no route to api.openai.com -- its egress allowlist is git
   # hosting plus package indexes, and it should not gain one merely to embed.
   # Gemini reaches Google through LiteLLM's own in-cluster GEMINI_API_KEY, so
-  # this key never carries that credential either.
-  models = concat(var.model_allowlists.codex_client_models, var.model_allowlists.oai_lane_models, var.model_allowlists.gemini_client_models, var.model_allowlists.embedding_client_models)
+  # this key never carries that credential either; Antigravity reaches CLIProxyAPI's
+  # OAuth session the same way the Codex lanes do.
+  models = concat(var.model_allowlists.codex_client_models, var.model_allowlists.oai_lane_models, var.model_allowlists.gemini_client_models, var.model_allowlists.antigravity_client_models, var.model_allowlists.embedding_client_models)
   metadata = {
     consumer = "public-coder-agent"
   }
@@ -347,6 +348,44 @@ resource "litellm_key" "gemini_clients" {
   team_id   = litellm_team.gemini_clients.id
   metadata = {
     consumer = "laptop-gemini-claude"
+  }
+}
+
+# ============================================================================
+# antigravity-clients — scoped key for laptop antigravity-claude (Google
+# Antigravity OAuth session via CLIProxyAPI, on the Anthropic Messages surface)
+# ============================================================================
+# Same Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted
+# with the shared narrow client-key age key. The laptop antigravity-claude wrapper
+# reads it from its sops-nix secret file. The antigravity/ant-messages/* upstream
+# reaches CLIProxyAPI with the in-cluster cli-proxy client key (ESO-mirrored into
+# litellm), so this key never carries it.
+
+data "sops_file" "antigravity_clients_key" {
+  source_file = "${path.module}/litellm-antigravity-clients-key.yaml"
+}
+
+resource "litellm_team" "antigravity_clients" {
+  team_alias = "antigravity-clients"
+  router_settings = {
+    # Keep a fallback to the cheap, high-quota flash-lite tier instead of
+    # hard-failing Claude Code.
+    fallbacks = [
+      {
+        model           = "*"
+        fallback_models = ["antigravity/ant-messages/gemini-3.5-flash-lite"]
+      }
+    ]
+  }
+}
+
+resource "litellm_key" "antigravity_clients" {
+  key_alias = "antigravity-clients"
+  key       = data.sops_file.antigravity_clients_key.data["litellm_antigravity_key"]
+  models    = var.model_allowlists.antigravity_client_models
+  team_id   = litellm_team.antigravity_clients.id
+  metadata = {
+    consumer = "laptop-antigravity-claude"
   }
 }
 

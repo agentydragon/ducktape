@@ -140,10 +140,20 @@ there is no periodic state-query fallback.
 
 The Action Service serves a generic MCP frontend in the same process, with the same catalog,
 admission, Decision, Execution, and receipt authority as its HTTP interface. Its fixed tools
-discover Actions, submit/cancel requests, read receipts, and page durable events; individual Actions are
-not mirrored into MCP tools. Catalog responses omit input schemas and full descriptions unless
-explicitly requested. Lists and wait durations are bounded, and backend configuration is never
-exposed.
+discover Actions, submit/cancel requests, read receipts and results, and page durable events. A result
+reads as the tool that ran answered, an MCP backend's own result exactly with every content block, and a
+request without one says what it is waiting on or why it has none. A submission answers the same way once
+its bounded wait ends, unless its caller asks for the receipt. A receipt reports an execution's state,
+error and timing but never its result, which is only ever answered as the tool answered it. Catalog
+responses omit input schemas and full descriptions unless explicitly requested. Lists and wait
+durations are bounded, and backend configuration is never exposed.
+
+A caller on an external Connection also sees direct tools: the Actions its group's reviewed
+configuration names, each as an MCP tool of its own, listed where a policy bound to the caller could
+auto-approve it. A direct call is an ordinary Action with the same admission, Decision, Execution and
+provenance. One that no policy decides is refused before anything is persisted, with the reason, so
+it never waits for a human; one still running after a bounded wait answers with its request instead
+of its result. A caller admitted by a workload token sees only the fixed tools.
 
 Every MCP HTTP request authenticates its bearer, with live workload validation for in-cluster callers.
 Reused MCP session identifiers confer no authority. Long waits revalidate
@@ -198,5 +208,5 @@ whether it uses OAuth linkage or a mounted credential.
 Approved work remains durably unclaimed during temporary backend outages. Revoked authority
 still becomes terminal; removed Actions and incompatible schemas are not treated as outages.
 Execution pins one connection generation and never automatically replays an ambiguous call.
-A tool's own error output is one of its two valid answers and completes the Action; the caller receives it flagged as an error. Only unreachable backends and unknown outcomes fail an execution. Draining stops new claims and reconnects while keeping
+A tool's own error output is one of its two valid answers and completes the Action; the caller receives it flagged as an error. Either answer is kept whole: every content block the tool returned, including images, audio and resources, and its structured content. Only unreachable backends and unknown outcomes fail an execution. Draining stops new claims and reconnects while keeping
 in-flight execution leases and connections through bounded result persistence.

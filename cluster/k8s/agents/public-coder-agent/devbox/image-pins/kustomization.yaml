@@ -2,6 +2,6 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/public-coder-devbox
-    newTag: devel-20260924183011-3f7b615 # {"$imagepolicy": "flux-system:public-coder-devbox:tag"}
+    newTag: devel-20260925233633-f423c72 # {"$imagepolicy": "flux-system:public-coder-devbox:tag"}
 configurations:
   - kustomizeconfig

@@ -24,6 +24,7 @@ from cluster.cdk8s.litellm.config import main_proxy_config
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
+    ANTIGRAVITY_MODELS,
     CLIPROXY_MODELS,
     GEMINI_EMBEDDING_COMPAT_ALIAS,
     GEMINI_EMBEDDING_MODELS,
@@ -61,6 +62,17 @@ CLAUDE_CLIENT_MODELS = [
 TANA_CLIENT_MODELS = [exposed_name(Provider.TANA, ApiShape.ANT_MESSAGES, exposed) for exposed, _ in TANA_MODELS]
 # The Gemini chat lineup -- the laptop gemini-claude wrapper and public-coder-agent.
 GEMINI_CLIENT_MODELS = [exposed_name(Provider.GOOGLE, ApiShape.GOOG_GENERATE, model.id) for model in GEMINI_MODELS]
+# The Antigravity OAuth-session lineup on the Anthropic Messages surface -- the laptop
+# antigravity-claude wrapper, agentplane-staging's Claude harness, and public-coder-agent.
+ANTIGRAVITY_CLIENT_MODELS = [
+    exposed_name(Provider.ANTIGRAVITY, ApiShape.ANT_MESSAGES, model.id) for model in ANTIGRAVITY_MODELS
+]
+# Antigravity's flash-lite tier -- cheap/fast, shared by the cheap-experiments key and
+# agentplane-testing's Claude harness (agentplane/testing_config.py).
+ANTIGRAVITY_CHEAP_CLIENT_MODELS = [
+    exposed_name(Provider.ANTIGRAVITY, ApiShape.ANT_MESSAGES, model)
+    for model in ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite")
+]
 _GEMINI_EMBEDDING_ROUTES = [
     exposed_name(Provider.GOOGLE, ApiShape.GOOG_EMBED, model) for model in GEMINI_EMBEDDING_MODELS
 ]
@@ -74,6 +86,15 @@ EMBEDDING_CLIENT_MODELS = [
     exposed_name(Provider.OLLAMA, ApiShape.OLM_EMBED, OLLAMA_EMBEDDING_MODEL),
 ]
 
+# Both existing LiteLLM chat routes for each local Ollama model, exposed to Agentplane
+# through the environment's own key.
+OLLAMA_CHAT_CLIENT_MODELS = [
+    exposed_name(Provider.OLLAMA, shape, ollama_chat_variant(model, context))
+    for model, _, contexts in OLLAMA_CHAT_MODELS
+    for context in contexts
+    for shape in (ApiShape.OAI_CHAT, ApiShape.OLM_CHAT)
+]
+
 # The one native subscription model per harness the agentplane testing session form
 # offers; the Codex one on both wires, for Claude Code clients on the same key.
 CHEAP_EXPERIMENTS_CLAUDE_MODEL = exposed_name(
@@ -84,19 +105,15 @@ CHEAP_EXPERIMENTS_CODEX_MODEL = codex_responses_name(_CHEAP_EXPERIMENTS_CODEX)
 # The cheap-experiments key, shared with agents only through an expiring Haku Console
 # Kubernetes grant and standing on the agentplane testing LLM ingress. Intentionally an
 # exact, cheap-model-only set rather than a provider-wide prefix or wildcard: the Gemini
-# chat and embedding lineups, the API-key-verified Mistral chat roster, every
-# model/context/protocol variant of the self-hosted Ollama chat models, and the two
-# native subscription models above.
+# chat and embedding lineups, Antigravity's flash-lite tier, the API-key-verified
+# Mistral chat roster, every model/context/protocol variant of the self-hosted Ollama
+# chat models, and the two native subscription models above.
 CHEAP_EXPERIMENTS_MODELS = [
     *GEMINI_CLIENT_MODELS,
+    *ANTIGRAVITY_CHEAP_CLIENT_MODELS,
     *_GEMINI_EMBEDDING_ROUTES,
     *(exposed_name(Provider.MISTRAL, ApiShape.OAI_CHAT, model) for model in MISTRAL_MODELS),
-    *(
-        exposed_name(Provider.OLLAMA, shape, ollama_chat_variant(model, context))
-        for model, _, contexts in OLLAMA_CHAT_MODELS
-        for context in contexts
-        for shape in (ApiShape.OAI_CHAT, ApiShape.OLM_CHAT)
-    ),
+    *OLLAMA_CHAT_CLIENT_MODELS,
     CHEAP_EXPERIMENTS_CLAUDE_MODEL,
     codex_messages_name(_CHEAP_EXPERIMENTS_CODEX),
     CHEAP_EXPERIMENTS_CODEX_MODEL,
@@ -113,6 +130,8 @@ def model_allowlists() -> dict[str, list[str]]:
         "claude_client_models": CLAUDE_CLIENT_MODELS,
         "embedding_client_models": EMBEDDING_CLIENT_MODELS,
         "gemini_client_models": GEMINI_CLIENT_MODELS,
+        "antigravity_client_models": ANTIGRAVITY_CLIENT_MODELS,
+        "ollama_chat_client_models": OLLAMA_CHAT_CLIENT_MODELS,
         "cheap_experiments_models": CHEAP_EXPERIMENTS_MODELS,
     }
     for lane, models in lanes.items():

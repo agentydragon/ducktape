@@ -30,14 +30,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
     HttpRouteSpecRulesFiltersType,
 )
-from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
-    PodMonitor,
-    PodMonitorSpec,
-    PodMonitorSpecPodMetricsEndpoints,
-    PodMonitorSpecSelector,
-)
 
-from cluster.cdk8s import cilium
 from cluster.cdk8s.authentik import db
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
@@ -45,6 +38,8 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "authentik"
@@ -151,7 +146,7 @@ def _values() -> dict[str, object]:
             "startupProbe": {"failureThreshold": 120, "periodSeconds": 10},
             # /-/health/live/ returns 500 whenever PostgreSQL is unreachable, so the default
             # threshold turned every seconds-long DB blip into a ~90s reboot and 503s
-            # (debug/2026_06_claude_ai_connector_deauth.md). Ride out ~2min; readiness stays
+            # (cluster/debug/2026_06_claude_ai_connector_deauth.md). Ride out ~2min; readiness stays
             # fast so the pod leaves the Service at once. Outpost API calls regularly take 1s+,
             # hence the 10s timeouts.
             "livenessProbe": {"timeoutSeconds": 10, "periodSeconds": 15, "failureThreshold": 8},
@@ -272,32 +267,32 @@ def _network_policy(chart: Chart) -> None:
     # Unauthenticated /api/v3/ enables user enumeration, provider tampering and backdoor user
     # creation, so only these consumers reach the server. A CiliumNetworkPolicy, since a stock
     # NetworkPolicy cannot match Gateway API traffic (reserved:ingress).
-    cilium.network_policy(
+    NetworkPolicy(
         chart,
         "server-ingress",
         metadata=metadata("authentik-server-ingress", NAMESPACE),
         selector=_SERVER_LABELS,
         ingress=[
-            cilium.ingress_from_gateway(_HTTP, _HTTPS),
+            IngressRule.from_gateway(_HTTP, _HTTPS),
             # Outposts sync their config from the server API.
-            cilium.ingress_from(_namespace_source(NAMESPACE), ports=[_HTTP, _HTTPS, _METRICS]),
+            IngressRule.from_endpoints(_namespace_source(NAMESPACE), ports=[_HTTP, _HTTPS, _METRICS]),
             # tofu-controller's tf-runner calls the Authentik API.
-            cilium.ingress_from(_namespace_source("flux-system"), ports=[_HTTP]),
+            IngressRule.from_endpoints(_namespace_source("flux-system"), ports=[_HTTP]),
             # Grafana OIDC token exchange and Prometheus scraping.
-            cilium.ingress_from(_namespace_source("monitoring"), ports=[_HTTP, _METRICS]),
+            IngressRule.from_endpoints(_namespace_source("monitoring"), ports=[_HTTP, _METRICS]),
             # Gatus liveness probes.
-            cilium.ingress_from(_namespace_source("gatus"), ports=[_HTTP]),
+            IngressRule.from_endpoints(_namespace_source("gatus"), ports=[_HTTP]),
             # The agentplane app and Action Service use the public issuer so discovery returns the
             # canonical external endpoints. When the public hostname resolves to the caller's own
             # node, hostNetwork Gateway hairpin traffic can arrive with the caller's namespace
             # identity instead of reserved:ingress; admitting this namespace on the HTTP ports
             # keeps that path equivalent to the Gateway route.
-            cilium.ingress_from(_namespace_source("agentplane-staging"), ports=[_HTTP, _HTTPS]),
+            IngressRule.from_endpoints(_namespace_source("agentplane-staging"), ports=[_HTTP, _HTTPS]),
             # kubectl MCP servers: OIDC discovery and JWKS.
-            cilium.ingress_from(_namespace_source("kubectl-passthrough-mcp"), ports=[_HTTP]),
+            IngressRule.from_endpoints(_namespace_source("kubectl-passthrough-mcp"), ports=[_HTTP]),
             # The Claude agent reads the Authentik API (events, apps, users, outposts, flows,
             # policies) with the AUTHENTIK_API_TOKEN loaded at session start.
-            cilium.ingress_from(_namespace_source("claude-sandbox"), ports=[_HTTP]),
+            IngressRule.from_endpoints(_namespace_source("claude-sandbox"), ports=[_HTTP]),
         ],
     )
 
@@ -307,11 +302,9 @@ def _pod_monitor(chart: Chart) -> None:
         chart,
         "server-podmonitor",
         metadata=metadata("authentik-server", NAMESPACE),
-        spec=PodMonitorSpec(
-            selector=PodMonitorSpecSelector(match_labels=_SERVER_LABELS),
-            # TODO: Consider adding bearer token auth if Authentik metrics require authentication.
-            pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics")],
-        ),
+        selector=_SERVER_LABELS,
+        # TODO: Consider adding bearer token auth if Authentik metrics require authentication.
+        pod_metrics_endpoints=[Endpoint.plain(port="metrics")],
     )
 
 

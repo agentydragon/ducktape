@@ -5,7 +5,7 @@
 The wyrm VM (VM 100 on atlas Proxmox host) has 2x NVIDIA RTX 5090 GPUs passed
 through via VFIO. The GPUs intermittently lock up, producing kernel log messages:
 
-```
+```text
 RC watchdog: GPU is probably locked!  Notify Timeout Seconds: 7
 Assertion failed: (status == NV_OK) || (status == NV_ERR_GPU_IN_FULLCHIP_RESET) @ rs_client.c:844
 Assertion failed: (status == NV_OK) || (status == NV_ERR_GPU_IN_FULLCHIP_RESET) @ rs_server.c:259
@@ -35,7 +35,7 @@ Atlas uses **systemd-boot**, not GRUB. The previous Ansible config wrote to
 
 As of investigation, the running kernel cmdline was:
 
-```
+```text
 root=ZFS=rpool/ROOT/pve-1 boot=zfs
 ```
 
@@ -71,7 +71,7 @@ Contributing factors:
 Updated `ansible/atlas.yaml` to write `/etc/kernel/cmdline` (systemd-boot)
 instead of `/etc/default/grub`:
 
-```
+```text
 root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off
 ```
 
@@ -99,7 +99,7 @@ Try these in order:
 
 Error storms from PCIe can cascade and lock the GPU. Add to kernel cmdline:
 
-```
+```text
 pci=noaer
 ```
 
@@ -108,7 +108,7 @@ pci=noaer
 Currently relying on nvidia driver blacklist. Explicit VFIO binding is more
 reliable. Add to `/etc/modprobe.d/vfio.conf`:
 
-```
+```text
 options vfio-pci ids=10de:2b85,10de:22e8
 ```
 
@@ -131,7 +131,7 @@ see if stability improves (keep Above 4G Decoding enabled).
 
 Prevents the host from touching the GPU framebuffer at all during boot:
 
-```
+```text
 video=efifb:off
 ```
 

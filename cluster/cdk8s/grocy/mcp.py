@@ -15,14 +15,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
+from cdk8s import ApiObjectMetadata, App, Chart, Size
+from cdk8s_plus_34 import Cpu, k8s
 
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
@@ -30,6 +24,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.valkey import valkey_instance
 
 BASE_DIR = f"{HAND_WRITTEN_ROOT}/grocy/mcp-base"
@@ -172,10 +167,8 @@ def base_chart(app: App) -> Chart:
         chart,
         "servicemonitor",
         metadata=ApiObjectMetadata(name=_NAME),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-            endpoints=[ServiceMonitorSpecEndpoints(port="metrics", path="/metrics", scrape_timeout="10s")],
-        ),
+        selector=_LABELS,
+        endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     return chart
 
@@ -202,16 +195,16 @@ def household_chart(app: App, *, household: str, display_name: str) -> Chart:
         name=f"grocy-{household}-valkey-ovh",
         namespace=namespace,
         description=f"Replacement OVH Valkey for Grocy {display_name} MCP OAuth state",
-        memory_request="64Mi",
-        cpu_limit="200m",
+        memory_request=Size.mebibytes(64),
+        cpu_limit=Cpu.millis(200),
         # TODO(vpa-memory-audit): 128Mi -> 384Mi. VPA observed 256Mi for both
         # request and upper bound — double the old limit. This valkey backs the
         # Grocy MCP cache; 256Mi resident suggests unbounded key growth rather
         # than a working set, so check the eviction policy.
-        memory_limit="384Mi",
+        memory_limit=Size.mebibytes(384),
         max_memory_percent_of_limit=None,
         storage_class="local-path-ovh",
-        storage_size="1Gi",
+        storage_size=Size.gibibytes(1),
     )
     return chart
 

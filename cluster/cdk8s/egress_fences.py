@@ -25,6 +25,7 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy, dns_allowlist
 
 HAKU_EGRESS_PROXY_NAMESPACE = "haku-egress-proxy"
 MITMPROXY_NAMESPACE = "agents-mitmproxy"
@@ -78,26 +79,33 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
     ("cache.nixos.org", "nixos.org", "channels.nixos.org"),
     # The haku-ci Bazel cold-fetch closure (no RBE): Bazel registry + release artifacts,
     # GitHub source/release archives, GNU source archives (rules_oci pulls gawk for
-    # py_image_layer manifests), the Node.js toolchain, snapshot.debian.org (rules_distroless
-    # apt manifests in haku-state -- the jupyter sidecar's git layer -- resolve + fetch debs
-    # from the dated snapshot at Bazel fetch time, on haku-ci and in Haku's sandboxes alike),
-    # and the Rust toolchain + crates: augur's simulator is a Rust extension, so anything
-    # depending on `@ducktape//finance/augur/rust` makes rules_rust cold-fetch rustc and its
-    # crates.
+    # py_image_layer manifests -- ftp.gnu.org's own mirror network includes
+    # mirrors.kernel.org, which the fetch may land on), the Node.js toolchain,
+    # snapshot.debian.org (rules_distroless apt manifests in haku-state -- the jupyter
+    # sidecar's git layer -- resolve + fetch debs from the dated snapshot at Bazel fetch
+    # time, on haku-ci and in Haku's sandboxes alike), the Rust toolchain + crates:
+    # augur's simulator is a Rust extension, so anything depending on
+    # `@ducktape//finance/augur/rust` makes rules_rust cold-fetch rustc and its crates,
+    # and the Go toolchain (root MODULE.bazel's `go_sdk.download`, fetched via rules_go's
+    # own `go.dev/dl` manifest + tarball hosts).
     (
-        "releases.bazel.build",
+        # keep-sorted start
         "bcr.bazel.build",
-        "github.com",
         "codeload.github.com",
-        "objects.githubusercontent.com",
-        "release-assets.githubusercontent.com",
-        "raw.githubusercontent.com",
         "ftp.gnu.org",
-        "nodejs.org",
-        "snapshot.debian.org",
-        "static.rust-lang.org",
+        "github.com",
+        "go.dev",
         "index.crates.io",
+        "mirrors.kernel.org",
+        "nodejs.org",
+        "objects.githubusercontent.com",
+        "raw.githubusercontent.com",
+        "release-assets.githubusercontent.com",
+        "releases.bazel.build",
+        "snapshot.debian.org",
         "static.crates.io",
+        "static.rust-lang.org",
+        # keep-sorted end
     ),
     # Forgejo Actions: `uses:` actions from data.forgejo.org, act_runner + job-container images
     # from code.forgejo.org.
@@ -119,37 +127,39 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
 # forgejo-http.forgejo is listed for parity with the iron allowlist; it is never queried in that
 # form, since the search path resolves it as forgejo-http.forgejo.svc.cluster.local first.
 OPENCLAW_SPIKE_ALLOWLIST = (
+    # keep-sorted start
     "api.anthropic.com",
+    "api.github.com",
+    "bcr.bazel.build",
+    "cache.nixos.org",
+    "channels.nixos.org",
+    "code.forgejo.org",
+    "codeload.github.com",
+    "data.forgejo.org",
+    "files.pythonhosted.org",
+    "forgejo-http.forgejo",
+    "ftp.gnu.org",
+    "ghcr.io",
+    "github.com",
     "haku.allegedly.works",
+    "index.crates.io",
     # The kube-apiserver, via the terminate+re-encrypt Gateway route (kube-api-proxy/README.md).
     # A fence gaining this host is a privilege change: what its holder may do is decided by the
     # RBAC bound to the identity in its bearer token, not by this list.
     "kubeapi.allegedly.works",
-    "forgejo-http.forgejo",
-    "pypi.org",
-    "files.pythonhosted.org",
-    "registry.npmjs.org",
-    "cache.nixos.org",
     "nixos.org",
-    "channels.nixos.org",
-    "releases.bazel.build",
-    "bcr.bazel.build",
-    "api.github.com",
-    "github.com",
-    "codeload.github.com",
-    "objects.githubusercontent.com",
-    "release-assets.githubusercontent.com",
-    "raw.githubusercontent.com",
-    "ftp.gnu.org",
-    "static.rust-lang.org",
-    "index.crates.io",
-    "static.crates.io",
     "nodejs.org",
-    "snapshot.debian.org",
-    "code.forgejo.org",
-    "data.forgejo.org",
-    "ghcr.io",
+    "objects.githubusercontent.com",
     "pkg-containers.githubusercontent.com",
+    "pypi.org",
+    "raw.githubusercontent.com",
+    "registry.npmjs.org",
+    "release-assets.githubusercontent.com",
+    "releases.bazel.build",
+    "snapshot.debian.org",
+    "static.crates.io",
+    "static.rust-lang.org",
+    # keep-sorted end
 )
 
 # What the shared agents-mitmproxy, the claude-sandbox chokepoint, reaches on the public
@@ -193,7 +203,7 @@ def _fence(
     """One policy on the Pods labelled `proxy`, in a chart named after the file it becomes.
     Additive with the namespace's default-deny NetworkPolicy."""
     chart = Chart(app, file_stem, disable_resource_name_hashes=True)
-    cilium.network_policy(
+    NetworkPolicy(
         chart, "fence", metadata=metadata(name, namespace), selector={"app.kubernetes.io/name": proxy}, egress=egress
     )
     return chart
@@ -214,7 +224,7 @@ def haku_cloud_api(app: App) -> Chart:
             # when targeting cluster endpoints (NO_PROXY in the inject policy still permits
             # explicit bypass for `*.svc.cluster.local` and `10.0.0.0/8`). The widest rule in
             # this fence, deliberately -- see the module docstring.
-            cilium.egress_to_entities("cluster", ports=[80, 443, 8000, 8080, 11434]),
+            EgressRule.to_entities(Entity.CLUSTER, ports=[80, 443, 8000, 8080, 11434]),
         ],
     )
 
@@ -230,9 +240,7 @@ def haku_openclaw_spike(app: App) -> Chart:
         namespace=HAKU_EGRESS_PROXY_NAMESPACE,
         proxy="haku-openclaw-spike-proxy",
         egress=[
-            cilium.dns_egress(
-                protocols=["ANY"], resolves=cilium.dns_allowlist(*OPENCLAW_SPIKE_ALLOWLIST, *CLUSTER_DNS)
-            ),
+            cilium.dns_egress(protocols=["ANY"], resolves=dns_allowlist(*OPENCLAW_SPIKE_ALLOWLIST, *CLUSTER_DNS)),
             # Public HTTPS is application-layer allowlisted by iron-proxy. remote-node/host
             # because allegedly.works is served from node ExternalIPs, which Cilium does not
             # classify as world. This opens 443 to anything and cannot be narrowed into an
@@ -240,8 +248,8 @@ def haku_openclaw_spike(app: App) -> Chart:
             # haku.allegedly.works (node identity, cluster/docs/cilium_network_policy.md). What
             # bounds this proxy is the iron allowlist at L7 and the DNS rule above -- neither of
             # which stops a destination reached by literal IP.
-            cilium.egress_to_entities("world", "remote-node", "host", ports=[443]),
-            cilium.egress_to(
+            EgressRule.to_entities(Entity.WORLD, Entity.REMOTE_NODE, Entity.HOST, ports=[443]),
+            EgressRule.to_endpoints(
                 {"k8s:io.kubernetes.pod.namespace": "forgejo", "k8s:app.kubernetes.io/name": "forgejo"}, 3000
             ),
         ],
@@ -261,7 +269,7 @@ def mitmproxy_cloud_api(app: App) -> Chart:
             # mitmproxy in-path even when targeting cluster endpoints (e.g. `ollama.ollama:11434`);
             # NO_PROXY in the inject policy still permits explicit bypass for
             # `*.svc.cluster.local` and `10.0.0.0/8`.
-            cilium.egress_to_entities("cluster", ports=[11434, 80, 443, 8000, 8080]),
+            EgressRule.to_entities(Entity.CLUSTER, ports=[11434, 80, 443, 8000, 8080]),
         ],
     )
 

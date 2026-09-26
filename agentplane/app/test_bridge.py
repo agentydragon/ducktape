@@ -30,13 +30,13 @@ from agentplane.app.agent_runtime.models import ThreadCheckpoint, ThreadEntity
 from agentplane.app.agent_runtime.runner.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.views import ThreadOperationalState
 from agentplane.app.api import create_app
 from agentplane.app.changes import Changes
 from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH
 from agentplane.app.database import connect
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
@@ -140,7 +140,7 @@ async def app_url(
     local_runners: Runners,
     inventory: SandboxInventory,
     store: ThreadStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
@@ -163,7 +163,7 @@ async def app_url(
         event_logs=event_logs,
         content=content,
         ingester=ingester,
-        thread_changes=thread_updates.changes,
+        thread_changes=database_updates.changes[Channel.THREADS],
     )
     server = uvicorn.Server(
         uvicorn.Config(
@@ -179,7 +179,7 @@ async def app_url(
                 reviewer=reviewer,
                 event_logs=event_logs,
                 content=content,
-                thread_updates=thread_updates,
+                database_updates=database_updates,
                 operator_sessions=operator_sessions,
             ),
             host="127.0.0.1",
@@ -549,7 +549,7 @@ async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_no
             waiting.set()
         return result
 
-    async def drop_notification(_session: object) -> None:
+    async def drop_notification(_session: object, _channel: Channel) -> None:
         return None
 
     timestamp = Timestamp()
@@ -592,14 +592,14 @@ async def replicas(
     local_runners: Runners,
     live_index: LiveIndex,
     runner: RunnerHandle,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     db_url: str,
     event_logs: EventLogStore,
     content: ContentStore,
     ingestion: Ingestion,
 ) -> AsyncIterator[Replicas]:
     replica_engine = connect(db_url)
-    replica_updates = ThreadUpdates(replica_engine.url)
+    replica_updates = DatabaseUpdates(replica_engine.url)
     await replica_updates.start()
     survivor_runners = Runners(live_index, runner.port)
     survivor_event_logs = EventLogStore(replica_engine)
@@ -612,19 +612,26 @@ async def replicas(
         event_logs=event_logs,
         content=content,
         ingester=owner_ingester,
-        thread_changes=thread_updates.changes,
+        thread_changes=database_updates.changes[Channel.THREADS],
     )
     survivor = RunnerBridge(
         runners=survivor_runners,
         event_logs=survivor_event_logs,
         content=ContentStore(replica_engine),
         ingester=survivor_ingester,
-        thread_changes=replica_updates.changes,
+        thread_changes=replica_updates.changes[Channel.THREADS],
     )
     await owner_ingester.start()
     await owner_ingester.reconcile()
     try:
-        yield Replicas(owner, owner_ingester, survivor, survivor_ingester, survivor_event_logs, replica_updates.changes)
+        yield Replicas(
+            owner,
+            owner_ingester,
+            survivor,
+            survivor_ingester,
+            survivor_event_logs,
+            replica_updates.changes[Channel.THREADS],
+        )
     finally:
         await owner_ingester.close()
         await survivor_ingester.close()
@@ -683,7 +690,7 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
     client = RunnerClient(runner.target, capture_history=True)
     replica_engine = connect(db_url)
     replica_store, replica_event_logs = ThreadStore(replica_engine), EventLogStore(replica_engine)
-    replica_updates = ThreadUpdates(replica_engine.url)
+    replica_updates = DatabaseUpdates(replica_engine.url)
     await replica_updates.start()
     try:
         attachment = await client.attach(SESSION, spec=spec)
@@ -720,7 +727,7 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
             event_logs=replica_event_logs,
             content=ContentStore(replica_engine),
             ingester=survivor_ingester,
-            thread_changes=replica_updates.changes,
+            thread_changes=replica_updates.changes[Channel.THREADS],
         )
         try:
             await survivor_ingester.start()
@@ -953,7 +960,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
     local_runners: Runners,
     live_index: LiveIndex,
     event_logs: EventLogStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     spec: protocol_pb2.SessionSpec,
     content: ContentStore,
     ingestion: Ingestion,
@@ -980,7 +987,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
         event_logs=event_logs,
         content=content,
         ingester=offline_ingester,
-        thread_changes=thread_updates.changes,
+        thread_changes=database_updates.changes[Channel.THREADS],
     )
     try:
         # A lost HTTP response is retryable from the committed Thread prefix even after the
@@ -989,7 +996,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
         assert await offline.command(thread, stop) == admitted
         async with (
             asyncio.timeout(10),
-            aclosing(follow(event_logs, thread_updates.changes, thread, after_cursor=0)) as frames,
+            aclosing(follow(event_logs, database_updates.changes[Channel.THREADS], thread, after_cursor=0)) as frames,
         ):
             lines = frame_lines(frames)
             assert (await next_message(lines)).event == "attached"

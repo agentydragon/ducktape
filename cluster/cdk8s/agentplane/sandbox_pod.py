@@ -1,18 +1,24 @@
 """The Pod shape every agentplane SandboxTemplate shares: the egress sidecar that relays a box's
-traffic to the central proxy, the tokens only it mounts, the interception CA over the system bundle,
-and the proxy environment that points a workload at the sidecar. The runner template (app.py) and
-the sandbox Actions' command box (command_sandbox.py) are both built from it, so both kinds of box
-sit behind the same egress path.
+traffic to the central proxy, the tokens only it mounts, the interception CA over the system bundle
+and as Java's trust store, a kubeconfig that reaches the API server through the proxy, and the proxy
+environment that points a workload at the sidecar. The runner template (app.py) and the sandbox
+Actions' command box (command_sandbox.py) are both built from it, so both kinds of box sit behind
+the same egress path; only the command box also gets the system bazelrc that points Bazel at the
+trust store.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpec,
     SandboxTemplateSpecPodTemplateSpecContainers,
     SandboxTemplateSpecPodTemplateSpecContainersEnv,
+    SandboxTemplateSpecPodTemplateSpecContainersReadinessProbe,
+    SandboxTemplateSpecPodTemplateSpecContainersReadinessProbeHttpGet,
+    SandboxTemplateSpecPodTemplateSpecContainersReadinessProbeHttpGetPort,
     SandboxTemplateSpecPodTemplateSpecContainersResources,
     SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits,
     SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests,
@@ -28,11 +34,16 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources,
     SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken,
 )
+from cdk8s_plus_34 import ConfigMap
+from constructs import Construct
 
 from agentplane.egress import sidecar
+from agentplane.egress.resources import placeholder_of
 from cluster.cdk8s.agentplane import egress, llm_ingress
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import SECRET_NAME
+from cluster.cdk8s.metadata import metadata
 from util.settings_contract import env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
@@ -51,6 +62,16 @@ _EGRESS_CA_VOLUME_NAME = "egress-ca"
 _MITM_PROXY_URL = f"http://127.0.0.1:{_SIDECAR_LISTEN_PORT}"
 _NO_PROXY_HOSTS = "127.0.0.1,localhost"
 _CA_BUNDLE_PATH = "/etc/ssl/certs/ca-certificates.crt"
+# Where Debian's JDKs keep the system trust store; Bazel's embedded JDK reads it only when told to.
+_JAVA_TRUST_STORE_PATH = "/etc/ssl/certs/java/cacerts"
+# Configuration files for the box's tools, one key each, mounted file by file.
+_TOOL_CONFIG_MAP_NAME = "agentplane-sandbox-tool-config"
+_TOOL_CONFIG_VOLUME_NAME = "tool-config"
+_BAZELRC_KEY = "bazel.bazelrc"
+_KUBECONFIG_KEY = "kubeconfig"
+# Outside the home directory: a subPath mount creates its missing parents as root, and kubectl keeps
+# its cache under ~/.kube.
+_KUBECONFIG_PATH = "/etc/kubernetes/kubeconfig"
 PROXY_VAR_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
 NO_PROXY_VAR_NAMES = ("NO_PROXY", "no_proxy")
 CA_BUNDLE_VAR_NAMES = ("SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "REQUESTS_CA_BUNDLE")
@@ -62,7 +83,8 @@ def egress_env() -> list[SandboxTemplateSpecPodTemplateSpecContainersEnv]:
     The box's fence lets it reach DNS and the egress proxy and nothing else, so a process that does
     not know to use the proxy has no egress at all -- and anything entering by another door
     (`kubectl exec`, the sandbox Actions' exec, a debug shell) is that kind of process. Both
-    spellings, since clients disagree on case; NO_PROXY is loopback and nothing else.
+    spellings, since clients disagree on case; NO_PROXY is loopback and nothing else. KUBECONFIG
+    names the box's own identity at the API server, through the same proxy.
     """
     return [
         *(
@@ -77,15 +99,75 @@ def egress_env() -> list[SandboxTemplateSpecPodTemplateSpecContainersEnv]:
             SandboxTemplateSpecPodTemplateSpecContainersEnv(name=name, value=_CA_BUNDLE_PATH)
             for name in CA_BUNDLE_VAR_NAMES
         ),
+        SandboxTemplateSpecPodTemplateSpecContainersEnv(name="KUBECONFIG", value=_KUBECONFIG_PATH),
     ]
 
 
-def egress_ca_mount() -> SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts:
+def egress_mounts() -> list[SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts]:
     """Public roots + cluster root + the proxy's interception root, over the image's own bundle at the
-    path every client falls back to. A subPath mount does not follow ConfigMap updates: a CA
-    rotation reaches a sandbox at its next Pod."""
+    path every client falls back to and as Java's trust store, plus the kubeconfig. A subPath mount
+    does not follow ConfigMap updates: a CA rotation reaches a sandbox at its next Pod."""
+    return [
+        SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+            name=_EGRESS_CA_VOLUME_NAME, mount_path=_CA_BUNDLE_PATH, sub_path=egress.CA_BUNDLE_KEY, read_only=True
+        ),
+        SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+            name=_EGRESS_CA_VOLUME_NAME,
+            mount_path=_JAVA_TRUST_STORE_PATH,
+            sub_path=egress.JAVA_TRUST_STORE_KEY,
+            read_only=True,
+        ),
+        SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+            name=_TOOL_CONFIG_VOLUME_NAME, mount_path=_KUBECONFIG_PATH, sub_path=_KUBECONFIG_KEY, read_only=True
+        ),
+    ]
+
+
+def bazelrc_mount() -> SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts:
+    """Bazel's system rc, for a box that only runs commands. A runner leaves it out: crossing a
+    container's memory limit kills every process in it, and a build that did would take the agent's
+    harness down with it."""
     return SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
-        name=_EGRESS_CA_VOLUME_NAME, mount_path=_CA_BUNDLE_PATH, sub_path=egress.CA_BUNDLE_KEY, read_only=True
+        name=_TOOL_CONFIG_VOLUME_NAME, mount_path="/etc/bazel.bazelrc", sub_path=_BAZELRC_KEY, read_only=True
+    )
+
+
+def add_tool_config(scope: Construct, env: Environment) -> None:
+    """Bazel's system rc, which Bazel in a command box reads before its workspace's own, and the
+    kubeconfig. Bazel's JVM fetches through the proxy but trusts only its own store, which lacks the
+    interception root; and Bazel scrubs a test's environment, so the box's egress environment reaches
+    a test only when named here. The kubeconfig reaches the API server through the proxy, verified
+    against the bundle that carries the interception root, with the placeholder the proxy swaps for
+    the box's own projected token: the box has no token of its own to put there; the sidecar holds
+    it."""
+    passthrough = " ".join(f"--test_env={var.name}" for var in egress_env())
+    ConfigMap(
+        scope,
+        "sandbox-tool-config",
+        metadata=metadata(_TOOL_CONFIG_MAP_NAME, env.namespace),
+        data={
+            _BAZELRC_KEY: (
+                f"startup --host_jvm_args=-Djavax.net.ssl.trustStore={_JAVA_TRUST_STORE_PATH}\ncommon {passthrough}\n"
+            ),
+            _KUBECONFIG_KEY: yaml_config(
+                {
+                    "apiVersion": "v1",
+                    "kind": "Config",
+                    "clusters": [
+                        {
+                            "name": "in-cluster",
+                            "cluster": {
+                                "server": f"https://{egress.KUBERNETES_HOST}",
+                                "certificate-authority": _CA_BUNDLE_PATH,
+                            },
+                        }
+                    ],
+                    "users": [{"name": "workload", "user": {"token": placeholder_of(egress.KUBERNETES_CREDENTIAL)}}],
+                    "contexts": [{"name": "in-cluster", "context": {"cluster": "in-cluster", "user": "workload"}}],
+                    "current-context": "in-cluster",
+                }
+            ),
+        },
     )
 
 
@@ -112,6 +194,12 @@ def _egress_sidecar(env: Environment) -> SandboxTemplateSpecPodTemplateSpecConta
                 name=env_name(sidecar.Settings, "listen_port"), value=str(_SIDECAR_LISTEN_PORT)
             ),
             SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                name=env_name(sidecar.Settings, "readiness_host"), value=sidecar.READINESS_HOST
+            ),
+            SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                name=env_name(sidecar.Settings, "readiness_port"), value=str(sidecar.READINESS_PORT)
+            ),
+            SandboxTemplateSpecPodTemplateSpecContainersEnv(
                 name=env_name(sidecar.Settings, "token_file"), value=f"{_EGRESS_TOKEN_DIR}/token"
             ),
             SandboxTemplateSpecPodTemplateSpecContainersEnv(
@@ -125,6 +213,17 @@ def _egress_sidecar(env: Environment) -> SandboxTemplateSpecPodTemplateSpecConta
             ),
         ],
         security_context=workload_security_context(),
+        readiness_probe=SandboxTemplateSpecPodTemplateSpecContainersReadinessProbe(
+            http_get=SandboxTemplateSpecPodTemplateSpecContainersReadinessProbeHttpGet(
+                path=sidecar.READINESS_PATH,
+                port=SandboxTemplateSpecPodTemplateSpecContainersReadinessProbeHttpGetPort.from_number(
+                    sidecar.READINESS_PORT
+                ),
+            ),
+            failure_threshold=1,
+            period_seconds=2,
+            timeout_seconds=1,
+        ),
         resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
             requests={
                 "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("10m"),
@@ -145,6 +244,10 @@ def _egress_volumes(env: Environment) -> list[SandboxTemplateSpecPodTemplateSpec
         SandboxTemplateSpecPodTemplateSpecVolumes(
             name=_EGRESS_CA_VOLUME_NAME,
             config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(name=env.egress.ca_secret_name),
+        ),
+        SandboxTemplateSpecPodTemplateSpecVolumes(
+            name=_TOOL_CONFIG_VOLUME_NAME,
+            config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(name=_TOOL_CONFIG_MAP_NAME),
         ),
         # The Pod's identity, and to nobody else: this volume is mounted by the egress sidecar
         # alone, so no token here is readable from the container an agent runs commands in.
@@ -176,13 +279,20 @@ def _egress_volumes(env: Environment) -> list[SandboxTemplateSpecPodTemplateSpec
 
 
 def pod_spec(
-    env: Environment, *, workload: SandboxTemplateSpecPodTemplateSpecContainers, service_account_name: str | None
+    env: Environment,
+    *,
+    workload: SandboxTemplateSpecPodTemplateSpecContainers,
+    service_account_name: str | None,
+    workload_volumes: Sequence[SandboxTemplateSpecPodTemplateSpecVolumes] = (),
 ) -> SandboxTemplateSpecPodTemplateSpec:
     """`workload` beside the egress sidecar, as uid 1000, with no ServiceAccount token in the Pod: the
     projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
-    several boxes out of the container a command runs in (agentplane/docs/sandbox_actions.md).
-    `service_account_name` is the template's own; whoever stamps a Sandbox from it may replace it."""
+    several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
+    `service_account_name` is the template's own; whoever stamps a Sandbox from it may replace it.
+    `workload_volumes` are Pod volumes the workload mounts beyond the egress path's own."""
     return SandboxTemplateSpecPodTemplateSpec(
+        # The workload first: with no default-container annotation, the first container is the one
+        # `kubectl exec` and the sandbox Actions run a command in.
         containers=[workload, _egress_sidecar(env)],
         automount_service_account_token=False,
         image_pull_secrets=[SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=SECRET_NAME)],
@@ -200,5 +310,5 @@ def pod_spec(
             fs_group=1000,
             seccomp_profile=SandboxTemplateSpecPodTemplateSpecSecurityContextSeccompProfile(type="RuntimeDefault"),
         ),
-        volumes=_egress_volumes(env),
+        volumes=[*_egress_volumes(env), *workload_volumes],
     )

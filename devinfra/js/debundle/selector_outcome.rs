@@ -14,6 +14,7 @@
 //! `alpha_all` readable names that are free references rather than local
 //! binders.
 
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
@@ -119,6 +120,43 @@ pub struct Candidate {
     pub binding: Option<String>,
 }
 
+/// The top-level statement that declares a binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Declaration {
+    /// Index of the statement in the chunk body.
+    pub owner: usize,
+    pub kind: DeclarationKind,
+}
+
+/// The keyword a top-level binding is declared with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeclarationKind {
+    Function,
+    Class,
+    Var,
+    Let,
+    Const,
+    Using,
+    AwaitUsing,
+    Import,
+}
+
+impl DeclarationKind {
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Function => "function",
+            Self::Class => "class",
+            Self::Var => "var",
+            Self::Let => "let",
+            Self::Const => "const",
+            Self::Using => "using",
+            Self::AwaitUsing => "await using",
+            Self::Import => "import",
+        }
+    }
+}
+
 /// A top-level statement a selector does not match, with where it first
 /// diverges; higher `score` is closer.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -151,6 +189,29 @@ impl NearMiss {
     }
 }
 
+/// What sets one [`Outcome::Ambiguous`] candidate apart from the others it is
+/// listed with.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Differentiator {
+    /// The candidate's statement.
+    pub owner: usize,
+    /// The statement the anchor is in: `owner`, or the one just before or
+    /// after it when `owner` has none.
+    pub statement: usize,
+    pub anchor: String,
+}
+
+impl Differentiator {
+    fn render(&self) -> String {
+        let site = match self.statement.cmp(&self.owner) {
+            Ordering::Equal => String::new(),
+            Ordering::Less => format!(" in the preceding body[{}]", self.statement),
+            Ordering::Greater => format!(" in the following body[{}]", self.statement),
+        };
+        format!("body[{}] by its {}{site}", self.owner, self.anchor)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Outcome {
@@ -170,6 +231,11 @@ pub enum Outcome {
         candidates: Vec<Candidate>,
         /// More candidates exist than are listed.
         truncated: bool,
+        /// Each listed candidate some anchor sets apart from the other listed
+        /// ones, with that anchor. Empty when `truncated`: an unlisted
+        /// candidate may share it.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        differentiators: Vec<Differentiator>,
     },
     /// In an unsatisfiable core of the joint solve with `with`; the set need
     /// not be minimal.
@@ -183,6 +249,7 @@ pub enum Outcome {
     /// Resolved to `binding`, which `claimed_by` already claims.
     DuplicateClaim {
         binding: String,
+        declaration: Declaration,
         claimed_by: EntityRef,
     },
     /// The selector could not be evaluated: it does not parse, uses an
@@ -210,6 +277,11 @@ pub enum ResolvedBy {
     /// silently when one of them is edited.
     Elimination {
         claimers: Vec<EntityRef>,
+    },
+    /// Its selector matches several places; the templates of `referrers`,
+    /// which name it, pick one. It moves silently when one of them is edited.
+    ReferencedBy {
+        referrers: Vec<EntityRef>,
     },
 }
 
@@ -301,6 +373,7 @@ impl Outcome {
         Self::Ambiguous {
             candidates,
             truncated,
+            differentiators: Vec::new(),
         }
     }
 
@@ -324,7 +397,7 @@ impl Outcome {
                 ..
             } => Severity::Ok,
             Self::Resolved {
-                resolved_by: ResolvedBy::Elimination { .. },
+                resolved_by: ResolvedBy::Elimination { .. } | ResolvedBy::ReferencedBy { .. },
                 ..
             } => Severity::Warning,
             _ => Severity::Error,
@@ -335,7 +408,7 @@ impl Outcome {
     /// declarations (an anonymous statement).
     fn describe(&self, statements: bool) -> String {
         let places = if statements {
-            "top-level statement group"
+            "top-level statement"
         } else {
             "top-level declaration"
         };
@@ -360,6 +433,11 @@ impl Outcome {
                         "resolved by elimination to {target}: its other matches are claimed by {}",
                         render_refs(claimers)
                     ),
+                    ResolvedBy::ReferencedBy { referrers } => format!(
+                        "resolved to {target} only because {} name it there; its selector alone \
+                         matches several places",
+                        render_refs(referrers)
+                    ),
                 }
             }
             Self::NoMatch { nearest_unclaimed } if nearest_unclaimed.is_empty() => {
@@ -376,16 +454,31 @@ impl Outcome {
             Self::Ambiguous {
                 candidates,
                 truncated,
-            } => format!(
-                "is ambiguous -- matched {}{} {places}s: {}",
-                if *truncated { "at least " } else { "" },
-                candidates.len(),
-                candidates
-                    .iter()
-                    .map(render_candidate)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+                differentiators,
+            } => {
+                let differentiated = match (truncated, differentiators.as_slice()) {
+                    (true, _) => String::new(),
+                    (false, []) => "; no candidate has an anchor the others lack".to_string(),
+                    (false, differentiators) => format!(
+                        "; set apart {}",
+                        differentiators
+                            .iter()
+                            .map(Differentiator::render)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                };
+                format!(
+                    "is ambiguous -- matched {}{} {places}s: {}{differentiated}",
+                    if *truncated { "at least " } else { "" },
+                    candidates.len(),
+                    candidates
+                        .iter()
+                        .map(render_candidate)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
             Self::Conflict { with } => format!(
                 "conflicts with {}: these selectors admit no joint assignment (the listed set \
                  need not be minimal)",
@@ -396,10 +489,13 @@ impl Outcome {
             }
             Self::DuplicateClaim {
                 binding,
+                declaration,
                 claimed_by,
             } => format!(
-                "binding {binding:?} is already claimed by {} as `{}`; each binding may belong to \
-                 exactly one logical module",
+                "binding {binding:?} (`{}` at body[{}]) is already claimed by {} as `{}`; each \
+                 binding may belong to exactly one logical module",
+                declaration.kind.keyword(),
+                declaration.owner,
                 claimed_by.logical_module,
                 match &claimed_by.entity {
                     Some(Entity::Export(name)) => name.as_str(),

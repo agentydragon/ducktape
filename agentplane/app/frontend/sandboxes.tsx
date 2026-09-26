@@ -19,12 +19,11 @@ import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertica
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { readiness } from "./action_policy";
+import { readiness } from "./actions/policy";
 import {
   api,
   displayableError,
   models,
-  type ActionPolicySetView,
   type Condition,
   type ModelCatalog,
   type NewSandbox,
@@ -32,8 +31,10 @@ import {
   type SandboxView,
   type ThreadDefaults,
 } from "./client";
+import type { ActionPolicySetView } from "./actions/client";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
+import { StaleNotice } from "./stream_status";
 
 const EMPTY_FORM: NewSandbox = { slug: "", template: "", policies: [], action_policy_sets: [], bootstrap: "" };
 const EMPTY_THREAD: ThreadDefaults = {};
@@ -108,7 +109,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [policySets, setPolicySets] = useState<ActionPolicySetView[]>([]);
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
-  const live = useLive<SandboxesSnapshot>(liveSandboxesUrl());
+  const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
   const rows: SandboxView[] = live.snapshot?.sandboxes ?? [];
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedPreset = searchParams.get(PRESET_PARAM);
@@ -200,6 +201,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   return (
     <Stack>
       <Title order={2}>Sandboxes</Title>
+      <StaleNotice streams={[live.stream]} />
       <LiveStatus live={live} />
       {confirmingDelete !== null && (
         <ConfirmDelete

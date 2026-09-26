@@ -1,4 +1,4 @@
-# Plan: relational selector language
+# Plan: selector language
 
 A selector's job is to name a minified entity by something that survives
 re-minification. Shape selectors (`source_match`) do that when the entity has a
@@ -8,7 +8,9 @@ a **relation** to something else in the program.
 
 Relational selectors resolve in the one joint solve described in
 <../docs/selector_resolution.md>; this plan is the remaining **language** work:
-which relations the selector surface can express.
+which relations and template forms the selector surface can express. Build a
+form only when it unlocks synthesis, stabilization, repair, or porting, and test
+it on generic synthetic fixtures.
 
 Notation: `@Name` means "the entity another spec member pins as `Name`".
 
@@ -25,24 +27,23 @@ per-selector existence over the chunk body, which is a different statement.
 **R3 — Transitive closure.** No reachability predicate, so "the registry plus
 its whole eager-use cone" is inexpressible.
 
-**R4 — Shape and relation in one anchor.** `MemberSelector` is a one-of: a
-member is pinned by shape or by a relation, never by both. "Emits this literal
-**and** is imported by `@settingsModule`" needs conjunction across the two
-families.
+**R4 — Shape and relation in one member.** A template can name a pinned entity
+(<../docs/selectors.md> § Naming other entities) and claim an entity through a
+statement that uses it (§ Pinning by use site), so "has this shape and
+references `@Anchor`" is expressible. `MemberSelector` is still a one-of between
+a template and a relational kind (`cross_ref`, `reads_member`, …): "emits this
+literal **and** is imported by `@settingsModule`" needs conjunction across the
+two.
 
-## Landing a new relation
+**Template-language gaps.**
 
-1. Add the fact to `chunk_facts` if it is not derivable from what is there.
-   Extraction stays fail-closed.
-2. Lower it to a table over candidate ids in the resolve
-   (`selector_resolve.rs`, <../docs/selector_resolution.md>), with a compiled
-   encoding in `selector_constraint_model_builder`.
-3. Prove it through `debundle run` on a fixture whose chunk also exports and
-   uses the anchor, as <../e2e/cross_ref_lowering_test.rs> does: real graphs
-   model `export { … }` and side-effect statements as owners that reference
-   every binding they touch, which is the discriminating case bare fixtures miss.
-4. Extend `docs/selectors.md` — a selector kind that is not documented there
-   does not exist for authors.
+- **Contextual sugar.** A template already spans adjacent statements, and
+  synthesis reads off a stable immediate neighbor into a 2-statement
+  `source_matches[]` window. Missing: readable `before` / `after` / `near` sugar
+  for hand-authored windows, and non-adjacent or enclosing-call-site context.
+- **Constrained holes.** A way to say a hole appears only as a specific
+  argument, callback body, object property value, or statement-list slot,
+  without scanning unrelated subtrees; ambiguous matches stay hard errors.
 
 ## Execution contract
 
@@ -57,16 +58,8 @@ families.
 - **Abort bar**: if a relation will not admit one general faithful encoding,
   stop and write the dead-end analysis. Do not add a special-case resolver.
 
-## Downstream evidence
+## Acceptance cases
 
-A 2026-06-23 census of the largest downstream spec found 5,583 `source_match`
-blocks across 1,751 YAML files, all `identifiers: alpha_all`. It found no uses
-of `target_statement`, `target_statements`, or authored
-`wildcard_string_literals`.
-
-Workers converting fragile name pins stop where the language needs: inverse
-use-site selectors (target-as-call-argument, setter/callback assignment, owner
-that reads a stable member); state slot / setter / getter families; identifying
-one target inside a mixed `let`/`const` run by family evidence rather than
-position; and membership in an object/array roster. These are R1–R4 and template references in
-authoring terms — treat them as the acceptance cases, not as separate features.
+Name pins workers still cannot convert: one target inside a mixed `let`/`const`
+run, told apart by family evidence rather than position; and state slot /
+setter / getter families.

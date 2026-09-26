@@ -8,28 +8,12 @@ bindings are written by the integration app at runtime and are never checked in 
 
 from __future__ import annotations
 
-from agentplane_actionpolicybinding_crds.works.allegedly.agentplane import (
-    ActionPolicyBinding,
-    ActionPolicyBindingSpec,
-    ActionPolicyBindingSpecSubject,
-)
-from agentplane_actionpolicyset_crds.works.allegedly.agentplane import (
-    ActionPolicySet,
-    ActionPolicySetSpec,
-    ActionPolicySetSpecAutoApproveIf,
-    ActionPolicySetSpecAutoApproveIfType,
-)
-from agentplane_egressbinding_crds.works.allegedly.agentplane import (
-    EgressBinding,
-    EgressBindingSpec,
-    EgressBindingSpecSubjects,
-)
-from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
-    EgressPolicy,
-    EgressPolicySpec,
-    EgressPolicySpecRules,
-    EgressPolicySpecRulesMethods,
-)
+from collections.abc import Sequence
+
+from agentplane_actionpolicybinding_crds.works.allegedly.agentplane import ActionPolicyBindingSpecSubject
+from agentplane_actionpolicyset_crds.works.allegedly.agentplane import ActionPolicySetSpecAutoApproveIf
+from agentplane_egressbinding_crds.works.allegedly.agentplane import EgressBindingSpecSubjects
+from agentplane_egresspolicy_crds.works.allegedly.agentplane import EgressPolicySpecRules, EgressPolicySpecRulesMethods
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 from constructs import Construct
@@ -39,15 +23,19 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
-from agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAction
-from cluster.cdk8s import external_creds
-from cluster.cdk8s.agentplane import testing
+from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
+from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s.agentplane import app as app_component, egress, testing
 from cluster.cdk8s.agentplane.app_settings import (
+    ACTIVITYWATCH_READ_POLICY,
+    AIQUOTA_READ_POLICY,
     BASIC_POLICY,
     COINBASE_POLICY,
     FORGEJO_HAKU_POLICY,
+    GITHUB_CLONE_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
+    HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
     KUBERNETES_POLICY,
     PACKAGES_POLICY,
@@ -58,8 +46,13 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GAFFER_PRIVATE_READS_SET,
     PUBLIC_GITHUB_READS_SET,
 )
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.agentplane.action_policy_binding import ActionPolicyBinding
+from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
+from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
+from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 _NAMESPACE = "agentplane-staging"
 _GITHUB_READS_SET = "github-reads"
@@ -77,15 +70,32 @@ _AGENTPLANE_TESTING_POLICY = "agentplane-testing"
 _GITHUB_DOWNLOADS_POLICY = "github-downloads"
 
 
-def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: ActionPolicySetSpec) -> None:
+def _policy_set(
+    scope: Construct,
+    id: str,
+    *,
+    metadata: ApiObjectMetadata,
+    auto_approve_if: Sequence[ActionPolicySetSpecAutoApproveIf],
+) -> None:
     # The Action Service parses `spec` more strictly than the CRD schema (an unknown policy
     # kind or key, an invalid JSON Schema); an object it refuses reports Ready=False on the
     # cluster and contributes nothing, so it fails here instead.
-    PolicySetSpec.model_validate(ActionPolicySet(scope, id, metadata=metadata, spec=spec).to_json()["spec"])
+    PolicySetSpec.model_validate(
+        ActionPolicySet(scope, id, metadata=metadata, auto_approve_if=auto_approve_if).to_json()["spec"]
+    )
 
 
-def _binding(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: ActionPolicyBindingSpec) -> None:
-    BindingSpec.model_validate(ActionPolicyBinding(scope, id, metadata=metadata, spec=spec).to_json()["spec"])
+def _binding(
+    scope: Construct,
+    id: str,
+    *,
+    metadata: ApiObjectMetadata,
+    subject: ActionPolicyBindingSpecSubject,
+    policy_sets: Sequence[str],
+) -> None:
+    BindingSpec.model_validate(
+        ActionPolicyBinding(scope, id, metadata=metadata, subject=subject, policy_sets=policy_sets).to_json()["spec"]
+    )
 
 
 # GitHub MCP's normal endpoint exposes its default catalog, including writes. This is the
@@ -93,41 +103,44 @@ def _binding(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: Ac
 # manual until reviewed here. `ui_get` reads an MCP App UI resource, not GitHub
 # repository state.
 _GITHUB_READS_ACTIONS = [
-    "get_me",
-    "get_team_members",
-    "get_teams",
-    "ui_get",
+    # keep-sorted start
     "find_duplicate",
-    "get_label",
-    "issue_dependency_read",
-    "issue_read",
-    "list_issue_fields",
-    "list_issue_types",
-    "list_issues",
-    "search_issues",
-    "list_pull_requests",
-    "pull_request_read",
-    "search_pull_requests",
     "get_commit",
     "get_file_blame",
     "get_file_contents",
+    "get_label",
     "get_latest_release",
+    "get_me",
     "get_release_by_tag",
     "get_tag",
+    "get_team_members",
+    "get_teams",
+    "issue_dependency_read",
+    "issue_read",
     "list_branches",
     "list_commits",
+    "list_issue_fields",
+    "list_issue_types",
+    "list_issues",
+    "list_pull_requests",
     "list_releases",
     "list_repository_collaborators",
     "list_tags",
+    "pull_request_read",
     "search_code",
     "search_commits",
+    "search_issues",
+    "search_pull_requests",
     "search_repositories",
     "search_users",
+    "ui_get",
+    # keep-sorted end
 ]
 
 # The tool list every repository-scoped read set shares -- only the trusted owner/repo
 # (or, for public-github-reads, a live visibility check) differs.
 _REPOSITORY_SCOPED_ACTIONS = [
+    # keep-sorted start
     "actions_get",
     "actions_list",
     "find_duplicate",
@@ -151,9 +164,10 @@ _REPOSITORY_SCOPED_ACTIONS = [
     "list_repository_collaborators",
     "list_tags",
     "pull_request_read",
+    "search_code",
     "search_issues",
     "search_pull_requests",
-    "search_code",
+    # keep-sorted end
 ]
 
 
@@ -167,6 +181,7 @@ _REPOSITORY_SCOPED_ACTIONS = [
 # support/issue-tracker report, not a Home Assistant state read. New upstream tools stay
 # manual until reviewed here, same convention as the GitHub reads set above.
 _HOME_ASSISTANT_READS_ACTIONS = [
+    # keep-sorted start
     "ha_config_get_automation",
     "ha_config_get_calendar_events",
     "ha_config_get_category",
@@ -197,12 +212,14 @@ _HOME_ASSISTANT_READS_ACTIONS = [
     "ha_list_floors_areas",
     "ha_list_services",
     "ha_search",
+    # keep-sorted end
 ]
 
 # Gmail's generated read-only surface (haku/console/tools/gmail.py's _GMAIL_READ_TOOLS); writes
 # (drafts_create/update/delete, threads_modify_labels, labels_create/patch/delete,
 # filters_create/delete) stay on the human path.
 _GMAIL_READS_ACTIONS = [
+    # keep-sorted start
     "drafts_get",
     "drafts_list",
     "filters_get",
@@ -212,6 +229,7 @@ _GMAIL_READS_ACTIONS = [
     "messages_get",
     "threads_get",
     "threads_list",
+    # keep-sorted end
 ]
 
 # Google Calendar's read-only surface (haku/console/tools/google_calendar.py); create_event
@@ -222,6 +240,7 @@ _GOOGLE_CALENDAR_READS_ACTIONS = ["get_event", "list_event_instances", "list_eve
 # date's calendar node when it is missing. Reviewed exclusion: `open_node` navigates the
 # operator's Tana desktop app. New upstream tools stay manual until reviewed here.
 _TANA_READS_ACTIONS = [
+    # keep-sorted start
     "get_children",
     "get_or_create_calendar_node",
     "get_tag_schema",
@@ -229,12 +248,14 @@ _TANA_READS_ACTIONS = [
     "list_workspaces",
     "read_node",
     "search_nodes",
+    # keep-sorted end
 ]
 
 # Grocy SF's read-only surface, as haku-console's `grocy_reads` policy auto-approved it.
 # Reviewed exclusion: `open_product_stock` marks a product opened. New upstream tools stay manual
 # until reviewed here.
 _GROCY_SF_READS_ACTIONS = [
+    # keep-sorted start
     "entities_get",
     "entities_list",
     "file_get",
@@ -254,6 +275,7 @@ _GROCY_SF_READS_ACTIONS = [
     "shopping_lists_list",
     "stock_entries_list",
     "stock_get",
+    # keep-sorted end
 ]
 
 
@@ -262,16 +284,11 @@ def _repository_reads(scope: Construct, id: str, *, name: str, description: str,
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE, annotations={"description": description}),
-        spec=ActionPolicySetSpec(
-            auto_approve_if=[
-                ActionPolicySetSpecAutoApproveIf(
-                    type=ActionPolicySetSpecAutoApproveIfType.GITHUB_UNDERSCORE_REPOSITORY,
-                    owner=owner,
-                    repository=repository,
-                    actions={"github": _REPOSITORY_SCOPED_ACTIONS},
-                )
-            ]
-        ),
+        auto_approve_if=[
+            AutoApproveIf.github_repository(
+                owner=owner, repository=repository, actions={"github": _REPOSITORY_SCOPED_ACTIONS}
+            ).to_spec()
+        ],
     )
 
 
@@ -305,14 +322,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of GitHub MCP's default catalog; every other GitHub Action stays on the human path."
             },
         ),
-        spec=ActionPolicySetSpec(
-            auto_approve_if=[
-                ActionPolicySetSpecAutoApproveIf(
-                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
-                    actions={"github": _GITHUB_READS_ACTIONS},
-                )
-            ]
-        ),
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"github": _GITHUB_READS_ACTIONS}).to_spec()],
     )
     # `get_me` returns only the authenticated caller's own GitHub identity and has no
     # repository or mutation surface. Kept separate so a caller can be granted the
@@ -327,13 +337,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The caller's own GitHub identity read, with no repository or mutation surface."
             },
         ),
-        spec=ActionPolicySetSpec(
-            auto_approve_if=[
-                ActionPolicySetSpecAutoApproveIf(
-                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS, actions={"github": ["get_me"]}
-                )
-            ]
-        ),
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"github": ["get_me"]}).to_spec()],
     )
     # The coder Agent's own fork, used to stage branches before opening PRs into
     # agentydragon/ducktape. It already has write access here (that's how it opens
@@ -377,14 +381,9 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public."
             },
         ),
-        spec=ActionPolicySetSpec(
-            auto_approve_if=[
-                ActionPolicySetSpecAutoApproveIf(
-                    type=ActionPolicySetSpecAutoApproveIfType.GITHUB_UNDERSCORE_PUBLIC_UNDERSCORE_REPOSITORY,
-                    actions={"github": _REPOSITORY_SCOPED_ACTIONS},
-                )
-            ]
-        ),
+        auto_approve_if=[
+            AutoApproveIf.github_public_repository(actions={"github": _REPOSITORY_SCOPED_ACTIONS}).to_spec()
+        ],
     )
 
     # Coinbase authenticates each request with a fresh JWT signed over its method, host and path,
@@ -392,7 +391,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # holds the key and signs for itself: it may read this one Secret through the API server, and
     # the `coinbase` policy passes its GETs to api.coinbase.com unchanged. What makes handing the
     # sandbox the key acceptable is that the key can only view.
-    add_external_secret(
+    ExternalSecret(
         scope,
         "coinbase-external-secret",
         name=_COINBASE_SECRET,
@@ -426,40 +425,55 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "egresspolicy-coinbase",
         metadata=ApiObjectMetadata(name=COINBASE_POLICY, namespace=_NAMESPACE),
-        spec=EgressPolicySpec(
-            rules=[EgressPolicySpecRules(hosts=["api.coinbase.com"], methods=[EgressPolicySpecRulesMethods.GET])]
-        ),
+        rules=[EgressPolicySpecRules(hosts=["api.coinbase.com"], methods=[EgressPolicySpecRulesMethods.GET])],
     )
     # The testing deployment's app, for the acceptance suite's harness scenarios run from a box
-    # (agentplane/acceptance/README.md). Nothing is substituted: the suite presents the app token
-    # it mints in agentplane-testing (rbac.AcceptanceToken), so any method may pass.
+    # (agentplane/acceptance/README.md): by its Service rather than its public name, which would
+    # hairpin out through the Gateway and back. Plain HTTP, so the proxy reads the request without
+    # bumping TLS. Nothing is substituted: the suite presents the app token it mints in
+    # agentplane-testing (rbac.AcceptanceToken), so any method may pass.
     EgressPolicy(
         scope,
         "egresspolicy-agentplane-testing",
         metadata=ApiObjectMetadata(name=_AGENTPLANE_TESTING_POLICY, namespace=_NAMESPACE),
-        spec=EgressPolicySpec(rules=[EgressPolicySpecRules(hosts=[testing.ENV.app.hostname])]),
+        rules=[
+            EgressPolicySpecRules(
+                hosts=[f"{app_component.NAME}.{testing.ENV.namespace}.svc.cluster.local"], cluster_internal=True
+            )
+        ],
+    )
+    NetworkPolicy(
+        scope,
+        "networkpolicy-egress-to-testing-app",
+        metadata=metadata(f"{egress.NAME}-to-testing-app", _NAMESPACE),
+        selector={"app.kubernetes.io/name": egress.NAME},
+        egress=[
+            EgressRule.to_endpoints(
+                cilium.endpoint_labels(testing.ENV.namespace, app_component.NAME), app_component.CONTAINER_PORT
+            )
+        ],
     )
     # GitHub downloads with nothing substituted: a release asset or a tag archive, which is what a
-    # Bazel `http_archive` fetches, without the write-capable PAT `github-public` carries.
+    # Bazel `http_archive` fetches, without the write-capable PAT `github-agentydragon-agent` carries.
     EgressPolicy(
         scope,
         "egresspolicy-github-downloads",
         metadata=ApiObjectMetadata(name=_GITHUB_DOWNLOADS_POLICY, namespace=_NAMESPACE),
-        spec=EgressPolicySpec(
-            rules=[
-                EgressPolicySpecRules(
-                    hosts=[
-                        "github.com",
-                        # Where `github.com/.../archive/...` redirects.
-                        "codeload.github.com",
-                        # Where `github.com/.../releases/download/...` redirects.
-                        "objects.githubusercontent.com",
-                        "release-assets.githubusercontent.com",
-                    ],
-                    methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.HEAD],
-                )
-            ]
-        ),
+        rules=[
+            EgressPolicySpecRules(
+                hosts=[
+                    "github.com",
+                    # Where `github.com/.../archive/...` redirects.
+                    "codeload.github.com",
+                    # Where `github.com/.../releases/download/...` redirects.
+                    "objects.githubusercontent.com",
+                    "release-assets.githubusercontent.com",
+                    # Raw file content off a ref, e.g. `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`.
+                    "raw.githubusercontent.com",
+                ],
+                methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.HEAD],
+            )
+        ],
     )
 
     # What a sandbox of claude-ai's may reach. The binding is on the account rather than on each
@@ -477,17 +491,19 @@ def add_staging_action_policies(scope: Construct) -> None:
     # (egress_staging_credentials.py). `grocy-sf-readonly` presents the app password of an Authentik
     # service account with no Grocy permissions, as HTTP Basic, on GETs to Grocy's own REST API (see
     # that module's `grocy-sf-readonly` EgressPolicy for why that's Grocy's API rather than the
-    # grocy-mcp-sf MCP server). `coinbase` presents nothing: the sandbox signs with the key above.
+    # grocy-mcp-sf MCP server). `activitywatch-read` presents the ActivityWatch read route's bearer,
+    # which that route itself holds to reads, and `aiquota-read` aiquota's bearer on its read-only
+    # API. `haku-mailbox` presents the JWT of Haku's own mailbox: JMAP reads and changes that one
+    # mailbox and cannot send. It and `forgejo-haku` are Haku's credentials, bound here because
+    # claude-ai is the connection Haku runs through (haku/TODO.md). `coinbase` presents nothing: the
+    # sandbox signs with the key above.
     # `agentplane-testing` presents nothing either: the acceptance suite brings its own app token.
     # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
-    #
-    # TODO(github-egress): consider binding `github-public` here too. The ActionPolicyBinding below
-    # auto-approves GitHub *reads through the Action Service*, while a sandbox of the same caller
-    # has only `github-downloads`: GET and HEAD with no credential, so `git clone`, whose fetch
-    # POSTs to `git-upload-pack`, fails for a repository its caller can read through an Action.
-    # What stands in the way is `github-public`'s credential: the `agentydragon-agent` PAT is
-    # write-capable and substituted on GET and POST with no path limit, so binding it lets a
-    # sandbox push as that bot.
+    # `github-clone` presents nothing either: the anonymous smart-HTTP git protocol
+    # (GET+POST to github.com only, scoped to the `info/refs`/`git-upload-pack` paths), which
+    # is what closes the gap `github-downloads`'s GET/HEAD-only surface left: a sandbox of this
+    # caller's can now `git clone`/`fetch` a public repository without the write-capable
+    # `github-agentydragon-agent` PAT, which stays unbound here on purpose (egress.py).
     EgressBinding(
         scope,
         "egressbinding-claude-ai",
@@ -496,21 +512,23 @@ def add_staging_action_policies(scope: Construct) -> None:
             namespace=_NAMESPACE,
             annotations={"description": "What sandboxes running as the claude-ai ServiceAccount may reach."},
         ),
-        spec=EgressBindingSpec(
-            subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
-            policies=[
-                BASIC_POLICY,
-                KUBERNETES_POLICY,
-                FORGEJO_HAKU_POLICY,
-                PACKAGES_POLICY,
-                GOOGLE_READONLY_POLICY,
-                GROCY_SF_READONLY_POLICY,
-                HOME_ASSISTANT_READONLY_POLICY,
-                COINBASE_POLICY,
-                _AGENTPLANE_TESTING_POLICY,
-                _GITHUB_DOWNLOADS_POLICY,
-            ],
-        ),
+        subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
+        policies=[
+            BASIC_POLICY,
+            KUBERNETES_POLICY,
+            FORGEJO_HAKU_POLICY,
+            PACKAGES_POLICY,
+            GOOGLE_READONLY_POLICY,
+            GROCY_SF_READONLY_POLICY,
+            HOME_ASSISTANT_READONLY_POLICY,
+            ACTIVITYWATCH_READ_POLICY,
+            AIQUOTA_READ_POLICY,
+            HAKU_MAILBOX_POLICY,
+            COINBASE_POLICY,
+            _AGENTPLANE_TESTING_POLICY,
+            _GITHUB_DOWNLOADS_POLICY,
+            GITHUB_CLONE_POLICY,
+        ],
     )
 
     # Every sandbox Action, auto-approved. Approving each one individually would not be a
@@ -525,17 +543,13 @@ def add_staging_action_policies(scope: Construct) -> None:
             name=_SANDBOX_SET,
             namespace=_NAMESPACE,
             annotations={
-                "description": "Auto-approves sandbox lifecycle and exec for a caller, which act only as that caller."
+                "description": (
+                    "Auto-approves every sandbox Action: a caller's own boxes, which act only as that caller, "
+                    "and reads of the templates they are made from."
+                )
             },
         ),
-        spec=ActionPolicySetSpec(
-            auto_approve_if=[
-                ActionPolicySetSpecAutoApproveIf(
-                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
-                    actions={SANDBOX_GROUP: sorted(SandboxAction)},
-                )
-            ]
-        ),
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={SANDBOX_GROUP: sorted(SandboxAction)}).to_spec()],
     )
 
     # Home Assistant's read-only surface (see _HOME_ASSISTANT_READS_ACTIONS above for the
@@ -550,14 +564,9 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of Home Assistant MCP's default catalog; every other Home Assistant Action stays on the human path."
             },
         ),
-        spec=ActionPolicySetSpec(
-            auto_approve_if=[
-                ActionPolicySetSpecAutoApproveIf(
-                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
-                    actions={"home_assistant": _HOME_ASSISTANT_READS_ACTIONS},
-                )
-            ]
-        ),
+        auto_approve_if=[
+            AutoApproveIf.exact_actions(actions={"home_assistant": _HOME_ASSISTANT_READS_ACTIONS}).to_spec()
+        ],
     )
 
     # Gmail's and Google Calendar's read-only surfaces (see the _GMAIL_READS_ACTIONS /
@@ -572,14 +581,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of the Gmail MCP backend's catalog; every write stays on the human path."
             },
         ),
-        spec=ActionPolicySetSpec(
-            auto_approve_if=[
-                ActionPolicySetSpecAutoApproveIf(
-                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
-                    actions={"gmail": _GMAIL_READS_ACTIONS},
-                )
-            ]
-        ),
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"gmail": _GMAIL_READS_ACTIONS}).to_spec()],
     )
     _policy_set(
         scope,
@@ -591,14 +593,9 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of the Google Calendar MCP backend's catalog; create_event stays on the human path."
             },
         ),
-        spec=ActionPolicySetSpec(
-            auto_approve_if=[
-                ActionPolicySetSpecAutoApproveIf(
-                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
-                    actions={"google_calendar": _GOOGLE_CALENDAR_READS_ACTIONS},
-                )
-            ]
-        ),
+        auto_approve_if=[
+            AutoApproveIf.exact_actions(actions={"google_calendar": _GOOGLE_CALENDAR_READS_ACTIONS}).to_spec()
+        ],
     )
 
     _policy_set(
@@ -611,14 +608,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of the Tana MCP backend's catalog, plus get_or_create_calendar_node; every other write and open_node stay on the human path."
             },
         ),
-        spec=ActionPolicySetSpec(
-            auto_approve_if=[
-                ActionPolicySetSpecAutoApproveIf(
-                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
-                    actions={"tana": _TANA_READS_ACTIONS},
-                )
-            ]
-        ),
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"tana": _TANA_READS_ACTIONS}).to_spec()],
     )
     _policy_set(
         scope,
@@ -630,14 +620,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of the Grocy SF MCP backend's catalog; every write, open_product_stock included, stays on the human path."
             },
         ),
-        spec=ActionPolicySetSpec(
-            auto_approve_if=[
-                ActionPolicySetSpecAutoApproveIf(
-                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
-                    actions={"grocy_sf": _GROCY_SF_READS_ACTIONS},
-                )
-            ]
-        ),
+        auto_approve_if=[AutoApproveIf.exact_actions(actions={"grocy_sf": _GROCY_SF_READS_ACTIONS}).to_spec()],
     )
 
     # The reviewed read sets for GitHub (github-reads and github-identity-reads), Home
@@ -655,17 +638,15 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
             },
         ),
-        spec=ActionPolicyBindingSpec(
-            subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
-            policy_sets=[
-                _GITHUB_READS_SET,
-                _GITHUB_IDENTITY_READS_SET,
-                _SANDBOX_SET,
-                _HOME_ASSISTANT_READS_SET,
-                _GMAIL_READS_SET,
-                _GOOGLE_CALENDAR_READS_SET,
-                _TANA_READS_SET,
-                _GROCY_SF_READS_SET,
-            ],
-        ),
+        subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
+        policy_sets=[
+            _GITHUB_READS_SET,
+            _GITHUB_IDENTITY_READS_SET,
+            _SANDBOX_SET,
+            _HOME_ASSISTANT_READS_SET,
+            _GMAIL_READS_SET,
+            _GOOGLE_CALENDAR_READS_SET,
+            _TANA_READS_SET,
+            _GROCY_SF_READS_SET,
+        ],
     )

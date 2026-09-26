@@ -16,6 +16,7 @@ py_library(
     srcs = ["replica.py"],
     deps = [
         "//agentplane/egress:main",
+        "//agentplane/egress:upstream",
         "@pypi//aiohttp",
         "@pypi//tenacity",
     ],

@@ -4,9 +4,12 @@ Mirrors output_base_gc's PRUNE/KEEP/REVIEW model. A worktree is prunable only wh
 clean (no tracked *or* untracked changes), idle (not the main checkout, not the invoking
 worktree, no process cwd'd inside), and its work is already in the main branch —
 established by git (HEAD is an ancestor of main; merging HEAD into main is a no-op, which
-catches squash/rebase-merges; or the branch is empty) or by a merged GitHub PR for its
-branch. Everything else is kept (dirty/active/live/open-PR) or reported for manual review
-(clean but unique unmerged work, detached HEAD with unique commits, undeterminable main).
+catches squash/rebase-merges; or the branch is empty) or by a merged or closed GitHub PR
+for its branch — a closed-not-merged PR means a human already decided not to land this
+work, and removing the worktree loses nothing since its branch (and any commits on it, even
+past the PR's head) stays reachable through the branch ref. Everything else is kept
+(dirty/active/live/open-PR) or reported for manual review (clean but unique unmerged work,
+detached HEAD with unique commits, undeterminable main).
 
 Repo-level git plumbing lives in `git_repo`; the PR model in `pull_request`. PR state is an
 injected mapping so this module needs no network; the CLI (workspace_gc) fills it from
@@ -59,6 +62,28 @@ def _dirty(status: Mapping[str, int]) -> bool:
     # status() reports tracked changes and untracked files (ignored excluded by default);
     # any entry means the tree is not clean.
     return bool(status)
+
+
+def _status(pg: pygit2.Repository) -> dict[str, int]:
+    """Git status, cheaply when the tree is already provably dirty.
+
+    Untracked-file detection has no early-exit: proving "nothing untracked exists" means
+    walking every directory the tree doesn't already fully ignore, a cost set by repo size
+    rather than by how much actually changed. A tracked-only check (staged-vs-HEAD,
+    workdir-vs-index) has no such walk — pygit2 can trust the index's cached (mtime, size)
+    per file — and on a worktree with real tracked changes or deletions, that alone already
+    proves the tree isn't clean, so the untracked walk is skipped entirely. Only a worktree
+    that's clean on tracked files pays for the full scan, to also catch untracked work.
+
+    The caller's `_last_activity` sees only the tracked-only dict when that already proved
+    dirty, so an untracked file's mtime can't push the reported last-activity time later in
+    that case — acceptable since the classification itself (kept, uncommitted changes)
+    doesn't depend on that timestamp.
+    """
+    tracked = pg.status(untracked_files="no")
+    if tracked:
+        return tracked
+    return pg.status()
 
 
 def _last_activity(pg: pygit2.Repository, path: Path, status: Iterable[str]) -> datetime | None:
@@ -121,7 +146,7 @@ def classify_worktree(
         # remove` cleans up the administrative files fine even though the directory is gone.
         return PrunableWorktree(worktree, "worktree directory is missing", None)
     logger.info("Scanning worktree %s: reading Git status", path)
-    status = pg.status()
+    status = _status(pg)
     logger.info("Scanning worktree %s: Git status complete (%d entries)", path, len(status))
     activity = _last_activity(pg, path, status)
 
@@ -147,7 +172,11 @@ def classify_worktree(
         return keep("uncommitted changes" + (f" ({pr_phrase(pr)})" if pr is not None else ""))
     if pr is not None and pr.state is PrState.OPEN:
         return keep(pr_phrase(pr))
-    if pr is not None and pr.state is PrState.MERGED:
+    if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED):
+        # Removing a worktree never touches its branch, so this is safe regardless of
+        # whether the branch has advanced past the PR's head — an advanced branch is
+        # caught separately by branch_gc, which does have to care (deleting a branch ref
+        # is destructive).
         return prune(pr_phrase(pr))
     if content_in_main(pg, pg.head.peel(pygit2.Commit).id, main):
         return prune(f"changes already in {main}")

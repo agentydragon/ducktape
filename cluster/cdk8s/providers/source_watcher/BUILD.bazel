@@ -1,0 +1,16 @@
+# Typed cdk8s Python constructs generated from the source-watcher CRD bundled with
+# the deployed Flux install. See cluster/docs/cdk8s.md.
+
+# gazelle:resolve py source_watcher_crds //cluster/cdk8s/providers/source_watcher:artifactgenerator
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+cdk8s_import(
+    name = "artifactgenerator",
+    crd = "//cluster/k8s:source_watcher_crd_bundle",
+    crd_name = "artifactgenerators.source.extensions.fluxcd.io",
+    crd_version = "v1beta1",
+    module_name = "source_watcher_crds",
+    module_path = "io/fluxcd/extensions/source",
+    visibility = ["//visibility:public"],
+)

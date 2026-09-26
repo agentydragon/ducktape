@@ -84,7 +84,7 @@ def python_env(*, inherit: bool = True) -> dict[str, str]:
     PYTHONPATH and causes stdlib shadowing when a local file collides with a
     stdlib module (e.g., ``mcp_infra/exec/subprocess.py`` shadowing stdlib
     ``subprocess`` in any subprocess spawned from a test in that package).
-    See <debug/explicit_init_py_investigation.md>.
+    See <devinfra/debug/explicit_init_py_investigation.md>.
     """
     env = os.environ.copy() if inherit else {k: v for k in _BAZEL_RUNFILES_ENV if (v := os.environ.get(k)) is not None}
     if _in_bazel_venv():

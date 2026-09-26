@@ -157,6 +157,10 @@ fn ambiguous_match_lists_candidates_in_body_order() {
                 {"owner": 2, "binding": "rightPanel"},
             ],
             "truncated": false,
+            "differentiators": [
+                {"owner": 0, "statement": 0, "anchor": "string literal \"left\""},
+                {"owner": 2, "statement": 2, "anchor": "string literal \"right\""},
+            ],
         }),
         "{report:#}"
     );

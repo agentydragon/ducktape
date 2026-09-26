@@ -41,12 +41,8 @@ The selector **mechanics** — hole forms (`ANYTHING`, `STMT_LIST`, `CASE_REST`,
 
 ## The toolkit
 
-Four debundler subcommands. `selector-debt` and `synthesize-selectors` read the
-chunk + `modules/` tree directly; `match-selector` reads just the chunk and a
-candidate selector. None of those three need a pipeline build or owner graph.
-The fourth (`spec validate`) is the whole-spec gate; its full mode needs the
-pipeline (see Setup). Treat the **minimizer as a first-class instrument**, not a last
-resort:
+What each command needs to run: Setup. Treat the **minimizer as a first-class
+instrument**, not a last resort:
 
 - **`spec selector-debt`** — the census. Ranks fragile name pins; add
   `--source-file` to also surface the near-ambiguous structural selectors (see the
@@ -59,37 +55,22 @@ resort:
   selectors with no hand-authoring. Run it dry to read its pick, `--candidates N` for
   a ranked menu, `--apply` to land a whole bucket. Use it two ways: as a **first-pass
   converter** for the easy majority, and as a **compaction pass** once you have
-  hand-picked an anchor but want the surrounding shape holed down. But it has **no
-  semantic intelligence**: whether the anchor it kept is _meaningful_ — and swapping
-  in the readable one when it kept an accidental but-unique token — is judgment you
-  supply on top of its output (next section); it cannot be read off the AST.
-- **`spec match-selector`** — the prove/probe. Resolves your candidate and reports
-  its outcome (`resolved`, or `no_match` / `ambiguous` with the colliding
-  candidates / `too_broad`) and over-pin slack.
+  hand-picked an anchor but want the surrounding shape holed down. Whether the
+  anchor it kept is _meaningful_ is yours to judge (§ What makes a good anchor).
+- **`spec match-selector`** — the prove/probe. Resolves your candidate alone and
+  reports its outcome (<references/SPEC.md> § Outcomes) and over-pin slack.
 - **`spec validate`** — the whole-spec keep-going sweep: one outcome per selector
-  that did not resolve (`no_match` / `ambiguous` / `conflict` / `too_broad` over
-  100 places / `duplicate_claim` / `invalid` / `undecided`), plus warnings for selectors
-  resolved only by elimination (below). A `no_match` lists the
-  `nearest_unclaimed` statements: start a repair from the first one. It also lists what each matched
-  template's free identifiers mean: check that every `reference` names the
-  entity you meant. The full mode runs the pipeline (Bazel
-  `:debundle`, package roots); the source-only preflight (`--modules` plus
-  `--source-file`) needs no pipeline build and resolves the modules together
-  just as the full mode does, short of duplicate claims across modules; when
-  selectors interact it runs the CP-SAT sidecar (`debundle` runfiles, or
-  `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER`) — see Setup.
-
-Division of labor: the minimizer makes a selector **compact and unique today** by
-mechanical read-off; judging whether its anchor is _meaningful_ (vs an accidental
-token that happens to be unique) and so **forward-compatible** is intelligence you
-supply — it cannot be read off the AST. Both halves of the backlog flow through
-these tools — the name pins from `selector-debt`'s default census, and the
-near-ambiguous structural selectors from its `--source-file` pass.
+  that did not resolve, plus warnings for selectors resolved only by
+  elimination (<references/SPEC.md> § Outcomes). A `no_match` of a one-statement template
+  may list `nearest_unclaimed` statements: start a repair from the first one. It
+  also lists what each matched template's free identifiers mean: check that
+  every `reference` names the entity you meant. Its full and source-only
+  modes: <references/docs/cli.md> § Running the pipeline.
 
 ## Shared CLI workflows
 
-@references/cli.md
-@references/selectors.md
+@references/docs/cli.md
+@references/docs/selectors.md
 
 ## Setup
 
@@ -105,18 +86,17 @@ base under `/tmp` to avoid lock contention, exactly as the other debundle
 skills do. In a consuming repo the CLI label is `@ducktape//...`; inside the
 debundler repo, drop the prefix.
 
-The whole-spec gate is the exception. Full `spec validate` (and `debundle run`) is
-the joint selector solve plus the realizability/cycle pipeline in dry-run, so it
-needs the full `debundle` **pipeline target** — the Bazel `:debundle` target with its package roots and a repo-root
-source root — not the standalone binary against the snapshot dir. Run it through
-Bazel. On NixOS, `--server_javabase=…` is a **startup** option: it must precede
-`build`, not follow it.
+The whole-spec gate is the exception: full `spec validate` (and `debundle run`)
+needs the Bazel `:debundle` **pipeline target**, with its package roots and a
+repo-root source root, not the standalone binary against the snapshot dir
+(<references/docs/cli.md> § Running the pipeline). On NixOS, `--server_javabase=…`
+is a **startup** option: it must precede `build`, not follow it.
 
 ## The worklist
 
-The backlog has two _enumerable_ halves. Run both before picking work — the second
-is invisible by default yet roughly as large as the first, so a top-down reader who
-skips it works only half the surface.
+Run each enumerable pass below before picking work: the source-aware pass is
+invisible by default, so a top-down reader who skips it works only part of the
+surface.
 
 **1. Name pins (default census).** Members still selected by their minified
 `binding.name`, most rebuild-fragile first:
@@ -142,8 +122,7 @@ This adds **source-aware near-ambiguous** rows — existing `source_match` selec
 that resolve uniquely today but have high-scoring sibling statements, i.e. one
 upstream edit from ambiguous — plus source-aware repeated-exact bodies and
 grouped `source_matches[]` suggestions. Treat this run as routine, not a footnote:
-it is cheap (tens of seconds whole-spec) and surfaces a population about as large as
-the name-pin backlog that is otherwise invisible.
+it is cheap and surfaces a population that is otherwise invisible.
 
 **3. Re-check existing noted debt.** A name pin kept with a "blocked on X"
 `note:` (step 6) may have been unblocked since: tooling that has landed (new hole
@@ -152,7 +131,7 @@ cleanly now. The census lists the name pin but not whether its recorded blocker 
 still real, so periodically re-run the minimizer over noted debt and retire the
 note where it now converts.
 
-A _third_ failure mode is **not** enumerable: a selector that is already
+One failure mode is **not** enumerable: a selector that is already
 `source_match` yet pinned on an _incidental_ anchor (the `{ name: ANYTHING }` shape).
 Judging whether a pin is forward-stable is the same intelligence as authoring it, so
 you find these by reading source. `match-selector` (used in the loop below) reports
@@ -178,29 +157,27 @@ wrong anchor, so slack only prioritizes; it never decides.
 
 3. **Choose a purpose anchor** (rubric below) and write it into a
    `source_matches[]` entry — by hand, or by taking `synthesize-selectors --apply`
-   output and tightening it onto the anchor you picked. After any `--apply`, run the repo
-   formatter (`pre-commit` / prettier) **before** reading the diff: `--apply`
-   re-emits the whole YAML in the debundler's canonical 0-space form, so a
-   pre-prettier `git diff` is unreviewable noise; the formatter reconciles it back to
-   exactly the semantic change.
+   output and tightening it onto the anchor you picked. After any `--apply`, run
+   the repo formatter **before** reading the diff (<references/docs/selectors.md>
+   § Bulk conversion loop).
 
 4. **Prove it.** Test the candidate with
    `debundle spec match-selector --source-file <chunk> --match '<selector>'
 --target-binding <name>`: it reports whether the selector resolves **uniquely** to
    the binding you mean, and its **slack** — the kept things you could still hole
-   without losing uniqueness (i.e. whether you over-pinned). It uses the public
-   alpha-equivalent source-match identifier policy. For a whole-spec sweep,
-   `debundle spec validate` (keep-going) resolves every selector jointly and
-   reports each one that did not resolve, plus the resolved-by-elimination
-   warnings, in the same outcome format.
+   without losing uniqueness (i.e. whether you over-pinned). `match-selector`
+   resolves the probe alone, so a template that names other entities or claims a
+   free identifier (pinning by use site) cannot be proven there: prove it with
+   source-only `debundle spec validate --modules <dir> --source-file <chunk>`,
+   which should report nothing for it (`resolved_by: own_references` is ok), and
+   check that its `templates` entry names the entities you meant.
 
 5. **Group** adjacent or cohesive bindings that share a declaration context into
    one `source_matches[]` entry rather than emitting N overlapping selectors.
 
 6. **Leave honest debt.** If the entity has no purpose-bearing anchor stable enough
-   to trust, keep the name pin and add an `annotations.<export>.note:` saying
-   why. A truthful name pin beats an incidental `source_match` that looks stable
-   and isn't.
+   to trust, keep the name pin with a `note:` (<references/docs/selectors.md>
+   § Selector debt).
 
 ## What makes a good anchor
 
@@ -224,45 +201,8 @@ looking.
 renames `getOwner` → `gO` freely but cannot rewrite the string
 `"DocumentAccessorFactory"` — strings are observable behavior. So an identity carried
 by a _literal_ is doubly stable: identity-bearing _and_ minification-immune. The
-ladder:
-
-Prefer (identity / contract — behavior-causal, human-meaningful):
-
-- a literal the entity emits **about itself** — a `getName`/`get type` returning its
-  name, `static displayName`, an error `name`/`message`, an action `type`, an
-  event / route / MIME / i18n / registration key;
-- public member or method names that name behavior _and_ survive minification
-  (`fetchAcl`, `dispatch`) — under `alpha_all` property names are exact anchors, so
-  they only help when the build keeps them (in this app, member names generally
-  survive);
-- API / operation identities (GraphQL op names, action types);
-- another spec entity, named by its readable export name in the template
-  (`new Widget(ANYTHING)`): the match must use that entity's own binding
-  (<../../docs/selectors.md> § Naming other entities);
-- for an entity with no distinctive body (one of several identical helper
-  copies), a statement that uses it: claim the free identifier in `bindings[]`
-  (<../../docs/selectors.md> § Pinning by use site);
-- a **stable prefix** of an otherwise volatile string, via a regex anchor.
-
-Disprefer (implementation / incidental — churned by refactors and rebuilds):
-
-- **control-flow and body internals** — `for`/`while`/`switch` shape, statement
-  sequences, nested expression trees: the mechanism, never the identity;
-- positional / structural shape with no kept value (arity, declaration order);
-- uniqueness borrowed from an unrelated **neighbor** declaration;
-- uniqueness that holds only because **other selectors claimed the
-  alternatives** — `spec validate` warns (`resolved` with `resolved_by: elimination`) and names
-  the claimers. Unique only in the joint solve, it breaks as soon as a claimer
-  moves; `match-selector` checks the selector alone, so a candidate it proves
-  unique does not have this problem;
-- bare numbers (`0`, `1`), booleans, ubiquitous literals; a generic object key with
-  its value holed (`{ name: ANYTHING }`); minified identifiers (wildcarded, but one spelled like another entity's export
-  name becomes a reference to it);
-- **content hashes and generated ids** — hashed CSS-module class names
-  (`Button-module_root__a1b2c3`), hashed asset URLs (`/static/app.7f3e9c.js`),
-  build-id query params, cache-busting suffixes: the _most_ volatile thing in the
-  bundle. Pin the stable prefix and hole / regex-anchor the volatile tail; **never
-  pin the hash.**
+full ranking, and what to reject as if stable: <references/docs/selectors.md>
+§ Anchor strength tiers.
 
 ### Good / okay / bad: one entity, three selectors
 
@@ -280,7 +220,7 @@ class DocumentAccessorFactory extends NodeAccessor {
 }
 ```
 
-All three resolve uniquely _today_; they differ only in what they claim makes this
+Each resolves uniquely _today_; they differ only in what they claim makes this
 the class. The claim wrapper is the same each time — only the `match:` body
 changes.
 
@@ -351,9 +291,9 @@ honest pin beats a photograph that _looks_ structural and durable but isn't.
 
 - **literal / enum tables** (i18n, routes, MIME, error codes): anchor on the
   distinctive key/value pair; group siblings into one selector.
-- **CSS Modules / style maps**: the dogfood app is built with CSS Modules, so class
-  literals are shaped `<Component>-module_<local>__<hash>`. Never pin the `<hash>` (it
-  is regenerated every build) — anchor each className constant with
+- **CSS Modules / style maps**: a CSS Modules build shapes class literals as
+  `<Component>-module_<local>__<hash>`. Never pin the `<hash>` (it is regenerated
+  every build) — anchor each className constant with
   `STR_LITERAL_MATCHING_RE("^<Component>-module_<local>__[A-Za-z0-9_-]+$")` and collect
   the component's `*Styles` object constants into one grouped `source_matches[]`
   entry (the `Widget-module_*` declaration-range example in `selectors.md` is
@@ -367,11 +307,11 @@ honest pin beats a photograph that _looks_ structural and durable but isn't.
   hole host / version / cache-busting parts of any URL.
 - **duplicated TS codegen helpers** (`__decorate` / `__defineProperty` /
   `__getOwnPropertyDescriptor` aliases): the bundler emits a byte-identical copy per
-  module, so nothing but the minified name distinguishes the copies — there is no
-  sparse selector to author. **Not your job:** leave them as honest name-pin debt.
-  Recognizing and collapsing these is a debundler tooling concern (the
-  `effect: typescript_decorate_helper` annotation is the partial-awareness hook), not
-  selector authoring — don't burn effort hunting an anchor that cannot exist.
+  module, so no template of a copy's body tells the copies apart. Pin each copy
+  through a statement that uses it: claim the helper's free identifier in a
+  `source_matches[]` template of its decorator call
+  (<references/docs/selectors.md> § Pinning by use site), or use `makes_decorate_call`.
+  Leave name-pin debt only for a copy no use site tells apart.
 
 ## Don't hand-transcribe long bodies
 

@@ -35,9 +35,24 @@ spec:
   vars:
     - name: model_allowlists
       value:
+        antigravity_client_models:
+          - antigravity/ant-messages/claude-opus-4-6-thinking
+          - antigravity/ant-messages/claude-sonnet-4-6
+          - antigravity/ant-messages/gemini-3.6-flash-high
+          - antigravity/ant-messages/gemini-3.7-flash-high
+          - antigravity/ant-messages/gemini-3.8-flash-high
+          - antigravity/ant-messages/gemini-3-flash
+          - antigravity/ant-messages/gemini-3.1-flash-image
+          - antigravity/ant-messages/gemini-pro-agent
+          - antigravity/ant-messages/gemini-3.1-pro-low
+          - antigravity/ant-messages/gpt-oss-120b-medium
+          - antigravity/ant-messages/gemini-3.1-flash-lite
+          - antigravity/ant-messages/gemini-3.5-flash-lite
         cheap_experiments_models:
           - google/goog-generate/gemini-3.7-flash
           - google/goog-generate/gemini-3.5-flash-lite
+          - antigravity/ant-messages/gemini-3.1-flash-lite
+          - antigravity/ant-messages/gemini-3.5-flash-lite
           - google/goog-embed/gemini-embedding-2
           - google/goog-embed/gemini-embedding-001
           - mistral/oai-chat/codestral-2508
@@ -77,6 +92,8 @@ spec:
           - ollama/olm-chat/gpt-oss-120b-128k
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
           - ollama/olm-chat/gemma4-31b-it-q8_0-128k
+          - ollama/oai-chat/qwen3.8-flash-next-q4-128k
+          - ollama/olm-chat/qwen3.8-flash-next-q4-128k
           - anthropic-api/ant-messages/claude-haiku-4-5-20251001
           - chatgpt/ant-messages/gpt-6-luna
           - chatgpt/oai-responses/gpt-6-luna
@@ -111,6 +128,21 @@ spec:
           - chatgpt/oai-responses/gpt-5.6-sol
           - chatgpt/oai-responses/gpt-5.6-terra
           - chatgpt/oai-responses/gpt-5.6-luna
+        ollama_chat_client_models:
+          - ollama/oai-chat/gpt-oss-20b-128k
+          - ollama/olm-chat/gpt-oss-20b-128k
+          - ollama/oai-chat/gpt-oss-20b-256k
+          - ollama/olm-chat/gpt-oss-20b-256k
+          - ollama/oai-chat/gpt-oss-20b-512k
+          - ollama/olm-chat/gpt-oss-20b-512k
+          - ollama/oai-chat/gpt-oss-20b-1m
+          - ollama/olm-chat/gpt-oss-20b-1m
+          - ollama/oai-chat/gpt-oss-120b-128k
+          - ollama/olm-chat/gpt-oss-120b-128k
+          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+          - ollama/olm-chat/gemma4-31b-it-q8_0-128k
+          - ollama/oai-chat/qwen3.8-flash-next-q4-128k
+          - ollama/olm-chat/qwen3.8-flash-next-q4-128k
         tana_client_models:
           - tana/ant-messages/claude-sonnet-4-6
           - tana/ant-messages/claude-opus-4-6

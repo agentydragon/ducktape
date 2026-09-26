@@ -47,6 +47,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: haku-console-db-indexer-generator
   refreshInterval: 8760h

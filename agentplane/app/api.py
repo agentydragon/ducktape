@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, nullcontext
 from typing import Annotated
 from uuid import UUID
 
@@ -44,7 +45,6 @@ from agentplane.app.agent_runtime.events.event_log import EventLogStore, ThreadN
 from agentplane.app.agent_runtime.runner import bridge as runner_bridge
 from agentplane.app.agent_runtime.runner.runners import SandboxNotReachableError
 from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.updates import ThreadUpdates
 from agentplane.app.agent_runtime.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
 from agentplane.app.agent_runtime.view.fold import CommandOutcome
 from agentplane.app.agent_runtime.view.views import ThreadView
@@ -55,6 +55,7 @@ from agentplane.app.consent import (
     decide_enrollment,
     preview_enrollment,
 )
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
 from agentplane.app.egress import (
     BindingNotFoundError,
@@ -75,10 +76,10 @@ from agentplane.app.inventory import (
     SandboxView,
 )
 from agentplane.app.live import LiveIndex, Updates, router as live_router
-from agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
-from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore
+from agentplane.app.oidc import OIDCSettings, build_oauth
+from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
-from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
+from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
 from agentplane.runner.client import OpenTimeoutError, RunnerError
 from agentplane.subjects import ServiceAccountRef
 
@@ -349,14 +350,14 @@ OperatorActions = Annotated[OperatorActionServiceClient, Depends(_operator_actio
 
 @consent_router.post("/{handle}/preview")
 async def connection_preview(request: Request, handle: EnrollmentHandle, client: OperatorActions) -> ConsentPreview:
-    return await preview_enrollment(request, handle, client)
+    return await preview_enrollment(operator_session_row(request), handle, client)
 
 
 @consent_router.post("/{handle}/decision")
 async def connection_decision(
     request: Request, handle: EnrollmentHandle, body: ConsentDecision, client: OperatorActions
 ) -> EnrollmentDecisionResult:
-    return await decide_enrollment(request, handle, body, client)
+    return await decide_enrollment(operator_session_row(request), handle, body, client)
 
 
 connections_router = APIRouter(tags=["connections"])
@@ -426,6 +427,16 @@ async def list_actions(
     return await client.list_requests(states=tuple(state or ()))
 
 
+def _operator_sessions(request: Request) -> OperatorSessionStore:
+    sessions = request.app.state.operator_sessions
+    if not isinstance(sessions, OperatorSessionStore):
+        raise TypeError(f"app.state.operator_sessions is {type(sessions).__name__}, not OperatorSessionStore")
+    return sessions
+
+
+OperatorSessions = Annotated[OperatorSessionStore, Depends(_operator_sessions)]
+
+
 async def _action_chunks(client: OperatorActions) -> AsyncIterator[AsyncIterator[bytes]]:
     async with AsyncExitStack() as stack:
         try:
@@ -433,24 +444,73 @@ async def _action_chunks(client: OperatorActions) -> AsyncIterator[AsyncIterator
                 chunks = await stack.enter_async_context(client.stream_requests())
         except TimeoutError as error:
             raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "Action stream startup timed out") from error
-        yield chunks
+        yield _without_repeated_snapshots(_renewed(client, chunks))
+
+
+async def _renewed(client: OperatorActionServiceClient, opened: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+    """`opened`, then the upstream opened again under a freshly exchanged token each time one ends, as
+    one does when the minute-long token it was opened with expires. One that ends before its first
+    chunk refused the token at the door; it is not opened again, so a refusal cannot loop."""
+    upstream: AbstractAsyncContextManager[AsyncIterator[bytes]] = nullcontext(opened)
+    while True:
+        delivered = False
+        async with upstream as chunks:
+            async for chunk in chunks:
+                delivered = True
+                yield chunk
+        if not delivered:
+            return
+        upstream = client.stream_requests()
+
+
+async def _without_repeated_snapshots(chunks: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+    """`chunks` regrouped into whole SSE frames, less each `snapshot` identical to the last one
+    forwarded. A snapshot is the whole Action history, megabytes (#7922), and every upstream
+    `_renewed` opens starts with one, however little has changed."""
+    pending = bytearray()
+    last_snapshot: bytes | None = None
+    async for chunk in chunks:
+        # A boundary split between two chunks starts at the last byte already held.
+        searched = max(len(pending) - 1, 0)
+        pending += chunk
+        while (end := pending.find(b"\n\n", searched)) != -1:
+            frame = bytes(pending[: end + 2])
+            del pending[: end + 2]
+            searched = 0
+            if frame.startswith(b"event: snapshot\n"):
+                if (digest := hashlib.sha256(frame).digest()) == last_snapshot:
+                    continue
+                last_snapshot = digest
+            yield frame
 
 
 @actions_router.get("/stream")
 async def action_stream(
-    request: Request, shutdown: Shutdown, chunks: Annotated[AsyncIterator[bytes], Depends(_action_chunks)]
+    request: Request,
+    shutdown: Shutdown,
+    updates: Updates,
+    sessions: OperatorSessions,
+    chunks: Annotated[AsyncIterator[bytes], Depends(_action_chunks)],
 ) -> StreamingResponse:
+    session_id = operator_session_row(request).id
+
+    async def session_over() -> None:
+        # The replicas share its end -- a logout on any of them, or its expiry -- through PostgreSQL.
+        await sessions.until_ended(session_id, updates.changes[Channel.OPERATOR_SESSIONS])
+
     async def body() -> AsyncIterator[bytes]:
-        # Force periodic reauthentication (including logout in another replica), not state polling.
         try:
-            async with asyncio.timeout(30):
-                async for chunk in shutdown.until(chunks):
-                    if operator_session(request) is None or await request.is_disconnected():
-                        return
-                    yield chunk
-        except TimeoutError:
-            return
-        except httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError:
+            async for chunk in shutdown.until(until_done(chunks, session_over)):
+                if await request.is_disconnected():
+                    return
+                yield chunk
+        except (
+            httpx.HTTPStatusError,
+            httpx.RequestError,
+            httpx2.HTTPStatusError,
+            httpx2.TransportError,
+            OperatorFederationError,
+        ):
             # Headers are already sent. End the SSE connection so EventSource reconnects.
             logger.warning("Action stream interrupted after response start", exc_info=True)
 
@@ -776,7 +836,7 @@ async def thread_event_stream(
     if cursor > thread.last_cursor:
         raise HTTPException(status.HTTP_409_CONFLICT, "cursor is beyond the archived Thread prefix")
     return StreamingResponse(
-        shutdown.until(stream.follow(event_logs, updates.changes, thread_id, after_cursor=cursor)),
+        shutdown.until(stream.follow(event_logs, updates.changes[Channel.THREADS], thread_id, after_cursor=cursor)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -799,7 +859,7 @@ def create_app(
     *,
     event_logs: EventLogStore,
     content: ContentStore,
-    thread_updates: ThreadUpdates,
+    database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
@@ -816,7 +876,8 @@ def create_app(
     app.state.store = store
     app.state.event_logs = event_logs
     app.state.content = content
-    app.state.thread_updates = thread_updates
+    app.state.database_updates = database_updates
+    app.state.operator_sessions = operator_sessions
     app.state.models = catalog
     app.state.presets = configured_presets
     app.state.egress = egress
@@ -854,7 +915,9 @@ def create_app(
             secret_key=oidc.session_secret,
             session_cookie=oidc.cookie_name,
             https_only=oidc.secure,
-            max_age=oidc.session_seconds,
+            max_age=oidc.session_max_seconds,
+            idle_seconds=oidc.session_idle_seconds,
+            activity_step_seconds=oidc.session_activity_step_seconds,
         )
         app.state.oauth = build_oauth(oidc)
         # Unguarded, because these are how a browser with no credential acquires one.

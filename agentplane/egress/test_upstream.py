@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import socket
 from datetime import UTC, datetime, timedelta
 from ipaddress import ip_address, ip_network
 
@@ -10,7 +12,7 @@ import pytest_bazel
 from mitmproxy import connection
 
 from agentplane.egress.policy import DenyReason
-from agentplane.egress.upstream import UpstreamRefusedError, UpstreamResolver, reachable
+from agentplane.egress.upstream import Address, UpstreamRefusedError, UpstreamResolver, reachable
 
 LOOPBACK = (ip_network("127.0.0.0/8"), ip_network("::1/128"))
 
@@ -96,16 +98,34 @@ async def test_pin_is_reused_while_fresh_and_not_after() -> None:
     assert resolver.pinned("localhost", 443) is None
 
 
-async def test_dial_goes_to_the_pinned_address_and_nowhere_without_one() -> None:
-    resolver = UpstreamResolver(exempt=LOOPBACK)
-    unpinned = connection.Server(address=("localhost", 443))
-    resolver.redirect(unpinned)
+class DocumentationRangeResolver(UpstreamResolver):
+    """Resolves every name to one documentation address, which no real lookup of a `.test` name returns."""
+
+    async def _resolve(self, host: str, port: int) -> list[Address]:
+        return [ip_address("192.0.2.7")]
+
+
+async def test_dial_resolves_to_the_pinned_address_and_nowhere_without_one() -> None:
+    resolver = DocumentationRangeResolver(exempt=(ip_network("192.0.2.0/24"),))
+    unpinned = connection.Server(address=("pinned.test", 443))
+    resolver.dial(unpinned)
     assert unpinned.error is not None
-    assert unpinned.address == ("localhost", 443)
-    await resolver.pin("localhost", 443)
-    pinned = connection.Server(address=("localhost", 443))
-    resolver.redirect(pinned)
-    assert (pinned.error, pinned.address) == (None, ("127.0.0.1", 443))
+    await resolver.pin("pinned.test", 443)
+    pinned = connection.Server(address=("pinned.test", 443))
+    resolver.dial(pinned)
+    # The connection keeps the name its requests carry, which is what mitmproxy matches to reuse it.
+    assert (pinned.error, pinned.address) == (None, ("pinned.test", 443))
+    loop = asyncio.get_running_loop()
+    [(_, _, _, _, target)] = await loop.getaddrinfo("PINNED.test", 443, type=socket.SOCK_STREAM)
+    assert target == ("192.0.2.7", 443)
+
+
+async def test_a_dial_resolves_only_its_own_target() -> None:
+    resolver = DocumentationRangeResolver(exempt=(ip_network("192.0.2.0/24"),))
+    await resolver.pin("pinned.test", 443)
+    resolver.dial(connection.Server(address=("pinned.test", 443)))
+    with pytest.raises(socket.gaierror):
+        await asyncio.get_running_loop().getaddrinfo("other.test", 443, type=socket.SOCK_STREAM)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
+    ANTIGRAVITY_MODELS,
     CLIPROXY_MODELS,
     GEMINI_EMBEDDING_COMPAT_ALIAS,
     GEMINI_EMBEDDING_MODELS,
@@ -263,6 +264,18 @@ def _tana_entries() -> list[dict]:
     ]
 
 
+def _antigravity_entries() -> list[dict]:
+    return _provider_entries(
+        [model.id for model in ANTIGRAVITY_MODELS],
+        provider=Provider.ANTIGRAVITY,
+        upstream_prefix="anthropic",
+        protocol="messages",
+        api_base=_CLIPROXY_BASE,
+        api_key="os.environ/CLIPROXY_CLIENT_KEY",
+        supports_function_calling=True,
+    )
+
+
 def _anthropic_entries() -> list[dict]:
     return [
         *_provider_entries(
@@ -359,6 +372,7 @@ def main_proxy_config() -> dict:
         *_tana_entries(),
         *_cliproxy_entries(),
         *_anthropic_entries(),
+        *_antigravity_entries(),
         *_simple_provider_entries(),
     ]
     # The name every consumer uses for this route; the assert catches both a divergence

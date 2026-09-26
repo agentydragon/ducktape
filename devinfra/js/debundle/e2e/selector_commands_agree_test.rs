@@ -490,6 +490,12 @@ export { a, b };
             "kind": "ambiguous",
             "candidates": [{"owner": 0, "binding": "a"}, {"owner": 1, "binding": "b"}],
             "truncated": false,
+            // Alike in themselves, each is set apart by its neighbor: only
+            // `a` is followed, and only `b` preceded, by a `"shared"` function.
+            "differentiators": [
+                {"owner": 0, "statement": 1, "anchor": "string literal \"shared\""},
+                {"owner": 1, "statement": 0, "anchor": "string literal \"shared\""},
+            ],
         })
     );
 }
@@ -769,6 +775,10 @@ fn resolution_by_elimination_is_shared_by_every_spec_command() {
             "kind": "ambiguous",
             "candidates": [{"owner": 0, "binding": "first"}, {"owner": 1, "binding": "second"}],
             "truncated": false,
+            "differentiators": [
+                {"owner": 0, "statement": 0, "anchor": "string literal \"shared\""},
+                {"owner": 1, "statement": 1, "anchor": "string literal \"other\""},
+            ],
         }),
         "spec match-selector"
     );
@@ -1048,6 +1058,10 @@ function f() { return key + 1; }"#;
         "kind": "ambiguous",
         "candidates": [{"owner": 1, "binding": "a"}, {"owner": 2, "binding": "b"}],
         "truncated": false,
+        "differentiators": [
+            {"owner": 1, "statement": 0, "anchor": "string literal \"anchor-key\""},
+            {"owner": 2, "statement": 1, "anchor": "number literal 1"},
+        ],
     });
 
     let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(

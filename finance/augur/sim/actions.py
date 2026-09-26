@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from pydantic import Field, PrivateAttr
 
 from finance.augur.sim.books import AccountRef, Record
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
 
 
 class ClaimId(Record):
@@ -24,28 +25,28 @@ class ClaimId(Record):
 
 
 class LotSale(Record):
-    account_id: str
-    lot_id: str
+    account_id: AccountId
+    lot_id: LotId
     units: int
 
 
 class Sell(Record):
     kind: Literal["Sell"] = "Sell"
     cause_id: str
-    agent_id: str
-    proceeds_account_id: str
-    asset_id: str
+    agent_id: AgentId
+    proceeds_account_id: AccountId
+    asset_id: AssetId
     lots: tuple[LotSale, ...]
 
 
 class Buy(Record):
     kind: Literal["Buy"] = "Buy"
     cause_id: str
-    agent_id: str
-    cash_account_id: str
-    holding_account_id: str
-    asset_id: str
-    lot_id: str
+    agent_id: AgentId
+    cash_account_id: AccountId
+    holding_account_id: AccountId
+    asset_id: AssetId
+    lot_id: LotId
     quantity_scale: int
     units: int
 
@@ -80,27 +81,27 @@ class Consume(Record):
 class Contribute(Record):
     kind: Literal["Contribute"] = "Contribute"
     cause_id: str
-    agent_id: str
-    portfolio_id: str
-    cash_account_id: str
+    agent_id: AgentId
+    portfolio_id: PortfolioId
+    cash_account_id: AccountId
     amount: int
 
 
 class Withdraw(Record):
     kind: Literal["Withdraw"] = "Withdraw"
     cause_id: str
-    agent_id: str
-    portfolio_id: str
-    cash_account_id: str
+    agent_id: AgentId
+    portfolio_id: PortfolioId
+    cash_account_id: AccountId
     amount: int
 
 
 class Liquidate(Record):
     kind: Literal["Liquidate"] = "Liquidate"
     cause_id: str
-    agent_id: str
-    portfolio_id: str
-    cash_account_id: str
+    agent_id: AgentId
+    portfolio_id: PortfolioId
+    cash_account_id: AccountId
 
 
 type Action = Annotated[

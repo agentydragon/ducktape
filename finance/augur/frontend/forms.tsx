@@ -10,8 +10,8 @@ import {
   fmtUsd,
   fmtQuantity,
 } from "./lib/format";
-import { LIFECYCLE_KINDS, defaultLifecycleEvent, resolveSleeveWeights } from "./input_helpers";
-import { sellableSecurities, isPrivateSecurityPosition } from "./data_helpers";
+import { LIFECYCLE_KINDS, defaultLifecycleEvent, resolveSleeveWeights, sleeveKey } from "./input_helpers";
+import { sellableSleeves, isPrivateSecurityPosition } from "./data_helpers";
 
 function firstSaleMonth(events) {
   let earliest = null;
@@ -201,7 +201,7 @@ export function SleeveWeightsControl({
   label = "Target allocation (relative weights)",
   compact = false,
 }) {
-  // One row per sellable holding with an integer weight. Only RATIOS matter, so the row also
+  // One row per sellable sleeve (a held security, or a TLH portfolio) with an integer weight. Only RATIOS matter, so the row also
   // shows each weight as a percentage of their sum — that is the number a person actually reasons
   // about, while the stored value stays an integer and needs no sum-to-one validator to defend it.
   //
@@ -209,20 +209,20 @@ export function SleeveWeightsControl({
   // so opening this and changing nothing leaves the target matching today's portfolio. Weight 0 is
   // meaningful rather than empty: it puts the holding OUTSIDE the target, never sold to fund the
   // band and not counted when measuring what is overweight.
-  const sellable = sellableSecurities(portfolio);
+  const sellable = sellableSleeves(portfolio);
   if (sellable.length === 0) return null;
   const resolved = resolveSleeveWeights(sleeveWeights, sellable);
   // The type argument is load-bearing. `resolveSleeveWeights` is untyped, so `resolved` is `any`
   // and the callback's return type is discarded — leaving `Map<unknown, unknown>`, which makes
   // every arithmetic use of a weight below a compile error.
-  const weightBySymbol = new Map<string, number>(resolved.map((sleeve) => [sleeve.symbol, sleeve.weight]));
-  const total = sellable.reduce((sum, row) => sum + (weightBySymbol.get(row.symbol) ?? 0), 0);
+  const weightByKey = new Map<string, number>(resolved.map((sleeve) => [sleeveKey(sleeve), sleeve.weight]));
+  const total = sellable.reduce((sum, row) => sum + (weightByKey.get(row.key) ?? 0), 0);
 
-  const emit = (symbol, weight) =>
+  const emit = (key, weight) =>
     onChange(
       sellable.map((row) => ({
-        symbol: row.symbol,
-        weight: row.symbol === symbol ? weight : (weightBySymbol.get(row.symbol) ?? 0),
+        ...row.sleeve,
+        weight: row.key === key ? weight : (weightByKey.get(row.key) ?? 0),
       }))
     );
 
@@ -231,11 +231,11 @@ export function SleeveWeightsControl({
       {label && <div className="augur-field-label mb-2">{label}</div>}
       <ul className="overflow-hidden rounded border border-slate-200 divide-y divide-slate-200 dark:border-slate-700 dark:divide-slate-700">
         {sellable.map((row) => {
-          const weight = weightBySymbol.get(row.symbol) ?? 0;
+          const weight = weightByKey.get(row.key) ?? 0;
           const share = total > 0 ? Math.round((100 * weight) / total) : 0;
           return (
             <li
-              key={row.symbol}
+              key={row.key}
               className={`flex items-center gap-2 px-2 py-1 ${weight > 0 ? "" : "bg-slate-50 opacity-80 dark:bg-slate-900/40"}`}
             >
               <span className="flex-1 text-sm font-semibold augur-strong">{row.label}</span>
@@ -245,7 +245,7 @@ export function SleeveWeightsControl({
                 step={1}
                 value={weight}
                 aria-label={`Target weight for ${row.label}`}
-                onChange={(event) => emit(row.symbol, Math.max(0, Math.trunc(Number(event.target.value) || 0)))}
+                onChange={(event) => emit(row.key, Math.max(0, Math.trunc(Number(event.target.value) || 0)))}
                 className="augur-input w-20 text-right augur-tabular"
               />
               <span className="w-12 text-right text-xs augur-muted augur-tabular">
@@ -288,6 +288,29 @@ function PortfolioPositionRow({ position, currency }) {
       <td className="py-1 text-right augur-tabular">{fmtQuanta(position.totalCostBasisQuanta, currency)}</td>
       <td className="py-1 text-right font-semibold augur-tabular">
         {fmtQuanta(position.currentValueQuanta, currency)}
+      </td>
+    </tr>
+  );
+}
+
+// Money and basis by cohort, not units at a price: the columns a holding fills with a unit count
+// and a unit value carry the cohort count instead.
+function PortfolioTlhRow({ portfolio, currency }) {
+  const cohorts = portfolio.cohorts.length;
+  return (
+    <tr className="border-t border-slate-100 dark:border-slate-800">
+      <td className="py-1 pl-3">
+        <div className="truncate font-semibold augur-strong">{portfolio.label}</div>
+        <div className="truncate text-xs augur-muted">
+          {portfolio.asset.symbol} · {portfolio.accountLabel || portfolio.accountId}
+        </div>
+      </td>
+      <td colSpan={2} className="py-1 text-right augur-tabular augur-muted">
+        {cohorts} {cohorts === 1 ? "cohort" : "cohorts"}
+      </td>
+      <td className="py-1 text-right augur-tabular">{fmtQuanta(portfolio.totalCostBasisQuanta, currency)}</td>
+      <td className="py-1 text-right font-semibold augur-tabular">
+        {fmtQuanta(portfolio.currentValueQuanta, currency)}
       </td>
     </tr>
   );
@@ -338,11 +361,20 @@ export function ProductPortfolioPanel({ portfolio, error }) {
   const privateSecurityHoldings = holdings.filter(isPrivateSecurityPosition);
   const publicHoldingsValueQuanta = sumCurrentValueQuanta(publicHoldings);
   const privateSecurityValueQuanta = sumCurrentValueQuanta(privateSecurityHoldings);
+  // Managed portfolios are not holdings: `totalHoldingsValueQuanta` leaves them out.
+  const tlhPortfolios = portfolio?.tlhPortfolios ?? [];
+  const tlhValueQuanta = sumCurrentValueQuanta(tlhPortfolios);
   const cashQuanta = portfolio?.cashQuanta ?? "0";
   const bonds = portfolio?.bonds ?? [];
   const bondFaceQuanta = portfolio?.totalBondFaceValueQuanta ?? "0";
-  const totalQuanta = currencyQuantaAdd(cashQuanta, portfolio?.totalHoldingsValueQuanta ?? "0", bondFaceQuanta);
-  const hasAnything = currencyQuantaIsPositive(cashQuanta) || holdings.length > 0 || bonds.length > 0;
+  const totalQuanta = currencyQuantaAdd(
+    cashQuanta,
+    portfolio?.totalHoldingsValueQuanta ?? "0",
+    tlhValueQuanta,
+    bondFaceQuanta
+  );
+  const hasAnything =
+    currencyQuantaIsPositive(cashQuanta) || holdings.length > 0 || tlhPortfolios.length > 0 || bonds.length > 0;
   return (
     <div className="px-4 py-3">
       <button
@@ -412,6 +444,20 @@ export function ProductPortfolioPanel({ portfolio, error }) {
                 />
               </>
             )}
+            {tlhPortfolios.length > 0 && (
+              <>
+                <PortfolioGroupHeaderRow label="Managed (TLH)" />
+                {tlhPortfolios.map((managed) => (
+                  <PortfolioTlhRow key={managed.portfolioId} portfolio={managed} currency={currency} />
+                ))}
+                <PortfolioSubtotalRow
+                  label="Managed subtotal"
+                  valueQuanta={tlhValueQuanta}
+                  dataKey="tlh-portfolios"
+                  currency={currency}
+                />
+              </>
+            )}
             {bonds.length > 0 && (
               <>
                 <PortfolioGroupHeaderRow label="Bonds (held to maturity)" />
@@ -426,7 +472,7 @@ export function ProductPortfolioPanel({ portfolio, error }) {
                 />
               </>
             )}
-            {holdings.length === 0 && bonds.length === 0 && (
+            {holdings.length === 0 && tlhPortfolios.length === 0 && bonds.length === 0 && (
               <tr className="border-t border-slate-100 dark:border-slate-800">
                 <td colSpan={5} className="py-1 augur-muted">
                   No holdings

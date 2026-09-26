@@ -204,7 +204,7 @@ def _generative(
     log_value_onset, log_value_scale) are sampled. When False they are FIXED at their prior
     centers and only the identifiable params (log_v0, sigma_v, log_shares0, dilution) are
     sampled -- the required mode for a single issuer whose data is all in the "large" regime and
-    so cannot identify the shape (see module docstring / plans M2.2-D).
+    so cannot identify the shape.
     """
 
     log_v0 = numpyro.sample("log_v0", dist.Normal(priors.log_v0_usd, priors.log_v0_sigma))
@@ -283,7 +283,7 @@ def fit_bayesian_dilution_prior(
     onset, scale) is FIXED at the prior centers and only the identifiable params (level,
     volatility, share count, dilution rate) are sampled. This is the required mode for a single
     issuer whose observations are all in the "large" regime -- it cannot identify the shape, and
-    fitting it anyway diverges (see plans M2.2-D). Set True only when the data spans a wide size
+    fitting it anyway diverges. Set True only when the data spans a wide size
     range (or for a future population fit). Either way the returned prior carries the full shape
     (fixed or fitted) so the deployment config is complete.
 

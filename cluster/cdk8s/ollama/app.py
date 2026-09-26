@@ -21,11 +21,11 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMetadata,
 )
 
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, password_generator
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ollama"
 _NAME = "ollama"
@@ -67,9 +67,12 @@ def _models_claim(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(name=_MODELS_CLAIM, namespace=_NAMESPACE),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
-            # OpenEBS LVM HDD on wyrm2 — co-located with GPUs
+            # OpenEBS LVM HDD on wyrm2 — co-located with GPUs. VG is 500GB
+            # (proxmox-vms.tf); this PVC plus the 20Gi public-coder-devbox PVC are its
+            # only other consumers. 350Gi covers the ~228GB roster
+            # (setup-gpt-oss-v2.sh) with headroom for future additions.
             storage_class_name="lvm-proxmox-hdd",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("200Gi")}),
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("350Gi")}),
         ),
     )
 
@@ -78,7 +81,7 @@ def _ollama_container() -> k8s.Container:
     probe_action = k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("ollama"))
     return k8s.Container(
         name="ollama",
-        image="ollama/ollama:0.34.0",
+        image="ollama/ollama:0.34.4",
         ports=[k8s.ContainerPort(name="ollama", container_port=_OLLAMA_PORT, protocol="TCP")],
         env=[
             k8s.EnvVar(name="OLLAMA_MODELS", value="/models"),
@@ -86,7 +89,11 @@ def _ollama_container() -> k8s.Container:
             k8s.EnvVar(name="NVIDIA_VISIBLE_DEVICES", value="all"),
             k8s.EnvVar(name="OLLAMA_KV_CACHE_TYPE", value="q8_0"),
             k8s.EnvVar(name="OLLAMA_FLASH_ATTENTION", value="1"),
-            k8s.EnvVar(name="OLLAMA_NUM_CTX", value="131072"),
+            k8s.EnvVar(name="OLLAMA_CONTEXT_LENGTH", value="131072"),
+            # Default 5m is shorter than a cold read of the 112GB qwen3.8-flash-next-q4
+            # weights off HDD-backed lvm-proxmox-hdd; Ollama abandons the load attempt
+            # (and does not retry) once this elapses.
+            k8s.EnvVar(name="OLLAMA_LOAD_TIMEOUT", value="30m"),
         ],
         resources=k8s.ResourceRequirements(
             requests={
@@ -232,7 +239,7 @@ def _setup_job(scope: Construct) -> None:
         scope,
         "setup-gpt-oss",
         # Versioned so a changed bootstrap model list creates a fresh Job.
-        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v3", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v4", namespace=_NAMESPACE),
         spec=k8s.JobSpec(
             ttl_seconds_after_finished=86400,
             template=k8s.PodTemplateSpec(
@@ -275,14 +282,14 @@ def _direct_token(scope: Construct) -> None:
         metadata=metadata(_DIRECT_TOKEN, _NAMESPACE),
         spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
     )
-    add_external_secret(
+    ExternalSecret(
         scope,
         "direct-token",
         name=_DIRECT_TOKEN,
         namespace=_NAMESPACE,
         # A direct-API credential is generated once, not periodically rotated.
         refresh="8760h",
-        data_from=[password_generator(generator.name)],
+        data_from=[DataFrom.from_password_generator(generator.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
         template=ExternalSecretSpecTargetTemplate(

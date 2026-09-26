@@ -412,9 +412,9 @@ def test_backend_server_product_zero_width_band_sells_exactly_the_required_spend
         # VOO sleeve.
         "funding_policy": {
             "sleeve_weights": [
-                {"symbol": "VOO", "weight": 1},
-                {"symbol": "btc", "weight": 1},
-                {"symbol": "eth", "weight": 1},
+                {"kind": "security", "symbol": "VOO", "weight": 1},
+                {"kind": "security", "symbol": "btc", "weight": 1},
+                {"kind": "security", "symbol": "eth", "weight": 1},
             ]
         },
     }
@@ -552,7 +552,10 @@ def test_backend_server_product_cash_band_refills_to_the_ceiling_from_the_overwe
             # Nominal bounds: an inflation-indexed band would move with the sampled CPI path and
             # the refill would no longer be an exact number.
             "cash_band_index_to_inflation": False,
-            "sleeve_weights": [{"symbol": "VOO", "weight": 1}, {"symbol": "btc", "weight": 1}],
+            "sleeve_weights": [
+                {"kind": "security", "symbol": "VOO", "weight": 1},
+                {"kind": "security", "symbol": "btc", "weight": 1},
+            ],
         },
     }
 
@@ -616,7 +619,7 @@ def test_backend_server_product_rollout_includes_federal_and_california_tax_even
             "cash_floor": 260_000,
             "cash_ceiling": 760_000,
             "cash_band_index_to_inflation": False,
-            "sleeve_weights": [{"symbol": "VOO", "weight": 1}],
+            "sleeve_weights": [{"kind": "security", "symbol": "VOO", "weight": 1}],
         },
     }
 

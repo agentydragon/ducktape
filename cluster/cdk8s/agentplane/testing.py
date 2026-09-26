@@ -15,7 +15,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import actions, dex, rbac, testing_config
+from cluster.cdk8s.agentplane import actions, app as app_component, dex, egress, rbac, testing_config
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     MCP_EVERYTHING_NAME,
     MCP_EVERYTHING_PORT,
@@ -37,6 +37,8 @@ from cluster.cdk8s.agentplane.environment import (
 )
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
+from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
 _NAMESPACE = "agentplane-testing"
 _HOSTNAME = "agentplane-testing.allegedly.works"
@@ -132,7 +134,7 @@ ENV = Environment(
             # MCP OAuth discovery/token exchange/tool calls for the linked "example" fixture:
             # cluster-internal only, unlike the real GitHub/Kubernetes MCP OAuth providers
             # linked in staging.
-            cilium.egress_to(cilium.endpoint_labels(_NAMESPACE, OAUTH_FIXTURE_NAME), OAUTH_FIXTURE_PORT),
+            EgressRule.to_endpoints(cilium.endpoint_labels(_NAMESPACE, OAUTH_FIXTURE_NAME), OAUTH_FIXTURE_PORT),
         ],
     ),
 )
@@ -144,6 +146,19 @@ def chart(app: App) -> Chart:
     # `rbac.AgentRbac`'s own docstring for why it must not be in staging's.
     rbac.AgentRbac(chart, "rbac", ENV)
     rbac.AcceptanceToken(chart, "acceptance-token", ENV)
+    # claude-ai's boxes reach this app through staging's egress proxy, by its Service rather than its
+    # public name, which would hairpin out through the Gateway and back.
+    NetworkPolicy(
+        chart,
+        "networkpolicy-app-from-staging-egress",
+        metadata=metadata(f"{app_component.NAME}-from-staging-egress", ENV.namespace),
+        selector={"app.kubernetes.io/name": app_component.NAME},
+        ingress=[
+            IngressRule.from_endpoints(
+                cilium.endpoint_labels("agentplane-staging", egress.NAME), ports=[app_component.CONTAINER_PORT]
+            )
+        ],
+    )
     add_testing_fixtures(chart)
     dex.Dex(chart, "dex")
     EgressCredentials(

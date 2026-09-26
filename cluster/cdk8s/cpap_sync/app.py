@@ -58,6 +58,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 
 NAME = "cpap-sync"
 NAMESPACE = "cpap-sync"
@@ -283,7 +284,7 @@ def chart(app: App) -> Chart:
         ),
     )
     _gateway_vm(chart)
-    cilium.network_policy(
+    NetworkPolicy(
         chart,
         "egress",
         metadata=metadata(
@@ -325,12 +326,12 @@ def chart(app: App) -> Chart:
             # compiles to the right selector but does not install a usable BPF allow
             # for the translated backend connection.  Keep the Service rule above for
             # the facade contract and explicitly authorize the stable VMI identity.
-            cilium.egress_to(
+            EgressRule.to_endpoints(
                 {"k8s:io.kubernetes.pod.namespace": NAMESPACE, "k8s:kubevirt.io/domain": _GATEWAY}, _GATEWAY_PORT
             ),
             # git.allegedly.works resolves to the cluster's Gateway node addresses;
             # cluster covers those node entities as well as in-cluster Forgejo traffic.
-            cilium.egress_to_entities("cluster", ports=[443, 3000]),
+            EgressRule.to_entities(Entity.CLUSTER, ports=[443, 3000]),
         ],
     )
     return chart

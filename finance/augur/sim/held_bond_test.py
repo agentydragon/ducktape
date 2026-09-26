@@ -1,0 +1,255 @@
+"""Current held-bond facts and compact carrying principal through real Python batches."""
+
+from collections.abc import Callable
+from decimal import Decimal
+from typing import Literal
+
+import pytest
+import pytest_bazel
+
+from finance.augur.sim.actions import Action, Consume, DecisionActions, PayClaim
+from finance.augur.sim.books import AccountRef, BondState, Book
+from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId
+from finance.augur.sim.observations import Decision, FixedCoupon, IndexedCoupon
+from finance.augur.sim.results import BondSeries, Finished, Paid, RejectedAction, Rollout
+from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.bonds import (
+    CORPORATE,
+    MUNI,
+    QUANTUM,
+    TREASURY,
+    Situation,
+    bond_case,
+    checking,
+    compose,
+    cpi_series,
+    dated,
+)
+
+
+def execute(
+    case: Situation,
+    policy: Callable[[list[Decision]], list[DecisionActions]],
+    capture: Literal["summary", "dense", "forensic"] = "summary",
+    ids: list[int] | None = None,
+) -> list[Rollout]:
+    session = ActionSession({id_: compose(case, id_) for id_ in ids or [0]}, AgentId("alice"), capture=capture)
+    try:
+        batch = session.start()
+        while not isinstance(batch, Finished):
+            batch = session.advance(policy(batch))
+        return batch.rollouts
+    finally:
+        session.close()
+
+
+def held_bonds(book: Book) -> list[BondState]:
+    assert book.bonds is not None
+    return book.bonds
+
+
+def held_case(*, indexed: bool = False, future_cpi: float = 2.0, rollout_count: int = 1) -> Situation:
+    return Situation(
+        accounts=checking((AgentId("alice"), Decimal(0)), (AgentId("bob"), Decimal(0)), (AgentId("world"), Decimal(0))),
+        bonds=tuple(
+            dated(
+                BondId(f"{agent}-bond"),
+                agent_id=agent,
+                face=Decimal(100),
+                annual_rate=0.12,
+                period=1,
+                purchase=-1,
+                maturity=2,
+                indexed=indexed,
+            )
+            for agent in (AgentId("alice"), AgentId("bob"))
+        ),
+        horizon_months=3,
+        series=cpi_series([[1.0, 2.0, future_cpi, future_cpi]] * rollout_count),
+        rollout_count=rollout_count,
+    )
+
+
+def consume(amount: int) -> Action:
+    return Consume(
+        request_id=0,
+        cause_id="bond-funded-spend",
+        component_id="consumption",
+        from_account=AccountRef(agent_id=AgentId("alice"), account_id=AccountId("checking")),
+        to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
+        amount=amount,
+    )
+
+
+def test_owned_terms_coupon_before_spending_and_maturity_removal() -> None:
+    observed = []
+
+    def policy(batch: list[Decision]) -> list[DecisionActions]:
+        responses = []
+        for decision in batch:
+            observation = decision.observation
+            assert observation.public_holdings == 0
+            assert observation.public_positions == ()
+            if observation.month < 2:
+                [bond] = observation.held_bonds
+                assert (bond.bond_id, bond.account_id, bond.issuer_jurisdiction_id) == ("alice-bond", "checking", None)
+                assert (bond.face_value, bond.purchase_price, bond.principal) == (10_000, 10_000, 10_000)
+                coupon = bond.coupon
+                assert isinstance(coupon, FixedCoupon)
+                assert (coupon.amount, bond.coupon_period_months) == (100, 1)
+                assert (bond.purchase_month, bond.maturity_month) == (-1, 2)
+            else:
+                assert observation.held_bonds == ()
+            observed.append((observation.month, observation.cash))
+            responses.append(DecisionActions(decision.rollout_id, observation.month, [consume(observation.cash)]))
+        return responses
+
+    [result] = execute(held_case(), policy)
+    assert observed == [(0, 100), (1, 100), (2, 10_100)]
+    assert result.stop is None
+    assert result.trace is None
+    assert result.summary.bond_principal == [
+        BondSeries(
+            account=AccountRef(agent_id=AgentId("alice"), account_id=AccountId("checking")),
+            bond_id=BondId("alice-bond"),
+            values=[10_000, 10_000, 10_000, 0],
+        )
+    ]
+    assert result.summary.cash[0].values == [0, 0, 0, 0]
+    assert [row.receipt.amount_requested for row in result.summary.payments] == [100, 100, 10_100]
+    assert all(isinstance(row.receipt.outcome, Paid) for row in result.summary.payments)
+
+
+def test_indexed_principal_stopped_marks_and_replay_exclude_unobserved_cpi() -> None:
+    def policy(batch: list[Decision]) -> list[DecisionActions]:
+        responses = []
+        for decision in reversed(batch):
+            observation = decision.observation
+            if observation.month < 2:
+                [bond] = observation.held_bonds
+                coupon = bond.coupon
+                assert isinstance(coupon, IndexedCoupon)
+                assert coupon.annual_rate_ppb == 120_000_000
+                assert bond.principal == (10_000 if observation.month == 0 else 20_000)
+                assert observation.cash == (100 if observation.month == 0 else 300)
+            else:
+                assert decision.rollout_id == 1
+                assert observation.held_bonds == ()
+            actions = [consume(301), consume(1)] if decision.rollout_id == 0 and observation.month == 1 else []
+            responses.append(DecisionActions(decision.rollout_id, observation.month, actions))
+        return responses
+
+    baseline = execute(held_case(indexed=True, rollout_count=2), policy, ids=[0, 1])
+    captures: tuple[Literal["dense", "forensic"], ...] = ("dense", "forensic")
+    for capture in captures:
+        replay = execute(held_case(indexed=True, rollout_count=2), policy, capture, ids=[1, 0])
+        for row in replay:
+            assert row.summary == baseline[row.rollout_id].summary
+            assert row.stop == baseline[row.rollout_id].stop
+            financial = row.trace
+            assert financial is not None
+            assert row.summary.bond_principal[0].values == [
+                next(bond.principal for bond in held_bonds(book) if bond.agent_id == "alice")
+                for book in financial.books
+            ]
+    stopped = baseline[0]
+    assert stopped == execute(held_case(indexed=True, future_cpi=99.0, rollout_count=2), policy, ids=[0])[0]
+    assert stopped.stop == RejectedAction(month=1, action_index=0)
+    assert stopped.summary.ending_book.month == 2
+    assert stopped.summary.ending_mark_month == 1
+    assert stopped.summary.bond_principal[0].values == [10_000, 20_000, 20_000]
+    assert stopped.summary.cash[0].values == [0, 100, 300]
+    assert len(stopped.summary.last_receipts) == 1
+
+
+def pay_claims(batch: list[Decision]) -> list[DecisionActions]:
+    return [
+        DecisionActions(
+            row.rollout_id,
+            row.observation.month,
+            [
+                PayClaim(
+                    request_id=index,
+                    cause_id=claim.cause_id,
+                    claim=claim,
+                    from_account=claim.from_account,
+                    amount=claim.amount_due,
+                )
+                for index, claim in enumerate(row.observation.claims)
+            ],
+        )
+        for row in batch
+    ]
+
+
+@pytest.mark.parametrize(
+    ("issuer", "federal", "state"), [(TREASURY, True, False), (MUNI, False, False), (CORPORATE, True, True)]
+)
+def test_existing_issuer_exemptions_survive_actor_capture(
+    issuer: JurisdictionId | None, federal: bool, state: bool
+) -> None:
+    [result] = execute(bond_case(issuer=issuer), pay_claims)
+    assert result.stop is None
+    taxes = {row.jurisdiction_id: row.total_tax for row in result.summary.tax_accruals}
+    assert (taxes[JurisdictionId("federal_us")] > 0) == federal
+    assert (taxes[JurisdictionId("california")] > 0) == state
+    # One $20,000 first-year coupon less the supplied $14,600 deduction, at 10%.
+    assert taxes[JurisdictionId("federal_us")] == (54_000 if federal else 0)
+
+
+@pytest.mark.parametrize(
+    ("face", "rate", "period", "coupon"),
+    [(600, 0.01, 1, 1), (180, 0.033333333, 1, 0), (1_250_627, 0.037, 5, 19_280), (600, 0.0, 1, 0)],
+)
+def test_fixed_coupon_rounds_once_and_funds_spending(face: int, rate: float, period: int, coupon: int) -> None:
+    case = Situation(
+        accounts=checking((AgentId("alice"), Decimal(0)), (AgentId("world"), Decimal(0))),
+        bonds=(
+            dated(
+                BondId("fixed-test"),
+                agent_id=AgentId("alice"),
+                face=face * QUANTUM,
+                annual_rate=rate,
+                period=period,
+                maturity=2 * period,
+            ),
+        ),
+        horizon_months=2 * period + 1,
+    )
+
+    def spend(batch: list[Decision]) -> list[DecisionActions]:
+        return [
+            DecisionActions(
+                row.rollout_id, row.observation.month, [consume(row.observation.cash)] if row.observation.cash else []
+            )
+            for row in batch
+        ]
+
+    [actor] = execute(case, spend, "dense")
+    expected = [(period, coupon, 0), (2 * period, coupon, face)] if coupon else [(2 * period, 0, face)]
+    assert actor.trace is not None
+    assert actor.trace.bond_cashflows is not None
+    assert [(row.month, row.coupon, row.redemption) for row in actor.trace.bond_cashflows] == expected
+    assert all(row.accretion == 0 for row in actor.trace.bond_cashflows)
+    assert actor.stop is None
+    assert sum(row.receipt.amount_requested for row in actor.summary.payments) == face + 2 * coupon
+    assert actor.summary.cash[0].values == [0] * (2 * period + 2)
+    assert actor.summary.bond_principal[0].values[-1] == 0
+
+
+def test_indexed_accretion_income_is_preserved_without_claiming_final_period_coverage() -> None:
+    # CPI changes at month 6; maturity is 120. This covers intermediate accretion,
+    # not the separately unverified final-period TIPS tax treatment.
+    [result] = execute(bond_case(indexed=True, cpi=[100.0] * 6 + [200.0] * 9), pay_claims, "forensic")
+    first_year = [row for row in result.summary.tax_accruals if row.month == 11]
+    taxes = {row.jurisdiction_id: row.total_tax for row in first_year}
+    assert taxes[JurisdictionId("federal_us")] > 0
+    assert taxes[JurisdictionId("california")] == 0
+    assert result.trace is not None
+    assert result.trace.bond_cashflows is not None
+    accretion = next(row for row in result.trace.bond_cashflows if row.month == 6)
+    assert (accretion.accretion, accretion.coupon, accretion.redemption) == (100_000_000, 4_000_000, 0)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

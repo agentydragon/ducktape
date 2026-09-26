@@ -808,6 +808,26 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: monitoring-gateway-probe
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: monitoring-crds
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/monitoring/gateway-probe
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: monitoring-gateway-probe
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: monitoring-rules
   namespace: ducktape-flux
 spec:
@@ -1632,6 +1652,32 @@ spec:
     namespace: ducktape-flux
   timeout: 10m0s
   wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Cross-repo bridge. Reconciles gaffer-private/k8s/ from the gaffer-private GitRepository -- entry point for every private app's flux-kustomization.yaml.
+  name: gaffer-private
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: gaffer-private-source
+      namespace: flux-system
+    - name: authentik
+      namespace: ducktape-flux
+    - name: gateway
+      namespace: ducktape-flux
+    - name: cert-manager-issuer-config
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./k8s
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: gaffer-private
+  timeout: 5m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -2973,7 +3019,7 @@ spec:
     - name: keda
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/haku-ci
+  path: ./cluster/generated/haku-ci
   prune: true
   retryInterval: 1m
   sourceRef:

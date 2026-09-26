@@ -9,12 +9,13 @@ from pydantic import ValidationError
 from finance.augur.sim.results import Finished, Paid, PaymentReceipt, PaymentRejected, RejectedAction
 from finance.augur.sim.session import ActionSession
 from finance.augur.x.monthly_actions.policy import decide
-from finance.augur.x.monthly_actions.run import prepare
+from finance.augur.x.monthly_actions.run import HOUSEHOLD, compose, situation
 
 
 @pytest.mark.parametrize("capture", ["summary", "forensic"])
 def test_results_and_file_replay_keep_exact_successful_prefix(capture: Literal["summary", "forensic"]) -> None:
-    session = ActionSession(prepare(), "example-household", [1, 0], capture=capture)
+    case = situation()
+    session = ActionSession({id_: compose(case, id_) for id_ in (1, 0)}, HOUSEHOLD, capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

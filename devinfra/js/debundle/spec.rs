@@ -64,9 +64,7 @@ pub struct TransformSpec {
     pub unassigned_mode: BTreeMap<String, UnassignedMode>,
     /// Per-chunk analysis options. Opt-in flags for conditionally-correct
     /// inferences that hold only when the input satisfies a checkable
-    /// precondition (see `devinfra/js/debundle/AGENTS.md` →
-    /// "Conditionally-correct optimizations" and
-    /// `devinfra/js/debundle/README.md` →
+    /// precondition (see `devinfra/js/debundle/README.md` →
     /// "Conditionally-correct optimizations"). Default-empty: every
     /// chunk uses the strictly-conservative analysis paths unless the
     /// spec explicitly opts in.

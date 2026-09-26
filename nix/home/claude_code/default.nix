@@ -321,9 +321,7 @@
 let
   cfg = config.programs.claude-code;
   allowed = import ../allowed-commands.nix;
-
-  # Gmail MCP Server - pinned to specific commit for security
-  gmail-mcp-server = import ../../packages/gmail-mcp.nix { inherit pkgs lib; };
+  mcpServers = import ../mcp-servers.nix;
 
   # Helper to generate recursive file-read permissions for directories.
   # Read(path) rules cover every file-reading tool; Grep(path) and Glob(path)
@@ -557,34 +555,10 @@ in
       "rust-analyzer-lsp@claude-plugins-official"
     ];
 
-    mcpServers = {
-      "haku-console" = {
-        type = "http";
-        url = "https://haku.allegedly.works/mcp";
-      };
-
-      # Disabled - Tana MCP server now in cluster
-      # tana-local = {
-      #   type = "http";
-      #  url = "http://localhost:8262/mcp";
-      # };
-
-      # Gmail integration via MCP
-      # Setup: See nix/packages/gmail-mcp.nix for full instructions
-      # Quick start: gmail-mcp-auth (after configuring Google Cloud OAuth)
-      gmail = {
-        type = "stdio";
-        command = "${gmail-mcp-server}/bin/gmail-mcp";
-        args = [ ];
-      };
-
-      # SideroLabs (Talos/Omni) docs MCP server
-      # Uncomment to enable — provides search over Talos and Omni documentation.
-      # siderolabs = {
-      #   type = "http";
-      #   url = "https://docs.siderolabs.com/mcp";
-      # };
-    };
+    mcpServers = lib.mapAttrs (name: server: {
+      type = "http";
+      inherit (server) url;
+    }) mcpServers;
 
     settings = {
       theme = "dark";
@@ -617,7 +591,7 @@ in
           "### User-specific"
           "**Primary use of Claude Code**: software development — personal infrastructure monorepo (Bazel/Nix/k8s/Rust/Python) plus props ML-eval-pipeline development, agent trace debugging, and Claude Code container reverse-engineering"
           "**Trusted repo**: this repo, agentydragon/ducktape, working dir /home/agentydragon/code/ducktape, and its two remotes (github.com/agentydragon/ducktape [public — only this repo's own work should be pushed there] and git.allegedly.works/agentydragon/ducktape.git); confidential/secret material must never be committed to either regardless of visibility"
-          "**Org-specific CLIs**: bb / bbr / bbapi (Bazel/BuildBuddy wrappers), direnv, kubectl (atlas cluster), talosctl, sops, nixos-rebuild, tana-claude, gemini-claude, z-claude, aiquota, codex, ghreq"
+          "**Org-specific CLIs**: bb / bbr / bbapi (Bazel/BuildBuddy wrappers), direnv, kubectl (atlas cluster), talosctl, sops, nixos-rebuild, tana-claude, gemini-claude, antigravity-claude, z-claude, aiquota, codex, ghreq"
           "routine under /home/agentydragon/code/ducktape/ prefix: Bazel builds/tests, gazelle BUILD regen, props critic/grader dev workflow, kubectl reads against the atlas cluster namespaces listed above, Forgejo/GitHub read operations"
         ];
         allow = [
@@ -709,12 +683,13 @@ in
           "MultiEdit"
           "Search"
           "Task"
-          "mcp__haku-console__*"
           # Domain-scoped WebFetch rules auto-approve sandbox network prompts for
           # known domains. Tradeoff: triggers --unshare-net, so Bazel commands must
           # use dangerouslyDisableSandbox: true. See docs/claude_code_sandbox.md.
           "WebSearch"
         ]
+        # Auto-approve every tool of every SSOT-configured MCP server.
+        ++ map (name: "mcp__${name}__*") (builtins.attrNames mcpServers)
         ++ allowedCommandPerms
         ++ mkWebFetchDomainPerms allowedWebFetchDomains
         ++ mkReadPerms alwaysAllowedReadDirs
@@ -733,9 +708,6 @@ in
     sopsFile = ../../../secrets/alloy-otlp-bearer-token.yaml;
     key = "token";
   };
-
-  # Add gmail-mcp-server to PATH for auth setup command
-  config.home.packages = [ gmail-mcp-server ];
 
   # Deploy skills and plugin cache.
   config.home.file =

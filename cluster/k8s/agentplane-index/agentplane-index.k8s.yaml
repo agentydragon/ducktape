@@ -121,7 +121,7 @@ metadata:
   name: ducktape
   namespace: agentplane-index
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app.kubernetes.io/instance: ducktape

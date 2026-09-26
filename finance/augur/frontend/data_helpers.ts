@@ -7,7 +7,7 @@ import {
   fmtQuanta,
   fmtNumber,
 } from "./lib/format";
-import { METRIC_OPTIONS } from "./input_helpers";
+import { METRIC_OPTIONS, sleeveKey } from "./input_helpers";
 import { ROLLOUT_EVENT_KIND_ORDER, type RolloutEventKind } from "./rollout_event_vocabulary.generated";
 
 export { ROLLOUT_EVENT_KIND_ORDER };
@@ -462,13 +462,16 @@ export function eventTitle(event) {
   return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${cu(eventAmount(event), event?._currency)}`;
 }
 
-// Rows the target allocation may name, in portfolio order, keyed by the SERIES symbol the sim
-// acts on — not the holding's display ticker, which can differ (a VOO holding is priced by the
-// SPY series) and which the backend would then fail to match, silently disabling auto-sale. Two
-// holdings sharing one series collapse into a single row, because the sim cannot tell them apart
-// either — so their values sum, which is what the weight seed has to divide by.
+// Rows the target allocation may name, in portfolio order: held securities, then TLH portfolios.
+// A security row is keyed by the SERIES symbol the sim acts on — not the holding's display
+// ticker, which can differ (a VOO holding is priced by the SPY series) and which the backend
+// would then fail to match, silently disabling auto-sale. Two holdings sharing one series
+// collapse into a single row, because the sim cannot tell them apart either — so their values
+// sum, which is what the weight seed has to divide by.
+// Each TLH portfolio is a row of its own, named by its id and labelled with its own label: it is
+// valued in money and drawn on as a managed portfolio, never merged with lots of its index.
 // Private equity is absent because its key carries no symbol: it leaves only via a tender event.
-export function sellableSecurities(portfolio) {
+export function sellableSleeves(portfolio) {
   const bySymbol = new Map();
   for (const position of portfolio?.holdings ?? []) {
     const symbol = isPrivateSecurityPosition(position) ? null : position.asset?.symbol;
@@ -481,11 +484,21 @@ export function sellableSecurities(portfolio) {
       row.valueQuanta = currencyQuantaAdd(row.valueQuanta, valueQuanta);
     } else bySymbol.set(symbol, { symbol, labels: [label], valueQuanta });
   }
-  return [...bySymbol.values()].map(({ symbol, labels, valueQuanta }) => ({
-    symbol,
-    label: labels.join(" + "),
-    valueQuanta,
-  }));
+  const securities = [...bySymbol.values()].map(({ symbol, labels, valueQuanta }) =>
+    sellableRow({ kind: "security", symbol }, labels.join(" + "), valueQuanta)
+  );
+  const managed = (portfolio?.tlhPortfolios ?? []).map((managedPortfolio) =>
+    sellableRow(
+      { kind: "managed_portfolio", portfolioId: managedPortfolio.portfolioId },
+      managedPortfolio.label,
+      managedPortfolio.currentValueQuanta ?? "0"
+    )
+  );
+  return [...securities, ...managed];
+}
+
+function sellableRow(sleeve, label, valueQuanta) {
+  return { key: sleeveKey(sleeve), sleeve, label, valueQuanta };
 }
 
 // Reads the typed asset key, not a display string: private equity is a different KIND of

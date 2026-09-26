@@ -188,16 +188,15 @@ enum SpecNsCommand {
     /// holed further without losing uniqueness. The interactive prove-gate
     /// probe for selector authoring.
     ///
-    /// Reports one selector outcome record in the `{counts, outcomes}`
-    /// format `spec validate` uses — `resolved` when it pins a unique
-    /// target, else `no_match`, `ambiguous` with its candidates,
-    /// `too_broad` or `invalid` — plus `slack` when resolved. Candidate
-    /// selectors use the public alpha-equivalent identifier policy.
+    /// Reports one selector outcome record (kinds: SPEC.md § Outcomes) in
+    /// the `{counts, outcomes}` format `spec validate` uses, plus `slack`
+    /// when resolved. Candidate selectors use the public alpha-equivalent
+    /// identifier policy.
     #[command(name = "match-selector")]
     MatchSelector(MatchSelectorArgs),
-    /// Keep-going selector validation: report every selector problem
-    /// (no-match, ambiguous, duplicate-claim, resolution error) in one
-    /// machine-readable pass.
+    /// Keep-going selector validation: report every selector outcome that is
+    /// not ok (kinds: SPEC.md § Outcomes) and what each matched template's
+    /// free identifiers mean, in one machine-readable pass.
     ///
     /// The full mode is `debundle run` in dry-run keep-going mode: it
     /// takes the same inputs (`--spec` / `--tree-config` + package

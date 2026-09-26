@@ -49,20 +49,14 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMetadata,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from aiquota.api import Settings
 from aiquota.config import Config
 from cluster.cdk8s import public_coder_proxy
+from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app  # aiquota()'s parameter is its Kustomization
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store, remote_data
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
@@ -78,6 +72,8 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from util.settings_contract import checked_value, env_name, settings_file
 
 NAME = "aiquota"
@@ -150,6 +146,12 @@ PUBLIC_CODER_BEARER = BearerMirror(
     namespace=public_coder_proxy.NAMESPACE,
     description="Shared AIQuota API bearer mirrored only to public-coder-agent's trusted egress proxy.",
 )
+# The same for agentplane-staging's egress proxy (agentplane/egress_staging_credentials.py).
+AGENTPLANE_STAGING_BEARER = BearerMirror(
+    consumer="agentplane-staging",
+    namespace=STAGING_NAMESPACE,
+    description="Shared AIQuota API bearer mirrored only to agentplane-staging's egress proxy credentials.",
+)
 
 BEARER_MIRRORS = (
     PUBLIC_CODER_BEARER,
@@ -165,6 +167,7 @@ BEARER_MIRRORS = (
         namespace="haku-sandbox",
         description="Shared AIQuota API bearer mirrored only to haku-sandbox for Haku's own quota reads.",
     ),
+    AGENTPLANE_STAGING_BEARER,
 )
 
 
@@ -193,13 +196,13 @@ class Aiquota(Construct):
         self._add_service_monitor()
 
     def _add_bearer_mirror(self, mirror: BearerMirror) -> None:
-        add_external_secret(
+        ExternalSecret(
             self,
             f"bearer-{mirror.consumer}",
             name=mirror.secret_name,
             namespace=NAMESPACE,
             refresh="1h",
-            store=cluster_secret_store("kubernetes-cli-proxy-api-secret-store"),
+            store=SecretStoreRef.cluster("kubernetes-cli-proxy-api-secret-store"),
             data=[remote_data(BEARER_SECRET_NAME, _BEARER_KEY)],
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
             deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -339,10 +342,8 @@ class Aiquota(Construct):
             self,
             "servicemonitor",
             metadata=metadata(NAME, NAMESPACE),
-            spec=ServiceMonitorSpec(
-                selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-                endpoints=[ServiceMonitorSpecEndpoints(port="http", path="/metrics", scrape_timeout="15s")],
-            ),
+            selector=_LABELS,
+            endpoints=[Endpoint.plain(port="http", scrape_timeout="15s")],
         )
 
 

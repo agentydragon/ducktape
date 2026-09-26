@@ -26,7 +26,7 @@ import mcp.types
 from fastmcp.client import Client, ClientTransport
 from fastmcp.client.messages import MessageHandler
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, field_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 from tenacity import RetryCallState, Retrying, wait_random_exponential
 
 from agentplane.action_service.catalog import (
@@ -440,7 +440,11 @@ class McpActionGroupExecutor(Executor):
                 if key in actions:
                     raise ValueError("duplicate MCP tool name")
                 actions[key] = ActionDefinition(
-                    description=tool.description or f"MCP tool {tool.name}", input_schema=tool.input_schema
+                    description=tool.description or f"MCP tool {tool.name}",
+                    input_schema=tool.input_schema,
+                    # `annotations.title` is the older spelling of the display name that `title` replaced.
+                    title=tool.title or (tool.annotations.title if tool.annotations is not None else None),
+                    annotations=tool.annotations,
                 )
             except jsonschema.SchemaError as error:
                 raise _InvalidMcpCatalogError(f"tool {tool.name!r} input schema: {error.message}") from error
@@ -595,7 +599,7 @@ class McpActionGroupExecutor(Executor):
         if connection.failed or self._connection is not connection:
             return self._unavailable_result()
         try:
-            result = await client.call_tool(name, request.arguments, raise_on_error=False)
+            result = await client.call_tool_mcp(name, request.arguments)
         except Exception as error:
             self._session_failed(connection, error)
             raise ExecutionOutcomeUnknownError(f"MCP tools/call transport failure for {name}") from None
@@ -604,7 +608,13 @@ class McpActionGroupExecutor(Executor):
             raise ExecutionOutcomeUnknownError("MCP backend reported an unknown execution outcome")
         # A tool's error output is one of its two valid answers, not an execution failure: the
         # backend ran the call and replied. Only transport and outcome uncertainty fail here.
-        return ExecutionResult(state=ExecutionState.SUCCEEDED, result=_safe_result(result))
+        # The upstream answer is kept whole in its MCP wire shape -- every content block (images,
+        # audio, resources), structured content, `isError` and `_meta` -- so it can be relayed
+        # unchanged. `resultType` describes the JSON-RPC exchange, not the tool's answer.
+        return ExecutionResult(
+            state=ExecutionState.SUCCEEDED,
+            result=result.model_dump(mode="json", by_alias=True, exclude_none=True, exclude={"result_type"}),
+        )
 
 
 def _describe(error: BaseException) -> str:
@@ -616,22 +626,7 @@ def _describe(error: BaseException) -> str:
     return f"{type(error).__name__}: {error}" if str(error) else type(error).__name__
 
 
-def _safe_result(result: Any) -> JsonValue:
-    if result.is_error:
-        payload: dict[str, JsonValue] = {"is_error": True, "content": _texts(result)}
-        if result.structured_content is not None:
-            payload["structured_content"] = cast(JsonValue, result.structured_content)
-        return payload
-    if result.structured_content is not None:
-        return cast(JsonValue, result.structured_content)
-    return {"content": _texts(result)}
-
-
-def _texts(result: Any) -> list[JsonValue]:
-    return [block.text for block in result.content if isinstance(block, mcp.types.TextContent)]
-
-
-def _mcp_error_kind(result: Any) -> str | None:
+def _mcp_error_kind(result: mcp.types.CallToolResult) -> str | None:
     """Read only the bounded machine-readable kind used for backend unknown outcomes."""
     for block in result.content:
         if not isinstance(block, mcp.types.TextContent):

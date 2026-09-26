@@ -5,8 +5,11 @@ milestones. Dispatch order is <../TODO.md>.
 
 ## Goal
 
-Make debundle specs cheap to create, stabilize, and port across minified bundle
-versions. The target user is an agent operating on a large real-world bundle:
+Make debundle specs cheap to create, stabilize, and port to the next minified
+bundle version. A spec describes one version's set of bundles; a new upstream
+version gets its own spec, copied from the previous version's and repaired. No
+spec has to resolve against two versions, but porting to an adjacent version
+(`1.5.123` → `1.5.124`) should take little work. The target user is an agent operating on a large real-world bundle:
 the agent should spend most of its time reviewing ranked patch plans and
 blockers, not hand-authoring fragile selectors one binding at a time.
 
@@ -14,8 +17,8 @@ Selector automation has two non-negotiable success criteria:
 
 1. The produced spec must work for the current chunk and resolve the intended
    binding, group, or anonymous statement with a uniqueness proof.
-2. The produced selectors must be likely to keep working across future versions
-   of the minified chunks. A selector that copies an entire current function
+2. The produced selectors must be likely to keep working when the spec is
+   copied to the next version of the minified chunks. A selector that copies an entire current function
    body, object literal, class body, or nested expression is often just an exact
    snapshot of today's code; it can be over-narrow even when it is unique. The
    tooling should prefer the loosest readable selector that still proves
@@ -28,8 +31,9 @@ This plan covers three product flows:
    emits readable, reviewable logical modules.
 2. Given an existing partially unstable spec, replace fragile selectors with
    stable structural selectors in large batches.
-3. Given version 1 chunks plus spec and version 2 chunks, update the spec to
-   version 2 and present the remaining repair work as structured diagnostics.
+3. Given a version's spec and chunks and the next version's chunks, produce the
+   next version's spec (a copy of the previous one) and present the remaining
+   repair work as structured diagnostics.
 
 Keep all examples and fixtures generic. Do not copy private downstream bundle
 source into Ducktape tests.
@@ -129,12 +133,9 @@ member; anonymous blocks where `STMT_LIST` ignores setup/cleanup). Grouped
 against repeated selectors and splitting when one huge selector would need long
 exact bodies or volatile initializers to be unique.
 
-**Reframe.** The cost model ranks and _proves_ candidates but does not _choose_
-the anchor: picking a purpose-bearing,
-forward-compatible anchor over a merely-unique one (the `name`-key vs `"running"`
-problem) is an intelligence task delegated to an agent, with the minimizer demoted
-to a suggester and the prove-gate kept as the validity oracle. The over-pin backlog
-tracked in <../TODO.md> is then about better _defaults_, not about spec quality.
+The minimizer suggests and proves; an agent chooses the anchor
+(<../docs/selectors.md> § The contract and the ladder), so the over-pin backlog
+in <../TODO.md> is about better defaults, not spec quality.
 
 ### Patch Plans
 
@@ -168,9 +169,9 @@ orthogonal:
 - `debundle spec plan repair --diagnostics <report.json> --source-root ...`
   emits a patch plan for the unresolved, ambiguous, duplicate-claim, or invalid
   outcomes of `spec validate --format json`.
-- `debundle spec plan port --from-modules ... --from-source-root ... --to-source-root ...`
-  emits a patch plan carrying a spec across bundle versions plus residual
-  semantic tasks.
+- `debundle spec plan port --modules <copy> --from-source-root <old> --to-source-root <new>`
+  emits a patch plan repairing a copied spec against the next version's chunks,
+  plus residual semantic tasks.
 - `debundle spec apply-plan --plan <plan.json> --modules ...`
   applies a reviewed plan, preserving comments/order where the edit type
   supports it and refusing stale plans whose inputs no longer match.
@@ -216,37 +217,45 @@ The stabilization flow is the current large-spec migration case:
 The output should be large reviewable PRs grouped by rewrite class, not tiny
 hand-authored module-by-module edits.
 
-## Flow 3: Port Version 1 Spec to Version 2 Chunks
+## Flow 3: Port a Spec to the Next Bundle Version
 
-Porting is step 1c of <selector_engine.md>. The retrieval design in "Repair
-and porting search" below applies to it.
+Copy the previous version's spec into the new version's spec directory and
+validate the copy against the new chunks: every non-`ok` outcome is the repair
+list, and a stable spec keeps it short. For each entity on it, resolve the old
+spec against the old chunks to get the entity's source there, search the new
+chunks with it (§ Repair And Porting Search) and propose a repaired selector;
+what no search explains is a residual report of semantic drift.
+`nearest_unclaimed` on `no_match` outcomes is the starting point that needs no
+old chunks, and `selector-debt --against <old spec>` flags members whose
+minified binding drifted.
+
+The measure is the work an adjacent-version port takes: outcomes to repair on
+the copy, and how many the tooling repairs unaided. A held-out evaluation of
+`debundle_stabilize` uses it: stabilize against one version, copy the spec to
+the next, and count what needs repair.
 
 ## Repair Workflow
 
 For a selector that does not match anything:
 
-1. Classify the failure: parse/schema error, unsupported hole, free readable
-   identifier, no top-level candidate, local subtree mismatch, literal mismatch,
-   or context-window mismatch.
-2. Show nearest candidate statements using canonical AST distance and stable
-   anchor overlap.
-3. Try mechanical relaxations: replace volatile subtrees with holes, shrink or
-   expand the statement window, use literal/regex anchors, or group bindings.
-4. Emit a candidate patch only if the repaired selector is unique.
+1. Classify the failure: parse/schema error, unsupported hole, no top-level
+   candidate, local subtree mismatch, literal mismatch, or context-window
+   mismatch.
+2. Starting from `nearest_unclaimed`, try mechanical relaxations: replace
+   volatile subtrees with holes, shrink or expand the statement window, use
+   literal/regex anchors, or group bindings.
+3. Emit a candidate patch only if the repaired selector is unique.
 
-For an ambiguous selector:
+For an ambiguous selector, `differentiators` (<../SPEC.md> § Outcomes) already
+names each listed candidate's differentiating anchor when the list is not
+truncated, and says when none exists. Open:
 
-1. List candidate source identities and the anchors they share.
-2. Suggest the smallest differentiating stable anchor: literal, key, class
-   member, call shape, adjacent statement, or declaration kind.
-3. If no stable differentiator exists, report that the selector must remain
-   intentionally more specific or use a different ownership boundary.
+1. List the anchors the candidates share.
+2. Differentiate a truncated list, against every candidate rather than the
+   listed ones.
 
-For duplicate claims:
-
-1. Report duplicate identity by declaration/declarator, not only minified name.
-2. Identify whether the right rewrite is binding-group collapse,
-   cross-module-group support, or a real ownership conflict.
+For duplicate claims, identify whether the right rewrite is binding-group
+collapse, cross-module-group support, or a real ownership conflict.
 
 ## Performance Plan
 
@@ -311,8 +320,8 @@ selectors share context or rewrite class.
 No-match and version-port repair should use top-k retrieval rather than scanning
 every statement:
 
-1. Extract anchors and fingerprints from the failing v1 selector or selected
-   v1 source identity.
+1. Extract anchors and fingerprints from the failing selector or the entity's
+   source in the previous version.
 2. Retrieve candidate statement ids from high-value anchors first: stable
    string literals, object keys, property names, declaration kind, arity, and
    structural fingerprint prefix.
@@ -341,14 +350,13 @@ Patch planning and application should be deterministic:
 
 ### Milestone 3: Repair Reports and Patch Plans
 
-- Nearest-candidate and smallest-differentiator diagnostics for `no_match` and
-  `ambiguous` outcomes.
+- The open `ambiguous` diagnostics above.
 - `plan repair` consumes the `spec validate --format json` report and emits or
   applies patch plans for mechanically proven cases.
 
 ### Milestone 4: Version-Port Workflow
 
-Step 1c of <selector_engine.md>.
+§ Flow 3.
 
 ### Milestone 5: New-App Bootstrap
 
@@ -370,3 +378,5 @@ Step 1c of <selector_engine.md>.
   not repeated reparsing or avoidable quadratic scans.
 - New downstream debundle specs start with structural selectors and an explicit
   debt report.
+- Porting a spec to an adjacent upstream version is mostly mechanical: most
+  selectors resolve unchanged on the copy and the tooling proposes the rest.

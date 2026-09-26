@@ -61,6 +61,32 @@ data:
         - anthropic-max20/ant-messages/claude-sonnet-5
         - anthropic-max20/ant-messages/claude-fable-5
         - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
+        - antigravity/ant-messages/claude-opus-4-6-thinking
+        - antigravity/ant-messages/claude-sonnet-4-6
+        - antigravity/ant-messages/gemini-3.6-flash-high
+        - antigravity/ant-messages/gemini-3.7-flash-high
+        - antigravity/ant-messages/gemini-3.8-flash-high
+        - antigravity/ant-messages/gemini-3-flash
+        - antigravity/ant-messages/gemini-3.1-flash-image
+        - antigravity/ant-messages/gemini-pro-agent
+        - antigravity/ant-messages/gemini-3.1-pro-low
+        - antigravity/ant-messages/gpt-oss-120b-medium
+        - antigravity/ant-messages/gemini-3.1-flash-lite
+        - antigravity/ant-messages/gemini-3.5-flash-lite
+        - ollama/oai-chat/gpt-oss-20b-128k
+        - ollama/olm-chat/gpt-oss-20b-128k
+        - ollama/oai-chat/gpt-oss-20b-256k
+        - ollama/olm-chat/gpt-oss-20b-256k
+        - ollama/oai-chat/gpt-oss-20b-512k
+        - ollama/olm-chat/gpt-oss-20b-512k
+        - ollama/oai-chat/gpt-oss-20b-1m
+        - ollama/olm-chat/gpt-oss-20b-1m
+        - ollama/oai-chat/gpt-oss-120b-128k
+        - ollama/olm-chat/gpt-oss-120b-128k
+        - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+        - ollama/olm-chat/gemma4-31b-it-q8_0-128k
+        - ollama/oai-chat/qwen3.8-flash-next-q4-128k
+        - ollama/olm-chat/qwen3.8-flash-next-q4-128k
       HARNESS_CODEX:
         - chatgpt/oai-responses/gpt-6-astra
         - chatgpt/oai-responses/gpt-6-sol
@@ -70,6 +96,20 @@ data:
         - chatgpt/oai-responses/gpt-5.6-sol
         - chatgpt/oai-responses/gpt-5.6-terra
         - chatgpt/oai-responses/gpt-5.6-luna
+        - ollama/oai-chat/gpt-oss-20b-128k
+        - ollama/olm-chat/gpt-oss-20b-128k
+        - ollama/oai-chat/gpt-oss-20b-256k
+        - ollama/olm-chat/gpt-oss-20b-256k
+        - ollama/oai-chat/gpt-oss-20b-512k
+        - ollama/olm-chat/gpt-oss-20b-512k
+        - ollama/oai-chat/gpt-oss-20b-1m
+        - ollama/olm-chat/gpt-oss-20b-1m
+        - ollama/oai-chat/gpt-oss-120b-128k
+        - ollama/olm-chat/gpt-oss-120b-128k
+        - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+        - ollama/olm-chat/gemma4-31b-it-q8_0-128k
+        - ollama/oai-chat/qwen3.8-flash-next-q4-128k
+        - ollama/olm-chat/qwen3.8-flash-next-q4-128k
     agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
     thread_presets:
@@ -86,7 +126,8 @@ data:
         template: agentplane-runner
         policies:
           - basic
-          - github-public
+          - github-agentydragon-agent
+          - github-clone
         action_policy_sets:
           - public-github-reads
           - public-ducktape-reads
@@ -106,11 +147,11 @@ data:
       mode: exchange
       service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
       token_endpoint: https://auth.allegedly.works/application/o/token/
-      login_jwks_uri: https://auth.allegedly.works/application/o/agentplane/jwks/
+      login_jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging/jwks/
       target:
-        issuer: https://auth.allegedly.works/application/o/agentplane-actions/
-        audience: agentplane-actions
-        jwks_uri: https://auth.allegedly.works/application/o/agentplane-actions/jwks/
+        issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
+        audience: agentplane-staging-actions
+        jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
       scope: openid
 immutable: false
 ---
@@ -135,6 +176,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-actions-generator
   refreshInterval: 8760h
@@ -171,6 +213,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-egress-generator
   refreshInterval: 8760h
@@ -207,6 +250,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-electric-generator
   refreshInterval: 8760h
@@ -828,6 +872,9 @@ spec:
         key: tls.crt
         name: agentplane-egress-ca
   target:
+    additionalFormats:
+      pkcs12:
+        key: ca-certificates.p12
     configMap:
       key: ca-certificates.crt
       metadata:
@@ -1314,24 +1361,24 @@ metadata:
 spec:
   rules:
     - hosts:
-        - pypi.org
-        - files.pythonhosted.org
-        - registry.npmjs.org
-        - nodejs.org
-        - index.crates.io
-        - static.crates.io
-        - static.rust-lang.org
-        - releases.bazel.build
         - bcr.bazel.build
         - cache.nixos.org
-        - nixos.org
         - channels.nixos.org
-        - ftp.gnu.org
-        - snapshot.debian.org
         - code.forgejo.org
         - data.forgejo.org
+        - files.pythonhosted.org
+        - ftp.gnu.org
         - ghcr.io
+        - index.crates.io
+        - nixos.org
+        - nodejs.org
         - pkg-containers.githubusercontent.com
+        - pypi.org
+        - registry.npmjs.org
+        - releases.bazel.build
+        - snapshot.debian.org
+        - static.crates.io
+        - static.rust-lang.org
       methods:
         - GET
         - HEAD
@@ -1339,7 +1386,7 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
-  name: github-public
+  name: github-agentydragon-agent
   namespace: agentplane-staging
 spec:
   rules:
@@ -1353,6 +1400,53 @@ spec:
         - POST
       credentialRef:
         name: github-pat
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: github-clone
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - github.com
+      methods:
+        - GET
+        - POST
+      paths:
+        - /*/*.git/info/refs
+        - /*/*.git/git-upload-pack
+        - /*/*/info/refs
+        - /*/*/git-upload-pack
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-sandbox-tool-config
+  namespace: agentplane-staging
+data:
+  bazel.bazelrc: |
+    startup --host_jvm_args=-Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
+    common --test_env=HTTP_PROXY --test_env=HTTPS_PROXY --test_env=http_proxy --test_env=https_proxy --test_env=NO_PROXY --test_env=no_proxy --test_env=SSL_CERT_FILE --test_env=NODE_EXTRA_CA_CERTS --test_env=CURL_CA_BUNDLE --test_env=GIT_SSL_CAINFO --test_env=REQUESTS_CA_BUNDLE --test_env=KUBECONFIG
+  kubeconfig: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: in-cluster
+        cluster:
+          server: https://kubernetes.default.svc.cluster.local
+          certificate-authority: /etc/ssl/certs/ca-certificates.crt
+    users:
+      - name: workload
+        user:
+          token: agentplane-credential-kubernetes-workload
+    contexts:
+      - name: in-cluster
+        context:
+          cluster: in-cluster
+          user: workload
+    current-context: in-cluster
+immutable: false
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -1609,7 +1703,7 @@ spec:
             - name: AGENTPLANE_ELECTRIC_URL
               value: http://agentplane-electric.agentplane-staging.svc.cluster.local:3000
             - name: AGENTPLANE_OIDC_ISSUER
-              value: https://auth.allegedly.works/application/o/agentplane/
+              value: https://auth.allegedly.works/application/o/agentplane-staging/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
               value: https://agentplane-staging.allegedly.works
             - name: AGENTPLANE_OIDC_CLIENT_ID
@@ -1708,7 +1802,7 @@ spec:
             - name: AGENTPLANE_ELECTRIC_URL
               value: http://agentplane-electric.agentplane-staging.svc.cluster.local:3000
             - name: AGENTPLANE_OIDC_ISSUER
-              value: https://auth.allegedly.works/application/o/agentplane/
+              value: https://auth.allegedly.works/application/o/agentplane-staging/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
               value: https://agentplane-staging.allegedly.works
             - name: AGENTPLANE_OIDC_CLIENT_ID
@@ -1949,6 +2043,8 @@ spec:
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
+  annotations:
+    sandbox-actions.agentplane.allegedly.works/description: "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
   name: agentplane-runner
   namespace: agentplane-staging
 spec:
@@ -1999,6 +2095,8 @@ spec:
             - GIT_SSL_CAINFO
             - --harness-env
             - REQUESTS_CA_BUNDLE
+            - --harness-env
+            - KUBECONFIG
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
@@ -2024,6 +2122,8 @@ spec:
               value: /etc/ssl/certs/ca-certificates.crt
             - name: REQUESTS_CA_BUNDLE
               value: /etc/ssl/certs/ca-certificates.crt
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubeconfig
             - name: ANTHROPIC_AUTH_TOKEN
               value: agentplane-credential-agentplane-workload
             - name: OPENAI_API_KEY
@@ -2052,6 +2152,15 @@ spec:
               name: egress-ca
               readOnly: true
               subPath: ca-certificates.crt
+            - mountPath: /etc/ssl/certs/java/cacerts
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.p12
+            - mountPath: /etc/kubernetes/kubeconfig
+              name: tool-config
+              readOnly: true
+              subPath: kubeconfig
+          workingDir: /state
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
               value: agentplane-egress.agentplane-staging.svc.cluster.local
@@ -2059,12 +2168,23 @@ spec:
               value: "8888"
             - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
               value: "3128"
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
+              value: 0.0.0.0
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
+              value: "3129"
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
               value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
+          readinessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /readyz
+              port: 3129
+            periodSeconds: 2
+            timeoutSeconds: 1
           resources:
             limits:
               memory: 128Mi
@@ -2097,6 +2217,9 @@ spec:
         - configMap:
             name: agentplane-egress-ca
           name: egress-ca
+        - configMap:
+            name: agentplane-sandbox-tool-config
+          name: tool-config
         - name: egress-token
           projected:
             sources:
@@ -2248,9 +2371,9 @@ metadata:
 data:
   settings.yaml: |
     operator_oidc:
-      issuer: https://auth.allegedly.works/application/o/agentplane-actions/
-      audience: agentplane-actions
-      jwks_uri: https://auth.allegedly.works/application/o/agentplane-actions/jwks/
+      issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
+      audience: agentplane-staging-actions
+      jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
     allowed_service_account_namespaces:
       - agentplane-staging
     web_push:
@@ -2317,18 +2440,17 @@ data:
           kind: sandbox
           description: Stamped and exec'd by this service, as the caller, in its own namespace.
           namespace: agentplane-staging
-          environments:
-            sandbox:
-              template: agentplane-sandbox
-              container: sandbox
-              default_cwd: /home/runner
-              description: "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
-            runner:
-              template: agentplane-runner
-              container: runner
-              default_cwd: /state
-              description: "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
-          default_environment: sandbox
+          templates:
+            - agentplane-sandbox
+            - agentplane-sandbox-build
+            - agentplane-runner
+        direct_tools:
+          - create
+          - dispose
+          - exec
+          - get
+          - get_template
+          - list
       ssh:
         title: SSH
         description: SSH commands on configured targets; every Action remains subject to operator approval.
@@ -2909,6 +3031,8 @@ spec:
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
+  annotations:
+    sandbox-actions.agentplane.allegedly.works/description: "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl (configured as the caller's ServiceAccount) and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
   name: agentplane-sandbox
   namespace: agentplane-staging
 spec:
@@ -2947,6 +3071,8 @@ spec:
               value: /etc/ssl/certs/ca-certificates.crt
             - name: REQUESTS_CA_BUNDLE
               value: /etc/ssl/certs/ca-certificates.crt
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubeconfig
           image: git.allegedly.works/ducktape-ci/agentplane-sandbox:unset
           name: sandbox
           resources:
@@ -2966,6 +3092,18 @@ spec:
               name: egress-ca
               readOnly: true
               subPath: ca-certificates.crt
+            - mountPath: /etc/ssl/certs/java/cacerts
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.p12
+            - mountPath: /etc/kubernetes/kubeconfig
+              name: tool-config
+              readOnly: true
+              subPath: kubeconfig
+            - mountPath: /etc/bazel.bazelrc
+              name: tool-config
+              readOnly: true
+              subPath: bazel.bazelrc
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
               value: agentplane-egress.agentplane-staging.svc.cluster.local
@@ -2973,12 +3111,23 @@ spec:
               value: "8888"
             - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
               value: "3128"
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
+              value: 0.0.0.0
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
+              value: "3129"
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
               value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
+          readinessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /readyz
+              port: 3129
+            periodSeconds: 2
+            timeoutSeconds: 1
           resources:
             limits:
               memory: 128Mi
@@ -3010,6 +3159,9 @@ spec:
         - configMap:
             name: agentplane-egress-ca
           name: egress-ca
+        - configMap:
+            name: agentplane-sandbox-tool-config
+          name: tool-config
         - name: egress-token
           projected:
             sources:
@@ -3021,6 +3173,157 @@ spec:
                   audience: https://localhost:7445
                   expirationSeconds: 600
                   path: kubernetes-token
+---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  annotations:
+    sandbox-actions.agentplane.allegedly.works/description: "The sandbox box sized for a build: the same tools plus bazel (bazelisk, which runs the version a workspace's `.bazelversion` names) and gcc, 2 cores and 4Gi, and a home directory that survives the container being killed for running out of memory, though not the box's Pod."
+  name: agentplane-sandbox-build
+  namespace: agentplane-staging
+spec:
+  networkPolicyManagement: Unmanaged
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-sandbox
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - command:
+            - bash
+            - -c
+            - trap 'exit 0' TERM; sleep infinity & wait
+          env:
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:3128
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:3128
+            - name: http_proxy
+              value: http://127.0.0.1:3128
+            - name: https_proxy
+              value: http://127.0.0.1:3128
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost
+            - name: no_proxy
+              value: 127.0.0.1,localhost
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: CURL_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: GIT_SSL_CAINFO
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubeconfig
+          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-build:unset
+          name: sandbox
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /etc/ssl/certs/ca-certificates.crt
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.crt
+            - mountPath: /etc/ssl/certs/java/cacerts
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.p12
+            - mountPath: /etc/kubernetes/kubeconfig
+              name: tool-config
+              readOnly: true
+              subPath: kubeconfig
+            - mountPath: /etc/bazel.bazelrc
+              name: tool-config
+              readOnly: true
+              subPath: bazel.bazelrc
+            - mountPath: /home/runner
+              name: home
+        - env:
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
+              value: agentplane-egress.agentplane-staging.svc.cluster.local
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
+              value: "8888"
+            - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
+              value: "3128"
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
+              value: 0.0.0.0
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
+              value: "3129"
+            - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
+              value: /var/run/agentplane-egress/token
+            - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
+          name: egress-sidecar
+          readinessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /readyz
+              port: 3129
+            periodSeconds: 2
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /var/run/agentplane-egress
+              name: egress-token
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - configMap:
+            name: agentplane-egress-ca
+          name: egress-ca
+        - configMap:
+            name: agentplane-sandbox-tool-config
+          name: tool-config
+        - name: egress-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-egress
+                  expirationSeconds: 600
+                  path: token
+              - serviceAccountToken:
+                  audience: https://localhost:7445
+                  expirationSeconds: 600
+                  path: kubernetes-token
+        - emptyDir:
+            sizeLimit: 20Gi
+          name: home
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -3430,36 +3733,36 @@ spec:
     - type: exact_actions
       actions:
         github:
-          - get_me
-          - get_team_members
-          - get_teams
-          - ui_get
           - find_duplicate
-          - get_label
-          - issue_dependency_read
-          - issue_read
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - search_issues
-          - list_pull_requests
-          - pull_request_read
-          - search_pull_requests
           - get_commit
           - get_file_blame
           - get_file_contents
+          - get_label
           - get_latest_release
+          - get_me
           - get_release_by_tag
           - get_tag
+          - get_team_members
+          - get_teams
+          - issue_dependency_read
+          - issue_read
           - list_branches
           - list_commits
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - list_pull_requests
           - list_releases
           - list_repository_collaborators
           - list_tags
+          - pull_request_read
           - search_code
           - search_commits
+          - search_issues
+          - search_pull_requests
           - search_repositories
           - search_users
+          - ui_get
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
@@ -3510,9 +3813,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
       owner: agentydragon-agent
       repository: ducktape
 ---
@@ -3551,9 +3854,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
       owner: agentydragon
       repository: ducktape
 ---
@@ -3592,9 +3895,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
       owner: agentydragon
       repository: gaffer-private
 ---
@@ -3633,9 +3936,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -3713,7 +4016,27 @@ metadata:
 spec:
   rules:
     - hosts:
-        - agentplane-testing.allegedly.works
+        - agentplane-app.agentplane-testing.svc.cluster.local
+      clusterInternal: true
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-egress-to-testing-app
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
@@ -3727,6 +4050,7 @@ spec:
         - codeload.github.com
         - objects.githubusercontent.com
         - release-assets.githubusercontent.com
+        - raw.githubusercontent.com
       methods:
         - GET
         - HEAD
@@ -3750,15 +4074,19 @@ spec:
     - google-readonly
     - grocy-sf-readonly
     - home-assistant-readonly
+    - activitywatch-read
+    - aiquota-read
+    - haku-mailbox
     - coinbase
     - agentplane-testing
     - github-downloads
+    - github-clone
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
 metadata:
   annotations:
-    description: Auto-approves sandbox lifecycle and exec for a caller, which act only as that caller.
+    description: "Auto-approves every sandbox Action: a caller's own boxes, which act only as that caller, and reads of the templates they are made from."
   name: sandbox-self
   namespace: agentplane-staging
 spec:
@@ -3769,7 +4097,8 @@ spec:
           - create
           - dispose
           - exec
-          - info
+          - get
+          - get_template
           - list
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
@@ -4114,12 +4443,12 @@ metadata:
 spec:
   rules:
     - hosts:
-        - gmail.googleapis.com
-        - tasks.googleapis.com
-        - people.googleapis.com
         - docs.googleapis.com
+        - gmail.googleapis.com
+        - people.googleapis.com
         - sheets.googleapis.com
         - slides.googleapis.com
+        - tasks.googleapis.com
         - youtube.googleapis.com
       methods:
         - GET
@@ -4242,13 +4571,13 @@ spec:
       methods:
         - GET
       paths:
+        - /api/files/**
         - /api/objects/**
         - /api/stock
         - /api/stock/**
-        - /api/user
-        - /api/system/info
         - /api/system/db-changed-time
-        - /api/files/**
+        - /api/system/info
+        - /api/user
       credentialRef:
         name: grocy-sf-readonly
 ---
@@ -4357,3 +4686,258 @@ spec:
       clusterInternal: true
       credentialRef:
         name: home-assistant-readonly
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-activitywatch-reader
+  namespace: activitywatch
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - activitywatch-read-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-activitywatch-reader
+  namespace: activitywatch
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-activitywatch-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-activitywatch-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: activitywatch
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: activitywatch-read-token
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: activitywatch-read-token
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-activitywatch-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: activitywatch-read-token
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: activitywatch-read
+  namespace: agentplane-staging
+spec:
+  description: The static bearer of the central ActivityWatch server's read route (cluster/docs/activitywatch/README.md), copied into this namespace by ESO. The route's own proxy admits it on GETs and on POST /api/0/query/ only, so it cannot write; what it reads is every device's window titles, URLs and AFK history.
+  source:
+    secretRef:
+      name: activitywatch-read-token
+      key: token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: activitywatch-read
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - activitywatch-read.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /api/0/**
+      credentialRef:
+        name: activitywatch-read
+    - hosts:
+        - activitywatch-read.allegedly.works
+      methods:
+        - POST
+      paths:
+        - /api/0/query/
+      credentialRef:
+        name: activitywatch-read
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: aiquota-read
+  namespace: agentplane-staging
+spec:
+  description: aiquota's shared API bearer (aiquota.py), mirrored into this namespace by reflector. The API behind it serves only reads -- the Claude and Codex subscription quotas and each provider's raw usage response -- and `aiquota-read`'s rule presents it only on GETs under /v1/.
+  source:
+    secretRef:
+      name: aiquota-api-bearer-agentplane-staging
+      key: bearer-token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: aiquota-read
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - aiquota.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /v1/**
+      credentialRef:
+        name: aiquota-read
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-haku-mail-reader
+  namespace: flux-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-mail-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-haku-mail-reader
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-haku-mail-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-haku-mail-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: flux-system
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-mail-token
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: haku-mail-token
+        property: jwt
+      secretKey: jwt
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-haku-mail-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: haku-mail-token
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: haku-mailbox
+  namespace: agentplane-staging
+spec:
+  description: The Authentik JWT of Haku's mailbox account (haku@allegedly.works on the Stalwart server, cluster/k8s/haku/mailbox), rotated by authentik-jwt-rotation and copied into this namespace by ESO. It reads and changes the contents of that one mailbox over JMAP; it cannot send mail or administer the server (haku/docs/security.md).
+  source:
+    secretRef:
+      name: haku-mail-token
+      key: jwt
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: haku-mailbox
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - haku-mailbox.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /.well-known/jmap
+        - /jmap/**
+      credentialRef:
+        name: haku-mailbox
+    - hosts:
+        - haku-mailbox.allegedly.works
+      methods:
+        - POST
+      paths:
+        - /jmap/**
+      credentialRef:
+        name: haku-mailbox

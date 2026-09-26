@@ -1,24 +1,19 @@
-# Strong entity identities — deferred
+# Strong entity identities
 
 The desired endpoint is distinct strongly typed IDs at domain/API boundaries:
 a security identity must not be usable where a property identity is required.
 Changing string prefixes alone does not provide that guarantee.
 
-The [roadmap](roadmap.md) tracks this as IDTYPES, deferred. It is not a prerequisite
-for INPUT's private lowering, product bindings, or studies.
-Existing typed keys and per-kind sampled frames should be reused rather than
-replaced by another representation.
+The [roadmap](roadmap.md) tracks this as IDTYPES. Entity IDs are the nominal types
+in `sim/ids.py` plus `model/series.py`'s `LocationId`, `IssuerId` and
+`SecuritySymbol`. What remains is config-model construction: `pydantic.mypy` runs
+without `init_typed`, so a non-strict model's `__init__` (the scenario and API config
+models) still accepts a bare `str` where an ID is declared; strict `Record`s and
+dataclasses are checked. Turning on `init_typed` is a repository-wide mypy change.
 
-When a consumer makes this worthwhile:
+Labels, not entity identities, stay `str`: cause IDs, obligation IDs (a recurring
+bill's cause-ID stem), consumption component IDs, `PreparedSeries.series_id` (the
+wire form of an existing typed key), Plaid account IDs and catalog source IDs.
 
-- Identify the remaining untyped entity-ID arguments, fields and artifact keys.
-- Use distinct nominal ID types and appropriate typed key unions; preserve
-  kind information through observations, actions and results.
-- Update affected producers, consumers and serialized contracts atomically.
-  Decide boundary encoding from that concrete change, not a blanket prefix-renaming
-  campaign or a compatibility shim.
-- Keep downstream private artifact/config updates explicit. No new code needs
-  a second supported format merely to keep an old deployment working.
-
-Reuse the existing typed conditioning/provenance records and current factor
-encoding; a global artifact/API/frontend ID migration is separate.
+Decide boundary encoding from the concrete change, not a blanket prefix-renaming
+campaign or a compatibility shim; no second supported format for an old deployment.

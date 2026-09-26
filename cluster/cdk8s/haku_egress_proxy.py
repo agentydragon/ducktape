@@ -15,14 +15,6 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cert_manager_crds.io.cert_manager import (
-    Certificate,
-    CertificateSpec,
-    CertificateSpecIssuerRef,
-    CertificateSpecPrivateKey,
-    CertificateSpecPrivateKeyAlgorithm,
-    CertificateSpecSecretTemplate,
-)
 from cilium_clusterwide_crds.io.cilium import (
     CiliumClusterwideNetworkPolicy,
     CiliumClusterwideNetworkPolicySpec,
@@ -40,25 +32,14 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from trust_manager_crds.io.cert_manager.trust import (
-    Bundle,
-    BundleSpec,
-    BundleSpecSources,
-    BundleSpecSourcesSecret,
-    BundleSpecTarget,
-    BundleSpecTargetConfigMap,
-    BundleSpecTargetConfigMapMetadata,
-    BundleSpecTargetNamespaceSelector,
-    BundleSpecTargetNamespaceSelectorMatchExpressions,
-)
 
 from cluster.cdk8s import cilium, egress_fences, external_creds
+from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "haku-egress-proxy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy"
@@ -81,68 +62,24 @@ def _secret_env(name: str, secret: str, key: str, *, optional: bool | None = Non
 
 
 def _ca(chart: Chart) -> None:
-    Certificate(
+    interception_root_ca(
         chart,
-        "certificate",
-        metadata=metadata("haku-egress-proxy-root-ca", NAME),
-        spec=CertificateSpec(
-            is_ca=True,
-            common_name="haku-egress-proxy-root-ca",
-            secret_name=_CA_SECRET,
-            duration="87600h",  # 10 years
-            renew_before="8760h",  # 1 year
-            private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256),
-            secret_template=CertificateSpecSecretTemplate(
-                annotations={
-                    "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                    # haku-console: the colocated egress proxy sidecar (#4942) intercepts with this
-                    # same shared CA, so fenced sandboxes — which already trust it via
-                    # haku-egress-proxy-ca-cert — trust the colocated listener too. When the
-                    # iron/mitmproxy fence retires (#4670 end state) this CA's ownership moves out
-                    # of this directory with it.
-                    "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "cert-manager,haku-console",
-                    "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                    "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "cert-manager,haku-console",
-                }
-            ),
-            issuer_ref=CertificateSpecIssuerRef(name="cluster-ca-bootstrap", kind="ClusterIssuer"),
-        ),
-    )
-    Bundle(
-        chart,
-        "trust-bundle",
-        metadata=ApiObjectMetadata(name="haku-egress-proxy-ca-cert"),
-        spec=BundleSpec(
-            sources=[
-                BundleSpecSources(use_default_c_as=True),
-                BundleSpecSources(secret=BundleSpecSourcesSecret(name="cluster-root-ca-secret", key="ca.crt")),
-                BundleSpecSources(secret=BundleSpecSourcesSecret(name=_CA_SECRET, key="tls.crt")),
-            ],
-            target=BundleSpecTarget(
-                config_map=BundleSpecTargetConfigMap(
-                    key="ca-certificates.crt",
-                    metadata=BundleSpecTargetConfigMapMetadata(
-                        annotations={
-                            "description": "Trust bundle for haku-egress-proxy-inspected sandbox HTTPS traffic"
-                        }
-                    ),
-                ),
-                # Written into Haku trust domains. The CLIProxyAPI-backed aiquota path
-                # connects directly to the in-cluster management service and does not
-                # trust or use this inspected egress listener. public-coder-agent receives
-                # it for the #4943 spike: its OpenClaw pod mounts this bundle to verify TLS
-                # through the colocated Console egress fence (haku-console:8888).
-                namespace_selector=BundleSpecTargetNamespaceSelector(
-                    match_expressions=[
-                        BundleSpecTargetNamespaceSelectorMatchExpressions(
-                            key="kubernetes.io/metadata.name",
-                            operator="In",
-                            values=["haku-sandbox", "haku-openclaw-spike", "haku-ci", "public-coder-agent"],
-                        )
-                    ]
-                ),
-            ),
-        ),
+        name="haku-egress-proxy-root-ca",
+        namespace=NAME,
+        secret_name=_CA_SECRET,
+        bundle_name="haku-egress-proxy-ca-cert",
+        description="Trust bundle for haku-egress-proxy-inspected sandbox HTTPS traffic",
+        # haku-console: the colocated egress proxy sidecar (#4942) intercepts with this same
+        # shared CA, so fenced sandboxes -- which already trust it via haku-egress-proxy-ca-cert
+        # -- trust the colocated listener too. When the iron/mitmproxy fence retires (#4670 end
+        # state) this CA's ownership moves out of this directory with it.
+        reflection_namespaces=("cert-manager", "haku-console"),
+        # Written into Haku trust domains. The CLIProxyAPI-backed aiquota path connects
+        # directly to the in-cluster management service and does not trust or use this
+        # inspected egress listener. public-coder-agent receives it for the #4943 spike: its
+        # OpenClaw pod mounts this bundle to verify TLS through the colocated Console egress
+        # fence (haku-console:8888).
+        target_namespaces=("haku-sandbox", "haku-openclaw-spike", "haku-ci", "public-coder-agent"),
     )
 
 
@@ -410,7 +347,7 @@ def _github_token(chart: Chart, name: str) -> None:
     """The agentydragon-agent GitHub PAT, consumed only by one iron-proxy here; its sandbox
     receives a non-secret placeholder that the proxy replaces in Authorization headers for
     exact GitHub hosts."""
-    add_external_secret(
+    ExternalSecret(
         chart,
         name,
         name=name,

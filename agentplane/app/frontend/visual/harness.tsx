@@ -13,17 +13,8 @@ import { createRoot } from "react-dom/client";
 
 import App from "../app";
 import { sampleConnection } from "../connections_fixture";
-import type {
-  ActionGroupView,
-  ActionPolicyView,
-  ActionRequestView,
-  BindingView,
-  Decision,
-  McpLinkageView,
-  PolicyView,
-  SandboxView,
-  ThreadView,
-} from "../client";
+import type { BindingView, Decision, McpLinkageView, PolicyView, SandboxView, ThreadView } from "../client";
+import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
 import { EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
 import { CommandSchema } from "../../../protocol/command_pb";
@@ -39,6 +30,7 @@ import {
 import { electricLive, electricShape, electricSubset, routes, UNANSWERED } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
+import { streamRegistry } from "../stream_status";
 
 /** Resolved before any fixture is built: the scenario's fields are what the fixtures vary on. */
 function resolveScenario(): Scenario {
@@ -486,6 +478,30 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   },
 ];
 
+// A 32x32 checkerboard, 95 bytes: a real image, small enough to inline.
+const DIAGRAM_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgAQMAAABJtOi3AAAABlBMVEX///8ii+b/FUc9AAAAFElEQVR42mNg+A+ERBBEKmOgsnkA7b0/wU6R7xwAAAAASUVORK5CYII=";
+
+// What the ssh MCP server's `exec` (x/ssh_mcp_server/server.py) returns for a listing that names one
+// missing path: ls exits 2, and its output runs past the lines the widget shows before "Show all".
+const SSH_EXEC_RESULT = {
+  host: "test-archive-host",
+  user: "test-user",
+  exit_code: 2,
+  stdout: [
+    "/home/test-user/test-archive:",
+    "total 1536",
+    ...Array.from({ length: 30 }, (_, index) => {
+      const day = index + 1;
+      return `-rw-r--r-- 1 test-user test-user 51200 Sep ${String(day).padStart(2)} 03:00 test-backup-2026-09-${String(day).padStart(2, "0")}.tar.zst`;
+    }),
+    "",
+  ].join("\n"),
+  stderr: "ls: cannot access '/home/test-user/test-archive/test-missing': No such file or directory\n",
+  stdout_truncated: false,
+  stderr_truncated: false,
+};
+
 const ACTIONS: ActionRequestView[] = [
   {
     id: "70000000-0000-4000-8000-000000000001",
@@ -513,10 +529,79 @@ const ACTIONS: ActionRequestView[] = [
     execution: null,
   },
   {
+    id: "70000000-0000-4000-8000-000000000006",
+    // The ssh group in MCP_GROUPS: its `exec` Action has widgets of its own (actions/rendering/ssh.tsx).
+    action: { group: "ssh", name: "exec" },
+    arguments: {
+      host: "test-archive-host",
+      user: "test-user",
+      command: 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"',
+      timeout_seconds: 60,
+    },
+    title: "restart the test backup service",
+    description: "Its last run stopped on a stale lock, which a restart clears.",
+    origin: { thread_id: THREADS[0].id },
+    correlation: {},
+    idempotency_key: "visual-ssh-pending",
+    caller: { namespace: "agentplane-visual", name: "demo-a1b2" },
+    state: "decision_pending",
+    version: 1,
+    created_at: ago(2 * 60_000),
+    updated_at: ago(2 * 60_000),
+    decision: null,
+    execution: null,
+  },
+  {
+    id: "70000000-0000-4000-8000-000000000007",
+    action: { group: "ssh", name: "exec" },
+    arguments: {
+      host: "test-archive-host",
+      user: "test-user",
+      command: 'ls -l "$HOME/test-archive" "$HOME/test-archive/test-missing"',
+    },
+    title: "list the test backup archive",
+    description: null,
+    origin: { thread_id: THREADS[0].id },
+    correlation: {},
+    idempotency_key: "visual-ssh-completed",
+    caller: { namespace: "agentplane-visual", name: "demo-a1b2" },
+    state: "succeeded",
+    version: 4,
+    created_at: ago(5 * 60_000),
+    updated_at: ago(4 * 60_000),
+    decision: {
+      id: "71000000-0000-4000-8000-000000000007",
+      verdict: "allow",
+      provider: "human_operator",
+      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+      decision_note: null,
+      idempotency_key: "visual-allow-ssh",
+      decided_at: ago(4 * 60_000),
+    },
+    execution: {
+      id: "72000000-0000-4000-8000-000000000007",
+      state: "succeeded",
+      // The whole CallToolResult, as FastMCP answers with the ExecResult: the value as structured
+      // content and again as one JSON text block, and the server's info in `_meta`.
+      result: {
+        _meta: { "io.modelcontextprotocol/serverInfo": { name: "ssh-mcp", version: "4.0.3" } },
+        content: [{ type: "text", text: JSON.stringify(SSH_EXEC_RESULT) }],
+        structuredContent: SSH_EXEC_RESULT,
+        isError: false,
+      },
+      error: null,
+      created_at: ago(4 * 60_000),
+      started_at: ago(4 * 60_000 - 500),
+      completed_at: ago(4 * 60_000 - 1_900),
+      reconciled_at: null,
+    },
+  },
+  {
     id: "70000000-0000-4000-8000-000000000002",
-    action: { group: "everything", name: "echo" },
-    arguments: { message: "completed fixture execution" },
-    title: "echo the completed fixture message",
+    // An MCP group in MCP_GROUPS below, so its stored result is the tool's whole CallToolResult.
+    action: { group: "example_docs", name: "render_diagram" },
+    arguments: { path: "docs/test-diagram.mmd" },
+    title: "render the test diagram",
     description: null,
     origin: { thread_id: THREADS[1].id },
     correlation: {},
@@ -538,7 +623,20 @@ const ACTIONS: ActionRequestView[] = [
     execution: {
       id: "72000000-0000-4000-8000-000000000002",
       state: "succeeded",
-      result: { echo: { message: "completed fixture execution" } },
+      result: {
+        content: [
+          { type: "text", text: "Rendered docs/test-diagram.mmd as a 32x32 PNG." },
+          { type: "image", data: DIAGRAM_PNG, mimeType: "image/png" },
+          {
+            type: "resource_link",
+            uri: "https://docs-mcp.example.test/diagrams/test-diagram",
+            name: "test-diagram",
+            title: "Test diagram page",
+          },
+        ],
+        structuredContent: { path: "docs/test-diagram.mmd", width: 32, height: 32 },
+        isError: false,
+      },
       error: null,
       created_at: ago(39 * 60_000),
       started_at: ago(39 * 60_000 - 500),
@@ -621,6 +719,41 @@ const ACTIONS: ActionRequestView[] = [
       created_at: ago(14 * 60_000),
       started_at: ago(14 * 60_000 - 500),
       completed_at: ago(14 * 60_000 - 900),
+      reconciled_at: null,
+    },
+  },
+  {
+    id: "70000000-0000-4000-8000-000000000005",
+    // A tool's error answer: the Action succeeded, and the CallToolResult says the tool failed.
+    action: { group: "example_notes", name: "get_note" },
+    arguments: { note_id: "test-missing-note" },
+    title: "read the missing test note",
+    description: null,
+    origin: { thread_id: THREADS[2].id },
+    correlation: {},
+    idempotency_key: "visual-tool-error",
+    caller: { namespace: "agentplane-visual", name: "demo-a1b2" },
+    state: "succeeded",
+    version: 4,
+    created_at: ago(10 * 60_000),
+    updated_at: ago(9 * 60_000),
+    decision: {
+      id: "71000000-0000-4000-8000-000000000005",
+      verdict: "allow",
+      provider: "human_operator",
+      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+      decision_note: null,
+      idempotency_key: "visual-allow-tool-error",
+      decided_at: ago(9 * 60_000),
+    },
+    execution: {
+      id: "72000000-0000-4000-8000-000000000005",
+      state: "succeeded",
+      result: { content: [{ type: "text", text: "No note has the id test-missing-note." }], isError: true },
+      error: null,
+      created_at: ago(9 * 60_000),
+      started_at: ago(9 * 60_000 - 500),
+      completed_at: ago(9 * 60_000 - 900),
       reconciled_at: null,
     },
   },
@@ -1105,6 +1238,14 @@ const MCP_GROUPS: ActionGroupView[] = [
     retry_at: null,
     failures: 0,
   }),
+  mcpGroup("ssh", "Test MCP backend behind a static bearer.", {
+    state: "available",
+    reason: null,
+    detail: null,
+    last_discovery_at: ago(60_000),
+    retry_at: null,
+    failures: 0,
+  }),
 ];
 
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
@@ -1164,7 +1305,14 @@ routes.push(
   // The Settings modal mounts all three tabs at once (Mantine keepMounted), so MCP servers and
   // Notifications fetch on mount even while the OAuth clients tab is the one shown in the shot.
   ["GET", /^\/mcp-servers$/, () => MCP_LINKAGES],
-  ["GET", /^\/action-groups$/, () => MCP_GROUPS],
+  [
+    "GET",
+    /^\/action-groups$/,
+    () =>
+      scenario.actionGroupsUnavailable
+        ? Response.json({ detail: "the Action Service did not answer: connection refused" }, { status: 502 })
+        : MCP_GROUPS,
+  ],
   ["GET", /^\/push\/config$/, () => ({ application_server_key: null })],
   ["GET", /^\/push\/subscriptions$/, () => []],
   [
@@ -1467,10 +1615,15 @@ function watch(): WatchHealth {
   return scenario.wedgedWatch ? WEDGED : FRESH;
 }
 
-/** Live inventory and action streams remain EventSource; projected threads use Electric fetches above. */
+/** Live inventory and action streams remain EventSource; projected threads use Electric fetches above.
+ * A stream a scenario drops goes back to `CONNECTING`, as a browser's does when the network drops,
+ * and never reconnects. */
 class HarnessEventSource extends EventTarget {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
   readonly url: string;
-  readyState = 1;
+  readyState = HarnessEventSource.CONNECTING;
 
   constructor(url: string) {
     super();
@@ -1480,6 +1633,7 @@ class HarnessEventSource extends EventTarget {
   }
 
   private serve(url: URL): void {
+    this.readyState = HarnessEventSource.OPEN;
     if (url.pathname === "/live/threads") {
       const snapshot: ThreadsSnapshot = {
         sandboxes: SANDBOXES,
@@ -1488,13 +1642,13 @@ class HarnessEventSource extends EventTarget {
         watch: watch(),
       };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (scenario.sidebarSource === "disconnected") this.dispatchEvent(new Event("error"));
+      if (scenario.sidebarSource === "disconnected") this.drop();
       return;
     }
     if (url.pathname === "/live/sandboxes") {
       const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (scenario.inventoryDropped) this.dispatchEvent(new Event("error"));
+      if (scenario.inventoryDropped) this.drop();
       return;
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
@@ -1516,12 +1670,34 @@ class HarnessEventSource extends EventTarget {
     throw new Error(`Unexpected EventSource route: ${url.pathname}`);
   }
 
+  private drop(): void {
+    this.readyState = HarnessEventSource.CONNECTING;
+    this.dispatchEvent(new Event("error"));
+  }
+
   close(): void {
-    this.readyState = 2;
+    this.readyState = HarnessEventSource.CLOSED;
   }
 }
 
 window.EventSource = HarnessEventSource as unknown as typeof EventSource;
+
+// Under the frozen clock no stream is ever off for any time at all, so the registry's runs ahead of
+// it instead: a stream off since the scene began has been off this long when it renders.
+const { outageAge } = scenario;
+if (outageAge !== undefined) streamRegistry.now = () => Date.now() + outageAge;
+
+if (scenario.openConnectionStatus) {
+  // Focus opens the indicator's tooltip, as it does for a keyboard or touch reader. Every stream is
+  // off until its first frame, so the one to open is the indicator for a stream that has dropped.
+  const openStatus = new MutationObserver(() => {
+    const indicator = document.querySelector<HTMLElement>('[data-connection][aria-label*="reconnecting"]');
+    if (!indicator) return;
+    openStatus.disconnect();
+    indicator.focus();
+  });
+  openStatus.observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-label"] });
+}
 
 if (scenario.openDebug) {
   const openDebug = new MutationObserver(() => {
@@ -1634,15 +1810,16 @@ if (scenario.openSettings) {
   });
   openSettings.observe(document, { childList: true, subtree: true });
 }
-if (scenario.openRawStatus) {
-  // No URL param toggles the switch (unlike the tab itself); flip it the way an operator would.
-  const openRaw = new MutationObserver(() => {
-    const label = [...document.querySelectorAll("label")].find((candidate) => candidate.textContent === "Raw");
-    if (!label) return;
-    openRaw.disconnect();
-    label.click();
-  });
-  openRaw.observe(document, { childList: true, subtree: true });
+if (scenario.openRaw) {
+  // No URL param toggles a Raw switch; flip each one as it mounts, the way an operator would.
+  const flipped = new WeakSet<HTMLLabelElement>();
+  new MutationObserver(() => {
+    for (const label of document.querySelectorAll("label")) {
+      if (label.textContent !== "Raw" || flipped.has(label)) continue;
+      flipped.add(label);
+      label.click();
+    }
+  }).observe(document, { childList: true, subtree: true });
 }
 if (scenario.openMobileSidebar) {
   // The drawer has no route of its own; open it the way an operator would, by tapping the

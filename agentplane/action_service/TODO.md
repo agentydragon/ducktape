@@ -18,3 +18,23 @@ authentication cannot be linked.
 An `McpExecutorBinding` group (`mcp_executor.py`) offers every upstream tool as an Action. A group
 could name tools to hide from discovery and refuse at admission, such as GitHub's Copilot
 delegation tools.
+
+## Executors that answer as MCP tools
+
+`tool_results.py` renders an outcome per executor kind: an MCP group's stored `CallToolResult` as
+it is, the sandbox executor's own JSON models the way FastMCP presents a returned model. Unifying
+the executors behind MCP, with the sandbox executor answering as an MCP tool and storing a
+`CallToolResult` too, would leave one result shape and remove that dispatch.
+
+## Submit only if a policy decides
+
+An agent that would rather not spend the operator's attention has no way to ask `request_action`
+to run an Action only if a policy decides it, and to be told the refusal instead of queuing it for
+a human. `ActionService.submit_decided` already refuses that way for direct tools, before anything
+is persisted.
+
+## Direct tools per Connection
+
+Every external Connection sees the same configured `direct_tools`, narrowed only by its
+ServiceAccount's policy. A client that should see a different set, or a workload that should see
+any, needs a per-caller selection, e.g. on the ServiceAccount or the Connection.

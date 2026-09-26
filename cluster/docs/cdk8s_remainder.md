@@ -86,24 +86,6 @@ unchanged, and generated ConfigMaps contain no credentials.
 
 ## Model selectively: third-party configuration
 
-### Haku CI runner
-
-`cluster/k8s/haku-ci/config.yaml` repeats proxy URLs, NO_PROXY, CA paths and cache
-mounts declared in `cluster/cdk8s/haku_ci/runner.py`. Runner timeouts also have
-relationships to Job deadlines and Pod termination grace.
-
-Proposed: render the used configuration from those same values; use an upstream schema
-if suitable, or a small model of the fields we own. Do not recreate the entire
-forgejo-runner configuration API. Build the folded `container.options` scalar from
-arguments with the runner's actual parsing rules, not an arbitrary whitespace join.
-
-The ConfigMap deliberately has no hash: each ScaledJob creates a fresh Job, and
-Kustomize does not automatically rewrite its nested ConfigMap reference. Preserve this
-behavior. Converting configuration does not justify trimming proxy/CA settings.
-
-Done: shared paths and timing constraints cannot drift, and a representative runner
-job verifies option parsing and mounts.
-
 ### Gatus
 
 `cluster/k8s/gatus/config.yaml` combines endpoint identity with monitoring intent:
@@ -163,11 +145,6 @@ Extend the small Kustomize model for an actually used field (`patches`,
 
 ## Kubernetes manifests and deliberate external owners
 
-- **Private-repository bridge:** convert
-  `cluster/k8s/gaffer-private-source/bridge.yaml` to a typed Flux Kustomization, keeping
-  `namespace=flux-system`, the direct `gaffer-private` source, `path=./k8s`, its
-  cross-namespace dependencies, and no readiness wait. Keep private child resources
-  outside this generator's graph.
 - **Remote installations:** `agents/agent-sandbox/controller/{kustomization,patches}.yaml`
   and `kubevirt/{operator,cdi-operator}/{kustomization,namespace-patch}.yaml` compose
   upstream release bundles with local patches. Keep upstream release ownership.

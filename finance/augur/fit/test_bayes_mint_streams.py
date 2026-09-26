@@ -47,18 +47,6 @@ def _primary(
     )
 
 
-def _secondary(observed_at: dt.date, valuation_usd: float, sigma: float = 0.10) -> ValuationObservation:
-    return ValuationObservation(
-        type="valuation_observation",
-        issuer_id="synthetic",
-        observed_at=observed_at,
-        valuation_usd=valuation_usd,
-        uncertainty_log_sigma=sigma,
-        valuation_kind="secondary",
-        source_id="test",
-    )
-
-
 def _date_at_months(months: float) -> dt.date:
     return _BASE + dt.timedelta(days=round(months * _DAYS_PER_MONTH))
 

@@ -59,8 +59,6 @@ the Kustomization that owns it through `generation.write_namespace`.
   and the `kustomization.yaml` that carries the generator where it is hand-written.
 - `image-pins/` Components and the ConfigMaps whose data carries a `$imagepolicy` marker
   (§ Live image automation).
-- One-off: `gaffer-private-source/bridge.yaml` (a Flux Kustomization reconciling
-  another repository, outside the generated graph).
 
 Open work is in <../cdk8s/PLAN.md>; file-specific treatment and mixed-directory
 mechanism findings are in <cdk8s_remainder.md>.
@@ -152,7 +150,7 @@ an `http_file` in `MODULE.bazel` pinned by sha256 to the version the cluster dep
 Python bindings are build-time output, never committed. Put each import declaration and
 its optional smoke test in `cluster/cdk8s/crd_bindings/<provider>/BUILD.bazel`; keep
 upstream CRD source pins in `MODULE.bazel`. Current providers are
-`//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium,cert_manager,cnpg,agent_sandbox,tofu_controller,source_watcher,seaweedfs,grafana_operator,kyverno,volsync,kubevirt,keda,clickhouse,external_snapshotter}`.
+`//cluster/cdk8s/crd_bindings/{flux,prometheus_operator,gateway_api,external_secrets,cilium,cert_manager,cnpg,agent_sandbox,tofu_controller,source_watcher,seaweedfs,kyverno,volsync,kubevirt,keda,clickhouse,external_snapshotter}`.
 `//agentplane/crds` owns its CRD constructs directly and is a separate case.
 
 The `source_watcher` import extracts `ArtifactGenerator` from the CRD bundle in
