@@ -127,6 +127,19 @@ def next_month(world: World, capture: FinancialCapture | None, *, failed: bool =
         world.open_month()
 
 
+def pay_in_full(world: World, observation: Observation) -> None:
+    """The household pays each observed claim in full, in observed order."""
+    for index, claim in enumerate(observation.claims):
+        action = PayClaim(
+            request_id=index + 1,
+            cause_id=claim.cause_id,
+            claim=ClaimId(month=claim.month, index=claim.index),
+            from_account=claim.from_account,
+            amount=claim.amount_due,
+        )
+        assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
+
+
 def sell(units: int) -> Sell:
     return Sell(
         cause_id="chosen-sale",
@@ -288,15 +301,7 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
         units = 30_000_000 if month == 0 else 1_500_000 if month == 12 else 0
         if units:
             assert isinstance(world.execute(HOUSEHOLD, sell(units)).outcome, Executed)
-        for claim in observation.claims:
-            action = PayClaim(
-                request_id=7,
-                cause_id=f"pay-{claim.cause_id}",
-                claim=ClaimId(month=claim.month, index=claim.index),
-                from_account=claim.from_account,
-                amount=claim.amount_due,
-            )
-            assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
+        pay_in_full(world, observation)
         assert not world.unpaid_claims(HOUSEHOLD)
         next_month(world, capture)
     financial = capture.financial()
@@ -503,8 +508,7 @@ def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(yea
                         lots=(LotSale(account_id=lot.account_id, lot_id=lot.lot_id, units=units),),
                     )
                     assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
-            settlement = world.settle_claims()
-            assert not settlement.failed
+            pay_in_full(world, view(world))
             next_month(world, capture)
         output = capture.financial()
         assert output.failed_month is None

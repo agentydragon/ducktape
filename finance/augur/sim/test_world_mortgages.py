@@ -200,7 +200,16 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
                 "test-mortgage"
             ]
             assert world.account_balance(HOUSEHOLD, "checking") == checking
-            assert not world.settle_claims().failed
+            others = [other for other in observation.claims if other is not claim]
+            for index, other in enumerate(others, start=1):
+                action = PayClaim(
+                    request_id=index + 1,
+                    cause_id=other.cause_id,
+                    claim=ClaimId(month=other.month, index=other.index),
+                    from_account=other.from_account,
+                    amount=other.amount_due,
+                )
+                assert isinstance(world.apply(HOUSEHOLD, action, index), Executed)
             assert quote is not None
             mortgage.record_payment(quote, world.mortgage_principal("test-mortgage"))
         if paid_off:

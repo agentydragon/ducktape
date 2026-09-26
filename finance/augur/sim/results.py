@@ -51,13 +51,7 @@ class InsufficientCash(Record):
     available: int
 
 
-class UnfundedGroup(Record):
-    kind: Literal["UnfundedGroup"] = "UnfundedGroup"
-    available: int
-    due: int
-
-
-type PaymentFailure = Annotated[PaymentRequestError | InsufficientCash | UnfundedGroup, Field(discriminator="kind")]
+type PaymentFailure = Annotated[PaymentRequestError | InsufficientCash, Field(discriminator="kind")]
 
 
 class Paid(Record):

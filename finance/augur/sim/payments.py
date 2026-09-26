@@ -1,11 +1,10 @@
-"""Full payments or typed rejections; grouped funding remains distinct from ordered actions."""
+"""Full payments or typed rejections."""
 
-from collections import defaultdict
 from dataclasses import dataclass
 
 from finance.augur.sim import results
 from finance.augur.sim.accounting import Accounting, MortgagePaymentOutcome, TransferOutcome
-from finance.augur.sim.actions import ClaimId, Consume, PayClaim
+from finance.augur.sim.actions import Consume, PayClaim
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, TaxPaymentOutcome, TaxSettlementOutcome
 from finance.augur.sim.claims import Claim, Claims, OrdinaryDeduction, PropertyTax, TaxPayment, TaxTrueUp
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
@@ -25,13 +24,6 @@ class ObligationOutcome:
     amount_paid: int
     shortfall: int
     failure_active: bool
-
-
-@dataclass(frozen=True)
-class Settlement:
-    failed: bool
-    product_shortfall: int
-    obligations: list[ObligationOutcome]
 
 
 def receipt(request: PayClaim | Consume, reason: results.PaymentFailure | None) -> results.PaymentReceipt:
@@ -239,67 +231,3 @@ def post_payment(accounting: Accounting, month: int, claim: Claim, source: Accou
         )
     if amount > 0:
         accounting.transfers.append(TransferOutcome(month, cause, source, claim.to_account, amount, None))
-
-
-def settle_grouped(accounting: Accounting, claims: Claims, product_actor: str | None) -> Settlement:
-    requests = [
-        PayClaim(
-            request_id=index + 1,
-            cause_id=claim.cause_id,
-            claim=ClaimId(month=claims.month, index=index),
-            from_account=claim.from_account,
-            amount=claim.amount_due,
-        )
-        for index, claim in enumerate(claims.entries)
-        if not claim.paid
-    ]
-    due: defaultdict[AccountRef, int] = defaultdict(int)
-    for request in requests:
-        due[request.from_account] = checked_count(due[request.from_account] + request.amount, "money addition")
-    rejections = {
-        source: results.UnfundedGroup(available=accounting.ledger.balance(source), due=amount)
-        for source, amount in due.items()
-        if accounting.ledger.balance(source) < amount
-    }
-    failed = False
-    shortfall = 0
-    obligations = []
-    for request in requests:
-        outcome = (
-            receipt(request, rejections[request.from_account])
-            if request.from_account in rejections
-            else execute(accounting, claims.month, claims, request.from_account.agent_id, request)
-        )
-        claim = claims.entries[request.claim.index]
-        gap = checked_count(outcome.amount_requested - outcome.amount_paid, "money subtraction")
-        rejected = isinstance(outcome.outcome, results.PaymentRejected)
-        failed |= rejected
-        if rejected and isinstance(claim.effect, TaxPayment | TaxTrueUp):
-            accounting.tax_payments.append(
-                TaxPaymentOutcome(
-                    month=claims.month,
-                    cause_id=request.cause_id,
-                    agent_id=request.from_account.agent_id,
-                    obligation_type=claim.obligation_type,
-                    amount_due=request.amount,
-                    amount_paid=0,
-                    shortfall=gap,
-                )
-            )
-        obligations.append(
-            ObligationOutcome(
-                claims.month,
-                request.cause_id,
-                request.cause_id,
-                claim.obligation_type,
-                request.from_account,
-                claim.to_account,
-                request.amount,
-                outcome.amount_paid,
-                gap,
-                rejected,
-            )
-        )
-        if request.from_account.agent_id == product_actor:
-            shortfall = checked_count(shortfall + gap, "money addition")
-    return Settlement(failed, shortfall, obligations)
