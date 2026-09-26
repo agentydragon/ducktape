@@ -149,24 +149,21 @@ def _gmail_filter_to_rule(gmail_filter: GmailFilter, labels_by_id: dict[str, str
             label = labels_by_id[label_id]
             break
 
-    # Use dict unpacking to handle keyword conflict with "from"
     return FilterRule(
-        **{
-            "from": criteria.from_,
-            "to": criteria.to,
-            "subject": criteria.subject,
-            "has": criteria.query,
-            "does_not_have": criteria.negated_query,
-            "label": label,
-            "important": True if SystemLabel.IMPORTANT in add_label_ids else None,
-            "star": True if SystemLabel.STARRED in add_label_ids else None,
-            "trash": True if SystemLabel.TRASH in add_label_ids else None,
-            "archive": True if SystemLabel.INBOX in remove_label_ids else None,
-            "read": True if SystemLabel.UNREAD in remove_label_ids else None,
-            "not_important": True if SystemLabel.IMPORTANT in remove_label_ids else None,
-            "not_spam": True if SystemLabel.SPAM in remove_label_ids else None,
-            "forward": action.forward,
-        }
+        from_=criteria.from_,
+        to=criteria.to,
+        subject=criteria.subject,
+        has=criteria.query,
+        does_not_have=criteria.negated_query,
+        label=label,
+        important=True if SystemLabel.IMPORTANT in add_label_ids else None,
+        star=True if SystemLabel.STARRED in add_label_ids else None,
+        trash=True if SystemLabel.TRASH in add_label_ids else None,
+        archive=True if SystemLabel.INBOX in remove_label_ids else None,
+        read=True if SystemLabel.UNREAD in remove_label_ids else None,
+        not_important=True if SystemLabel.IMPORTANT in remove_label_ids else None,
+        not_spam=True if SystemLabel.SPAM in remove_label_ids else None,
+        forward=action.forward,
     )
 
 
