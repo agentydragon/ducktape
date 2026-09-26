@@ -75,10 +75,12 @@ For each active path, the common session:
    and prepares the next decision.
 
 An actor's mail covers its current owned accounts, public lots/basis, TLH statements,
-declared empty holding pools and their current prices, due claims, recorded tax
-facts, held dated-bond facts, and current/origin CPI when modeled. Missing CPI is
-explicit. It does not expose another actor's private books, future realized paths or
-a future tax assessment as a current liability. Statements are copies; nothing an
+declared empty holding pools and their current prices, due claims, held dated-bond
+facts, current/origin CPI when modeled, and, for an enrolled taxpayer, its tax
+records: the open year's income by source, realized short- and long-term gains so
+far, the capital-loss carryforward, and year-close assessments not yet settled.
+Missing CPI or tax records is explicit. It does not expose another actor's private
+books, future realized paths or a future tax assessment as a current liability. Statements are copies; nothing an
 actor receives can mutate canonical books.
 
 Exact lot sales, quantity purchases, cash transfers, claim payments and chosen

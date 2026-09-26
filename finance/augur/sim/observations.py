@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from finance.augur.sim.actions import ClaimId
-from finance.augur.sim.books import AccountRef, Record
+from finance.augur.sim.books import AccountRef, Record, TaxLiabilityState
 from finance.augur.sim.results import Receipt
 
 
@@ -79,6 +79,36 @@ class TlhPortfolioObservation(Record):
     accepts_contributions: bool
 
 
+class TaxRecords(Record):
+    """What the tax book has recorded for the observing taxpayer, as of this month's mail."""
+
+    income: tuple[tuple[str, int], ...] = Field(
+        description=(
+            "This tax year's income per declared income source (`ordinary`, `interest:<issuer>`), in declaration "
+            "order; ordinary income is net of the deductions already taken from it."
+        )
+    )
+    short_term_gain: int = Field(
+        description=(
+            "This tax year's realized short-term gain so far, negative for a net loss; the close nets it against "
+            "long-term results and the carryforward."
+        )
+    )
+    long_term_gain: int = Field(description="This tax year's realized long-term gain so far, negative for a net loss.")
+    capital_loss_carryforward: int = Field(
+        description=(
+            "Net capital loss carried into this tax year from the last close. The book keeps gains and this "
+            "carryforward per taxpayer; each of its jurisdictions assesses the same figures."
+        )
+    )
+    liabilities: tuple[TaxLiabilityState, ...] = Field(
+        description=(
+            "Year-close assessments per jurisdiction that the year's true-up has not yet settled. `amount_owed` is "
+            "the assessed tax, gross of estimated payments made toward it."
+        )
+    )
+
+
 class Observation(Record):
     """Money uses currency quanta; CPI is current/origin, absent only if unmodeled."""
 
@@ -93,6 +123,8 @@ class Observation(Record):
     held_bonds: tuple[HeldBond, ...]
     tlh_portfolios: tuple[TlhPortfolioObservation, ...]
     claims: tuple[Claim, ...]
+    # Absent when the actor is not an enrolled taxpayer.
+    tax_records: TaxRecords | None
     previous_receipts: tuple[Receipt, ...] = ()
 
 

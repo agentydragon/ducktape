@@ -19,6 +19,7 @@ from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.money import checked_count
 from finance.augur.sim.mortgage import Mortgage
+from finance.augur.sim.observations import TaxRecords
 from finance.augur.sim.prepared import PreparedAccount, PreparedJurisdiction
 from finance.augur.sim.scenario import TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.tax_year import TaxBook
@@ -59,6 +60,12 @@ class TaxLiabilityStatement(Statement):
     """The tax book's assessed liabilities, for the authority that collects them."""
 
     liabilities: tuple[TaxLiabilityState, ...]
+
+
+class TaxStatement(Statement):
+    """The addressee's recorded tax facts; absent when it is not an enrolled taxpayer."""
+
+    records: TaxRecords | None
 
 
 class Accounting:
@@ -129,6 +136,30 @@ class Accounting:
 
     def liability_statement(self, month: int) -> TaxLiabilityStatement:
         return TaxLiabilityStatement(month=month, liabilities=tuple(self.tax_liabilities))
+
+    def tax_statement(self, actor: str, month: int) -> TaxStatement:
+        """The open year's facts and the assessed liabilities not yet settled; no quote of the coming close."""
+        year = self.tax.years.get(actor)
+        if year is None:
+            return TaxStatement(month=month, records=None)
+        return TaxStatement(
+            month=month,
+            records=TaxRecords(
+                income=tuple(
+                    (income_source_wire_id(source), amount)
+                    for (agent, source), amount in self.tax.income.by_source.items()
+                    if agent == actor
+                ),
+                short_term_gain=year.short_term_gain,
+                long_term_gain=year.long_term_gain,
+                capital_loss_carryforward=year.capital_loss_carryforward,
+                liabilities=tuple(
+                    liability
+                    for liability in self.liability_statement(month).liabilities
+                    if liability.agent_id == actor and liability.active and liability.amount_owed
+                ),
+            ),
+        )
 
     def begin_month(self) -> None:
         self.journal.clear()

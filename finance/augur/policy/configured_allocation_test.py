@@ -73,6 +73,7 @@ def _observation(
         )
         if due
         else (),
+        tax_records=None,
     )
 
 

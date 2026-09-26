@@ -5,7 +5,7 @@ from collections.abc import Sequence
 
 from more_itertools import one
 
-from finance.augur.sim.accounting import AccountStatement
+from finance.augur.sim.accounting import AccountStatement, TaxStatement
 from finance.augur.sim.actions import Action
 from finance.augur.sim.actor import Actor, MonthOpened, Statement
 from finance.augur.sim.claims import Due
@@ -19,7 +19,15 @@ from finance.augur.sim.observations import Claim, Observation
 from finance.augur.sim.results import Receipt
 
 type Mail = (
-    MonthOpened | MarketStatement | AccountStatement | PositionStatement | BondStatement | TlhStatement | Due | Receipt
+    MonthOpened
+    | MarketStatement
+    | AccountStatement
+    | PositionStatement
+    | BondStatement
+    | TlhStatement
+    | TaxStatement
+    | Due
+    | Receipt
 )
 
 
@@ -41,6 +49,7 @@ def assemble(agent_id: AgentId, month: int, mail: Sequence[Mail]) -> Observation
     positions = statement(PositionStatement)
     bonds = statement(BondStatement)
     tlh = statement(TlhStatement)
+    tax = statement(TaxStatement)
     return Observation(
         agent_id=agent_id,
         month=month,
@@ -53,6 +62,7 @@ def assemble(agent_id: AgentId, month: int, mail: Sequence[Mail]) -> Observation
         held_bonds=bonds.bonds,
         tlh_portfolios=tlh.portfolios,
         claims=tuple(message for message in mail if isinstance(message, Claim)),
+        tax_records=tax.records,
         previous_receipts=tuple(message for message in mail if isinstance(message, Receipt)),
     )
 
