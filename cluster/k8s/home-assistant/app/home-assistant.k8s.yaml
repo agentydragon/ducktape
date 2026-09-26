@@ -218,38 +218,12 @@ spec:
   selector:
     app.kubernetes.io/name: home-assistant
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: home-assistant-onboarding
-  namespace: home-assistant
-data:
-  settings.yaml: |
-    endpoint:
-      url: http://home-assistant.home-assistant.svc.cluster.local:8123
-      client_id: https://home.allegedly.works/
-      redirect_uri: https://home.allegedly.works/
-    owner_username: ha-local-admin
-    owner_display_name: Home Assistant Local Administrator
-    http_config:
-      server_host:
-        - 127.0.0.1
-      server_port: 8124
-      cors_allowed_origins:
-        - https://cast.home-assistant.io
-      use_x_forwarded_for: true
-      trusted_proxies:
-        - 127.0.0.1/32
-      login_attempts_threshold: -1
-      ip_ban_enabled: true
-      ssl_profile: modern
-      use_x_frame_options: true
----
 apiVersion: batch/v1
 kind: Job
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/force: enabled
+    reloader.stakater.com/auto: "false"
   name: home-assistant-onboarding
   namespace: home-assistant
 spec:
@@ -257,7 +231,7 @@ spec:
   template:
     metadata:
       annotations:
-        home-assistant.allegedly.works/bootstrap-revision: "4"
+        home-assistant.allegedly.works/bootstrap-revision: "5"
       labels:
         app.kubernetes.io/name: home-assistant-onboarding
     spec:
@@ -272,6 +246,18 @@ spec:
                 secretKeyRef:
                   key: password
                   name: home-assistant-break-glass
+            - name: HOME_ASSISTANT_ONBOARDING_CORE_CONFIG__LOCATION__LATITUDE
+              valueFrom:
+                secretKeyRef:
+                  key: latitude
+                  name: home-assistant-location
+                  optional: true
+            - name: HOME_ASSISTANT_ONBOARDING_CORE_CONFIG__LOCATION__LONGITUDE
+              valueFrom:
+                secretKeyRef:
+                  key: longitude
+                  name: home-assistant-location
+                  optional: true
           image: git.allegedly.works/ducktape-ci/homeassistant-onboarding:unset
           imagePullPolicy: Always
           name: onboarding

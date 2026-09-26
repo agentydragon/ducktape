@@ -17,7 +17,7 @@ from agentplane.runner import protocol_pb2
 # gazelle:include_dep @pypi//protobuf
 
 PUBLIC_CODER = "public-coder"
-GITHUB_PUBLIC = "github-public"
+GITHUB_AGENTYDRAGON_AGENT = "github-agentydragon-agent"
 INSTRUCTIONS = "For this acceptance thread, end the final answer with PRESET-INSTRUCTIONS-OK."
 
 Sandboxes = Callable[..., Awaitable[SandboxView]]
@@ -29,7 +29,7 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     configured = {preset.name: preset for preset in await client.presets()}
     preset = configured[PUBLIC_CODER]
     assert preset.thread_defaults.harness is Harness.CODEX
-    assert GITHUB_PUBLIC in preset.policies
+    assert GITHUB_AGENTYDRAGON_AGENT in preset.policies
     assert preset.thread_defaults.model
 
     view = await sandbox(
@@ -42,7 +42,9 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     assert view.binding is not None
     assert view.binding.thread_defaults is not None
     assert view.binding.thread_defaults.instructions == INSTRUCTIONS
-    assert GITHUB_PUBLIC in {policy.name for binding in await client.bindings(view.name) for policy in binding.policies}
+    assert GITHUB_AGENTYDRAGON_AGENT in {
+        policy.name for binding in await client.bindings(view.name) for policy in binding.policies
+    }
 
     first_id = f"preset-{uuid4().hex[:8]}"
     async for attempt in runner_startup_retries():

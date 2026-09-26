@@ -29,6 +29,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
 NAME = "agentplane-electric"
 PORT = 3000
@@ -103,15 +104,15 @@ class Electric(Construct):
             selector=deployment,
             ports=[ServicePort(name="http", port=PORT, target_port=PORT, protocol=Protocol.TCP)],
         )
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "networkpolicy",
             metadata=metadata(NAME, env.namespace),
             selector=_LABELS,
-            ingress=[cilium.ingress_from(cilium.endpoint_labels(env.namespace, "agentplane-app"), ports=[PORT])],
+            ingress=[IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-app"), ports=[PORT])],
             egress=[
                 cilium.dns_egress(),
-                cilium.egress_to(
+                EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": env.namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,
                 ),

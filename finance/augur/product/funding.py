@@ -10,9 +10,10 @@ from decimal import Decimal
 from finance.augur.model.series import SecurityKey
 from finance.augur.policy.cash_band import Raise, cash_band
 from finance.augur.policy.sleeves import withdraw_by_symbol
-from finance.augur.product.wire import FundingPolicy
+from finance.augur.product.wire import FundingPolicy, ManagedSleeveWeight, SecuritySleeveWeight
 from finance.augur.sim.actions import Action, DecisionActions, PayClaim
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
+from finance.augur.sim.ids import AccountId, AgentId, AssetId
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.scenario import InitialLot
 
@@ -29,25 +30,27 @@ class Policy:
         self,
         config: FundingPolicy,
         *,
-        actor_id: str,
-        cash_account_id: str,
+        actor_id: AgentId,
+        cash_account_id: AccountId,
         initial_lots: tuple[InitialLot, ...],
         currency_quantum: Decimal,
     ) -> None:
         self.actor_id = actor_id
         self.cash_account_id = cash_account_id
         public_lots = [lot for lot in initial_lots if lot.agent_id == actor_id and isinstance(lot.asset, SecurityKey)]
-        held = {str(lot.asset.symbol) for lot in public_lots if isinstance(lot.asset, SecurityKey)}
+        held = {AssetId(lot.asset.symbol) for lot in public_lots if isinstance(lot.asset, SecurityKey)}
+        if any(isinstance(sleeve, ManagedSleeveWeight) for sleeve in config.sleeve_weights):
+            raise ValueError("this policy sells ordinary lots only; it has no managed-portfolio sleeves")
         self.targets = {
-            str(sleeve.symbol): sleeve.weight
+            AssetId(sleeve.symbol): sleeve.weight
             for sleeve in config.sleeve_weights
-            if sleeve.weight > 0 and str(sleeve.symbol) in held
+            if isinstance(sleeve, SecuritySleeveWeight) and sleeve.weight > 0 and AssetId(sleeve.symbol) in held
         }
         self.source_accounts = tuple(
             dict.fromkeys(
                 lot.account_id
                 for lot in public_lots
-                if isinstance(lot.asset, SecurityKey) and str(lot.asset.symbol) in self.targets
+                if isinstance(lot.asset, SecurityKey) and AssetId(lot.asset.symbol) in self.targets
             )
         )
         self.floor = int(currency_amount_to_quanta(config.cash_floor, quantum=currency_quantum))

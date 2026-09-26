@@ -59,6 +59,26 @@ class GitRepo:
         pg.add_worktree(name, str(path), branch_ref)
         return GitRepo(path)
 
+    def clone(self, name: str) -> GitRepo:
+        """A real `git clone` of this repo: unlike `.worktree()`, an independent `.git` with
+        its own `origin` remote-tracking state (`refs/remotes/origin/HEAD` included) — the
+        shape a genuine foreign clone has in production. pygit2's `clone_repository` does not
+        set up that remote-tracking state the way the `git` CLI does, so this is the `run`
+        escape hatch, not a pygit2 call."""
+        path = self.path.parent / name
+        self.run("clone", "--quiet", str(self.path), str(path))
+        return GitRepo(path)
+
+    def set_origin(self, url: str) -> None:
+        """Point `origin` at `url` — adds it if absent, otherwise repoints it."""
+        pg = self._pygit2()
+        try:
+            pg.remotes["origin"]
+        except KeyError:
+            pg.remotes.create("origin", url)
+        else:
+            pg.remotes.set_url("origin", url)
+
 
 @pytest.fixture
 def repo(tmp_path: Path) -> GitRepo:

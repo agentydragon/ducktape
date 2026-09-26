@@ -10,6 +10,12 @@ of that single result:
   * `worktrees`    — the worktree slice; `--prune` removes prunable worktrees.
   * `bazel-bases`  — the output-base slice; `--delete` removes prunable bases.
 
+The `all` command also surfaces foreign clones (`foreign_clone_gc`) — other clones of the same
+project, found among Bazel output-base workspaces, that are invisible to `git worktree list`
+run against this repo. `--prune` alone never removes one (`shutil.rmtree` on an independent git
+object store is a bigger blast radius than anything else this tool does); it additionally
+needs `--delete-foreign-clones`.
+
 Nothing is removed without an explicit flag; every apply re-scans and revalidates each
 candidate immediately before removing it. This module owns GitHub access (PR state); the scan
 itself is network-free.
@@ -26,23 +32,30 @@ import shutil
 import subprocess
 import sys
 import threading
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Annotated, Any
 
 import httpx
 import humanize
+import pygit2
 import typer
 from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TaskID, TextColumn
 from tabulate import tabulate
 
-from devinfra.gc import branch_gc, git_repo, output_base_gc, workspace_scan, worktree_gc
+from devinfra.gc import branch_gc, foreign_clone_gc, git_repo, output_base_gc, workspace_scan, worktree_gc
 from devinfra.gc.branch_gc import BranchClassification, FailedBranch, PrunableBranch, RemovedBranch, RetainedBranch
+from devinfra.gc.foreign_clone_gc import (
+    ForeignCloneClassification,
+    PrunableForeignClone,
+    PrunedForeignClone,
+    RetainedForeignClone,
+)
 from devinfra.gc.git_repo import GitError
 from devinfra.gc.output_base_gc import DeletedBase, FailedBase, PrunableBase, SkippedBase, default_output_user_root
 from devinfra.gc.pull_request import PrInfo, PrState
-from devinfra.gc.scan_progress import ProgressCategory, ProgressSink
+from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressCategory, ProgressSink
 from devinfra.gc.workspace_scan import WorkspaceScan
 from devinfra.gc.worktree_gc import (
     Classification,
@@ -56,7 +69,6 @@ from devinfra.gc.worktree_gc import (
 logger = logging.getLogger(__name__)
 
 _PR_RANK = {PrState.MERGED: 3, PrState.OPEN: 2, PrState.CLOSED: 1}
-_REMOTE_SLUG_RE = re.compile(r"(?:github\.com[:/])([^/]+/[^/]+?)(?:\.git)?/?$")
 _DEFAULT_OUTPUT_USER_ROOT = default_output_user_root()
 
 
@@ -70,8 +82,22 @@ def _github_token() -> str | None:
     return token or None
 
 
+_REMOTE_SLUG_RE = re.compile(r"(?:github\.com[:/])([^/]+/[^/]+?)(?:\.git)?/?$")
+
+
 def _repo_slug(repo: Path) -> str | None:
-    url = git_repo.git(repo, "remote", "get-url", "origin", check=False).stdout.strip()
+    """The `owner/name` GitHub slug of `repo`'s `origin` remote, for the GraphQL PR lookup.
+
+    GitHub-specific and `origin`-specific on purpose — this only feeds the PR API call, unlike
+    `git_repo.shares_a_remote`'s host-and-remote-agnostic match used to find foreign clones.
+    """
+    pg = pygit2.Repository(os.fspath(repo))
+    try:
+        url = pg.remotes["origin"].url
+    except KeyError:
+        return None
+    if url is None:
+        return None
     match = _REMOTE_SLUG_RE.search(url)
     return match.group(1) if match else None
 
@@ -231,13 +257,42 @@ def render_branches(items: list[BranchClassification], *, include_kept: bool) ->
     return "\n".join(parts)
 
 
+def _foreign_clone_status(item: ForeignCloneClassification) -> str:
+    if isinstance(item, PrunableForeignClone):
+        return "PRUNE"
+    if isinstance(item, RetainedForeignClone):
+        return "KEEP"
+    return "REVIEW"
+
+
+def render_foreign_clones(items: list[ForeignCloneClassification], *, include_kept: bool) -> str:
+    visible = items if include_kept else [item for item in items if not isinstance(item, RetainedForeignClone)]
+    rows = [
+        [_foreign_clone_status(item), _short(item.clone.root), len(item.clone.members), item.reason] for item in visible
+    ]
+    counts = {
+        "prunable": sum(isinstance(item, PrunableForeignClone) for item in items),
+        "kept": sum(isinstance(item, RetainedForeignClone) for item in items),
+        "review": sum(isinstance(item, foreign_clone_gc.ReviewForeignClone) for item in items),
+    }
+    headers = ["STATUS", "ROOT", "WORKTREES", "DETAIL"]
+    parts = [tabulate(rows, headers=headers, tablefmt="plain")] if rows else []
+    parts.append(
+        f"Summary: {len(items)} foreign clones; {counts['prunable']} prunable, "
+        f"{counts['kept']} kept, {counts['review']} review"
+    )
+    return "\n".join(parts)
+
+
 def _active_worktree(repo: Path) -> Path | None:
     toplevel = git_repo.git(repo, "rev-parse", "--show-toplevel", check=False).stdout.strip()
     return Path(toplevel) if toplevel else None
 
 
-def _gather_prs(repo: Path, *, no_prs: bool) -> dict[str, PrInfo]:
-    return {} if no_prs else pr_states(repo, workspace_scan.pr_branch_candidates(repo))
+def _gather_prs(repo: Path, *, no_prs: bool, extra_branches: frozenset[str] = frozenset()) -> dict[str, PrInfo]:
+    if no_prs:
+        return {}
+    return pr_states(repo, workspace_scan.pr_branch_candidates(repo) | extra_branches)
 
 
 class _ProgressReporter:
@@ -302,7 +357,13 @@ class _ProgressReporter:
 
 
 def _scan(
-    repo: Path, *, prs: dict[str, PrInfo], output_user_root: Path | None, progress: ProgressSink
+    repo: Path,
+    *,
+    prs: dict[str, PrInfo],
+    output_user_root: Path | None,
+    progress: ProgressSink,
+    workers: int,
+    foreign_clone_roots: Sequence[Path] = (),
 ) -> WorkspaceScan:
     return workspace_scan.scan_workspace(
         repo,
@@ -311,14 +372,17 @@ def _scan(
         pr_states=prs,
         active_path=_active_worktree(repo),
         output_user_root=output_user_root,
+        foreign_clone_roots=foreign_clone_roots,
+        workers=workers,
         progress=progress,
     )
 
 
-def _apply_worktree_removals(repo: Path, worktrees: list[Classification]) -> int:
+def _apply_worktree_removals(repo: Path, worktrees: list[Classification]) -> bool:
+    """Remove every prunable worktree; returns whether all of them succeeded."""
     candidates = [item for item in worktrees if isinstance(item, PrunableWorktree)]
     if not candidates:
-        return 0
+        return True
     logger.info("Removing %d worktrees", len(candidates))
     results = []
     for index, item in enumerate(candidates, start=1):
@@ -332,13 +396,14 @@ def _apply_worktree_removals(repo: Path, worktrees: list[Classification]) -> int
     removed = sum(isinstance(result, RemovedWorktree) for result in results)
     failed = len(results) - removed
     print(f"Worktrees: {removed} removed, {failed} failed")
-    return int(failed > 0)
+    return failed == 0
 
 
-def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) -> int:
+def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) -> bool:
+    """Delete every prunable branch; returns whether all of them succeeded."""
     candidates = [item for item in branches if isinstance(item, PrunableBranch)]
     if not candidates:
-        return 0
+        return True
     logger.info("Deleting %d branches", len(candidates))
     results = []
     for index, item in enumerate(candidates, start=1):
@@ -352,14 +417,15 @@ def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) ->
     deleted = sum(isinstance(result, RemovedBranch) for result in results)
     failed = len(results) - deleted
     print(f"Branches: {deleted} deleted, {failed} failed")
-    return int(failed > 0)
+    return failed == 0
 
 
-def _apply_base_deletions(output_user_root: Path) -> int:
+def _apply_base_deletions(output_user_root: Path) -> bool:
+    """Delete every prunable output base; returns whether all of them succeeded."""
     fresh = output_base_gc.scan_output_user_root(output_user_root)
     candidates = [item for item in fresh if isinstance(item, PrunableBase)]
     if not candidates:
-        return 0
+        return True
     free_before = shutil.disk_usage(output_user_root).free
     results = output_base_gc.delete_prunable_bases(candidates)
     free_change = shutil.disk_usage(output_user_root).free - free_before
@@ -378,29 +444,71 @@ def _apply_base_deletions(output_user_root: Path) -> int:
         f"Bases: {deleted} deleted, {skipped} skipped, {failed} failed; "
         f"free-space change {humanize.naturalsize(free_change, binary=True)}"
     )
-    return int(skipped > 0 or failed > 0)
+    return skipped == 0 and failed == 0
 
 
-def run_worktrees(repo: Path, *, show_all: bool, no_prs: bool, prune: bool) -> int:
+def _apply_foreign_clone_deletions(repo: Path, output_user_root: Path, prs: dict[str, PrInfo], workers: int) -> bool:
+    """Remove every prunable foreign clone; returns whether all of them succeeded.
+
+    Fresh discovery + classification right here is the revalidation: nothing computed before
+    this call is reused, so a clone that turned dirty (or gained an open PR) in the meantime is
+    never passed to `prune_foreign_clone`.
+    """
+    roots = workspace_scan.foreign_clone_roots(repo, output_user_root)
+    active_path = _active_worktree(repo)
+
+    def classify_one(root: Path) -> foreign_clone_gc.ForeignCloneClassification:
+        return foreign_clone_gc.classify_foreign_clone(root, pr_states=prs, active_path=active_path)
+
+    classifications = workspace_scan.parallel_classify(
+        roots,
+        lambda: classify_one,
+        phase="foreign_clones",
+        noun="foreign clone",
+        progress=NULL_PROGRESS,
+        category_of=workspace_scan.foreign_clone_category,
+        describe=str,
+        workers=workers,
+    )
+    candidates = [item.clone for item in classifications if isinstance(item, PrunableForeignClone)]
+    if not candidates:
+        return True
+    logger.info("Removing %d foreign clones", len(candidates))
+    results = [foreign_clone_gc.prune_foreign_clone(clone) for clone in candidates]
+    for result in results:
+        if isinstance(result, PrunedForeignClone):
+            print(f"REMOVED foreign clone {_short(result.root)}")
+        else:
+            print(f"FAILED foreign clone {_short(result.root)}: {result.error}", file=sys.stderr)
+    removed = sum(isinstance(result, PrunedForeignClone) for result in results)
+    failed = len(results) - removed
+    print(f"Foreign clones: {removed} removed, {failed} failed")
+    return failed == 0
+
+
+def run_worktrees(repo: Path, *, show_all: bool, no_prs: bool, prune: bool, workers: int) -> None:
     progress = _ProgressReporter()
     try:
         prs = _gather_prs(repo, no_prs=no_prs)
         with progress:
-            scan = _scan(repo, prs=prs, output_user_root=None, progress=progress)
+            scan = _scan(repo, prs=prs, output_user_root=None, progress=progress, workers=workers)
     except GitError as error:
         print(error, file=sys.stderr)
-        return 1
+        raise SystemExit(1) from error
     print(render_worktrees(scan.worktrees, include_kept=show_all))
     if not prune:
         if any(isinstance(item, PrunableWorktree) for item in scan.worktrees):
             print("Dry run only; pass --prune to remove the prunable worktrees.")
-        return 0
+        return
     with progress:
-        rescanned = _scan(repo, prs=prs, output_user_root=None, progress=progress).worktrees
-    return _apply_worktree_removals(repo, rescanned)
+        rescanned = _scan(repo, prs=prs, output_user_root=None, progress=progress, workers=workers).worktrees
+    if not _apply_worktree_removals(repo, rescanned):
+        raise SystemExit(1)
 
 
-def run_bases(repo: Path, *, output_user_root: Path, show_all: bool, no_prs: bool, sizes: bool, delete: bool) -> int:
+def run_bases(
+    repo: Path, *, output_user_root: Path, show_all: bool, no_prs: bool, sizes: bool, delete: bool, workers: int
+) -> None:
     # Inspect the bases first: that filesystem pass alone decides every PRUNE/KEEP verdict.
     # Only the "workspace is a prunable worktree" annotation needs git, and only for the few
     # worktrees that are actually a base's workspace — so the PR query is scoped to their
@@ -416,28 +524,49 @@ def run_bases(repo: Path, *, output_user_root: Path, show_all: bool, no_prs: boo
                 main=git_repo.main_ref(repo),
                 pr_states=prs,
                 active_path=_active_worktree(repo),
+                workers=workers,
                 progress=progress,
             )
     except (GitError, OSError, RuntimeError) as error:
         print(error, file=sys.stderr)
-        return 1
+        raise SystemExit(1) from error
     print(output_base_gc.render_report(bases, include_kept=show_all, include_sizes=sizes))
     if not delete:
         if any(isinstance(item, PrunableBase) for item in bases):
             print("Dry run only; pass --delete to remove the prunable bases.")
-        return 0
-    return _apply_base_deletions(output_user_root)
+        return
+    if not _apply_base_deletions(output_user_root):
+        raise SystemExit(1)
 
 
-def run_all(repo: Path, *, output_user_root: Path, show_all: bool, no_prs: bool, sizes: bool, prune: bool) -> int:
+def run_all(
+    repo: Path,
+    *,
+    output_user_root: Path,
+    show_all: bool,
+    no_prs: bool,
+    sizes: bool,
+    prune: bool,
+    delete_foreign_clones: bool,
+    workers: int,
+) -> None:
     progress = _ProgressReporter()
     try:
-        prs = _gather_prs(repo, no_prs=no_prs)
+        foreign_roots = workspace_scan.foreign_clone_roots(repo, output_user_root)
+        extra_branches = frozenset(workspace_scan.foreign_clone_branch_candidates(foreign_roots))
+        prs = _gather_prs(repo, no_prs=no_prs, extra_branches=extra_branches)
         with progress:
-            scan = _scan(repo, prs=prs, output_user_root=output_user_root, progress=progress)
+            scan = _scan(
+                repo,
+                prs=prs,
+                output_user_root=output_user_root,
+                progress=progress,
+                workers=workers,
+                foreign_clone_roots=foreign_roots,
+            )
     except (GitError, OSError, RuntimeError) as error:
         print(error, file=sys.stderr)
-        return 1
+        raise SystemExit(1) from error
 
     print("# Worktrees")
     print(render_worktrees(scan.worktrees, include_kept=show_all))
@@ -445,7 +574,10 @@ def run_all(repo: Path, *, output_user_root: Path, show_all: bool, no_prs: bool,
     print(render_branches(scan.branches, include_kept=show_all))
     print("\n# Bazel output bases")
     print(output_base_gc.render_report(scan.bases, include_kept=show_all, include_sizes=sizes))
+    print("\n# Foreign clones")
+    print(render_foreign_clones(scan.foreign_clones, include_kept=show_all))
 
+    foreign_prunable = any(isinstance(i, PrunableForeignClone) for i in scan.foreign_clones)
     if not prune:
         prunable = (
             any(isinstance(i, PrunableWorktree) for i in scan.worktrees)
@@ -454,20 +586,29 @@ def run_all(repo: Path, *, output_user_root: Path, show_all: bool, no_prs: bool,
         )
         if prunable:
             print("\nDry run only; pass --prune to remove all prunable worktrees, branches, and bases.")
-        return 0
+        if foreign_prunable:
+            print("Foreign clones are prunable too; pass --prune --delete-foreign-clones to remove them.")
+        return
 
     print()
-    exit_code = 0
 
     def rescan() -> WorkspaceScan:
         with progress:
-            return _scan(repo, prs=prs, output_user_root=None, progress=progress)
+            return _scan(repo, prs=prs, output_user_root=None, progress=progress, workers=workers)
 
-    # Remove worktrees first so branches they hold are freed and their bases orphan.
-    exit_code |= _apply_worktree_removals(repo, rescan().worktrees)
-    exit_code |= _apply_branch_deletions(repo, rescan().branches)
-    exit_code |= _apply_base_deletions(output_user_root)
-    return exit_code
+    # Remove worktrees first so branches they hold are freed and their bases orphan. Every step
+    # runs regardless of an earlier one's failures — each domain is independent — and the
+    # combined outcome decides the process exit status once, at the end.
+    worktrees_ok = _apply_worktree_removals(repo, rescan().worktrees)
+    branches_ok = _apply_branch_deletions(repo, rescan().branches)
+    bases_ok = _apply_base_deletions(output_user_root)
+    foreign_ok = True
+    if delete_foreign_clones:
+        foreign_ok = _apply_foreign_clone_deletions(repo, output_user_root, prs, workers)
+    elif foreign_prunable:
+        print("Foreign clones were left alone; pass --delete-foreign-clones to remove them too.")
+    if not (worktrees_ok and branches_ok and bases_ok and foreign_ok):
+        raise SystemExit(1)
 
 
 app = typer.Typer(help=__doc__, add_completion=False)
@@ -478,6 +619,14 @@ _AllOption = Annotated[bool, typer.Option("--all", help="also show kept items")]
 _NoPrsOption = Annotated[bool, typer.Option("--no-prs", help="skip the GitHub PR cross-check (git signals only)")]
 _SizesOption = Annotated[bool, typer.Option("--sizes", help="calculate base sizes with du (potentially slow)")]
 _VerboseOption = Annotated[bool, typer.Option("--verbose", "-v", help="log every worktree/branch as it's scanned")]
+_WorkersOption = Annotated[
+    int,
+    typer.Option(
+        "--workers",
+        min=1,
+        help="worker threads for worktree/branch/foreign-clone classification (the right count depends on the machine and disk)",
+    ),
+]
 
 
 def _configure_logging(*, verbose: bool) -> None:
@@ -495,14 +644,29 @@ def _all_command(
     no_prs: _NoPrsOption = False,
     sizes: _SizesOption = False,
     verbose: _VerboseOption = False,
+    workers: _WorkersOption = workspace_scan.DEFAULT_CLASSIFY_WORKERS,
     prune: Annotated[
         bool, typer.Option("--prune", help="remove all prunable worktrees, branches, and output bases")
+    ] = False,
+    delete_foreign_clones: Annotated[
+        bool,
+        typer.Option(
+            "--delete-foreign-clones",
+            help="with --prune, also rmtree prunable foreign clones (bigger blast radius: an independent git object store, not a linked worktree)",
+        ),
     ] = False,
 ) -> None:
     """Classify worktrees, branches, and output bases together (the default command)."""
     _configure_logging(verbose=verbose)
-    raise typer.Exit(
-        run_all(repo, output_user_root=output_user_root, show_all=show_all, no_prs=no_prs, sizes=sizes, prune=prune)
+    run_all(
+        repo,
+        output_user_root=output_user_root,
+        show_all=show_all,
+        no_prs=no_prs,
+        sizes=sizes,
+        prune=prune,
+        delete_foreign_clones=delete_foreign_clones,
+        workers=workers,
     )
 
 
@@ -512,11 +676,12 @@ def _worktrees_command(
     show_all: _AllOption = False,
     no_prs: _NoPrsOption = False,
     verbose: _VerboseOption = False,
+    workers: _WorkersOption = workspace_scan.DEFAULT_CLASSIFY_WORKERS,
     prune: Annotated[bool, typer.Option("--prune", help="remove prunable worktrees (revalidated first)")] = False,
 ) -> None:
     """The worktree slice of the joint scan."""
     _configure_logging(verbose=verbose)
-    raise typer.Exit(run_worktrees(repo, show_all=show_all, no_prs=no_prs, prune=prune))
+    run_worktrees(repo, show_all=show_all, no_prs=no_prs, prune=prune, workers=workers)
 
 
 @app.command("bazel-bases")
@@ -527,12 +692,19 @@ def _bases_command(
     no_prs: _NoPrsOption = False,
     sizes: _SizesOption = False,
     verbose: _VerboseOption = False,
+    workers: _WorkersOption = workspace_scan.DEFAULT_CLASSIFY_WORKERS,
     delete: Annotated[bool, typer.Option("--delete", help="revalidate and remove prunable output bases")] = False,
 ) -> None:
     """The Bazel output-base slice of the joint scan."""
     _configure_logging(verbose=verbose)
-    raise typer.Exit(
-        run_bases(repo, output_user_root=output_user_root, show_all=show_all, no_prs=no_prs, sizes=sizes, delete=delete)
+    run_bases(
+        repo,
+        output_user_root=output_user_root,
+        show_all=show_all,
+        no_prs=no_prs,
+        sizes=sizes,
+        delete=delete,
+        workers=workers,
     )
 
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cert_manager_crds.io.cert_manager import Certificate, CertificateSpec, CertificateSpecIssuerRef
+from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
     CiliumNetworkPolicySpecIngressFromEntities,
@@ -38,6 +38,8 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
 NAME = "haku-mailbox"
 NAMESPACE = "haku-mailbox"
@@ -366,7 +368,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
     # The broad CIDR trusted by Stalwart for PROXY headers is safe only together with these
     # identity-aware policies: only the ingress DaemonSet may reach the SMTP backend, so another
     # pod cannot forge a Google source address.
-    cilium.network_policy(
+    NetworkPolicy(
         chart,
         "smtp-ingress-policy",
         metadata=metadata(_INGRESS_NAME, NAMESPACE),
@@ -389,17 +391,17 @@ def _add_smtp_ingress(chart: Chart) -> None:
                 ],
             )
         ],
-        egress=[cilium.dns_egress(), cilium.egress_to(_LABELS, _SMTP_PORT)],
+        egress=[cilium.dns_egress(), EgressRule.to_endpoints(_LABELS, _SMTP_PORT)],
     )
-    cilium.network_policy(
+    NetworkPolicy(
         chart,
         "policy",
         metadata=metadata(NAME, NAMESPACE),
         selector=_LABELS,
         ingress=[
-            cilium.ingress_from(_INGRESS_LABELS, ports=[_SMTP_PORT]),
-            cilium.ingress_from_gateway(_HTTP_PORT),
-            cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": namespace.NAMESPACE}, ports=[_IMAP_PORT]),
+            IngressRule.from_endpoints(_INGRESS_LABELS, ports=[_SMTP_PORT]),
+            IngressRule.from_gateway(_HTTP_PORT),
+            IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": namespace.NAMESPACE}, ports=[_IMAP_PORT]),
         ],
     )
 
@@ -434,22 +436,18 @@ def chart(app: App) -> Chart:
     Certificate(
         chart,
         "certificate",
-        metadata=metadata(
-            "mx-allegedly-works",
-            NAMESPACE,
-            annotations={
-                "description": (
-                    "STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs "
-                    "(Gmail) use opportunistic TLS; the reloader annotation on the deployment restarts the "
-                    "receiver when cert-manager rotates this."
-                )
-            },
-        ),
-        spec=CertificateSpec(
-            secret_name=_TLS_SECRET,
-            dns_names=["mx.allegedly.works"],
-            issuer_ref=CertificateSpecIssuerRef(name="${LETSENCRYPT_ISSUER}", kind="ClusterIssuer"),
-        ),
+        name="mx-allegedly-works",
+        namespace=NAMESPACE,
+        annotations={
+            "description": (
+                "STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs "
+                "(Gmail) use opportunistic TLS; the reloader annotation on the deployment restarts the "
+                "receiver when cert-manager rotates this."
+            )
+        },
+        secret_name=_TLS_SECRET,
+        dns_names=["mx.allegedly.works"],
+        issuer_ref=CertificateSpecIssuerRef(name="${LETSENCRYPT_ISSUER}", kind="ClusterIssuer"),
     )
     _add_deployment(chart)
     _add_services(chart)

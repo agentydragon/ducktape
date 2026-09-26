@@ -16,6 +16,7 @@ from pydantic import Field, model_validator
 
 from finance.augur.dates import months_between
 from finance.augur.model.schemas import StrictModel
+from finance.augur.model.series import IssuerId
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityModelArtifact, TrainedPrivateEquityScalePrior
 
 ValuationKind = Literal["primary", "secondary", "admin", "implied"]
@@ -58,7 +59,7 @@ _DEFAULT_WORLD_GDP_MONTHLY_LOG_DRIFT_PENALTY = 0.08
 
 class PriceObservation(StrictModel):
     type: Literal["price_observation"]
-    issuer_id: str = Field(min_length=1)
+    issuer_id: IssuerId = Field(min_length=1)
     observed_at: date
     kind: Literal["tender_price", "ppu_mark"]
     price_usd_per_share: float = Field(gt=0)
@@ -69,7 +70,7 @@ class PriceObservation(StrictModel):
 
 class ValuationObservation(StrictModel):
     type: Literal["valuation_observation"]
-    issuer_id: str = Field(min_length=1)
+    issuer_id: IssuerId = Field(min_length=1)
     observed_at: date
     valuation_usd: float = Field(gt=0)
     uncertainty_log_sigma: float = Field(gt=0)
@@ -131,7 +132,7 @@ class PrivateEquityTrainingPriors(StrictModel):
 
 
 class PrivateEquityTrainingConfig(StrictModel):
-    issuer_id: str = Field(min_length=1)
+    issuer_id: IssuerId = Field(min_length=1)
     observations_path: str
     out_model_path: str
     as_of_date: date | None = None

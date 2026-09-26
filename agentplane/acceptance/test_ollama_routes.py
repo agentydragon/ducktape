@@ -16,22 +16,19 @@ from agentplane.app.inventory import SandboxView
 from agentplane.app.presets import Harness
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
+from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, ApiShape, Provider, exposed_name, ollama_chat_variant
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 
 Sandboxes = Callable[..., Awaitable[SandboxView]]
-MODELS = (
-    ("gpt-oss-20b", ("128k", "256k", "512k", "1m")),
-    ("gpt-oss-120b", ("128k",)),
-    ("gemma4-31b-it-q8_0", ("128k",)),
-)
-VARIANTS = [(model, context) for model, contexts in MODELS for context in contexts]
-VARIANTS.sort(key=lambda variant: variant[1] != "128k")
+_128K = 128 * 1024
+VARIANTS = [(model, context) for model, _ollama_model, contexts in OLLAMA_CHAT_MODELS for context in contexts]
+VARIANTS.sort(key=lambda variant: variant[1] != _128K)
 CASES = [
-    (harness, f"ollama/{wire}/{model}-{context}")
+    (harness, exposed_name(Provider.OLLAMA, wire, ollama_chat_variant(model, context)))
     for model, context in VARIANTS
-    for wire in ("oai-chat", "olm-chat")
+    for wire in (ApiShape.OAI_CHAT, ApiShape.OLM_CHAT)
     for harness in (protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX)
 ]
 

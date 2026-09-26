@@ -6,7 +6,12 @@ model_rosters.py for the model-name scheme.
 from __future__ import annotations
 
 from cluster.cdk8s.agentplane.app_settings import settings
-from cluster.cdk8s.litellm.keys import CLAUDE_CLIENT_MODELS, OAI_LANE_MODELS, OLLAMA_CHAT_CLIENT_MODELS
+from cluster.cdk8s.litellm.keys import (
+    ANTIGRAVITY_CLIENT_MODELS,
+    CLAUDE_CLIENT_MODELS,
+    OAI_LANE_MODELS,
+    OLLAMA_CHAT_CLIENT_MODELS,
+)
 from cluster.cdk8s.model_rosters import codex_responses_name
 
 _NAMESPACE = "agentplane-staging"
@@ -28,8 +33,9 @@ PUBLIC_CODER_ACTION_POLICY_SETS = (
 def config() -> dict:
     return settings(
         namespace=_NAMESPACE,
-        # The staging key admits the subscription lanes and local Ollama chat routes.
-        harness_claude=[*CLAUDE_CLIENT_MODELS, *OLLAMA_CHAT_CLIENT_MODELS],
+        # The staging key admits the subscription lanes, the full Antigravity lineup,
+        # and local Ollama chat routes.
+        harness_claude=[*CLAUDE_CLIENT_MODELS, *ANTIGRAVITY_CLIENT_MODELS, *OLLAMA_CHAT_CLIENT_MODELS],
         harness_codex=[*OAI_LANE_MODELS, *OLLAMA_CHAT_CLIENT_MODELS],
         thread_preset_codex_model=codex_responses_name("gpt-6-luna"),
         action_policy_sets=list(PUBLIC_CODER_ACTION_POLICY_SETS),

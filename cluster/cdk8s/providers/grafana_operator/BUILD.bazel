@@ -1,0 +1,116 @@
+# gazelle:ignore
+# gazelle:resolve py grafana_grafana_crds //cluster/cdk8s/providers/grafana_operator:grafana
+# gazelle:resolve py grafana_grafanadashboard_crds //cluster/cdk8s/providers/grafana_operator:grafanadashboard
+# gazelle:resolve py grafana_grafanadatasource_crds //cluster/cdk8s/providers/grafana_operator:grafanadatasource
+# gazelle:resolve py grafana_grafanaserviceaccount_crds //cluster/cdk8s/providers/grafana_operator:grafanaserviceaccount
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+cdk8s_import(
+    name = "grafana",
+    crd = "@grafana_grafana_crd//file",
+    module_name = "grafana_grafana_crds",
+    module_path = "org/integreatly/grafana",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "grafanadashboard",
+    crd = "@grafana_grafanadashboard_crd//file",
+    module_name = "grafana_grafanadashboard_crds",
+    module_path = "org/integreatly/grafana",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "grafanadatasource",
+    crd = "@grafana_grafanadatasource_crd//file",
+    module_name = "grafana_grafanadatasource_crds",
+    module_path = "org/integreatly/grafana",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "grafanaserviceaccount",
+    crd = "@grafana_grafanaserviceaccount_crd//file",
+    module_name = "grafana_grafanaserviceaccount_crds",
+    module_path = "org/integreatly/grafana",
+    visibility = ["//visibility:public"],
+)
+
+# Named grafana_operator_grafana, not grafana: cdk8s_import above already claims the
+# bare "grafana" target name.
+py_library(
+    name = "grafana_operator_grafana",
+    srcs = ["grafana.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":grafana",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "grafana_dashboard",
+    srcs = ["grafana_dashboard.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":grafanadashboard",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "grafana_datasource",
+    srcs = ["grafana_datasource.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":grafanadatasource",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_grafana",
+    srcs = ["test_grafana.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":grafana_operator_grafana",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_grafana_dashboard",
+    srcs = ["test_grafana_dashboard.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":grafana_dashboard",
+        ":grafanadashboard",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_grafana_datasource",
+    srcs = ["test_grafana_datasource.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":grafana_datasource",
+        ":grafanadatasource",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)

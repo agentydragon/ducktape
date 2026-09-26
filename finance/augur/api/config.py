@@ -28,10 +28,11 @@ from finance.augur.api.schemas import ApiModel
 from finance.augur.api.wire import ActorRole, ProductInputDefaults
 from finance.augur.budget.schema import BudgetConfig
 from finance.augur.model.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
-from finance.augur.model.series import SecuritySymbol
+from finance.augur.model.series import LocationId, SecuritySymbol
 from finance.augur.model.state_space import StateSpaceProviderConfig
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from finance.augur.product.wire import MAX_HORIZON_MONTHS
+from finance.augur.sim.ids import AgentId, JurisdictionId, PropertyId
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
@@ -48,7 +49,7 @@ class AgentDefinition(ApiModel):
     Actor IDs are user-provided identity strings (e.g. "primary", "buyer").
     The role is a typed concept the policy / scenario engine consumes."""
 
-    actor_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    actor_id: AgentId = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str
     role: ActorRole
 
@@ -56,7 +57,7 @@ class AgentDefinition(ApiModel):
 class PropertyAssetConfig(ApiModel):
     """Deployment-owned public image URL for one property."""
 
-    property_id: str = Field(min_length=1)
+    property_id: PropertyId = Field(min_length=1)
     image_url: HttpUrl
 
 
@@ -112,7 +113,7 @@ class DistributionTaxShareConfig(ApiModel):
     """
 
     fraction: float = Field(gt=0.0, le=1.0)
-    issuer_jurisdiction_id: str | None = Field(
+    issuer_jurisdiction_id: JurisdictionId | None = Field(
         default=None,
         description=(
             "The taxing authority that issued the underlying debt — `federal_us` for the "
@@ -149,7 +150,7 @@ class LocationConfig(ApiModel):
     core enums.
     """
 
-    location_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    location_id: LocationId = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str
     city: str
     state: str
@@ -170,7 +171,7 @@ class Config(ApiModel):
     property_source: PropertySourceConfig
     portfolio_sources: PortfolioSourcesConfig
     locations: tuple[LocationConfig, ...] = ()
-    location_selection: tuple[str, ...] | None = None
+    location_selection: tuple[LocationId, ...] | None = None
     security_distributions: tuple[SecurityDistributionConfig, ...] = Field(
         default=(),
         description=(

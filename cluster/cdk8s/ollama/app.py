@@ -38,8 +38,6 @@ _DIRECT_TOKEN = "ollama-direct-token"
 # Both rendered by the hand-written kustomization.yaml's configMapGenerator.
 _AUTH_PROXY_CONFIG_MAP = "ollama-auth-proxy"
 _SCRIPTS_CONFIG_MAP = "gpt-oss-scripts"
-# Host inference experiments own the GPUs; retain models and routing for resumption.
-_PAUSED_FOR_HOST_EXPERIMENTS = True
 
 
 def _namespace(scope: Construct) -> None:
@@ -83,7 +81,7 @@ def _ollama_container() -> k8s.Container:
     probe_action = k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("ollama"))
     return k8s.Container(
         name="ollama",
-        image="ollama/ollama:0.34.0",
+        image="ollama/ollama:0.34.4",
         ports=[k8s.ContainerPort(name="ollama", container_port=_OLLAMA_PORT, protocol="TCP")],
         env=[
             k8s.EnvVar(name="OLLAMA_MODELS", value="/models"),
@@ -92,6 +90,10 @@ def _ollama_container() -> k8s.Container:
             k8s.EnvVar(name="OLLAMA_KV_CACHE_TYPE", value="q8_0"),
             k8s.EnvVar(name="OLLAMA_FLASH_ATTENTION", value="1"),
             k8s.EnvVar(name="OLLAMA_CONTEXT_LENGTH", value="131072"),
+            # Default 5m is shorter than a cold read of the 112GB qwen3.8-flash-next-q4
+            # weights off HDD-backed lvm-proxmox-hdd; Ollama abandons the load attempt
+            # (and does not retry) once this elapses.
+            k8s.EnvVar(name="OLLAMA_LOAD_TIMEOUT", value="30m"),
         ],
         resources=k8s.ResourceRequirements(
             requests={
@@ -138,7 +140,7 @@ def _deployment(scope: Construct) -> None:
             name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
         ),
         spec=k8s.DeploymentSpec(
-            replicas=0 if _PAUSED_FOR_HOST_EXPERIMENTS else 1,
+            replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=_LABELS),
             template=k8s.PodTemplateSpec(
@@ -323,8 +325,7 @@ def chart(app: App) -> Chart:
         listener=None,
     )
     _rbac(chart)
-    if not _PAUSED_FOR_HOST_EXPERIMENTS:
-        _setup_job(chart)
+    _setup_job(chart)
     _direct_token(chart)
     return chart
 

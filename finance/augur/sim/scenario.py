@@ -1,11 +1,7 @@
-"""Scenario configuration — Pydantic models for the user-facing
-config of a simulation run.
+"""Authored declarations: exact-decimal Pydantic models the app and the portfolio config write.
 
-At spike 1, the scenario carries the agents, their initial cash
-balances, a list of scheduled transfer events, and the horizon in
-months. Later layers extend `Scenario` with positions (asset
-holdings), liabilities (mortgages), properties, policies, the
-external-series bundle reference, and tax profiles per agent.
+The compiler's per-table pieces (`sim/compiler/`) lower them into the prepared records a
+composed world declares.
 """
 
 from __future__ import annotations
@@ -27,17 +23,28 @@ from pydantic import (
     model_validator,
 )
 
-from finance.augur.model.asset_key import AssetKey, asset_price_key_or_none
-from finance.augur.model.series import IndexSeriesKey, SecurityKey
-from finance.augur.model.series_model import SeriesModelBundle
+from finance.augur.model.asset_key import AssetKey
+from finance.augur.model.series import IndexSeriesKey, LocationId, SecurityKey
 from finance.augur.policy.cash_band import validate_band_bounds
 from finance.augur.sim.enums import IncomeCategory
 from finance.augur.sim.fixed_point import validate_currency_amount, validate_currency_quantum
+from finance.augur.sim.ids import (
+    AccountId,
+    AgentId,
+    BondId,
+    JurisdictionId,
+    LiabilityId,
+    LotId,
+    PortfolioId,
+    PropertyId,
+)
 from finance.augur.sim.tlh import TlhAssumptions
 
 type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
 type NonNegativeCurrencyAmount = Annotated[CurrencyAmount, Field(ge=0)]
 type PositiveCurrencyAmount = Annotated[CurrencyAmount, Field(gt=0)]
+
+CHECKING = AccountId("checking")
 
 
 class FilingStatus(StrEnum):
@@ -77,18 +84,11 @@ class Currency(BaseModel):
         return validate_currency_quantum(quantum)
 
 
-class Agent(BaseModel):
-    """An agent in the simulation. Identified by a stable id used
-    on every frame keyed by agent_id."""
-
-    agent_id: str
-
-
 class InitialAccountBalance(BaseModel):
     """Starting cash for one (agent, account) pair at month 0."""
 
-    agent_id: str
-    account_id: str
+    agent_id: AgentId
+    account_id: AccountId
     balance: CurrencyAmount
 
 
@@ -124,10 +124,6 @@ class SeriesIndexedAmount(BaseModel):
     base_month_index: NonNegativeInt = 0
     adjustment_period_months: PositiveInt = 1
 
-    def _reset_month(self, month: int) -> int:
-        elapsed = month - self.base_month_index
-        return self.base_month_index + (elapsed // self.adjustment_period_months) * self.adjustment_period_months
-
 
 type AmountSchedule = Annotated[FixedAmount | SeriesIndexedAmount, Field(discriminator="kind")]
 type AmountSpec = CurrencyAmount | AmountSchedule
@@ -156,7 +152,7 @@ class InterestIncome(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     category: Literal[IncomeCategory.INTEREST] = IncomeCategory.INTEREST
-    issuer_jurisdiction_id: str | None = Field(
+    issuer_jurisdiction_id: JurisdictionId | None = Field(
         default=None,
         description=(
             "The taxing authority that issued the debt — `federal_us` for a Treasury, "
@@ -172,80 +168,24 @@ ORDINARY_INCOME = OrdinaryIncome()
 type TransferDeductionCategory = Literal["ordinary"]
 
 
-class ScheduledTransfer(BaseModel):
-    """A cash transfer between two agents scheduled at a fixed
-    month. Emitted by the engine as a Transfer event at that month;
-    the amount may be fixed or derived from a series-indexed schedule.
-
-    `income_category` tags the transfer as taxable income for the
-    `to_agent_id` (recipient). When `"ordinary"`, the recipient's
-    `ordinary_income_ytd` increments by the transferred amount —
-    W-2-style wages, rental income, etc.
-
-    `deduction_category` tags the transfer as a deductible expense for
-    the `from_agent_id` (payer). When `"ordinary"`, the payer's
-    `ordinary_income_ytd` decrements by the transferred amount —
-    Schedule-E-style deductible expenses paid via transfer flows
-    (property management fee, leasing fee, etc.). §469
-    passive-activity loss limitations are not modeled. A transfer can
-    carry both categories simultaneously (rare but legal — e.g.
-    inter-company payment that is income to recipient and deductible
-    by payer)."""
-
-    month: int
-    cause_id: str
-    from_agent_id: str
-    from_account_id: str
-    to_agent_id: str
-    to_account_id: str
-    amount: AmountSpec
-    income_category: TransferIncomeCategory | None = None
-    deduction_category: TransferDeductionCategory | None = None
-
-
-class RecurringTransfer(BaseModel):
-    """A cash transfer that fires every month within a window. The
-    canonical use is a recurring paycheck (income arriving monthly)
-    or recurring rent / utilities. The engine emits one Transfer
-    event per active month per rollout; series-indexed amounts may
-    vary by rollout and adjustment period.
-
-    `start_month` is inclusive. `end_month` is inclusive when
-    supplied; when `None`, the transfer fires through the scenario's
-    horizon end. The `cause_id` is reused on every emitted event row
-    so a user can group_by it to see "every paycheck Alice
-    received"."""
-
-    start_month: int
-    end_month: int | None = None
-    cause_id: str
-    from_agent_id: str
-    from_account_id: str
-    to_agent_id: str
-    to_account_id: str
-    amount: AmountSpec
-    income_category: TransferIncomeCategory | None = None
-    deduction_category: TransferDeductionCategory | None = None
-
-    def is_active_at(self, month: int) -> bool:
-        return self.start_month <= month and (self.end_month is None or month <= self.end_month)
-
-
 class ScheduledPropertyCashflow(BaseModel):
     """A property-domain cashflow lowered to a transfer event while the property is active.
 
-    Unlike generic `ScheduledTransfer`, this cashflow is tied to the referenced property's
-    ownership lifecycle. It may be configured beyond sale; the engine suppresses it once the
-    property is sold.
+    The cashflow is tied to the referenced property's ownership lifecycle. It may be configured
+    beyond sale; the engine suppresses it once the property is sold.
+
+    `income_category` tags the amount as taxable income for the recipient; `deduction_category`
+    tags it as a deductible expense for the payer (a property management or leasing fee). §469
+    passive-activity loss limitations are not modeled.
     """
 
     month: int
-    property_id: str
+    property_id: PropertyId
     cause_id: str
-    from_agent_id: str
-    from_account_id: str
-    to_agent_id: str
-    to_account_id: str
+    from_agent_id: AgentId
+    from_account_id: AccountId
+    to_agent_id: AgentId
+    to_account_id: AccountId
     amount: AmountSpec
     income_category: TransferIncomeCategory | None = None
     deduction_category: TransferDeductionCategory | None = None
@@ -256,18 +196,15 @@ class RecurringPropertyCashflow(BaseModel):
 
     start_month: int
     end_month: int | None = None
-    property_id: str
+    property_id: PropertyId
     cause_id: str
-    from_agent_id: str
-    from_account_id: str
-    to_agent_id: str
-    to_account_id: str
+    from_agent_id: AgentId
+    from_account_id: AccountId
+    to_agent_id: AgentId
+    to_account_id: AccountId
     amount: AmountSpec
     income_category: TransferIncomeCategory | None = None
     deduction_category: TransferDeductionCategory | None = None
-
-    def is_active_at(self, month: int) -> bool:
-        return self.start_month <= month and (self.end_month is None or month <= self.end_month)
 
 
 class ObligationType(StrEnum):
@@ -288,64 +225,29 @@ class ObligationType(StrEnum):
     PROPERTY_MAINTENANCE = "property_maintenance"
 
 
-class ScheduledObligation(BaseModel):
-    """A required due-now payment at one month.
-
-    Unlike a raw transfer, an obligation is settled through the
-    liquidity-policy path: available cash plus policy-emitted sale
-    proceeds must cover the whole amount, and the rollout fails if
-    the full amount cannot be paid immediately.
-
-    `deduction_category` tags the (paid) amount as a tax-deductible
-    expense for `agent_id`. When set, `agent_id`'s ordinary_income_ytd
-    decrements by `deductible_fraction × paid_amount` at settlement
-    time. `deductible_fraction` defaults to 1.0; smaller values model
-    partial deductibility (e.g. the rented share of HOA dues on a
-    partial rental).
-    """
-
-    month: int
-    obligation_id: str
-    obligation_type: str
-    agent_id: str
-    from_account_id: str
-    to_agent_id: str
-    to_account_id: str
-    amount_due: AmountSpec
-    deduction_category: TransferDeductionCategory | None = None
-    deductible_fraction: float = Field(default=1.0, ge=0.0, le=1.0)
-    # When set, ties the obligation to a property; the engine then uses
-    # `current.property_rented_fraction[r, prop]` at settlement time to override the
-    # compile-time `deductible_fraction` (allowing mid-horizon lifecycle events to take
-    # effect). Used today by HOA / insurance / maintenance flows on rented properties.
-    property_id: str | None = None
-
-
 class RecurringObligation(BaseModel):
     """A required due-now payment that repeats in a month window.
 
-    `deduction_category` + `deductible_fraction` work the same way as on
-    `ScheduledObligation` — see that class's docstring.
+    `deduction_category` tags the paid amount as a deductible expense for `agent_id`, scaled by
+    `deductible_fraction` (below 1 for partial deductibility, e.g. the rented share of HOA dues
+    on a partial rental).
     """
 
     start_month: int
     end_month: int | None = None
     obligation_id: str
     obligation_type: str
-    agent_id: str
-    from_account_id: str
-    to_agent_id: str
-    to_account_id: str
+    agent_id: AgentId
+    from_account_id: AccountId
+    to_agent_id: AgentId
+    to_account_id: AccountId
     amount_due: AmountSpec
     deduction_category: TransferDeductionCategory | None = None
     deductible_fraction: float = Field(default=1.0, ge=0.0, le=1.0)
     # When set, ties the obligation to a property; the engine uses
     # `current.property_rented_fraction[r, prop]` at settlement time to override the
     # compile-time `deductible_fraction` so mid-horizon lifecycle events take effect.
-    property_id: str | None = None
-
-    def is_active_at(self, month: int) -> bool:
-        return self.start_month <= month and (self.end_month is None or month <= self.end_month)
+    property_id: PropertyId | None = None
 
 
 class BondHolding(BaseModel):
@@ -368,17 +270,17 @@ class BondHolding(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    bond_id: str
-    agent_id: str
+    bond_id: BondId
+    agent_id: AgentId
     # No default: which account the coupons land in is a real decision, and a bond pointing
     # at an account that does not exist resolves to no slot at all — the coupon would be
     # scattered into the dump row and vanish silently rather than raise.
-    account_id: str
+    account_id: AccountId
     # The taxing authority that issued the debt — `federal_us` for a Treasury, `california`
     # for a CA muni, `None` for a corporate issuer. Whether any given holder owes tax on the
     # coupon is a relation between this issuer and that holder's jurisdictions, never a
     # property of the bond: "in-state" is holder-relative.
-    issuer_jurisdiction_id: str | None = None
+    issuer_jurisdiction_id: JurisdictionId | None = None
     face_value: PositiveCurrencyAmount
     purchase_price: PositiveCurrencyAmount
     annual_coupon_rate: NonNegativeFloat
@@ -445,7 +347,7 @@ class DistributionTaxSlice(BaseModel):
     fraction: PositiveFloat
     # Same holder-relative meaning as `BondHolding.issuer_jurisdiction_id`: whether this slice
     # is taxable is a relation between the issuer and the holder's jurisdictions.
-    issuer_jurisdiction_id: str | None = None
+    issuer_jurisdiction_id: JurisdictionId | None = None
 
 
 class SecurityDistribution(BaseModel):
@@ -473,12 +375,12 @@ class SecurityDistribution(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     asset: AssetKey
-    agent_id: str
+    agent_id: AgentId
     # The account whose units this pays on — lots elsewhere are a different pool.
-    holding_account_id: str
+    holding_account_id: AccountId
     # No default, for the same reason `BondHolding.account_id` has none: cash paid to an account
     # that does not exist is scattered into the dump row and vanishes silently.
-    to_account_id: str
+    to_account_id: AccountId
     tax_character: tuple[DistributionTaxSlice, ...]
 
     @model_validator(mode="after")
@@ -496,19 +398,6 @@ class SecurityDistribution(BaseModel):
         return self
 
 
-class HoldingPool(BaseModel):
-    """An owned account/asset pool that may be empty at the start.
-
-    Declaring a pool supplies its account/product scope and public price requirement;
-    it neither creates a position nor asks a policy to invest. Available actions
-    still depend on the product's execution support.
-    """
-
-    agent_id: str
-    account_id: str
-    asset: AssetKey
-
-
 class InitialLot(BaseModel):
     """A pre-existing tax lot, with its exact remaining total cost basis.
 
@@ -523,9 +412,9 @@ class InitialLot(BaseModel):
     from it via `asset_price_key`.
     """
 
-    lot_id: str
-    agent_id: str
-    account_id: str = "checking"
+    lot_id: LotId
+    agent_id: AgentId
+    account_id: AccountId = CHECKING
     asset: AssetKey
     purchase_month_index: int
     quantity: float
@@ -534,28 +423,8 @@ class InitialLot(BaseModel):
     )
 
 
-class ScheduledAssetSale(BaseModel):
-    """Sell a configured quantity of an asset at a fixed month. The
-    sale consumes from the agent's lots of that asset in
-    `source_account_id` in FIFO order by `purchase_month_index`.
-    Proceeds = `quantity * unit_price` are credited to
-    `proceeds_account_id`.
-
-    The price is the asset's own sampled level at that month, per rollout — a
-    sale cannot name its own. A seller who could fix the price would be immune
-    to the market path, which is the one thing every rollout exists to vary."""
-
-    month: int
-    cause_id: str
-    agent_id: str
-    source_account_id: str = "checking"
-    asset: AssetKey
-    quantity: float
-    proceeds_account_id: str
-
-
-class SleeveTarget(BaseModel):
-    """One sleeve of a target allocation: an asset and its relative weight.
+class SecuritySleeveTarget(BaseModel):
+    """One sleeve of a target allocation: a security's lots in the source accounts, and its relative weight.
 
     Weights are integers and only their RATIOS matter — `(3, 1)` and `(30, 10)` are the same
     policy. A fraction would be derivable from the weights, so storing fractions would store
@@ -566,6 +435,22 @@ class SleeveTarget(BaseModel):
     weight: NonNegativeInt = Field(
         description="Relative target weight; zero keeps the sleeve sellable but receives no deposits."
     )
+
+
+class ManagedSleeveTarget(BaseModel):
+    """One sleeve of a target allocation: a managed TLH portfolio, sized in money, and its relative weight.
+
+    The portfolio is not its index: it has a value but no units or unit price, and lots of the
+    index it tracks are a separate sleeve.
+    """
+
+    portfolio_id: PortfolioId
+    weight: NonNegativeInt = Field(
+        description="Relative target weight; zero keeps the sleeve sellable but receives no deposits."
+    )
+
+
+type SleeveTarget = SecuritySleeveTarget | ManagedSleeveTarget
 
 
 class CashflowOnly(BaseModel):
@@ -632,11 +517,11 @@ class TargetAllocationPolicy(BaseModel):
     will be held to maturity — expressible at all.
     """
 
-    agent_id: str
+    agent_id: AgentId
     # Cash account the band governs: it receives sale proceeds and pays the matching obligations.
-    account_id: str
+    account_id: AccountId
     # Holding accounts the policy may sell from. Empty means the funding account only.
-    source_account_ids: tuple[str, ...] = ()
+    source_account_ids: tuple[AccountId, ...] = ()
     sleeves: list[SleeveTarget]
     # `AmountSpec = Decimal | AmountSchedule` — an exact decimal for a constant band, or a
     # `SeriesIndexedAmount` (e.g. `series=InflationKey()`) to hold the band in real terms.
@@ -674,12 +559,15 @@ class TargetAllocationPolicy(BaseModel):
             )
         if not any(sleeve.weight > 0 for sleeve in self.sleeves):
             raise ValueError("target-allocation policy requires at least one positive sleeve weight")
-        assets = [sleeve.asset for sleeve in self.sleeves]
-        if len(set(assets)) != len(assets):
-            duplicated = sorted({str(asset) for asset in assets if assets.count(asset) > 1})
+        named = [
+            str(sleeve.asset) if isinstance(sleeve, SecuritySleeveTarget) else f"portfolio {sleeve.portfolio_id}"
+            for sleeve in self.sleeves
+        ]
+        if len(set(named)) != len(named):
+            duplicated = sorted({name for name in named if named.count(name) > 1})
             raise ValueError(
                 f"target-allocation policy for {self.agent_id}/{self.account_id} names {duplicated} "
-                "more than once; an asset weighted twice is counted twice and skews every target"
+                "more than once; a sleeve weighted twice is counted twice and skews every target"
             )
         # Band ordering is checked on the CONFIGURED amounts because per-month values may be
         # CPI-indexed, hence traced, and a traced value cannot drive a raise. Indexing scales
@@ -711,19 +599,19 @@ class TaxProfile(BaseModel):
     """A taxed agent's tax-time configuration. At spike 1 only single filers are modeled;
     later layers add MFJ / HoH and any filing-status-driven branching."""
 
-    agent_id: str
+    agent_id: AgentId
     filing_status: FilingStatus = FilingStatus.SINGLE
-    jurisdiction_ids: list[str] = Field(
+    jurisdiction_ids: list[JurisdictionId] = Field(
         description='Ordered list of taxing authorities — typically `["federal_us", "california"]` for a CA resident.'
     )
-    tax_authority_agent_id: str = Field(
+    tax_authority_agent_id: AgentId = Field(
         description="Destination of tax-payment transfers — a bookkeeping sink, not a taxed agent itself."
     )
-    payment_account_id: str = Field(
-        default="checking", description="The agent's account the engine debits for estimated-tax and true-up payments."
+    payment_account_id: AccountId = Field(
+        default=CHECKING, description="The agent's account the engine debits for estimated-tax and true-up payments."
     )
-    tax_authority_account_id: str = Field(
-        default="checking", description="The matching credit account on the tax authority's side."
+    tax_authority_account_id: AccountId = Field(
+        default=CHECKING, description="The matching credit account on the tax authority's side."
     )
     prior_year_tax: NonNegativeCurrencyAmount = Field(
         default=Decimal(0),
@@ -738,9 +626,9 @@ class TaxProfile(BaseModel):
 class MortgageFinancing(BaseModel):
     """Mortgage terms attached to a property purchase."""
 
-    liability_id: str
-    lender_agent_id: str
-    lender_account_id: str = "checking"
+    liability_id: LiabilityId
+    lender_agent_id: AgentId
+    lender_account_id: AccountId = CHECKING
     principal: CurrencyAmount
     annual_interest_rate: float
     term_months: PositiveInt
@@ -756,7 +644,7 @@ class SetRentedFractionEvent(BaseModel):
 
     kind: Literal["set_rented_fraction"] = "set_rented_fraction"
     month: int
-    property_id: str
+    property_id: PropertyId
     rented_fraction: float = Field(ge=0.0, le=1.0)
 
 
@@ -768,8 +656,8 @@ class PrimaryResidenceAssignment(BaseModel):
     residences for the same taxpayer.
     """
 
-    agent_id: str
-    property_id: str
+    agent_id: AgentId
+    property_id: PropertyId
 
 
 class SetPrimaryResidenceEvent(BaseModel):
@@ -777,8 +665,8 @@ class SetPrimaryResidenceEvent(BaseModel):
 
     kind: Literal["set_primary_residence"] = "set_primary_residence"
     month: int
-    agent_id: str
-    property_id: str | None
+    agent_id: AgentId
+    property_id: PropertyId | None
 
 
 class PropertySaleEvent(BaseModel):
@@ -804,7 +692,7 @@ class PropertySaleEvent(BaseModel):
 
     kind: Literal["property_sale"] = "property_sale"
     month: int
-    property_id: str
+    property_id: PropertyId
     closing_cost_pct: float = Field(ge=0.0, le=100.0)
 
 
@@ -820,7 +708,7 @@ class CapitalImprovementEvent(BaseModel):
 
     kind: Literal["capital_improvement"] = "capital_improvement"
     month: int
-    property_id: str
+    property_id: PropertyId
     amount: PositiveCurrencyAmount
     description: str = ""
 
@@ -847,12 +735,12 @@ class ScheduledPropertyPurchase(BaseModel):
 
     month: int
     cause_id: str
-    property_id: str
-    location_id: str
-    buyer_agent_id: str
-    buyer_account_id: str
-    seller_agent_id: str
-    seller_account_id: str = "checking"
+    property_id: PropertyId
+    location_id: LocationId
+    buyer_agent_id: AgentId
+    buyer_account_id: AccountId
+    seller_agent_id: AgentId
+    seller_account_id: AccountId = CHECKING
     purchase_price: CurrencyAmount
     down_payment: CurrencyAmount
     buyer_closing_cost: NonNegativeCurrencyAmount = Decimal(0)
@@ -888,80 +776,14 @@ class PropertyTaxPolicy(BaseModel):
     is `None`, the rate comes from `Location.annual_property_tax_rate`.
     """
 
-    property_id: str
-    owner_agent_id: str
-    from_account_id: str = "checking"
-    tax_authority_agent_id: str
-    tax_authority_account_id: str = "checking"
+    property_id: PropertyId
+    owner_agent_id: AgentId
+    from_account_id: AccountId = CHECKING
+    tax_authority_agent_id: AgentId
+    tax_authority_account_id: AccountId = CHECKING
     annual_tax_rate: float | None = None
     start_month: int = 0
     end_month: int | None = None
-
-    def is_active_at(self, month: int) -> bool:
-        return self.start_month <= month and (self.end_month is None or month <= self.end_month)
-
-
-class FederalSaltCapEntry(BaseModel):
-    """One step of the federal SALT-cap schedule.
-
-    The cap that applies in calendar-year-index `Y` is the `cap` of the
-    latest entry with `effective_year_index <= Y`. Year-index is 0-based from
-    the start of the simulation horizon, so [(0, 40_000.0), (4, 10_000.0)]
-    encodes "$40k for years 0..3, then $10k from year 4 onward" — the OBBBA
-    transition for a 2026-start sim ($40k for 2026..2029, $10k from 2030).
-    """
-
-    effective_year_index: int
-    cap: CurrencyAmount
-
-
-# Default schedule reflects the TCJA + OBBBA federal SALT-cap timeline as
-# enacted through mid-2025: $40k cap for 2025..2029 (current sims start in 2026
-# so year index 0..3), reverting to $10k from 2030 onward. Sims that span the
-# transition see the cap tighten mid-horizon.
-#
-# Known modeling gaps (not implemented; document so the consumer knows what
-# we elide):
-#   - **AGI-based phase-out of the $40k cap.** The OBBBA cap phases down for
-#     high incomes (over ~$500k AGI); we treat it as a flat ceiling.
-#   - **Sales tax election.** Taxpayers in no-state-income-tax states may
-#     deduct state sales tax instead of state income tax; we always use the
-#     accrued state income tax.
-#   - **Timing nuance.** Real Schedule A allows deducting state taxes *paid*
-#     in the calendar year, which can include prior-year true-ups. We deduct
-#     state tax *accrued in this calendar year* (equivalent to assuming all
-#     state tax is withheld in the year of accrual).
-#   - **Standalone post-2029 sunset.** If Congress doesn't extend OBBBA,
-#     2030+ reverts to the TCJA $10k cap — already reflected here. If the
-#     entire TCJA sunset triggers, the cap disappears (deduction becomes
-#     unlimited); express that by passing an empty schedule (no entries =
-#     no cap = uncapped SALT deduction).
-DEFAULT_FEDERAL_SALT_CAP_SCHEDULE: tuple[FederalSaltCapEntry, ...] = (
-    FederalSaltCapEntry(effective_year_index=0, cap=40_000),
-    FederalSaltCapEntry(effective_year_index=4, cap=10_000),
-)
-
-
-class FederalSaltDeductionPolicy(BaseModel):
-    """Federal SALT deduction (Schedule A) for one tax profile.
-
-    SALT contributors are derived from the targeted `TaxProfile`: every
-    jurisdiction in `TaxProfile.jurisdiction_ids` other than
-    `federal_jurisdiction_id` is treated as a state/local jurisdiction whose
-    annual accrued income tax flows into the federal SALT total, alongside
-    property tax paid this calendar year by the profile's agent. The total
-    is capped per `cap_schedule` and surfaces as a federal itemized line
-    that stacks with MID.
-
-    `federal_jurisdiction_id` is the jurisdiction within the profile that
-    *receives* the SALT deduction; the SALT cap is a federal-Schedule-A
-    concept and only applies there. Default `federal_us` matches the
-    convention used by `local_regulation.py` and `tax_profile_defaults`.
-    """
-
-    profile_id: str
-    federal_jurisdiction_id: str = "federal_us"
-    cap_schedule: list[FederalSaltCapEntry] = Field(default_factory=lambda: list(DEFAULT_FEDERAL_SALT_CAP_SCHEDULE))
 
 
 class PrivateEquityTenderPolicy(BaseModel):
@@ -998,32 +820,42 @@ class PrivateEquityTenderPolicy(BaseModel):
       QSBS-eligible PE.
     """
 
-    owner_agent_id: str
-    proceeds_account_id: str = "checking"
+    owner_agent_id: AgentId
+    proceeds_account_id: AccountId = CHECKING
     liquid_net_worth_floor: AmountSchedule
 
 
-class TlhPortfolioSpec(BaseModel):
-    """A separately owned reduced-form portfolio, not an ordinary holding plus a policy."""
+class TlhCohort(BaseModel):
+    """One tax lot of a direct-indexing statement: what it is worth, its basis and when it was bought."""
 
     model_config = ConfigDict(extra="forbid")
 
-    portfolio_id: str = Field(min_length=1)
-    owner_agent_id: str
-    account_id: str
+    value: NonNegativeCurrencyAmount = Field(description="Market value at the opening mark, month zero's price.")
+    cost_basis: NonNegativeCurrencyAmount = Field(
+        description="Remaining adjusted basis, already net of harvesting before the scenario opens."
+    )
+    purchase_month_index: int
+
+
+class TlhPortfolioSpec(BaseModel):
+    """A separately owned reduced-form portfolio, not an ordinary holding plus a policy.
+
+    `asset` is the index the portfolio tracks; its price series carries the cohorts' value.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    portfolio_id: PortfolioId = Field(min_length=1)
+    owner_agent_id: AgentId
+    account_id: AccountId
     asset: AssetKey
-    initial_lots: list[InitialLot]
+    initial_cohorts: list[TlhCohort]
     assumptions: TlhAssumptions
 
     @model_validator(mode="after")
-    def _validate_opening_positions(self) -> TlhPortfolioSpec:
+    def _validate_index(self) -> TlhPortfolioSpec:
         if not isinstance(self.asset, SecurityKey):
             raise ValueError("TLH portfolios require a public security price, not private equity")
-        for lot in self.initial_lots:
-            if (lot.agent_id, lot.account_id, lot.asset) != (self.owner_agent_id, self.account_id, self.asset):
-                raise ValueError("TLH opening lots must match the portfolio owner, account and asset")
-        if len({lot.lot_id for lot in self.initial_lots}) != len(self.initial_lots):
-            raise ValueError("TLH opening lot IDs must be unique within the portfolio")
         return self
 
 
@@ -1038,8 +870,8 @@ class MortgageInterestDeductionPolicy(BaseModel):
     `max(itemized, standard)` before bracket-walking.
     """
 
-    liability_id: str
-    owner_agent_id: str
+    liability_id: LiabilityId
+    owner_agent_id: AgentId
     debt_class: Literal["acquisition", "home_equity"] = Field(
         default="acquisition",
         description=(
@@ -1052,480 +884,14 @@ class MortgageInterestDeductionPolicy(BaseModel):
             "tag improvement-tied HELOCs as `acquisition` if you want them deducted."
         ),
     )
-    per_jurisdiction_principal_cap: dict[str, CurrencyAmount] = Field(
-        default_factory=lambda: {"federal_us": Decimal(750_000), "california": Decimal(1_000_000)},
+    per_jurisdiction_principal_cap: dict[JurisdictionId, CurrencyAmount] = Field(
+        default_factory=lambda: {
+            JurisdictionId("federal_us"): Decimal(750_000),
+            JurisdictionId("california"): Decimal(1_000_000),
+        },
         description=(
             "Per-jurisdiction principal cap in USD. Federal post-TCJA caps acquisition "
             "debt at $750k; California's pre-TCJA $1M cap was preserved, so the two "
             "diverge for moderately-large mortgages."
         ),
     )
-
-
-class Scenario(BaseModel):
-    """Spike-1 simulation scenario. Carries the minimum to run
-    a multi-rollout simulation over a fixed horizon with both
-    scheduled and recurring transfers, plus tax lots and asset
-    sales."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    currency: Currency = Field(default_factory=Currency)
-    agents: list[Agent]
-    initial_cash: list[InitialAccountBalance]
-    holding_pools: list[HoldingPool] = Field(default_factory=list)
-    initial_lots: list[InitialLot] = Field(default_factory=list)
-    initial_bonds: list[BondHolding] = Field(default_factory=list)
-    security_distributions: list[SecurityDistribution] = Field(default_factory=list)
-    scheduled_transfers: list[ScheduledTransfer] = Field(default_factory=list)
-    recurring_transfers: list[RecurringTransfer] = Field(default_factory=list)
-    scheduled_property_cashflows: list[ScheduledPropertyCashflow] = Field(default_factory=list)
-    recurring_property_cashflows: list[RecurringPropertyCashflow] = Field(default_factory=list)
-    scheduled_obligations: list[ScheduledObligation] = Field(default_factory=list)
-    recurring_obligations: list[RecurringObligation] = Field(default_factory=list)
-    scheduled_asset_sales: list[ScheduledAssetSale] = Field(default_factory=list)
-    scheduled_property_purchases: list[ScheduledPropertyPurchase] = Field(default_factory=list)
-    initial_primary_residences: list[PrimaryResidenceAssignment] = Field(default_factory=list)
-    primary_residence_events: list[SetPrimaryResidenceEvent] = Field(default_factory=list)
-    # Mid-horizon transitions that mutate per-property rented_fraction at runtime. Each event
-    # must reference an existing property_id from scheduled_property_purchases and fire after
-    # that property's purchase month.
-    property_lifecycle_events: list[PropertyLifecycleEvent] = Field(default_factory=list)
-    property_tax_policies: list[PropertyTaxPolicy] = Field(default_factory=list)
-    mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] = Field(default_factory=list)
-    federal_salt_deduction_policies: list[FederalSaltDeductionPolicy] = Field(default_factory=list)
-    private_equity_tender_policies: list[PrivateEquityTenderPolicy] = Field(default_factory=list)
-    # Component-owned opening positions never also appear in ordinary initial_lots.
-    tlh_portfolios: list[TlhPortfolioSpec] = Field(default_factory=list)
-    external_series: SeriesModelBundle = Field(default_factory=SeriesModelBundle)
-    # Required so callers explicitly choose either taxed agents or an intentional no-tax scenario.
-    tax_profiles: list[TaxProfile]
-    target_allocation_policies: list[TargetAllocationPolicy] = Field(default_factory=list)
-    horizon_months: PositiveInt
-
-    @model_validator(mode="after")
-    def _reject_duplicate_holding_pools(self) -> Scenario:
-        seen: set[tuple[str, str, str]] = set()
-        for pool in self.holding_pools:
-            key = (pool.agent_id, pool.account_id, pool.asset.wire_id)
-            if key in seen:
-                raise ValueError(f"duplicate holding pool: {key}")
-            seen.add(key)
-        return self
-
-    @model_validator(mode="after")
-    def _reject_duplicate_agent_ids(self) -> Scenario:
-        seen: set[str] = set()
-        duplicates: set[str] = set()
-        for agent in self.agents:
-            if agent.agent_id in seen:
-                duplicates.add(agent.agent_id)
-            seen.add(agent.agent_id)
-        if duplicates:
-            duplicate_list = ", ".join(repr(agent_id) for agent_id in sorted(duplicates))
-            raise ValueError(f"duplicate agent_id(s): {duplicate_list}")
-        return self
-
-    @model_validator(mode="after")
-    def _validate_tlh_ownership(self) -> Scenario:
-        ids = [portfolio.portfolio_id for portfolio in self.tlh_portfolios]
-        if len(set(ids)) != len(ids):
-            raise ValueError("TLH portfolio IDs must be unique")
-        ordinary = {(lot.agent_id, lot.account_id, lot.asset.wire_id) for lot in self.initial_lots}
-        ordinary.update((pool.agent_id, pool.account_id, pool.asset.wire_id) for pool in self.holding_pools)
-        owners = {agent.agent_id for agent in self.agents}
-        managed: set[tuple[str, str, str]] = set()
-        for portfolio in self.tlh_portfolios:
-            key = (portfolio.owner_agent_id, portfolio.account_id, portfolio.asset.wire_id)
-            if portfolio.owner_agent_id not in owners:
-                raise ValueError(f"TLH portfolio {portfolio.portfolio_id!r} has an unknown owner")
-            if key in ordinary or key in managed:
-                raise ValueError(f"TLH pool {key!r} must have exactly one component owner and no ordinary holdings")
-            managed.add(key)
-        return self
-
-    @model_validator(mode="after")
-    def _reject_duplicate_initial_lot_purchase_months(self) -> Scenario:
-        seen: dict[tuple[str, str, str, int], str] = {}
-        duplicates: list[tuple[str, str, str, int, str, str]] = []
-        for lot in self.initial_lots:
-            # Dedup/sort/message on the asset's wire id (a stable, ordered string id) — the
-            # tuple stays string-keyed so `sorted(duplicates)` compares cleanly.
-            key = (lot.agent_id, lot.account_id, lot.asset.wire_id, lot.purchase_month_index)
-            previous_lot_id = seen.get(key)
-            if previous_lot_id is not None:
-                duplicates.append((*key, previous_lot_id, lot.lot_id))
-            else:
-                seen[key] = lot.lot_id
-        if duplicates:
-            duplicate_list = ", ".join(
-                f"{agent_id}/{account_id}/{asset_id}@{purchase_month} ({first_lot_id}, {second_lot_id})"
-                for agent_id, account_id, asset_id, purchase_month, first_lot_id, second_lot_id in sorted(duplicates)
-            )
-            raise ValueError(f"duplicate initial lot purchase months for FIFO pool(s): {duplicate_list}")
-        return self
-
-    @model_validator(mode="after")
-    def _reject_unusable_security_distributions(self) -> Scenario:
-        """One payout per (agent, holding account, asset) pool, and only on a traded security.
-
-        Two specs over the same pool would each pay on the pool's whole unit count, so the
-        holding would distribute twice — a doubled yield that looks like a modelling result.
-        """
-
-        seen: set[tuple[str, str, str]] = set()
-        for distribution in self.security_distributions:
-            key = (distribution.agent_id, distribution.holding_account_id, distribution.asset.wire_id)
-            if key in seen:
-                raise ValueError(
-                    f"duplicate security distribution for {key[0]}/{key[1]}/{key[2]}: "
-                    "a pool pays out once, so two specs over it would double the payout"
-                )
-            seen.add(key)
-            if asset_price_key_or_none(distribution.asset) is None:
-                raise ValueError(
-                    f"security distribution names {distribution.asset.wire_id!r}, which is not a "
-                    "traded security (private equity is marked, not distributed)"
-                )
-        return self
-
-    @model_validator(mode="after")
-    def _reject_out_of_horizon_scheduled_events(self) -> Scenario:
-        horizon = int(self.horizon_months)
-        for scheduled_transfer in self.scheduled_transfers:
-            if not 0 <= scheduled_transfer.month < horizon:
-                raise ValueError(
-                    f"scheduled transfer {scheduled_transfer.cause_id!r} "
-                    f"has month {scheduled_transfer.month}, "
-                    f"outside scenario horizon [0, {horizon})"
-                )
-        for sale in self.scheduled_asset_sales:
-            if not 0 <= sale.month < horizon:
-                raise ValueError(
-                    f"scheduled asset sale {sale.cause_id!r} has month {sale.month}, "
-                    f"outside scenario horizon [0, {horizon})"
-                )
-        for scheduled_obligation in self.scheduled_obligations:
-            if not 0 <= scheduled_obligation.month < horizon:
-                raise ValueError(
-                    f"scheduled obligation {scheduled_obligation.obligation_id!r} "
-                    f"has month {scheduled_obligation.month}, "
-                    f"outside scenario horizon [0, {horizon})"
-                )
-        for scheduled_cashflow in self.scheduled_property_cashflows:
-            if not 0 <= scheduled_cashflow.month < horizon:
-                raise ValueError(
-                    f"scheduled property cashflow {scheduled_cashflow.cause_id!r} "
-                    f"has month {scheduled_cashflow.month}, "
-                    f"outside scenario horizon [0, {horizon})"
-                )
-        for purchase in self.scheduled_property_purchases:
-            if not 0 <= purchase.month < horizon:
-                raise ValueError(
-                    f"scheduled property purchase {purchase.cause_id!r} has month {purchase.month}, "
-                    f"outside scenario horizon [0, {horizon})"
-                )
-        for recurring_transfer in self.recurring_transfers:
-            if (
-                recurring_transfer.end_month is not None
-                and recurring_transfer.end_month < recurring_transfer.start_month
-            ):
-                raise ValueError(
-                    f"recurring transfer {recurring_transfer.cause_id!r} "
-                    f"has end_month {recurring_transfer.end_month} "
-                    f"before start_month {recurring_transfer.start_month}"
-                )
-        for recurring_cashflow in self.recurring_property_cashflows:
-            if (
-                recurring_cashflow.end_month is not None
-                and recurring_cashflow.end_month < recurring_cashflow.start_month
-            ):
-                raise ValueError(
-                    f"recurring property cashflow {recurring_cashflow.cause_id!r} "
-                    f"has end_month {recurring_cashflow.end_month} "
-                    f"before start_month {recurring_cashflow.start_month}"
-                )
-        for recurring_obligation in self.recurring_obligations:
-            if (
-                recurring_obligation.end_month is not None
-                and recurring_obligation.end_month < recurring_obligation.start_month
-            ):
-                raise ValueError(
-                    f"recurring obligation {recurring_obligation.obligation_id!r} "
-                    f"has end_month {recurring_obligation.end_month} "
-                    f"before start_month {recurring_obligation.start_month}"
-                )
-        return self
-
-    @model_validator(mode="after")
-    def _reject_invalid_property_lifecycle_events(self) -> Scenario:
-        horizon = int(self.horizon_months)
-        purchase_month_by_property_id: dict[str, int] = {}
-        duplicate_property_ids: set[str] = set()
-        for purchase in self.scheduled_property_purchases:
-            if purchase.property_id in purchase_month_by_property_id:
-                duplicate_property_ids.add(purchase.property_id)
-            purchase_month_by_property_id[purchase.property_id] = int(purchase.month)
-        if duplicate_property_ids:
-            duplicate_list = ", ".join(repr(property_id) for property_id in sorted(duplicate_property_ids))
-            raise ValueError(f"duplicate scheduled property purchase property_id(s): {duplicate_list}")
-
-        property_cashflows: list[ScheduledPropertyCashflow | RecurringPropertyCashflow] = [
-            *self.scheduled_property_cashflows,
-            *self.recurring_property_cashflows,
-        ]
-        for cashflow in property_cashflows:
-            if cashflow.property_id not in purchase_month_by_property_id:
-                known = ", ".join(repr(property_id) for property_id in sorted(purchase_month_by_property_id))
-                raise ValueError(
-                    f"property cashflow {cashflow.cause_id!r} references unknown property_id "
-                    f"{cashflow.property_id!r}; known: {known or '<none>'}"
-                )
-
-        sale_month_by_property_id: dict[str, int] = {}
-        lifecycle_events_by_property_month: dict[tuple[str, int], list[PropertyLifecycleEvent]] = {}
-        for lifecycle_event in self.property_lifecycle_events:
-            event_month = int(lifecycle_event.month)
-            lifecycle_events_by_property_month.setdefault((lifecycle_event.property_id, event_month), []).append(
-                lifecycle_event
-            )
-            if not 0 <= event_month < horizon:
-                raise ValueError(
-                    f"property lifecycle event for {lifecycle_event.property_id!r} "
-                    f"has month {lifecycle_event.month}, "
-                    f"outside scenario horizon [0, {horizon})"
-                )
-            purchase_month = purchase_month_by_property_id.get(lifecycle_event.property_id)
-            if purchase_month is None:
-                known = ", ".join(repr(property_id) for property_id in sorted(purchase_month_by_property_id))
-                raise ValueError(
-                    f"property lifecycle event at month {lifecycle_event.month} references unknown property_id "
-                    f"{lifecycle_event.property_id!r}; known: {known or '<none>'}"
-                )
-            if event_month <= purchase_month:
-                raise ValueError(
-                    f"property lifecycle event for {lifecycle_event.property_id!r} "
-                    f"fires at month {lifecycle_event.month} "
-                    f"but the property's purchase month is {purchase_month}; lifecycle events must "
-                    "fire strictly after purchase."
-                )
-            if isinstance(lifecycle_event, PropertySaleEvent):
-                previous_sale_month = sale_month_by_property_id.get(lifecycle_event.property_id)
-                if previous_sale_month is not None:
-                    raise ValueError(
-                        f"multiple property sale lifecycle events for {lifecycle_event.property_id!r}: "
-                        f"months {previous_sale_month} and {lifecycle_event.month}"
-                    )
-                sale_month_by_property_id[lifecycle_event.property_id] = event_month
-
-        for (property_id, event_month), lifecycle_events in lifecycle_events_by_property_month.items():
-            sale_events = [event for event in lifecycle_events if isinstance(event, PropertySaleEvent)]
-            if not sale_events:
-                continue
-            non_sale_events = [event for event in lifecycle_events if not isinstance(event, PropertySaleEvent)]
-            if non_sale_events:
-                other_types = ", ".join(sorted(type(event).__name__ for event in non_sale_events))
-                raise ValueError(
-                    f"property lifecycle events for {property_id!r} at month {event_month} combine "
-                    f"PropertySaleEvent with {other_types}; same-month sale lifecycle ordering is ambiguous"
-                )
-
-        for lifecycle_event in self.property_lifecycle_events:
-            sale_month = sale_month_by_property_id.get(lifecycle_event.property_id)
-            if sale_month is None:
-                continue
-            event_month = int(lifecycle_event.month)
-            if event_month > sale_month or (
-                event_month == sale_month and not isinstance(lifecycle_event, PropertySaleEvent)
-            ):
-                raise ValueError(
-                    f"property lifecycle event for {lifecycle_event.property_id!r} at month {lifecycle_event.month} "
-                    f"fires after sale at month {sale_month}; the property is frozen after sale"
-                )
-        return self
-
-    @model_validator(mode="after")
-    def _reject_invalid_primary_residence_assignments(self) -> Scenario:
-        horizon = int(self.horizon_months)
-        agent_ids = {agent.agent_id for agent in self.agents}
-        purchase_by_property_id: dict[str, ScheduledPropertyPurchase] = {}
-        for purchase in self.scheduled_property_purchases:
-            purchase_by_property_id[purchase.property_id] = purchase
-
-        sale_month_by_property_id: dict[str, int] = {}
-        for lifecycle_event in self.property_lifecycle_events:
-            if isinstance(lifecycle_event, PropertySaleEvent):
-                sale_month_by_property_id[lifecycle_event.property_id] = int(lifecycle_event.month)
-
-        seen_initial_agents: set[str] = set()
-        for assignment in self.initial_primary_residences:
-            if assignment.agent_id in seen_initial_agents:
-                raise ValueError(f"multiple initial primary residences for agent_id {assignment.agent_id!r}")
-            seen_initial_agents.add(assignment.agent_id)
-            self._validate_primary_residence_property_assignment(
-                label="initial primary residence",
-                agent_id=assignment.agent_id,
-                property_id=assignment.property_id,
-                month=0,
-                agent_ids=agent_ids,
-                purchase_by_property_id=purchase_by_property_id,
-                sale_month_by_property_id=sale_month_by_property_id,
-                allow_same_month_purchase=True,
-            )
-
-        seen_event_keys: set[tuple[str, int]] = set()
-        for primary_event in self.primary_residence_events:
-            event_month = int(primary_event.month)
-            if not 0 <= event_month < horizon:
-                raise ValueError(
-                    f"primary residence event for agent_id {primary_event.agent_id!r} "
-                    f"has month {primary_event.month}, "
-                    f"outside scenario horizon [0, {horizon})"
-                )
-            key = (primary_event.agent_id, event_month)
-            if key in seen_event_keys:
-                raise ValueError(
-                    f"multiple primary residence events for agent_id {primary_event.agent_id!r} "
-                    f"at month {primary_event.month}"
-                )
-            seen_event_keys.add(key)
-            if primary_event.property_id is None:
-                if primary_event.agent_id not in agent_ids:
-                    known = ", ".join(repr(agent_id) for agent_id in sorted(agent_ids))
-                    raise ValueError(
-                        f"primary residence event at month {primary_event.month} references unknown agent_id "
-                        f"{primary_event.agent_id!r}; known: {known or '<none>'}"
-                    )
-                continue
-            self._validate_primary_residence_property_assignment(
-                label="primary residence event",
-                agent_id=primary_event.agent_id,
-                property_id=primary_event.property_id,
-                month=event_month,
-                agent_ids=agent_ids,
-                purchase_by_property_id=purchase_by_property_id,
-                sale_month_by_property_id=sale_month_by_property_id,
-                allow_same_month_purchase=True,
-            )
-        return self
-
-    def _validate_primary_residence_property_assignment(
-        self,
-        *,
-        label: str,
-        agent_id: str,
-        property_id: str,
-        month: int,
-        agent_ids: set[str],
-        purchase_by_property_id: dict[str, ScheduledPropertyPurchase],
-        sale_month_by_property_id: dict[str, int],
-        allow_same_month_purchase: bool,
-    ) -> None:
-        if agent_id not in agent_ids:
-            known = ", ".join(repr(agent) for agent in sorted(agent_ids))
-            raise ValueError(f"{label} references unknown agent_id {agent_id!r}; known: {known or '<none>'}")
-        purchase = purchase_by_property_id.get(property_id)
-        if purchase is None:
-            known = ", ".join(repr(property_id) for property_id in sorted(purchase_by_property_id))
-            raise ValueError(f"{label} references unknown property_id {property_id!r}; known: {known or '<none>'}")
-        if purchase.buyer_agent_id != agent_id:
-            raise ValueError(
-                f"{label} assigns property_id {property_id!r} to agent_id {agent_id!r}, "
-                f"but the property's buyer_agent_id is {purchase.buyer_agent_id!r}"
-            )
-        purchase_month = int(purchase.month)
-        if month < purchase_month or (month == purchase_month and not allow_same_month_purchase):
-            raise ValueError(
-                f"{label} assigns property_id {property_id!r} at month {month}, "
-                f"before its purchase month {purchase_month}"
-            )
-        sale_month = sale_month_by_property_id.get(property_id)
-        if sale_month is not None and month > sale_month:
-            raise ValueError(
-                f"{label} assigns property_id {property_id!r} at month {month}, after sale at month {sale_month}"
-            )
-
-    @model_validator(mode="after")
-    def _reject_duplicate_funding_policy_accounts(self) -> Scenario:
-        """One funding policy per cash account.
-
-        Two policies on one account would each size their raise from the same projected
-        balance, unaware of the other's sale, and between them sell roughly twice what the
-        month needed.
-        """
-
-        keys = [(policy.agent_id, policy.account_id) for policy in self.target_allocation_policies]
-        seen: set[tuple[str, str]] = set()
-        duplicates: set[tuple[str, str]] = set()
-        for key in keys:
-            if key in seen:
-                duplicates.add(key)
-            seen.add(key)
-        if duplicates:
-            duplicate_list = ", ".join(f"{agent_id}/{account_id}" for agent_id, account_id in sorted(duplicates))
-            raise ValueError(f"duplicate funding policies for account(s): {duplicate_list}")
-        return self
-
-    @model_validator(mode="after")
-    def _reject_ambiguous_tax_and_liability_links(self) -> Scenario:
-        seen_tax_profile_agents: set[str] = set()
-        duplicate_tax_profile_agents: set[str] = set()
-        for profile in self.tax_profiles:
-            if profile.agent_id in seen_tax_profile_agents:
-                duplicate_tax_profile_agents.add(profile.agent_id)
-            seen_tax_profile_agents.add(profile.agent_id)
-        if duplicate_tax_profile_agents:
-            duplicate_list = ", ".join(repr(agent_id) for agent_id in sorted(duplicate_tax_profile_agents))
-            raise ValueError(f"duplicate TaxProfile.agent_id(s): {duplicate_list}")
-
-        purchase_by_property_id = {purchase.property_id: purchase for purchase in self.scheduled_property_purchases}
-        seen_liability_ids: dict[str, str] = {}
-        duplicate_liability_ids: list[tuple[str, str, str]] = []
-        for purchase in self.scheduled_property_purchases:
-            if purchase.mortgage is None:
-                continue
-            liability_id = purchase.mortgage.liability_id
-            previous_property_id = seen_liability_ids.get(liability_id)
-            if previous_property_id is not None:
-                duplicate_liability_ids.append((liability_id, previous_property_id, purchase.property_id))
-            else:
-                seen_liability_ids[liability_id] = purchase.property_id
-        if duplicate_liability_ids:
-            duplicate_list = ", ".join(
-                f"{liability_id!r} on {first_property_id!r} and {second_property_id!r}"
-                for liability_id, first_property_id, second_property_id in sorted(duplicate_liability_ids)
-            )
-            raise ValueError(f"duplicate mortgage liability_id(s): {duplicate_list}")
-
-        property_tax_policy_by_property_month: dict[tuple[str, int], int] = {}
-        for policy_index, policy in enumerate(self.property_tax_policies):
-            property_purchase = purchase_by_property_id.get(policy.property_id)
-            if property_purchase is None:
-                known = ", ".join(repr(property_id) for property_id in sorted(purchase_by_property_id))
-                raise ValueError(
-                    f"property tax policy references unknown property_id {policy.property_id!r}; "
-                    f"known: {known or '<none>'}"
-                )
-            if policy.owner_agent_id != property_purchase.buyer_agent_id:
-                raise ValueError(
-                    f"property tax policy for property_id {policy.property_id!r} has "
-                    f"owner_agent_id={policy.owner_agent_id!r}, but the property's buyer_agent_id "
-                    f"is {property_purchase.buyer_agent_id!r}"
-                )
-            if policy.end_month is not None and policy.end_month < policy.start_month:
-                raise ValueError(
-                    f"property tax policy for property_id {policy.property_id!r} has "
-                    f"end_month {policy.end_month} before start_month {policy.start_month}"
-                )
-            for month in range(int(self.horizon_months)):
-                if not policy.is_active_at(month):
-                    continue
-                key = (policy.property_id, month)
-                previous_policy_index = property_tax_policy_by_property_month.get(key)
-                if previous_policy_index is not None:
-                    raise ValueError(
-                        f"overlapping property tax policies for property_id {policy.property_id!r} "
-                        f"at month {month}: indexes {previous_policy_index} and {policy_index}"
-                    )
-                property_tax_policy_by_property_month[key] = policy_index
-        return self

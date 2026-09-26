@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(
     default_testonly = True,
@@ -6,146 +6,25 @@ package(
 )
 
 py_library(
-    name = "case",
-    srcs = ["case.py"],
-    deps = [
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:external_series",
-        "//finance/augur/sim:jurisdictions",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:prepared",
-        "//finance/augur/sim:runtime",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim/compiler:execution",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "fixtures",
-    srcs = ["fixtures.py"],
-    deps = [
-        ":case",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "simulation_result",
-    srcs = ["simulation_result.py"],
-    deps = [
-        ":case",
-        "//finance/augur/sim:events",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
-    name = "frozen_rollout",
-    srcs = ["frozen_rollout.py"],
-    deps = [
-        ":case",
-        ":simulation_result",
-        "//finance/augur/model:asset_key",
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:scenario",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "income_sources",
-    srcs = ["income_sources.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        ":simulation_result",
-        "//finance/augur/sim:scenario",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "property_stakes",
-    srcs = ["property_stakes.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        ":simulation_result",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:scenario",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "cash_conservation",
-    srcs = ["cash_conservation.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        ":simulation_result",
-        "//finance/augur/model:asset_key",
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:scenario",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "target_allocation",
-    srcs = ["target_allocation.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        ":simulation_result",
-        "//finance/augur/sim:scenario",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
     name = "bonds",
     srcs = ["bonds.py"],
     deps = [
-        ":case",
-        ":fixtures",
         "//finance/augur/model:series",
-        "//finance/augur/sim:scenario",
-    ],
-)
-
-py_library(
-    name = "rental_lifecycle",
-    srcs = ["rental_lifecycle.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        ":simulation_result",
-        "//finance/augur/model:series",
+        "//finance/augur/sim:bonds",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:external_series",
         "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:locations",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
         "//finance/augur/sim:scenario",
+        "//finance/augur/sim:tax_authority",
+        "//finance/augur/sim:world",
+        "//finance/augur/sim/compiler:execution",
+        "//finance/augur/sim/compiler:income_sources",
+        "//finance/augur/sim/compiler:tax",
         "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
     ],
 )
 
@@ -153,77 +32,8 @@ py_library(
     name = "security_distributions",
     srcs = ["security_distributions.py"],
     deps = [
-        ":case",
-        ":fixtures",
         "//finance/augur/model:series",
         "//finance/augur/sim:scenario",
-    ],
-)
-
-py_library(
-    name = "private_equity",
-    srcs = ["private_equity.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        ":simulation_result",
-        "//finance/augur/model:asset_key",
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:scenario",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "deductions",
-    srcs = ["deductions.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        ":simulation_result",
-        "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:scenario",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "behaviour",
-    srcs = ["behaviour.py"],
-    deps = [
-        ":case",
-        ":simulation_result",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:scenario",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "engine_edges",
-    srcs = ["engine_edges.py"],
-    deps = [
-        ":case",
-        ":simulation_result",
-        "//finance/augur/model:asset_key",
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:external_series",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim:tlh",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
     ],
 )
 
@@ -231,272 +41,34 @@ py_library(
     name = "accounting",
     srcs = ["accounting.py"],
     deps = [
-        ":case",
         "//finance/augur/sim:accounting",
         "//finance/augur/sim:books",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:market_path",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:scenario",
+        "//finance/augur/sim:tax_authority",
+        "//finance/augur/sim:world",
         "//finance/augur/sim/compiler:tax",
     ],
 )
 
 py_library(
-    name = "configured_result",
-    srcs = ["configured_result.py"],
+    name = "issuer_protocol",
+    srcs = ["issuer_protocol.py"],
     deps = [
-        ":case",
-        ":simulation_result",
-        "//finance/augur/sim:configured",
-        "//finance/augur/sim:events",
-        "//finance/augur/sim:scenario",
-        "@pypi//polars",
-    ],
-)
-
-py_test(
-    name = "action_test",
-    srcs = ["action_test.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/sim:actions",
-        "//finance/augur/sim:books",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:prepared",
-        "//finance/augur/sim:results",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim:session",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
-py_test(
-    name = "asset_sales_test",
-    srcs = ["asset_sales_test.py"],
+py_library(
+    name = "scripted",
+    srcs = ["scripted.py"],
     deps = [
-        ":case",
-        ":fixtures",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:gbm",
-        "//finance/augur/model:level_series_groups",
-        "//finance/augur/model:series",
-        "//finance/augur/model:series_model",
-        "//finance/augur/policy:sleeves",
         "//finance/augur/sim:actions",
-        "//finance/augur/sim:books",
+        "//finance/augur/sim:agent",
         "//finance/augur/sim:observations",
-        "//finance/augur/sim:results",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim:session",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "bond_test",
-    srcs = ["bond_test.py"],
-    deps = [
-        ":bonds",
-        ":case",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:actions",
-        "//finance/augur/sim:books",
-        "//finance/augur/sim:results",
-        "//finance/augur/sim:session",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "configured_acceptance_test",
-    srcs = ["configured_acceptance_test.py"],
-    deps = [
-        ":behaviour",
-        ":case",
-        ":cash_conservation",
-        ":configured_result",
-        ":deductions",
-        ":engine_edges",
-        ":fixtures",
-        ":frozen_rollout",
-        ":income_sources",
-        ":private_equity",
-        ":property_stakes",
-        ":rental_lifecycle",
-        ":simulation_result",
-        ":target_allocation",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "held_bond_test",
-    srcs = ["held_bond_test.py"],
-    deps = [
-        ":bonds",
-        ":case",
-        ":fixtures",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:actions",
-        "//finance/augur/sim:books",
-        "//finance/augur/sim:configured",
-        "//finance/augur/sim:observations",
-        "//finance/augur/sim:results",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim:session",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "indexed_payments_test",
-    srcs = ["indexed_payments_test.py"],
-    deps = [
-        ":case",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:actions",
-        "//finance/augur/sim:books",
-        "//finance/augur/sim:external_series",
-        "//finance/augur/sim:results",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim:session",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "lot_basis_test",
-    srcs = ["lot_basis_test.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/api:finance",
-        "//finance/augur/api:portfolio",
-        "//finance/augur/model:series",
-        "//finance/augur/product:portfolio",
-        "//finance/augur/sim:actions",
-        "//finance/augur/sim:results",
-        "//finance/augur/sim:session",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "obligations_test",
-    srcs = ["obligations_test.py"],
-    deps = [
-        ":case",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/policy:cash_band",
-        "//finance/augur/policy:funding",
-        "//finance/augur/policy:sleeves",
-        "//finance/augur/sim:actions",
-        "//finance/augur/sim:books",
-        "//finance/augur/sim:observations",
-        "//finance/augur/sim:results",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim:session",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "public_sales_test",
-    srcs = ["public_sales_test.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/sim:actions",
-        "//finance/augur/sim:books",
-        "//finance/augur/sim:observations",
-        "//finance/augur/sim:results",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim:session",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "security_distributions_test",
-    srcs = ["security_distributions_test.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        ":security_distributions",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:actions",
-        "//finance/augur/sim:results",
-        "//finance/augur/sim:session",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_invocation",
-    srcs = ["test_invocation.py"],
-    deps = [
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:artifacts",
-        "//finance/augur/sim:external_series",
-        "//finance/augur/sim:results",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim:session",
-        "//finance/augur/sim/compiler:execution",
-        "//finance/augur/x/bounded_spending:python_policy",
-        "//finance/augur/x/monthly_actions:run",
-        "@pypi//numpy",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "transfers_test",
-    srcs = ["transfers_test.py"],
-    deps = [
-        ":case",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/sim:actions",
-        "//finance/augur/sim:books",
-        "//finance/augur/sim:results",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim:session",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

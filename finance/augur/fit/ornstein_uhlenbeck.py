@@ -33,14 +33,13 @@ chooses which regimes the fit has seen, and it is the single input that moves th
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
 import numpy as np
 
-from finance.augur.model.structural_macro import MINIMUM_MONTHS, MONTHS_PER_YEAR, PERCENT_TO_DECIMAL
+from finance.augur.model.structural_macro import MINIMUM_MONTHS, PERCENT_TO_DECIMAL
 from finance.evidence.loading import MonthlyLevel
 
 
@@ -59,23 +58,6 @@ class OrnsteinUhlenbeckFit:
     latest_level: float
     latest_month: date
     sample_months: int
-
-    @property
-    def half_life_years(self) -> float:
-        """How long the process takes to close half a gap to its mean. `inf` if it never does.
-
-        The DISCRETE half-life: the gap decays by `(1 - k)` per month, so it halves after
-        `log(0.5) / log(1 - k)` months. Not the continuous-time `log(2) / k`, which is the
-        same thing only in the limit and runs ~0.5% long at these speeds. Small, but the
-        provider's own fund-convergence term is exact-discrete, and one of the two being an
-        approximation of the other is the kind of thing that never gets noticed.
-        """
-
-        if self.reversion_per_month <= 0.0:
-            return math.inf
-        if self.reversion_per_month >= 1.0:
-            return 0.0
-        return math.log(0.5) / math.log(1.0 - self.reversion_per_month) / MONTHS_PER_YEAR
 
 
 @dataclass(frozen=True)

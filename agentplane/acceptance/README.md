@@ -122,8 +122,9 @@ bazelisk test //agentplane/acceptance:test_egress --test_output=streamed --test_
 Run the other live scenarios by their explicit targets: `:test_launch_presets`,
 `:test_instructions`, `:test_mcp`, and `:test_thread_latency`.
 
-`//agentplane/acceptance:test_ollama_routes` exercises the twelve configured Ollama chat
-routes on both harnesses, with the 128k cases first. Each cell creates a Sandbox,
+`//agentplane/acceptance:test_ollama_routes` exercises every configured Ollama chat
+route (sourced from `cluster/cdk8s/model_rosters.py`'s `OLLAMA_CHAT_MODELS`) on both
+harnesses, with the 128k cases first. Each cell creates a Sandbox,
 opens a real session, and requires recorded shell-tool output. It has an absolute
 300-second turn limit; a backend that never completes still leaves an interrupted
 turn rather than a model verdict. To run just one cell, set `OLLAMA_SMOKE_CASE` to

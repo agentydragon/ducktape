@@ -14,8 +14,6 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from volsync_replicationdestination_crds.backube.volsync import (
-    ReplicationDestination,
-    ReplicationDestinationSpec,
     ReplicationDestinationSpecRsyncTls,
     ReplicationDestinationSpecRsyncTlsCopyMethod,
     ReplicationDestinationSpecRsyncTlsMoverAffinity,
@@ -28,8 +26,6 @@ from volsync_replicationdestination_crds.backube.volsync import (
     ReplicationDestinationSpecTrigger,
 )
 from volsync_replicationsource_crds.backube.volsync import (
-    ReplicationSource,
-    ReplicationSourceSpec,
     ReplicationSourceSpecRsyncTls,
     ReplicationSourceSpecRsyncTlsCopyMethod,
     ReplicationSourceSpecRsyncTlsMoverAffinity,
@@ -45,6 +41,8 @@ from volsync_replicationsource_crds.backube.volsync import (
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.volsync.replication_destination import ReplicationDestination
+from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 
 _NAME = "grocy"
 _LABELS = {"app.kubernetes.io/name": _NAME}
@@ -197,6 +195,63 @@ def base_chart(app: App) -> Chart:
     return chart
 
 
+_MOVER_UID = 1000  # Matches the linuxserver.io image's PUID/PGID, so movers own the files they copy.
+
+
+def _destination_mover_security_context() -> ReplicationDestinationSpecRsyncTlsMoverSecurityContext:
+    return ReplicationDestinationSpecRsyncTlsMoverSecurityContext(
+        run_as_user=_MOVER_UID,
+        run_as_group=_MOVER_UID,
+        fs_group=_MOVER_UID,
+        seccomp_profile=ReplicationDestinationSpecRsyncTlsMoverSecurityContextSeccompProfile(type="RuntimeDefault"),
+    )
+
+
+def _source_mover_security_context() -> ReplicationSourceSpecRsyncTlsMoverSecurityContext:
+    return ReplicationSourceSpecRsyncTlsMoverSecurityContext(
+        run_as_user=_MOVER_UID,
+        run_as_group=_MOVER_UID,
+        fs_group=_MOVER_UID,
+        seccomp_profile=ReplicationSourceSpecRsyncTlsMoverSecurityContextSeccompProfile(type="RuntimeDefault"),
+    )
+
+
+def _destination_mover_zone_affinity() -> ReplicationDestinationSpecRsyncTlsMoverAffinity:
+    return ReplicationDestinationSpecRsyncTlsMoverAffinity(
+        node_affinity=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinity(
+            required_during_scheduling_ignored_during_execution=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                node_selector_terms=[
+                    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                        match_expressions=[
+                            ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                key=_ZONE_KEY, operator="In", values=[_ZONE]
+                            )
+                        ]
+                    )
+                ]
+            )
+        )
+    )
+
+
+def _source_mover_zone_affinity() -> ReplicationSourceSpecRsyncTlsMoverAffinity:
+    return ReplicationSourceSpecRsyncTlsMoverAffinity(
+        node_affinity=ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinity(
+            required_during_scheduling_ignored_during_execution=ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                node_selector_terms=[
+                    ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                        match_expressions=[
+                            ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                key=_ZONE_KEY, operator="In", values=[_ZONE]
+                            )
+                        ]
+                    )
+                ]
+            )
+        )
+    )
+
+
 def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
     namespace = f"grocy-{household}"
     chart = Chart(app, namespace, disable_resource_name_hashes=True)
@@ -260,21 +315,12 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
         chart,
         "migration",
         metadata=metadata("grocy-config-ovh-migration", namespace),
-        spec=ReplicationDestinationSpec(
-            trigger=ReplicationDestinationSpecTrigger(manual="prep-20260520"),
-            rsync_tls=ReplicationDestinationSpecRsyncTls(
-                destination_pvc=_CONFIG_CLAIM,
-                copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
-                service_type="ClusterIP",
-                mover_security_context=ReplicationDestinationSpecRsyncTlsMoverSecurityContext(
-                    run_as_user=1000,
-                    run_as_group=1000,
-                    fs_group=1000,
-                    seccomp_profile=ReplicationDestinationSpecRsyncTlsMoverSecurityContextSeccompProfile(
-                        type="RuntimeDefault"
-                    ),
-                ),
-            ),
+        trigger=ReplicationDestinationSpecTrigger(manual="prep-20260520"),
+        rsync_tls=ReplicationDestinationSpecRsyncTls(
+            destination_pvc=_CONFIG_CLAIM,
+            copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
+            service_type="ClusterIP",
+            mover_security_context=_destination_mover_security_context(),
         ),
     )
     # Periodic backup of the grocy-config-ovh PVC into a SeaweedFS-backed PVC.
@@ -300,73 +346,27 @@ def household_chart(app: App, *, household: str, backup_schedule: str) -> Chart:
         chart,
         "backup-destination",
         metadata=metadata(_BACKUP, namespace),
-        spec=ReplicationDestinationSpec(
-            rsync_tls=ReplicationDestinationSpecRsyncTls(
-                destination_pvc=_BACKUP,
-                copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
-                service_type="ClusterIP",
-                mover_security_context=ReplicationDestinationSpecRsyncTlsMoverSecurityContext(
-                    run_as_user=1000,
-                    run_as_group=1000,
-                    fs_group=1000,
-                    seccomp_profile=ReplicationDestinationSpecRsyncTlsMoverSecurityContextSeccompProfile(
-                        type="RuntimeDefault"
-                    ),
-                ),
-                mover_affinity=ReplicationDestinationSpecRsyncTlsMoverAffinity(
-                    node_affinity=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinity(
-                        required_during_scheduling_ignored_during_execution=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                            node_selector_terms=[
-                                ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                                    match_expressions=[
-                                        ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                            key=_ZONE_KEY, operator="In", values=[_ZONE]
-                                        )
-                                    ]
-                                )
-                            ]
-                        )
-                    )
-                ),
-            )
+        rsync_tls=ReplicationDestinationSpecRsyncTls(
+            destination_pvc=_BACKUP,
+            copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
+            service_type="ClusterIP",
+            mover_security_context=_destination_mover_security_context(),
+            mover_affinity=_destination_mover_zone_affinity(),
         ),
     )
     ReplicationSource(
         chart,
         "backup-source",
         metadata=metadata(_BACKUP, namespace),
-        spec=ReplicationSourceSpec(
-            source_pvc=_CONFIG_CLAIM,
-            trigger=ReplicationSourceSpecTrigger(schedule=backup_schedule),
-            rsync_tls=ReplicationSourceSpecRsyncTls(
-                copy_method=ReplicationSourceSpecRsyncTlsCopyMethod.DIRECT,
-                key_secret=f"volsync-rsync-tls-{_BACKUP}",
-                address=f"volsync-rsync-tls-dst-{_BACKUP}.{namespace}.svc",
-                port=8000,
-                mover_security_context=ReplicationSourceSpecRsyncTlsMoverSecurityContext(
-                    run_as_user=1000,
-                    run_as_group=1000,
-                    fs_group=1000,
-                    seccomp_profile=ReplicationSourceSpecRsyncTlsMoverSecurityContextSeccompProfile(
-                        type="RuntimeDefault"
-                    ),
-                ),
-                mover_affinity=ReplicationSourceSpecRsyncTlsMoverAffinity(
-                    node_affinity=ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinity(
-                        required_during_scheduling_ignored_during_execution=ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                            node_selector_terms=[
-                                ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                                    match_expressions=[
-                                        ReplicationSourceSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                            key=_ZONE_KEY, operator="In", values=[_ZONE]
-                                        )
-                                    ]
-                                )
-                            ]
-                        )
-                    )
-                ),
-            ),
+        source_pvc=_CONFIG_CLAIM,
+        trigger=ReplicationSourceSpecTrigger(schedule=backup_schedule),
+        mover=ReplicationSourceSpecRsyncTls(
+            copy_method=ReplicationSourceSpecRsyncTlsCopyMethod.DIRECT,
+            key_secret=f"volsync-rsync-tls-{_BACKUP}",
+            address=f"volsync-rsync-tls-dst-{_BACKUP}.{namespace}.svc",
+            port=8000,
+            mover_security_context=_source_mover_security_context(),
+            mover_affinity=_source_mover_zone_affinity(),
         ),
     )
     return chart

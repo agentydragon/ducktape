@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
+from finance.augur.sim.ids import AgentId, JurisdictionId
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 from finance.augur.sim.scenario import ORDINARY_INCOME, TransferIncomeCategory
@@ -52,21 +53,26 @@ class TaxAssessment:
 class IncomeLedger:
     """Income remains per source, including income a particular jurisdiction exempts."""
 
-    def __init__(self, taxpayers: Iterable[str], sources: Sequence[TransferIncomeCategory]) -> None:
-        self.by_source = {(agent, source): 0 for agent in taxpayers for source in sources}
+    def __init__(self, sources: Sequence[TransferIncomeCategory]) -> None:
+        self.sources = tuple(sources)
+        self.by_source: dict[tuple[AgentId, TransferIncomeCategory], int] = {}
 
-    def accrue(self, agent_id: str, source: TransferIncomeCategory, amount: int) -> None:
+    def enroll(self, agent_id: AgentId) -> None:
+        for source in self.sources:
+            self.by_source[(agent_id, source)] = 0
+
+    def accrue(self, agent_id: AgentId, source: TransferIncomeCategory, amount: int) -> None:
         key = (agent_id, source)
         if key in self.by_source:
             self.by_source[key] = checked_count(self.by_source[key] + amount, "money addition")
 
-    def deduct_from_ordinary(self, agent_id: str, amount: int) -> None:
+    def deduct_from_ordinary(self, agent_id: AgentId, amount: int) -> None:
         self.accrue(agent_id, ORDINARY_INCOME, checked_count(-amount, "money negation"))
 
-    def ordinary(self, agent_id: str) -> int:
+    def ordinary(self, agent_id: AgentId) -> int:
         return self.by_source.get((agent_id, ORDINARY_INCOME), 0)
 
-    def reset(self, agent_id: str) -> None:
+    def reset(self, agent_id: AgentId) -> None:
         for key in self.by_source:
             if key[0] == agent_id:
                 self.by_source[key] = 0
@@ -74,15 +80,17 @@ class IncomeLedger:
     def copy(self) -> IncomeLedger:
         """Rows are ints under frozen keys, so a fresh dict detaches the copy; `deepcopy` would
         rebuild every income-source model behind those keys."""
-        clone = IncomeLedger((), ())
+        clone = IncomeLedger(self.sources)
         clone.by_source = dict(self.by_source)
         return clone
 
 
-def taxes_interest_from(rules: PreparedTaxRules, issuer_id: str | None, issuer_level: JurisdictionLevel | None) -> bool:
-    if issuer_id is None or issuer_level is None:
+def taxes_interest_from(
+    rules: PreparedTaxRules, issuer_jurisdiction_id: JurisdictionId | None, issuer_level: JurisdictionLevel | None
+) -> bool:
+    if issuer_jurisdiction_id is None or issuer_level is None:
         return True
-    if issuer_id == rules.jurisdiction_id:
+    if issuer_jurisdiction_id == rules.jurisdiction_id:
         return not rules.exempts_own_issue
     return issuer_level not in rules.exempt_interest_from_levels
 

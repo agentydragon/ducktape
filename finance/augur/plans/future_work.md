@@ -12,8 +12,8 @@ assumptions remain downstream.
   explicit financial-product bindings. Distinguish configured
   opening levels, relative path anchors and fixed contractual amounts. Keep their
   anchoring conventions explicit at composition, not inferred from source names.
-- **P12 / ACCEPT / CAP:** retire configured drivers and test adapters while
-  preserving actual state/receipt facts. Account/component selection and any
+- **P12 / CAP:** retire the configured strategy while preserving actual
+  state/receipt facts. Account/component selection and any
   additional trade/contract capture need a named consumer. Do not create another
   accounting store, generic posting-template framework or mandatory metric slab.
 - **Consider the name “exogenous.”** Removing it may better describe the boundary
@@ -30,15 +30,11 @@ assumptions remain downstream.
   decisions and other modeled processes in experiment provenance. Do not turn a
   storage position into another rollout identity or promise seed equivalence
   between different models.
-- **IDTYPES, deferred:** use distinct strongly typed entity IDs so security and
-  property identities cannot be interchanged at domain/API boundaries. This is
-  not merely a prefix spelling change. Preserve existing typed keys; do not make
-  a global serialization/ID sweep a prerequisite for product composition.
 
 ## Reduced-form TLH portfolios
 
 **MA3** remains the [paired TLH experiment](managed_portfolio.md). Reuse the
-Python component's [ownership and timing contract](../docs/tlh.md).
+Python component's [ownership and timing contract](../sim/tlh.py).
 
 - Check modeled realized losses and subsequent gain/basis consequences against
   named real-account evidence. Refit decay as longitudinal evidence becomes
@@ -50,9 +46,11 @@ Python component's [ownership and timing contract](../docs/tlh.md).
   a prerequisite or a permanent prohibition. Reconsider it only if discrepancies
   with reality affect a decision worth modeling. It belongs to the investment
   service model, not a new household policy discriminator.
-- Report realized effects and aggregate value/basis from the component's financial
-  statements. Keep cohort state private to the Python component; neither policy
-  observations nor native capture owns a second mutable basis/deferral authority.
+- Lots and a TLH portfolio on the same index in one account are refused: a
+  portfolio owns its whole (owner, account, asset) slot, and the world keys ownership
+  and distributions by that slot. Supporting both means keying them by portfolio id
+  instead; do it only if a real account holds both (Plaid proxy groups each get their
+  own portfolio account).
 
 ## Taxes and financial contracts
 
@@ -203,5 +201,4 @@ Richer PE app controls are dropped from the backlog, not queued as deferred work
   consistent percentile labels and hover/selected-trajectory detail. UI choice
   does not redefine the simulation's accounting or policy interface.
 - Reuse shared browser-test infrastructure when a concrete remaining duplicate
-  is found. Performance/layout tuning waits for an actual measured workload;
-  deleted cache paths and Python-engine loops are not optimization backlog.
+  is found. Performance/layout tuning waits for an actual measured workload.

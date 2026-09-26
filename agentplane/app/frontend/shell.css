@@ -43,7 +43,7 @@
 
 /* Hidden on desktop, where the persistent sidebar (sidebar.css) needs no toggle. Sticky rather than
    part of the normal flow so it stays reachable while agentplane-shell-main's own content scrolls
-   under it (UISHELL_MOBILE, agentplane/plans/task_dag.md). */
+   under it. */
 .agentplane-mobile-topbar {
   display: none;
 }

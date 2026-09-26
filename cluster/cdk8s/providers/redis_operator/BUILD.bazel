@@ -1,0 +1,14 @@
+# gazelle:resolve py redis_operator_redisreplication_crds //cluster/cdk8s/providers/redis_operator:redisreplication
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+# Group redis.redis.opstreelabs.in reverse-DNSes to a path starting with the keyword `in`.
+cdk8s_import(
+    name = "redisreplication",
+    crd = "@redis_operator_crds//file",
+    crd_name = "redisreplications.redis.redis.opstreelabs.in",
+    module_name = "redis_operator_redisreplication_crds",
+    module_path = "in/opstreelabs/redis/redis",
+    python_module_path = "in_/opstreelabs/redis/redis",
+    visibility = ["//visibility:public"],
+)

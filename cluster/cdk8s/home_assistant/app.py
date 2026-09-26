@@ -6,7 +6,7 @@ PrometheusRule.
 The provisioner images' tags are the placeholder "unset"; the hand-written
 `cluster/k8s/home-assistant/app/image-pins/kustomization.yaml` overrides them at
 `kustomize build` time via Flux's image-automation markers. Hand-written beside the generated
-output: the `configMapGenerator` inputs, the SOPS break-glass Secret and the `kustomization.yaml` that generates the ConfigMaps.
+output: the `configMapGenerator` inputs and the SOPS Secrets.
 """
 
 from __future__ import annotations
@@ -22,23 +22,11 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
 )
 from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsAuthorization,
     ServiceMonitorSpecEndpointsAuthorizationCredentials,
-    ServiceMonitorSpecSelector,
-)
-from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
-    PrometheusRule,
-    PrometheusRuleSpec,
-    PrometheusRuleSpecGroups,
-    PrometheusRuleSpecGroupsRules,
-    PrometheusRuleSpecGroupsRulesExpr,
 )
 from volsync_replicationsource_crds.backube.volsync import (
-    ReplicationSource,
-    ReplicationSourceSpec,
     ReplicationSourceSpecRestic,
     ReplicationSourceSpecResticCacheCapacity,
     ReplicationSourceSpecResticCopyMethod,
@@ -57,12 +45,16 @@ from volsync_replicationsource_crds.backube.volsync import (
 )
 
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
+from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
 from homeassistant.provisioner.components import settings as components
@@ -94,9 +86,18 @@ _SETTINGS_DIR = "/etc/provisioner"
 _CONFIG_DIR = "/config"
 # Home Assistant's own listener; Caddy (the hand-written Caddyfile) proxies to it.
 _BACKEND_PORT = 8124
-# Rendered by the kustomization.yaml's configMapGenerator.
-_CONFIGURATION_CONFIG_MAP = "home-assistant-configuration"
-_CADDY_CONFIG_MAP = "home-assistant-caddy"
+# From the hand-written files beside the kustomization.yaml, under names without a content hash:
+# Reloader restarts the Deployment when either changes.
+_FIXED_NAME = GeneratorOptions(disable_name_suffix_hash=True)
+_CONFIGURATION_CONFIG_MAP = ConfigMapArgs(
+    name="home-assistant-configuration",
+    namespace=_NAMESPACE,
+    options=_FIXED_NAME,
+    files=["configuration.yaml=configuration.yaml.conf"],
+)
+_CADDY_CONFIG_MAP = ConfigMapArgs(
+    name="home-assistant-caddy", namespace=_NAMESPACE, options=_FIXED_NAME, files=["Caddyfile"]
+)
 
 # The local owner the provisioners log in as, through the in-cluster Service.
 _ENDPOINT = HomeAssistantEndpoint(
@@ -149,10 +150,23 @@ _TOKENS = (HA_MCP_TOKEN, AGENTPLANE_READER_TOKEN)
 _BREAK_GLASS_PASSWORD = k8s.EnvVarSource(
     secret_key_ref=k8s.SecretKeySelector(name="home-assistant-break-glass", key="password")
 )
+# The home zone's `latitude` and `longitude`, encrypted in home-location.sops.yaml so that this public
+# repository does not show them. Optional: without it, onboarding leaves the location as set in the
+# UI. Changing it re-runs nothing by itself: bump the onboarding Job's bootstrap-revision in the same
+# change.
+_LOCATION_SECRET = "home-assistant-location"
 
 
 def _quantities(**values: str) -> dict[str, k8s.Quantity]:
     return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
+
+
+def _settings_yaml(
+    settings: type[YamlFileSettings], content: dict[str, object], *, supplied: tuple[tuple[str, ...], ...] = ()
+) -> str:
+    """A provisioner's settings file, each key checked against `settings`; `supplied` names the
+    fields an env var completes."""
+    return yaml_config(settings_file(settings, content, supplied=supplied))
 
 
 def _settings_config_map(
@@ -163,13 +177,11 @@ def _settings_config_map(
     *,
     supplied: tuple[tuple[str, ...], ...] = (),
 ) -> k8s.KubeConfigMap:
-    """A provisioner's settings file, each key checked against `settings`; `supplied` names the
-    fields an env var completes."""
     return k8s.KubeConfigMap(
         scope,
         name,
         metadata=k8s.ObjectMeta(name=name, namespace=_NAMESPACE),
-        data={"settings.yaml": yaml_config(settings_file(settings, content, supplied=supplied))},
+        data={"settings.yaml": _settings_yaml(settings, content, supplied=supplied)},
     )
 
 
@@ -293,9 +305,9 @@ def _deployment(scope: Construct) -> None:
                             name="config",
                             persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_CONFIG_CLAIM),
                         ),
-                        _config_map_volume("configuration", _CONFIGURATION_CONFIG_MAP),
+                        _config_map_volume("configuration", _CONFIGURATION_CONFIG_MAP.name),
                         _config_map_volume("installer-settings", installer_settings.name),
-                        _config_map_volume("caddy-config", _CADDY_CONFIG_MAP),
+                        _config_map_volume("caddy-config", _CADDY_CONFIG_MAP.name),
                     ],
                 ),
             ),
@@ -312,41 +324,61 @@ def _deployment(scope: Construct) -> None:
     )
 
 
+# Rendered by the kustomization.yaml's configMapGenerator: the content hash in its name makes a
+# settings change a new template for the onboarding Job, which Flux then replaces and so re-runs.
+_ONBOARDING_SETTINGS = ConfigMapArgs(
+    name=_ONBOARDING,
+    namespace=_NAMESPACE,
+    literals=[
+        "settings.yaml="
+        + _settings_yaml(
+            onboarding.Settings,
+            {
+                "endpoint": _ENDPOINT.model_dump(),
+                "owner_username": _OWNER_USERNAME,
+                "owner_display_name": "Home Assistant Local Administrator",
+                "http_config": onboarding.HttpConfig(
+                    server_host=["127.0.0.1"],
+                    server_port=_BACKEND_PORT,
+                    cors_allowed_origins=["https://cast.home-assistant.io"],
+                    use_x_forwarded_for=True,
+                    trusted_proxies=["127.0.0.1/32"],
+                    login_attempts_threshold=-1,
+                    ip_ban_enabled=True,
+                    ssl_profile="modern",
+                    use_x_frame_options=True,
+                ).model_dump(),
+                "core_config": onboarding.CoreConfig(time_zone="America/Los_Angeles").model_dump(exclude_none=True),
+            },
+            supplied=(("owner_password",),),
+        )
+    ],
+)
+
+
 def _onboarding_job(scope: Construct) -> None:
-    settings = _settings_config_map(
-        scope,
-        _ONBOARDING,
-        onboarding.Settings,
-        {
-            "endpoint": _ENDPOINT.model_dump(),
-            "owner_username": _OWNER_USERNAME,
-            "owner_display_name": "Home Assistant Local Administrator",
-            "http_config": onboarding.HttpConfig(
-                server_host=["127.0.0.1"],
-                server_port=_BACKEND_PORT,
-                cors_allowed_origins=["https://cast.home-assistant.io"],
-                use_x_forwarded_for=True,
-                trusted_proxies=["127.0.0.1/32"],
-                login_attempts_threshold=-1,
-                ip_ban_enabled=True,
-                ssl_profile="modern",
-                use_x_frame_options=True,
-            ).model_dump(),
-        },
-        supplied=(("owner_password",),),
-    )
     k8s.KubeJob(
         scope,
         "onboarding",
         metadata=k8s.ObjectMeta(
-            name=_ONBOARDING, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}
+            name=_ONBOARDING,
+            namespace=_NAMESPACE,
+            annotations={
+                # Flux re-runs this Job, replacing it whenever its template changes. Reloader's
+                # cluster-wide reload would also recreate it when a ConfigMap or Secret it reads
+                # changes, and in an apply that changes both, the two replacements race.
+                "kustomize.toolkit.fluxcd.io/force": "enabled",
+                "reloader.stakater.com/auto": "false",
+            },
         ),
         spec=k8s.JobSpec(
             backoff_limit=3,
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(
-                    # Bump when bootstrap behavior changes so Flux replaces the immutable Job.
-                    annotations={"home-assistant.allegedly.works/bootstrap-revision": "4"},
+                    annotations={
+                        # Bump to re-run the Job when nothing else in this template changed.
+                        "home-assistant.allegedly.works/bootstrap-revision": "5"
+                    },
                     labels={"app.kubernetes.io/name": _ONBOARDING},
                 ),
                 spec=k8s.PodSpec(
@@ -364,6 +396,17 @@ def _onboarding_job(scope: Construct) -> None:
                                     name=env_name(onboarding.Settings, "owner_password"),
                                     value_from=_BREAK_GLASS_PASSWORD,
                                 ),
+                                *(
+                                    k8s.EnvVar(
+                                        name=env_name(onboarding.Settings, "core_config", "location", key),
+                                        value_from=k8s.EnvVarSource(
+                                            secret_key_ref=k8s.SecretKeySelector(
+                                                name=_LOCATION_SECRET, key=key, optional=True
+                                            )
+                                        ),
+                                    )
+                                    for key in ("latitude", "longitude")
+                                ),
                             ],
                             resources=k8s.ResourceRequirements(
                                 requests=_quantities(cpu="20m", memory="64Mi"), limits=_quantities(memory="256Mi")
@@ -371,7 +414,7 @@ def _onboarding_job(scope: Construct) -> None:
                             volume_mounts=[_settings_mount("settings")],
                         )
                     ],
-                    volumes=[_config_map_volume("settings", settings.name)],
+                    volumes=[_config_map_volume("settings", _ONBOARDING_SETTINGS.name)],
                 ),
             ),
         ),
@@ -498,47 +541,39 @@ def _monitoring(scope: Construct) -> None:
         scope,
         "service-monitor",
         metadata=metadata(_NAME, _NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-            endpoints=[
-                ServiceMonitorSpecEndpoints(
-                    port="http",
-                    path="/api/prometheus",
-                    authorization=ServiceMonitorSpecEndpointsAuthorization(
-                        type="Bearer",
-                        credentials=ServiceMonitorSpecEndpointsAuthorizationCredentials(
-                            name=_METRICS_TOKEN, key="password"
-                        ),
+        selector=_LABELS,
+        endpoints=[
+            ServiceMonitorSpecEndpoints(
+                port="http",
+                path="/api/prometheus",
+                authorization=ServiceMonitorSpecEndpointsAuthorization(
+                    type="Bearer",
+                    credentials=ServiceMonitorSpecEndpointsAuthorizationCredentials(
+                        name=_METRICS_TOKEN, key="password"
                     ),
-                )
-            ],
-        ),
+                ),
+            )
+        ],
     )
     PrometheusRule(
         scope,
         "prometheus-rule",
         metadata=metadata(_NAME, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        spec=PrometheusRuleSpec(
-            groups=[
-                PrometheusRuleSpecGroups(
-                    name=_NAME,
-                    rules=[
-                        PrometheusRuleSpecGroupsRules(
-                            alert="HomeAssistantUnavailable",
-                            expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
-                                'up{namespace="home-assistant", service="home-assistant"} == 0'
-                            ),
-                            for_="10m",
-                            labels={"severity": "warning"},
-                            annotations={
-                                "summary": "Home Assistant is unavailable",
-                                "description": "Prometheus has been unable to scrape Home Assistant for 10 minutes.",
-                            },
-                        )
-                    ],
-                )
-            ]
-        ),
+        groups=[
+            group(
+                _NAME,
+                [
+                    Rule.alert(
+                        "HomeAssistantUnavailable",
+                        'up{namespace="home-assistant", service="home-assistant"} == 0',
+                        for_="10m",
+                        labels={"severity": "warning"},
+                        summary="Home Assistant is unavailable",
+                        description="Prometheus has been unable to scrape Home Assistant for 10 minutes.",
+                    )
+                ],
+            )
+        ],
     )
 
 
@@ -550,50 +585,46 @@ def _backup(scope: Construct) -> None:
         scope,
         "backup",
         metadata=metadata(_BACKUP, _NAMESPACE),
-        spec=ReplicationSourceSpec(
-            source_pvc=_CONFIG_CLAIM,
-            trigger=ReplicationSourceSpecTrigger(schedule="17 */6 * * *"),
-            restic=ReplicationSourceSpecRestic(
-                repository="home-assistant-config-restic-tenant",
-                copy_method=ReplicationSourceSpecResticCopyMethod.DIRECT,
-                prune_interval_days=7,
-                retain=ReplicationSourceSpecResticRetain(daily=7, weekly=4, monthly=6),
-                cache_storage_class_name=_STORAGE_CLASS,
-                cache_access_modes=["ReadWriteOnce"],
-                cache_capacity=ReplicationSourceSpecResticCacheCapacity.from_string("1Gi"),
-                mover_pod_labels=_BACKUP_LABELS,
-                mover_resources=ReplicationSourceSpecResticMoverResources(
-                    requests={
-                        "cpu": ReplicationSourceSpecResticMoverResourcesRequests.from_string("250m"),
-                        "memory": ReplicationSourceSpecResticMoverResourcesRequests.from_string("512Mi"),
-                    },
-                    limits={
-                        "cpu": ReplicationSourceSpecResticMoverResourcesLimits.from_string("1"),
-                        "memory": ReplicationSourceSpecResticMoverResourcesLimits.from_string("1Gi"),
-                    },
-                ),
-                mover_security_context=ReplicationSourceSpecResticMoverSecurityContext(
-                    run_as_user=0,
-                    run_as_group=0,
-                    seccomp_profile=ReplicationSourceSpecResticMoverSecurityContextSeccompProfile(
-                        type="RuntimeDefault"
-                    ),
-                ),
-                mover_affinity=ReplicationSourceSpecResticMoverAffinity(
-                    node_affinity=ReplicationSourceSpecResticMoverAffinityNodeAffinity(
-                        required_during_scheduling_ignored_during_execution=ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                            node_selector_terms=[
-                                ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                                    match_expressions=[
-                                        ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                            key="kubernetes.io/hostname", operator="In", values=["optiplex"]
-                                        )
-                                    ]
-                                )
-                            ]
-                        )
+        source_pvc=_CONFIG_CLAIM,
+        trigger=ReplicationSourceSpecTrigger(schedule="17 */6 * * *"),
+        mover=ReplicationSourceSpecRestic(
+            repository="home-assistant-config-restic-tenant",
+            copy_method=ReplicationSourceSpecResticCopyMethod.DIRECT,
+            prune_interval_days=7,
+            retain=ReplicationSourceSpecResticRetain(daily=7, weekly=4, monthly=6),
+            cache_storage_class_name=_STORAGE_CLASS,
+            cache_access_modes=["ReadWriteOnce"],
+            cache_capacity=ReplicationSourceSpecResticCacheCapacity.from_string("1Gi"),
+            mover_pod_labels=_BACKUP_LABELS,
+            mover_resources=ReplicationSourceSpecResticMoverResources(
+                requests={
+                    "cpu": ReplicationSourceSpecResticMoverResourcesRequests.from_string("250m"),
+                    "memory": ReplicationSourceSpecResticMoverResourcesRequests.from_string("512Mi"),
+                },
+                limits={
+                    "cpu": ReplicationSourceSpecResticMoverResourcesLimits.from_string("1"),
+                    "memory": ReplicationSourceSpecResticMoverResourcesLimits.from_string("1Gi"),
+                },
+            ),
+            mover_security_context=ReplicationSourceSpecResticMoverSecurityContext(
+                run_as_user=0,
+                run_as_group=0,
+                seccomp_profile=ReplicationSourceSpecResticMoverSecurityContextSeccompProfile(type="RuntimeDefault"),
+            ),
+            mover_affinity=ReplicationSourceSpecResticMoverAffinity(
+                node_affinity=ReplicationSourceSpecResticMoverAffinityNodeAffinity(
+                    required_during_scheduling_ignored_during_execution=ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                        node_selector_terms=[
+                            ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                                match_expressions=[
+                                    ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                        key="kubernetes.io/hostname", operator="In", values=["optiplex"]
+                                    )
+                                ]
+                            )
+                        ]
                     )
-                ),
+                )
             ),
         ),
     )
@@ -676,3 +707,11 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, _OUTPUT_DIR, chart)
+    write_yaml(
+        root / _OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(
+            resources=[f"{_NAME}.k8s.yaml", "break-glass-credentials.sops.yaml", "home-location.sops.yaml"],
+            components=["./image-pins"],
+            config_map_generator=[_CONFIGURATION_CONFIG_MAP, _CADDY_CONFIG_MAP, _ONBOARDING_SETTINGS],
+        ),
+    )

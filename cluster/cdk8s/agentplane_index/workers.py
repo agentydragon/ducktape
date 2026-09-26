@@ -118,7 +118,9 @@ def _health_probe(*, period_seconds: int | None = None, failure_threshold: int |
     )
 
 
-def _worker(chart: Chart, *, instance: str, database: str, url: str, branch: str, env: tuple[k8s.EnvVar, ...]) -> None:
+def _worker(
+    chart: Chart, *, instance: str, database: str, url: str, branch: str, env: tuple[k8s.EnvVar, ...], replicas: int = 1
+) -> None:
     """One repository's database, and the index worker serving it."""
     Database(
         chart,
@@ -140,7 +142,7 @@ def _worker(chart: Chart, *, instance: str, database: str, url: str, branch: str
         f"{instance}-deployment",
         metadata=k8s.ObjectMeta(name=instance, namespace=NAME, annotations={"reloader.stakater.com/auto": "true"}),
         spec=k8s.DeploymentSpec(
-            replicas=1,
+            replicas=replicas,
             selector=k8s.LabelSelector(match_labels=labels),
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=labels),
@@ -242,6 +244,11 @@ def chart(app: App) -> Chart:
         # gitignore syntax. Specimens duplicate code indexed at its real path; the .gz
         # reference blobs are not text and would only cost the clone read.
         env=(k8s.EnvVar(name=env_name(Settings, "ignore"), value="props/specimens/\n*.gz\n"),),
+        # CLEANUP(added 2026-09-26): paused so its continuous /v1/embeddings traffic to
+        # ollama.ollama stops evicting the much larger qwen3.8-flash-next-q4 chat model
+        # mid-load during agentplane/debug/agentplane_ollama_live_smoke_2026_09_24.md's
+        # smoke testing. Remove once that test run is done and restore replicas=1.
+        replicas=0,
     )
     _worker(
         chart,

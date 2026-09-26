@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,37 @@ def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
 
 def git_out(repo: Path, *args: str) -> str:
     return git(repo, *args).stdout.strip()
+
+
+def _normalize_remote_url(url: str) -> str:
+    """A best-effort key for comparing two remote URLs that may name the same repo.
+
+    Not a full git-URL-equivalence engine (no host aliasing, no fork-network resolution) —
+    just enough to match the common spellings of one remote: a trailing `.git`, a trailing
+    slash, and an SSH vs HTTPS form of the same host and path.
+    """
+    url = url.strip().removesuffix("/").removesuffix(".git").removeprefix("git+")
+    if url.startswith("git@"):
+        host, _, path = url.removeprefix("git@").partition(":")
+        url = f"{host}/{path}"
+    else:
+        url = re.sub(r"^\w+://", "", url)  # strip a URL scheme (https://, ssh://, git://)
+        url = re.sub(r"^[^@/]+@", "", url)  # strip a leading user@ (ssh://user@host/...)
+    return url.lower()
+
+
+def remote_urls(repo: Path) -> set[str]:
+    """Every remote configured on `repo`, normalized for cross-repo comparison — not just
+    `origin`, since a clone may track the same project under a different remote name."""
+    pg = pygit2.Repository(os.fspath(repo))
+    return {_normalize_remote_url(remote.url) for remote in pg.remotes if remote.url}
+
+
+def shares_a_remote(a: Path, b: Path) -> bool:
+    """True when `a` and `b` have any remote URL in common — the same project, on any host,
+    under any remote name, regardless of how many remotes either side configures. Says nothing
+    about which (if either) is a GitHub repo; that is a separate, narrower question."""
+    return bool(remote_urls(a) & remote_urls(b))
 
 
 @dataclass(frozen=True, slots=True)

@@ -134,7 +134,7 @@ while `dispose` + `create` of it reached `Ready` in about 45 s. So an exceeded-q
 with, then `dispose` + `create` the refused one.
 
 Shapes follow <../../../haku/console/tools/sandbox.py>, the surface already in daily use: one
-bounded Bash script per call, a per-environment ceiling on timeout and retained output patched into
+bounded Bash script per call, a per-deployment ceiling on timeout and retained output patched into
 the advertised schema, and a nonzero exit reported as a result rather than a transport error.
 
 Properties of the Action path the tool documentation has to state, because an agent assuming
@@ -187,8 +187,8 @@ and revocation complete only within that window.
 **The proxy mints a Kubernetes token per request.** `TokenRequest` for the account that just
 authenticated, bound to the Pod its review named. It needs `create` on `serviceaccounts/token` in
 every namespace the proxy accepts bearers from, on the one component already holding every
-substituted credential — the grant shape `EGRESS_SOURCE_ADDRESS` removed the proxy's `pods` read to
-avoid.
+substituted credential — the per-namespace grant the proxy declines even for a `pods` read
+([egress README](../../egress/README.md#rejected-binding-a-bearer-to-its-pods-source-address)).
 
 **Mounting the Kubernetes token in the workload container.** The simplest source, and it gives up
 what the placeholder design exists for: a credential inside the box can be copied out and used

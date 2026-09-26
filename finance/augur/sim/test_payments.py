@@ -1,4 +1,4 @@
-"""Occurrence-scoped payment admission and configured all-or-none source funding."""
+"""Occurrence-scoped payment admission."""
 
 from copy import deepcopy
 from dataclasses import replace
@@ -9,10 +9,13 @@ import pytest_bazel
 from finance.augur.sim import results
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import ClaimId, Consume, PayClaim
+from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.claims import Claim, Claims, tax_claims
-from finance.augur.sim.payments import execute, settle_grouped
+from finance.augur.sim.claims import Claim, Claims
+from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.payments import execute
 from finance.augur.sim.scenario import ORDINARY_INCOME
+from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.testing.accounting import (
     CASH,
     EXOGENOUS,
@@ -20,7 +23,8 @@ from finance.augur.sim.testing.accounting import (
     RECIPIENT,
     RESERVE,
     accounting,
-    prepared_scenario,
+    opening,
+    taxpayer,
 )
 
 
@@ -89,7 +93,7 @@ def test_claim_occurrences_are_not_labels_and_consumption_is_not_a_claim(books: 
         ({"claim": ClaimId(month=0, index=1)}, "UnknownClaim"),
         ({"amount": 50}, "InvalidAmount"),
         ({"from_account": RECIPIENT}, "WrongActor"),
-        ({"from_account": AccountRef(agent_id=HOUSEHOLD, account_id="undeclared")}, "UnknownAccount"),
+        ({"from_account": AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("undeclared"))}, "UnknownAccount"),
         ({"cause_id": ""}, "EmptyIdentifier"),
         ({}, "InsufficientCash"),
     ],
@@ -116,7 +120,7 @@ def test_rejected_payments_change_neither_books_nor_capture(
         (RECIPIENT, -1, "budget", "InvalidAmount"),
         (RECIPIENT, 101, "budget", "InsufficientCash"),
         (RECIPIENT, 1, "", "EmptyIdentifier"),
-        (AccountRef(agent_id="test_other", account_id="undeclared"), 1, "budget", "UnknownAccount"),
+        (AccountRef(agent_id=AgentId("test_other"), account_id=AccountId("undeclared")), 1, "budget", "UnknownAccount"),
     ],
 )
 def test_consumption_admission_preserves_all_books(
@@ -174,63 +178,46 @@ def test_moving_cash_within_the_actor_is_not_paid_consumption(
     assert state(books, claims) == before
 
 
-def test_grouped_funding_is_decided_before_incoming_claim_payments(books: Accounting) -> None:
-    claims = Claims(
-        0,
-        [
-            Claim("first", "rent", CASH, RECIPIENT, 60, None),
-            Claim("second", "rent", CASH, RECIPIENT, 50, None),
-            Claim("incoming", "rent", RECIPIENT, CASH, 1, None),
-        ],
-    )
-    before = dict(books.ledger.balances)
-    settlement = settle_grouped(books, claims, HOUSEHOLD)
-    assert settlement.failed
-    assert settlement.product_shortfall == 110
-    assert [outcome.amount_paid for outcome in settlement.obligations] == [0, 0, 0]
-    assert dict(books.ledger.balances) == before
-    assert not any(claim.paid for claim in claims.entries)
-
-
-def test_funded_group_does_not_rescue_a_source_that_was_unfunded_at_preflight(books: Accounting) -> None:
-    claims = Claims(
-        0, [Claim("outgoing", "rent", CASH, RECIPIENT, 80, None), Claim("incoming", "rent", RECIPIENT, CASH, 1, None)]
-    )
-    settlement = settle_grouped(books, claims, HOUSEHOLD)
-    assert settlement.failed
-    assert settlement.product_shortfall == 0
-    assert [outcome.amount_paid for outcome in settlement.obligations] == [80, 0]
-    assert books.ledger.balance(CASH) == 20
-    assert books.ledger.balance(RECIPIENT) == 80
-
-
 def test_estimates_and_true_up_settle_the_same_annual_liability() -> None:
-    scenario = prepared_scenario()
-    profile = replace(scenario.tax_profiles[0], prior_year_tax=400)
-    scenario = replace(
-        scenario,
-        tax_profiles=(profile,),
-        accounts=tuple(
-            replace(account, opening_balance=2000) if account.account == CASH else account
-            for account in scenario.accounts
-        ),
-    )
-    books = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources)
+    profile = replace(taxpayer(HOUSEHOLD), prior_year_tax=400)
+    books = accounting(opening({CASH: 2000}), (profile,))
+    authority = TaxAuthority(profile)
+
+    def assessed(month: int) -> Claims:
+        authority.handle(books.liability_statement(month))
+        return Claims(
+            month,
+            [
+                Claim(a.cause_id, a.obligation_type, a.from_account, a.to_account, a.amount, a.effect)
+                for a in authority.handle(MonthOpened(month=month))
+            ],
+        )
+
+    def pay_in_full(claims: Claims) -> None:
+        for id_, claim in claims.due(HOUSEHOLD):
+            request = PayClaim(
+                request_id=id_.index + 1,
+                cause_id=claim.cause_id,
+                claim=id_,
+                from_account=claim.from_account,
+                amount=claim.amount_due,
+            )
+            assert execute(books, claims.month, claims, HOUSEHOLD, request).outcome == results.Paid()
+
     for month in (3, 5, 8):
-        claims = Claims(month, tax_claims(scenario.tax_profiles, books.tax_liabilities, month))
-        assert not settle_grouped(books, claims, HOUSEHOLD).failed
+        pay_in_full(assessed(month))
     books.tax.income.accrue(HOUSEHOLD, ORDINARY_INCOME, 10_000)
-    books.close_tax_year(scenario, 11, [])
+    authority.close_month(books, 11, [], ())
     assert [liability.amount_owed for liability in books.tax_liabilities] == [1000]
-    claims = Claims(12, tax_claims(scenario.tax_profiles, books.tax_liabilities, 12))
+    claims = assessed(12)
     assert [claim.amount_due for claim in claims.entries] == [100, 600]
-    assert not settle_grouped(books, claims, HOUSEHOLD).failed
+    pay_in_full(claims)
     assert [payment.amount_paid for payment in books.tax_payments] == [100, 100, 100, 100, 600]
     assert books.ledger.balance(CASH) == 1000
     assert books.tax_liabilities[0].amount_owed == 0
     assert books.tax_liabilities[0].active
     assert books.tax_settlements[0].amount == 1000
-    assert books.ledger.balance(AccountRef(agent_id=HOUSEHOLD, account_id="asset:tax-prepayments")) == 0
+    assert books.ledger.balance(AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("asset:tax-prepayments"))) == 0
     assert books.ledger.trial_balance() == 0
 
 

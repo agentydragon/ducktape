@@ -37,8 +37,6 @@ from cdk8s_plus_34 import (
     Volume,
 )
 from cert_manager_crds.io.cert_manager import (
-    Certificate,
-    CertificateSpec,
     CertificateSpecIssuerRef,
     CertificateSpecPrivateKey,
     CertificateSpecPrivateKeyAlgorithm,
@@ -52,6 +50,8 @@ from cluster.cdk8s.haku import console
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "haku-kube-api-proxy"
 HOSTNAME = "haku-kubeapi.allegedly.works"
@@ -75,18 +75,17 @@ class KubeApiProxy(Construct):
         Certificate(
             self,
             "certificate",
-            metadata=metadata(_TLS_SECRET, namespace),
-            spec=CertificateSpec(
-                secret_name=_TLS_SECRET,
-                duration="2160h",
-                renew_before="720h",
-                private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256),
-                common_name=_SERVICE_FQDN,
-                dns_names=[_SERVICE_FQDN, f"{NAME}.{namespace}.svc"],
-                # Every sandbox trust bundle already carries cluster-root-ca, so kubeconfigs
-                # verify this leaf via their existing bundle.
-                issuer_ref=CertificateSpecIssuerRef(name="cluster-internal-ca", kind="ClusterIssuer"),
-            ),
+            name=_TLS_SECRET,
+            namespace=namespace,
+            secret_name=_TLS_SECRET,
+            duration="2160h",
+            renew_before="720h",
+            private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256),
+            common_name=_SERVICE_FQDN,
+            dns_names=[_SERVICE_FQDN, f"{NAME}.{namespace}.svc"],
+            # Every sandbox trust bundle already carries cluster-root-ca, so kubeconfigs
+            # verify this leaf via their existing bundle.
+            issuer_ref=CertificateSpecIssuerRef(name="cluster-internal-ca", kind="ClusterIssuer"),
         )
         # Execution identity for the proxy. Its projected token is rotated by Kubernetes and
         # never forwarded to, mounted into, or otherwise exposed to an Agent.
@@ -222,21 +221,21 @@ class KubeApiProxy(Construct):
         # kubeconfigs authenticate, and it mounts no ServiceAccount token, so this is its only
         # kubectl path); egress to DNS for the console's name only, kube-apiserver, and the
         # public-TLS console authorization endpoint.
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "networkpolicy",
             metadata=metadata(NAME, console.NAMESPACE),
             selector=LABELS,
             ingress=[
-                cilium.ingress_from_gateway(_HTTP_PORT),
-                cilium.ingress_from(
+                IngressRule.from_gateway(_HTTP_PORT),
+                IngressRule.from_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": "haku-sandbox", "k8s:app.kubernetes.io/name": "haku-sandbox"},
                     ports=[_TLS_PORT],
                 ),
             ],
             egress=[
                 cilium.dns_egress(protocols=("ANY",), resolves=[console.HOSTNAME]),
-                cilium.egress_to_entities("kube-apiserver", ports=[443, 6443]),
+                EgressRule.to_entities(Entity.KUBE_APISERVER, ports=[443, 6443]),
                 # The console's public origin resolves to Gateway node addresses; the process
                 # is configured with exactly one authorization URL and rejects redirects.
                 cilium.egress_via_gateway(console.HOSTNAME),

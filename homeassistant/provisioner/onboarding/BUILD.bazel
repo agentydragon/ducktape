@@ -72,3 +72,17 @@ py_test(
         "@pypi//respx",
     ],
 )
+
+py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
+    deps = [
+        ":settings",
+        "//:conftest",
+        "//homeassistant/provisioner:conftest",
+        "//homeassistant/provisioner:endpoint",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

@@ -7,15 +7,7 @@ namespace.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cert_manager_clusterissuer_crds.io.cert_manager import (
-    ClusterIssuer,
-    ClusterIssuerSpec,
-    ClusterIssuerSpecCa,
-    ClusterIssuerSpecSelfSigned,
-)
 from cert_manager_crds.io.cert_manager import (
-    Certificate,
-    CertificateSpec,
     CertificateSpecIssuerRef,
     CertificateSpecPrivateKey,
     CertificateSpecPrivateKeyAlgorithm,
@@ -29,7 +21,8 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetConfigMap,
 )
 
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate
+from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 
 NAME = "cluster-ca"
 _ROOT_CA_SECRET = "cluster-root-ca-secret"
@@ -37,33 +30,22 @@ _ROOT_CA_SECRET = "cluster-root-ca-secret"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    bootstrap = ClusterIssuer(
-        chart,
-        "bootstrap",
-        metadata=ApiObjectMetadata(name="cluster-ca-bootstrap"),
-        spec=ClusterIssuerSpec(self_signed=ClusterIssuerSpecSelfSigned()),
-    )
+    bootstrap = ClusterIssuer.self_signed(chart, "bootstrap", name="cluster-ca-bootstrap")
     Certificate(
         chart,
         "root-ca",
-        metadata=metadata("cluster-root-ca", "cert-manager"),
-        spec=CertificateSpec(
-            is_ca=True,
-            common_name="cluster-root-ca",
-            secret_name=_ROOT_CA_SECRET,
-            duration="87600h",  # 10 years
-            renew_before="8760h",  # 1 year
-            private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.RSA, size=4096),
-            issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
-        ),
+        name="cluster-root-ca",
+        namespace="cert-manager",
+        is_ca=True,
+        common_name="cluster-root-ca",
+        secret_name=_ROOT_CA_SECRET,
+        duration="87600h",  # 10 years
+        renew_before="8760h",  # 1 year
+        private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.RSA, size=4096),
+        issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
     )
     # Issues internal service certificates from the root CA.
-    ClusterIssuer(
-        chart,
-        "internal",
-        metadata=ApiObjectMetadata(name="cluster-internal-ca"),
-        spec=ClusterIssuerSpec(ca=ClusterIssuerSpecCa(secret_name=_ROOT_CA_SECRET)),
-    )
+    ClusterIssuer.ca(chart, "internal", name="cluster-internal-ca", secret_name=_ROOT_CA_SECRET)
     Bundle(
         chart,
         "bundle",

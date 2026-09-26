@@ -26,6 +26,7 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "loki-read-proxy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/loki-read-proxy"
@@ -193,7 +194,7 @@ def chart(app: App) -> Chart:
     # static allowlist, so this ingress fence is their access control; token-bearing requests
     # are additionally authorized by the caller's Kubernetes RBAC. Egress is restricted too, so
     # a compromised proxy cannot pivot anywhere else either.
-    cilium.network_policy(
+    NetworkPolicy(
         chart,
         "cilium-network-policy",
         metadata=metadata(
@@ -209,12 +210,12 @@ def chart(app: App) -> Chart:
         ),
         selector=_LABELS,
         # Haku agent sandboxes → proxy (namespace-filtered log reads)
-        ingress=[cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "haku-sandbox"}, ports=[_PORT])],
+        ingress=[IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": "haku-sandbox"}, ports=[_PORT])],
         egress=[
             # kube-dns (resolve loki-read.loki.svc)
             cilium.dns_egress(),
             # loki-read (UPSTREAM_URL) — bypasses loki-gateway's nginx entirely (ducktape#4750).
-            cilium.egress_to(
+            EgressRule.to_endpoints(
                 {
                     "app.kubernetes.io/name": "loki",
                     "app.kubernetes.io/component": "read",
@@ -223,7 +224,7 @@ def chart(app: App) -> Chart:
                 3100,
             ),
             # kube-apiserver: SelfSubjectAccessReview with the caller's bearer token.
-            cilium.egress_to_entities("kube-apiserver", ports=[443, 6443]),
+            EgressRule.to_entities(Entity.KUBE_APISERVER, ports=[443, 6443]),
         ],
     )
     return chart

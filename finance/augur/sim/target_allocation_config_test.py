@@ -16,8 +16,8 @@ from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.scenario import (
     CashflowOnly,
     DriftBand,
+    SecuritySleeveTarget,
     SeriesIndexedAmount,
-    SleeveTarget,
     TargetAllocationPolicy,
 )
 
@@ -30,7 +30,7 @@ def _policy(**overrides: object) -> TargetAllocationPolicy:
         **{
             "agent_id": "alice",
             "account_id": "checking",
-            "sleeves": [SleeveTarget(asset=_VTI, weight=3), SleeveTarget(asset=_BND, weight=1)],
+            "sleeves": [SecuritySleeveTarget(asset=_VTI, weight=3), SecuritySleeveTarget(asset=_BND, weight=1)],
             "cash_floor": 10_000,
             "cash_ceiling": 50_000,
             "rebalancing": CashflowOnly(),
@@ -82,7 +82,7 @@ def test_an_asset_weighted_twice_is_rejected() -> None:
     skewing every target — including the targets of the sleeves that are correct."""
 
     with pytest.raises(ValidationError, match="more than once"):
-        _policy(sleeves=[SleeveTarget(asset=_VTI, weight=3), SleeveTarget(asset=_VTI, weight=1)])
+        _policy(sleeves=[SecuritySleeveTarget(asset=_VTI, weight=3), SecuritySleeveTarget(asset=_VTI, weight=1)])
 
 
 def test_a_policy_with_no_sleeves_is_rejected() -> None:
@@ -95,12 +95,12 @@ def test_a_policy_with_no_sleeves_is_rejected() -> None:
 
 
 def test_zero_target_remains_in_scope_but_all_zero_targets_are_rejected() -> None:
-    policy = _policy(sleeves=[SleeveTarget(asset=_VTI, weight=0), SleeveTarget(asset=_BND, weight=1)])
-    assert [sleeve.asset for sleeve in policy.sleeves] == [_VTI, _BND]
+    policy = _policy(sleeves=[SecuritySleeveTarget(asset=_VTI, weight=0), SecuritySleeveTarget(asset=_BND, weight=1)])
+    assert policy.sleeves == [SecuritySleeveTarget(asset=_VTI, weight=0), SecuritySleeveTarget(asset=_BND, weight=1)]
     with pytest.raises(ValidationError, match="at least one positive"):
-        _policy(sleeves=[SleeveTarget(asset=_VTI, weight=0), SleeveTarget(asset=_BND, weight=0)])
+        _policy(sleeves=[SecuritySleeveTarget(asset=_VTI, weight=0), SecuritySleeveTarget(asset=_BND, weight=0)])
     with pytest.raises(ValidationError):
-        SleeveTarget(asset=_VTI, weight=-1)
+        SecuritySleeveTarget(asset=_VTI, weight=-1)
 
 
 def test_a_policy_must_say_how_it_rebalances() -> None:
@@ -117,7 +117,7 @@ def test_a_policy_must_say_how_it_rebalances() -> None:
             allow_purchases=False,
             agent_id="alice",
             account_id="checking",
-            sleeves=[SleeveTarget(asset=_VTI, weight=3), SleeveTarget(asset=_BND, weight=1)],
+            sleeves=[SecuritySleeveTarget(asset=_VTI, weight=3), SecuritySleeveTarget(asset=_BND, weight=1)],
             cash_floor=10_000,
             cash_ceiling=50_000,
         )  # type: ignore[call-arg]

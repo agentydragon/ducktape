@@ -102,12 +102,16 @@ def echo_executor() -> RecordingExecutor:
 
 
 class ScriptedExecutor(Executor):
-    """Answers each Action with the result a test set for it."""
+    """Answers each Action with the result a test set for it, once `release` is set; it starts set,
+    and a test clears it to hold an execution running."""
 
     def __init__(self) -> None:
         self.results: dict[ActionIdentity, ExecutionResult] = {}
+        self.release = asyncio.Event()
+        self.release.set()
 
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
+        await self.release.wait()
         return self.results[request.action]
 
 

@@ -5,20 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecEndpointsScheme,
-    ServiceMonitorSpecNamespaceSelector,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpointsScheme
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 NAME = "cilium-monitoring"
 NAMESPACE = "monitoring"
@@ -35,15 +29,9 @@ def chart(app: App) -> Chart:
         chart,
         "cilium-agent",
         metadata=metadata("cilium-agent", NAMESPACE, labels=_labels("cilium-agent")),
-        spec=ServiceMonitorSpec(
-            namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=["kube-system"]),
-            selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "cilium-agent"}),
-            endpoints=[
-                ServiceMonitorSpecEndpoints(
-                    port="metrics", path="/metrics", scheme=ServiceMonitorSpecEndpointsScheme.HTTP, scrape_timeout="10s"
-                )
-            ],
-        ),
+        namespace_selector=["kube-system"],
+        selector={"app.kubernetes.io/name": "cilium-agent"},
+        endpoints=[Endpoint.plain(port="metrics", scheme=ServiceMonitorSpecEndpointsScheme.HTTP, scrape_timeout="10s")],
     )
     # Hubble flow metrics, enabled by `hubble.metrics` in
     # cluster/terraform/main/cilium-values.yaml. The Cilium chart creates the
@@ -56,18 +44,11 @@ def chart(app: App) -> Chart:
         chart,
         "hubble",
         metadata=metadata("hubble", NAMESPACE, labels=_labels("hubble")),
-        spec=ServiceMonitorSpec(
-            namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=["kube-system"]),
-            selector=ServiceMonitorSpecSelector(match_labels={"k8s-app": "hubble"}),
-            endpoints=[
-                ServiceMonitorSpecEndpoints(
-                    port="hubble-metrics",
-                    path="/metrics",
-                    scheme=ServiceMonitorSpecEndpointsScheme.HTTP,
-                    scrape_timeout="10s",
-                )
-            ],
-        ),
+        namespace_selector=["kube-system"],
+        selector={"k8s-app": "hubble"},
+        endpoints=[
+            Endpoint.plain(port="hubble-metrics", scheme=ServiceMonitorSpecEndpointsScheme.HTTP, scrape_timeout="10s")
+        ],
     )
     return chart
 

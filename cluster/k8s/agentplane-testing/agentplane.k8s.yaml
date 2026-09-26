@@ -58,6 +58,8 @@ data:
     models:
       HARNESS_CLAUDE:
         - anthropic-api/ant-messages/claude-haiku-4-5-20251001
+        - antigravity/ant-messages/gemini-3.1-flash-lite
+        - antigravity/ant-messages/gemini-3.5-flash-lite
         - ollama/oai-chat/gpt-oss-20b-128k
         - ollama/olm-chat/gpt-oss-20b-128k
         - ollama/oai-chat/gpt-oss-20b-256k
@@ -104,7 +106,8 @@ data:
         template: agentplane-runner
         policies:
           - basic
-          - github-public
+          - github-agentydragon-agent
+          - github-clone
         thread_preset: public-coder-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
@@ -1342,7 +1345,7 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
-  name: github-public
+  name: github-agentydragon-agent
   namespace: agentplane-testing
 spec:
   rules:
@@ -1356,6 +1359,24 @@ spec:
         - POST
       credentialRef:
         name: github-pat
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: github-clone
+  namespace: agentplane-testing
+spec:
+  rules:
+    - hosts:
+        - github.com
+      methods:
+        - GET
+        - POST
+      paths:
+        - /*/*.git/info/refs
+        - /*/*.git/git-upload-pack
+        - /*/*/info/refs
+        - /*/*/git-upload-pack
 ---
 apiVersion: v1
 kind: ConfigMap

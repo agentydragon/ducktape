@@ -22,12 +22,6 @@ def checked_wide(value: int, operation: str) -> int:
     return value
 
 
-def trunc_div(numerator: int, denominator: int) -> int:
-    """Integer division toward zero, including negative income and basis adjustments."""
-    magnitude = abs(numerator) // abs(denominator)
-    return -magnitude if (numerator < 0) != (denominator < 0) else magnitude
-
-
 def round_ratio(numerator: int, denominator: int) -> int:
     """Nearest integer, with exact ties away from zero; never a float conversion."""
     quotient, remainder = divmod(abs(numerator), abs(denominator))

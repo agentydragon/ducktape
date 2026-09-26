@@ -10,8 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
-    SandboxTemplate,
-    SandboxTemplateSpec,
     SandboxTemplateSpecEnvVarsInjectionPolicy,
     SandboxTemplateSpecNetworkPolicyManagement,
     SandboxTemplateSpecPodTemplate,
@@ -72,6 +70,7 @@ from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     DataFrom,
     ExternalSecret,
@@ -160,141 +159,136 @@ def _sandbox_template(chart: Chart) -> SandboxTemplate:
     return SandboxTemplate(
         chart,
         "sandbox-template",
-        metadata=metadata(TEMPLATE_NAME, NAMESPACE),
-        spec=SandboxTemplateSpec(
-            # Unmanaged so the controller doesn't stamp its own RFC1918-blocking policy that would
-            # fight the haku-egress-proxy fence applied at the namespace level (the existing
-            # haku-sandbox-force-proxy CCNP).
-            network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
-            # Claims may inject env, same as the runner templates: the claim-env rail is how a
-            # per-provision caller-bound token reaches the box (#5228 slice 1); without this the
-            # controller rejects claim env (`EnvVarsInjectionRejected`, fatal in the sandbox
-            # client). Injection authority stays Console's -- only Console creates claims against
-            # this pool.
-            env_vars_injection_policy=SandboxTemplateSpecEnvVarsInjectionPolicy.ALLOWED,
-            pod_template=SandboxTemplateSpecPodTemplate(
-                metadata=SandboxTemplateSpecPodTemplateMetadata(labels={"app.kubernetes.io/name": "haku-sandbox"}),
-                spec=SandboxTemplateSpecPodTemplateSpec(
-                    # Controller defaults DNS to public resolvers only; restore cluster DNS so
-                    # forgejo-http.forgejo (module fetch + haku-state clone) resolves.
-                    dns_policy="ClusterFirst",
-                    image_pull_secrets=[
-                        SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=forgejo_images.SECRET_NAME)
-                    ],
-                    # No region nodeSelector: any always-on node (hil/home/proxmox) is fine now that
-                    # /workspace is an emptyDir (below) rather than a region-pinned PVC. Roaming
-                    # nodes (iguana, rugged) stay excluded on their own via their existing
-                    # `node-role.kubernetes.io/roaming=true:NoSchedule` taint -- no explicit
-                    # exclusion needed here.
-                    # TODO(operator, 2026-07-25): roaming nodes are often offline (see
-                    # cluster/README.md Node Types), so scheduling a sandbox there needs more
-                    # thought (claim durability across a node going away mid-session,
-                    # re-provisioning UX) before adding the toleration that would let a claim land
-                    # on one. Not done as part of this change.
-                    # No Kubernetes credential is mounted. `kubectl` reaches the API only through
-                    # haku-kube-api-proxy, which asks Console about every request before forwarding
-                    # it under the proxy's own in-cluster credential. Standing authority is
-                    # unchanged -- Console SARs the haku access-profile group, bound to the same
-                    # haku-sandbox-admin Role the mounted token carried (haku/rbac.py) -- so this
-                    # removes an exfiltratable credential rather than access. The per-claim setup
-                    # script writes the kubeconfig from the two env vars below.
-                    automount_service_account_token=False,
-                    security_context=SandboxTemplateSpecPodTemplateSpecSecurityContext(
-                        run_as_non_root=True,
-                        run_as_user=1000,
-                        run_as_group=1000,
-                        fs_group=1000,
-                        seccomp_profile=SandboxTemplateSpecPodTemplateSpecSecurityContextSeccompProfile(
-                            type="RuntimeDefault"
-                        ),
+        name=TEMPLATE_NAME,
+        namespace=NAMESPACE,
+        # Unmanaged so the controller doesn't stamp its own RFC1918-blocking policy that would
+        # fight the haku-egress-proxy fence applied at the namespace level (the existing
+        # haku-sandbox-force-proxy CCNP).
+        network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
+        # Claims may inject env, same as the runner templates: the claim-env rail is how a
+        # per-provision caller-bound token reaches the box (#5228 slice 1); without this the
+        # controller rejects claim env (`EnvVarsInjectionRejected`, fatal in the sandbox
+        # client). Injection authority stays Console's -- only Console creates claims against
+        # this pool.
+        env_vars_injection_policy=SandboxTemplateSpecEnvVarsInjectionPolicy.ALLOWED,
+        pod_template=SandboxTemplateSpecPodTemplate(
+            metadata=SandboxTemplateSpecPodTemplateMetadata(labels={"app.kubernetes.io/name": "haku-sandbox"}),
+            spec=SandboxTemplateSpecPodTemplateSpec(
+                # Controller defaults DNS to public resolvers only; restore cluster DNS so
+                # forgejo-http.forgejo (module fetch + haku-state clone) resolves.
+                dns_policy="ClusterFirst",
+                image_pull_secrets=[
+                    SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=forgejo_images.SECRET_NAME)
+                ],
+                # No region nodeSelector: any always-on node (hil/home/proxmox) is fine now that
+                # /workspace is an emptyDir (below) rather than a region-pinned PVC. Roaming
+                # nodes (iguana, rugged) stay excluded on their own via their existing
+                # `node-role.kubernetes.io/roaming=true:NoSchedule` taint -- no explicit
+                # exclusion needed here.
+                # TODO(operator, 2026-07-25): roaming nodes are often offline (see
+                # cluster/README.md Node Types), so scheduling a sandbox there needs more
+                # thought (claim durability across a node going away mid-session,
+                # re-provisioning UX) before adding the toleration that would let a claim land
+                # on one. Not done as part of this change.
+                # No Kubernetes credential is mounted. `kubectl` reaches the API only through
+                # haku-kube-api-proxy, which asks Console about every request before forwarding
+                # it under the proxy's own in-cluster credential. Standing authority is
+                # unchanged -- Console SARs the haku access-profile group, bound to the same
+                # haku-sandbox-admin Role the mounted token carried (haku/rbac.py) -- so this
+                # removes an exfiltratable credential rather than access. The per-claim setup
+                # script writes the kubeconfig from the two env vars below.
+                automount_service_account_token=False,
+                security_context=SandboxTemplateSpecPodTemplateSpecSecurityContext(
+                    run_as_non_root=True,
+                    run_as_user=1000,
+                    run_as_group=1000,
+                    fs_group=1000,
+                    seccomp_profile=SandboxTemplateSpecPodTemplateSpecSecurityContextSeccompProfile(
+                        type="RuntimeDefault"
                     ),
-                    containers=[
-                        SandboxTemplateSpecPodTemplateSpecContainers(
-                            name="workspace",
-                            # image-pins/ sets the tag.
-                            image="git.allegedly.works/ducktape-ci/haku-sandbox-image:unset",
-                            command=["sleep", "infinity"],
-                            working_dir="/workspace",
-                            security_context=SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(
-                                allow_privilege_escalation=False,
-                                capabilities=SandboxTemplateSpecPodTemplateSpecContainersSecurityContextCapabilities(
-                                    drop=["ALL"]
-                                ),
-                            ),
-                            env=[
-                                # The haku Forgejo credential is redeemed by the colocated egress
-                                # fence: this inert password is replaced only in Authorization
-                                # headers for the approved Forgejo origins. The per-claim
-                                # haku-sandbox-setup.sh writes the pair into ~/.netrc for both
-                                # in-cluster git fetches (the ducktape_haku module git_override on
-                                # every bazel invocation + the haku-state clone), while the real
-                                # credential stays in Console.
-                                SandboxTemplateSpecPodTemplateSpecContainersEnv(name="HAKU_GIT_USERNAME", value="haku"),
-                                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                                    name="HAKU_GIT_PASSWORD", value="haku-forgejo-token-placeholder"
-                                ),
-                                # The haku-console agent bearer, so the CLI's console-MCP client
-                                # (`cli/console.py`, which prefers this env var over a kubectl
-                                # secret read) authenticates with no kubectl and no per-run token
-                                # fetch -- `bazel run //cli:haku -- read --all` works out of the
-                                # box. Same credential the agent already drives the console with;
-                                # keeping it on the pod env grants no authority the sandbox lacked.
-                                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                                    name="HAKU_CONSOLE_TOKEN",
-                                    value_from=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFrom(
-                                        secret_key_ref=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFromSecretKeyRef(
-                                            name="haku-console-agent-api", key="token"
-                                        )
-                                    ),
-                                ),
-                                # Where `kubectl` sends everything, now that nothing is mounted.
-                                # Console authorizes each request against the bearer above;
-                                # haku-sandbox-setup.sh turns the pair into ~/.kube/config with the
-                                # bearer in a mode-0600 tokenFile. https, never http: client-go
-                                # attaches kubeconfig credentials only to a TLS server.
-                                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                                    name="HAKU_KUBERNETES_PROXY_URL", value=kube_api_proxy.URL
-                                ),
-                            ],
-                            resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
-                                requests={
-                                    "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string(
-                                        "1"
-                                    ),
-                                    "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string(
-                                        "2Gi"
-                                    ),
-                                },
-                                limits={
-                                    "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("3"),
-                                    "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string(
-                                        "6Gi"
-                                    ),
-                                },
-                            ),
-                            volume_mounts=[
-                                SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
-                                    name="workspace", mount_path="/workspace"
-                                )
-                            ],
-                        )
-                    ],
-                    # emptyDir, not a PVC: /workspace only ever holds a shallow (--depth 1)
-                    # haku-state git checkout, which haku-sandbox-setup.sh unconditionally
-                    # fetch+reset --hard's on every claim, so nothing here needs to survive a pod
-                    # restart. A network filesystem also costs binding latency and makes Bazel's
-                    # project-file scan intermittently ENOENT against SeaweedFS.
-                    volumes=[
-                        SandboxTemplateSpecPodTemplateSpecVolumes(
-                            name="workspace",
-                            empty_dir=SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir(
-                                size_limit=SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit.from_string(
-                                    "30Gi"
-                                )
-                            ),
-                        )
-                    ],
                 ),
+                containers=[
+                    SandboxTemplateSpecPodTemplateSpecContainers(
+                        name="workspace",
+                        # image-pins/ sets the tag.
+                        image="git.allegedly.works/ducktape-ci/haku-sandbox-image:unset",
+                        command=["sleep", "infinity"],
+                        working_dir="/workspace",
+                        security_context=SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(
+                            allow_privilege_escalation=False,
+                            capabilities=SandboxTemplateSpecPodTemplateSpecContainersSecurityContextCapabilities(
+                                drop=["ALL"]
+                            ),
+                        ),
+                        env=[
+                            # The haku Forgejo credential is redeemed by the colocated egress
+                            # fence: this inert password is replaced only in Authorization
+                            # headers for the approved Forgejo origins. The per-claim
+                            # haku-sandbox-setup.sh writes the pair into ~/.netrc for both
+                            # in-cluster git fetches (the ducktape_haku module git_override on
+                            # every bazel invocation + the haku-state clone), while the real
+                            # credential stays in Console.
+                            SandboxTemplateSpecPodTemplateSpecContainersEnv(name="HAKU_GIT_USERNAME", value="haku"),
+                            SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                                name="HAKU_GIT_PASSWORD", value="haku-forgejo-token-placeholder"
+                            ),
+                            # The haku-console agent bearer, so the CLI's console-MCP client
+                            # (`cli/console.py`, which prefers this env var over a kubectl
+                            # secret read) authenticates with no kubectl and no per-run token
+                            # fetch -- `bazel run //cli:haku -- read --all` works out of the
+                            # box. Same credential the agent already drives the console with;
+                            # keeping it on the pod env grants no authority the sandbox lacked.
+                            SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                                name="HAKU_CONSOLE_TOKEN",
+                                value_from=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFrom(
+                                    secret_key_ref=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFromSecretKeyRef(
+                                        name="haku-console-agent-api", key="token"
+                                    )
+                                ),
+                            ),
+                            # Where `kubectl` sends everything, now that nothing is mounted.
+                            # Console authorizes each request against the bearer above;
+                            # haku-sandbox-setup.sh turns the pair into ~/.kube/config with the
+                            # bearer in a mode-0600 tokenFile. https, never http: client-go
+                            # attaches kubeconfig credentials only to a TLS server.
+                            SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                                name="HAKU_KUBERNETES_PROXY_URL", value=kube_api_proxy.URL
+                            ),
+                        ],
+                        resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
+                            requests={
+                                "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("1"),
+                                "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string(
+                                    "2Gi"
+                                ),
+                            },
+                            limits={
+                                "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("3"),
+                                "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string(
+                                    "6Gi"
+                                ),
+                            },
+                        ),
+                        volume_mounts=[
+                            SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+                                name="workspace", mount_path="/workspace"
+                            )
+                        ],
+                    )
+                ],
+                # emptyDir, not a PVC: /workspace only ever holds a shallow (--depth 1)
+                # haku-state git checkout, which haku-sandbox-setup.sh unconditionally
+                # fetch+reset --hard's on every claim, so nothing here needs to survive a pod
+                # restart. A network filesystem also costs binding latency and makes Bazel's
+                # project-file scan intermittently ENOENT against SeaweedFS.
+                volumes=[
+                    SandboxTemplateSpecPodTemplateSpecVolumes(
+                        name="workspace",
+                        empty_dir=SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir(
+                            size_limit=SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit.from_string("30Gi")
+                        ),
+                    )
+                ],
             ),
         ),
     )
