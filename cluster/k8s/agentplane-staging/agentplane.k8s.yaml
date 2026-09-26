@@ -2413,8 +2413,8 @@ data:
           - create
           - dispose
           - exec
+          - get
           - get_template
-          - info
           - list
       ssh:
         title: SSH
