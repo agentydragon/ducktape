@@ -119,6 +119,16 @@ def test_merged_pr_overrides_unmerged_git(repo: GitRepo, proc: Path) -> None:
     assert "PR #42 merged" in result.reason
 
 
+def test_closed_pr_overrides_unmerged_git(repo: GitRepo, proc: Path) -> None:
+    # A PR was closed unmerged; the worktree is clean. Nothing is lost by removing the
+    # worktree either way — its branch (whatever it holds) stays reachable through the ref.
+    wt = repo.worktree("wt", "feature")
+    wt.commit("novel", "unique\n", "abandoned attempt")
+    result = _classify(repo, wt.path, proc, pr_states={"feature": PrInfo(11, PrState.CLOSED)})
+    assert isinstance(result, wg.PrunableWorktree)
+    assert "closed PR #11" in result.reason
+
+
 def test_open_pr_is_kept(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")
     wt.commit("novel", "unique\n", "work in review")
