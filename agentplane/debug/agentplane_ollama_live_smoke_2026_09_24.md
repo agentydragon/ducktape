@@ -77,3 +77,129 @@ The first test took 228.5 seconds total including a 30-second diagnostic Pod hol
 Gemma was deliberately deferred until the separate context-setting correction is deployed, to avoid another redundant cold load. At 00:00 UTC the live Ollama 0.34.0 Deployment still had `OLLAMA_NUM_CTX=131072`, not `OLLAMA_CONTEXT_LENGTH`; therefore this rerun validates sidecar readiness but **not** the proposed context fix. The prior Gemma passes remain valid observations, and the prior 120B limit remains unresolved; neither model was rerun here. `ducktape-flux/agentplane-testing` was Progressing/Ready Unknown at the final query despite the live generation-47 template and both successful turns, so this report does not claim the entire Flux Kustomization was Ready. The next bounded verification is Gemma through both harnesses plus `/api/ps` context once the corrected deployment is observed live.
 
 Upgrade assessment: [Ollama 0.34.4](https://github.com/ollama/ollama/releases/tag/v0.34.4) is newer than deployed 0.34.0, but its [envconfig](https://github.com/ollama/ollama/blob/v0.34.4/envconfig/config.go) still uses `OLLAMA_CONTEXT_LENGTH`, and its OpenAI-compatible [chat](https://github.com/ollama/ollama/blob/v0.34.4/openai/openai.go) and [Responses](https://github.com/ollama/ollama/blob/v0.34.4/openai/responses.go) request structures still have no `options` field. It does not provide evidence of a fix for the LiteLLM `reasoning` object passed as `think` or Agentplane's pre-header cancellation behavior. No Ollama upgrade was performed.
+
+## qwen3.8-flash-next-q4 direct-Ollama probing (2026-09-26)
+
+Scope: `qwen3.8-flash-next-q4` (`metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL`, 112GB on disk),
+added to the roster in #7971 but never live-tested. This section covers direct probing of
+the Ollama native `/api/chat` endpoint (via `kubectl port-forward`), not yet the Agentplane
+harness/Sandbox path in the section above.
+
+Cluster Ollama itself was paused for host inference experiments between #7907 and #8000
+(2026-09-24 to 2026-09-26); the model roster entry existed in git the whole time but the
+Ollama Deployment was at `replicas: 0`, so the model was never pulled until #8000 re-enabled
+it and the `setup-gpt-oss-v4` Job ran.
+
+**Capability tag**: Ollama's own `/api/tags` reports this model's `capabilities` as
+`["completion", "vision"]` — no `"tools"`, unlike `gpt-oss`/`gemma4:31b-it-q8_0` which both
+report `"tools"`. `ollama show --template` confirms the embedded Jinja template does have a
+tool-call branch (`{%- if tools and tools is iterable ... %}`), but it renders tool calls as
+`<tool_call>\n<function=name>\n<parameter=x>\nvalue\n</parameter>\n</function>\n</tool_call>` —
+an XML-tag format, not the JSON-object format (`{"name": ..., "arguments": {...}}`) most
+tool-call templates and Ollama's own capability-detection heuristic expect. This is the
+likely reason Ollama doesn't tag the model as tool-capable, even though the template clearly
+intends to support tool calls.
+
+**Confirmed working despite the missing tag**: a direct `/api/chat` request with a `tools`
+array and `num_ctx=4096` (2026-09-26 07:55 UTC, once the load-timeout and contention fixes
+below were live and the model was warm) returned a correctly structured response —
+`message.tool_calls[0]` = `{"function": {"name": "get_weather", "arguments": {"location":
+"Paris"}}}`, plus real content in a separate `message.thinking` field, both parsed cleanly by
+Ollama out of the model's own XML-tagged template output. So the capability tag is simply
+wrong/stale for this third-party model, not a functional block: Ollama parses this template's
+tool-call and thinking output correctly, it just doesn't advertise that it can.
+
+**Cold-load failures, root-caused**: every direct-probe attempt at a fresh Ollama pod (several,
+between 2026-09-26 04:58 and 07:28 UTC) failed with the Ollama container logging
+`"Load failed" ... error="timed out waiting for llama-server to start - "`, and **no further
+load activity for that model followed** — contrary to this doc's earlier assumption (written
+by an earlier pass over this same session) that a failed request's model keeps loading
+server-side and a retry benefits from it. That assumption was wrong for this model: tracing
+`llama_server.go:433`/`sched.go:641` log lines by blob hash across the session showed the
+apparent "success shortly after a failure" pattern was two different models' blobs
+interleaved (qwen failing, then a different, smaller model's request succeeding), not qwen
+recovering. Root cause: `OLLAMA_LOAD_TIMEOUT` (default `5m`, confirmed via
+`ollama serve --help`: "How long to allow model loads to stall before giving up") is shorter
+than a cold read of this 112GB model off HDD-backed `lvm-proxmox-hdd` storage, and Ollama
+abandons a stalled load once it elapses, with no automatic retry absent a new client request.
+
+Contributing contention, since Ollama only keeps one large model resident at a time on
+wyrm2's single GPU pair: `agentplane-index`'s `ducktape` worker continuously calls
+`ollama.ollama.svc`'s `/v1/embeddings` as part of its normal operation (re-embedding on every
+new commit to this repo — confirmed via its `/status` endpoint showing `pending_files: 0`,
+`updating: false`, i.e. not backlogged, just keeping up with this repo's actual commit rate),
+which repeatedly evicted the qwen load attempt before its own timeout could even be reached.
+
+Both were fixed and merged:
+
+- #8023: paused `agentplane-index`'s `ducktape` worker (`replicas: 0`) for the duration of
+  this test; `haku-state`'s worker was left running; nothing else was found to depend on the
+  `ducktape` index. Tombstoned for revert once this testing is done.
+- #8030: raised `OLLAMA_LOAD_TIMEOUT` to `30m` on the ollama Deployment. A live-only
+  `kubectl set env` test of this (before committing it) was silently reverted by Flux's
+  drift correction after ~14 minutes, which is itself worth recording: **a live patch to a
+  Flux-managed Deployment does not survive past the next reconcile**, and its rollback
+  triggered a pod restart whose incidental model-load log line was initially (and
+  incorrectly) mistaken for unrelated third-party traffic on the shared Ollama instance.
+
+With both fixes live, a direct `/api/chat` probe (no `tools`, `num_ctx=4096`) completed a
+cold load in `llama-server started in 708.47 seconds` (~11m48s), well inside the new 30m
+budget. `ollama ps` afterward reported `87 GB`, `33%/67% CPU/GPU` split, confirming this
+model does not fit in wyrm2's combined GPU VRAM and runs partly off CPU-mapped memory.
+The container's own cgroup `memory.current` stayed at 24GB of its 40GB `memory.max` the whole
+time — the CPU-resident portion is not being evicted by the memory limit.
+
+**Generation throughput, separately from load time**: that same load-triggering "Say hi."
+request (no tools, 4096 ctx) took a **total** of 20m6s end to end, logged by llama.cpp's own
+`print_timing`: `prompt eval ... 0.18 tokens per second`, `eval time ... 0.14 tokens per
+second`, for a 55-token prompt and a 27-token reply. This is not a one-off cold-start cost —
+it is steady-state per-token throughput on this node, roughly three orders of magnitude
+slower than an interactively-usable rate. The Ollama server serializes requests to this model
+(`llama-server ... -np 1`, one parallel slot); a second, immediately-following tool-call probe
+queued behind this one and was killed by its own 90s client timeout without ever starting.
+
+At this throughput, any answer (including a correct tool call) is real but arrives on the
+order of many minutes per turn, which functions as a de facto timeout failure in every
+harness/proxy path this doc's other sections describe (Agentplane's 300s absolute turn budget,
+LiteLLM/Ollama's default request timeout, a Codex/Claude Code CLI session). A follow-up
+tool-call request on the same warm instance (2026-09-26 07:55 UTC, 319-token prompt, 72-token
+reply including `thinking`) completed faster — `total_duration` 263.5s, ~1.44 tok/s generation
+— but that is still roughly **20-30x slower** than the operator's own reference point (below)
+and not a usable interactive rate by any reasonable bar; it does not change the conclusion.
+
+**Root cause, better supported than the HDD/page-cache theory above**: the operator's working
+comparison point is `ghcr.io/ggml-org/llama.cpp@sha256:014f721265...` (confirmed live:
+`llama-server --version` → `0.5.0-dev, build 11151, commit bd4f514db`, authored
+**2026-09-23**), run directly via `docker run` with `--fit-target 1024,1024` (this is llama.cpp's
+own _default_ value, confirmed via `llama-server --help`, so not itself a difference) against
+the same model file on a different, SSD-backed path, and got ~30 tokens/sec. Ollama 0.34.0
+vendors its own llama.cpp at commit `0f3a71be1`, authored **2026-09-02** (confirmed live via
+`llama-server --version` inside the ollama container) — a 21-day gap. Qwen3.8-Flash-Next
+(`qwen4exp`) is a hybrid Gated DeltaNet (recurrent/SSM) + MoE architecture ("Qwen3 Next"
+family); upstream llama.cpp history between those two commits includes several fixes and
+optimizations specific to that hybrid layer type merged **after** ollama's pin: `models : fix
+GDN normalization from max to rsqrt` (#28068, 2026-09-06), `convert : write explicit
+recurrent_layers for Qwen3-Next / Qwen3.5` (#28208, 2026-09-07), plus later MoE/kernel work
+(radix-select top-k #28670, raised expert limit for `mul_mat_id` #28501, contiguous-tensor
+CUDA conversion #29155). This lines up with something already captured, unremarked, in this
+session's own probe logs: `forcing full prompt re-processing due to lack of cache data
+(likely due to SWA or hybrid/recurrent memory ...)` — direct, session-local evidence that
+Ollama's older build is hitting a hybrid-architecture context-caching limitation for this
+specific model, not merely a storage-speed effect. HDD-vs-SSD storage and GPU-VRAM packing
+(the 33%/67% CPU/GPU split) may still be contributing factors, but the version gap plus this
+specific, already-observed cache-invalidation message is the best-supported explanation and
+was not something a Deployment-level config change could fix — it needs a newer llama.cpp
+backend serving this model, not a different `OLLAMA_LOAD_TIMEOUT`/`memory` value. No such
+change was made in this session; this is a finding to act on separately, not a landed fix.
+
+**Summary**: the tool-call protocol question is answered — this model, served by Ollama
+0.34.0, produces correctly structured `tool_calls` and a separate `thinking` field despite its
+missing `"tools"` capability tag. The practical-usability question is not answered
+favorably: generation throughput on this deployment (~0.14-1.44 tok/s, load-dependent) is
+20-30x slower than the operator's own SSD-hosted, newer-llama.cpp reference (~30 tok/s), most
+likely because Ollama 0.34.0's vendored llama.cpp (2026-09-02) predates hybrid
+Gated-DeltaNet/MoE-specific fixes and optimizations this model's architecture needs, upstream
+by 2026-09-23. Landed in this session: #8023 (temporary), #8030 (durable) — neither addresses
+the throughput gap. Not attempted: bumping the Ollama image to a release with a newer vendored
+llama.cpp, or standing up this specific model behind a directly-deployed, more-current
+llama.cpp server (mirroring the operator's own working setup) instead of through Ollama.
