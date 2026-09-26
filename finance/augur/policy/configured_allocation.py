@@ -9,6 +9,8 @@ settles a trade, estimates tax, or reaches into a managed component's holdings.
 from dataclasses import dataclass
 from fractions import Fraction
 
+from more_itertools import only
+
 from finance.augur.policy import sleeves
 from finance.augur.policy.cash_band import Hold, Invest, Raise, cash_band, validate_band_bounds
 from finance.augur.sim.actions import Action, Buy, Contribute, Liquidate, Sell, Withdraw
@@ -193,7 +195,7 @@ def plan(
     for index, sleeve in enumerate(policy.sleeves):
         price = prices[sleeve.asset_id]
         sleeves._count(price)
-        destination = next(
+        destination = only(
             (item for item in portfolios if item.account_id == sources[0] and item.asset_id == sleeve.asset_id), None
         )
         if policy.allow_purchases and destination is not None:

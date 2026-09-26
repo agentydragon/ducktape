@@ -70,6 +70,7 @@ py_library(
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:observations",
         "//finance/augur/sim:prepared",
+        "@pypi//more_itertools",
     ],
 )
 
