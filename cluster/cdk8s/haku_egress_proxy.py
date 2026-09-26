@@ -69,17 +69,12 @@ def _ca(chart: Chart) -> None:
         secret_name=_CA_SECRET,
         bundle_name="haku-egress-proxy-ca-cert",
         description="Trust bundle for haku-egress-proxy-inspected sandbox HTTPS traffic",
-        # haku-console: the colocated egress proxy sidecar (#4942) intercepts with this same
-        # shared CA, so fenced sandboxes -- which already trust it via haku-egress-proxy-ca-cert
-        # -- trust the colocated listener too. When the iron/mitmproxy fence retires (#4670 end
-        # state) this CA's ownership moves out of this directory with it.
-        reflection_namespaces=("cert-manager", "haku-console"),
+        reflection_namespaces=("cert-manager",),
         # Written into Haku trust domains. The CLIProxyAPI-backed aiquota path connects
         # directly to the in-cluster management service and does not trust or use this
-        # inspected egress listener. public-coder-agent receives it for the #4943 spike: its
-        # OpenClaw pod mounts this bundle to verify TLS through the colocated Console egress
-        # fence (haku-console:8888).
-        target_namespaces=("haku-sandbox", "haku-openclaw-spike", "haku-ci", "public-coder-agent"),
+        # inspected egress listener. public-coder-agent has its own separate interception CA
+        # (public_coder_proxy.py) and does not consume this bundle.
+        target_namespaces=("haku-sandbox", "haku-openclaw-spike", "haku-ci"),
     )
 
 
@@ -545,17 +540,8 @@ def _namespace_selector(namespace: str) -> CiliumClusterwideNetworkPolicySpecEnd
 
 def _sandbox_fence(chart: Chart) -> None:
     """Force all external egress from the haku-sandbox namespace through the dedicated
-    haku-egress-proxy. Allows: DNS, cluster-internal traffic, kube-apiserver, haku-egress-proxy
-    port 8080, and the colocated egress proxy in the Console pod (haku-console, port 8888,
-    #4942). Blocks: direct external internet access.
-
-    The colocated-proxy rule is explicit even though the `toEntities: cluster` rule already admits
-    it at L4: it keeps the enforcement model legible (#4670 § Enforcement topology -- "DNS,
-    cluster, apiserver, and the proxy's listener") and survives the eventual tightening of that
-    broad cluster rule into a ceiling. It makes the colocated listener *reachable*; the
-    Kyverno-injected HTTP_PROXY still points sandbox clients at the port-8080 fence, so this opens
-    the path without cutting traffic over (the repoint is the adoption step). The oracle at
-    haku-console:8079 is loopback-bound, so nothing answers on the pod IP there.
+    haku-egress-proxy. Allows: DNS, cluster-internal traffic, kube-apiserver, and haku-egress-proxy
+    port 8080. Blocks: direct external internet access.
     """
     CiliumClusterwideNetworkPolicy(
         chart,
@@ -579,12 +565,6 @@ def _sandbox_fence(chart: Chart) -> None:
                 ),
                 # Shared proxy for existing sandbox traffic.
                 _to_endpoint(NAME, {"k8s:app.kubernetes.io/name": NAME}, 8080),
-                # Colocated egress proxy in the Console pod (#4942). The sidecar shares the Console
-                # pod's network namespace, so its listener is selected by the Console pod label on
-                # port 8888. Once the Kyverno HTTP_PROXY repoint lands, this becomes the sandbox's
-                # egress path; until then it is a reachable-but-unused route the adoption cutover
-                # switches to.
-                _to_endpoint("haku-console", {"k8s:app.kubernetes.io/name": "haku-console"}, 8888),
             ],
         ),
     )

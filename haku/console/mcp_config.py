@@ -311,7 +311,6 @@ class ConsoleConfigFile(BaseModel):
     # A deploy-reviewed fail-safe maximum for approval-created temporary grants. Tool schema bounds
     # remain useful client guidance, but these server-side settings are authoritative.
     kubernetes_grant_max_lifetime_seconds: int = Field(default=3600, ge=1, le=86_400)
-    http_grant_max_lifetime_seconds: int = Field(default=3600, ge=1, le=86_400)
     # The one Agent Sandbox environment the `sandbox` in-process server hands out: which warm pool
     # it claims from and the reviewed bootstrap each claim runs. Unset → the server is not offered.
     # Editing this keeps live claims usable; a claim whose recorded pod properties no longer match

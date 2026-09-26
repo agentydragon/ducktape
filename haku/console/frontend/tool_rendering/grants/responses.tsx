@@ -1,4 +1,3 @@
-import type { JSX } from "react";
 import { Group, Stack } from "@mantine/core";
 import type { z } from "zod";
 
@@ -17,7 +16,7 @@ import {
   PreviewTitle,
   type PreviewVariant,
 } from "../vocabulary";
-import { HttpGrantCoverage, KubernetesGrantScopeAndRules } from "./requests";
+import { KubernetesGrantScopeAndRules } from "./requests";
 
 const zCreateGrantResult: z.ZodType<McpToolResultFor<typeof GRANTS_SERVER_ID, "create_grant">> = mcpToolResultSchema(
   GRANTS_SERVER_ID,
@@ -50,15 +49,6 @@ function Timestamp({ label, value }: { label: string; value: string }) {
   );
 }
 
-function GrantCoverage({ view, variant }: { view: GrantView; variant: PreviewVariant }): JSX.Element {
-  if (view.domain === "kubernetes") {
-    return (
-      <KubernetesGrantScopeAndRules spec={{ scope: view.grant.scope, rules: view.grant.rules }} variant={variant} />
-    );
-  }
-  return <HttpGrantCoverage spec={view.grant.spec} />;
-}
-
 function GrantResult({
   view,
   variant,
@@ -68,7 +58,7 @@ function GrantResult({
   variant: PreviewVariant;
   showCoverage: boolean;
 }) {
-  const grant = view.grant;
+  const grant = view;
   const endedAt = grant.ended_at;
   return (
     <Stack gap="xs">
@@ -77,9 +67,8 @@ function GrantResult({
         <PreviewBadge variant="light" color={statusColor(grant.status)}>
           {grant.status}
         </PreviewBadge>
-        <PreviewBadge variant="outline">{view.domain}</PreviewBadge>
       </Group>
-      {showCoverage && <GrantCoverage view={view} variant={variant} />}
+      {showCoverage && <KubernetesGrantScopeAndRules spec={grant} variant={variant} />}
       {variant === "detailed" && (
         <Stack gap={2}>
           {showCoverage && (
@@ -115,7 +104,7 @@ function GrantsResult({
     <Stack gap="xs">
       <PreviewText c="dimmed">{plural(grants.length, "grant")} returned</PreviewText>
       {shown.map((view) => (
-        <GrantResult key={view.grant.grant_id} view={view} variant={variant} showCoverage={showCoverage} />
+        <GrantResult key={view.grant_id} view={view} variant={variant} showCoverage={showCoverage} />
       ))}
       <MoreLine count={grants.length - shown.length} />
     </Stack>

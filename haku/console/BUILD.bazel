@@ -202,7 +202,6 @@ py_library(
     deps = [
         ":pydantic_column",
         "//haku/console/grants:envelope",
-        "//haku/console/grants/http:models",
         "//haku/console/grants/kubernetes:models",
         "//haku/console/identity:agent",
         "//haku/console/identity:operator_identity",
@@ -302,8 +301,6 @@ py_library(
         ":settings",
         "//haku/console/grants:catalog",
         "//haku/console/grants:routes",
-        "//haku/console/grants/http:repository",
-        "//haku/console/grants/http:service",
         "//haku/console/grants/kubernetes:authorization",
         "//haku/console/grants/kubernetes:authorization_service",
         "//haku/console/grants/kubernetes:proxy_authorization",

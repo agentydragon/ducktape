@@ -9,17 +9,12 @@ function plural(count: number): string {
   return `${count} grant${count === 1 ? "" : "s"}`;
 }
 
-function domainLabel(domain: "kubernetes" | "http"): string {
-  return domain === "kubernetes" ? "Kubernetes" : "HTTP";
-}
-
 export const grantsActions: Record<string, ActionEntry> = {
-  create_grant: fromArgs(zCreateGrantArgs, (args) => {
-    const domain = args.grants.length > 0 ? `${domainLabel(args.grants[0].domain)} ` : "";
-    return { text: `Grants: Create ${domain}${plural(args.grants.length)}` };
-  }),
+  create_grant: fromArgs(zCreateGrantArgs, (args) => ({
+    text: `Grants: Create Kubernetes ${plural(args.grants.length)}`,
+  })),
   revoke_grants: fromArgs(zRevokeGrantsArgs, (args) => ({
-    text: `Grants: End ${domainLabel(args.domain)} ${plural(args.grant_ids.length)}`,
+    text: `Grants: End ${plural(args.grant_ids.length)}`,
     destructive: true,
   })),
 };
