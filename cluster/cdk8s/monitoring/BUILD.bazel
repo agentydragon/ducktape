@@ -1,7 +1,7 @@
-# gazelle:resolve py flux_kustomize //cluster/cdk8s/crd_bindings/flux:kustomization
+# gazelle:resolve py flux_kustomize //cluster/cdk8s/providers/flux:kustomization
 # gazelle:resolve py source_watcher_crds //cluster/cdk8s/providers/source_watcher:artifactgenerator
-# gazelle:resolve py flux_helm //cluster/cdk8s/crd_bindings/flux:helmrelease
-# gazelle:resolve py flux_source //cluster/cdk8s/crd_bindings/flux:helmrepository
+# gazelle:resolve py flux_helm //cluster/cdk8s/providers/flux:helmrelease
+# gazelle:resolve py flux_source //cluster/cdk8s/providers/flux:helmrepository
 # gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor
 # gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor
 # gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/crd_bindings/prometheus_operator:prometheusrule
@@ -24,7 +24,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
@@ -39,7 +39,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:terraform",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
@@ -69,7 +69,7 @@ py_library(
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
+        "//cluster/cdk8s/providers/flux:helmrepository",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
@@ -85,9 +85,9 @@ py_library(
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
-        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/providers/flux:helmrelease",
+        "//cluster/cdk8s/providers/flux:helmrepository",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
@@ -118,9 +118,9 @@ py_library(
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
-        "//cluster/cdk8s/crd_bindings/flux:helmrepository",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/providers/flux:helmrelease",
+        "//cluster/cdk8s/providers/flux:helmrepository",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -152,9 +152,9 @@ py_library(
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/flux:helmrelease",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/providers/flux:helmrelease",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:namespace",
         "//cluster/cdk8s/seaweedfs:s3",
@@ -173,7 +173,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
@@ -191,7 +191,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",

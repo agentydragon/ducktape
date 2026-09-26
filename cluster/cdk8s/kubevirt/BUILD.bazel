@@ -25,7 +25,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/kubevirt:cdi",
         "//cluster/cdk8s/providers/kubevirt:storageprofile",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
