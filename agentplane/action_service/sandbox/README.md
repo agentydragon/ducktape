@@ -134,7 +134,7 @@ while `dispose` + `create` of it reached `Ready` in about 45 s. So an exceeded-q
 with, then `dispose` + `create` the refused one.
 
 Shapes follow <../../../haku/console/tools/sandbox.py>, the surface already in daily use: one
-bounded Bash script per call, a per-environment ceiling on timeout and retained output patched into
+bounded Bash script per call, a per-deployment ceiling on timeout and retained output patched into
 the advertised schema, and a nonzero exit reported as a result rather than a transport error.
 
 Properties of the Action path the tool documentation has to state, because an agent assuming
