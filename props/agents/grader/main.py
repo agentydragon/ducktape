@@ -177,7 +177,9 @@ def _create_grader_tools(grader_run_id: UUID, snapshot_slug: SnapshotSlug, state
             if not occ:
                 raise ValueError(f"TP occurrence not found: {args.tp_id}/{args.occurrence_id}")
 
-            files_dict = {str(r.file_path): (r.start_line, r.end_line) for r in occ.ranges}
+            files_dict: dict[str, tuple[int | None, int | None]] = {
+                str(r.file_path): (r.start_line, r.end_line) for r in occ.ranges
+            }
             gt_ref = TPRef(tp_id=args.tp_id, occurrence_id=args.occurrence_id)
             return GTDetails(gt_ref=gt_ref, rationale=tp.rationale, files=files_dict, note=occ.note)
 
@@ -196,7 +198,9 @@ def _create_grader_tools(grader_run_id: UUID, snapshot_slug: SnapshotSlug, state
             if not occ:
                 raise ValueError(f"FP occurrence not found: {args.fp_id}/{args.occurrence_id}")
 
-            files_dict = {str(r.file_path): (r.start_line, r.end_line) for r in occ.ranges}
+            files_dict: dict[str, tuple[int | None, int | None]] = {
+                str(r.file_path): (r.start_line, r.end_line) for r in occ.ranges
+            }
             gt_ref = FPRef(fp_id=args.fp_id, occurrence_id=args.occurrence_id)
             return GTDetails(gt_ref=gt_ref, rationale=fp.rationale, files=files_dict, note=occ.note)
 
