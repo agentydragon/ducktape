@@ -7,23 +7,23 @@ experiment consumers are added meanwhile.
 
 ## Readers
 
-- `policy/configured_household.py::ConfiguredHousehold`, the `_AllocationPolicy`
-  records it adapts (`sim/prepared.py`) and the sim's `TargetAllocationPolicy` schema:
-  the sim suites move onto `policy/cash_band_household.py` (or `ClaimPayer`), and the
-  records go with the household. Keep the shared sleeve calculations
-  (`policy/{cash_band,sleeves}.py`); their tests cover exact allocation, reserved
-  cash, zero targets/full exits, FIFO scoping and quantity scales. A newly required
-  product-specific calculation needs a real Python consumer and independent financial
-  checks; do not promote mixed-scale raw-quantity PE selection to a generic helper.
-- The PE issuer phase selects recovery, forced and tender lots with `Holdings.fifo`
-  inside the world; PE's migration after GPE replaces that with explicit responses.
+- `World.declare_housing` (`sim/property.py::Housing`): scripted purchases, sales,
+  residence and rented-share changes and improvements the world executes on schedule,
+  which the app declares from its request. HOUSING's migration after GHOUSE replaces
+  them with household actions.
+- `World.declare_tender_policy` (`sim/prepared.py::_TenderPolicy`): a liquid-net-worth
+  floor the world sells to on the owner's behalf; without one, compulsory recovery is
+  skipped. The PE issuer phase selects recovery, forced and tender lots with
+  `Holdings.fifo` inside the world; PE's migration after GPE replaces both with
+  explicit responses. Do not promote its mixed-scale raw-quantity selection to a
+  generic sleeve helper.
 
-## Gaps on the app's configured path
+## Gaps on the app's funding path
 
 - The app's household never reinvests (`reinvest=None`), so the app never buys or
   contributes, and the zero-mark contribution refusal
   (`TlhPortfolioObservation.accepts_contributions`) is reachable only from household
-  tests (`policy/test_cash_band_household.py`, `policy/test_configured_household.py`).
+  tests (`policy/test_cash_band_household{,_world}.py`).
 
 ## Older PR disposition
 

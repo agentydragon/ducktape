@@ -9,7 +9,6 @@ tax, or reaches into a managed component's holdings.
 """
 
 from collections import defaultdict
-from collections.abc import Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 
@@ -227,8 +226,38 @@ class CashBandHousehold(EconomicAgent):
                     raise ValueError(f"opening lot {lot.spec.lot_id!r} uses a reserved purchase identity")
 
     def decide(self, observation: Observation) -> list[Action]:
+        """This month's sales, then every due claim paid in full in observed order, then the purchases.
+
+        Each purchase is sized from the cash the sales, the payments and the earlier purchases
+        leave, so each order is exact against the cash the month will actually leave. A claim
+        that cash cannot cover is rejected and stops the path, so a month with one buys nothing.
+        """
         proposal = self.propose(observation)
-        return [*proposal.sales, *settle(observation, proposal.sales, [(self, item) for item in proposal.purchases])]
+        cash = dict(observation.accounts)
+        for action in proposal.sales:
+            account, proceeds = _proceeds(action, observation)
+            cash[account] = checked_count(cash[account] + proceeds, "projected cash")
+        payments = full_payments(observation.claims)
+        for payment in payments:
+            account = payment.from_account.account_id
+            cash[account] = checked_count(cash[account] - payment.amount, "projected cash")
+        actions: list[Action] = [*proposal.sales, *payments]
+        if any(cash[payment.from_account.account_id] < 0 for payment in payments):
+            return actions
+        for pending in proposal.purchases:
+            projected = observation.model_copy(update={"accounts": tuple(cash.items())})
+            order: Buy | Contribute | None
+            if isinstance(pending, PendingContribution):
+                order = self.contribution(projected, pending)
+                spent = 0 if order is None else order.amount
+            else:
+                order = self.buy(projected, pending)
+                spent = 0 if order is None else position_value(pending.price, order.units, pending.quantity_scale)
+            if order is None:
+                continue
+            cash[self.cash_account_id] = checked_count(cash[self.cash_account_id] - spent, "projected cash")
+            actions.append(order)
+        return actions
 
     def propose(self, observation: Observation) -> Proposal:
         """Ordered sales and post-claim purchase intents, sleeve by sleeve; call once a month, in order."""
@@ -413,44 +442,6 @@ class CashBandHousehold(EconomicAgent):
             raise ValueError("an inflation-indexed band bound needs a modeled CPI")
         reset = observation.month // bound.adjustment_period_months * bound.adjustment_period_months
         return mul_div(bound.base_amount, self.cpi_levels[reset], self.cpi_levels[0], "series-indexed amount")
-
-
-def settle(
-    observation: Observation,
-    sales: Sequence[Action],
-    purchases: Sequence[tuple[CashBandHousehold, PendingBuy | PendingContribution]],
-) -> list[Action]:
-    """Pay every due claim in full in observed order, then the purchases in order.
-
-    Each purchase is sized from the cash `sales`, the payments and the earlier purchases leave,
-    so each order is exact against the cash the month will actually leave. A claim that cash
-    cannot cover is rejected and stops the path, so a month with one buys nothing.
-    """
-    cash = dict(observation.accounts)
-    for action in sales:
-        account, proceeds = _proceeds(action, observation)
-        cash[account] = checked_count(cash[account] + proceeds, "projected cash")
-    payments = full_payments(observation.claims)
-    for payment in payments:
-        account = payment.from_account.account_id
-        cash[account] = checked_count(cash[account] - payment.amount, "projected cash")
-    actions: list[Action] = [*payments]
-    if any(cash[payment.from_account.account_id] < 0 for payment in payments):
-        return actions
-    for household, pending in purchases:
-        projected = observation.model_copy(update={"accounts": tuple(cash.items())})
-        order: Buy | Contribute | None
-        if isinstance(pending, PendingContribution):
-            order = household.contribution(projected, pending)
-            spent = 0 if order is None else order.amount
-        else:
-            order = household.buy(projected, pending)
-            spent = 0 if order is None else position_value(pending.price, order.units, pending.quantity_scale)
-        if order is None:
-            continue
-        cash[household.cash_account_id] = checked_count(cash[household.cash_account_id] - spent, "projected cash")
-        actions.append(order)
-    return actions
 
 
 def _proceeds(action: Action, observation: Observation) -> tuple[AccountId, int]:

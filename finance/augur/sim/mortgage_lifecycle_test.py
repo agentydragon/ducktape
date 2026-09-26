@@ -14,7 +14,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LocationId
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import ClaimId, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, JournalEntry
@@ -207,7 +207,7 @@ def drive(world: World, *payers: AgentId) -> Recorded:
 
 def run(world: World) -> Recorded:
     """One tracked household paying every due claim in full, in order, month by month."""
-    world.track(ConfiguredHousehold(AgentId(ALICE), ()))
+    world.track(ClaimPayer(AgentId(ALICE)))
     recorded = Recorded.opening(world)
     world.start()
     while not world.finished:

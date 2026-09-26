@@ -118,8 +118,7 @@ portfolio id, never by the index it tracks, so it has no quote to size against, 
 lots of that index are a sleeve of their own. `TlhStatement` says whether each portfolio
 accepts a contribution at its current mark, which value and basis alone cannot. `observations.py` owns frozen current facts and private claim authority. There is
 no second public native action/observation representation or native session driver.
-Configured allocators are not silently enabled through this API. The issuer
-protocol on a private holding (`sim/private_equity.py`) is a world phase: `close_month`
+The issuer protocol on a private holding (`sim/private_equity.py`) is a world phase: `close_month`
 runs it after the month's settlement on a path that has not stopped, whichever
 driver closes the month, and `declare_tender_policy` says how an owner answers a
 sale opportunity. A rejected action stops only its rollout with the successful prefix

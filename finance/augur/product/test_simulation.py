@@ -11,7 +11,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LocationId, SecurityKey, SecuritySymbol
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.product.metric_composition import METRIC_NAMES
 from finance.augur.product.metrics import ProductMetricArrays, metric_fan, projection_summaries, terminal_summary
 from finance.augur.product.simulation import (
@@ -144,7 +144,7 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
             world.declare_pool(pool)
         for held in compile_lots([lot], quantum=CURRENCY.quantum):
             world.hold(held)
-        world.track(Scripted(ConfiguredHousehold(AgentId(AGENT), ()), {SALE_MONTH: (sale,)}))
+        world.track(Scripted(ClaimPayer(AgentId(AGENT)), {SALE_MONTH: (sale,)}))
         return world
 
     return lambda: [compose(rollout_id) for rollout_id in range(rollout_count)]
@@ -211,7 +211,7 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
             (),
             compile_locations([purchase], {LOCATION: location}, quantum=CURRENCY.quantum),
         )
-        world.track(ConfiguredHousehold(AgentId(AGENT), ()))
+        world.track(ClaimPayer(AgentId(AGENT)))
         return world
 
     return lambda: [compose()]

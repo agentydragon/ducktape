@@ -8,7 +8,6 @@ from pydantic import ValidationError
 
 from finance.augur.model.series import LocationId, RentKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.scenario import (
-    CashflowOnly,
     DistributionTaxSlice,
     MortgageFinancing,
     RecurringObligation,
@@ -16,9 +15,7 @@ from finance.augur.sim.scenario import (
     ScheduledPropertyCashflow,
     ScheduledPropertyPurchase,
     SecurityDistribution,
-    SecuritySleeveTarget,
     SeriesIndexedAmount,
-    TargetAllocationPolicy,
 )
 
 
@@ -45,27 +42,6 @@ def test_series_indexed_amount_parses_from_authored_data() -> None:
     amount = obligation.amount_due
     assert isinstance(amount, SeriesIndexedAmount)
     assert amount.series == RentKey(location_id=LocationId("san_francisco_ca"))
-
-
-@pytest.mark.parametrize(
-    ("sources", "cause", "error"),
-    [
-        (("brokerage", "brokerage"), "fund", "source accounts must be unique"),
-        (("brokerage",), "  ", "cause prefix must not be empty"),
-    ],
-)
-def test_allocation_rejects_repeated_sources_and_empty_cause(sources: tuple[str, ...], cause: str, error: str) -> None:
-    with pytest.raises(ValidationError, match=error):
-        TargetAllocationPolicy(
-            agent_id="alice",
-            account_id="checking",
-            source_account_ids=sources,
-            sleeves=[SecuritySleeveTarget(asset=SecurityKey(symbol="stock"), weight=1)],
-            cause_id_prefix=cause,
-            cash_ceiling=0,
-            allow_purchases=False,
-            rebalancing=CashflowOnly(),
-        )
 
 
 def test_cashflow_income_category_allows_only_the_typed_categories() -> None:

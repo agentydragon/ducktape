@@ -1,11 +1,27 @@
-"""The configured household sizes its purchases from the cash its own batch leaves."""
+"""The household against a world: what `check` refuses before it is tracked, and purchases sized
+from the cash its own batch leaves.
+
+The guards are on the household's knobs against the world it would act on, not on financial
+execution; the financial behaviour of the same households lives in
+<../sim/allocation_household_test.py> and <../sim/target_allocation_test.py>.
+"""
 
 from dataclasses import dataclass
+from typing import Any
 
+import pytest
 import pytest_bazel
 from more_itertools import one
 
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.cash_band_household import (
+    BandBound,
+    CashBandHousehold,
+    CpiIndexed,
+    ManagedSleeve,
+    Reinvest,
+    SecuritySleeve,
+    Sleeve,
+)
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
@@ -18,10 +34,6 @@ from finance.augur.sim.prepared import (
     PreparedObligation,
     PreparedSeries,
     PreparedTlhPortfolio,
-    _AllocationPolicy,
-    _ManagedSleeveTarget,
-    _SecuritySleeveTarget,
-    _SleeveTarget,
 )
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
@@ -34,14 +46,24 @@ HOLDINGS = AccountId("holdings-account")
 QUIET = TlhAssumptions(
     peak_annual_yield=0, floor_annual_yield=0, maturity_decay_exponent=1, drawdown_sensitivity=0, short_term_fraction=1
 )
+GUARDED = AgentId("test-alice")
+STOCK = AssetId("test-stock")
+CHECKING = AccountId("checking")
+BROKERAGE = AccountId("brokerage")
+SCALE = 1_000_000
+HORIZON = 13
+INDEX = CpiIndexed(base_amount=0, adjustment_period_months=12)
+OPENING_LOT = LotId("opening-stock")
+STOCK_SLEEVE = SecuritySleeve(asset_id=STOCK, weight=1)
+REINVEST = Reinvest(rebalance_tolerance_ppb=None)
 
 
 @dataclass
 class Situation:
-    """One household's books, its funding policy and the claims raised on it."""
+    """One household's books, the household and the claims raised on it."""
 
     prices: dict[str, int]
-    policy: _AllocationPolicy
+    household: CashBandHousehold
     opening_cash: int = 0
     lots: tuple[PreparedLot, ...] = ()
     portfolios: tuple[PreparedTlhPortfolio, ...] = ()
@@ -49,21 +71,16 @@ class Situation:
     horizon_months: int = 1
 
 
-def sleeve(asset_id: AssetId, weight: int) -> _SecuritySleeveTarget:
-    return _SecuritySleeveTarget(asset_id=asset_id, weight=weight, quantity_scale=1)
-
-
-def policy(*sleeves: _SleeveTarget, ceiling: int, tolerance: int | None) -> _AllocationPolicy:
-    return _AllocationPolicy(
-        agent_id=ALICE,
-        account_id=CASH,
-        source_account_ids=(HOLDINGS,),
+def reinvesting(*sleeves: Sleeve, ceiling: int, tolerance: int | None) -> CashBandHousehold:
+    return CashBandHousehold(
+        ALICE,
+        cash_account_id=CASH,
+        floor=0,
+        ceiling=ceiling,
         sleeves=sleeves,
-        cash_floor=0,
-        cash_ceiling=ceiling,
+        source_account_ids=(HOLDINGS,),
+        reinvest=Reinvest(rebalance_tolerance_ppb=tolerance),
         cause_id_prefix="fund",
-        allow_purchases=True,
-        rebalance_tolerance_ppb=tolerance,
     )
 
 
@@ -112,8 +129,8 @@ def run(case: Situation) -> FinancialOutput:
             PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=opening)
         )
     # Every security sleeve gets a pool: the household reads its quotes off the positions it observes.
-    for target in case.policy.sleeves:
-        if isinstance(target, _SecuritySleeveTarget):
+    for target in case.household.sleeves:
+        if isinstance(target, SecuritySleeve):
             world.declare_pool(
                 PreparedHoldingPool(agent_id=ALICE, account_id=HOLDINGS, asset_id=target.asset_id, quantity_scale=1)
             )
@@ -123,7 +140,8 @@ def run(case: Situation) -> FinancialOutput:
         world.declare_portfolio(spec)
     for obligation in case.claims:
         world.track(Biller(obligation))
-    world.track(ConfiguredHousehold(AgentId(ALICE), (case.policy,)))
+    case.household.check(world)
+    world.track(case.household)
     recorder = FinancialCapture(world, capture="forensic")
     world.start()
     while not world.finished:
@@ -157,7 +175,12 @@ def test_a_purchase_is_sized_to_what_the_months_claim_payment_leaves() -> None:
     output = run(
         Situation(
             prices={"coarse": 100, "fine": 1},
-            policy=policy(sleeve(AssetId("coarse"), 1), sleeve(AssetId("fine"), 1), ceiling=1_000, tolerance=0),
+            household=reinvesting(
+                SecuritySleeve(asset_id=AssetId("coarse"), weight=1),
+                SecuritySleeve(asset_id=AssetId("fine"), weight=1),
+                ceiling=1_000,
+                tolerance=0,
+            ),
             opening_cash=50,
             lots=(
                 lot(LotId("opening-coarse"), AssetId("coarse"), units=5, basis=500),
@@ -196,8 +219,8 @@ def test_a_projected_purchase_into_a_managed_sleeve_contributes_what_is_left() -
     output = run(
         Situation(
             prices={"index": 7},
-            policy=policy(
-                _ManagedSleeveTarget(portfolio_id=PortfolioId("managed"), weight=1), ceiling=0, tolerance=None
+            household=reinvesting(
+                ManagedSleeve(portfolio_id=PortfolioId("managed"), weight=1), ceiling=0, tolerance=None
             ),
             opening_cash=1_000,
             portfolios=(managed_portfolio(TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-24)),),
@@ -221,8 +244,8 @@ def test_a_portfolio_at_a_zero_index_mark_is_not_offered_the_surplus() -> None:
     output = run(
         Situation(
             prices={"index": 0},
-            policy=policy(
-                _ManagedSleeveTarget(portfolio_id=PortfolioId("managed"), weight=1), ceiling=0, tolerance=None
+            household=reinvesting(
+                ManagedSleeve(portfolio_id=PortfolioId("managed"), weight=1), ceiling=0, tolerance=None
             ),
             opening_cash=1_000,
             portfolios=(managed_portfolio(TlhOpeningCohort(value=0, cost_basis=100, purchase_month_index=-24)),),
@@ -236,6 +259,140 @@ def test_a_portfolio_at_a_zero_index_mark_is_not_offered_the_surplus() -> None:
     assert (balance(closed, ALICE), balance(closed, CREDITOR)) == (600, 400)
     assert output.tlh_financial_effects is not None
     assert [effect.operation for effect in output.tlh_financial_effects] == ["modeled_realization"] * 2
+
+
+def stock_world(
+    *, lot_id: LotId = OPENING_LOT, inflation: tuple[int, ...] | None = None, second_grid: int | None = None
+) -> World:
+    """Alice's cash and 100 shares held in brokerage, on a flat price path and optionally a CPI path.
+
+    With `second_grid`, a second brokerage account declares a pool of the same stock on that grid.
+    """
+    series = [PreparedSeries(series_id=f"security:{STOCK}", snapshots=HORIZON + 1, values=(1_000,) * (HORIZON + 1))]
+    if inflation is not None:
+        series.append(PreparedSeries(series_id="inflation", snapshots=HORIZON + 1, values=inflation))
+    world = World(MarketPath(series, 0, rollout_count=1), horizon_months=HORIZON)
+    world.declare_account(
+        PreparedAccount(account=AccountRef(agent_id=GUARDED, account_id=CHECKING), opening_balance=10_000)
+    )
+    world.declare_pool(
+        PreparedHoldingPool(agent_id=GUARDED, account_id=BROKERAGE, asset_id=STOCK, quantity_scale=SCALE)
+    )
+    if second_grid is not None:
+        world.declare_pool(
+            PreparedHoldingPool(
+                agent_id=GUARDED, account_id=AccountId("brokerage-2"), asset_id=STOCK, quantity_scale=second_grid
+            )
+        )
+    world.hold(
+        PreparedLot(
+            lot_id=lot_id,
+            agent_id=GUARDED,
+            account_id=BROKERAGE,
+            asset_id=STOCK,
+            purchase_month=-24,
+            quantity_scale=SCALE,
+            units=100 * SCALE,
+            basis=50_000,
+        )
+    )
+    return world
+
+
+def check(
+    world: World,
+    *,
+    cash_account_id: AccountId = CHECKING,
+    floor: BandBound = 0,
+    ceiling: BandBound = 0,
+    sleeves: tuple[Sleeve, ...] = (STOCK_SLEEVE,),
+    source_account_ids: tuple[AccountId, ...] = (BROKERAGE,),
+    reinvest: Reinvest | None = REINVEST,
+    cause_id_prefix: str = "fund",
+) -> None:
+    """Build a household differing from a valid reinvesting one in the knobs given, and check it."""
+    CashBandHousehold(
+        GUARDED,
+        cash_account_id=cash_account_id,
+        floor=floor,
+        ceiling=ceiling,
+        sleeves=sleeves,
+        source_account_ids=source_account_ids,
+        reinvest=reinvest,
+        cause_id_prefix=cause_id_prefix,
+    ).check(world)
+
+
+def test_generated_purchase_namespace_is_reserved() -> None:
+    reserved = stock_world(lot_id=LotId("fund_buy_s0_1000000"))
+    with pytest.raises(ValueError, match="reserved purchase identity"):
+        check(reserved)
+    check(reserved, reinvest=None)
+    check(stock_world(lot_id=LotId("fund_buy_s0_1000000x")))
+
+
+@pytest.mark.parametrize(
+    ("knobs", "error"),
+    [
+        ({"source_account_ids": (BROKERAGE, BROKERAGE)}, "source accounts must be unique"),
+        ({"source_account_ids": (AccountId("undeclared"),)}, "purchase pool is not declared"),
+        ({"cash_account_id": AccountId("undeclared")}, "declared funding account"),
+        ({"cause_id_prefix": " "}, "nonempty cause"),
+        ({"sleeves": (STOCK_SLEEVE,) * 2}, "duplicate funding sleeve"),
+        ({"sleeves": ()}, "nonempty values"),
+        ({"sleeves": (SecuritySleeve(asset_id=STOCK, weight=0),)}, "positive target"),
+        ({"sleeves": (SecuritySleeve(asset_id=STOCK, weight=-1),)}, "nonnegative"),
+        ({"floor": 1}, "must not exceed"),
+        ({"floor": -1}, "nonnegative"),
+        (
+            {
+                "floor": CpiIndexed(base_amount=5, adjustment_period_months=1),
+                "ceiling": CpiIndexed(base_amount=4, adjustment_period_months=1),
+            },
+            "must not exceed",
+        ),
+        ({"ceiling": CpiIndexed(base_amount=0, adjustment_period_months=0)}, "invalid reset period"),
+        ({"ceiling": INDEX}, "missing series"),
+    ],
+    ids=[
+        "sources",
+        "purchase_pool",
+        "funding",
+        "cause",
+        "duplicate_sleeve",
+        "no_sleeves",
+        "zero_weights",
+        "negative_weight",
+        "band",
+        "negative_floor",
+        "indexed_band",
+        "period",
+        "missing_index",
+    ],
+)
+def test_a_malformed_household_is_refused_before_it_is_tracked(knobs: dict[str, Any], error: str) -> None:
+    with pytest.raises(ValueError, match=error):
+        check(stock_world(), **knobs)
+
+
+def test_source_pools_on_different_grids_are_refused() -> None:
+    with pytest.raises(ValueError, match="disagree on the quantity grid"):
+        check(stock_world(second_grid=10), source_account_ids=(BROKERAGE, AccountId("brokerage-2")))
+
+
+def test_an_indexed_bound_needs_a_positive_level_at_every_reset_it_reads() -> None:
+    with pytest.raises(ValueError, match="positive index levels"):
+        check(stock_world(inflation=(10**9,) * 12 + (0, 0)), ceiling=INDEX)
+
+
+def test_exact_integer_indices_and_a_sales_only_scope_are_valid() -> None:
+    # An exact i64 index above 2**53 is valid; absent purchase destinations remain valid for sales-only rules.
+    check(
+        stock_world(inflation=(2**53 + 1,) * (HORIZON + 1)),
+        reinvest=None,
+        source_account_ids=(AccountId("unused-holdings"),),
+        ceiling=INDEX,
+    )
 
 
 if __name__ == "__main__":

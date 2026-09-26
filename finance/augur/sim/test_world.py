@@ -9,7 +9,7 @@ from typing import Literal
 import pytest
 import pytest_bazel
 
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import Action, Buy, ClaimId, Consume, DecisionActions, LotSale, PayClaim, Sell, Transfer
 from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.agent import EconomicAgent, assemble
@@ -562,7 +562,7 @@ def stepped(
 ) -> FinancialOutput:
     """One composed rollout to its horizon under a household that makes the scripted sales."""
     world = composed(run, rollout)
-    world.track(Scripted(ConfiguredHousehold(HOUSEHOLD, ()), sales))
+    world.track(Scripted(ClaimPayer(HOUSEHOLD), sales))
     capture = FinancialCapture(world, capture=mode)
     world.start()
     while not world.finished:
@@ -597,7 +597,7 @@ def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
     )
 
     def household() -> Scripted:
-        return Scripted(ConfiguredHousehold(HOUSEHOLD, ()), {0: sales})
+        return Scripted(ClaimPayer(HOUSEHOLD), {0: sales})
 
     phased = composed(run)
     actor = household()

@@ -10,7 +10,7 @@ import pytest_bazel
 
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
@@ -158,7 +158,7 @@ def private_equity_world(*, freeze: bool) -> World:
 def run(world: World, actor: AgentId) -> Rollout:
     """The household pays an account's claims only when its cash covers all of them."""
 
-    household = ConfiguredHousehold(AgentId(actor), ())
+    household = ClaimPayer(AgentId(actor))
     session = ActionSession({0: world}, actor)
     try:
         batch = session.start()

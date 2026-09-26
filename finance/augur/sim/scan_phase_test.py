@@ -11,7 +11,7 @@ import numpy as np
 import pytest_bazel
 
 from finance.augur.model.series import SP500_SYMBOL, LocationId, SecurityKey
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.bills import Biller
@@ -115,7 +115,7 @@ def taxed_by(world: World, *jurisdiction_ids: JurisdictionId, prior_year_tax: De
 
 def run(world: World, *, tracked: EconomicAgent | None = None) -> list[Book]:
     """Every month to the horizon or the stop; the books the caller keeps for itself between steps."""
-    world.track(ConfiguredHousehold(AgentId(ALICE), ()) if tracked is None else tracked)
+    world.track(ClaimPayer(AgentId(ALICE)) if tracked is None else tracked)
     books = [world.book()]
     world.start()
     while not world.finished:
@@ -263,7 +263,7 @@ def test_security_sale_books_proceeds_and_a_long_term_gain() -> None:
     books = run(
         world,
         tracked=Scripted(
-            ConfiguredHousehold(AgentId(ALICE), ()),
+            ClaimPayer(AgentId(ALICE)),
             {
                 3: (
                     Sell(

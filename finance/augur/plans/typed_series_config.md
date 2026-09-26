@@ -5,7 +5,8 @@ a security identity must not be usable where a property identity is required.
 Changing string prefixes alone does not provide that guarantee.
 
 The [roadmap](roadmap.md) tracks this as IDTYPES. Entity IDs are the nominal types
-in `sim/ids.py` plus `model/series.py`'s `LocationId` and `IssuerId`. What remains:
+in `sim/ids.py` plus `model/series.py`'s `LocationId`, `IssuerId` and
+`SecuritySymbol`. What remains:
 
 - **The captured lot asset.** `SecurityLotState.asset_id`, `holdings.Disposition.asset_id`
   and the `lot_dispositions` frame column hold an `AssetKey` wire id
