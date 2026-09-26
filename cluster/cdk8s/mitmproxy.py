@@ -10,14 +10,6 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cert_manager_crds.io.cert_manager import (
-    Certificate,
-    CertificateSpec,
-    CertificateSpecIssuerRef,
-    CertificateSpecPrivateKey,
-    CertificateSpecPrivateKeyAlgorithm,
-    CertificateSpecSecretTemplate,
-)
 from cilium_clusterwide_crds.io.cilium import (
     CiliumClusterwideNetworkPolicy,
     CiliumClusterwideNetworkPolicySpec,
@@ -34,23 +26,12 @@ from cilium_clusterwide_crds.io.cilium import (
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
-from trust_manager_crds.io.cert_manager.trust import (
-    Bundle,
-    BundleSpec,
-    BundleSpecSources,
-    BundleSpecSourcesSecret,
-    BundleSpecTarget,
-    BundleSpecTargetConfigMap,
-    BundleSpecTargetConfigMapMetadata,
-    BundleSpecTargetNamespaceSelector,
-    BundleSpecTargetNamespaceSelectorMatchExpressions,
-)
 
 from cluster.cdk8s import cilium, egress_fences
+from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "mitmproxy"
 NAMESPACE = egress_fences.MITMPROXY_NAMESPACE
@@ -91,55 +72,14 @@ class Mitmproxy(Construct):
         self._add_sandbox_egress_policy()
 
     def _add_ca(self) -> None:
-        Certificate(
+        interception_root_ca(
             self,
-            "certificate",
-            metadata=metadata("mitmproxy-root-ca", NAMESPACE),
-            spec=CertificateSpec(
-                is_ca=True,
-                common_name="mitmproxy-root-ca",
-                secret_name=_CA_SECRET_NAME,
-                duration="87600h",  # 10 years
-                renew_before="8760h",  # 1 year
-                private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256),
-                # trust-manager reads Bundle sources from its own namespace.
-                secret_template=CertificateSpecSecretTemplate(
-                    annotations={
-                        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                        "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "cert-manager",
-                        "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                        "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "cert-manager",
-                    }
-                ),
-                issuer_ref=CertificateSpecIssuerRef(name="cluster-ca-bootstrap", kind="ClusterIssuer"),
-            ),
-        )
-        Bundle(
-            self,
-            "trust-bundle",
-            metadata=ApiObjectMetadata(name="mitmproxy-ca-cert"),
-            spec=BundleSpec(
-                sources=[
-                    BundleSpecSources(use_default_c_as=True),
-                    BundleSpecSources(secret=BundleSpecSourcesSecret(name="cluster-root-ca-secret", key="ca.crt")),
-                    BundleSpecSources(secret=BundleSpecSourcesSecret(name=_CA_SECRET_NAME, key="tls.crt")),
-                ],
-                target=BundleSpecTarget(
-                    config_map=BundleSpecTargetConfigMap(
-                        key="ca-certificates.crt",
-                        metadata=BundleSpecTargetConfigMapMetadata(
-                            annotations={"description": "Trust bundle for mitmproxy-inspected sandbox HTTPS traffic"}
-                        ),
-                    ),
-                    namespace_selector=BundleSpecTargetNamespaceSelector(
-                        match_expressions=[
-                            BundleSpecTargetNamespaceSelectorMatchExpressions(
-                                key=_NAMESPACE_NAME_LABEL, operator="In", values=list(SANDBOX_NAMESPACES)
-                            )
-                        ]
-                    ),
-                ),
-            ),
+            name="mitmproxy-root-ca",
+            namespace=NAMESPACE,
+            secret_name=_CA_SECRET_NAME,
+            bundle_name="mitmproxy-ca-cert",
+            description="Trust bundle for mitmproxy-inspected sandbox HTTPS traffic",
+            target_namespaces=SANDBOX_NAMESPACES,
         )
 
     def _add_deployment(self) -> None:

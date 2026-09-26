@@ -22,6 +22,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from agentplane.action_service.sandbox.actions import SandboxAction
 from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.agentplane import actions, command_sandbox, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
@@ -195,6 +196,9 @@ _ACTIONS_SETTINGS = {
                 # that survives its Pod.
                 "templates": [command_sandbox.NAME, command_sandbox.BUILD_NAME, "agentplane-runner"],
             },
+            # claude.ai and Claude Code reach these as MCP tools of their own, where `sandbox-self`
+            # auto-approves them for the Connection's claude-ai account.
+            "direct_tools": sorted(SandboxAction),
         },
         "ssh": {
             "title": "SSH",

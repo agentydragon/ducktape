@@ -41,29 +41,6 @@ Move those decisions to explicit actions as each consumer migrates; P12 deletes
 the scheduled-sale schema and executor branch with the last one. Reuse the
 existing explicit asset-sale and public-sale/tax controls as independent financial coverage.
 
-**ACCEPT — remaining legacy acceptance readers.** `sim/testing/configured_result.py::ConfiguredResult`
-decodes configured forensic output into the separate
-`sim/testing/simulation_result.py::SimulationResult` contract;
-`sim/testing/configured_acceptance_test.py` instantiates the suites against `run_case`. Move bounded
-supported-domain suites onto the common Python action session and the existing typed
-books/traces/receipts. Keep independent numerical assertions, not only
-old/new equivalence; delete superseded test contracts/adapters with their last
-readers. Reuse the common-session distribution, public-sale/tax and dated-bond
-controls rather than restoring their configured-runner suites. The household
-obligation/failure, transfer and indexed-payment controls also use the common
-session. Public asset-sale controls live in `sim/testing/asset_sales_test.py` on that
-same session; do not restore their deleted legacy suite classes. Remaining year-end tax,
-cash-conservation and feature-specific suites retain their actual numerical
-coverage until their own consumers migrate.
-The multiple-taxpayer cases in `sim/testing/income_sources.py` need GP's scoped
-multiple-actor sequencing; separate runs are not a replacement for those joint
-controls. Keep the common-session product bond-value regression as actual adapter
-coverage, rather than a weaker principal-only assertion. Python financial step tests remain useful. The native full-run helpers and
-extension have been removed; remaining acceptance projections use the configured
-Python world and are not another financial implementation. Housing/PE/harvest suites wait only for
-their affected capabilities, not the whole acceptance migration. Do not discard
-regressions or wrap the old runner behind the new result type.
-
 P12 also deletes `compiler/execution.py::_holding_pools`' strategy-derived
 declarations/first-source-account choice and
 `product/scenarios.py::_target_allocation_policies_from_funding_policy` with their

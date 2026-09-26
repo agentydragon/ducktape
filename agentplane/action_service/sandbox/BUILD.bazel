@@ -108,6 +108,8 @@ py_library(
         ":binding",
         ":models",
         "//agentplane/action_service:catalog",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )
@@ -120,6 +122,9 @@ py_test(
         ":binding",
         "//:conftest",
         "//agentplane/action_service:conftest",
+        "@pypi//jsonschema",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//referencing",
     ],
 )

@@ -326,6 +326,8 @@ class SandboxInventory:
             container=_workload_container(sandbox),
             script=script,
             cwd=cwd,
+            # Submission already refuses past these caps; a request another replica admitted under
+            # different caps, across a settings roll, is still held to this one's.
             max_output_bytes=min(max_output_bytes, self._binding.max_output_bytes),
             timeout_seconds=min(timeout_seconds, self._binding.max_timeout_seconds),
         )

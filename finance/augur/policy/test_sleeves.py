@@ -97,7 +97,7 @@ def prepared() -> CompiledRun:
 
 
 def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(prepared: CompiledRun) -> None:
-    session = ActionSession(prepared, "test-owner", [0])
+    session = ActionSession.from_run(prepared, "test-owner", [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)
@@ -154,7 +154,7 @@ def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(prepared: Comp
 
 
 def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_grid(prepared: CompiledRun) -> None:
-    session = ActionSession(prepared, "test-owner", [0])
+    session = ActionSession.from_run(prepared, "test-owner", [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)
@@ -190,7 +190,7 @@ def test_zero_target_full_exit_reentry_and_reserved_cash(prepared: CompiledRun, 
             prepared,
             scenario=replace(prepared.scenario, initial_lots=(replace(opening_lots[0], units=1), *opening_lots[1:])),
         )
-    session = ActionSession(prepared, "test-owner", [0])
+    session = ActionSession.from_run(prepared, "test-owner", [0])
     try:
         batch = session.start()
         for month in (0, 1):
@@ -235,7 +235,7 @@ def test_deposit_reserves_cash_and_never_buys_zero_target(prepared: CompiledRun,
                 initial_lots=tuple(lot for lot in prepared.scenario.initial_lots if lot.asset_id != "test-second"),
             ),
         )
-    session = ActionSession(prepared, "test-owner", [0])
+    session = ActionSession.from_run(prepared, "test-owner", [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)
@@ -272,7 +272,7 @@ def test_deposit_reserves_cash_and_never_buys_zero_target(prepared: CompiledRun,
 
 
 def test_selected_pools_keep_their_own_economic_unit_scale(prepared: CompiledRun) -> None:
-    session = ActionSession(prepared, "test-owner", [0])
+    session = ActionSession.from_run(prepared, "test-owner", [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)

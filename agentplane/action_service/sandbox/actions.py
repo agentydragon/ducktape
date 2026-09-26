@@ -10,6 +10,7 @@ import json
 from enum import StrEnum
 from typing import cast
 
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, JsonValue
 
 from agentplane.action_service.catalog import ActionDefinition
@@ -44,6 +45,17 @@ def _schema(model: type[BaseModel]) -> dict[str, JsonValue]:
     return cast(dict[str, JsonValue], model.model_json_schema())
 
 
+def _exec_schema(binding: SandboxExecutorBinding) -> dict[str, JsonValue]:
+    """`ExecArgs` with this deployment's caps as its maxima, so submission refuses a request the
+    executor would cut short, and says why, instead of the run ending early."""
+    # TODO: find a way to carry the caps into the schema other than overwriting the maxima
+    # `ExecArgs` generates by hand.
+    schema = ExecArgs.model_json_schema()
+    schema["properties"]["timeout_seconds"]["maximum"] = binding.max_timeout_seconds
+    schema["properties"]["max_output_bytes"]["maximum"] = binding.max_output_bytes
+    return cast(dict[str, JsonValue], schema)
+
+
 def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> dict[str, ActionDefinition]:
     """What this group offers, declared from its own models rather than discovered over a wire.
 
@@ -64,6 +76,8 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
                 f"{binding.initial_ttl_seconds}s after creation unless an {SandboxAction.EXEC} keeps it longer."
             ),
             input_schema=_schema(CreateArgs),
+            title="Create sandbox",
+            annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True),
         ),
         SandboxAction.GET_TEMPLATE: ActionDefinition(
             description=(
@@ -73,20 +87,25 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
                 "runs as your ServiceAccount, whatever `serviceAccountName` the template names."
             ),
             input_schema=_schema(TemplateArgs),
+            title="Show sandbox template",
+            annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         ),
         SandboxAction.EXEC: ActionDefinition(
             description=(
                 "Run one bounded Bash script in a ready sandbox of yours. A nonzero exit is a normal "
-                f"result, not a failure. Timeout is capped at {binding.max_timeout_seconds}s and "
-                f"retained output at {binding.max_output_bytes} bytes per stream, whatever you ask for. "
-                f"Each run first keeps the box at least {binding.exec_ttl_extension_seconds}s past its start; "
-                "a box already past its `expires_at` is refused."
+                "result, not a failure. Each run first keeps the box at least "
+                f"{binding.exec_ttl_extension_seconds}s past its start; a box already past its `expires_at` "
+                "is refused."
             ),
-            input_schema=_schema(ExecArgs),
+            input_schema=_exec_schema(binding),
+            title="Run script in sandbox",
+            annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=False),
         ),
         SandboxAction.LIST: ActionDefinition(
             description="Every sandbox you have here. Another account's are not listed and not reachable.",
             input_schema=_schema(NoArgs),
+            title="List sandboxes",
+            annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         ),
         SandboxAction.GET: ActionDefinition(
             description=(
@@ -95,9 +114,13 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
                 "condition's reason and message say what it is waiting on."
             ),
             input_schema=_schema(NameArgs),
+            title="Inspect sandbox",
+            annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         ),
         SandboxAction.DISPOSE: ActionDefinition(
             description="Delete one sandbox of yours, and everything in it. Disposing an absent one is not an error.",
             input_schema=_schema(NameArgs),
+            title="Dispose sandbox",
+            annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True),
         ),
     }

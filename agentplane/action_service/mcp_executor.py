@@ -440,7 +440,11 @@ class McpActionGroupExecutor(Executor):
                 if key in actions:
                     raise ValueError("duplicate MCP tool name")
                 actions[key] = ActionDefinition(
-                    description=tool.description or f"MCP tool {tool.name}", input_schema=tool.input_schema
+                    description=tool.description or f"MCP tool {tool.name}",
+                    input_schema=tool.input_schema,
+                    # `annotations.title` is the older spelling of the display name that `title` replaced.
+                    title=tool.title or (tool.annotations.title if tool.annotations is not None else None),
+                    annotations=tool.annotations,
                 )
             except jsonschema.SchemaError as error:
                 raise _InvalidMcpCatalogError(f"tool {tool.name!r} input schema: {error.message}") from error

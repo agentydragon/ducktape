@@ -713,6 +713,11 @@ spec:
       name: monitoring-etcd
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/monitoring/gateway-probe/**"
+          to: "@artifact/cluster/generated/monitoring/gateway-probe/"
+      name: monitoring-gateway-probe
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/monitoring/loki/**"
           to: "@artifact/cluster/generated/monitoring/loki/"
       name: monitoring-loki

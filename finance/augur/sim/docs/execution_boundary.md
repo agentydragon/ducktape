@@ -5,7 +5,7 @@ from an authored scenario, materialized paths, jurisdiction rules, and locations
 Preparation does not fetch evidence, fit models, or reinterpret tax law.
 `sim.validation` validates supported financial inputs before world construction.
 
-`sim.session` and `sim.configured` call `sim.world.World` directly with Python
+`sim.session` and `product.simulation` call `sim.world.World` directly with Python
 records. Actions, claims, observations, mortgage servicing facts, and completed
 results are not serialized through a private binding layer. The Python world
 owns authoritative books, exact transactions, taxes, and contractual consequences;

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from finance.augur.sim.actions import Action, Consume, PayClaim
 from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.observations import Observation
 from finance.augur.x.allocation_glide.policy import propose_trades
 from finance.augur.x.bounded_spending import python_policy
@@ -21,7 +22,7 @@ class JointHousehold(EconomicAgent):
     """One path's spending memory and recorded intentions live on the instance."""
 
     def __init__(self, parameters: Parameters, *, annual_step: int) -> None:
-        super().__init__("retiree")
+        super().__init__(AgentId("retiree"))
         self.rule = ScalarPolicy(parameters)
         self.reference = ScalarPolicy(Parameters(parameters.rate_bps, 0, 0))
         self.annual_step = annual_step
