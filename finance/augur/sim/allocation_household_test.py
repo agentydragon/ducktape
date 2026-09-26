@@ -419,8 +419,8 @@ def test_fifo_across_two_policy_purchase_dates_preserves_basis_and_tax_character
                         proceeds_account_id=AccountId("proceeds"),
                         asset_id=AssetId(STOCK.symbol),
                         lots=(
-                            LotSale(account_id=BROKERAGE, lot_id=LotId("early_buy_p1_s0_0"), units=2 * SCALE),
-                            LotSale(account_id=BROKERAGE, lot_id=LotId("fund_buy_p0_s0_0"), units=1 * SCALE),
+                            LotSale(account_id=BROKERAGE, lot_id=LotId("early_buy_s0_0"), units=2 * SCALE),
+                            LotSale(account_id=BROKERAGE, lot_id=LotId("fund_buy_s0_0"), units=1 * SCALE),
                         ),
                     ),
                 )

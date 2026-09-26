@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
+from functools import partial
 
 from more_itertools import duplicates_everseen, one
 
@@ -13,7 +14,15 @@ from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.api.wire import ActorRole, Property
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.series import InflationKey, IssuerId, LevelSeriesKey, LocationId, RentKey, SecurityKey
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.cash_band_household import (
+    BandBound,
+    CashBandHousehold,
+    CpiIndexed,
+    ManagedSleeve,
+    SecuritySleeve,
+    Sleeve,
+)
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.product.wire import (
     CapitalImprovementEventWire,
     CashFinancing,
@@ -32,7 +41,6 @@ from finance.augur.product.wire import (
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.compiler.execution import (
     compile_accounts,
-    compile_allocation_policy,
     compile_bond,
     compile_distribution,
     compile_holding_pools,
@@ -53,8 +61,8 @@ from finance.augur.sim.compiler.execution import (
 from finance.augur.sim.compiler.series import level_series_demand
 from finance.augur.sim.compiler.tax import PreparedTaxProfile, compile_income_sources, compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.fixed_point import round_currency_amount
-from finance.augur.sim.ids import AccountId, AgentId, PropertyId
+from finance.augur.sim.fixed_point import currency_amount_to_quanta, round_currency_amount
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, PropertyId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -70,7 +78,6 @@ from finance.augur.sim.prepared import (
     PreparedRecurringPropertyCashflow,
     PreparedSeries,
     PreparedTlhPortfolio,
-    _AllocationPolicy,
     _MortgageInterestDeduction,
     _PropertyTax,
     _TenderPolicy,
@@ -82,14 +89,12 @@ from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     BondHolding,
     CapitalImprovementEvent,
-    CashflowOnly,
     Currency,
     DistributionTaxSlice,
     FilingStatus,
     FixedAmount,
     InitialAccountBalance,
     InitialLot,
-    ManagedSleeveTarget,
     MortgageFinancing as SimMortgageFinancing,
     MortgageInterestDeductionPolicy,
     ObligationType,
@@ -103,12 +108,9 @@ from finance.augur.sim.scenario import (
     ScheduledPropertyCashflow,
     ScheduledPropertyPurchase,
     SecurityDistribution,
-    SecuritySleeveTarget,
     SeriesIndexedAmount,
     SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
-    SleeveTarget,
-    TargetAllocationPolicy,
     TaxProfile,
     TlhPortfolioSpec,
     TransferDeductionCategory,
@@ -265,7 +267,8 @@ class Situation:
 
     currency: Currency
     horizon_months: int
-    household: AgentId
+    # A fresh household per path: it keeps the path's CPI history and purchase identities.
+    household: Callable[[], CashBandHousehold | ClaimPayer]
     # Every series the declarations read, which is what the request samples.
     level_series: tuple[LevelSeriesKey, ...]
     private_equity_issuers: frozenset[IssuerId]
@@ -281,7 +284,6 @@ class Situation:
     distributions: tuple[PreparedDistribution, ...]
     tender_policy: _TenderPolicy | None
     obligations: tuple[PreparedRecurringObligation, ...]
-    funding_policies: tuple[_AllocationPolicy, ...]
 
 
 def build_situation(
@@ -448,11 +450,12 @@ def build_situation(
     tender_policies = _build_private_equity_tender_policies(
         scenario_key=scenario_key, initial_lots=initial_lots, primary_agent_id=primary_agent_id
     )
-    funding_policies = _target_allocation_policies_from_funding_policy(
+    household, band = _funding_household(
         scenario_key.funding_policy,
         primary_agent_id=primary_agent_id,
         initial_lots=initial_lots,
         tlh_portfolios=tlh_portfolios,
+        quantum=quantum,
     )
     # The funding policy sells a pool's lots oldest first, so a pool may not hold two lots bought the same month.
     bought = [(lot.agent_id, lot.account_id, lot.asset.wire_id, lot.purchase_month_index) for lot in initial_lots]
@@ -472,7 +475,7 @@ def build_situation(
     return Situation(
         currency=currency,
         horizon_months=horizon_months,
-        household=primary_agent_id,
+        household=household,
         level_series=level_series_demand(
             lots=initial_lots,
             tlh_portfolios=tlh_portfolios,
@@ -482,8 +485,10 @@ def build_situation(
                 *(cashflow.amount for cashflow in scheduled_property_cashflows),
                 *(cashflow.amount for cashflow in recurring_property_cashflows),
                 *(obligation.amount_due for obligation in recurring_obligations),
+                # Both band bounds, not just the floor: the ceiling is the refill target a raise is
+                # sized to, so an indexed ceiling needs its series sampled.
+                *band,
             ),
-            policies=funding_policies,
             tender_policies=tender_policies,
             purchases=scheduled_property_purchases,
         ),
@@ -498,7 +503,7 @@ def build_situation(
         ),
         accounts=compile_accounts(initial_balances, quantum=quantum),
         tax_profile=compile_profile(profile, jurisdictions, quantum=quantum),
-        pools=compile_holding_pools(lots=initial_lots, policies=funding_policies, tlh_portfolios=tlh_portfolios),
+        pools=compile_holding_pools(lots=initial_lots),
         lots=compile_lots(initial_lots, quantum=quantum),
         tlh_portfolios=tuple(compile_tlh_portfolio(portfolio, quantum=quantum) for portfolio in tlh_portfolios),
         bonds=tuple(compile_bond(bond, quantum=quantum) for bond in initial_bonds),
@@ -508,7 +513,6 @@ def build_situation(
         obligations=tuple(
             compile_recurring_obligation(obligation, quantum=quantum) for obligation in recurring_obligations
         ),
-        funding_policies=tuple(compile_allocation_policy(policy, quantum=quantum) for policy in funding_policies),
     )
 
 
@@ -563,8 +567,9 @@ def compose(situation: Situation, market: MarketPath) -> World:
             world.declare_flow(flow)
     for obligation in situation.obligations:
         world.track(Biller(obligation))
-    household = ConfiguredHousehold(situation.household, situation.funding_policies)
-    household.check(world)
+    household = situation.household()
+    if isinstance(household, CashBandHousehold):
+        household.check(world)
     world.track(household)
     return world
 
@@ -1041,63 +1046,64 @@ def _monthly_spend_amount(scenario_key: ScenarioKey) -> Decimal | SeriesIndexedA
     raise ValueError(f"unsupported spend_index: {scenario_key.spend_index!r}")
 
 
-def _target_allocation_policies_from_funding_policy(
+def _funding_household(
     funding_policy: FundingPolicy,
     *,
     primary_agent_id: AgentId,
     initial_lots: tuple[InitialLot, ...],
     tlh_portfolios: tuple[TlhPortfolioSpec, ...],
-) -> list[TargetAllocationPolicy]:
-    """Lower the wire's cash band + weights to the sim's target-allocation policy.
+    quantum: Decimal,
+) -> tuple[Callable[[], CashBandHousehold | ClaimPayer], tuple[Decimal | SeriesIndexedAmount, ...]]:
+    """The household the wire's cash band + weights describe, and the band bounds it reads.
 
-    Zero-weight entries are the product UI's explicit "never sell" exclusion, not the sim's
-    sellable zero-target sleeve. Drop them before constructing the sim portfolio. A security
+    Zero-weight entries are the product UI's explicit "never sell" exclusion, not the
+    household's sellable zero-weight sleeve. Drop them before choosing the sleeves. A security
     weight naming nothing held is dropped too, so a saved target can outlive the position it
-    mentions. A managed weight names a TLH portfolio, whose account the policy then draws on;
+    mentions. A managed weight names a TLH portfolio, whose account the household then draws on;
     a portfolio the owner does not hold is refused, since a portfolio id is not a symbol a
     later snapshot could hold again.
 
-    No sleeves left means no policy at all: the owner never auto-sells, and an unaffordable
-    obligation is ruin. That is the honest reading of an empty target — there is no holding it
-    is willing to give up — and it is why the wire has no "derive it for me" sentinel.
+    No sleeves left means the owner never auto-sells, and an unaffordable obligation is ruin.
+    That is the honest reading of an empty target — there is no holding it is willing to give
+    up — and it is why the wire has no "derive it for me" sentinel. The app never buys.
     """
 
-    holders = [(lot.account_id, lot.asset) for lot in initial_lots if not isinstance(lot.asset, PrivateEquityAssetKey)]
-    held_by_symbol = {asset.symbol: asset for _, asset in holders if isinstance(asset, SecurityKey)}
+    holders = [(lot.account_id, lot.asset.symbol) for lot in initial_lots if isinstance(lot.asset, SecurityKey)]
+    held = {symbol for _, symbol in holders}
     managed_by_id = {managed.portfolio_id: managed for managed in tlh_portfolios}
-    sleeves: list[SleeveTarget] = []
+    sleeves: list[Sleeve] = []
     for sleeve in funding_policy.sleeve_weights:
         if isinstance(sleeve, ManagedSleeveWeight):
             if sleeve.portfolio_id not in managed_by_id:
                 raise ValueError(f"sleeve weights name unknown TLH portfolio {sleeve.portfolio_id!r}")
             if sleeve.weight > 0:
-                sleeves.append(ManagedSleeveTarget(portfolio_id=sleeve.portfolio_id, weight=sleeve.weight))
-        elif sleeve.weight > 0 and sleeve.symbol in held_by_symbol:
-            sleeves.append(SecuritySleeveTarget(asset=held_by_symbol[sleeve.symbol], weight=sleeve.weight))
+                sleeves.append(ManagedSleeve(portfolio_id=sleeve.portfolio_id, weight=sleeve.weight))
+        elif sleeve.weight > 0 and sleeve.symbol in held:
+            sleeves.append(SecuritySleeve(asset_id=AssetId(sleeve.symbol), weight=sleeve.weight))
     if not sleeves:
-        return []
+        return partial(ClaimPayer, primary_agent_id), ()
     # Lot accounts in holding order, which is the order their FIFO sales walk, then the portfolios'.
-    targeted = {sleeve.asset for sleeve in sleeves if isinstance(sleeve, SecuritySleeveTarget)}
-    sources = [account_id for account_id, asset in holders if asset in targeted] + [
-        managed_by_id[sleeve.portfolio_id].account_id for sleeve in sleeves if isinstance(sleeve, ManagedSleeveTarget)
+    targeted = {sleeve.asset_id for sleeve in sleeves if isinstance(sleeve, SecuritySleeve)}
+    sources = [account_id for account_id, symbol in holders if AssetId(symbol) in targeted] + [
+        managed_by_id[sleeve.portfolio_id].account_id for sleeve in sleeves if isinstance(sleeve, ManagedSleeve)
     ]
-    return [
-        TargetAllocationPolicy(
-            allow_purchases=False,
-            rebalancing=CashflowOnly(),
-            agent_id=primary_agent_id,
-            account_id=PRIMARY_ACCOUNT_ID,
-            source_account_ids=tuple(dict.fromkeys(sources)),
-            sleeves=sleeves,
-            cash_floor=_band_bound_amount(
-                funding_policy.cash_floor, index_to_inflation=funding_policy.cash_band_index_to_inflation
-            ),
-            cash_ceiling=_band_bound_amount(
-                funding_policy.cash_ceiling, index_to_inflation=funding_policy.cash_band_index_to_inflation
-            ),
-            cause_id_prefix="product_funding_sale",
-        )
-    ]
+    band = tuple(
+        _band_bound_amount(amount, index_to_inflation=funding_policy.cash_band_index_to_inflation)
+        for amount in (funding_policy.cash_floor, funding_policy.cash_ceiling)
+    )
+    floor, ceiling = (_household_bound(amount, quantum=quantum) for amount in band)
+    household = partial(
+        CashBandHousehold,
+        primary_agent_id,
+        cash_account_id=PRIMARY_ACCOUNT_ID,
+        floor=floor,
+        ceiling=ceiling,
+        sleeves=tuple(sleeves),
+        source_account_ids=tuple(dict.fromkeys(sources)),
+        reinvest=None,
+        cause_id_prefix="product_funding_sale",
+    )
+    return household, band
 
 
 def _band_bound_amount(amount: Decimal, *, index_to_inflation: bool) -> Decimal | SeriesIndexedAmount:
@@ -1110,6 +1116,15 @@ def _band_bound_amount(amount: Decimal, *, index_to_inflation: bool) -> Decimal 
     if not index_to_inflation or amount <= 0:
         return amount
     return SeriesIndexedAmount(base_amount=amount, series=InflationKey(), adjustment_period_months=1)
+
+
+def _household_bound(amount: Decimal | SeriesIndexedAmount, *, quantum: Decimal) -> BandBound:
+    if isinstance(amount, Decimal):
+        return int(currency_amount_to_quanta(amount, quantum=quantum))
+    return CpiIndexed(
+        base_amount=int(currency_amount_to_quanta(amount.base_amount, quantum=quantum)),
+        adjustment_period_months=int(amount.adjustment_period_months),
+    )
 
 
 def _build_private_equity_tender_policies(

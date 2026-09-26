@@ -146,8 +146,8 @@ comparing stopped books with completed horizons.
 
 `ProductService` lowers each request once into a `Situation` of prepared declarations
 (<../product/scenarios.py>), samples the series it reads, and composes one world per
-path with the app household (<../policy/configured_household.py>) tracked on it;
-<../product/simulation.py> steps each to the horizon. The household consults `policy/configured_allocation.py` for its funding
+path with the app household (<../policy/cash_band_household.py>) tracked on it;
+<../product/simulation.py> steps each to the horizon. The household proposes its funding
 sales, pays every due claim in full in observed order — a claim the cash those sales
 leave cannot cover is rejected and stops the path — and sizes each exact purchase from
 what those sales and payments leave. Selected detail

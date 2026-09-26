@@ -74,8 +74,8 @@ class SecuritySleeveWeight(ApiModel):
     same target. Weight 0 means the sleeve is OUTSIDE the target: never sold to fund the band,
     and not counted when measuring what is overweight. That is how a position you intend to
     keep — private equity before liquidity, a bond held to maturity — is expressed. The product
-    adapter drops these entries; unlike this UI exclusion, a sim sleeve target with zero weight
-    stays sellable and targets a full exit when rebalancing.
+    adapter drops these entries; unlike this UI exclusion, a zero-weight household sleeve
+    (`policy/cash_band_household.py`) stays sellable and targets a full exit when rebalancing.
     """
 
     kind: Literal["security"] = "security"

@@ -7,30 +7,23 @@ experiment consumers are added meanwhile.
 
 ## Readers
 
-- `policy/configured_household.py::ConfiguredHousehold` and
-  `policy/configured_allocation.py`'s proposer (`plan`) and `check_policies`: retire
-  with the app's household. Keep the shared sleeve calculations
+- `policy/configured_household.py::ConfiguredHousehold`, the `_AllocationPolicy`
+  records it adapts (`sim/prepared.py`) and the sim's `TargetAllocationPolicy` schema:
+  the sim suites move onto `policy/cash_band_household.py` (or `ClaimPayer`), and the
+  records go with the household. Keep the shared sleeve calculations
   (`policy/{cash_band,sleeves}.py`); their tests cover exact allocation, reserved
   cash, zero targets/full exits, FIFO scoping and quantity scales. A newly required
   product-specific calculation needs a real Python consumer and independent financial
   checks; do not promote mixed-scale raw-quantity PE selection to a generic helper.
-- `product/scenarios.py::_target_allocation_policies_from_funding_policy` and
-  `sim/compiler/execution.py::compile_holding_pools`' sleeve-derived pools and
-  first-source-account choice: declarations, not a strategy configuration, determine
-  available accounts and instruments.
 - The PE issuer phase selects recovery, forced and tender lots with `Holdings.fifo`
   inside the world; PE's migration after GPE replaces that with explicit responses.
-- The product shell's zero weight means "never sell this holding", whereas a zero
-  target in a selected core portfolio means "exit this sleeve". Keep exclusion and
-  target weight distinct when migrating the shell; never turn an excluded holding into
-  a sale.
 
 ## Gaps on the app's configured path
 
-- The product lowering sets `allow_purchases=False`, so the app never buys or
+- The app's household never reinvests (`reinvest=None`), so the app never buys or
   contributes, and the zero-mark contribution refusal
   (`TlhPortfolioObservation.accepts_contributions`) is reachable only from household
-  tests (`policy/test_configured_household.py`).
+  tests (`policy/test_cash_band_household.py`, `policy/test_configured_household.py`).
 
 ## Older PR disposition
 

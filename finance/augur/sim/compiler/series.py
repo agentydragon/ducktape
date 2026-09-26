@@ -30,9 +30,7 @@ from finance.augur.sim.scenario import (
     PrivateEquityTenderPolicy,
     ScheduledPropertyPurchase,
     SecurityDistribution,
-    SecuritySleeveTarget,
     SeriesIndexedAmount,
-    TargetAllocationPolicy,
     TlhPortfolioSpec,
 )
 
@@ -44,7 +42,6 @@ def level_series_demand(
     bonds: Iterable[BondHolding],
     distributions: Iterable[SecurityDistribution],
     amounts: Iterable[AmountSpec],
-    policies: Iterable[TargetAllocationPolicy],
     tender_policies: Iterable[PrivateEquityTenderPolicy],
     purchases: Iterable[ScheduledPropertyPurchase],
 ) -> tuple[LevelSeriesKey, ...]:
@@ -87,15 +84,6 @@ def level_series_demand(
         add(SecurityDistributionKey(symbol=asset_price_key(distribution.asset).symbol))
     for amount in amounts:
         _add_amount_series_key(amount, add)
-    # A managed sleeve's portfolio demands its own index above.
-    for policy in policies:
-        for sleeve in policy.sleeves:
-            if isinstance(sleeve, SecuritySleeveTarget):
-                add(asset_price_key_or_none(sleeve.asset))
-        # Both band bounds, not just the floor: the ceiling is the refill TARGET, so a raise
-        # cannot be sized without it, and an indexed ceiling needs its series sampled.
-        _add_amount_series_key(policy.cash_floor, add)
-        _add_amount_series_key(policy.cash_ceiling, add)
     for pe_policy in tender_policies:
         _add_amount_series_key(pe_policy.liquid_net_worth_floor, add)
     # A property is valued at sale off its location's home-value series.

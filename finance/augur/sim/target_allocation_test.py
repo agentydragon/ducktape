@@ -1,6 +1,6 @@
 """The configured allocation household against canonical settlement and recorded books.
 
-The shared proposal arithmetic has unit controls in `policy/configured_allocation_test.py`.
+The shared proposal arithmetic has unit controls in `policy/test_cash_band_household.py`.
 These flat-price worlds exercise the household's whole monthly batch: pre-claim sales, the
 full claim payments in order, and the purchases sized from what both leave.
 """
@@ -210,7 +210,7 @@ def test_a_zero_target_sleeve_is_exited_whole_and_its_proceeds_reinvested() -> N
     output = run(
         Situation(opening_cash=0, floor=0, ceiling=0, weights=(0, 1), allow_purchases=True, tolerance_ppb=FULL_DRIFT)
     )
-    assert units(output, month=1) == {"stock": 0.0, "bond": BOND_UNITS, "allocation_sale_buy_p0_s1_0": STOCK_UNITS}
+    assert units(output, month=1) == {"stock": 0.0, "bond": BOND_UNITS, "allocation_sale_buy_s1_0": STOCK_UNITS}
     assert alice_cash(output)[-1] == 0
     [sale] = sales(output)
     assert sale.units / sale.quantity_scale == STOCK_UNITS
@@ -342,8 +342,8 @@ def test_surplus_above_the_ceiling_is_invested_into_the_underweight_sleeve() -> 
 
     held = units(run(Situation(opening_cash=100_000, floor=10_000, ceiling=20_000, allow_purchases=True)), month=1)
 
-    assert held["allocation_sale_buy_p0_s0_0"] == 50.0
-    assert held["allocation_sale_buy_p0_s1_0"] == 850.0
+    assert held["allocation_sale_buy_s0_0"] == 50.0
+    assert held["allocation_sale_buy_s1_0"] == 850.0
     # The holdings it started with are untouched: this month bought, it did not rebalance.
     assert held["stock"] == STOCK_UNITS
     assert held["bond"] == BOND_UNITS
@@ -363,7 +363,7 @@ def test_a_purchase_records_the_price_its_rollout_paid() -> None:
     column would report 0, making the whole proceeds a gain on the eventual sale."""
 
     output = run(Situation(opening_cash=100_000, floor=10_000, ceiling=20_000, allow_purchases=True))
-    bought = one(row for row in book(output, 1).lots if row.lot_id == "allocation_sale_buy_p0_s1_0")
+    bought = one(row for row in book(output, 1).lots if row.lot_id == "allocation_sale_buy_s1_0")
 
     assert bought.basis_remaining == 85_000 * QUANTA_PER_UNIT
 
@@ -380,7 +380,7 @@ def test_successive_purchases_create_separate_lots() -> None:
         Situation(opening_cash=0, floor=0, ceiling=1_000, income=30_000, income_months=(2, None), allow_purchases=True)
     )
     rows = sorted(
-        (row for row in book(output, HORIZON).lots if row.lot_id.startswith("allocation_sale_buy_p0_s1_")),
+        (row for row in book(output, HORIZON).lots if row.lot_id.startswith("allocation_sale_buy_s1_")),
         key=lambda row: row.lot_id,
     )
 
@@ -437,10 +437,10 @@ def test_a_drifted_portfolio_is_rebalanced_in_a_quiet_month() -> None:
     held = units(output, month=1)
 
     assert held["stock"] == 500.0
-    assert held["allocation_sale_buy_p0_s1_0"] == 400.0
+    assert held["allocation_sale_buy_s1_0"] == 400.0
     # Untouched: the bond sleeve was the underweight one, so the trim never reaches it.
     assert held["bond"] == BOND_UNITS
-    assert "allocation_sale_buy_p0_s0_0" not in held
+    assert "allocation_sale_buy_s0_0" not in held
     # Cash-neutral to the cent. A rebalance is a portfolio operation, not a funding one.
     assert alice_cash(output)[1] == 5_000_000
 
