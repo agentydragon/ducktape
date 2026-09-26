@@ -16,7 +16,7 @@ from cdk8s_plus_34 import (
     MemoryResources,
 )
 
-from cluster.cdk8s.agentplane import container_security
+from cluster.cdk8s import container_security
 
 
 def migrate_init_container(image: str, *, env_variables: dict[str, EnvValue]) -> ContainerProps:

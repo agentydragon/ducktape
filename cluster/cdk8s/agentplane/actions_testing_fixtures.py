@@ -32,8 +32,7 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import container_security
+from cluster.cdk8s import cilium, container_security
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches

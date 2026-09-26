@@ -66,7 +66,7 @@ Model with constructs, deploy with one props object per environment.
   `fqdn_fence`, ...) for this cluster's own facts, `providers/cilium/network_policy.py`'s
   `EgressRule`/`IngressRule` for the generic shapes; `gateway.https_route`,
   `probes.http_probe`, `agentplane/migrate_container.py`,
-  `agentplane/node_scheduling.py`, `pod_spec_patches.py`, `api_resource.custom_resource`.
+  `node_scheduling.py`, `pod_spec_patches.py`, `api_resource.custom_resource`.
   Parameterize the variation the call sites have (SNI list, listener, timeout), not
   variation nobody uses.
 - **A value that feeds two artifacts lives once.** The web-push hosts feed both the
@@ -239,7 +239,7 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
 - `cdk8s_plus_34` defaults: `automount_token=False` on a ServiceAccount and
   `automount_service_account_token=False` on a workload, both to set for a TokenReview
   caller; `readOnlyRootFilesystem`/`runAsNonRoot` hardened
-  (`agentplane/container_security.py` opts out where unaudited);
+  (`container_security.py` opts out where unaudited);
   `allowPrivilegeEscalation: false` and `privileged: false` always emitted; the
   Deployment selector is `cdk8s.io/metadata.addr`, not `app.kubernetes.io/name`
   (`select=False` plus `deployment.select(LabelSelector.of(labels=...))` keeps a

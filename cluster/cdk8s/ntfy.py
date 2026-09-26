@@ -55,8 +55,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cnpg, fleet_rules
-from cluster.cdk8s.agentplane import node_scheduling
+from cluster.cdk8s import cnpg, fleet_rules, node_scheduling
 from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,

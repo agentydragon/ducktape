@@ -25,8 +25,7 @@ from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetTemplate
 
-from cluster.cdk8s import cnpg
-from cluster.cdk8s.agentplane import node_scheduling
+from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 

@@ -32,8 +32,8 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.action_service.main import CONFIG_FILE_ENV, Settings
-from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import container_security, database, llm_ingress, node_scheduling
+from cluster.cdk8s import cilium, container_security, node_scheduling
+from cluster.cdk8s.agentplane import database, llm_ingress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
