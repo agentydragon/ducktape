@@ -1,7 +1,7 @@
 """Configured cash-band/drift proposals using the shared sleeve arithmetic.
 
 Sales precede claim settlement. Pending purchases retain their chosen quantity
-but are clamped to actual post-claim cash. The caller owns execution, current
+(a managed sleeve's, its chosen amount) but are clamped to actual post-claim cash. The caller owns execution, current
 quotes, resolved indexed bounds, and per-path lot identities; nothing here
 settles a trade, estimates tax, or reaches into a managed component's holdings.
 """
@@ -9,6 +9,8 @@ settles a trade, estimates tax, or reaches into a managed component's holdings.
 from collections.abc import Iterable
 from dataclasses import dataclass
 from fractions import Fraction
+
+from more_itertools import only
 
 from finance.augur.policy import sleeves
 from finance.augur.policy.cash_band import Hold, Invest, Raise, cash_band, validate_band_bounds
@@ -113,15 +115,26 @@ class PendingBuy:
     quantity_scale: int
 
 
+@dataclass(frozen=True, kw_only=True)
+class PendingContribution:
+    """Money for a managed sleeve: the portfolio takes exactly this amount, no unit grid."""
+
+    cause_id_prefix: str
+    agent_id: str
+    cash_account_id: str
+    portfolio_id: str
+    asset_id: str
+    wanted_amount: int
+
+
 @dataclass(frozen=True)
 class AllocationPlan:
     sales: list[Action]
-    buys: list[PendingBuy]
+    buys: list[PendingBuy | PendingContribution]
 
 
 def _quantity(amount: int, price: int, scale: int, *, round_up: bool) -> int:
-    # A worthless managed index has no purchasable units. It may still report
-    # internal rounding cash, which withdrawals below use without inferring units.
+    # A worthless managed index has no units to size a lot sale against.
     return 0 if not price else quantity_for_value(max(0, amount), price, scale, round_up=round_up)
 
 
@@ -165,11 +178,28 @@ def plan(
     else:
         drift_sales = drift_buys = [0] * len(values)
     sales: list[Action] = []
-    buys = []
+    buys: list[PendingBuy | PendingContribution] = []
     for index, sleeve in enumerate(policy.sleeves):
         price = prices[sleeve.asset_id]
         sleeves._count(price)
-        if policy.allow_purchases:
+        destination = only(
+            (item for item in portfolios if item.account_id == sources[0] and item.asset_id == sleeve.asset_id), None
+        )
+        if policy.allow_purchases and destination is not None:
+            amount = sleeves._count(deposits[index] + drift_buys[index])
+            # A worthless index takes no contribution.
+            if amount and price:
+                buys.append(
+                    PendingContribution(
+                        cause_id_prefix=policy.cause_id_prefix,
+                        agent_id=policy.agent_id,
+                        cash_account_id=policy.account_id,
+                        portfolio_id=destination.portfolio_id,
+                        asset_id=sleeve.asset_id,
+                        wanted_amount=amount,
+                    )
+                )
+        elif policy.allow_purchases:
             units = sleeves._count(
                 _quantity(deposits[index], price, sleeve.quantity_scale, round_up=False)
                 + _quantity(drift_buys[index], price, sleeve.quantity_scale, round_up=False)
@@ -250,11 +280,10 @@ def plan(
     return AllocationPlan(sales=sales, buys=buys)
 
 
-def materialize_buy(observation: Observation, pending: PendingBuy, *, lot_sequence: int) -> Buy | Contribute | None:
+def materialize_buy(observation: Observation, pending: PendingBuy, *, lot_sequence: int) -> Buy | None:
     """Clamp one planned purchase to fresh cash after claims and earlier purchases.
 
-    The driver increments the per-path policy/sleeve sequence only when this
-    returns an ordinary Buy. A managed contribution has no household-visible lot.
+    The driver increments the per-path policy/sleeve sequence only when this returns a Buy.
     """
     if observation.agent_id != pending.agent_id:
         raise ValueError("pending purchase received another actor's observation")
@@ -262,29 +291,9 @@ def materialize_buy(observation: Observation, pending: PendingBuy, *, lot_sequen
     units = min(pending.wanted_units, _quantity(cash, pending.price, pending.quantity_scale, round_up=False))
     if not units:
         return None
-    cause_id = f"{pending.cause_id_prefix}_buy_m{observation.month}_security:{pending.asset_id}"
-    portfolio = next(
-        (
-            item
-            for item in observation.tlh_portfolios
-            if item.account_id == pending.holding_account_id and item.asset_id == pending.asset_id
-        ),
-        None,
-    )
-    if portfolio is not None:
-        amount = sleeves._quoted_value(units, pending.price, pending.quantity_scale)
-        if not amount:
-            return None
-        return Contribute(
-            cause_id=cause_id,
-            agent_id=pending.agent_id,
-            portfolio_id=portfolio.portfolio_id,
-            cash_account_id=pending.cash_account_id,
-            amount=amount,
-        )
     sleeves._count(lot_sequence)
     return Buy(
-        cause_id=cause_id,
+        cause_id=f"{pending.cause_id_prefix}_buy_m{observation.month}_security:{pending.asset_id}",
         agent_id=pending.agent_id,
         cash_account_id=pending.cash_account_id,
         holding_account_id=pending.holding_account_id,
@@ -292,4 +301,23 @@ def materialize_buy(observation: Observation, pending: PendingBuy, *, lot_sequen
         lot_id=f"{pending.cause_id_prefix}_buy_p{pending.policy_index}_s{pending.sleeve_index}_{lot_sequence}",
         units=units,
         quantity_scale=pending.quantity_scale,
+    )
+
+
+def materialize_contribution(observation: Observation, pending: PendingContribution) -> Contribute | None:
+    """Clamp one planned contribution to fresh cash after claims and earlier purchases.
+
+    A managed contribution has no household-visible lot.
+    """
+    if observation.agent_id != pending.agent_id:
+        raise ValueError("pending contribution received another actor's observation")
+    amount = min(pending.wanted_amount, max(0, dict(observation.accounts)[pending.cash_account_id]))
+    if not amount:
+        return None
+    return Contribute(
+        cause_id=f"{pending.cause_id_prefix}_buy_m{observation.month}_security:{pending.asset_id}",
+        agent_id=pending.agent_id,
+        portfolio_id=pending.portfolio_id,
+        cash_account_id=pending.cash_account_id,
+        amount=amount,
     )

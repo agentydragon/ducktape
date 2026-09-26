@@ -1221,6 +1221,7 @@ py_test(
         ":fixed_point",
         ":jurisdictions",
         ":market_path",
+        ":money",
         ":observations",
         ":prepared",
         ":results",

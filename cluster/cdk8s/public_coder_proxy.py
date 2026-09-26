@@ -42,6 +42,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "public-coder-agent-proxy"
@@ -374,13 +375,13 @@ def _ingress_policy(scope: Construct, app_namespace: str, app_labels: dict[str, 
     the OpenClaw Agent pod and its KubeVirt devbox. In particular, namespace co-tenancy is not
     authority to use this Service, and the metrics port remains closed until a reviewed scraper
     needs it."""
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "ingress",
         metadata=metadata("allow-public-coder-agent-proxy-ingress", NAMESPACE),
         selector=LABELS,
         ingress=[
-            cilium.ingress_from(
+            IngressRule.from_endpoints(
                 _endpoint(app_namespace, app_labels),
                 _endpoint(public_coder_devbox.NAMESPACE, public_coder_devbox.POD_LABELS),
                 ports=[PROXY_PORT],
@@ -411,7 +412,7 @@ def _egress_policy(scope: Construct) -> None:
     NetworkPolicy, which permits egress solely to this proxy. That is what makes the substitution
     unavoidable rather than advisory.
     """
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "egress",
         metadata=metadata("allow-public-coder-agent-proxy-egress", NAMESPACE),
@@ -428,11 +429,11 @@ def _egress_policy(scope: Construct) -> None:
             # `reserved:host`. Widening a CIDR/FQDN rule cannot substitute --
             # `policy-cidr-match-mode` is unset cluster-wide, so CIDR-derived selectors never match
             # node IPs. See cluster/docs/cilium_network_policy.md.
-            cilium.egress_to_entities("world", "remote-node", "host", ports=[443, 80]),
+            EgressRule.to_entities(Entity.WORLD, Entity.REMOTE_NODE, Entity.HOST, ports=[443, 80]),
             # The agent's normalized analytics reads leave the app through this Iron proxy, then
             # use the private ClickHouse HTTP ClusterIP service. Do not grant this egress to the
             # app Pod itself.
-            cilium.egress_to(_endpoint(client.NAMESPACE, client.LABELS), client.HTTP_PORT),
+            EgressRule.to_endpoints(_endpoint(client.NAMESPACE, client.LABELS), client.HTTP_PORT),
             # The confined configuration, for restoration: TCP 443 by toFQDNs to the GitHub hosts
             # (clone, push to forks, and open pull requests via the REST API) github.com,
             # api.github.com, codeload.github.com, objects.githubusercontent.com,

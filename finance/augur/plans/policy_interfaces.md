@@ -221,7 +221,7 @@ never the future realized path.
 ## Opaque TLH portfolio composition
 
 The approved concrete `TlhPortfolio` is Python-owned and described in the
-[TLH contract](../docs/tlh.md). Its investor view contains value and reported tax
+[TLH component](../sim/tlh.py). Its investor view contains value and reported tax
 basis, not private cohorts/harvesting memory. Contributions, gross withdrawals
 and liquidation use the common ordered-action contract. The policy does not
 manufacture losses or trigger monthly harvesting.

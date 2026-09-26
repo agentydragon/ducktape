@@ -1,4 +1,5 @@
 from copy import deepcopy
+from dataclasses import replace
 
 import pytest
 import pytest_bazel
@@ -10,8 +11,9 @@ from finance.augur.sim.tlh import (
     TlhMarketUpdate,
     TlhObservation,
     TlhOpening,
-    TlhOpeningPosition,
+    TlhOpeningCohort,
     TlhPortfolio,
+    WithdrawalResult,
 )
 
 
@@ -32,10 +34,7 @@ def portfolio(assumptions: TlhAssumptions) -> TlhPortfolio:
     return TlhPortfolio(
         assumptions,
         TlhOpening(
-            month=-1,
-            price=100,
-            quantity_scale=1,
-            positions=(TlhOpeningPosition(units=100, reported_tax_basis=10_000, purchase_month=-24),),
+            month=-1, price=100, cohorts=(TlhOpeningCohort(value=10_000, cost_basis=10_000, purchase_month_index=-24),)
         ),
     )
 
@@ -52,7 +51,7 @@ def test_harvest_then_liquidation_conserves_net_gain(portfolio: TlhPortfolio) ->
 
 def test_new_contribution_does_not_inherit_prior_harvest(portfolio: TlhPortfolio) -> None:
     portfolio.advance(TlhMarketUpdate(month=0, price=100))
-    assert portfolio.contribute(10_000).cash_paid == 10_000
+    portfolio.contribute(10_000)
     old_position = portfolio.withdraw(10_000)
     assert old_position.realizations == ModeledRealizations(long_term_gain=100)
     assert portfolio.observe() == TlhObservation(value=10_000, reported_tax_basis=10_000)
@@ -77,7 +76,7 @@ def test_partial_withdrawal_preserves_remaining_basis(portfolio: TlhPortfolio) -
     assert final.realizations.long_term_gain == 67
 
 
-def test_share_grid_overfill_remains_inside_portfolio(portfolio: TlhPortfolio) -> None:
+def test_a_withdrawal_below_one_unit_sells_exactly_its_value(portfolio: TlhPortfolio) -> None:
     before = portfolio.observe()
     sold = portfolio.withdraw(1)
     assert sold.cash_received == 1
@@ -88,43 +87,48 @@ def test_share_grid_overfill_remains_inside_portfolio(portfolio: TlhPortfolio) -
     assert portfolio.liquidate().cash_received == 9_999
 
 
-def test_contribution_rounding_cash_is_not_harvested(assumptions: TlhAssumptions) -> None:
-    portfolio = TlhPortfolio(assumptions, TlhOpening(month=-1, price=100, quantity_scale=1, positions=()))
+def test_a_contribution_worth_less_than_one_unit_is_exposure_like_any_other(assumptions: TlhAssumptions) -> None:
+    portfolio = TlhPortfolio(assumptions, TlhOpening(month=-1, price=100, cohorts=()))
     portfolio.contribute(99)
-    assert portfolio.advance(TlhMarketUpdate(month=0, price=50)) == ModeledRealizations()
-    assert portfolio.observe() == TlhObservation(value=99, reported_tax_basis=99)
-    assert portfolio.liquidate().cash_received == 99
+    # 0.99 of the index halves to 49.5, marked at 50; 1% of that harvests 0.5, rounded to 1.
+    assert portfolio.advance(TlhMarketUpdate(month=0, price=50)) == ModeledRealizations(short_term_gain=-1)
+    assert portfolio.observe() == TlhObservation(value=50, reported_tax_basis=98)
+    # A rate of 2 quanta per unit of the index pays 2 / 50 × 49.5.
+    assert portfolio.distribution(2 * MONEY_FACTOR_SCALE) == 2
+    assert portfolio.liquidate() == WithdrawalResult(50, ModeledRealizations(short_term_gain=-48))
+
+
+def test_a_worthless_index_takes_no_contribution_and_opens_only_worthless_cohorts(assumptions: TlhAssumptions) -> None:
+    written_off = TlhOpeningCohort(value=0, cost_basis=5, purchase_month_index=-24)
+    portfolio = TlhPortfolio(assumptions, TlhOpening(month=-1, price=0, cohorts=(written_off,)))
+    assert portfolio.observe() == TlhObservation(value=0, reported_tax_basis=5)
+    with pytest.raises(ValueError, match="worthless"):
+        portfolio.contribute(1)
+    with pytest.raises(ValueError, match="zero opening mark"):
+        TlhPortfolio(assumptions, TlhOpening(month=-1, price=0, cohorts=(replace(written_off, value=1),)))
 
 
 def test_imported_adjusted_basis_is_not_reconstructed(assumptions: TlhAssumptions) -> None:
     portfolio = TlhPortfolio(
         assumptions,
         TlhOpening(
-            month=0,
-            price=100,
-            quantity_scale=10,
-            positions=(TlhOpeningPosition(units=25, reported_tax_basis=151, purchase_month=-24),),
+            month=0, price=100, cohorts=(TlhOpeningCohort(value=250, cost_basis=151, purchase_month_index=-24),)
         ),
     )
     assert portfolio.observe() == TlhObservation(value=250, reported_tax_basis=151)
     assert portfolio.liquidate().realizations.long_term_gain == 99
 
 
-def test_fractional_fills_retain_basis_but_round_each_payment(assumptions: TlhAssumptions) -> None:
+def test_split_withdrawals_deliver_the_value_and_gain_of_one_liquidation(assumptions: TlhAssumptions) -> None:
+    # At a price of 3 the opening 10 is 10/3 units of the index: each withdrawal sells a fraction of one.
     portfolio = TlhPortfolio(
         assumptions,
-        TlhOpening(
-            month=0,
-            price=3,
-            quantity_scale=10,
-            positions=(TlhOpeningPosition(units=5, reported_tax_basis=2, purchase_month=-24),),
-        ),
+        TlhOpening(month=0, price=3, cohorts=(TlhOpeningCohort(value=10, cost_basis=7, purchase_month_index=-24),)),
     )
-    assert portfolio.observe().value == 2  # 1.5 rounds upward.
-    first = portfolio.withdraw(1)  # Four counts pay 1.2 -> 1; last count marks 0.3 -> 0.
-    final = portfolio.liquidate()
-    assert first.cash_received + final.cash_received == 1
-    assert first.realizations.long_term_gain + final.realizations.long_term_gain == -1
+    sales = [portfolio.withdraw(3) for _ in range(3)]
+    sales.append(portfolio.liquidate())
+    assert [sale.cash_received for sale in sales] == [3, 3, 3, 1]
+    assert sum(sale.realizations.long_term_gain for sale in sales) == 10 - 7
     assert portfolio.observe() == TlhObservation(value=0, reported_tax_basis=0)
 
 
@@ -161,10 +165,7 @@ def test_losses_cannot_reduce_basis_below_zero(assumptions: TlhAssumptions) -> N
     portfolio = TlhPortfolio(
         assumptions,
         TlhOpening(
-            month=-1,
-            price=100,
-            quantity_scale=1,
-            positions=(TlhOpeningPosition(units=10, reported_tax_basis=3, purchase_month=-24),),
+            month=-1, price=100, cohorts=(TlhOpeningCohort(value=1_000, cost_basis=3, purchase_month_index=-24),)
         ),
     )
     assert portfolio.advance(TlhMarketUpdate(month=0, price=100)).short_term_gain == -3
@@ -177,7 +178,8 @@ def test_distribution_uses_component_exposure(portfolio: TlhPortfolio) -> None:
     sold = portfolio.withdraw(5_000)
     assert sold.cash_received == 5_000
     assert sold.realizations.long_term_gain == 50
-    assert portfolio._distribution(MONEY_FACTOR_SCALE // 10) == 5
+    # 0.1 quanta per unit of the index on the 50 units the remaining 5,000 buys.
+    assert portfolio.distribution(MONEY_FACTOR_SCALE // 10) == 5
 
 
 def test_curve_has_maturity_decay_and_drawdown_response(assumptions: TlhAssumptions) -> None:
@@ -203,10 +205,7 @@ def test_financial_effects_balance_each_transition(assumptions: TlhAssumptions) 
     portfolio = TlhPortfolio(
         assumptions,
         TlhOpening(
-            month=-1,
-            price=77,
-            quantity_scale=10,
-            positions=(TlhOpeningPosition(units=505, reported_tax_basis=3_999, purchase_month=-24),),
+            month=-1, price=77, cohorts=(TlhOpeningCohort(value=3_889, cost_basis=3_999, purchase_month_index=-24),)
         ),
     )
     for month, price in enumerate((77, 43, 100, 99, 120, 3, 0, 50)):
@@ -214,8 +213,9 @@ def test_financial_effects_balance_each_transition(assumptions: TlhAssumptions) 
         harvest = portfolio.advance(TlhMarketUpdate(month=month, price=price))
         assert portfolio.observe().reported_tax_basis - before == harvest.short_term_gain + harvest.long_term_gain
         before = portfolio.observe().reported_tax_basis
-        contribution = portfolio.contribute(101)
-        assert portfolio.observe().reported_tax_basis - before == contribution.cash_paid
+        if price:
+            portfolio.contribute(101)
+            assert portfolio.observe().reported_tax_basis - before == 101
         before = portfolio.observe().reported_tax_basis
         redemption = portfolio.withdraw(min(113, portfolio.observe().value))
         assert (

@@ -2,7 +2,7 @@
 
 The [roadmap](roadmap.md) owns dispatch. **MA3** is a runnable paired
 harvesting/no-harvest comparison using the existing Python `TlhPortfolio` and
-common action session. Reuse [the TLH contract](../docs/tlh.md), not a second
+common action session. Reuse [the TLH component](../sim/tlh.py), not a second
 managed-account abstraction or financial executor.
 
 ## Remaining acceptance

@@ -71,6 +71,7 @@ py_library(
         "//finance/augur/sim:observations",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:world",
+        "@pypi//more_itertools",
     ],
 )
 

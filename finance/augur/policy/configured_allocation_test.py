@@ -6,7 +6,13 @@ import pytest
 import pytest_bazel
 
 from finance.augur.policy import sleeves
-from finance.augur.policy.configured_allocation import materialize_buy, plan
+from finance.augur.policy.configured_allocation import (
+    PendingBuy,
+    PendingContribution,
+    materialize_buy,
+    materialize_contribution,
+    plan,
+)
 from finance.augur.sim.actions import Buy, Contribute, Liquidate, Sell, Withdraw
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.observations import Claim, Observation, PublicPosition, TlhPortfolioObservation
@@ -103,16 +109,33 @@ def test_post_claim_purchase_clamp_and_lot_identity() -> None:
     proposal = plan(original, _policy(scale=10), policy_index=2, floor=0, ceiling=0, prices={"asset-0": 3})
     assert proposal.sales == []
     [pending] = proposal.buys
+    assert isinstance(pending, PendingBuy)
     assert pending.wanted_units == 100  # Only the unreserved 30 quanta are planned.
     purchase = materialize_buy(_observation(cash=7), pending, lot_sequence=4)
     assert isinstance(purchase, Buy)
     assert (purchase.units, purchase.quantity_scale, purchase.lot_id) == (23, 10, "fund_buy_p2_s0_4")
     assert sleeves._quoted_value(purchase.units, pending.price, purchase.quantity_scale) == 7
     assert materialize_buy(_observation(), pending, lot_sequence=4) is None
-    # The same pending budget creates an opaque contribution, not a public component lot.
-    contribution = materialize_buy(_observation(cash=7, portfolios=(_managed(100),)), pending, lot_sequence=4)
+
+
+def test_a_managed_sleeve_plans_money_not_units_and_clamps_to_cash() -> None:
+    managed = (_managed(100),)
+    proposal = plan(
+        _observation(cash=100, due=70, portfolios=managed),
+        _policy(),
+        policy_index=2,
+        floor=0,
+        ceiling=0,
+        prices={"asset-0": 7},
+    )
+    [pending] = proposal.buys
+    assert isinstance(pending, PendingContribution)
+    # All 30 unreserved quanta; whole units at a price of 7 would have bought only 28.
+    assert pending.wanted_amount == 30
+    contribution = materialize_contribution(_observation(cash=7, portfolios=managed), pending)
     assert isinstance(contribution, Contribute)
-    assert contribution.amount == 7
+    assert (contribution.portfolio_id, contribution.amount) == ("managed", 7)
+    assert materialize_contribution(_observation(portfolios=managed), pending) is None
 
 
 def test_funding_ceil_and_drift_floor_are_distinct_quantity_controls() -> None:
@@ -133,6 +156,7 @@ def test_funding_ceil_and_drift_floor_are_distinct_quantity_controls() -> None:
     assert isinstance(sale, Sell)
     assert [lot.units for lot in sale.lots] == [2]  # Floor((15 - floor(15/2))/3).
     [pending] = drift.buys
+    assert isinstance(pending, PendingBuy)
     assert pending.wanted_units == 2
 
 
@@ -154,7 +178,7 @@ def test_ordered_sources_and_per_lot_rounding_use_economic_units() -> None:
     assert sum(sleeves._quoted_value(lot.units, 3, 10) for lot in sale.lots) == 2
 
 
-def test_zero_target_exit_includes_zero_mark_units_and_managed_cash() -> None:
+def test_zero_target_exit_includes_zero_mark_units_and_a_worthless_managed_sleeve() -> None:
     observation = _observation(lots=(_lot(units=1, scale=10, price=1), _lot(asset="asset-1", units=10, price=1)))
     proposal = plan(
         observation,
@@ -181,17 +205,26 @@ def test_zero_target_exit_includes_zero_mark_units_and_managed_cash() -> None:
 
 
 @pytest.mark.parametrize("cash", [0, 100])
-def test_zero_managed_index_cannot_invent_units_but_can_redeem_reported_cash(cash: int) -> None:
+def test_a_worthless_managed_index_takes_no_contribution_and_has_nothing_to_withdraw(cash: int) -> None:
     observation = _observation(cash=cash, portfolios=(_managed(0),))
     assert plan(observation, _policy(), policy_index=0, floor=0, ceiling=0, prices={"asset-0": 0}).buys == []
     raised = plan(observation, _policy(), policy_index=0, floor=200, ceiling=200, prices={"asset-0": 0})
     assert raised.sales == []
     assert raised.buys == []
-    cash_component = _observation(cash=cash, portfolios=(_managed(5),))
-    raised = plan(cash_component, _policy(), policy_index=0, floor=200, ceiling=200, prices={"asset-0": 0})
+
+
+def test_a_managed_withdrawal_is_the_money_the_band_raises() -> None:
+    raised = plan(
+        _observation(cash=100, portfolios=(_managed(500),)),
+        _policy(),
+        policy_index=0,
+        floor=200,
+        ceiling=200,
+        prices={"asset-0": 7},
+    )
     [sale] = raised.sales
     assert isinstance(sale, Withdraw)
-    assert sale.amount == 5
+    assert sale.amount == 100
     assert raised.buys == []
 
 

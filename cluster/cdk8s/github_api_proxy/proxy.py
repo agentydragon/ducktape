@@ -68,6 +68,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 _IDENTITY_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/identity"
 _APP_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/app"
@@ -425,18 +426,18 @@ def _service(scope: Construct) -> None:
 
 
 def _network_policy(scope: Construct) -> None:
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "network-policy",
         metadata=metadata(_NAME, _NAMESPACE),
         selector=_LABELS,
         ingress=[
-            cilium.ingress_from_gateway(_PROXY_PORT),
-            cilium.ingress_from(cilium.endpoint_labels("monitoring", "alloy"), ports=[_METRICS_PORT]),
+            IngressRule.from_gateway(_PROXY_PORT),
+            IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy"), ports=[_METRICS_PORT]),
         ],
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
-            cilium.egress_to_entities("world", ports=[80, 443]),
+            EgressRule.to_entities(Entity.WORLD, ports=[80, 443]),
         ],
         # These non-public ranges can be outside Cilium's cluster identity set.
         # Limit the deny to web ports so the explicit cluster-DNS exception remains.

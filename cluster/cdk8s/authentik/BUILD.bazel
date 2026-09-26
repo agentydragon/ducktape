@@ -61,7 +61,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":db",
-        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
@@ -71,6 +70,7 @@ py_library(
         "//cluster/cdk8s/crd_bindings/flux:helmrelease",
         "//cluster/cdk8s/crd_bindings/flux:helmrepository",
         "//cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor",
+        "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/gateway_api:httproute",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",

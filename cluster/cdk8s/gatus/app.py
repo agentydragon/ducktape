@@ -36,6 +36,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gatus"
 _NAME = "gatus"
@@ -149,16 +150,16 @@ def _network_policies(scope: Construct) -> None:
     #
     # Uses CiliumNetworkPolicy because standard K8s NetworkPolicy cannot match Cilium
     # Gateway API traffic (reserved:ingress identity via hostNetwork Envoy).
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "ingress",
         metadata=metadata("gatus-ingress", _NAMESPACE),
         selector=_LABELS,
         ingress=[
             # Cilium Gateway API (reserved:ingress identity) → Gatus
-            cilium.ingress_from_gateway(_PORT),
+            IngressRule.from_gateway(_PORT),
             # Prometheus → Gatus (ServiceMonitor scraping)
-            cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_PORT]),
+            IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_PORT]),
         ],
     )
     # Route Gatus's DNS through Cilium's DNS proxy, so its queries are observable
@@ -170,7 +171,7 @@ def _network_policies(scope: Construct) -> None:
     # policy, and a policy enforces. This one is written to enforce nothing — an
     # egress rule flips the endpoint to default-deny, so the second rule has to
     # re-admit everything Gatus reaches.
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "dns-visibility",
         metadata=metadata("gatus-dns-visibility", _NAMESPACE),

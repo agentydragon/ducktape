@@ -12,9 +12,9 @@ from finance.augur.sim.holdings import gain_account
 from finance.augur.sim.managed import ComponentEffects, InterestCredit, ManagedPortfolios, basis_account
 from finance.augur.sim.money import MIN_COUNT
 from finance.augur.sim.observations import TlhPortfolioObservation
-from finance.augur.sim.prepared import PreparedLot, PreparedSeries, PreparedTlhPortfolio
+from finance.augur.sim.prepared import PreparedSeries, PreparedTlhPortfolio
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, INCOME_SOURCES, accounting, world_on
-from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
 PRICES = PreparedSeries(series_id="security:test_fund", snapshots=3, values=(100, 110, 120) * 2)
@@ -27,20 +27,7 @@ def spec() -> PreparedTlhPortfolio:
         owner_agent_id=HOUSEHOLD,
         account_id="custody",
         asset_id="test_fund",
-        quantity_scale=1,
-        # One unit bought at 80 and priced at 100 opens the component at value 100, basis 80.
-        initial_cohorts=(
-            PreparedLot(
-                lot_id="managed-opening",
-                agent_id=HOUSEHOLD,
-                account_id="custody",
-                asset_id="test_fund",
-                purchase_month=-1,
-                quantity_scale=1,
-                units=1,
-                basis=80,
-            ),
-        ),
+        initial_cohorts=(TlhOpeningCohort(value=100, cost_basis=80, purchase_month_index=-1),),
         assumptions=TlhAssumptions(
             peak_annual_yield=0,
             floor_annual_yield=0,
