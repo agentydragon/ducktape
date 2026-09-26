@@ -11,7 +11,7 @@ import pytest_bazel
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
 from finance.augur.policy.configured_household import ConfiguredHousehold
-from finance.augur.sim.actions import ClaimId, DecisionActions
+from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.tax import compile_profile
@@ -28,7 +28,7 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
     _TenderPolicy,
 )
-from finance.augur.sim.results import Finished, Rollout, UnpaidClaims
+from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -182,7 +182,7 @@ def test_the_rollout_really_does_freeze_where_the_case_says() -> None:
 
     rollout = run(frozen_world(horizon_months=TAX_YEAR_MONTHS), ALICE)
 
-    assert rollout.stop == UnpaidClaims(month=FAIL_MONTH, claims=[ClaimId(month=FAIL_MONTH, index=0)])
+    assert rollout.stop == RejectedAction(month=FAIL_MONTH, action_index=0)
     assert rollout.summary.ending_mark_month == FAIL_MONTH
 
 

@@ -148,9 +148,9 @@ comparing stopped books with completed horizons.
 (<../product/scenarios.py>), samples the series it reads, and composes one world per
 path with the app household (<../policy/configured_household.py>) tracked on it;
 <../product/simulation.py> steps each to the horizon. The household consults `policy/configured_allocation.py` for its funding
-sales, pays each account's claims all or none on the cash those sales leave — so a
-month it cannot fund stops the path with the whole due as its shortfall — and sizes
-each exact purchase from what those sales and payments leave. Selected detail
+sales, pays every due claim in full in observed order — a claim the cash those sales
+leave cannot cover is rejected and stops the path — and sizes each exact purchase from
+what those sales and payments leave. Selected detail
 executes once and projects both metrics and events from that completed capture
 before applying <../product/projection.py>; in-process event projection consumes
 captured rows directly, without a JSON export/decode round trip. The app's

@@ -152,7 +152,7 @@ class World:
         self.previous_receipts: list[results.Receipt] = []
         self.stop: results.Stop | None = None
         self.failed = False
-        self.shortfall = 0  # The configured runner's grouped-settlement shortfall for this month.
+        self.shortfall = 0  # The tracked agent's unpaid dues at this month's close.
         self.started = False
         self.opened = False
         self.finished = False
@@ -1158,12 +1158,6 @@ class World:
             for id_, claim in self.claims.due(actor)
             if claim.amount_due > 0
         ]
-
-    def settle_claims(self, product_actor: str | None = None) -> payments.Settlement:
-        """The configured runner's grouped all-or-none settlement; `product_actor` scopes its shortfall."""
-        settlement = payments.settle_grouped(self.accounting, self.claims, product_actor)
-        self.obligations.extend(settlement.obligations)
-        return settlement
 
     def close_books(self, *, failed: bool, mortgages: Sequence[Mortgage]) -> None:
         """Accrue, let each tax authority close a successful month, and advance the month counter."""

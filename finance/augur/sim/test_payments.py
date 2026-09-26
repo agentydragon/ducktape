@@ -1,4 +1,4 @@
-"""Occurrence-scoped payment admission and configured all-or-none source funding."""
+"""Occurrence-scoped payment admission."""
 
 from copy import deepcopy
 from dataclasses import replace
@@ -12,7 +12,7 @@ from finance.augur.sim.actions import ClaimId, Consume, PayClaim
 from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import Claim, Claims
-from finance.augur.sim.payments import execute, settle_grouped
+from finance.augur.sim.payments import execute
 from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.testing.accounting import (
@@ -177,36 +177,6 @@ def test_moving_cash_within_the_actor_is_not_paid_consumption(
     assert state(books, claims) == before
 
 
-def test_grouped_funding_is_decided_before_incoming_claim_payments(books: Accounting) -> None:
-    claims = Claims(
-        0,
-        [
-            Claim("first", "rent", CASH, RECIPIENT, 60, None),
-            Claim("second", "rent", CASH, RECIPIENT, 50, None),
-            Claim("incoming", "rent", RECIPIENT, CASH, 1, None),
-        ],
-    )
-    before = dict(books.ledger.balances)
-    settlement = settle_grouped(books, claims, HOUSEHOLD)
-    assert settlement.failed
-    assert settlement.product_shortfall == 110
-    assert [outcome.amount_paid for outcome in settlement.obligations] == [0, 0, 0]
-    assert dict(books.ledger.balances) == before
-    assert not any(claim.paid for claim in claims.entries)
-
-
-def test_funded_group_does_not_rescue_a_source_that_was_unfunded_at_preflight(books: Accounting) -> None:
-    claims = Claims(
-        0, [Claim("outgoing", "rent", CASH, RECIPIENT, 80, None), Claim("incoming", "rent", RECIPIENT, CASH, 1, None)]
-    )
-    settlement = settle_grouped(books, claims, HOUSEHOLD)
-    assert settlement.failed
-    assert settlement.product_shortfall == 0
-    assert [outcome.amount_paid for outcome in settlement.obligations] == [80, 0]
-    assert books.ledger.balance(CASH) == 20
-    assert books.ledger.balance(RECIPIENT) == 80
-
-
 def test_estimates_and_true_up_settle_the_same_annual_liability() -> None:
     profile = replace(taxpayer(HOUSEHOLD), prior_year_tax=400)
     books = accounting(opening({CASH: 2000}), (profile,))
@@ -222,14 +192,25 @@ def test_estimates_and_true_up_settle_the_same_annual_liability() -> None:
             ],
         )
 
+    def pay_in_full(claims: Claims) -> None:
+        for id_, claim in claims.due(HOUSEHOLD):
+            request = PayClaim(
+                request_id=id_.index + 1,
+                cause_id=claim.cause_id,
+                claim=id_,
+                from_account=claim.from_account,
+                amount=claim.amount_due,
+            )
+            assert execute(books, claims.month, claims, HOUSEHOLD, request).outcome == results.Paid()
+
     for month in (3, 5, 8):
-        assert not settle_grouped(books, assessed(month), HOUSEHOLD).failed
+        pay_in_full(assessed(month))
     books.tax.income.accrue(HOUSEHOLD, ORDINARY_INCOME, 10_000)
     authority.close_month(books, 11, [], ())
     assert [liability.amount_owed for liability in books.tax_liabilities] == [1000]
     claims = assessed(12)
     assert [claim.amount_due for claim in claims.entries] == [100, 600]
-    assert not settle_grouped(books, claims, HOUSEHOLD).failed
+    pay_in_full(claims)
     assert [payment.amount_paid for payment in books.tax_payments] == [100, 100, 100, 100, 600]
     assert books.ledger.balance(CASH) == 1000
     assert books.tax_liabilities[0].amount_owed == 0

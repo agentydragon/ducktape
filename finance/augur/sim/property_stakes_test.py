@@ -220,7 +220,7 @@ def compose(case: Situation, rollout_id: int) -> World:
 
 
 def run(case: Situation) -> list[Rollout]:
-    """Alice pays each account's claims all or none: her installments and her property taxes."""
+    """Alice pays every due claim in full, in order: her installments and her property taxes."""
     household = ConfiguredHousehold(AgentId(ALICE), ())
     session = ActionSession({id_: compose(case, id_) for id_ in range(case.rollout_count)}, ALICE)
     try:
