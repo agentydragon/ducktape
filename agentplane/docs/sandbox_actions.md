@@ -147,7 +147,7 @@ otherwise misreads every call:
 - an `ActionPolicySet` and a binding for the calling account are the access control. Without them
   every command waits for a human, which is not an exec loop.
 
-Staging also offers all five to external Connections as direct tools (`sandbox__exec` and so on;
+Staging also offers each of them to external Connections as a direct tool (`sandbox__exec` and so on;
 [Action Service README](../action_service/README.md) § Direct tools): a call answers with its result,
 the model as structured content and as JSON text, or with its request once 30 seconds have passed,
 for `get_action_result` to wait on. A command that outlives the wait keeps running; answering with

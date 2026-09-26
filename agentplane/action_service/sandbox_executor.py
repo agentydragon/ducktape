@@ -92,6 +92,8 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
                 "runs as your ServiceAccount, whatever `serviceAccountName` the template names."
             ),
             input_schema=_schema(TemplateArgs),
+            title="Show sandbox template",
+            annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         ),
         SandboxAction.EXEC: ActionDefinition(
             description=(
