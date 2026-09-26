@@ -5,7 +5,7 @@
 # gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor
 # gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor
 # gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/crd_bindings/prometheus_operator:prometheusrule
-# gazelle:resolve py cilium_crds //cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy
+# gazelle:resolve py cilium_crds //cluster/cdk8s/providers/cilium:ciliumnetworkpolicy
 # gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/providers/cnpg:cluster
 # gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
 # gazelle:resolve py grafana_grafana_crds //cluster/cdk8s/crd_bindings/grafana_operator:grafana
@@ -152,10 +152,10 @@ py_library(
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/crd_bindings/flux:helmrelease",
         "//cluster/cdk8s/crd_bindings/flux:kustomization",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/seaweedfs:namespace",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",

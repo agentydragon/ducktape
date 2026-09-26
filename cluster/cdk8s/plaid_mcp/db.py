@@ -33,6 +33,7 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/db"
@@ -151,7 +152,7 @@ def _app_secret_env(name: str, key: str) -> k8s.EnvVar:
 
 
 def _readonly_provisioner(chart: Chart) -> None:
-    cilium.network_policy(
+    NetworkPolicy(
         chart,
         "provisioner-egress",
         metadata=metadata(
@@ -165,7 +166,7 @@ def _readonly_provisioner(chart: Chart) -> None:
         ),
         selector=_PROVISIONER_LABELS,
         # Cilium exposes Kubernetes pod labels with the k8s: prefix.
-        egress=[cilium.dns_egress(), cilium.egress_to({"k8s:cnpg.io/cluster": _CLUSTER}, 5432)],
+        egress=[cilium.dns_egress(), EgressRule.to_endpoints({"k8s:cnpg.io/cluster": _CLUSTER}, 5432)],
     )
     k8s.KubeJob(
         chart,

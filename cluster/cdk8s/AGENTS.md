@@ -62,12 +62,13 @@ Model with constructs, deploy with one props object per environment.
   `x/` or `haku/` imports `cluster/`. A project's own `deploy/` may hold a props-driven
   construct (tested with synthetic props); the cluster's instantiation of it lives here.
 - **One helper per repeated shape.** When the same dozen generated-struct lines appear
-  twice, name the shape once: `cilium.py` (`ingress_from_gateway`, `egress_to`,
-  `egress_to_fqdns`, `egress_via_gateway`, `dns_egress`, `fqdn_fence`,
-  `deny_all_egress`, ...), `gateway.https_route`, `probes.http_probe`,
-  `agentplane/migrate_container.py`, `agentplane/node_scheduling.py`,
-  `pod_spec_patches.py`, `api_resource.custom_resource`. Parameterize the variation the
-  call sites have (SNI list, listener, timeout), not variation nobody uses.
+  twice, name the shape once: `cilium.py` (`egress_via_gateway`, `dns_egress`,
+  `fqdn_fence`, ...) for this cluster's own facts, `providers/cilium/network_policy.py`'s
+  `EgressRule`/`IngressRule` for the generic shapes; `gateway.https_route`,
+  `probes.http_probe`, `agentplane/migrate_container.py`,
+  `agentplane/node_scheduling.py`, `pod_spec_patches.py`, `api_resource.custom_resource`.
+  Parameterize the variation the call sites have (SNI list, listener, timeout), not
+  variation nobody uses.
 - **A value that feeds two artifacts lives once.** The web-push hosts feed both the
   Action Service allowlist and its egress rule from one tuple in `staging.py`. When
   two artifacts must agree, derive both from one value; never write a test that reads

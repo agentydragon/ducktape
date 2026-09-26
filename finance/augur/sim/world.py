@@ -1146,8 +1146,8 @@ class World:
                 for (agent, source), amount in self.accounting.tax.income.by_source.items()
             ],
             lots=[lot.snapshot() for lot in self.holdings.lots],
-            bonds=[] if self.bonds is None else self.bonds.snapshots(self.month, self.mark_month),
-            properties=[] if self.properties is None else self.properties.snapshots(),
+            bonds=None if self.bonds is None else self.bonds.snapshots(self.month, self.mark_month),
+            properties=None if self.properties is None else self.properties.snapshots(),
             mortgages=self.mortgage_snapshots(),
             tax_liabilities=list(self.accounting.tax_liabilities),
             capital_gains=[
@@ -1156,7 +1156,9 @@ class World:
                 )
                 for agent, year in self.accounting.tax.years.items()
             ],
-            tlh_portfolios=[
+            tlh_portfolios=None
+            if self.managed is None
+            else [
                 TlhPortfolioState(
                     portfolio_id=row.portfolio_id,
                     owner_agent_id=row.owner_agent_id,
@@ -1165,7 +1167,7 @@ class World:
                     value=row.value,
                     reported_tax_basis=row.reported_tax_basis,
                 )
-                for row in self.marks()
+                for row in self.managed.marks.values()
             ],
             failed=self.failed_month is not None,
         )

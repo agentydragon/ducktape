@@ -26,6 +26,15 @@ from finance.augur.model.exogenous import (
     level_series_request_channels,
     validate_sample_satisfies_request,
 )
+from finance.augur.product.metrics import (
+    OutcomeBasis,
+    ProductMetricFanSummary,
+    ProductProjectionSummaries,
+    ProductTerminalSummary,
+    metric_fan,
+    projection_summaries,
+    terminal_summary,
+)
 from finance.augur.product.projection import project_product_rollout
 from finance.augur.product.scenarios import (
     asset_label_by_series_id,
@@ -53,15 +62,6 @@ from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.locations import Location
 from finance.augur.sim.prepared import CompiledRun
-from finance.augur.sim.product_metrics import (
-    OutcomeBasis,
-    ProductMetricFanSummary,
-    ProductProjectionSummaries,
-    ProductTerminalSummary,
-    metric_fan,
-    projection_summaries,
-    terminal_summary,
-)
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import Scenario, TlhPortfolioSpec
@@ -223,7 +223,7 @@ class ProductService:
         self._validate_scenario_key(scenario_key)
         scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
         external_series = materialize_sampled_exogenous(sampled)
-        jurisdictions = load_jurisdictions_for(scenario)
+        jurisdictions = load_jurisdictions_for(scenario.tax_profiles)
         return (
             compile_run(
                 scenario,

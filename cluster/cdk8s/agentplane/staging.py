@@ -43,6 +43,7 @@ from cluster.cdk8s.external_secrets.single_secret_store import single_secret_sto
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     DataFrom,
     ExternalSecret,
@@ -329,26 +330,26 @@ ENV = Environment(
             BearerMcpMount(name="google-mcp", secret_name=_GOOGLE_MCP_BEARER_SECRET, secret_key="bearer-token"),
         ],
         extra_egress=[
-            cilium.egress_to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
-            cilium.egress_to(cilium.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
-            cilium.egress_to(cilium.endpoint_labels("ha-mcp", "ha-mcp"), 8765),
-            cilium.egress_to(cilium.endpoint_labels("tana-mcp", "tana-mcp"), 8263),
-            cilium.egress_to(cilium.endpoint_labels("google-mcp", "google-mcp"), 8080),
+            EgressRule.to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
+            EgressRule.to_endpoints(cilium.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
+            EgressRule.to_endpoints(cilium.endpoint_labels("ha-mcp", "ha-mcp"), 8765),
+            EgressRule.to_endpoints(cilium.endpoint_labels("tana-mcp", "tana-mcp"), 8263),
+            EgressRule.to_endpoints(cilium.endpoint_labels("google-mcp", "google-mcp"), 8080),
             # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
             # resolver fetches /application/o/agentplane-staging-actions/jwks/ over HTTPS.
             cilium.egress_via_gateway("auth.allegedly.works"),
             # GitHub MCP discovery advertises github.com as its OAuth authorization server.
-            cilium.egress_to_fqdns("api.githubcopilot.com", "github.com"),
+            EgressRule.to_fqdns("api.githubcopilot.com", "github.com"),
             # `github_public_repository` policies confirm a repository is public with an
             # unauthenticated GitHub REST call (agentplane/action_service/github_policy/visibility.py); no credential
             # rides this path.
-            cilium.egress_to_fqdns("api.github.com"),
+            EgressRule.to_fqdns("api.github.com"),
             # The Kubernetes MCP server uses the public Gateway/remote-node path.
             cilium.egress_via_gateway("kubectl-passthrough-mcp.allegedly.works"),
             # Grocy SF's MCP server (OAuth discovery, DCR, and the linked /mcp calls) is the
             # same public Gateway path.
             cilium.egress_via_gateway("grocy-mcp-sf.allegedly.works"),
-            cilium.egress_to(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
+            EgressRule.to_endpoints(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
         ],
     ),
 )

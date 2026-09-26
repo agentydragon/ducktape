@@ -1,17 +1,33 @@
 """The app's simulation: one composed world per path with the app household tracked on it, stepped to the horizon."""
 
+from dataclasses import dataclass
+
 import numpy as np
 
 from finance.augur.policy.configured_allocation import validate_prepared
 from finance.augur.policy.configured_household import ConfiguredHousehold
-from finance.augur.sim.capture import FinancialCapture, WorldResult, event_log
+from finance.augur.product.metric_composition import BASE_METRIC_NAMES
+from finance.augur.product.metrics import ProductMetricArrays, product_row
+from finance.augur.sim.capture import FinancialCapture, FinancialOutput, event_log
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.ids import AgentId
-from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
 from finance.augur.sim.prepared import CompiledRun
-from finance.augur.sim.product_metrics import ProductMetricArrays, product_row
 from finance.augur.sim.validation import validate
 from finance.augur.sim.world import Capture, World
+
+
+@dataclass(frozen=True)
+class WorldResult:
+    """One path's record, kept between steps: the app's projections read this, never the world.
+
+    `financial` and `events` are `None` under summary capture, which keeps only the metric slab.
+    """
+
+    rollout_id: int
+    failed_month: int | None
+    product_metrics: list[tuple[int, int, int, int, int, int, int]]
+    financial: FinancialOutput | None = None
+    events: EventLog | None = None
 
 
 def execute(run: CompiledRun, capture: Capture, primary_agent_id: str) -> tuple[WorldResult, ...]:
@@ -27,23 +43,19 @@ def execute(run: CompiledRun, capture: Capture, primary_agent_id: str) -> tuple[
                 household_id, run.scenario._target_allocation_policies, scheduled_sales=run.scenario._scheduled_sales
             )
         )
-        recorder = FinancialCapture(world, capture=capture)
+        recorder = None if capture == "summary" else FinancialCapture(world, capture=capture)
         rows = [product_row(world, primary_agent_id)]
         world.start()
         while not world.finished:
             world.step()
-            recorder.record()
+            if recorder is not None:
+                recorder.record()
             rows.append(product_row(world, primary_agent_id))
-        financial = recorder.financial()
-        completed.append(
-            WorldResult(
-                rollout_id,
-                financial,
-                event_log(financial) if financial is not None else None,
-                recorder.configured_summary() if capture == "summary" else None,
-                rows,
-            )
-        )
+        if recorder is None:
+            completed.append(WorldResult(rollout_id, world.failed_month, rows))
+        else:
+            financial = recorder.financial()
+            completed.append(WorldResult(rollout_id, world.failed_month, rows, financial, event_log(financial)))
     return tuple(completed)
 
 
@@ -72,12 +84,7 @@ def project_product_metrics(run: CompiledRun, completed: tuple[WorldResult, ...]
     failures = []
     for column, result in enumerate(completed):
         rows = result.product_metrics
-        if result.financial is not None:
-            failed = result.financial.failed_month
-        elif result.configured_summary is not None:
-            failed = result.configured_summary.failed_month
-        else:
-            raise RuntimeError("product aggregation requires configured financial capture")
+        failed = result.failed_month
         expected = snapshots if failed is None else failed + 2
         if len(rows) != expected:
             raise ValueError(f"rollout produced {len(rows)} product snapshots, expected {expected}")

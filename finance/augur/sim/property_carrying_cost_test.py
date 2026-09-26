@@ -195,7 +195,9 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
     )
     assert rollout.trace is not None
 
-    final_property = one(book(rollout, 2).properties)
+    final_properties = book(rollout, 2).properties
+    assert final_properties is not None
+    final_property = one(final_properties)
     assert final_property.location_id == "san_francisco"
     assert final_property.purchase_month == 0
     assert usd(final_property.adjusted_basis) == pytest.approx(510_000.0)

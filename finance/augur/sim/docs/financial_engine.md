@@ -47,4 +47,5 @@ experiment callers use the same Python world.
 Use <../session.py> for ordinary batch actions, a tracked `EconomicAgent` on
 `World.step()` for a household that decides each month, and <../artifacts.py> for
 prepared-file persistence.
-See <execution_boundary.md>, <money_representation.md>, and <product_metrics.md>.
+See <execution_boundary.md>, <money_representation.md>, and
+<../../product/docs/metrics.md>.

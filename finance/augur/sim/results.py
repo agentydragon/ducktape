@@ -178,11 +178,13 @@ class EventPayload(Record):
 
 
 class Trace(Record):
+    """`bond_cashflows` and `distributions` are `None` when the world has no such domain."""
+
     events: InstanceOf[EventLog]
     books: list[Book]
     journal: list[JournalEntry]
-    bond_cashflows: list[BondCashflowOutcome]
-    distributions: list[DistributionOutcome]
+    bond_cashflows: list[BondCashflowOutcome] | None = None
+    distributions: list[DistributionOutcome] | None = None
     receipts: list[Receipt]
 
     @field_validator("events", mode="before")

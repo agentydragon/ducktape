@@ -36,12 +36,12 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
-from cluster.cdk8s import cilium
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 NAME = "airlock"
@@ -265,7 +265,7 @@ def chart(app: App) -> Chart:
         listener=None,
     )
     # Airlock serves only its browser OAuth broker over port 8765.
-    cilium.network_policy(
+    NetworkPolicy(
         chart,
         "ciliumnetworkpolicy",
         metadata=metadata("airlock-ingress", NAME),

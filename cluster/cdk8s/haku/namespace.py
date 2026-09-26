@@ -14,11 +14,11 @@ from cilium_crds.io.cilium import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cilium
 from cluster.cdk8s.flux import flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
 NAME = "haku-namespace"
 NAMESPACE = "haku-sandbox"
@@ -61,7 +61,7 @@ def chart(app: App) -> Chart:
     #
     # Egress is unchanged -- the mitmproxy CCNP owns that direction. Operator-owned (Haku has no
     # netpol RBAC). Security model: haku/docs/security.md.
-    cilium.network_policy(
+    NetworkPolicy(
         chart,
         "ingress",
         metadata=metadata("haku-sandbox-ingress", NAMESPACE),
