@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: home-assistant-location
+    namespace: home-assistant
+stringData:
+    latitude: ENC[AES256_GCM,data:1tHVZgfpav8p,iv:rbTOaQYOG64QKtHgEIhgt0Auvpcod9IdCUeAtEQA4rY=,tag:+In2gvb2vsFWyia25QTF9w==,type:str]
+    longitude: ENC[AES256_GCM,data:83XYrNOy2Gf5TFk=,iv:gPK3PnSMdVTMc1P7oSSKTQzcGKMumFeiDw2Wa5pCsOI=,tag:zFL9VRja2eVQuorzDiee/A==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBGU2k3Ykc1c3NlNW9qOEMv
+            ejZsOEh6RVhKQ0k0ZjZjcVVLeE8vdzdaTVhzClFqK29Ja1Rad3doVzN3TjUvRlgr
+            RzlsMXpvd1hSdVIyaEE1YitXU2dXd1kKLS0tIEdRdUJNVm4zc3R4dXRBdFVSdFNr
+            Qi9HOFhMeklRcndLOVhNdHQ0NlFBU1kKMPel9EEb2dyC/C+HApwiggXNodjKOPAo
+            A1hTZr67U4wQsm9cPI9Yw+D3IdmzpTrwCRRkafrSpeK+y2Y+OmK6xA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBXUm1veVJ0NzRXZG9OcGdF
+            Yk1yelJUTXpudTJJZzI5WWR5ay9HZ0xJeUNJCnFkMC9WVEkxRWJzeWNaMGw3ZTJ2
+            YTkrbkFFeVFNbzdzaXBEcnlXOEtqdUkKLS0tIGl2ZVpBVzRBWk9yYjkxMEdYMDBq
+            UTFFc0VwQ0RqbTFCWEdMczVueDR6cG8KRZ792H884pAHU9Fr4p6Mf/CjJ5H6+IAr
+            CBehZ32RDn4dHUMzbcmZChkz5sn+yIzwSGwceDwHRPhS8SfaTbG/GA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-26T02:59:32Z"
+    mac: ENC[AES256_GCM,data:OkR+To2bd/diZoN06E+FP68Q4Qeg18MKVTJiwwCRoD3w990SiO4XcR6nam+v8l63ptSb1epAGy05DSBmVQO0sTP7K4hq5ZJWXv6NW3yyZoVf4iVHT3jQ40VHwZCaUvSjwVg07wi94vzUTdHscZ+1kNBbyWqbNwXVQakucNHWcJ8=,iv:SBw26GXnGQmc6cDECysU2DaCXvdyvvcf2eiNTNy/KTg=,tag:zYwqJ/qZZdCt8jkEBLd3Tg==,type:str]
+    version: 3.13.3
