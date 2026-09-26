@@ -284,14 +284,15 @@ def compile_holding_pools(
     policies: Iterable[TargetAllocationPolicy],
     tlh_portfolios: Iterable[TlhPortfolioSpec],
 ) -> tuple[PreparedHoldingPool, ...]:
-    """Every pool a lot or allocation sleeve names, except those a manager owns."""
+    """Every pool a lot or allocation sleeve names; a sleeve's pool on a managed slot is left out.
+
+    A lot's pool on a managed slot stays, so the world refuses the lot beside the portfolio.
+    """
     prepared: dict[tuple[str, str, str], PreparedHoldingPool] = {}
     managed = {(p.owner_agent_id, p.account_id, _asset_id(p.asset)) for p in tlh_portfolios}
 
     def add(agent_id: str, account_id: str, asset: AssetKey) -> None:
         asset_id = _asset_id(asset)
-        if (agent_id, account_id, asset_id) in managed:
-            return
         prepared[agent_id, account_id, asset_id] = PreparedHoldingPool(
             agent_id=agent_id, account_id=account_id, asset_id=asset_id, quantity_scale=quantity_scale_for_asset(asset)
         )
@@ -301,7 +302,10 @@ def compile_holding_pools(
     for policy in policies:
         account_id = policy.source_account_ids[0] if policy.source_account_ids else policy.account_id
         for sleeve in policy.sleeves:
-            if isinstance(sleeve, SecuritySleeveTarget):
+            if (
+                isinstance(sleeve, SecuritySleeveTarget)
+                and (policy.agent_id, account_id, _asset_id(sleeve.asset)) not in managed
+            ):
                 add(policy.agent_id, account_id, sleeve.asset)
     return tuple(prepared.values())
 
