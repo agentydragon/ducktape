@@ -6,7 +6,7 @@ PrometheusRule.
 The provisioner images' tags are the placeholder "unset"; the hand-written
 `cluster/k8s/home-assistant/app/image-pins/kustomization.yaml` overrides them at
 `kustomize build` time via Flux's image-automation markers. Hand-written beside the generated
-output: the `configMapGenerator` inputs, the SOPS break-glass Secret and the `kustomization.yaml` that generates the ConfigMaps.
+output: the `configMapGenerator` inputs and the SOPS Secrets.
 """
 
 from __future__ import annotations
@@ -57,9 +57,10 @@ from volsync_replicationsource_crds.backube.volsync import (
 )
 
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
@@ -94,9 +95,18 @@ _SETTINGS_DIR = "/etc/provisioner"
 _CONFIG_DIR = "/config"
 # Home Assistant's own listener; Caddy (the hand-written Caddyfile) proxies to it.
 _BACKEND_PORT = 8124
-# Rendered by the kustomization.yaml's configMapGenerator.
-_CONFIGURATION_CONFIG_MAP = "home-assistant-configuration"
-_CADDY_CONFIG_MAP = "home-assistant-caddy"
+# From the hand-written files beside the kustomization.yaml, under names without a content hash:
+# Reloader restarts the Deployment when either changes.
+_FIXED_NAME = GeneratorOptions(disable_name_suffix_hash=True)
+_CONFIGURATION_CONFIG_MAP = ConfigMapArgs(
+    name="home-assistant-configuration",
+    namespace=_NAMESPACE,
+    options=_FIXED_NAME,
+    files=["configuration.yaml=configuration.yaml.conf"],
+)
+_CADDY_CONFIG_MAP = ConfigMapArgs(
+    name="home-assistant-caddy", namespace=_NAMESPACE, options=_FIXED_NAME, files=["Caddyfile"]
+)
 
 # The local owner the provisioners log in as, through the in-cluster Service.
 _ENDPOINT = HomeAssistantEndpoint(
@@ -149,14 +159,23 @@ _TOKENS = (HA_MCP_TOKEN, AGENTPLANE_READER_TOKEN)
 _BREAK_GLASS_PASSWORD = k8s.EnvVarSource(
     secret_key_ref=k8s.SecretKeySelector(name="home-assistant-break-glass", key="password")
 )
-# The home zone's `latitude` and `longitude`, kept out of this public repository: the operator
-# creates it, as a SOPS file beside break-glass-credentials.sops.yaml. Optional, so onboarding leaves
-# the location as set in the UI until it exists.
+# The home zone's `latitude` and `longitude`, encrypted in home-location.sops.yaml so that this public
+# repository does not show them. Optional: without it, onboarding leaves the location as set in the
+# UI. Changing it re-runs nothing by itself: bump the onboarding Job's bootstrap-revision in the same
+# change.
 _LOCATION_SECRET = "home-assistant-location"
 
 
 def _quantities(**values: str) -> dict[str, k8s.Quantity]:
     return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
+
+
+def _settings_yaml(
+    settings: type[YamlFileSettings], content: dict[str, object], *, supplied: tuple[tuple[str, ...], ...] = ()
+) -> str:
+    """A provisioner's settings file, each key checked against `settings`; `supplied` names the
+    fields an env var completes."""
+    return yaml_config(settings_file(settings, content, supplied=supplied))
 
 
 def _settings_config_map(
@@ -167,13 +186,11 @@ def _settings_config_map(
     *,
     supplied: tuple[tuple[str, ...], ...] = (),
 ) -> k8s.KubeConfigMap:
-    """A provisioner's settings file, each key checked against `settings`; `supplied` names the
-    fields an env var completes."""
     return k8s.KubeConfigMap(
         scope,
         name,
         metadata=k8s.ObjectMeta(name=name, namespace=_NAMESPACE),
-        data={"settings.yaml": yaml_config(settings_file(settings, content, supplied=supplied))},
+        data={"settings.yaml": _settings_yaml(settings, content, supplied=supplied)},
     )
 
 
@@ -297,9 +314,9 @@ def _deployment(scope: Construct) -> None:
                             name="config",
                             persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_CONFIG_CLAIM),
                         ),
-                        _config_map_volume("configuration", _CONFIGURATION_CONFIG_MAP),
+                        _config_map_volume("configuration", _CONFIGURATION_CONFIG_MAP.name),
                         _config_map_volume("installer-settings", installer_settings.name),
-                        _config_map_volume("caddy-config", _CADDY_CONFIG_MAP),
+                        _config_map_volume("caddy-config", _CADDY_CONFIG_MAP.name),
                     ],
                 ),
             ),
@@ -316,42 +333,61 @@ def _deployment(scope: Construct) -> None:
     )
 
 
+# Rendered by the kustomization.yaml's configMapGenerator: the content hash in its name makes a
+# settings change a new template for the onboarding Job, which Flux then replaces and so re-runs.
+_ONBOARDING_SETTINGS = ConfigMapArgs(
+    name=_ONBOARDING,
+    namespace=_NAMESPACE,
+    literals=[
+        "settings.yaml="
+        + _settings_yaml(
+            onboarding.Settings,
+            {
+                "endpoint": _ENDPOINT.model_dump(),
+                "owner_username": _OWNER_USERNAME,
+                "owner_display_name": "Home Assistant Local Administrator",
+                "http_config": onboarding.HttpConfig(
+                    server_host=["127.0.0.1"],
+                    server_port=_BACKEND_PORT,
+                    cors_allowed_origins=["https://cast.home-assistant.io"],
+                    use_x_forwarded_for=True,
+                    trusted_proxies=["127.0.0.1/32"],
+                    login_attempts_threshold=-1,
+                    ip_ban_enabled=True,
+                    ssl_profile="modern",
+                    use_x_frame_options=True,
+                ).model_dump(),
+                "core_config": onboarding.CoreConfig(time_zone="America/Los_Angeles").model_dump(exclude_none=True),
+            },
+            supplied=(("owner_password",),),
+        )
+    ],
+)
+
+
 def _onboarding_job(scope: Construct) -> None:
-    settings = _settings_config_map(
-        scope,
-        _ONBOARDING,
-        onboarding.Settings,
-        {
-            "endpoint": _ENDPOINT.model_dump(),
-            "owner_username": _OWNER_USERNAME,
-            "owner_display_name": "Home Assistant Local Administrator",
-            "http_config": onboarding.HttpConfig(
-                server_host=["127.0.0.1"],
-                server_port=_BACKEND_PORT,
-                cors_allowed_origins=["https://cast.home-assistant.io"],
-                use_x_forwarded_for=True,
-                trusted_proxies=["127.0.0.1/32"],
-                login_attempts_threshold=-1,
-                ip_ban_enabled=True,
-                ssl_profile="modern",
-                use_x_frame_options=True,
-            ).model_dump(),
-            "core_config": onboarding.CoreConfig(time_zone="America/Los_Angeles").model_dump(exclude_none=True),
-        },
-        supplied=(("owner_password",),),
-    )
     k8s.KubeJob(
         scope,
         "onboarding",
         metadata=k8s.ObjectMeta(
-            name=_ONBOARDING, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}
+            name=_ONBOARDING,
+            namespace=_NAMESPACE,
+            annotations={
+                # Flux re-runs this Job, replacing it whenever its template changes. Reloader's
+                # cluster-wide reload would also recreate it when a ConfigMap or Secret it reads
+                # changes, and in an apply that changes both, the two replacements race.
+                "kustomize.toolkit.fluxcd.io/force": "enabled",
+                "reloader.stakater.com/auto": "false",
+            },
         ),
         spec=k8s.JobSpec(
             backoff_limit=3,
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(
-                    # Bump when bootstrap behavior changes so Flux replaces the immutable Job.
-                    annotations={"home-assistant.allegedly.works/bootstrap-revision": "5"},
+                    annotations={
+                        # Bump to re-run the Job when nothing else in this template changed.
+                        "home-assistant.allegedly.works/bootstrap-revision": "5"
+                    },
                     labels={"app.kubernetes.io/name": _ONBOARDING},
                 ),
                 spec=k8s.PodSpec(
@@ -387,7 +423,7 @@ def _onboarding_job(scope: Construct) -> None:
                             volume_mounts=[_settings_mount("settings")],
                         )
                     ],
-                    volumes=[_config_map_volume("settings", settings.name)],
+                    volumes=[_config_map_volume("settings", _ONBOARDING_SETTINGS.name)],
                 ),
             ),
         ),
@@ -692,3 +728,11 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, _OUTPUT_DIR, chart)
+    write_yaml(
+        root / _OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(
+            resources=[f"{_NAME}.k8s.yaml", "break-glass-credentials.sops.yaml", "home-location.sops.yaml"],
+            components=["./image-pins"],
+            config_map_generator=[_CONFIGURATION_CONFIG_MAP, _CADDY_CONFIG_MAP, _ONBOARDING_SETTINGS],
+        ),
+    )
