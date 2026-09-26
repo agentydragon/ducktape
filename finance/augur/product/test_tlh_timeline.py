@@ -15,61 +15,90 @@ from finance.augur.product.action_projection import metric_arrays
 from finance.augur.product.projection import project_product_rollout
 from finance.augur.product.wire import HoldingSaleEvent, TlhFinancialEffectEvent
 from finance.augur.sim.actions import Contribute, DecisionActions, Liquidate, Withdraw
+from finance.augur.sim.books import AccountRef
+from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.events import TlhOperation
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.jurisdictions import load_jurisdiction
+from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.prepared import (
+    PreparedAccount,
+    PreparedJurisdiction,
+    PreparedLot,
+    PreparedSeries,
+    PreparedTlhPortfolio,
+)
 from finance.augur.sim.results import Finished
-from finance.augur.sim.scenario import Currency, InitialLot, TaxProfile, TlhPortfolioSpec
+from finance.augur.sim.scenario import ORDINARY_INCOME, TaxProfile
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.testing.case import Case, levels, scenario
-from finance.augur.sim.testing.fixtures import checking
+from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.sim.world import World
+
+ASSET = "test-managed-index"
+# Money is counted in whole dollars here, so the stipulated $1 price is one quantum.
+QUANTUM = Decimal(1)
+FEDERAL = load_jurisdiction("federal_us")
 
 
-@pytest.fixture
-def case() -> Case:
-    asset = SecurityKey(symbol=SecuritySymbol("test-managed-index"))
-    return Case(
-        scenario=scenario(
-            checking(("owner", Decimal(10)), ("irs", Decimal(0))),
-            tax_profiles=[TaxProfile(agent_id="owner", jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs")],
-            horizon_months=1,
-            currency=Currency(quantum=Decimal(1)),
-            tlh_portfolios=[
-                TlhPortfolioSpec(
-                    portfolio_id="managed",
-                    owner_agent_id="owner",
-                    account_id="checking",
-                    asset=asset,
-                    initial_lots=[
-                        InitialLot(
-                            lot_id="imported",
-                            agent_id="owner",
-                            account_id="checking",
-                            asset=asset,
-                            purchase_month_index=-24,
-                            quantity=100,
-                            cost_basis=Decimal(100),
-                        )
-                    ],
-                    assumptions=TlhAssumptions(
-                        peak_annual_yield=0.12,
-                        floor_annual_yield=0,
-                        maturity_decay_exponent=1,
-                        drawdown_sensitivity=0,
-                        short_term_fraction=1,
-                    ),
-                )
-            ],
+def compose(price: int) -> World:
+    """The owner's $10 and a managed index of 100 units bought for $100 two years ago, at `price` throughout."""
+    world = World(
+        MarketPath(
+            (PreparedSeries(series_id=f"security:{ASSET}", snapshots=2, values=(price, price)),), 0, rollout_count=1
         ),
-        rollout_count=1,
-        series={asset: levels([[Decimal(1), Decimal(1)]])},
+        horizon_months=1,
+        income_sources=(ORDINARY_INCOME,),
+        jurisdictions=(PreparedJurisdiction(jurisdiction_id="federal_us", level=FEDERAL.level),),
     )
+    for agent_id, balance in (("owner", 10), ("irs", 0)):
+        world.declare_account(
+            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id="checking"), opening_balance=balance)
+        )
+    world.track(
+        TaxAuthority(
+            compile_profile(
+                TaxProfile(agent_id="owner", jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs"),
+                {"federal_us": FEDERAL},
+                quantum=QUANTUM,
+            )
+        )
+    )
+    scale = quantity_scale_for_asset(SecurityKey(symbol=SecuritySymbol(ASSET)))
+    world.declare_portfolio(
+        PreparedTlhPortfolio(
+            portfolio_id="managed",
+            owner_agent_id="owner",
+            account_id="checking",
+            asset_id=ASSET,
+            quantity_scale=scale,
+            initial_cohorts=(
+                PreparedLot(
+                    lot_id="imported",
+                    agent_id="owner",
+                    account_id="checking",
+                    asset_id=ASSET,
+                    purchase_month=-24,
+                    quantity_scale=scale,
+                    units=int(quantity_to_quanta(100, scale=scale)),
+                    basis=100,
+                ),
+            ),
+            assumptions=TlhAssumptions(
+                peak_annual_yield=0.12,
+                floor_annual_yield=0,
+                maturity_decay_exponent=1,
+                drawdown_sensitivity=0,
+                short_term_fraction=1,
+            ),
+        )
+    )
+    return world
 
 
 @pytest.mark.parametrize("capture", ["dense", "forensic"])
-def test_tlh_cash_and_separate_realizations_reach_product_timeline(
-    case: Case, capture: Literal["dense", "forensic"]
-) -> None:
-    session = ActionSession.from_run(case.compiled_run, "owner", [0], capture=capture)
+def test_tlh_cash_and_separate_realizations_reach_product_timeline(capture: Literal["dense", "forensic"]) -> None:
+    session = ActionSession({0: compose(price=1)}, "owner", capture=capture)
     try:
         assert not isinstance(session.start(), Finished)
         result = session.advance(
@@ -113,7 +142,9 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(
     ]
     projected = project_product_rollout(
         events,
-        metric_arrays(case.compiled_run, result.rollouts, primary_agent_id="owner"),
+        metric_arrays(
+            result.rollouts, primary_agent_id="owner", horizon_months=1, currency_code="USD", currency_quantum="1"
+        ),
         rollout_id=0,
         primary_agent_id="owner",
         asset_label_by_id={},
@@ -139,13 +170,8 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(
     assert bool(rollout.trace.journal) == (capture == "forensic")
 
 
-def test_zero_cash_liquidation_is_still_a_redemption(case: Case) -> None:
-    worthless = Case(
-        scenario=case.scenario,
-        rollout_count=1,
-        series={asset: levels([[Decimal(0), Decimal(0)]]) for asset in case.series},
-    )
-    session = ActionSession.from_run(worthless.compiled_run, "owner", [0], capture="dense")
+def test_zero_cash_liquidation_is_still_a_redemption() -> None:
+    session = ActionSession({0: compose(price=0)}, "owner", capture="dense")
     try:
         assert not isinstance(session.start(), Finished)
         result = session.advance(

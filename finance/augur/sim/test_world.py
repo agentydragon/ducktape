@@ -1,7 +1,7 @@
 """Actor-scoped financial execution, ordered request prefixes and canonical capture."""
 
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from itertools import pairwise
 
 import pytest
@@ -14,14 +14,14 @@ from finance.augur.sim.agent import EconomicAgent, assemble
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.capture import FinancialCapture, WorldResult, event_log
-from finance.augur.sim.compiler.tax import PreparedTaxBracket
+from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxProfile
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
-    CompiledRun,
+    PreparedAccount,
     PreparedHoldingPool,
     PreparedLot,
     PreparedObligation,
@@ -33,20 +33,36 @@ from finance.augur.sim.prepared import (
 from finance.augur.sim.product_metrics import product_row
 from finance.augur.sim.results import ConsumptionTarget, Executed, Finished, Rejected, RejectedAction, UnpaidClaims
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, prepared_scenario
+from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, taxpayer, world_on
 from finance.augur.sim.world import Capture, World
 
 
-def actor_run(horizon: int = 2, paths: int = 1) -> CompiledRun:
-    base = prepared_scenario()
-    scenario = replace(
-        base,
-        horizon_months=horizon,
-        tax_profiles=(),
-        accounts=tuple(
-            replace(account, opening_balance=10_000 if account.account == CASH else 0) for account in base.accounts
+@dataclass(frozen=True)
+class Situation:
+    """What every path shares: the household's books, what it holds, and what it is billed or paid."""
+
+    series: tuple[PreparedSeries, ...]
+    rollout_count: int
+    horizon_months: int
+    accounts: tuple[PreparedAccount, ...]
+    holding_pools: tuple[PreparedHoldingPool, ...]
+    initial_lots: tuple[PreparedLot, ...]
+    tax_profiles: tuple[PreparedTaxProfile, ...] = ()
+    obligations: tuple[PreparedObligation, ...] = ()
+    scheduled_transfers: tuple[PreparedTransfer, ...] = ()
+
+
+def situation(horizon: int = 2, paths: int = 1) -> Situation:
+    """10,000 in checking and 100 units of stock at 1000 bought for 50,000, on flat paths."""
+    return Situation(
+        series=(
+            PreparedSeries(
+                series_id="security:test_stock", snapshots=horizon + 1, values=(1000,) * ((horizon + 1) * paths)
+            ),
         ),
+        rollout_count=paths,
+        horizon_months=horizon,
+        accounts=opening({CASH: 10_000}),
         holding_pools=(
             PreparedHoldingPool(
                 agent_id=HOUSEHOLD, account_id="checking", asset_id="test_stock", quantity_scale=1_000_000
@@ -65,44 +81,29 @@ def actor_run(horizon: int = 2, paths: int = 1) -> CompiledRun:
             ),
         ),
     )
-    return CompiledRun(
-        currency_code="USD",
-        currency_quantum="0.01",
-        rollout_count=paths,
-        scenario=scenario,
-        series=(
-            PreparedSeries(
-                series_id="security:test_stock", snapshots=horizon + 1, values=(1000,) * ((horizon + 1) * paths)
-            ),
-        ),
-    )
 
 
 @pytest.fixture
-def cash_only() -> CompiledRun:
-    run = actor_run()
+def cash_only() -> Situation:
+    run = situation()
     return replace(
         run,
-        scenario=replace(
-            run.scenario,
-            initial_lots=(),
-            accounts=tuple(
-                replace(account, opening_balance=2500 if account.account == CASH else 0)
-                for account in run.scenario.accounts
-            ),
-            holding_pools=(
-                replace(run.scenario.holding_pools[0], account_id="empty-brokerage"),
-                PreparedHoldingPool(
-                    agent_id=WORLD, account_id="other-brokerage", asset_id="test_stock", quantity_scale=1_000_000
-                ),
+        initial_lots=(),
+        accounts=tuple(
+            replace(account, opening_balance=2500 if account.account == CASH else 0) for account in run.accounts
+        ),
+        holding_pools=(
+            replace(run.holding_pools[0], account_id="empty-brokerage"),
+            PreparedHoldingPool(
+                agent_id=WORLD, account_id="other-brokerage", asset_id="test_stock", quantity_scale=1_000_000
             ),
         ),
         series=(replace(run.series[0], values=(1000, 2000, 3000)),),
     )
 
 
-def world_for(run: CompiledRun, rollout: int = 0) -> World:
-    world = World.from_run(run, rollout)
+def world_for(run: Situation, rollout: int = 0) -> World:
+    world = composed(run, rollout)
     world.start()
     return world
 
@@ -177,7 +178,7 @@ def bill(amount: int) -> PreparedObligation:
     )
 
 
-def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_only: CompiledRun) -> None:
+def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_only: Situation) -> None:
     world = world_for(cash_only)
     capture = FinancialCapture(world, capture="forensic")
     observation = view(world)
@@ -201,7 +202,7 @@ def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_on
     assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in financial.journal)
 
 
-def test_declaring_an_empty_pool_does_not_invest_cash_without_an_action(cash_only: CompiledRun) -> None:
+def test_declaring_an_empty_pool_does_not_invest_cash_without_an_action(cash_only: Situation) -> None:
     world = world_for(cash_only)
     capture = FinancialCapture(world, capture="summary")
     balances = [checking(world)]
@@ -215,7 +216,7 @@ def test_declaring_an_empty_pool_does_not_invest_cash_without_an_action(cash_onl
 
 @pytest.mark.parametrize("wrong_scale", [False, True])
 def test_an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation(
-    cash_only: CompiledRun, wrong_scale: bool
+    cash_only: Situation, wrong_scale: bool
 ) -> None:
     world = world_for(cash_only)
     capture = FinancialCapture(world, capture="forensic")
@@ -239,23 +240,21 @@ def test_an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation(
 
 @pytest.mark.parametrize("case", ["no_pool", "unpriced", "duplicate"])
 def test_declarations_reject_missing_prices_and_do_not_fall_back_to_initial_lots(case: str) -> None:
-    run = actor_run(1)
-    pool = run.scenario.holding_pools[0]
+    run = situation(1)
+    pool = run.holding_pools[0]
     if case == "no_pool":
-        run = replace(run, scenario=replace(run.scenario, holding_pools=()))
+        run = replace(run, holding_pools=())
     elif case == "unpriced":
-        run = replace(
-            run, scenario=replace(run.scenario, initial_lots=(), holding_pools=(replace(pool, asset_id="unpriced"),))
-        )
+        run = replace(run, initial_lots=(), holding_pools=(replace(pool, asset_id="unpriced"),))
     else:
-        run = replace(run, scenario=replace(run.scenario, initial_lots=(), holding_pools=(pool, pool)))
-    with pytest.raises(ValueError, match=r"holding pool|missing series"):
-        ActionSession.from_run(run, HOUSEHOLD, [0])
+        run = replace(run, initial_lots=(), holding_pools=(pool, pool))
+    with pytest.raises(ValueError, match=r"holding pool|missing public security series"):
+        composed(run)
 
 
 def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> None:
-    run = actor_run(13)
-    profile = prepared_scenario().tax_profiles[0]
+    run = situation(13)
+    profile = taxpayer(HOUSEHOLD)
     rules = replace(
         profile.jurisdictions[0],
         ordinary_brackets=(PreparedTaxBracket(None, 200_000_000),),
@@ -264,21 +263,18 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
     )
     run = replace(
         run,
-        scenario=replace(
-            run.scenario,
-            tax_profiles=(replace(profile, jurisdictions=(rules,)),),
-            obligations=(bill(50_000),),
-            accounts=tuple(replace(account, opening_balance=0) for account in run.scenario.accounts),
-            scheduled_transfers=(
-                PreparedTransfer(
-                    month=0,
-                    cause_id="current-contribution",
-                    from_account=EXOGENOUS,
-                    to_account=CASH,
-                    amount=20_000,
-                    income_category=None,
-                    deduction_category=None,
-                ),
+        tax_profiles=(replace(profile, jurisdictions=(rules,)),),
+        obligations=(bill(50_000),),
+        accounts=tuple(replace(account, opening_balance=0) for account in run.accounts),
+        scheduled_transfers=(
+            PreparedTransfer(
+                month=0,
+                cause_id="current-contribution",
+                from_account=EXOGENOUS,
+                to_account=CASH,
+                amount=20_000,
+                income_category=None,
+                deduction_category=None,
             ),
         ),
     )
@@ -316,7 +312,7 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
 
 
 def test_ordered_actions_can_buy_before_transferring_and_buy_again() -> None:
-    world = world_for(actor_run())
+    world = world_for(situation())
     capture = FinancialCapture(world, capture="forensic")
     actions: list[Action] = [
         sell(20_000_000),
@@ -338,7 +334,7 @@ def test_ordered_actions_can_buy_before_transferring_and_buy_again() -> None:
 
 
 def test_rejected_financial_request_preserves_prior_sale_and_independent_world() -> None:
-    run = actor_run(3, 2)
+    run = situation(3, 2)
     failed, live = world_for(run), world_for(run, rollout=1)
     failed_capture, live_capture = FinancialCapture(failed, capture="dense"), FinancialCapture(live, capture="dense")
     assert isinstance(failed.execute(HOUSEHOLD, sell(10_000_000)).outcome, Executed)
@@ -364,8 +360,8 @@ def test_rejected_financial_request_preserves_prior_sale_and_independent_world()
 
 
 def test_payment_capture_names_the_actual_selected_source() -> None:
-    run = actor_run(1)
-    world = world_for(replace(run, scenario=replace(run.scenario, obligations=(bill(5000),))))
+    run = situation(1)
+    world = world_for(replace(run, obligations=(bill(5000),)))
     [claim] = view(world).claims
     assert isinstance(world.execute(HOUSEHOLD, transfer(5000)).outcome, Executed)
     action = PayClaim(
@@ -383,12 +379,12 @@ def test_payment_capture_names_the_actual_selected_source() -> None:
 
 
 def test_compact_capture_replays_observed_prefixes_and_canonical_payment_identity() -> None:
-    run = actor_run(3)
+    run = situation(3)
     run = replace(run, series=(replace(run.series[0], values=(1000, 2000, 9000, 10_000)),))
     outputs = []
     modes: tuple[Capture, ...] = ("summary", "dense", "forensic")
     for mode in modes:
-        session = ActionSession.from_run(run, HOUSEHOLD, [0], capture=mode)
+        session = session_for(run, [0], capture=mode)
         batch = session.start()
         for month in range(2):
             assert not isinstance(batch, Finished)
@@ -423,8 +419,8 @@ def test_compact_capture_replays_observed_prefixes_and_canonical_payment_identit
 
 @pytest.mark.parametrize("mode", ["summary", "forensic"])
 def test_unpaid_claims_keep_occurrence_and_source_without_hidden_sales(mode: Capture) -> None:
-    run = actor_run(3)
-    world = world_for(replace(run, scenario=replace(run.scenario, obligations=(bill(5000), bill(7000)))))
+    run = situation(3)
+    world = world_for(replace(run, obligations=(bill(5000), bill(7000))))
     capture = FinancialCapture(world, capture=mode)
     unpaid = world.unpaid_claims(HOUSEHOLD)
     assert len(unpaid) == 2
@@ -458,10 +454,10 @@ def assert_same_result(actual: WorldResult, expected: WorldResult) -> None:
 
 
 @pytest.fixture
-def year_run() -> CompiledRun:
-    run = actor_run(13)
-    lot = replace(run.scenario.initial_lots[0], units=50_000_000, basis=25_000)
-    profile = prepared_scenario().tax_profiles[0]
+def year_situation() -> Situation:
+    run = situation(13)
+    lot = replace(run.initial_lots[0], units=50_000_000, basis=25_000)
+    profile = taxpayer(HOUSEHOLD)
     rules = replace(
         profile.jurisdictions[0],
         ordinary_brackets=(PreparedTaxBracket(None, 200_000_000),),
@@ -470,33 +466,30 @@ def year_run() -> CompiledRun:
     )
     return replace(
         run,
-        scenario=replace(
-            run.scenario,
-            initial_lots=(lot, replace(lot, lot_id="second-lot", asset_id="second")),
-            holding_pools=(*run.scenario.holding_pools, replace(run.scenario.holding_pools[0], asset_id="second")),
-            tax_profiles=(replace(profile, jurisdictions=(rules,)),),
-            obligations=(bill(50_000), replace(bill(5000), month=12)),
-            scheduled_transfers=(
-                PreparedTransfer(
-                    month=12,
-                    cause_id="test-contribution",
-                    from_account=EXOGENOUS,
-                    to_account=CASH,
-                    amount=10_000,
-                    income_category=None,
-                    deduction_category=None,
-                ),
+        initial_lots=(lot, replace(lot, lot_id="second-lot", asset_id="second")),
+        holding_pools=(*run.holding_pools, replace(run.holding_pools[0], asset_id="second")),
+        tax_profiles=(replace(profile, jurisdictions=(rules,)),),
+        obligations=(bill(50_000), replace(bill(5000), month=12)),
+        scheduled_transfers=(
+            PreparedTransfer(
+                month=12,
+                cause_id="test-contribution",
+                from_account=EXOGENOUS,
+                to_account=CASH,
+                amount=10_000,
+                income_category=None,
+                deduction_category=None,
             ),
         ),
         series=(*run.series, replace(run.series[0], series_id="security:second")),
     )
 
 
-def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(year_run: CompiledRun) -> None:
+def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(year_situation: Situation) -> None:
     run = replace(
-        year_run,
+        year_situation,
         rollout_count=2,
-        series=tuple(replace(s, values=(*s.values, *(v * 2 for v in s.values))) for s in year_run.series),
+        series=tuple(replace(s, values=(*s.values, *(v * 2 for v in s.values))) for s in year_situation.series),
     )
     before = deepcopy(run)
     first, second = world_for(run, rollout=0), world_for(run, rollout=1)
@@ -505,7 +498,7 @@ def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(yea
         capture = FinancialCapture(world, capture="forensic")
         for month in range(13):
             if month == 0:
-                for lot in run.scenario.initial_lots:
+                for lot in run.initial_lots:
                     action = Sell(
                         cause_id=f"sell-{lot.asset_id}",
                         agent_id=HOUSEHOLD,
@@ -531,27 +524,28 @@ def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(yea
     assert run == before
 
 
-def composed(run: CompiledRun, rollout: int = 0) -> World:
-    """The prepared run's facts declared one at a time, as an experiment would write them."""
-    scenario = run.scenario
-    world = World(
-        MarketPath.from_run(run, rollout),
-        horizon_months=scenario.horizon_months,
-        income_sources=scenario.income_sources,
-        jurisdictions=scenario.jurisdictions,
+def composed(run: Situation, rollout: int = 0) -> World:
+    """The situation's facts declared one at a time on one path, as an experiment would write them."""
+    world = world_on(
+        run.series,
+        horizon_months=run.horizon_months,
+        rollout_id=rollout,
+        rollout_count=run.rollout_count,
+        accounts=run.accounts,
+        taxpayers=run.tax_profiles,
     )
-    for account in scenario.accounts:
-        world.declare_account(account)
-    for profile in scenario.tax_profiles:
-        world.track(TaxAuthority(profile))
-    for pool in scenario.holding_pools:
+    for pool in run.holding_pools:
         world.declare_pool(pool)
-    for lot in scenario.initial_lots:
+    for lot in run.initial_lots:
         world.hold(lot)
-    world.scheduled_transfers = scenario.scheduled_transfers
-    for obligation in scenario.obligations:
+    world.scheduled_transfers = run.scheduled_transfers
+    for obligation in run.obligations:
         world.track(Biller(obligation))
     return world
+
+
+def session_for(run: Situation, rollout_ids: list[int], *, capture: Capture = "forensic") -> ActionSession:
+    return ActionSession({id_: composed(run, id_) for id_ in rollout_ids}, HOUSEHOLD, capture=capture)
 
 
 def recorded(world: World, mode: Capture) -> tuple[FinancialCapture, list[tuple[int, int, int, int, int, int, int]]]:
@@ -571,9 +565,7 @@ def result_of(
     )
 
 
-def stepped(
-    run: CompiledRun, mode: Capture, *, rollout: int = 0, sales: tuple[_ScheduledSale, ...] = ()
-) -> WorldResult:
+def stepped(run: Situation, mode: Capture, *, rollout: int = 0, sales: tuple[_ScheduledSale, ...] = ()) -> WorldResult:
     """One composed rollout to its horizon under a household that makes the scheduled sales."""
     world = composed(run, rollout)
     world.track(ConfiguredHousehold(HOUSEHOLD, (), scheduled_sales=sales))
@@ -589,10 +581,10 @@ def stepped(
 @pytest.mark.parametrize("stopped", [False, True])
 @pytest.mark.parametrize("mode", ["forensic", "dense", "summary"])
 def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
-    year_run: CompiledRun, stopped: bool, mode: Capture
+    year_situation: Situation, stopped: bool, mode: Capture
 ) -> None:
     """`step` is open, decide, execute in order, close — and nothing else the phases do not do."""
-    run = year_run
+    run = year_situation
     sales = tuple(
         _ScheduledSale(
             month=0,
@@ -603,14 +595,13 @@ def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
             units=20_000_000,
             proceeds_account_id="checking",
         )
-        for lot in run.scenario.initial_lots
+        for lot in run.initial_lots
     )
     if stopped:
         run = replace(
             run,
-            scenario=replace(
-                run.scenario, horizon_months=15, obligations=(bill(1000), replace(bill(999_999), month=12))
-            ),
+            horizon_months=15,
+            obligations=(bill(1000), replace(bill(999_999), month=12)),
             series=tuple(replace(s, snapshots=16, values=(*s.values, 9000, 10_000)) for s in run.series),
         )
         sales = (replace(sales[0], units=1_000_000),)
@@ -669,26 +660,23 @@ def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
 
 @pytest.mark.parametrize("mode", ["forensic", "dense", "summary"])
 def test_transfer_and_fifo_sale_remain_balanced(mode: Capture) -> None:
-    run = actor_run(2, 2)
+    run = situation(2, 2)
     run = replace(
         run,
-        scenario=replace(
-            run.scenario,
-            accounts=tuple(
-                replace(a, opening_balance=1000 if a.account == CASH else 2000 if a.account == EXOGENOUS else 0)
-                for a in run.scenario.accounts
-            ),
-            initial_lots=(replace(run.scenario.initial_lots[0], units=2_000_000, basis=20_000),),
-            scheduled_transfers=(
-                PreparedTransfer(
-                    month=0,
-                    cause_id="gift",
-                    from_account=EXOGENOUS,
-                    to_account=CASH,
-                    amount=500,
-                    income_category=None,
-                    deduction_category=None,
-                ),
+        accounts=tuple(
+            replace(a, opening_balance=1000 if a.account == CASH else 2000 if a.account == EXOGENOUS else 0)
+            for a in run.accounts
+        ),
+        initial_lots=(replace(run.initial_lots[0], units=2_000_000, basis=20_000),),
+        scheduled_transfers=(
+            PreparedTransfer(
+                month=0,
+                cause_id="gift",
+                from_account=EXOGENOUS,
+                to_account=CASH,
+                amount=500,
+                income_category=None,
+                deduction_category=None,
             ),
         ),
         series=(replace(run.series[0], values=(10_000, 15_000, 15_000, 10_000, 20_000, 20_000)),),
@@ -771,10 +759,10 @@ class _Household(EconomicAgent):
 
 
 def test_tracked_agent_steps_agree_with_the_batch_session() -> None:
-    run = actor_run(horizon=3, paths=2)
-    run = replace(run, scenario=replace(run.scenario, obligations=(bill(1000),)))
+    run = situation(horizon=3, paths=2)
+    run = replace(run, obligations=(bill(1000),))
     amounts = {0: 500, 2: 700}
-    world = World.from_run(run, 1)
+    world = composed(run, 1)
     agent = _Household(amounts)
     world.track(agent)
     world.start()
@@ -783,7 +771,7 @@ def test_tracked_agent_steps_agree_with_the_batch_session() -> None:
         world.step()
         balances.append(checking(world))
     assert agent.months == [0, 1, 2]
-    session = ActionSession.from_run(run, HOUSEHOLD, [1], capture="forensic")
+    session = session_for(run, [1], capture="forensic")
     batch = session.start()
     while not isinstance(batch, Finished):
         [decision] = batch
@@ -797,7 +785,7 @@ def test_tracked_agent_steps_agree_with_the_batch_session() -> None:
 
 
 def test_rejected_action_stops_the_path_before_later_decisions() -> None:
-    world = World.from_run(actor_run(horizon=3), 0)
+    world = composed(situation(horizon=3), 0)
     agent = _Household({0: 100, 1: 10_000_000, 2: 100})
     world.track(agent)
     world.start()
@@ -811,7 +799,7 @@ def test_rejected_action_stops_the_path_before_later_decisions() -> None:
 
 
 def test_tracking_is_checked_before_the_world_starts() -> None:
-    world = World.from_run(actor_run(), 0)
+    world = composed(situation(), 0)
     with pytest.raises(ValueError, match="not running"):
         world.step()
     with pytest.raises(ValueError, match="unknown actor"):
@@ -824,7 +812,7 @@ def test_tracking_is_checked_before_the_world_starts() -> None:
         world.track(_Household({}))
     with pytest.raises(ValueError, match="already started"):
         world.start()
-    untracked = World.from_run(actor_run(), 0)
+    untracked = composed(situation(), 0)
     untracked.start()
     with pytest.raises(ValueError, match="tracked agent"):
         untracked.step()
@@ -848,7 +836,7 @@ def loan(opening_principal: int | None = 6000) -> Mortgage:
 
 
 def test_tracked_mortgage_is_serviced_from_the_ledger_through_payoff() -> None:
-    world = World.from_run(actor_run(horizon=14), 0)
+    world = composed(situation(horizon=14), 0)
     household, mortgage = _Household({}), loan()
     world.track(household)
     world.track(mortgage)
@@ -907,7 +895,7 @@ def rent() -> Biller:
 
 
 def test_a_tracked_bill_is_demanded_in_its_months_and_paid_by_the_household() -> None:
-    world = World.from_run(actor_run(horizon=4), 0)
+    world = composed(situation(horizon=4), 0)
     household = _Household({})
     world.track(household)
     world.track(rent())
@@ -920,13 +908,13 @@ def test_a_tracked_bill_is_demanded_in_its_months_and_paid_by_the_household() ->
 
 
 def test_a_composed_world_has_only_the_domains_it_declares() -> None:
-    run = actor_run(horizon=2)
-    world = World(MarketPath.from_run(run, 0), horizon_months=2)
-    for account in run.scenario.accounts:
+    run = situation(horizon=2)
+    world = World(MarketPath(run.series, 0, rollout_count=1), horizon_months=2)
+    for account in run.accounts:
         world.declare_account(account)
-    for pool in run.scenario.holding_pools:
+    for pool in run.holding_pools:
         world.declare_pool(pool)
-    for lot in run.scenario.initial_lots:
+    for lot in run.initial_lots:
         world.hold(lot)
     world.track(_Household({0: 500}))
     capture = FinancialCapture(world, capture="forensic")
@@ -947,10 +935,10 @@ def test_a_composed_world_has_only_the_domains_it_declares() -> None:
     with pytest.raises(ValueError, match="no managed portfolio"):
         world.managed_portfolios()
     with pytest.raises(ValueError, match="before starting"):
-        world.declare_pool(run.scenario.holding_pools[0])
+        world.declare_pool(run.holding_pools[0])
     with pytest.raises(ValueError, match="missing public security series"):
-        World(MarketPath.from_run(run, 0), horizon_months=2).declare_pool(
-            replace(run.scenario.holding_pools[0], asset_id="test-unpriced")
+        World(MarketPath(run.series, 0, rollout_count=1), horizon_months=2).declare_pool(
+            replace(run.holding_pools[0], asset_id="test-unpriced")
         )
 
 
@@ -960,7 +948,7 @@ class _Deadbeat(EconomicAgent):
 
 
 def test_an_unpaid_installment_stops_the_path_and_leaves_the_contract_open() -> None:
-    world = World.from_run(actor_run(horizon=3), 0)
+    world = composed(situation(horizon=3), 0)
     mortgage = loan()
     world.track(_Deadbeat(HOUSEHOLD))
     world.track(mortgage)
@@ -974,7 +962,7 @@ def test_an_unpaid_installment_stops_the_path_and_leaves_the_contract_open() -> 
 
 
 def test_tracked_bills_name_a_declared_payer_and_no_property() -> None:
-    world = World.from_run(actor_run(), 0)
+    world = composed(situation(), 0)
     with pytest.raises(ValueError, match="property"):
         world.track(Biller(replace(rent().spec, property_id="test-home")))
     with pytest.raises(ValueError, match="unknown actor"):
@@ -990,7 +978,7 @@ def test_tracked_bills_name_a_declared_payer_and_no_property() -> None:
 
 
 def test_tracked_mortgages_open_the_ledger_once_before_the_world_starts() -> None:
-    world = World.from_run(actor_run(), 0)
+    world = composed(situation(), 0)
     with pytest.raises(ValueError, match="outstanding"):
         world.track(loan(None))
     with pytest.raises(ValueError, match="unknown actor"):

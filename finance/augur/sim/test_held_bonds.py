@@ -8,15 +8,9 @@ import pytest_bazel
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.held_bonds import HeldBonds
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    CompiledRun,
-    PreparedBond,
-    PreparedFixedAmount,
-    PreparedIndexedCoupon,
-    PreparedSeries,
-)
+from finance.augur.sim.prepared import PreparedBond, PreparedFixedAmount, PreparedIndexedCoupon, PreparedSeries
 from finance.augur.sim.scenario import InterestIncome
-from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, prepared_books, prepared_scenario
+from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, accounting
 
 
 @pytest.fixture
@@ -36,16 +30,10 @@ def nominal() -> PreparedBond:
 
 
 def bond_books(bond: PreparedBond, levels: tuple[int, ...]) -> tuple[Accounting, HeldBonds]:
-    scenario = replace(prepared_scenario(), horizon_months=len(levels) - 1, initial_bonds=(bond,))
-    accounting = prepared_books(scenario)
-    run = CompiledRun(
-        currency_code="USD",
-        currency_quantum="0.01",
-        rollout_count=1,
-        scenario=scenario,
-        series=(PreparedSeries(series_id="inflation", snapshots=len(levels), values=levels),),
+    market = MarketPath(
+        (PreparedSeries(series_id="inflation", snapshots=len(levels), values=levels),), 0, rollout_count=1
     )
-    return accounting, HeldBonds((bond,), MarketPath.from_run(run, 0))
+    return accounting(), HeldBonds((bond,), market)
 
 
 def test_no_month_zero_coupon_and_redemption_keeps_the_maturity_coupon(nominal: PreparedBond) -> None:

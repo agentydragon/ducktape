@@ -14,9 +14,7 @@ from decimal import Decimal
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.compiler.execution import compile_run
-from finance.augur.sim.compiler.tax import compile_tax
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.compiler.tax import compile_profile, compile_tax
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket, load_jurisdiction
 from finance.augur.sim.scenario import Agent, Currency, InitialAccountBalance, OrdinaryIncome, Scenario, TaxProfile
 
@@ -40,15 +38,8 @@ def _capping(jurisdiction: Jurisdiction, *, offset: Decimal) -> Jurisdiction:
 
 
 def _compile(scenario: Scenario, jurisdictions: dict[str, Jurisdiction]) -> None:
-    compile_run(
-        scenario,
-        rollout_count=1,
-        external_series=ExternalSeriesContext.from_level_blocks(
-            [], rollout_count=1, horizon_months=int(scenario.horizon_months)
-        ),
-        jurisdictions=jurisdictions,
-        locations={},
-    )
+    for profile in scenario.tax_profiles:
+        compile_profile(profile, jurisdictions, quantum=scenario.currency.quantum)
 
 
 def test_the_shipped_jurisdictions_agree_on_the_cap() -> None:
@@ -163,7 +154,6 @@ def test_no_taxpayers_still_declares_ordinary_income_without_phantom_rules() -> 
     prepared = compile_tax(scenario, {})
     assert prepared.profiles == ()
     assert prepared.income_sources == (OrdinaryIncome(),)
-    _compile(scenario, {})
 
 
 if __name__ == "__main__":

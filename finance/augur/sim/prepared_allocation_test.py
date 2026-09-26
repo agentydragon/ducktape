@@ -8,6 +8,7 @@ behaviour of the same policies lives in <allocation_household_test.py>.
 from dataclasses import replace
 from decimal import Decimal
 
+import numpy as np
 import pytest
 import pytest_bazel
 
@@ -15,11 +16,19 @@ from finance.augur.model.series import SecurityKey
 from finance.augur.policy.configured_allocation import validate_prepared
 from finance.augur.sim.artifacts import decode_prepared, encode_prepared
 from finance.augur.sim.compiler.execution import compile_run
+from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.prepared import CompiledRun, PreparedIndexedAmount, PreparedSeries
-from finance.augur.sim.scenario import CashflowOnly, InitialLot, SleeveTarget, TargetAllocationPolicy, TaxProfile
-from finance.augur.sim.testing.case import Case, flat, scenario
-from finance.augur.sim.testing.fixtures import checking
+from finance.augur.sim.scenario import (
+    Agent,
+    CashflowOnly,
+    InitialAccountBalance,
+    InitialLot,
+    Scenario,
+    SleeveTarget,
+    TargetAllocationPolicy,
+    TaxProfile,
+)
 
 STOCK = SecurityKey(symbol="stock")
 TAX = Jurisdiction(
@@ -46,35 +55,37 @@ def _policy(*, purchases: bool = True) -> TargetAllocationPolicy:
     )
 
 
-def _case(*, purchases: bool = True) -> Case:
-    return Case(
-        scenario=scenario(
-            checking(("alice", Decimal(100)), ("world", Decimal(100))),
-            horizon_months=13,
-            initial_lots=[
-                InitialLot(
-                    lot_id="opening-stock",
-                    agent_id="alice",
-                    account_id="brokerage",
-                    asset=STOCK,
-                    purchase_month_index=-24,
-                    quantity=100,
-                    cost_basis=500,
-                )
-            ],
-            target_allocation_policies=[_policy(purchases=purchases)],
-            tax_profiles=[TaxProfile(agent_id="alice", tax_authority_agent_id="world", jurisdiction_ids=["synthetic"])],
-        ),
-        rollout_count=1,
-        series={STOCK: flat(Decimal(10), rollout_count=1, horizon_months=13)},
+def _scenario(*, purchases: bool = True) -> Scenario:
+    return Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="world")],
+        initial_cash=[
+            InitialAccountBalance(agent_id=agent_id, account_id="checking", balance=Decimal(100))
+            for agent_id in ("alice", "world")
+        ],
+        horizon_months=13,
+        initial_lots=[
+            InitialLot(
+                lot_id="opening-stock",
+                agent_id="alice",
+                account_id="brokerage",
+                asset=STOCK,
+                purchase_month_index=-24,
+                quantity=100,
+                cost_basis=500,
+            )
+        ],
+        target_allocation_policies=[_policy(purchases=purchases)],
+        tax_profiles=[TaxProfile(agent_id="alice", tax_authority_agent_id="world", jurisdiction_ids=["synthetic"])],
     )
 
 
-def _prepared(case: Case) -> CompiledRun:
+def _prepared(scenario: Scenario) -> CompiledRun:
     return compile_run(
-        case.scenario,
-        rollout_count=case.rollout_count,
-        external_series=case.external_series,
+        scenario,
+        rollout_count=1,
+        external_series=ExternalSeriesContext.from_level_blocks(
+            [(STOCK, np.full((1, 14), 10.0))], rollout_count=1, horizon_months=13
+        ),
         jurisdictions={"synthetic": TAX},
         locations={},
     )
@@ -85,23 +96,22 @@ def _imported(run: CompiledRun) -> CompiledRun:
 
 
 def test_generated_purchase_namespace_is_reserved() -> None:
-    case = _case()
-    opening = case.scenario.initial_lots[0].model_copy(update={"lot_id": "fund_buy_p0_s0_1000000"})
-    authored = case.scenario.model_copy(update={"initial_lots": [opening]})
+    scenario = _scenario()
+    opening = scenario.initial_lots[0].model_copy(update={"lot_id": "fund_buy_p0_s0_1000000"})
+    authored = scenario.model_copy(update={"initial_lots": [opening]})
     with pytest.raises(ValueError, match="reserved allocation-purchase identity"):
-        validate_prepared(_prepared(replace(case, scenario=authored)))
+        validate_prepared(_prepared(authored))
     disabled = authored.model_copy(update={"target_allocation_policies": [_policy(purchases=False)]})
-    validate_prepared(_prepared(replace(case, scenario=disabled)))
+    validate_prepared(_prepared(disabled))
     nonmatching = authored.model_copy(
         update={"initial_lots": [opening.model_copy(update={"lot_id": opening.lot_id + "x"})]}
     )
-    validate_prepared(_prepared(replace(case, scenario=nonmatching)))
+    validate_prepared(_prepared(nonmatching))
 
 
 def test_a_missing_asset_quote_is_not_a_zero_valued_holding() -> None:
-    case = _case()
     second = SecurityKey(symbol="second")
-    authored = case.scenario.model_copy(
+    authored = _scenario().model_copy(
         update={
             "target_allocation_policies": [
                 _policy().model_copy(
@@ -111,7 +121,7 @@ def test_a_missing_asset_quote_is_not_a_zero_valued_holding() -> None:
         }
     )
     with pytest.raises(ValueError, match=r"(?i)missing|series|level block"):
-        _prepared(replace(case, scenario=authored))
+        _prepared(authored)
 
 
 @pytest.mark.parametrize(
@@ -136,7 +146,7 @@ def test_a_missing_asset_quote_is_not_a_zero_valued_holding() -> None:
     ],
 )
 def test_an_imported_policy_is_rejected_before_a_world_is_composed(malformation: str, error: str) -> None:
-    run = _prepared(_case())
+    run = _prepared(_scenario())
     [policy] = run.scenario._target_allocation_policies
     [sleeve] = policy.sleeves
     index = PreparedIndexedAmount(base_amount=0, series_id="inflation", base_month_index=0, adjustment_period_months=12)
@@ -181,7 +191,7 @@ def test_an_imported_policy_is_rejected_before_a_world_is_composed(malformation:
 
 
 def test_a_prepared_policy_keeps_exact_integer_indices_and_disabled_purchase_scope() -> None:
-    run = _prepared(_case(purchases=False))
+    run = _prepared(_scenario(purchases=False))
     [policy] = run.scenario._target_allocation_policies
     # Policy bounds no longer cross a float transport. An exact i64 index above
     # 2**53 is valid; absent purchase destinations remain valid for sales-only rules.
