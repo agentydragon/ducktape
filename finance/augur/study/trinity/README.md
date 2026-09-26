@@ -4,8 +4,7 @@ Cooley, Hubbard and Walz, "Retirement Savings: Choosing a Withdrawal Rate That I
 Sustainable", _AAII Journal_ XX(2), February 1998 — the paper the "4% rule" comes from. Its
 Table 3 (inflation-adjusted withdrawals, 1926 to 1995) is the target.
 
-`replay.py` composes the study straight onto `World`s — no `Scenario`, no compiled
-execution input: `situation()` compiles the sampled paths once, `compose()` declares one
+`replay.py` composes the study straight onto `World`s: `situation()` compiles the sampled paths once, `compose()` declares one
 window's books (accounts, sleeve lots, the bond payout, the indexed withdrawal claims) and
 `execute()` drives an `ActionSession` over them — replays every 30-year window the period
 supplies, and reports success rates and SAFEMAX per allocation. Its module docstring carries the

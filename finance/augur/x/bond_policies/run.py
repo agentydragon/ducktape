@@ -1,10 +1,9 @@
 """Run bond-construction and spending cells through Augur's canonical household engine.
 
 Construction functions supply unit prices and coupons; this module owns accounts,
-withdrawals, funding policy, and output. No `Scenario`: each spending cell is a
-`Situation` composed straight onto one `World` per path. The supplied curves are
-stipulated stress paths, not sampled evidence or forecasts, so cells have no
-probability weights.
+withdrawals, funding policy, and output. Each spending cell is a `Situation` composed
+straight onto one `World` per path. The supplied curves are stipulated stress paths,
+not sampled evidence or forecasts, so cells have no probability weights.
 """
 
 import argparse

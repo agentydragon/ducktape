@@ -1,6 +1,6 @@
 """Trinity's sleeve portfolio without its scheduled withdrawals, composed onto a World.
 
-No `Scenario`: the books are declared straight onto one world per path, and the Python
+The books are declared straight onto one world per path, and the Python
 policy supplies every sale and the consumption itself. Paths and instruments come from
 the Trinity experiment.
 """

@@ -10,9 +10,8 @@ An experiment composes a `World` (<world.py>) per path on a `MarketPath`: it
 declares the accounts, pools, lots, bonds, TLH portfolios, housing and standing
 cashflows that exist at month zero, tracks an `EconomicAgent` subclass (<agent.py>) and any `Mortgage`
 (<mortgage.py>), `Biller` (<bills.py>) or `TaxAuthority` (<tax_authority.py>)
-that exists then, and loops over `world.step()`. An authored `Scenario` reaches
-the same world through `compile_run` in <compiler/execution.py> and
-`World.from_run`. Alternatively it starts the common `ActionSession` and submits
+that exists then, and loops over `world.step()`. Alternatively it starts the
+common `ActionSession` and submits
 one batch of ordered actions per decision month. Both read typed results from
 <results.py> and books from <books.py>; a caller wanting a detailed history
 records it between steps with `FinancialCapture` (<capture.py>). A domain the
@@ -28,12 +27,11 @@ spending/allocation comparison and <../x/monthly_actions/README.md> for explicit
 batch actions.
 Shared proposal helpers live in <../policy/>; they do not settle trades or taxes.
 
-`CompiledRun` in <prepared.py> owns typed resolved facts: exact integer money,
-quantities, tax rules and supplied paths. The compiler constructs these directly;
-file serialization is private to the I/O boundaries. Sessions accept the prepared value,
-not a mutable wire dictionary. The compiler's per-table pieces produce the same records
-without a `Scenario`; the app lowers its request through them and tracks its household
-(<../policy/configured_household.py>) on each world it composes.
+<prepared.py> holds the typed resolved facts a world declares: exact integer money,
+quantities, tax rules and supplied paths. The compiler's per-table pieces in <compiler/>
+lower the authored records of <scenario.py> into them; the app lowers its request through
+them and tracks its household (<../policy/configured_household.py>) on each world it
+composes.
 
 ## Outcomes and failure
 

@@ -570,6 +570,10 @@ def test_a_managed_portfolio_has_a_declared_owner_a_price_path_and_one_manager()
         composed(prices(100, 100, 100)).declare_portfolio(replace(MANAGED, owner_agent_id="test-stranger"))
     with pytest.raises(ValueError, match="missing security series"):
         composed().declare_portfolio(MANAGED)
+    # Zero is a mark a manager may carry; below zero is not a price at any snapshot, the terminal one included.
+    composed(prices(100, 0, 0)).declare_portfolio(MANAGED)
+    with pytest.raises(ValueError, match="index price must be nonnegative, got -1 at month 2"):
+        composed(prices(100, 100, -1)).declare_portfolio(MANAGED)
 
 
 ISSUER = "test-issuer"

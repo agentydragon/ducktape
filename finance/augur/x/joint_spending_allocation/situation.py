@@ -1,6 +1,6 @@
 """Two placeholder securities, an annual bill and a synthetic tax schedule, composed onto a World.
 
-No `Scenario`: the situation is declared straight onto the world, one world per path.
+The situation is declared straight onto the world, one world per path.
 """
 
 from dataclasses import dataclass
