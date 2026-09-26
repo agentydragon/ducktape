@@ -21,10 +21,9 @@ from pydantic import BaseModel, JsonValue, ValidationError
 
 from agentplane.action_service.catalog import ActionDefinition
 from agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState, Executor
-from agentplane.action_service.service import hold_lease
-from agentplane.sandbox_actions.binding import SandboxExecutorBinding
-from agentplane.sandbox_actions.inventory import ForeignSandboxError, SandboxActionError, SandboxInventory
-from agentplane.sandbox_actions.models import (
+from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.inventory import ForeignSandboxError, SandboxActionError, SandboxInventory
+from agentplane.action_service.sandbox.models import (
     READY_CONDITION,
     CreateArgs,
     DisposeResult,
@@ -35,6 +34,7 @@ from agentplane.sandbox_actions.models import (
     SandboxList,
     TemplateArgs,
 )
+from agentplane.action_service.service import hold_lease
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import PodExecError
 

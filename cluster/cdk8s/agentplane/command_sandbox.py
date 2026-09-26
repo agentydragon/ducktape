@@ -26,7 +26,7 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
-from agentplane.sandbox_actions.binding import DESCRIPTION_ANNOTATION
+from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import egress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment

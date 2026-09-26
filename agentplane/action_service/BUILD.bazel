@@ -19,7 +19,7 @@ py_library(
     name = "catalog",
     srcs = ["catalog.py"],
     deps = [
-        "//agentplane/sandbox_actions:binding",
+        "//agentplane/action_service/sandbox:binding",
         "@pypi//pydantic",
     ],
 )
@@ -196,7 +196,7 @@ py_library(
         ":updates",
         "//agentplane:kubernetes_watch",
         "//agentplane/action_service/github_policy:visibility",
-        "//agentplane/sandbox_actions:inventory",
+        "//agentplane/action_service/sandbox:inventory",
         "//agentplane/workload_auth:principal",
         "//mcp_infra/exec:kubernetes",
         "//util:kubernetes",
@@ -454,9 +454,9 @@ py_library(
         ":mcp_executor",
         ":mcp_linkage",
         ":models",
-        ":sandbox_executor",
-        "//agentplane/sandbox_actions:binding",
-        "//agentplane/sandbox_actions:inventory",
+        "//agentplane/action_service/sandbox:binding",
+        "//agentplane/action_service/sandbox:executor",
+        "//agentplane/action_service/sandbox:inventory",
         "@pypi//pydantic",
     ],
 )
@@ -1068,49 +1068,5 @@ py_library(
         "//agentplane/action_service/policies:registry",
         "//agentplane/action_service/policies:resources",
         "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "sandbox_executor",
-    srcs = ["sandbox_executor.py"],
-    # The group key and its Action names, so the staging policy that auto-approves them is written
-    # from the roster that offers them rather than from a second copy.
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
-    deps = [
-        ":catalog",
-        ":models",
-        ":service",
-        "//agentplane:subjects",
-        "//agentplane/sandbox_actions:binding",
-        "//agentplane/sandbox_actions:inventory",
-        "//agentplane/sandbox_actions:models",
-        "//mcp_infra/exec:kubernetes",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_sandbox_executor",
-    srcs = ["test_sandbox_executor.py"],
-    deps = [
-        ":catalog",
-        ":conftest",
-        ":models",
-        ":sandbox_executor",
-        ":service",
-        "//:conftest",
-        "//agentplane:subjects",
-        "//agentplane/sandbox_actions:binding",
-        "//agentplane/sandbox_actions:inventory",
-        "//agentplane/sandbox_actions:models",
-        "//mcp_infra/exec:kubernetes",
-        "//mcp_infra/exec:models",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

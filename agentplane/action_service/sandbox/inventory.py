@@ -16,8 +16,8 @@ from typing import Any, cast
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiException, CoreV1Api
 
-from agentplane.sandbox_actions.binding import DESCRIPTION_ANNOTATION, PREFIX, SandboxExecutorBinding
-from agentplane.sandbox_actions.models import READY_CONDITION, SandboxInfo
+from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION, PREFIX, SandboxExecutorBinding
+from agentplane.action_service.sandbox.models import READY_CONDITION, SandboxInfo
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import CommandResult, ExecRunner
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL, condition, pod_name

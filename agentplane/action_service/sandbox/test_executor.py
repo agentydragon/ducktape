@@ -18,11 +18,11 @@ from pydantic import JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionState
-from agentplane.action_service.sandbox_executor import SandboxAction, SandboxExecutor, actions
+from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.executor import SandboxAction, SandboxExecutor, actions
+from agentplane.action_service.sandbox.inventory import ForeignSandboxError, SandboxActionError
+from agentplane.action_service.sandbox.models import READY_CONDITION, SandboxCondition, SandboxInfo
 from agentplane.action_service.service import ExecutionOutcomeUnknownError
-from agentplane.sandbox_actions.binding import SandboxExecutorBinding
-from agentplane.sandbox_actions.inventory import ForeignSandboxError, SandboxActionError
-from agentplane.sandbox_actions.models import READY_CONDITION, SandboxCondition, SandboxInfo
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import CommandResult, PodExecError
 from mcp_infra.exec.models import Exited
