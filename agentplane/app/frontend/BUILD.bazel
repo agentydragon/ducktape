@@ -104,6 +104,7 @@ ts_library(
     srcs = ["action_call.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":action_rendering",
         ":client",
         ":json_view",
         ":raw_switch",
@@ -150,6 +151,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":action_call",
+        ":action_rendering",
         ":actions",
         ":call_tool_result",
         ":client",
@@ -182,6 +184,90 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
+    ],
+)
+
+# Widgets for particular Actions' requests and responses, registered by the Action's identity:
+# action_rendering/index.tsx dispatches, and each group's widgets are a module beside it.
+ts_library(
+    name = "action_rendering",
+    srcs = ["action_rendering/index.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_rendering_entry",
+        ":action_rendering_result_entry",
+        ":action_rendering_ssh",
+        ":call_tool_result",
+        ":client",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "action_rendering_entry",
+    srcs = ["action_rendering/entry.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "action_rendering_result_entry",
+    srcs = ["action_rendering/result_entry.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "action_rendering_ssh",
+    srcs = ["action_rendering/ssh.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_rendering_entry",
+        ":action_rendering_result_entry",
+        ":syntax_highlight",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "action_rendering_test",
+    testonly = True,
+    srcs = ["action_rendering/index.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_rendering",
+        ":actions_testing",
+        ":call_tool_result",
+        "//:node_modules/@types/react",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "action_rendering_ssh_test",
+    testonly = True,
+    srcs = ["action_rendering/ssh.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_rendering_entry",
+        ":action_rendering_result_entry",
+        ":action_rendering_ssh",
+        ":actions_testing",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/vitest",
     ],
 )
 
@@ -694,29 +780,55 @@ ts_library(
     ],
 )
 
-# json_view.tsx imports this for the bundler; esbuild resolves it beside the emitted json_view.js
-# and folds it into the SPA's stylesheet, so it travels as a dep of the library that imports it.
+# syntax_highlight.tsx imports this for the bundler; esbuild resolves it beside the emitted
+# syntax_highlight.js and folds it into the SPA's stylesheet, so it travels as a dep of the library
+# that imports it.
 js_library(
-    name = "json_view_css",
-    srcs = ["json_view.css"],
+    name = "syntax_highlight_css",
+    srcs = ["syntax_highlight.css"],
 )
 
-# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site.
+# The one highlight.js setup: its core build with the json and bash grammars, sanitized output, and
+# the token colours.
 ts_library(
-    name = "json_view",
+    name = "syntax_highlight",
     srcs = [
-        "json_view.tsx",
+        "syntax_highlight.tsx",
         # `declare module "*.css"` for the stylesheet import above.
         "css.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":json_view_css",
+        ":syntax_highlight_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/dompurify",
         "//:node_modules/@types/react",
         "//:node_modules/dompurify",
         "//:node_modules/highlight.js",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "syntax_highlight_test",
+    testonly = True,
+    srcs = ["syntax_highlight.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":syntax_highlight",
+        "//:node_modules/vitest",
+    ],
+)
+
+# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site.
+ts_library(
+    name = "json_view",
+    srcs = ["json_view.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":syntax_highlight",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
@@ -1099,6 +1211,8 @@ vitest_bin.vitest_test(
         "test_setup.ts",
         "vitest.config.mts",
         ":action_policy_test",
+        ":action_rendering_ssh_test",
+        ":action_rendering_test",
         ":actions_history_test",
         ":actions_test",
         ":call_tool_result_test",
@@ -1121,10 +1235,13 @@ vitest_bin.vitest_test(
         ":settings_test",
         ":sidebar_test",
         ":stream_status_test",
+        ":syntax_highlight_test",
         ":thread_groups_test",
         ":thread_store_test",
         ":thread_title_test",
         "//:node_modules/happy-dom",
+        # syntax_highlight.test.ts runs in jsdom; see the note there.
+        "//:node_modules/jsdom",
         "//:node_modules/vitest",
     ],
 )

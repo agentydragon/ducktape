@@ -4,7 +4,7 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ActionRequests, stateLabel } from "./actions";
-import { button, render, request, unmountLast } from "./actions_testing";
+import { button, render, request, SSH_EXEC_ARGUMENTS, sshExec, unmountLast } from "./actions_testing";
 import { actionService, type ActionRequestView, type ActionService } from "./client";
 import { STALE_AFTER_MS } from "./stream_status";
 
@@ -84,6 +84,35 @@ describe("ActionRequests", () => {
     expect(container.textContent).toContain("Exact arguments (unredacted)");
     expect(container.textContent).toContain("test-exact-token");
     expect(container.textContent).toContain("test-exact-password");
+  });
+
+  it("draws a registered Action's arguments with its widget, and the card's Raw switch turns them to JSON", async () => {
+    const container = await render(
+      { list: async () => [sshExec("decision_pending")], decide: vi.fn() },
+      ActionRequests
+    );
+    expect(container.textContent).toContain("test-user@test-host.example");
+    expect(container.textContent).not.toContain('"command"');
+    const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    if (!raw) throw new Error("missing the Raw switch");
+    await act(async () => raw.click());
+    expect(container.textContent).toContain('"command": "echo test-output"');
+    expect(container.textContent).not.toContain("test-user@test-host.example");
+  });
+
+  it("offers no Raw switch where the arguments show only as their JSON", async () => {
+    // Arguments no widget is registered for, and ones the registered widget does not take.
+    const unfit = {
+      ...sshExec("decision_pending"),
+      id: request("decision_pending", 2).id,
+      arguments: { ...SSH_EXEC_ARGUMENTS, test_extra: "test-value" },
+    };
+    const container = await render(
+      { list: async () => [request("decision_pending", 1), unfit], decide: vi.fn() },
+      ActionRequests
+    );
+    expect(container.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(container.textContent).toContain('"test_extra": "test-value"');
   });
 
   it("renders the caller's own title and description verbatim, as plain text", async () => {

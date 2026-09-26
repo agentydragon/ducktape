@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { type JSX, act } from "react";
+import { type JSX, type ReactNode, act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach } from "vitest";
 
@@ -55,21 +55,60 @@ export function request(state: ActionState, index: number): ActionRequestView {
   };
 }
 
+/** Arguments the ssh group's `exec` Action takes. */
+export const SSH_EXEC_ARGUMENTS: ActionRequestView["arguments"] = {
+  host: "test-host.example",
+  user: "test-user",
+  command: "echo test-output",
+};
+
+/** The ssh group's `exec` Action in `state`. Once it ran, its result is stored as the Action Service
+ * keeps an MCP tool's answer: the whole CallToolResult, where FastMCP writes the `ExecResult` the tool
+ * returned twice, as structured content and as one JSON text block. `returned` overrides fields of
+ * that `ExecResult`. */
+export function sshExec(state: ActionState, returned: Record<string, unknown> = {}): ActionRequestView {
+  const row = request(state, 1);
+  const value = {
+    host: "test-host.example",
+    user: "test-user",
+    exit_code: 0,
+    stdout: "test-output\n",
+    stderr: "",
+    stdout_truncated: false,
+    stderr_truncated: false,
+    ...returned,
+  };
+  return {
+    ...row,
+    action: { group: "ssh", name: "exec" },
+    arguments: SSH_EXEC_ARGUMENTS,
+    execution: row.execution && {
+      ...row.execution,
+      result: row.execution.result && {
+        content: [{ type: "text", text: JSON.stringify(value) }],
+        structuredContent: value,
+        isError: false,
+      },
+    },
+  };
+}
+
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
 
-export async function render(service: ActionService, View: View): Promise<HTMLDivElement> {
+/** Mounts `node` in the app's Mantine provider, until the test ends. */
+export async function mount(node: ReactNode): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   mounted.push({ root, container });
   await act(async () => {
-    root.render(
-      <MantineProvider env="test">
-        <View service={service} />
-      </MantineProvider>
-    );
+    root.render(<MantineProvider env="test">{node}</MantineProvider>);
   });
   return container;
+}
+
+export async function render(service: ActionService, View: View): Promise<HTMLDivElement> {
+  return mount(<View service={service} />);
 }
 
 export function button(container: HTMLElement, label: string): HTMLButtonElement {

@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { CallToolResultView, parseCallToolResult } from "./call_tool_result";
+import { type CallToolResult, CallToolResultView, parseCallToolResult, toolValue } from "./call_tool_result";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
@@ -150,6 +150,49 @@ describe("parseCallToolResult", () => {
   it("is null for a value that is not a CallToolResult", () => {
     for (const value of [{ test: true }, { content: "test" }, { content: [], isError: "test" }, [], "test", null]) {
       expect(parseCallToolResult(value)).toBeNull();
+    }
+  });
+});
+
+describe("toolValue", () => {
+  function valueOf(stored: unknown): unknown {
+    const result: CallToolResult | null = parseCallToolResult(stored);
+    if (result === null) throw new Error("the fixture is not a CallToolResult");
+    return toolValue(result);
+  }
+
+  it("is the structured content, unwrapped from FastMCP's envelope around a return that is not an object", () => {
+    expect(
+      valueOf({ content: [{ type: "text", text: "test summary" }], structuredContent: { test_a: 1 }, isError: false })
+    ).toEqual({ test_a: 1 });
+    expect(
+      valueOf({
+        content: [{ type: "text", text: "[1,2]" }],
+        structuredContent: { result: [1, 2] },
+        isError: false,
+        _meta: { fastmcp: { wrap_result: true } },
+      })
+    ).toEqual([1, 2]);
+  });
+
+  it("is the JSON a lone text block holds when there is no structured content", () => {
+    expect(valueOf({ content: [{ type: "text", text: '{"test_a": 1}' }], isError: false })).toEqual({ test_a: 1 });
+  });
+
+  it("is absent for an error, for prose, and for more than one block", () => {
+    for (const stored of [
+      { content: [{ type: "text", text: '{"test_a": 1}' }], structuredContent: { test_a: 1 }, isError: true },
+      { content: [{ type: "text", text: "test prose" }], isError: false },
+      {
+        content: [
+          { type: "text", text: "{}" },
+          { type: "text", text: "{}" },
+        ],
+        isError: false,
+      },
+      { content: [], isError: false },
+    ]) {
+      expect(valueOf(stored)).toBeUndefined();
     }
   });
 });
