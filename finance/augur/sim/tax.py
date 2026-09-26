@@ -16,6 +16,8 @@ from finance.augur.sim.scenario import ORDINARY_INCOME, TransferIncomeCategory
 @dataclass
 class TaxFacts:
     taxable_ordinary_income: int = 0
+    # Outside capital-loss netting; stacked with net long-term gain where the rules have its brackets.
+    qualified_dividends: int = 0
     short_term_gain: int = 0
     long_term_gain: int = 0
     section_1250_recapture: int = 0
@@ -42,6 +44,7 @@ class TaxAssessment:
     long_term_gain: int
     ordinary_loss_offset: int
     ordinary_taxable: int
+    # Net long-term gain plus qualified dividends: what the long-term capital-gain brackets rate.
     long_term_capital_gain_taxable: int
     ordinary_tax: int
     capital_gain_tax: int
@@ -183,7 +186,8 @@ def assess(facts: TaxFacts, rules: PreparedTaxRules) -> TaxAssessment:
     ordinary = facts.taxable_ordinary_income
     if rules.section_1250_rate_ppb == 0:
         ordinary = checked_count(ordinary + facts.section_1250_recapture, "money addition")
-    total_taxable = _taxable(ordinary, gains.short_term, gains.long_term, gains.ordinary_offset, deduction)
+    preferential = checked_count(gains.long_term + facts.qualified_dividends, "money addition")
+    total_taxable = _taxable(ordinary, gains.short_term, preferential, gains.ordinary_offset, deduction)
     if rules.long_term_capital_gain_brackets:
         ordinary_taxable = _taxable(ordinary, gains.short_term, 0, gains.ordinary_offset, deduction)
         capital_taxable = checked_count(total_taxable - ordinary_taxable, "money subtraction")

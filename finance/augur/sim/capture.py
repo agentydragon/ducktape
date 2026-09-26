@@ -260,7 +260,7 @@ def event_log(output: FinancialOutput) -> EventLog:
                     "short_term_gain_quanta": row.short_term_gain,
                     "long_term_gain_quanta": row.long_term_gain,
                     "basis_change_quanta": row.basis_change,
-                    "interest_income_quanta": row.interest_income,
+                    "income_quanta": row.income,
                 }
                 for row in output.tlh_financial_effects
             ],

@@ -12,6 +12,7 @@ from finance.augur.model.series import LocationId, RentKey, SecurityKey, Securit
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.scenario import (
     DistributionTaxSlice,
+    InterestIncome,
     MortgageFinancing,
     RecurringObligation,
     RecurringPropertyCashflow,
@@ -144,7 +145,11 @@ def test_a_distribution_tax_character_must_sum_to_one() -> None:
             agent_id=ALICE,
             holding_account_id=AccountId("brokerage"),
             to_account_id=CHECKING,
-            tax_character=(DistributionTaxSlice(fraction=0.4, issuer_jurisdiction_id=JurisdictionId("federal_us")),),
+            tax_character=(
+                DistributionTaxSlice(
+                    fraction=0.4, income_category=InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us"))
+                ),
+            ),
         )
 
 

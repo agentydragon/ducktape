@@ -689,7 +689,7 @@ py_library(
         ":market_path",
         ":money",
         ":prepared",
-        ":scenario",
+        "//finance/augur/sim/compiler:income_sources",
     ],
 )
 
@@ -708,6 +708,7 @@ py_library(
         ":observations",
         ":prepared",
         ":scenario",
+        "//finance/augur/sim/compiler:income_sources",
     ],
 )
 
@@ -793,6 +794,7 @@ py_test(
         ":money",
         ":observations",
         ":prepared",
+        ":scenario",
         ":tlh",
         ":world",
         "//:conftest",
@@ -1751,6 +1753,25 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim/testing:accounting",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "qualified_dividends_test",
+    srcs = ["qualified_dividends_test.py"],
+    deps = [
+        ":books",
+        ":fixed_point",
+        ":ids",
+        ":jurisdictions",
+        ":scenario",
+        ":tax_authority",
+        ":tax_year",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/compiler:tax",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

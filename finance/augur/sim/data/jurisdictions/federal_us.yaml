@@ -8,8 +8,9 @@
 # (lower_of_this_bracket, upper_of_this_bracket].
 #
 # LTCG brackets are walked separately on long-term capital gains
-# (holding period >= 12 months); the LTCG bracket position depends
-# on total taxable income (ordinary + LTCG combined) per §1(h).
+# (holding period >= 12 months) plus qualified dividends (§1(h)(11));
+# the LTCG bracket position depends on total taxable income (ordinary
+# + LTCG + qualified dividends combined) per §1(h).
 jurisdiction_id: federal_us
 
 ordinary_income_brackets:

@@ -158,7 +158,7 @@ def project_product_rollout(
                 short_term_gain_quanta=_quanta(row["short_term_gain_quanta"]),
                 long_term_gain_quanta=_quanta(row["long_term_gain_quanta"]),
                 basis_change_quanta=_quanta(row["basis_change_quanta"]),
-                interest_income_quanta=_quanta(row["interest_income_quanta"]),
+                income_quanta=_quanta(row["income_quanta"]),
             )
             for row in rows(events.tlh_financial_effects, agent_id=primary_agent_id)
         ),
