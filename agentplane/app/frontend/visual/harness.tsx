@@ -31,6 +31,7 @@ import { electricLive, electricShape, electricSubset, routes, UNANSWERED } from 
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
 import { streamRegistry } from "../stream_status";
+import { theme } from "../theme";
 
 /** Resolved before any fixture is built: the scenario's fields are what the fixtures vary on. */
 function resolveScenario(): Scenario {
@@ -1837,7 +1838,7 @@ window.location.hash = scenario.route;
 const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");
 createRoot(container).render(
-  <MantineProvider defaultColorScheme="auto">
+  <MantineProvider theme={theme} defaultColorScheme="auto">
     <App />
   </MantineProvider>
 );

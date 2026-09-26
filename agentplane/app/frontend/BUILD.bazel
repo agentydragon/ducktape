@@ -1180,12 +1180,20 @@ ts_library(
 )
 
 ts_library(
+    name = "theme",
+    srcs = ["theme.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//:node_modules/@mantine/core"],
+)
+
+ts_library(
     name = "main_lib",
     srcs = ["main.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":app",
         ":operator_login",
+        ":theme",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -1292,6 +1300,7 @@ ts_library(
         ":live",
         ":local_commands",
         ":stream_status",
+        ":theme",
         ":visual_scenarios",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
