@@ -200,7 +200,7 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree 
     const target = pendingScrollTarget;
     setPendingScrollTarget(null);
     const frame = requestAnimationFrame(() => {
-      document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      document.getElementById(target)?.scrollIntoView({ block: "center" });
     });
     return () => cancelAnimationFrame(frame);
   }, [pendingScrollTarget, selectedFile, loadingFile]);
