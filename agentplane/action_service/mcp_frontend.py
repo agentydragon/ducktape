@@ -44,8 +44,9 @@ from agentplane.action_service.models import (
 )
 from agentplane.action_service.policy_view import SELF, PolicyTarget
 from agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
+from agentplane.action_service.tool_results import tool_result
 from agentplane.action_service.updates import ActionUpdates, UpdatesUnavailableError
-from agentplane.action_service.waits import ActionWaiter, WaitOptions
+from agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitSeconds
 from agentplane.subjects import ServiceAccountRef
 
 PageSize = Annotated[int, Field(ge=1, le=100, description="Maximum entries in this page (1-100).")]
@@ -333,6 +334,16 @@ def create_server(
         if current.principal != principal:
             raise ToolError("Caller identity changed during the wait; recover the request as its original caller.")
 
+    async def named_request(request_id: UUID | None, idempotency_key: str | None, principal: CallerPrincipal) -> UUID:
+        if (request_id is None) == (idempotency_key is None):
+            raise ToolError("Name the request by exactly one of request_id or idempotency_key.")
+        if request_id is not None:
+            return request_id
+        return one(
+            await service.list_requests(principal, idempotency_key=idempotency_key),
+            too_short=ActionNotFoundError(idempotency_key),
+        ).id
+
     async def wait_for_receipt(request_id: UUID, principal: CallerPrincipal, options: WaitOptions) -> ActionRequestView:
         if options.wait_seconds == 0:
             return await waiter.get(request_id, principal, options)
@@ -455,17 +466,38 @@ def create_server(
         This never submits, retries, or cancels execution, and other callers' requests are not readable.
         """
         principal = caller.principal
-        if (request_id is None) == (idempotency_key is None):
-            raise ToolError("Name the request by exactly one of request_id or idempotency_key.")
-        if request_id is None:
-            request_id = one(
-                await service.list_requests(principal, idempotency_key=idempotency_key),
-                too_short=ActionNotFoundError(idempotency_key),
-            ).id
-        view = await wait_for_receipt(request_id, principal, wait)
+        view = await wait_for_receipt(await named_request(request_id, idempotency_key, principal), principal, wait)
         if wait.wait_seconds:
             await revalidate(principal)
         return _result(_receipt(view, set(include_fields)), exclude_unset=True)
+
+    @server.tool(annotations={"readOnlyHint": True})
+    @_tool_errors
+    async def get_action_result(
+        request_id: UUID | None = None,
+        idempotency_key: IdempotencyKey | None = None,
+        wait_seconds: WaitSeconds = 0,
+        caller: Caller = CALLER,
+    ) -> ToolResult:
+        """Read your Action's outcome as the tool it ran answered: its own content blocks, images included, and
+        structured content, where get_action_request returns receipt JSON.
+        Name the request by exactly one of request_id or idempotency_key, as for get_action_request.
+        wait_seconds (0-30) waits for it to finish; until then the result says what it waits on and is not an error.
+        Denied, cancelled, failed and unknown outcomes are error results; unknown means it may have run.
+        This never submits, retries, or cancels execution, and other callers' requests are not readable.
+        """
+        principal = caller.principal
+        view = await wait_for_receipt(
+            await named_request(request_id, idempotency_key, principal),
+            principal,
+            WaitOptions(wait_seconds=wait_seconds),
+        )
+        if wait_seconds:
+            await revalidate(principal)
+        group = catalog.groups.get(view.action.group)
+        if group is None:
+            raise ToolError("This Action's group is no longer configured; read the request with get_action_request.")
+        return tool_result(view, group.executor)
 
     @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
     @_tool_errors
