@@ -407,6 +407,7 @@ py_library(
         "//agentplane/action_service:main",
         "//agentplane/action_service:mcp_linkage",
         "//agentplane/action_service:operator_oidc",
+        "//agentplane/action_service/sandbox:actions",
         "//agentplane/action_service/sandbox:binding",
         "//agentplane/app:action_federation",
         "//cluster/cdk8s:cilium",

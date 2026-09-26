@@ -108,6 +108,8 @@ py_library(
         ":binding",
         ":models",
         "//agentplane/action_service:catalog",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )

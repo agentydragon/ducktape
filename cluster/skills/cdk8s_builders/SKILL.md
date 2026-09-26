@@ -73,6 +73,25 @@ above is for: the wrapper's `__init__` takes it as a raw keyword, and the one ca
 that needs a specific shape builds it directly, rather than a factory invented to make
 an untyped, single-user value look like reusable schema structure.
 
+### Check the generated constructor before reaching for `add_json_patch`
+
+`ApiObject.add_json_patch(...)` is for a value the generated `<Kind>Spec`'s constructor
+genuinely cannot express — a field the CRD's schema doesn't surface at all, or a value
+only known after the whole tree is synthesized. It is not a stand-in for a field the
+generated struct already accepts as a real keyword. Before patching a field in after
+construction, check the generated constructor's own signature for it; a field the CRD
+schema defines — even with unusual enum casing, a deprecated status, or an
+awkward generated name — is almost always already a typed parameter there, and belongs
+passed straight through, not bolted on with a patch.
+
+One recurring trap: `cdk8s_import`'s codegen can collapse a schema enum's
+duplicate-cased members (`audit`/`Audit`) into one generated member whose wire value
+differs in case from the spelling a caller expects. A duplicate-cased `enum:` list in
+the schema is the tell that the CRD itself treats the two cases as synonyms — so the
+fix is to accept the generated enum's own casing, not bypass the generated field over a
+cosmetic mismatch. Reach for `add_json_patch` only once you've confirmed the field
+truly isn't reachable from the constructor at all.
+
 ## Don't invent a mechanism cdk8s/Kubernetes doesn't already have
 
 `cluster/cdk8s/AGENTS.md`'s boundary rule binds here too: the vocabulary is Kubernetes, cdk8s, Flux and Kustomize objects plus plain Python values — no marker annotation, "provides" declaration, registry, or record type standing in for an object. If a wrapper's design seems to need one of those, stop and ask rather than ship it.

@@ -26,6 +26,7 @@ from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.main import ActionServiceDeploymentSettings, WebPushDeploymentSettings
 from agentplane.action_service.mcp_linkage import McpOAuthServer
 from agentplane.action_service.operator_oidc import OperatorOidcSettings
+from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.app.action_federation import ExchangeFederationSettings
 from cluster.cdk8s import cilium, external_creds
@@ -194,6 +195,9 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
                 # that survives its Pod.
                 templates={command_sandbox.NAME, command_sandbox.BUILD_NAME, "agentplane-runner"},
             ),
+            # claude.ai and Claude Code reach these as MCP tools of their own, where `sandbox-self`
+            # auto-approves them for the Connection's claude-ai account.
+            direct_tools=frozenset(SandboxAction),
         ),
         "ssh": ActionGroup(
             title="SSH",
