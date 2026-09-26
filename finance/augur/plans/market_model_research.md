@@ -38,9 +38,8 @@ beliefs and a market-conditioned forecast on the same dated evidence.
 The [PM-reifier spike](../x/pm_reifier/README.md) records exploratory June 2026
 runs, not current adoption evidence. [Loom](../../../loom/PLAN.md) has a separate
 forecast-evaluation substrate and proposed WorldSet pipeline; no WorldSet bridge
-is required for Augur's present experiments. Reifier retirement is deferred;
-keeping it executable is not required. If calibration/reification is later
-deleted, preserve the revival task in [future work](future_work.md).
+is required for Augur's present experiments. Reifier retirement is owned by
+[future work](future_work.md).
 
 ## Sparse company models
 

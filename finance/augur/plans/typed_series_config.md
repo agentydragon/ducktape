@@ -4,10 +4,9 @@ The desired endpoint is distinct strongly typed IDs at domain/API boundaries:
 a security identity must not be usable where a property identity is required.
 Changing string prefixes alone does not provide that guarantee.
 
-The [roadmap](roadmap.md) tracks this as IDTYPES. Mail in the decided
-[composition](library_design_gates.md) is already addressed by `AgentId`
-(`sim/ids.py`); the remaining entity IDs are not a prerequisite for product
-bindings or studies.
+The [roadmap](roadmap.md) tracks this as IDTYPES. Actor mail is already addressed
+by `AgentId` (`sim/ids.py`); the remaining entity IDs are not a prerequisite for
+product bindings or studies.
 Existing typed keys and per-kind sampled frames should be reused rather than
 replaced by another representation.
 
