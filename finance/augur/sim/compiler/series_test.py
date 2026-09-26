@@ -1,67 +1,67 @@
-"""What a scenario demands of the exogenous model, before any engine runs it."""
+"""What declarations demand of the exogenous model, before any world runs them."""
 
 from __future__ import annotations
 
 import pytest_bazel
 
-from finance.augur.model.series import InflationKey, SecurityKey
-from finance.augur.sim.compiler.series import scenario_level_series_keys
-from finance.augur.sim.scenario import Agent, BondHolding, HoldingPool, InitialAccountBalance, Scenario
+from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityKey
+from finance.augur.sim.compiler.series import level_series_demand
+from finance.augur.sim.scenario import BondHolding, HoldingPool
 
 
-def bond_scenario(*, indexed: bool) -> Scenario:
-    """An investor holding one dated bond and nothing priced."""
-    return Scenario(
-        agents=[Agent(agent_id="test-investor")],
-        initial_cash=[InitialAccountBalance(agent_id="test-investor", account_id="cash", balance="100")],
-        initial_bonds=[
-            BondHolding(
-                bond_id="test-bond",
-                agent_id="test-investor",
-                account_id="cash",
-                face_value=100,
-                purchase_price=100,
-                annual_coupon_rate=0.04,
-                coupon_period_months=6,
-                purchase_month_index=0,
-                maturity_month_index=12,
-                inflation_indexed=indexed,
-            )
-        ],
-        tax_profiles=[],
-        horizon_months=14,
+def demand(*, bonds: tuple[BondHolding, ...] = (), pools: tuple[HoldingPool, ...] = ()) -> tuple[LevelSeriesKey, ...]:
+    return level_series_demand(
+        pools=pools,
+        lots=(),
+        tlh_portfolios=(),
+        bonds=bonds,
+        distributions=(),
+        amounts=(),
+        sales=(),
+        policies=(),
+        tender_policies=(),
+        purchases=(),
+    )
+
+
+def bond(*, indexed: bool) -> BondHolding:
+    """One dated bond, with nothing priced beside it."""
+    return BondHolding(
+        bond_id="test-bond",
+        agent_id="test-investor",
+        account_id="cash",
+        face_value=100,
+        purchase_price=100,
+        annual_coupon_rate=0.04,
+        coupon_period_months=6,
+        purchase_month_index=0,
+        maturity_month_index=12,
+        inflation_indexed=indexed,
     )
 
 
 def test_an_indexed_bond_demands_an_inflation_path() -> None:
-    """The demand a TIPS makes that nothing else in a scenario need make.
+    """The demand a TIPS makes that nothing else beside it need make.
 
     Every other level-series demand comes from something PRICED — a lot, a sleeve, a sale. A
     bond has no price series at all, so an indexed one is the only instrument whose exogenous
     demand is invisible from the thing that carries it. Without it, the engine rejects a
     missing inflation path for any caller that derives its sampling request from the
-    scenario, which is what the product surface does, unless it happens to want CPI anyway.
+    declarations, which is what the product surface does, unless it happens to want CPI anyway.
 
     Asserted on the demand function rather than through a run: a run supplies its own bundle
     and would pass either way, which is how the gap stayed invisible from `sim/`.
     """
 
-    assert InflationKey() in scenario_level_series_keys(bond_scenario(indexed=True))
+    assert InflationKey() in demand(bonds=(bond(indexed=True),))
     # And not otherwise: a nominal bond's cashflows are fixed by its terms, so demanding a
     # series it never reads would fail an unmodeled-inflation deployment for no reason.
-    assert InflationKey() not in scenario_level_series_keys(bond_scenario(indexed=False))
+    assert InflationKey() not in demand(bonds=(bond(indexed=False),))
 
 
 def test_empty_holding_pool_demands_a_price_before_sampling() -> None:
     stock = SecurityKey(symbol="test-unheld-stock")
-    scenario = Scenario(
-        agents=[Agent(agent_id="test-investor")],
-        initial_cash=[InitialAccountBalance(agent_id="test-investor", account_id="cash", balance="100")],
-        holding_pools=[HoldingPool(agent_id="test-investor", account_id="brokerage", asset=stock)],
-        tax_profiles=[],
-        horizon_months=1,
-    )
-    assert stock in scenario_level_series_keys(scenario)
+    assert stock in demand(pools=(HoldingPool(agent_id="test-investor", account_id="brokerage", asset=stock),))
 
 
 if __name__ == "__main__":

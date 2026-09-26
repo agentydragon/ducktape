@@ -1,37 +1,16 @@
 """Owned, resolved simulation facts: exact money/quantity counts and supplied paths.
 
-Preparation constructs these records directly. Native and file codecs serialize
-them at I/O; no mutable wire document is retained. Underscored configured records
+The declaration vocabulary a composed world takes. Underscored configured records
 preserve existing consumers until their policies move to the common action session.
 """
 
 from dataclasses import dataclass
-from typing import Annotated, Literal
-
-from pydantic import BeforeValidator, Field, PlainSerializer
+from typing import Literal
 
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.income_sources import income_source_wire_id
-from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.jurisdictions import JurisdictionLevel
-from finance.augur.sim.scenario import InterestIncome, OrdinaryIncome, TransferDeductionCategory, TransferIncomeCategory
+from finance.augur.sim.scenario import TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
-
-
-def _income_source(value: object) -> TransferIncomeCategory:
-    if isinstance(value, OrdinaryIncome | InterestIncome):
-        return value
-    if value == "ordinary":
-        return OrdinaryIncome()
-    if isinstance(value, str) and value.startswith("interest:"):
-        issuer = value.removeprefix("interest:")
-        return InterestIncome(issuer_jurisdiction_id=None if issuer == "corporate" else issuer)
-    raise ValueError("income source must be ordinary or interest:<issuer>")
-
-
-type _SerializedIncome = Annotated[
-    TransferIncomeCategory, BeforeValidator(_income_source), PlainSerializer(income_source_wire_id, return_type=str)
-]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -69,10 +48,10 @@ type PreparedAmount = int | PreparedFixedAmount | PreparedIndexedAmount
 @dataclass(frozen=True, kw_only=True)
 class PreparedFlow:
     cause_id: str
-    from_account: Annotated[AccountRef, Field(alias="from")]
-    to_account: Annotated[AccountRef, Field(alias="to")]
+    from_account: AccountRef
+    to_account: AccountRef
     amount: PreparedAmount
-    income_category: _SerializedIncome | None
+    income_category: TransferIncomeCategory | None
     deduction_category: TransferDeductionCategory | None
 
 
@@ -101,8 +80,8 @@ class PreparedRecurringPropertyCashflow(PreparedRecurringTransfer):
 class PreparedClaim:
     obligation_id: str
     obligation_type: str
-    from_account: Annotated[AccountRef, Field(alias="from")]
-    to_account: Annotated[AccountRef, Field(alias="to")]
+    from_account: AccountRef
+    to_account: AccountRef
     amount_due: PreparedAmount
     property_id: str | None
     deduction_category: TransferDeductionCategory | None
@@ -327,66 +306,9 @@ class _SaltDeduction:
 
 
 @dataclass(frozen=True, kw_only=True)
-class PreparedScenario:
-    """Initial books, due cashflows and resolved rules; configured strategies stay private."""
-
-    horizon_months: int
-    accounts: tuple[PreparedAccount, ...]
-    holding_pools: tuple[PreparedHoldingPool, ...]
-    jurisdictions: tuple[PreparedJurisdiction, ...]
-    locations: tuple[PreparedLocation, ...]
-    scheduled_transfers: tuple[PreparedTransfer, ...]
-    recurring_transfers: tuple[PreparedRecurringTransfer, ...]
-    scheduled_property_cashflows: tuple[PreparedPropertyCashflow, ...]
-    recurring_property_cashflows: tuple[PreparedRecurringPropertyCashflow, ...]
-    obligations: tuple[PreparedObligation, ...]
-    recurring_obligations: tuple[PreparedRecurringObligation, ...]
-    initial_lots: tuple[PreparedLot, ...]
-    initial_bonds: tuple[PreparedBond, ...]
-    tax_profiles: tuple[PreparedTaxProfile, ...]
-    income_sources: tuple[_SerializedIncome, ...]
-    distributions: tuple[PreparedDistribution, ...]
-    _scheduled_sales: Annotated[tuple[_ScheduledSale, ...], Field(alias="scheduled_sales")]
-    _target_allocation_policies: Annotated[tuple[_AllocationPolicy, ...], Field(alias="target_allocation_policies")]
-    _private_equity_tender_policies: Annotated[tuple[_TenderPolicy, ...], Field(alias="private_equity_tender_policies")]
-    tlh_portfolios: tuple[PreparedTlhPortfolio, ...]
-    _scheduled_property_purchases: Annotated[tuple[_PropertyPurchase, ...], Field(alias="scheduled_property_purchases")]
-    _initial_primary_residences: Annotated[tuple[_PrimaryResidence, ...], Field(alias="initial_primary_residences")]
-    _primary_residence_events: Annotated[tuple[_PrimaryResidenceEvent, ...], Field(alias="primary_residence_events")]
-    _property_rented_fraction_events: Annotated[
-        tuple[_RentedFraction, ...], Field(alias="property_rented_fraction_events")
-    ]
-    _capital_improvement_events: Annotated[tuple[_CapitalImprovement, ...], Field(alias="capital_improvement_events")]
-    _property_sales: Annotated[tuple[_PropertySale, ...], Field(alias="property_sales")]
-    _mortgage_interest_deduction_policies: Annotated[
-        tuple[_MortgageInterestDeduction, ...], Field(alias="mortgage_interest_deduction_policies")
-    ]
-    _property_tax_policies: Annotated[tuple[_PropertyTax, ...], Field(alias="property_tax_policies")]
-    _federal_salt_deduction_policies: Annotated[
-        tuple[_SaltDeduction, ...], Field(alias="federal_salt_deduction_policies")
-    ]
-
-    @property
-    def has_property_purchases(self) -> bool:
-        return bool(self._scheduled_property_purchases)
-
-
-@dataclass(frozen=True, kw_only=True)
 class PreparedSeries:
     """One supplied integer path population in original rollout order."""
 
     series_id: str
     snapshots: int
     values: tuple[int, ...]
-
-
-@dataclass(frozen=True, kw_only=True)
-class CompiledRun:
-    """The sole prepared authority; source declarations and wire documents are not retained."""
-
-    currency_code: str
-    currency_quantum: str
-    rollout_count: int
-    scenario: PreparedScenario
-    series: tuple[PreparedSeries, ...]
-    _schema_version: Annotated[Literal[15], Field(alias="schema_version")] = 15

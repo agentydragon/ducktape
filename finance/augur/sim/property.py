@@ -3,7 +3,6 @@
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Self
 
 from finance.augur.sim.accounting import Accounting, TransferOutcome
 from finance.augur.sim.actor import Statement
@@ -14,7 +13,6 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
 from finance.augur.sim.prepared import (
-    PreparedScenario,
     _CapitalImprovement,
     _PrimaryResidence,
     _PrimaryResidenceEvent,
@@ -138,17 +136,6 @@ class Housing:
     residence_events: tuple[_PrimaryResidenceEvent, ...] = ()
     rented_fraction_events: tuple[_RentedFraction, ...] = ()
     capital_improvements: tuple[_CapitalImprovement, ...] = ()
-
-    @classmethod
-    def from_scenario(cls, scenario: PreparedScenario) -> Self:
-        return cls(
-            purchases=scenario._scheduled_property_purchases,
-            sales=scenario._property_sales,
-            initial_residences=scenario._initial_primary_residences,
-            residence_events=scenario._primary_residence_events,
-            rented_fraction_events=scenario._property_rented_fraction_events,
-            capital_improvements=scenario._capital_improvement_events,
-        )
 
     def check(self, horizon_months: int) -> None:
         """One purchase per property inside the horizon; its lifecycle strictly after it and frozen

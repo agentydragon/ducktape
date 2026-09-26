@@ -1,8 +1,7 @@
-"""Prepare the execution input directly from an authored scenario and materialized paths.
+"""Lower authored declarations and sampled paths into the prepared records a composed world declares.
 
-Resolve tax rules and quantize money, quantities and index levels once. The resulting
-typed value is what the engine executes, not an adapter over a second compiled world model.
-Unsupported inputs are rejected rather than silently omitted.
+Quantize money, quantities and index levels once, per table. Unsupported inputs are
+rejected rather than silently omitted.
 """
 
 from __future__ import annotations
@@ -27,13 +26,7 @@ from finance.augur.model.series import (
 from finance.augur.sim.bonds import coupon_amount_quanta
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.private_equity import compile_pe_channels
-from finance.augur.sim.compiler.series import (
-    collect_level_series_keys,
-    external_series_cubes,
-    materialize_level_rows,
-    validate_series_indexed_amounts,
-)
-from finance.augur.sim.compiler.tax import compile_tax
+from finance.augur.sim.compiler.series import external_series_cubes, materialize_level_rows
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
@@ -46,7 +39,6 @@ from finance.augur.sim.fixed_point import (
 from finance.augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.prepared import (
-    CompiledRun,
     PreparedAccount,
     PreparedAmount,
     PreparedBond,
@@ -64,7 +56,6 @@ from finance.augur.sim.prepared import (
     PreparedRecurringObligation,
     PreparedRecurringPropertyCashflow,
     PreparedRecurringTransfer,
-    PreparedScenario,
     PreparedSeries,
     PreparedTlhPortfolio,
     PreparedTransfer,
@@ -103,7 +94,6 @@ from finance.augur.sim.scenario import (
     RecurringObligation,
     RecurringPropertyCashflow,
     RecurringTransfer,
-    Scenario,
     ScheduledAssetSale,
     ScheduledObligation,
     ScheduledPropertyCashflow,
@@ -118,17 +108,14 @@ from finance.augur.sim.scenario import (
 )
 from finance.augur.sim.tlh import TlhOpeningCohort
 
-_BASIS_POINT_SCALE = 10_000
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
 _INDEX_SERIES_KINDS = (InflationKey, RentKey)
 
 
 class UnsupportedScenarioError(ValueError):
-    """A scenario the Rust engine has no representation for.
+    """An authored input the prepared records have no representation for.
 
-    Raised rather than encoded: the execution input schema is `deny_unknown_fields`, so a feature with
-    no field would have to be dropped, and dropping one changes the answer without changing the
-    shape of it.
+    Raised rather than dropped: dropping a feature changes the answer without changing its shape.
     """
 
 
@@ -200,7 +187,7 @@ def _level_series(
 def compile_series(
     external_series: ExternalSeriesContext, *, rollout_count: int, horizon_months: int, currency_quantum: Decimal
 ) -> tuple[PreparedSeries, ...]:
-    """The sampled level series as integer paths, for a world composed without a `Scenario`.
+    """The sampled level series as integer paths.
 
     Only sampled keys are carried; a composed world checks at `declare_pool` that the
     series a pool needs is present.
@@ -278,7 +265,7 @@ def compile_jurisdictions(
     """Every jurisdiction whose LEVEL an interest-exemption rule can name.
 
     The compiler resolves an issuer's level with `load_jurisdiction` whether or not a tax profile
-    names it (`compile_tax`), so a Treasury coupon is state-exempt for a holder who files only in
+    names it (`compile_income_sources`), so a Treasury coupon is state-exempt for a holder who files only in
     California. The registry mirrors that: the profiles' own `jurisdictions`, plus every issuer a
     bond or fund distribution names.
     """
@@ -704,123 +691,5 @@ def compile_salt_deduction(policy: FederalSaltDeductionPolicy, *, quantum: Decim
                 cap=int(currency_amount_to_quanta(entry.cap, quantum=quantum)),
             )
             for entry in policy.cap_schedule
-        ),
-    )
-
-
-def compile_run(
-    scenario: Scenario,
-    *,
-    rollout_count: int,
-    external_series: ExternalSeriesContext,
-    jurisdictions: Mapping[str, Jurisdiction],
-    locations: Mapping[str, Location],
-) -> CompiledRun:
-    """Resolve one self-contained execution input; retain no source objects to reread.
-
-    Sampling and rule/location loading belong to the caller, so experiments can reuse
-    a supplied path population across policy cells.
-    """
-    if rollout_count <= 0:
-        raise ValueError(f"rollout_count must be positive; got {rollout_count}")
-    quantum = scenario.currency.quantum
-    horizon = int(scenario.horizon_months)
-    rows = materialize_level_rows(
-        tuple(external_series.levels.value_rows()), rollout_count=rollout_count, horizon_months=horizon
-    )
-    keys = collect_level_series_keys(scenario, rows)
-    levels, money = external_series_cubes(
-        rows,
-        series_index_by_id={key: index for index, key in enumerate(keys)},
-        rollout_count=rollout_count,
-        horizon_months=horizon,
-        currency_quantum=quantum,
-    )
-    validate_series_indexed_amounts(scenario, rollout_count=rollout_count, rows_by_key={row.key: row for row in rows})
-    tax = compile_tax(scenario, jurisdictions)
-    housing = compile_housing(
-        purchases=scenario.scheduled_property_purchases,
-        initial_residences=scenario.initial_primary_residences,
-        residence_events=scenario.primary_residence_events,
-        lifecycle_events=scenario.property_lifecycle_events,
-        quantum=quantum,
-    )
-    return CompiledRun(
-        currency_code=scenario.currency.code,
-        currency_quantum=format(quantum, "f"),
-        rollout_count=rollout_count,
-        scenario=PreparedScenario(
-            horizon_months=horizon,
-            jurisdictions=compile_jurisdictions(
-                jurisdictions, bonds=scenario.initial_bonds, distributions=scenario.security_distributions
-            ),
-            locations=compile_locations(scenario.scheduled_property_purchases, locations, quantum=quantum),
-            accounts=compile_accounts(scenario.initial_cash, quantum=quantum),
-            holding_pools=compile_holding_pools(
-                pools=scenario.holding_pools,
-                lots=scenario.initial_lots,
-                policies=scenario.target_allocation_policies,
-                tlh_portfolios=scenario.tlh_portfolios,
-            ),
-            scheduled_transfers=tuple(
-                compile_transfer(transfer, quantum=quantum) for transfer in scenario.scheduled_transfers
-            ),
-            recurring_transfers=tuple(
-                compile_recurring_transfer(transfer, quantum=quantum) for transfer in scenario.recurring_transfers
-            ),
-            scheduled_property_cashflows=tuple(
-                compile_property_cashflow(cashflow, quantum=quantum)
-                for cashflow in scenario.scheduled_property_cashflows
-            ),
-            recurring_property_cashflows=tuple(
-                compile_recurring_property_cashflow(cashflow, quantum=quantum)
-                for cashflow in scenario.recurring_property_cashflows
-            ),
-            obligations=tuple(
-                compile_obligation(obligation, quantum=quantum) for obligation in scenario.scheduled_obligations
-            ),
-            recurring_obligations=tuple(
-                compile_recurring_obligation(obligation, quantum=quantum)
-                for obligation in scenario.recurring_obligations
-            ),
-            initial_lots=compile_lots(scenario.initial_lots, quantum=quantum),
-            initial_bonds=tuple(compile_bond(bond, quantum=quantum) for bond in scenario.initial_bonds),
-            _scheduled_sales=tuple(compile_scheduled_sale(sale) for sale in scenario.scheduled_asset_sales),
-            tax_profiles=tax.profiles,
-            income_sources=tax.income_sources,
-            distributions=tuple(compile_distribution(distribution) for distribution in scenario.security_distributions),
-            _target_allocation_policies=tuple(
-                compile_allocation_policy(policy, quantum=quantum) for policy in scenario.target_allocation_policies
-            ),
-            _private_equity_tender_policies=tuple(
-                compile_tender_policy(policy, quantum=quantum) for policy in scenario.private_equity_tender_policies
-            ),
-            tlh_portfolios=tuple(
-                compile_tlh_portfolio(portfolio, quantum=quantum) for portfolio in scenario.tlh_portfolios
-            ),
-            _scheduled_property_purchases=housing.purchases,
-            _initial_primary_residences=housing.initial_residences,
-            _primary_residence_events=housing.residence_events,
-            _property_rented_fraction_events=housing.rented_fraction_events,
-            _capital_improvement_events=housing.capital_improvements,
-            _property_sales=housing.sales,
-            _mortgage_interest_deduction_policies=tuple(
-                compile_interest_deduction(policy, quantum=quantum)
-                for policy in scenario.mortgage_interest_deduction_policies
-            ),
-            _property_tax_policies=tuple(compile_property_tax(policy) for policy in scenario.property_tax_policies),
-            _federal_salt_deduction_policies=tuple(
-                compile_salt_deduction(policy, quantum=quantum) for policy in scenario.federal_salt_deduction_policies
-            ),
-        ),
-        series=(
-            *_level_series(keys, levels, money),
-            *compile_private_equity_series(
-                private_equity_issuers(scenario.initial_lots),
-                external_series.private_equity,
-                rollout_count=rollout_count,
-                horizon_months=horizon,
-                quantum=quantum,
-            ),
         ),
     )
