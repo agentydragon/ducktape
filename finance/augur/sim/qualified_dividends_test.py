@@ -4,7 +4,8 @@ Every expected figure is a single filer's tax computed on paper from `data/juris
 federal rates qualified dividends on the long-term capital-gain brackets, stacked with net
 long-term gain above ordinary income after the deduction; California has no such brackets
 and taxes them as ordinary income. Federal figures are regular income tax (ordinary plus
-capital-gain rate tax); a surtax such as NIIT is assessed apart from them.
+capital-gain rate tax); NIIT, to which qualified dividends are net investment income, is
+assessed apart from them.
 """
 
 from dataclasses import dataclass
@@ -90,6 +91,22 @@ def test_liability(year: Year, federal: tuple[int, int], california: int) -> Non
     rows = close(year)
     assert (rows[FEDERAL].ordinary_tax, rows[FEDERAL].capital_gain_tax) == federal
     assert rows[CALIFORNIA].total_tax == california
+
+
+@pytest.mark.parametrize(
+    ("year", "niit"),
+    [
+        # MAGI 190,000 is under the $200,000 threshold.
+        pytest.param(Year(wages=160_000, dividends=30_000), 0, id="below"),
+        # MAGI 230,000 is 30,000 over, less than the 50,000 of dividends: 3.8% x 30,000.
+        pytest.param(Year(wages=180_000, dividends=50_000), 114_000, id="straddling"),
+        # MAGI 550,000: every dividend dollar is over the threshold: 3.8% x 50,000.
+        pytest.param(Year(wages=500_000, dividends=50_000), 190_000, id="above"),
+    ],
+)
+def test_qualified_dividends_are_net_investment_income(year: Year, niit: int) -> None:
+    rows = close(year)
+    assert (rows[FEDERAL].net_investment_income_tax, rows[CALIFORNIA].net_investment_income_tax) == (niit, 0)
 
 
 def test_the_deduction_left_over_by_ordinary_income_shelters_dividends() -> None:

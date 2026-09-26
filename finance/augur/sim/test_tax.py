@@ -5,21 +5,25 @@ from dataclasses import replace
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules
+from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules, PreparedThresholdTax
 from finance.augur.sim.ids import AgentId, JurisdictionId
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.money import MAX_COUNT
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome
+from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, QualifiedDividendIncome
 from finance.augur.sim.tax import (
     IncomeLedger,
     NettedGains,
     TaxFacts,
     apply_brackets,
     assess,
+    is_investment_income,
     net_capital_gains,
     taxes_interest_from,
     validate_rules,
 )
+
+# 3.8% over a $200,000 MAGI threshold, in quanta of $0.01.
+NIIT = PreparedThresholdTax(rate_ppb=38_000_000, threshold=20_000_000)
 
 
 @pytest.fixture
@@ -117,6 +121,82 @@ def test_untaxed_recipients_do_not_acquire_income_rows() -> None:
     income.enroll(AgentId("test_household"))
     income.accrue(AgentId("test_counterparty"), ORDINARY_INCOME, 10)
     assert income.by_source == {("test_household", ORDINARY_INCOME): 0}
+
+
+@pytest.mark.parametrize(
+    ("facts", "niit"),
+    [
+        # MAGI exactly $200,000 is not over the threshold.
+        (TaxFacts(taxable_ordinary_income=20_000_000, investment_income=5_000_000), 0),
+        # MAGI $220,000 straddles it: 3.8% of the $20,000 excess, smaller than $30,000 NII.
+        (TaxFacts(taxable_ordinary_income=22_000_000, investment_income=3_000_000), 76_000),
+        # MAGI $310,000: the $10,000 of NII is smaller than the $110,000 excess.
+        (TaxFacts(taxable_ordinary_income=31_000_000, investment_income=1_000_000), 38_000),
+        # A $50,000 long-term gain is NII and MAGI: 3.8% of min(50,000, 100,000).
+        (TaxFacts(taxable_ordinary_income=25_000_000, long_term_gain=5_000_000), 190_000),
+        # A $10,000 short-term loss enters NII only as its $3,000 allowed offset:
+        # MAGI 270,000 - 3,000 = 267,000; NII 20,000 - 3,000 = 17,000; 3.8% × 17,000.
+        (TaxFacts(taxable_ordinary_income=27_000_000, investment_income=2_000_000, short_term_gain=-1_000_000), 64_600),
+        # A $4,000 short-term loss nets against a $10,000 long-term gain: NII 6,000.
+        (TaxFacts(taxable_ordinary_income=25_000_000, short_term_gain=-400_000, long_term_gain=1_000_000), 22_800),
+        # A $5,000 carryforward absorbs most of an $8,000 gain: NII 3,000.
+        (
+            TaxFacts(taxable_ordinary_income=25_000_000, long_term_gain=800_000, capital_loss_carryforward=500_000),
+            11_400,
+        ),
+        # Unrecaptured depreciation is gain on a disposition: $30,000 is NII and MAGI.
+        (TaxFacts(taxable_ordinary_income=19_000_000, section_1250_recapture=3_000_000), 76_000),
+    ],
+)
+def test_niit_is_the_rate_on_the_lesser_of_nii_and_the_magi_excess(
+    federal: PreparedTaxRules, facts: TaxFacts, niit: int
+) -> None:
+    assert assess(facts, replace(federal, net_investment_income_tax=NIIT)).net_investment_income_tax == niit
+    assert assess(facts, federal).net_investment_income_tax == 0
+
+
+def test_niit_is_a_separate_component_of_the_total(federal: PreparedTaxRules) -> None:
+    """Taxable 220,000 - 14,600 = 205,400 at 10/12/22%: 1160 + 4266 + 34815 = 40241; plus $760 NIIT."""
+    assessment = assess(
+        TaxFacts(taxable_ordinary_income=22_000_000, investment_income=3_000_000),
+        replace(federal, net_investment_income_tax=NIIT),
+    )
+    assert (assessment.ordinary_tax, assessment.capital_gain_tax) == (4_024_100, 0)
+    assert assessment.total_tax == 4_100_100
+
+
+def test_interest_and_qualified_dividends_are_investment_income() -> None:
+    assert is_investment_income(InterestIncome(issuer_jurisdiction_id=JurisdictionId("test_state")))
+    assert is_investment_income(QualifiedDividendIncome())
+    assert not is_investment_income(ORDINARY_INCOME)
+
+
+@pytest.mark.parametrize(
+    ("facts", "surtax", "total"),
+    [
+        # Taxable income 1,005,363 - 5,363 = $1,000,000, not above the threshold.
+        (TaxFacts(taxable_ordinary_income=100_536_300), 0, 10_000_000),
+        # $1,000,001: 1% of the $1 over it, on top of the 10% bracket tax.
+        (TaxFacts(taxable_ordinary_income=100_536_400), 1, 10_000_011),
+        # Gains are taxable income here: 505,363 + 600,000 - 5,363 = $1,100,000.
+        (TaxFacts(taxable_ordinary_income=50_536_300, long_term_gain=60_000_000), 100_000, 11_100_000),
+    ],
+)
+def test_state_surtax_on_taxable_income_above_a_million(facts: TaxFacts, surtax: int, total: int) -> None:
+    rules = PreparedTaxRules(
+        jurisdiction_id=JurisdictionId("test_state"),
+        exempt_interest_from_levels=(JurisdictionLevel.FEDERAL,),
+        exempts_own_issue=True,
+        ordinary_brackets=(PreparedTaxBracket(None, 100_000_000),),
+        long_term_capital_gain_brackets=(),
+        standard_deduction=536_300,
+        max_capital_loss_ordinary_offset=300_000,
+        section_1250_rate_ppb=0,
+        taxable_income_surtax=PreparedThresholdTax(rate_ppb=10_000_000, threshold=100_000_000),
+    )
+    assessment = assess(facts, rules)
+    assert assessment.taxable_income_surtax == surtax
+    assert assessment.total_tax == total
 
 
 if __name__ == "__main__":

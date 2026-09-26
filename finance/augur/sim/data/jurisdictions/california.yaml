@@ -4,8 +4,6 @@
 # dividends at ordinary income rates (no separate LTCG bracket), so
 # `ltcg_brackets` is omitted here — the tax layer will fall through to
 # the ordinary bracket when no LTCG-specific brackets are configured.
-#
-# The 1% mental-health surcharge on income above $1M is deferred.
 jurisdiction_id: california
 
 ordinary_income_brackets:
@@ -33,3 +31,12 @@ level: state
 exempt_interest_from_levels:
   - federal
 exempts_own_issue: true
+
+# R&TC 17043's 1% Behavioral Health Services Tax (formerly Mental Health Services Tax):
+# FTB 2025 Form 540 instructions, line 62: 1% of taxable income (Form 540 line 19) over
+# $1,000,000. The threshold is statutory and not inflation-indexed.
+# https://www.ftb.ca.gov/forms/2025/2025-540-instructions.html
+taxable_income_surtax:
+  rate: 0.01
+  threshold:
+    single: 1000000

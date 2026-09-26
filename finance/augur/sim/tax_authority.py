@@ -12,8 +12,8 @@ from finance.augur.sim.ids import AccountId, JurisdictionId
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 from finance.augur.sim.mortgage import Mortgage
 from finance.augur.sim.prepared import PreparedJurisdiction, _MortgageInterestDeduction, _SaltDeduction
-from finance.augur.sim.scenario import InterestIncome, OrdinaryIncome, QualifiedDividendIncome
-from finance.augur.sim.tax import TaxFacts, assess, net_capital_gains, taxes_interest_from
+from finance.augur.sim.scenario import OrdinaryIncome, QualifiedDividendIncome
+from finance.augur.sim.tax import TaxFacts, assess, is_investment_income, taxes_interest_from
 from finance.augur.sim.tax_year import TaxBook
 
 
@@ -121,40 +121,41 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement, Assessment]):
         income = book.income.copy()
         year = book.years[agent]
         levels = {jurisdiction.jurisdiction_id: jurisdiction.level for jurisdiction in jurisdictions}
-        gains = net_capital_gains(
-            year.short_term_gain,
-            year.long_term_gain,
-            year.capital_loss_carryforward,
-            profile.jurisdictions[0].max_capital_loss_ordinary_offset,
-        )
-        for deduction in (year.depreciation_deduction, year.rental_interest_deduction, gains.ordinary_offset):
+        for deduction in (year.depreciation_deduction, year.rental_interest_deduction):
             income.deduct_from_ordinary(agent, deduction)
         annual = []
         for rules in profile.jurisdictions:
             taxable = 0
             qualified_dividends = 0
+            investment = 0
             for (owner, source), amount in income.by_source.items():
                 if owner != agent:
                     continue
-                if isinstance(source, QualifiedDividendIncome):
-                    qualified_dividends = checked_count(qualified_dividends + amount, "money addition")
-                elif isinstance(source, OrdinaryIncome) or (
-                    isinstance(source, InterestIncome)
-                    and taxes_interest_from(
+                if not (
+                    isinstance(source, OrdinaryIncome | QualifiedDividendIncome)
+                    or taxes_interest_from(
                         rules,
                         source.issuer_jurisdiction_id,
                         levels.get(source.issuer_jurisdiction_id) if source.issuer_jurisdiction_id else None,
                     )
                 ):
+                    continue
+                if isinstance(source, QualifiedDividendIncome):
+                    qualified_dividends = checked_count(qualified_dividends + amount, "money addition")
+                else:
                     taxable = checked_count(taxable + amount, "money addition")
+                if is_investment_income(source):
+                    investment = checked_count(investment + amount, "money addition")
             mortgage_deduction = mortgage_interest_deduction(
                 self.mortgage_interest_policies, mortgages, rules.jurisdiction_id
             )
             facts = TaxFacts(
                 taxable_ordinary_income=taxable,
                 qualified_dividends=qualified_dividends,
-                short_term_gain=gains.short_term,
-                long_term_gain=gains.long_term,
+                investment_income=investment,
+                short_term_gain=year.short_term_gain,
+                long_term_gain=year.long_term_gain,
+                capital_loss_carryforward=year.capital_loss_carryforward,
                 section_1250_recapture=year.section_1250_recapture,
                 itemized_deduction=mortgage_deduction,
                 mortgage_interest_deduction=mortgage_deduction,
@@ -209,8 +210,10 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement, Assessment]):
                 ordinary_tax=assessment.ordinary_tax,
                 capital_gain_tax=assessment.capital_gain_tax,
                 section_1250_tax=assessment.section_1250_tax,
+                net_investment_income_tax=assessment.net_investment_income_tax,
+                taxable_income_surtax=assessment.taxable_income_surtax,
                 total_tax=assessment.total_tax,
-                capital_loss_carryforward=gains.carryforward,
+                capital_loss_carryforward=assessment.capital_loss_carryforward,
             )
             for rules, facts, assessment in annual
         ]

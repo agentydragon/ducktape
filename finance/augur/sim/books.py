@@ -176,6 +176,8 @@ class TaxAccrual(Record):
     ordinary_tax: int
     capital_gain_tax: int
     section_1250_tax: int
+    net_investment_income_tax: int
+    taxable_income_surtax: int
     total_tax: int
     capital_loss_carryforward: int
 

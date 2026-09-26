@@ -41,3 +41,12 @@ level: federal
 # hence exempts_own_issue is left false.
 exempt_interest_from_levels:
   - state
+
+# IRC 1411 net investment income tax. IRS Form 8960 (2025) instructions, Part III: 3.8% of
+# the smaller of net investment income and MAGI over $200,000 for a single filer. The
+# threshold is statutory and not inflation-indexed.
+# https://www.irs.gov/instructions/i8960
+net_investment_income_tax:
+  rate: 0.038
+  threshold:
+    single: 200000
