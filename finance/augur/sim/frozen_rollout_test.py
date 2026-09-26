@@ -32,6 +32,7 @@ from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.testing.issuer_protocol import issuer_protocol
 from finance.augur.sim.world import World
 
@@ -98,7 +99,8 @@ def frozen_world(*, horizon_months: int) -> World:
                 TaxProfile(agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS),
                 jurisdictions,
                 quantum=QUANTUM,
-            )
+            ),
+            indexation=FixedNominalLaw(),
         )
     )
     world.track(Biller(unfundable(month=FAIL_MONTH, payer=ALICE, amount=Decimal(1))))

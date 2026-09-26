@@ -21,7 +21,13 @@ from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
-from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
+from finance.augur.sim.jurisdictions import (
+    Jurisdiction,
+    JurisdictionLevel,
+    StatutoryAmount,
+    StatutoryIndexation,
+    TaxBracket,
+)
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -35,6 +41,7 @@ from finance.augur.sim.results import Finished
 from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, ObligationType, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.world import World
 from finance.augur.x.monthly_actions.policy import decide
 
@@ -50,6 +57,16 @@ _FLAT_TAX = Jurisdiction(
     ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.10)]},
     standard_deduction={FilingStatus.SINGLE: Decimal(0)},
     max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
+    law_year=2024,
+    indexation=dict.fromkeys(
+        (
+            StatutoryAmount.ORDINARY_INCOME_BRACKETS,
+            StatutoryAmount.LTCG_BRACKETS,
+            StatutoryAmount.STANDARD_DEDUCTION,
+            StatutoryAmount.MAX_CAPITAL_LOSS_ORDINARY_OFFSET,
+        ),
+        StatutoryIndexation.FIXED,
+    ),
 )
 
 
@@ -112,7 +129,12 @@ def compose(case: Situation, rollout_id: int) -> World:
         tax_authority_agent_id=TAX_AUTHORITY,
         prior_year_tax=Decimal(0),
     )
-    world.track(TaxAuthority(compile_profile(profile, {_FLAT_TAX.jurisdiction_id: _FLAT_TAX}, quantum=QUANTUM)))
+    world.track(
+        TaxAuthority(
+            compile_profile(profile, {_FLAT_TAX.jurisdiction_id: _FLAT_TAX}, quantum=QUANTUM),
+            indexation=FixedNominalLaw(),
+        )
+    )
     scale = quantity_scale_for_asset(STOCK)
     world.declare_pool(
         PreparedHoldingPool(

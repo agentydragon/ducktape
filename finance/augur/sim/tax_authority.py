@@ -6,14 +6,16 @@ from finance.augur.sim.accounting import Accounting, TaxLiabilityStatement
 from finance.augur.sim.actor import Actor, MonthOpened
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, TaxAccrual, TaxLiabilityState
 from finance.augur.sim.claims import Demand, TaxPayment, TaxTrueUp
-from finance.augur.sim.compiler.tax import PreparedTaxProfile
+from finance.augur.sim.compiler.tax import PreparedTaxProfile, PreparedTaxRules
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AccountId, JurisdictionId
+from finance.augur.sim.market_path import MarketStatement
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 from finance.augur.sim.mortgage import Mortgage
 from finance.augur.sim.prepared import PreparedJurisdiction, _MortgageInterestDeduction, _SaltDeduction
 from finance.augur.sim.scenario import OrdinaryIncome, QualifiedDividendIncome
 from finance.augur.sim.tax import TaxFacts, assess, is_investment_income, taxes_interest_from
+from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation, rules_for_year
 from finance.augur.sim.tax_year import TaxBook
 
 
@@ -22,16 +24,22 @@ class Assessment(Demand):
     effect: TaxPayment | TaxTrueUp
 
 
-class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement, Assessment]):
+class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement | MarketStatement, Assessment]):
     """One taxpayer's tax: closes each year from the facts settlement recorded and posts the assessment.
 
-    Estimates through the year are a quarter of the profile's prior-year tax each; January's
-    fourth estimate and true-up settle the liability the close posted, which the authority
-    reads back from its `TaxLiabilityStatement`.
+    Month 0 opens a tax year; each twelfth month opens the next. Estimates through the year are a
+    quarter of the profile's prior-year tax each; January's fourth estimate and true-up settle the
+    liability the close posted, which the authority reads back from its `TaxLiabilityStatement`.
+    Under `CpiIndexedLaw` a year's rules are set by its January `MarketStatement`.
     """
 
-    def __init__(self, profile: PreparedTaxProfile) -> None:
+    def __init__(self, profile: PreparedTaxProfile, *, indexation: TaxIndexation) -> None:
+        if isinstance(indexation, CpiIndexedLaw):
+            indexation.check(profile.jurisdictions)
         self.profile = profile
+        self.indexation = indexation
+        # The open tax year and its indexed rules, under `CpiIndexedLaw`.
+        self.indexed_year: tuple[int, tuple[PreparedTaxRules, ...]] | None = None
         self.liabilities: TaxLiabilityStatement | None = None
         self.salt_policies: tuple[_SaltDeduction, ...] = ()
         self.mortgage_interest_policies: tuple[_MortgageInterestDeduction, ...] = ()
@@ -46,9 +54,27 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement, Assessment]):
         else:
             self.salt_policies = (*self.salt_policies, policy)
 
-    def handle(self, message: MonthOpened | TaxLiabilityStatement) -> list[Assessment]:
+    def rules(self, tax_year: int) -> tuple[PreparedTaxRules, ...]:
+        """The profile's jurisdiction rules as they stand in `tax_year`."""
+        if isinstance(self.indexation, FixedNominalLaw):
+            return self.profile.jurisdictions
+        if self.indexed_year is None or self.indexed_year[0] != tax_year:
+            raise ValueError(f"CPI-indexed tax year {tax_year} needs its January market statement")
+        return self.indexed_year[1]
+
+    def handle(self, message: MonthOpened | TaxLiabilityStatement | MarketStatement) -> list[Assessment]:
         if isinstance(message, TaxLiabilityStatement):
             self.liabilities = message
+            return []
+        if isinstance(message, MarketStatement):
+            if isinstance(self.indexation, CpiIndexedLaw) and message.month % 12 == 0:
+                if message.cpi is None:
+                    raise ValueError("CPI-indexed tax needs the modeled CPI")
+                index = self.indexation.index(message.cpi)
+                self.indexed_year = (
+                    message.month // 12,
+                    tuple(rules_for_year(rules, index) for rules in self.profile.jurisdictions),
+                )
             return []
         profile, month = self.profile, message.month
         quarter = {3: 1, 5: 2, 8: 3}.get(month % 12)
@@ -124,7 +150,7 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement, Assessment]):
         for deduction in (year.depreciation_deduction, year.rental_interest_deduction):
             income.deduct_from_ordinary(agent, deduction)
         annual = []
-        for rules in profile.jurisdictions:
+        for rules in self.rules(month // 12):
             taxable = 0
             qualified_dividends = 0
             investment = 0

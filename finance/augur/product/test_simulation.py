@@ -49,6 +49,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import Capture, World
 
@@ -143,7 +144,11 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
             quantum=CURRENCY.quantum,
         ):
             world.declare_account(account)
-        world.track(TaxAuthority(compile_profile(profile, jurisdictions, quantum=CURRENCY.quantum)))
+        world.track(
+            TaxAuthority(
+                compile_profile(profile, jurisdictions, quantum=CURRENCY.quantum), indexation=FixedNominalLaw()
+            )
+        )
         for pool in compile_holding_pools(lots=[lot]):
             world.declare_pool(pool)
         for held in compile_lots([lot], quantum=CURRENCY.quantum):

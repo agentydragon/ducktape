@@ -11,6 +11,7 @@ from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.prepared import _MortgageInterestDeduction, _SaltCap, _SaltDeduction
 from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, OTHER, accounting, flat_rules, taxpayer
 
 
@@ -26,7 +27,7 @@ def test_year_close_nets_once_then_reassesses_federal_salt_and_resets() -> None:
         ),
     )
     books = accounting(taxpayers=(profile,))
-    authority = TaxAuthority(profile)
+    authority = TaxAuthority(profile, indexation=FixedNominalLaw())
     authority.declare_deduction(
         _SaltDeduction(
             profile_id=HOUSEHOLD,
@@ -70,7 +71,7 @@ def test_year_close_rejection_keeps_income_carryovers_and_all_jurisdictions_unco
     journal = list(books.journal)
     balances = dict(books.ledger.balances)
     with pytest.raises(KeyError):
-        TaxAuthority(taxpayer(HOUSEHOLD)).close_month(books, 11, [], ())
+        TaxAuthority(taxpayer(HOUSEHOLD), indexation=FixedNominalLaw()).close_month(books, 11, [], ())
     assert books.tax.income.by_source == before.income.by_source
     assert books.tax.years == before.years
     assert books.journal == journal
@@ -80,7 +81,7 @@ def test_year_close_rejection_keeps_income_carryovers_and_all_jurisdictions_unco
 
 
 def test_an_authority_refuses_a_deduction_claimed_by_another_taxpayer() -> None:
-    authority = TaxAuthority(taxpayer(HOUSEHOLD))
+    authority = TaxAuthority(taxpayer(HOUSEHOLD), indexation=FixedNominalLaw())
     with pytest.raises(ValueError, match="not 'test_household'"):
         authority.declare_deduction(
             _MortgageInterestDeduction(

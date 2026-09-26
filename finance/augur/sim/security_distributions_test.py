@@ -38,6 +38,7 @@ from finance.augur.sim.results import Finished, Paid, Rollout
 from finance.augur.sim.scenario import ORDINARY_INCOME, DistributionTaxSlice, InterestIncome, ObligationType, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.testing.security_distributions import (
     AGGREGATE,
     CALIFORNIA_MUNI,
@@ -174,7 +175,8 @@ def compose(
                     TaxProfile(agent_id=ALICE, jurisdiction_ids=list(FILED_IN), tax_authority_agent_id=IRS),
                     {id_: load_jurisdiction(id_) for id_ in FILED_IN},
                     quantum=QUANTUM,
-                )
+                ),
+                indexation=FixedNominalLaw(),
             )
         )
     scale = quantity_scale_for_asset(FUND)

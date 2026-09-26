@@ -71,6 +71,7 @@ py_library(
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim:tax_authority",
+        "//finance/augur/sim:tax_indexation",
         "//finance/augur/sim:world",
         "//finance/augur/sim/compiler:execution",
         "//finance/augur/sim/compiler:tax",

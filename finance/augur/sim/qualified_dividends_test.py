@@ -21,6 +21,7 @@ from finance.augur.sim.ids import AgentId, JurisdictionId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.scenario import ORDINARY_INCOME, QualifiedDividendIncome, TaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_year import TaxBook
 
 QUANTUM = Decimal("0.01")
@@ -56,7 +57,10 @@ def close(year: Year) -> dict[JurisdictionId, TaxAccrual]:
     book.income.accrue(FILER, QualifiedDividendIncome(), _quanta(year.dividends))
     book.gain(FILER, _quanta(year.short_term), long_term=False)
     book.gain(FILER, _quanta(year.long_term), long_term=True)
-    return {row.jurisdiction_id: row for row in TaxAuthority(profile).assessments(book, YEAR_END, [], ())}
+    return {
+        row.jurisdiction_id: row
+        for row in TaxAuthority(profile, indexation=FixedNominalLaw()).assessments(book, YEAR_END, [], ())
+    }
 
 
 @pytest.mark.parametrize(

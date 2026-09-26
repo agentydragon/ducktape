@@ -41,6 +41,8 @@ def federal() -> PreparedTaxRules:
         standard_deduction=1_460_000,
         max_capital_loss_ordinary_offset=300_000,
         section_1250_rate_ppb=250_000_000,
+        law_year=2024,
+        indexed=frozenset(),
     )
 
 
@@ -192,6 +194,8 @@ def test_state_surtax_on_taxable_income_above_a_million(facts: TaxFacts, surtax:
         standard_deduction=536_300,
         max_capital_loss_ordinary_offset=300_000,
         section_1250_rate_ppb=0,
+        law_year=2024,
+        indexed=frozenset(),
         taxable_income_surtax=PreparedThresholdTax(rate_ppb=10_000_000, threshold=100_000_000),
     )
     assessment = assess(facts, rules)

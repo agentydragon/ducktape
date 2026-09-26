@@ -16,6 +16,7 @@ from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.payments import execute
 from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.testing.accounting import (
     CASH,
     EXOGENOUS,
@@ -181,7 +182,7 @@ def test_moving_cash_within_the_actor_is_not_paid_consumption(
 def test_estimates_and_true_up_settle_the_same_annual_liability() -> None:
     profile = replace(taxpayer(HOUSEHOLD), prior_year_tax=400)
     books = accounting(opening({CASH: 2000}), (profile,))
-    authority = TaxAuthority(profile)
+    authority = TaxAuthority(profile, indexation=FixedNominalLaw())
 
     def assessed(month: int) -> Claims:
         authority.handle(books.liability_statement(month))
