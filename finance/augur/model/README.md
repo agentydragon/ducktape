@@ -43,5 +43,4 @@ bbr test //finance/augur/model:test_market_paths //finance/augur/model:test_prod
 ```
 
 The [PE model conventions](../docs/private_equity_model.md) describe the existing
-valuation/issuance modes and their limits. [Optional research](../plans/market_model_research.md)
-does not prescribe a single statistical model or prediction-market/LLM pipeline.
+valuation/issuance modes and their limits.

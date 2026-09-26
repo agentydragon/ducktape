@@ -2,8 +2,7 @@
 
 This describes existing conventions in <../model/private_equity_risk.py>, not
 validated cap-table economics or a recommendation of a deployment preset.
-The [calibration contract](calibration.md) owns market resolution and reporting;
-[future work](../plans/future_work.md) owns deferred model changes and retirement.
+The [calibration contract](calibration.md) owns market resolution and reporting.
 
 ## Model modes
 
