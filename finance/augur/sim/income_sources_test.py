@@ -42,8 +42,8 @@ FILED_IN = (JurisdictionId("federal_us"), JurisdictionId("california"))
 # 31 USC 3124 bars a state from taxing interest on federal obligations, so this source is
 # federally taxable and exempt in California — the split the ledger has to keep. An in-state
 # muni is exempt at both levels: IRC 103 federally, own-issue in California.
-TREASURY = InterestIncome(issuer_jurisdiction_id="federal_us")
-MUNI = InterestIncome(issuer_jurisdiction_id="california")
+TREASURY = InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us"))
+MUNI = InterestIncome(issuer_jurisdiction_id=JurisdictionId("california"))
 TREASURY_SOURCE = "interest:federal_us"
 ORDINARY_SOURCE = "ordinary"
 

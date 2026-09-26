@@ -28,14 +28,17 @@ from finance.augur.product.wire import (
     ScenarioKey,
     SecuritySleeveWeight,
     SleeveWeight,
+    SpendIndex,
     TlhFinancialEffectEvent,
 )
 from finance.augur.sim.events import TlhOperation
-from finance.augur.sim.ids import AccountId
+from finance.augur.sim.ids import AccountId, PortfolioId
 from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.tlh import TlhAssumptions
 
-_PORTFOLIO_ID = "test-managed"
+VOO = SecuritySymbol("VOO")
+
+_PORTFOLIO_ID = PortfolioId("test-managed")
 _ACCOUNT_ID = AccountId("test_managed_brokerage")
 
 
@@ -78,10 +81,13 @@ def _rollout(product: ProductService, *sleeves: SleeveWeight) -> RolloutResponse
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=1,
-        monthly_spend=1_000,
-        spend_index="none",
+        monthly_spend=Decimal(1_000),
+        spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(
-            cash_floor=260_000, cash_ceiling=280_000, cash_band_index_to_inflation=False, sleeve_weights=sleeves
+            cash_floor=Decimal(260_000),
+            cash_ceiling=Decimal(280_000),
+            cash_band_index_to_inflation=False,
+            sleeve_weights=sleeves,
         ),
     )
     return product.rollout(RolloutRequest(scenario=scenario, seed=7))
@@ -134,9 +140,9 @@ def test_a_managed_sleeve_funds_the_band_in_money_from_its_portfolio(
 @pytest.mark.parametrize(
     ("sleeves", "sells_lots", "redeems"),
     [
-        ((SecuritySleeveWeight(symbol="VOO", weight=1),), True, False),
+        ((SecuritySleeveWeight(symbol=VOO, weight=1),), True, False),
         (
-            (SecuritySleeveWeight(symbol="VOO", weight=0), ManagedSleeveWeight(portfolio_id=_PORTFOLIO_ID, weight=1)),
+            (SecuritySleeveWeight(symbol=VOO, weight=0), ManagedSleeveWeight(portfolio_id=_PORTFOLIO_ID, weight=1)),
             False,
             True,
         ),
@@ -155,9 +161,7 @@ def test_lots_of_an_index_and_a_portfolio_pegged_to_it_stay_separate_sleeves(
 
     assert detail.rollout.failed is False
     assert detail.rollout.ending_metrics.cash_quanta == _usd_quanta(280_000)
-    assert [sale.asset for sale in _sales(detail)] == (
-        [SecurityKey(symbol=SecuritySymbol("VOO"))] if sells_lots else []
-    )
+    assert [sale.asset for sale in _sales(detail)] == ([SecurityKey(symbol=VOO)] if sells_lots else [])
     assert [event.portfolio_id for event in _redemptions(detail)] == ([_PORTFOLIO_ID] if redeems else [])
 
 
@@ -167,7 +171,7 @@ def test_a_managed_sleeve_naming_an_unknown_portfolio_is_refused(
     with pytest.raises(ValueError, match="unknown TLH portfolio 'test-absent'"):
         _rollout(
             _product(augur_config, catalog, index="SPY", account_id=_ACCOUNT_ID),
-            ManagedSleeveWeight(portfolio_id="test-absent", weight=1),
+            ManagedSleeveWeight(portfolio_id=PortfolioId("test-absent"), weight=1),
         )
 
 

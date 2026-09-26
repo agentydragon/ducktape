@@ -6,6 +6,7 @@ import pytest_bazel
 
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.portfolio import (
+    HoldingKind,
     HoldingTaxLotConfig,
     LabeledTlhPortfolio,
     PortfolioAccountConfig,
@@ -14,34 +15,40 @@ from finance.augur.api.portfolio import (
 )
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.portfolio import ProductTlhCohort, product_portfolio_response
+from finance.augur.sim.ids import AccountId, AgentId, LotId, PortfolioId
 from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.tlh import TlhAssumptions
 
 
 def test_product_portfolio_response_includes_holding_positions_and_lots() -> None:
     response = product_portfolio_response(
-        snapshot=FinanceSnapshot(as_of_date="2026-05-14", cash=50_000),
+        snapshot=FinanceSnapshot(as_of_date="2026-05-14", cash=Decimal(50_000)),
         portfolio=PortfolioConfig(
             accounts=(
-                PortfolioAccountConfig(account_id="taxable", owner_agent_id="agent_a", label="Taxable Brokerage"),
+                PortfolioAccountConfig(
+                    account_id=AccountId("taxable"), owner_agent_id=AgentId("agent_a"), label="Taxable Brokerage"
+                ),
             ),
             holdings=(
                 SecurityHoldingConfig(
                     position_id="sp500_proxy",
-                    account_id="taxable",
+                    account_id=AccountId("taxable"),
                     label="SP500 Proxy",
                     symbol=SecuritySymbol("VOO"),
-                    security_kind="etf",
-                    unit_value=500,
+                    security_kind=HoldingKind.ETF,
+                    unit_value=Decimal(500),
                     lots=(
                         HoldingTaxLotConfig(
-                            lot_id="sp500_2020_01", holding_period_months_at_start=76, quantity=150.0, cost_basis=60_000
+                            lot_id=LotId("sp500_2020_01"),
+                            holding_period_months_at_start=76,
+                            quantity=150.0,
+                            cost_basis=Decimal(60_000),
                         ),
                         HoldingTaxLotConfig(
-                            lot_id="sp500_2024_06",
+                            lot_id=LotId("sp500_2024_06"),
                             holding_period_months_at_start=23,
                             quantity=150.0,
-                            cost_basis="49_999.50",
+                            cost_basis=Decimal("49999.50"),
                         ),
                     ),
                 ),
@@ -68,20 +75,22 @@ def test_product_portfolio_response_includes_holding_positions_and_lots() -> Non
 
 def test_product_portfolio_response_carries_tlh_portfolios_as_money_apart_from_holdings() -> None:
     response = product_portfolio_response(
-        snapshot=FinanceSnapshot(as_of_date="2026-05-14", cash=1_000),
+        snapshot=FinanceSnapshot(as_of_date="2026-05-14", cash=Decimal(1_000)),
         portfolio=PortfolioConfig(
             accounts=(
                 PortfolioAccountConfig(
-                    account_id="test-managed-account", owner_agent_id="test-owner", label="Test Managed"
+                    account_id=AccountId("test-managed-account"),
+                    owner_agent_id=AgentId("test-owner"),
+                    label="Test Managed",
                 ),
             )
         ),
         tlh_portfolios=(
             LabeledTlhPortfolio(
                 spec=TlhPortfolioSpec(
-                    portfolio_id="test-managed",
-                    owner_agent_id="test-owner",
-                    account_id="test-managed-account",
+                    portfolio_id=PortfolioId("test-managed"),
+                    owner_agent_id=AgentId("test-owner"),
+                    account_id=AccountId("test-managed-account"),
                     asset=SecurityKey(symbol=SecuritySymbol("test-index")),
                     initial_cohorts=[
                         TlhCohort(value=Decimal("250.01"), cost_basis=Decimal(300), purchase_month_index=-4),

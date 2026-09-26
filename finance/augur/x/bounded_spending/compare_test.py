@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import InflationKey, SecurityKey
+from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.execution import compile_series
@@ -28,7 +28,7 @@ from util.bazel.runfiles import get_required_path
 
 @pytest.fixture
 def early_claim_failure() -> Finished:
-    stock = SecurityKey(symbol="test-bill-funding")
+    stock = SecurityKey(symbol=SecuritySymbol("test-bill-funding"))
     series = compile_series(
         ExternalSeriesContext.from_level_blocks(
             [(stock, np.array([[100.0] * 3, [300.0] * 3])), (InflationKey(), np.ones((2, 3)))],

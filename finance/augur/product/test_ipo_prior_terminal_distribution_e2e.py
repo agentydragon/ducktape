@@ -14,19 +14,26 @@ this cannot be caught by looking at the output alone.
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 import pytest_bazel
 
 from finance.augur.api.config import Config
-from finance.augur.calibration.catalog import ExactMarket, IpoByDateMapping, ManifoldRef, MarketCatalog
+from finance.augur.calibration.catalog import CatalogMetadata, ExactMarket, IpoByDateMapping, ManifoldRef, MarketCatalog
 from finance.augur.calibration.ipo_prior import derive_public_market_anchors
 from finance.augur.calibration.testing import mock_price_clients
 from finance.augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from finance.augur.model.provider_config import CompositeProviderConfig
-from finance.augur.model.series import IssuerId
+from finance.augur.model.series import IssuerId, SecuritySymbol
 from finance.augur.product.conftest import MakeProductService
 from finance.augur.product.service import ProductService
-from finance.augur.product.wire import FundingPolicy, ProjectionSamplingRequest, ScenarioKey, SecuritySleeveWeight
+from finance.augur.product.wire import (
+    FundingPolicy,
+    ProjectionSamplingRequest,
+    ScenarioKey,
+    SecuritySleeveWeight,
+    SpendIndex,
+)
 from finance.evidence.markets import Platform
 
 # One market, deadline six months after the catalog's model anchor. Its YES price is the whole
@@ -39,16 +46,16 @@ _ISSUER = IssuerId("private_holding_a")
 _SCENARIO = ScenarioKey(
     model_id="current_model",
     horizon_months=24,
-    monthly_spend=5000,
-    spend_index="none",
+    monthly_spend=Decimal(5000),
+    spend_index=SpendIndex.NONE,
     funding_policy=FundingPolicy(
-        cash_floor=10000,
-        cash_ceiling=50000,
+        cash_floor=Decimal(10000),
+        cash_ceiling=Decimal(50000),
         cash_band_index_to_inflation=False,
         sleeve_weights=(
-            SecuritySleeveWeight(symbol="VOO", weight=1),
-            SecuritySleeveWeight(symbol="btc", weight=1),
-            SecuritySleeveWeight(symbol="eth", weight=1),
+            SecuritySleeveWeight(symbol=SecuritySymbol("VOO"), weight=1),
+            SecuritySleeveWeight(symbol=SecuritySymbol("btc"), weight=1),
+            SecuritySleeveWeight(symbol=SecuritySymbol("eth"), weight=1),
         ),
     ),
 )
@@ -56,7 +63,7 @@ _SCENARIO = ScenarioKey(
 
 def _catalog() -> MarketCatalog:
     return MarketCatalog(
-        metadata={"as_of": "2026-05-29", "augur_model_as_of": "2026-05-27"},
+        metadata=CatalogMetadata(as_of=date(2026, 5, 29), augur_model_as_of=date(2026, 5, 27)),
         markets=[
             ExactMarket(
                 platform_ref=ManifoldRef(manifold_id=_MARKET_ID),

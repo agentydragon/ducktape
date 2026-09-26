@@ -34,6 +34,8 @@ from finance.augur.model.provider_config import ProviderConfig
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.model.series_model import derive_stream_rollout_seeds
 
+ACME = IssuerId("acme")
+
 
 def _issuer(**updates: object) -> PrivateEquityRiskIssuerConfig:
     fields = {
@@ -46,12 +48,10 @@ def _issuer(**updates: object) -> PrivateEquityRiskIssuerConfig:
 
 
 def _sample(issuer: PrivateEquityRiskIssuerConfig, *, horizon_months: int = 4) -> SampledExogenousBundle:
-    model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
+    model = PrivateEquityRiskProviderConfig(issuers={ACME: issuer}).realize_model()
     return model.sample(
         ExogenousSamplingRequest(
-            horizon_months=horizon_months,
-            rollout_seeds=(7,),
-            required_private_equity_issuers=frozenset({IssuerId("acme")}),
+            horizon_months=horizon_months, rollout_seeds=(7,), required_private_equity_issuers=frozenset({ACME})
         )
     )
 
@@ -282,10 +282,10 @@ def test_private_equity_risk_legal_event_severity_matches_80_15_5_split() -> Non
         tender_interval_months_median=120.0,
         annual_legal_event_probability=1.0,
     )
-    model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
+    model = PrivateEquityRiskProviderConfig(issuers={ACME: issuer}).realize_model()
     sampled = model.sample(
         ExogenousSamplingRequest(
-            horizon_months=1, rollout_seeds=rollout_seeds, required_private_equity_issuers=frozenset({IssuerId("acme")})
+            horizon_months=1, rollout_seeds=rollout_seeds, required_private_equity_issuers=frozenset({ACME})
         )
     )
     event_kind = sampled.private_equity.issuer_int_matrix(
@@ -318,10 +318,10 @@ def test_private_equity_risk_legal_impairment_severe_indefinite_blocks_at_firing
         tender_interval_months_median=120.0,
         annual_legal_event_probability=1.0,
     )
-    model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
+    model = PrivateEquityRiskProviderConfig(issuers={ACME: issuer}).realize_model()
     sampled = model.sample(
         ExogenousSamplingRequest(
-            horizon_months=1, rollout_seeds=rollout_seeds, required_private_equity_issuers=frozenset({IssuerId("acme")})
+            horizon_months=1, rollout_seeds=rollout_seeds, required_private_equity_issuers=frozenset({ACME})
         )
     )
     event_kind = sampled.private_equity.issuer_int_matrix(
@@ -343,7 +343,7 @@ def test_private_equity_risk_unrequested_issuer_still_satisfies_request() -> Non
     """The PE risk model samples its configured issuers regardless of what's
     explicitly requested; requesting an unknown issuer fails at validation."""
 
-    model = PrivateEquityRiskProviderConfig(issuers={"acme": _issuer()}).realize_model()
+    model = PrivateEquityRiskProviderConfig(issuers={ACME: _issuer()}).realize_model()
 
     with pytest.raises(ValueError, match=r"missing required private-equity issuer\(s\): \['other_issuer'\]"):
         model.sample(
@@ -434,12 +434,10 @@ def test_public_market_open_realized_probability_tracks_anchor_cdf() -> None:
         public_market_cdf_anchors=_IPO_ANCHORS,
         annual_public_market_probability=0.07,
     )
-    model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
+    model = PrivateEquityRiskProviderConfig(issuers={ACME: issuer}).realize_model()
     sampled = model.sample(
         ExogenousSamplingRequest(
-            horizon_months=31,
-            rollout_seeds=rollout_seeds,
-            required_private_equity_issuers=frozenset({IssuerId("acme")}),
+            horizon_months=31, rollout_seeds=rollout_seeds, required_private_equity_issuers=frozenset({ACME})
         )
     )
     regime = sampled.private_equity.issuer_int_matrix(
@@ -508,9 +506,9 @@ def test_valuation_channel_on_is_deterministic_under_fixed_seeds() -> None:
 
     issuer = _valuation_issuer()
     request = ExogenousSamplingRequest(
-        horizon_months=8, rollout_seeds=(11, 22, 33), required_private_equity_issuers=frozenset({IssuerId("acme")})
+        horizon_months=8, rollout_seeds=(11, 22, 33), required_private_equity_issuers=frozenset({ACME})
     )
-    model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
+    model = PrivateEquityRiskProviderConfig(issuers={ACME: issuer}).realize_model()
     first = model.sample(request)
     second = model.sample(request)
 
@@ -632,7 +630,7 @@ def _deterministic_dilution_factor(*, rate: float, horizon_months: int) -> np.nd
             annual_dilution_rate=rate,
             annual_dilution_rate_log_sigma=0.0,
             rollout_seeds=(7,),
-            issuer_id=IssuerId("acme"),
+            issuer_id=ACME,
             rollout_count=1,
             horizon_months=horizon_months,
         )[0]
@@ -709,18 +707,18 @@ def test_valuation_channel_off_is_byte_identical_to_pre_m2_baseline() -> None:
     rollout_count = 256
     rollout_seeds = tuple(range(4242, 4242 + rollout_count))
     request = ExogenousSamplingRequest(
-        horizon_months=18, rollout_seeds=rollout_seeds, required_private_equity_issuers=frozenset({IssuerId("acme")})
+        horizon_months=18, rollout_seeds=rollout_seeds, required_private_equity_issuers=frozenset({ACME})
     )
 
     # Pre-M2 shape: no valuation fields set at all.
-    bare = PrivateEquityRiskProviderConfig(issuers={"acme": _issuer(**legacy_params)}).realize_model().sample(request)
+    bare = PrivateEquityRiskProviderConfig(issuers={ACME: _issuer(**legacy_params)}).realize_model().sample(request)
     # M2 fields present but channel OFF (current_valuation_usd unset). Set the inert
     # valuation RW params to NON-zero values to prove they cannot leak when the channel
     # is off (their seed stream is never derived).
     disabled = (
         PrivateEquityRiskProviderConfig(
             issuers={
-                "acme": _issuer(
+                ACME: _issuer(
                     valuation_monthly_log_return_mu=0.5,
                     valuation_monthly_log_return_sigma=0.5,
                     valuation_student_t_nu=3.0,
@@ -792,9 +790,9 @@ def _sample_dilution_paths(issuer: PrivateEquityRiskIssuerConfig, *, rollout_cou
     request = ExogenousSamplingRequest(
         horizon_months=horizon_months,
         rollout_seeds=tuple(range(1, rollout_count + 1)),
-        required_private_equity_issuers=frozenset({IssuerId("acme")}),
+        required_private_equity_issuers=frozenset({ACME}),
     )
-    return _sample_issuer(IssuerId("acme"), issuer, request)
+    return _sample_issuer(ACME, issuer, request)
 
 
 def _drawn_rates(issuer: PrivateEquityRiskIssuerConfig, *, rollout_count: int) -> np.ndarray:
@@ -829,7 +827,7 @@ def _latent_coupled_mark(
         annual_dilution_rate=issuer.annual_dilution_rate,
         annual_dilution_rate_log_sigma=issuer.annual_dilution_rate_log_sigma,
         rollout_seeds=seeds,
-        issuer_id=IssuerId("acme"),
+        issuer_id=ACME,
         rollout_count=rollout_count,
         horizon_months=horizon_months,
     )
@@ -934,7 +932,7 @@ def test_zero_rate_with_positive_sigma_yields_no_dilution_and_no_spread() -> Non
         annual_dilution_rate=0.0,
         annual_dilution_rate_log_sigma=0.5,
         rollout_seeds=tuple(range(1, rollout_count + 1)),
-        issuer_id=IssuerId("acme"),
+        issuer_id=ACME,
         rollout_count=rollout_count,
         horizon_months=horizon,
     )
@@ -1036,9 +1034,9 @@ def test_mint_streams_determinism_under_fixed_seeds() -> None:
 
     issuer = _mint_streams_issuer()
     request = ExogenousSamplingRequest(
-        horizon_months=24, rollout_seeds=(11, 22, 33), required_private_equity_issuers=frozenset({IssuerId("acme")})
+        horizon_months=24, rollout_seeds=(11, 22, 33), required_private_equity_issuers=frozenset({ACME})
     )
-    model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
+    model = PrivateEquityRiskProviderConfig(issuers={ACME: issuer}).realize_model()
     a = model.sample(request)
     b = model.sample(request)
     for channel in (PrivateEquityFloatChannel.COMPANY_VALUATION_USD, PrivateEquityFloatChannel.MARK_USD_PER_UNIT):
@@ -1203,14 +1201,14 @@ def test_legacy_bayesian_central_trajectory_collapses() -> None:
         annual_public_market_probability=0.07,
         public_market_lockup_months=6,
     )
-    model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
+    model = PrivateEquityRiskProviderConfig(issuers={ACME: issuer}).realize_model()
     rollout_count = 500
     horizon = 120
     sampled = model.sample(
         ExogenousSamplingRequest(
             horizon_months=horizon,
             rollout_seeds=tuple(range(1, rollout_count + 1)),
-            required_private_equity_issuers=frozenset({IssuerId("acme")}),
+            required_private_equity_issuers=frozenset({ACME}),
         )
     )
     mark = sampled.private_equity.issuer_float_matrix(
@@ -1276,14 +1274,14 @@ def test_mint_streams_central_trajectory_does_not_collapse() -> None:
         annual_public_market_probability=0.07,
         public_market_lockup_months=6,
     )
-    model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
+    model = PrivateEquityRiskProviderConfig(issuers={ACME: issuer}).realize_model()
     rollout_count = 500
     horizon = 120
     sampled = model.sample(
         ExogenousSamplingRequest(
             horizon_months=horizon,
             rollout_seeds=tuple(range(1, rollout_count + 1)),
-            required_private_equity_issuers=frozenset({IssuerId("acme")}),
+            required_private_equity_issuers=frozenset({ACME}),
         )
     )
     mark = sampled.private_equity.issuer_float_matrix(

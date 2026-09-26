@@ -8,12 +8,15 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from more_itertools import one
+from pydantic import HttpUrl
 
 from finance.augur.api.catalog import build_catalog, build_settings
 from finance.augur.api.config import LocationConfig, PropertyAssetConfig
 from finance.augur.api.conftest import MakeCatalogConfig
 from finance.augur.api.local_regulation import TaxRegime
 from finance.augur.sim.ids import PropertyId
+
+LOCATION_B_PROPERTY = PropertyId("location_b_property")
 
 
 def test_catalog_locations_default_to_loaded_property_source(
@@ -45,7 +48,8 @@ def test_catalog_applies_public_property_asset_urls(
             properties_path,
             property_assets=(
                 PropertyAssetConfig(
-                    property_id="location_a_property", image_url="https://cdn.example.com/augur/location-a-hero.jpg"
+                    property_id=PropertyId("location_a_property"),
+                    image_url=HttpUrl("https://cdn.example.com/augur/location-a-hero.jpg"),
                 ),
             ),
         )
@@ -55,7 +59,7 @@ def test_catalog_applies_public_property_asset_urls(
         catalog.properties_by_id[PropertyId("location_a_property")].image_url
         == "https://cdn.example.com/augur/location-a-hero.jpg"
     )
-    assert catalog.properties_by_id[PropertyId("location_b_property")].image_url is None
+    assert catalog.properties_by_id[LOCATION_B_PROPERTY].image_url is None
 
 
 def test_catalog_allows_explicit_public_property_asset_url(
@@ -66,13 +70,14 @@ def test_catalog_allows_explicit_public_property_asset_url(
             properties_path,
             property_assets=(
                 PropertyAssetConfig(
-                    property_id="location_b_property", image_url="https://cdn.example.com/augur/location-b-hero.jpg"
+                    property_id=LOCATION_B_PROPERTY,
+                    image_url=HttpUrl("https://cdn.example.com/augur/location-b-hero.jpg"),
                 ),
             ),
         )
     )
 
-    assert catalog.properties_by_id[PropertyId("location_b_property")].image_url == (
+    assert catalog.properties_by_id[LOCATION_B_PROPERTY].image_url == (
         "https://cdn.example.com/augur/location-b-hero.jpg"
     )
 
@@ -133,7 +138,8 @@ def test_catalog_rejects_asset_for_unknown_property(
                 properties_path,
                 property_assets=(
                     PropertyAssetConfig(
-                        property_id="missing_property", image_url="https://cdn.example.com/augur/missing-hero.jpg"
+                        property_id=PropertyId("missing_property"),
+                        image_url=HttpUrl("https://cdn.example.com/augur/missing-hero.jpg"),
                     ),
                 ),
             )

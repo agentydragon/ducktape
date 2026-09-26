@@ -346,7 +346,7 @@ def property_sale_world() -> World:
     world.track(
         TaxAuthority(
             compile_profile(
-                TaxProfile(agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id="irs"),
+                TaxProfile(agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=AgentId("irs")),
                 jurisdictions,
                 quantum=QUANTUM,
             )

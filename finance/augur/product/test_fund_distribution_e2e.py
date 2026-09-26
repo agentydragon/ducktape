@@ -37,8 +37,8 @@ from finance.augur.product.scenarios import (
     sim_locations_from_config,
 )
 from finance.augur.product.service import ProductService
-from finance.augur.product.wire import RolloutRequest, ScenarioKey
-from finance.augur.sim.ids import AgentId
+from finance.augur.product.wire import RolloutRequest, ScenarioKey, SpendIndex
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId, PortfolioId
 from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.tlh import TlhAssumptions
 
@@ -52,10 +52,10 @@ _MONTHLY_PAYOUT_USD = _UNITS * _PER_UNIT_USD
 # An aggregate fund: part Treasury (state-exempt), part corporate (exempt nowhere). The mixed
 # case a single tag cannot express, and the reason the declaration is a vector.
 _AGGREGATE = (
-    DistributionTaxShareConfig(fraction=0.4, issuer_jurisdiction_id="federal_us"),
+    DistributionTaxShareConfig(fraction=0.4, issuer_jurisdiction_id=JurisdictionId("federal_us")),
     DistributionTaxShareConfig(fraction=0.6),
 )
-_ALL_TREASURY = (DistributionTaxShareConfig(fraction=1.0, issuer_jurisdiction_id="federal_us"),)
+_ALL_TREASURY = (DistributionTaxShareConfig(fraction=1.0, issuer_jurisdiction_id=JurisdictionId("federal_us")),)
 
 
 def _with_bond_fund_series(model: ProviderConfig, *, distributes: bool) -> ProviderConfig:
@@ -110,14 +110,17 @@ def _with_bond_fund(config: Config, tax_character: tuple[DistributionTaxShareCon
                 *fixed.portfolio.holdings,
                 SecurityHoldingConfig(
                     position_id="bond_fund",
-                    account_id="taxable_brokerage",
+                    account_id=AccountId("taxable_brokerage"),
                     label="Aggregate Bond Fund",
                     symbol=_SYMBOL,
                     security_kind=HoldingKind.ETF,
                     unit_value=_UNIT_VALUE,
                     lots=(
                         HoldingTaxLotConfig(
-                            lot_id="bnd_2023_01", holding_period_months_at_start=40, quantity=_UNITS, cost_basis=150_000
+                            lot_id=LotId("bnd_2023_01"),
+                            holding_period_months_at_start=40,
+                            quantity=_UNITS,
+                            cost_basis=Decimal(150_000),
                         ),
                     ),
                 ),
@@ -152,7 +155,10 @@ def _service(
 
 def _cash_path(product: ProductService, *, horizon_months: int = 3) -> list[int]:
     scenario = ScenarioKey(
-        model_id="current_model", horizon_months=horizon_months, monthly_spend=1000, spend_index="none"
+        model_id="current_model",
+        horizon_months=horizon_months,
+        monthly_spend=Decimal(1000),
+        spend_index=SpendIndex.NONE,
     )
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
     # The public Frame uses decimal integer strings so currency values never cross JSON as
@@ -195,9 +201,9 @@ def test_a_tlh_portfolio_of_a_declared_fund_is_paid_on_its_value(
             security_distributions=config.security_distributions,
             tlh_portfolios=(
                 TlhPortfolioSpec(
-                    portfolio_id="test-managed-bonds",
+                    portfolio_id=PortfolioId("test-managed-bonds"),
                     owner_agent_id=owner,
-                    account_id="test_managed_brokerage",
+                    account_id=AccountId("test_managed_brokerage"),
                     asset=SecurityKey(symbol=_SYMBOL),
                     initial_cohorts=[
                         TlhCohort(value=Decimal(36_500), cost_basis=Decimal(36_500), purchase_month_index=-24)

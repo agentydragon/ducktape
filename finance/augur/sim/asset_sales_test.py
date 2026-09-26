@@ -81,7 +81,10 @@ def _lot(
 def _taxed(*jurisdiction_ids: JurisdictionId) -> TaxProfile:
     """One single filer paying from `checking` to the `irs` agent; the ids are all it says about tax law."""
     return TaxProfile(
-        agent_id=ALICE, jurisdiction_ids=list(jurisdiction_ids), tax_authority_agent_id="irs", prior_year_tax=Decimal(0)
+        agent_id=ALICE,
+        jurisdiction_ids=list(jurisdiction_ids),
+        tax_authority_agent_id=AgentId("irs"),
+        prior_year_tax=Decimal(0),
     )
 
 

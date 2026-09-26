@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import InflationKey, SecurityKey
+from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
@@ -18,7 +18,7 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -50,6 +50,9 @@ from finance.augur.x.bounded_spending.python_policy import (
 from finance.augur.x.bounded_spending.stress_paths import equity_only
 from util.bazel.runfiles import get_required_path
 
+RETIREE = AgentId("retiree")
+WORLD = AgentId("world")
+
 
 def _series(paths: ExternalSeriesContext, *, rollout_count: int, horizon_months: int) -> tuple[PreparedSeries, ...]:
     return compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency_quantum=QUANTUM)
@@ -71,7 +74,7 @@ def _books(
         income_sources=(ORDINARY_INCOME,),
         jurisdictions=jurisdictions,
     )
-    for name, balance in ((AgentId("retiree"), retiree_cash), (AgentId("world"), 0)):
+    for name, balance in ((RETIREE, retiree_cash), (WORLD, 0)):
         world.declare_account(
             PreparedAccount(
                 account=AccountRef(agent_id=name, account_id=AccountId("checking")), opening_balance=balance
@@ -186,8 +189,8 @@ def test_post_cashflow_review_and_ordered_claim_prefix_are_explicit() -> None:
             PreparedTransfer(
                 month=0,
                 cause_id="current-income",
-                from_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
-                to_account=AccountRef(agent_id=AgentId("retiree"), account_id=AccountId("checking")),
+                from_account=AccountRef(agent_id=WORLD, account_id=AccountId("checking")),
+                to_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
                 amount=10_000,
                 income_category=None,
                 deduction_category=None,
@@ -199,8 +202,8 @@ def test_post_cashflow_review_and_ordered_claim_prefix_are_explicit() -> None:
                     month=0,
                     obligation_id="due-bill",
                     obligation_type=ObligationType.OUTSIDE_RENT,
-                    from_account=AccountRef(agent_id=AgentId("retiree"), account_id=AccountId("checking")),
-                    to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
+                    from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
+                    to_account=AccountRef(agent_id=WORLD, account_id=AccountId("checking")),
                     amount_due=3_000,
                     property_id=None,
                     deduction_category=None,
@@ -229,7 +232,7 @@ def test_current_cpi_is_routed_without_future_values() -> None:
     )
     session = ActionSession(
         {id_: _books(series, id_, rollout_count=2, horizon_months=2, retiree_cash=100) for id_ in [1, 0]},
-        AgentId("retiree"),
+        RETIREE,
         capture="summary",
     )
     batch = session.start()
@@ -250,9 +253,9 @@ def test_cpi_dependent_rule_does_not_invent_a_flat_missing_index() -> None:
 
 
 def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> None:
-    stock = SecurityKey(symbol="synthetic-tax-stock")
+    stock = SecurityKey(symbol=SecuritySymbol("synthetic-tax-stock"))
     rules = Jurisdiction(
-        jurisdiction_id="synthetic-flat-tax",
+        jurisdiction_id=JurisdictionId("synthetic-flat-tax"),
         level=JurisdictionLevel.FEDERAL,
         ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.20)]},
         ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.10)]},
@@ -268,9 +271,9 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
     )
     profile = compile_profile(
         TaxProfile(
-            agent_id="retiree",
+            agent_id=RETIREE,
             jurisdiction_ids=[rules.jurisdiction_id],
-            tax_authority_agent_id="world",
+            tax_authority_agent_id=WORLD,
             prior_year_tax=Decimal(0),
         ),
         {rules.jurisdiction_id: rules},
@@ -290,7 +293,7 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
         world.track(TaxAuthority(profile))
         world.declare_pool(
             PreparedHoldingPool(
-                agent_id=AgentId("retiree"),
+                agent_id=RETIREE,
                 account_id=AccountId("brokerage"),
                 asset_id=AssetId(stock.symbol),
                 quantity_scale=scale,
@@ -299,7 +302,7 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
         world.hold(
             PreparedLot(
                 lot_id=LotId("tax-lot"),
-                agent_id=AgentId("retiree"),
+                agent_id=RETIREE,
                 account_id=AccountId("brokerage"),
                 asset_id=AssetId(stock.symbol),
                 purchase_month=-24,

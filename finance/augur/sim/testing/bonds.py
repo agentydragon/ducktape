@@ -123,7 +123,7 @@ class Situation:
     series: tuple[PreparedSeries, ...] = ()
     rollout_count: int = 1
     # Filed in the shipped federal and California law, paying `irs`.
-    taxpayers: tuple[str, ...] = ()
+    taxpayers: tuple[AgentId, ...] = ()
 
 
 def compose(case: Situation, rollout_id: int = 0) -> World:
@@ -145,7 +145,7 @@ def compose(case: Situation, rollout_id: int = 0) -> World:
     for account in case.accounts:
         world.declare_account(account)
     for agent_id in case.taxpayers:
-        profile = TaxProfile(agent_id=agent_id, jurisdiction_ids=list(filed_in), tax_authority_agent_id="irs")
+        profile = TaxProfile(agent_id=agent_id, jurisdiction_ids=list(filed_in), tax_authority_agent_id=AgentId("irs"))
         world.track(TaxAuthority(compile_profile(profile, rules, quantum=QUANTUM)))
     for bond in case.bonds:
         world.hold(bond)
@@ -184,5 +184,5 @@ def bond_case(
         ),
         horizon_months=HORIZON,
         series=cpi_series([cpi or CPI_FLAT]),
-        taxpayers=("alice",) if is_taxed else (),
+        taxpayers=(AgentId("alice"),) if is_taxed else (),
     )

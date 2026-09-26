@@ -10,26 +10,34 @@ from finance.augur.model.level_series_groups import (
     LevelSeriesGroups,
     PropertyValueGroups,
 )
-from finance.augur.model.series import SP500_SYMBOL, HomeValueKey, InflationKey, RentKey, SecurityKey
+from finance.augur.model.series import (
+    SP500_SYMBOL,
+    HomeValueKey,
+    InflationKey,
+    LocationId,
+    RentKey,
+    SecurityKey,
+    SecuritySymbol,
+)
 
 
 def test_asset_price_groups_project_by_symbol() -> None:
     groups = AssetPriceGroups[int].model_validate({"security": {"SPY": 2, "btc": 3, "eth": 4}})
     assert groups.by_asset_price_key() == {
         SecurityKey(symbol=SP500_SYMBOL): 2,
-        SecurityKey(symbol="btc"): 3,
-        SecurityKey(symbol="eth"): 4,
+        SecurityKey(symbol=SecuritySymbol("btc")): 3,
+        SecurityKey(symbol=SecuritySymbol("eth")): 4,
     }
 
 
 def test_property_value_groups_project_by_location() -> None:
     groups = PropertyValueGroups[int].model_validate({"home_value": {"san_francisco_ca": 5}})
-    assert groups.by_property_value_key() == {HomeValueKey(location_id="san_francisco_ca"): 5}
+    assert groups.by_property_value_key() == {HomeValueKey(location_id=LocationId("san_francisco_ca")): 5}
 
 
 def test_index_series_groups_project_singleton_and_locations() -> None:
     groups = IndexSeriesGroups[int].model_validate({"inflation": 1, "rent": {"vallejo_ca": 6}})
-    assert groups.by_index_series_key() == {InflationKey(): 1, RentKey(location_id="vallejo_ca"): 6}
+    assert groups.by_index_series_key() == {InflationKey(): 1, RentKey(location_id=LocationId("vallejo_ca")): 6}
 
 
 def test_roles_keep_each_series_in_its_own_group() -> None:
@@ -44,10 +52,15 @@ def test_roles_keep_each_series_in_its_own_group() -> None:
     )
     assert roles.asset_prices.by_asset_price_key() == {
         SecurityKey(symbol=SP500_SYMBOL): 2,
-        SecurityKey(symbol="btc"): 3,
+        SecurityKey(symbol=SecuritySymbol("btc")): 3,
     }
-    assert roles.property_values.by_property_value_key() == {HomeValueKey(location_id="san_francisco_ca"): 5}
-    assert roles.index_series.by_index_series_key() == {InflationKey(): 1, RentKey(location_id="vallejo_ca"): 6}
+    assert roles.property_values.by_property_value_key() == {
+        HomeValueKey(location_id=LocationId("san_francisco_ca")): 5
+    }
+    assert roles.index_series.by_index_series_key() == {
+        InflationKey(): 1,
+        RentKey(location_id=LocationId("vallejo_ca")): 6,
+    }
 
 
 def test_extra_forbid_rejects_flat_kind_at_roles_top_level() -> None:

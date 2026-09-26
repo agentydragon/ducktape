@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import json
 from collections.abc import Callable, Iterator
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,7 @@ from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.provider_config import ProviderConfig
 from finance.augur.model.series import LocationId
 from finance.augur.model.testing import ConstantFrameModel
+from finance.augur.sim.ids import AccountId, AgentId
 
 # Factories the fixtures below hand tests: build a Config (`minimal_config` overrides any field;
 # `make_catalog_config` takes the property-shortlist path for the catalog-builder tests) or a
@@ -86,7 +88,7 @@ def fixture_locations(
     """The two synthetic fixture locations plus San Francisco, for the catalog-builder tests."""
     return (
         LocationConfig(
-            location_id="location_a",
+            location_id=LocationId("location_a"),
             label="Location A",
             city="Location A",
             state="Fixture",
@@ -94,7 +96,7 @@ def fixture_locations(
             notes=("Synthetic public fixture location.",),
         ),
         LocationConfig(
-            location_id="location_b",
+            location_id=LocationId("location_b"),
             label="Location B",
             city="Location B",
             state="Fixture",
@@ -102,7 +104,7 @@ def fixture_locations(
             notes=("Synthetic public fixture location.",),
         ),
         LocationConfig(
-            location_id="san_francisco_ca",
+            location_id=LocationId("san_francisco_ca"),
             label="San Francisco, CA",
             city="San Francisco",
             state="CA",
@@ -125,11 +127,11 @@ def minimal_config(tmp_path: Path) -> MinimalConfig:
         portfolio_sources: PortfolioSourcesConfig | None = None,
         models: dict[str, Any] | None = None,
         calibration_catalog: CalibrationCatalogConfig | None = None,
-        **overrides: object,
+        **overrides: Any,
     ) -> Config:
         default_models: dict[str, ProviderConfig] = {"current_model": IndependentProviderConfig()}
         return Config(
-            agents=(AgentDefinition(actor_id="owner", label="Owner", role=ActorRole.PRIMARY_OWNER),),
+            agents=(AgentDefinition(actor_id=AgentId("owner"), label="Owner", role=ActorRole.PRIMARY_OWNER),),
             property_source=property_source
             if property_source is not None
             else PropertySourceConfig(properties_path=tmp_path / "properties.json"),
@@ -154,15 +156,15 @@ def minimal_config(tmp_path: Path) -> MinimalConfig:
 def plaid_config() -> PortfolioSourcesConfig:
     """A `PortfolioSourcesConfig` with an enabled Plaid source (one cash account + one SP500 proxy)."""
     return PortfolioSourcesConfig(
-        fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-01", cash=100)),
+        fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-01", cash=Decimal(100))),
         plaid=PlaidPortfolioSourceConfig(
             enabled=True,
             cash=PlaidCashSourceConfig(plaid_account_ids=("checking",)),
             sp500_proxy_groups=(
                 PlaidSp500ProxyGroupConfig(
                     position_id="wealthfront_sp500",
-                    portfolio_account_id="wealthfront_taxable",
-                    owner_agent_id="owner",
+                    portfolio_account_id=AccountId("wealthfront_taxable"),
+                    owner_agent_id=AgentId("owner"),
                     account_label="Wealthfront",
                     label="SP500 proxy",
                     plaid_account_ids=("wealthfront_account",),
@@ -185,10 +187,12 @@ def make_catalog_config(fixture_locations: tuple[LocationConfig, ...]) -> MakeCa
     ) -> Config:
         models: dict[str, ProviderConfig] = {"current_model": IndependentProviderConfig()}
         return Config(
-            agents=(AgentDefinition(actor_id="agent_a", label="Agent A", role=ActorRole.PRIMARY_OWNER),),
+            agents=(AgentDefinition(actor_id=AgentId("agent_a"), label="Agent A", role=ActorRole.PRIMARY_OWNER),),
             property_source=PropertySourceConfig(properties_path=properties_path, property_assets=property_assets),
             portfolio_sources=PortfolioSourcesConfig(
-                fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-14", cash=12_345))
+                fixed=FixedPortfolioSourceConfig(
+                    snapshot=FinanceSnapshot(as_of_date="2026-05-14", cash=Decimal(12_345))
+                )
             ),
             max_rollout_samples=128,
             locations=fixture_locations,

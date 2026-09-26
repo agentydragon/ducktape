@@ -93,7 +93,7 @@ def test_carryforward_offsets_short_before_long() -> None:
 
 
 def test_income_retains_exempt_sources_and_resets_only_one_taxpayer(federal: PreparedTaxRules) -> None:
-    state_coupon = InterestIncome(issuer_jurisdiction_id="test_state")
+    state_coupon = InterestIncome(issuer_jurisdiction_id=JurisdictionId("test_state"))
     income = IncomeLedger([ORDINARY_INCOME, state_coupon])
     income.enroll(AgentId("test_household"))
     income.enroll(AgentId("test_other"))

@@ -35,7 +35,7 @@ from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PropertyId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.runtime import load_jurisdictions_for
@@ -52,7 +52,11 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import Capture, World
 
+CHECKING = AccountId("checking")
+
 AGENT = AgentId("alice")
+IRS = AgentId("irs")
+SELLER = AgentId("seller")
 CURRENCY = Currency()
 HORIZON_MONTHS = 30
 SALE_MONTH = 14
@@ -90,9 +94,9 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
     """
 
     lot = InitialLot(
-        lot_id="alice-vti",
+        lot_id=LotId("alice-vti"),
         agent_id=AGENT,
-        account_id="checking",
+        account_id=CHECKING,
         asset=VTI,
         purchase_month_index=-24,  # comfortably long-term
         quantity=UNITS,
@@ -101,17 +105,17 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
     sale = Sell(
         cause_id="sell-vti",
         agent_id=AGENT,
-        proceeds_account_id=AccountId("checking"),
+        proceeds_account_id=CHECKING,
         asset_id=AssetId(VTI.symbol),
         lots=(
             LotSale(
-                account_id=AccountId("checking"),
+                account_id=CHECKING,
                 lot_id=lot.lot_id,
                 units=int(quantity_to_quanta(UNITS, scale=quantity_scale_for_asset(VTI))),
             ),
         ),
     )
-    profile = TaxProfile(agent_id=AGENT, jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs")
+    profile = TaxProfile(agent_id=AGENT, jurisdiction_ids=[JurisdictionId("federal_us")], tax_authority_agent_id=IRS)
     jurisdictions = load_jurisdictions_for([profile])
     series = compile_series(
         ExternalSeriesContext.from_level_blocks(
@@ -133,8 +137,8 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
         )
         for account in compile_accounts(
             [
-                InitialAccountBalance(agent_id=agent_id, account_id="checking", balance=Decimal(0))
-                for agent_id in (AGENT, "irs")
+                InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=Decimal(0))
+                for agent_id in (AGENT, IRS)
             ],
             quantum=CURRENCY.quantum,
         ):
@@ -162,11 +166,11 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
     purchase = ScheduledPropertyPurchase(
         month=0,
         cause_id="buy-house",
-        property_id="house",
+        property_id=PropertyId("house"),
         location_id=LOCATION,
         buyer_agent_id=AGENT,
-        buyer_account_id="checking",
-        seller_agent_id="seller",
+        buyer_account_id=CHECKING,
+        seller_agent_id=SELLER,
         # Bought for exactly what the series says it is worth, so the sale's proceeds are
         # the home value itself rather than a figure a reader has to recompute.
         purchase_price=PURCHASE_PRICE,
@@ -192,8 +196,8 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
         )
         for account in compile_accounts(
             [
-                InitialAccountBalance(agent_id=agent_id, account_id="checking", balance=Decimal(1_000_000))
-                for agent_id in (AGENT, "seller")
+                InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=Decimal(1_000_000))
+                for agent_id in (AGENT, SELLER)
             ],
             quantum=CURRENCY.quantum,
         ):
@@ -204,7 +208,9 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
                 initial_residences=(),
                 residence_events=(),
                 lifecycle_events=[
-                    PropertySaleEvent(month=PROPERTY_SALE_MONTH, property_id="house", closing_cost_pct=closing_cost_pct)
+                    PropertySaleEvent(
+                        month=PROPERTY_SALE_MONTH, property_id=PropertyId("house"), closing_cost_pct=closing_cost_pct
+                    )
                 ],
                 quantum=CURRENCY.quantum,
             ),
