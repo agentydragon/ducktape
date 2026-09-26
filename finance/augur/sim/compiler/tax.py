@@ -15,9 +15,7 @@ from finance.augur.sim.scenario import (
     InterestIncome,
     OrdinaryIncome,
     RecurringPropertyCashflow,
-    RecurringTransfer,
     ScheduledPropertyCashflow,
-    ScheduledTransfer,
     SecurityDistribution,
     TaxProfile,
     TransferIncomeCategory,
@@ -78,7 +76,7 @@ class PreparedTaxProfile:
 
 def compile_income_sources(
     *,
-    flows: Iterable[ScheduledTransfer | RecurringTransfer | ScheduledPropertyCashflow | RecurringPropertyCashflow],
+    flows: Iterable[ScheduledPropertyCashflow | RecurringPropertyCashflow],
     bonds: Iterable[BondHolding],
     distributions: Iterable[SecurityDistribution],
 ) -> tuple[TransferIncomeCategory, ...]:

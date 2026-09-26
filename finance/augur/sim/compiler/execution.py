@@ -51,14 +51,11 @@ from finance.augur.sim.prepared import (
     PreparedJurisdiction,
     PreparedLocation,
     PreparedLot,
-    PreparedObligation,
     PreparedPropertyCashflow,
     PreparedRecurringObligation,
     PreparedRecurringPropertyCashflow,
-    PreparedRecurringTransfer,
     PreparedSeries,
     PreparedTlhPortfolio,
-    PreparedTransfer,
     _AllocationPolicy,
     _CapitalImprovement,
     _MortgageFinancing,
@@ -69,9 +66,6 @@ from finance.augur.sim.prepared import (
     _PropertySale,
     _PropertyTax,
     _RentedFraction,
-    _SaltCap,
-    _SaltDeduction,
-    _ScheduledSale,
     _SleeveTarget,
     _TenderPolicy,
 )
@@ -80,9 +74,7 @@ from finance.augur.sim.scenario import (
     BondHolding,
     CapitalImprovementEvent,
     DriftBand,
-    FederalSaltDeductionPolicy,
     FixedAmount,
-    HoldingPool,
     InitialAccountBalance,
     InitialLot,
     MortgageInterestDeductionPolicy,
@@ -93,12 +85,8 @@ from finance.augur.sim.scenario import (
     PropertyTaxPolicy,
     RecurringObligation,
     RecurringPropertyCashflow,
-    RecurringTransfer,
-    ScheduledAssetSale,
-    ScheduledObligation,
     ScheduledPropertyCashflow,
     ScheduledPropertyPurchase,
-    ScheduledTransfer,
     SecurityDistribution,
     SeriesIndexedAmount,
     SetPrimaryResidenceEvent,
@@ -251,11 +239,6 @@ def compile_private_equity_series(
     return tuple(series)
 
 
-def private_equity_issuers(lots: Iterable[InitialLot]) -> tuple[str, ...]:
-    """The issuers whose protocol series a world holding these lots reads, in series order."""
-    return tuple(sorted({str(lot.asset.issuer_id) for lot in lots if isinstance(lot.asset, PrivateEquityAssetKey)}))
-
-
 def compile_jurisdictions(
     jurisdictions: Mapping[str, Jurisdiction],
     *,
@@ -295,12 +278,11 @@ def compile_accounts(balances: Iterable[InitialAccountBalance], *, quantum: Deci
 
 def compile_holding_pools(
     *,
-    pools: Iterable[HoldingPool],
     lots: Iterable[InitialLot],
     policies: Iterable[TargetAllocationPolicy],
     tlh_portfolios: Iterable[TlhPortfolioSpec],
 ) -> tuple[PreparedHoldingPool, ...]:
-    """Every pool a declared pool, lot or allocation sleeve names, except those a manager owns."""
+    """Every pool a lot or allocation sleeve names, except those a manager owns."""
     prepared: dict[tuple[str, str, str], PreparedHoldingPool] = {}
     managed = {(p.owner_agent_id, p.account_id, _asset_id(p.asset)) for p in tlh_portfolios}
 
@@ -312,8 +294,6 @@ def compile_holding_pools(
             agent_id=agent_id, account_id=account_id, asset_id=asset_id, quantity_scale=quantity_scale_for_asset(asset)
         )
 
-    for pool in pools:
-        add(pool.agent_id, pool.account_id, pool.asset)
     for lot in lots:
         add(lot.agent_id, lot.account_id, lot.asset)
     for policy in policies:
@@ -428,18 +408,6 @@ def compile_allocation_policy(policy: TargetAllocationPolicy, *, quantum: Decima
     )
 
 
-def compile_scheduled_sale(sale: ScheduledAssetSale) -> _ScheduledSale:
-    return _ScheduledSale(
-        month=int(sale.month),
-        cause_id=sale.cause_id,
-        agent_id=sale.agent_id,
-        account_id=sale.source_account_id,
-        asset_id=_asset_id(sale.asset),
-        units=int(quantity_to_quanta(sale.quantity, scale=quantity_scale_for_asset(sale.asset))),
-        proceeds_account_id=sale.proceeds_account_id,
-    )
-
-
 def compile_tender_policy(policy: PrivateEquityTenderPolicy, *, quantum: Decimal) -> _TenderPolicy:
     return _TenderPolicy(
         owner_agent_id=policy.owner_agent_id,
@@ -449,31 +417,6 @@ def compile_tender_policy(policy: PrivateEquityTenderPolicy, *, quantum: Decimal
             quantum=quantum,
             context=f"private-equity floor for {policy.owner_agent_id!r}",
         ),
-    )
-
-
-def compile_transfer(transfer: ScheduledTransfer, *, quantum: Decimal) -> PreparedTransfer:
-    return PreparedTransfer(
-        month=int(transfer.month),
-        cause_id=transfer.cause_id,
-        from_account=AccountRef(agent_id=transfer.from_agent_id, account_id=transfer.from_account_id),
-        to_account=AccountRef(agent_id=transfer.to_agent_id, account_id=transfer.to_account_id),
-        amount=_amount(transfer.amount, quantum=quantum, context=f"scheduled transfer {transfer.cause_id!r}"),
-        income_category=transfer.income_category,
-        deduction_category=transfer.deduction_category,
-    )
-
-
-def compile_recurring_transfer(transfer: RecurringTransfer, *, quantum: Decimal) -> PreparedRecurringTransfer:
-    return PreparedRecurringTransfer(
-        start_month=int(transfer.start_month),
-        end_month=None if transfer.end_month is None else int(transfer.end_month),
-        cause_id=transfer.cause_id,
-        from_account=AccountRef(agent_id=transfer.from_agent_id, account_id=transfer.from_account_id),
-        to_account=AccountRef(agent_id=transfer.to_agent_id, account_id=transfer.to_account_id),
-        amount=_amount(transfer.amount, quantum=quantum, context=f"recurring transfer {transfer.cause_id!r}"),
-        income_category=transfer.income_category,
-        deduction_category=transfer.deduction_category,
     )
 
 
@@ -503,20 +446,6 @@ def compile_recurring_property_cashflow(
         amount=_amount(cashflow.amount, quantum=quantum, context=f"recurring property cashflow {cashflow.cause_id!r}"),
         income_category=cashflow.income_category,
         deduction_category=cashflow.deduction_category,
-    )
-
-
-def compile_obligation(obligation: ScheduledObligation, *, quantum: Decimal) -> PreparedObligation:
-    return PreparedObligation(
-        month=int(obligation.month),
-        obligation_id=obligation.obligation_id,
-        obligation_type=obligation.obligation_type,
-        from_account=AccountRef(agent_id=obligation.agent_id, account_id=obligation.from_account_id),
-        to_account=AccountRef(agent_id=obligation.to_agent_id, account_id=obligation.to_account_id),
-        amount_due=_amount(obligation.amount_due, quantum=quantum, context=f"obligation {obligation.obligation_id!r}"),
-        property_id=obligation.property_id,
-        deduction_category=obligation.deduction_category,
-        deductible_fraction_ppb=rate_to_ppb(obligation.deductible_fraction),
     )
 
 
@@ -678,18 +607,4 @@ def compile_interest_deduction(
             jurisdiction_id: int(currency_amount_to_quanta(cap, quantum=quantum))
             for jurisdiction_id, cap in policy.per_jurisdiction_principal_cap.items()
         },
-    )
-
-
-def compile_salt_deduction(policy: FederalSaltDeductionPolicy, *, quantum: Decimal) -> _SaltDeduction:
-    return _SaltDeduction(
-        profile_id=policy.profile_id,
-        federal_jurisdiction_id=policy.federal_jurisdiction_id,
-        cap_schedule=tuple(
-            _SaltCap(
-                effective_year_index=int(entry.effective_year_index),
-                cap=int(currency_amount_to_quanta(entry.cap, quantum=quantum)),
-            )
-            for entry in policy.cap_schedule
-        ),
     )

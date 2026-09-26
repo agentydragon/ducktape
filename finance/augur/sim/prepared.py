@@ -300,6 +300,16 @@ class _SaltCap:
 
 @dataclass(frozen=True, kw_only=True)
 class _SaltDeduction:
+    """Federal SALT itemized deduction (Schedule A) for one enrolled taxpayer.
+
+    Each of the profile's jurisdictions other than `federal_jurisdiction_id` contributes the
+    income tax it accrued this calendar year, alongside property tax paid; the total is capped
+    by the latest `cap_schedule` entry in effect (year index 0-based from the horizon's start;
+    an empty schedule is uncapped) and stacks with mortgage interest. Not modeled: the AGI
+    phase-out of the cap, the sales-tax election, and deducting prior-year true-ups in the year
+    they are paid.
+    """
+
     profile_id: str
     federal_jurisdiction_id: str
     cap_schedule: tuple[_SaltCap, ...]

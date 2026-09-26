@@ -26,10 +26,8 @@ from finance.augur.sim.fixed_point import sampled_array_to_per_unit_rate, sample
 from finance.augur.sim.scenario import (
     AmountSpec,
     BondHolding,
-    HoldingPool,
     InitialLot,
     PrivateEquityTenderPolicy,
-    ScheduledAssetSale,
     ScheduledPropertyPurchase,
     SecurityDistribution,
     SeriesIndexedAmount,
@@ -40,13 +38,11 @@ from finance.augur.sim.scenario import (
 
 def level_series_demand(
     *,
-    pools: Iterable[HoldingPool],
     lots: Iterable[InitialLot],
     tlh_portfolios: Iterable[TlhPortfolioSpec],
     bonds: Iterable[BondHolding],
     distributions: Iterable[SecurityDistribution],
     amounts: Iterable[AmountSpec],
-    sales: Iterable[ScheduledAssetSale],
     policies: Iterable[TargetAllocationPolicy],
     tender_policies: Iterable[PrivateEquityTenderPolicy],
     purchases: Iterable[ScheduledPropertyPurchase],
@@ -70,8 +66,6 @@ def level_series_demand(
             seen.add(key)
             keys.append(key)
 
-    for pool in pools:
-        add(asset_price_key_or_none(pool.asset))
     # Holdings are marked every month off their asset-price series.
     for lot in lots:
         add(asset_price_key_or_none(lot.asset))
@@ -82,9 +76,8 @@ def level_series_demand(
     # any holding that does not happen to want CPI for another reason — a CPI-indexed spend,
     # cash band, tender floor, or property obligation.
     #
-    # Demand side only, deliberately: the supply-side twin must NOT add this. Inflation reaches
-    # the cube by having been SAMPLED; adding the key there when nobody sampled it would give
-    # the TIPS an all-NaN price row instead of the loud raise, which is strictly worse.
+    # Demand side only: `compile_series` carries only what was SAMPLED, so a TIPS whose inflation
+    # nobody sampled is refused where it is held rather than priced off an all-NaN row.
     if any(bond.inflation_indexed for bond in bonds):
         add(InflationKey())
     # A distributing security demands TWO series: its price (already demanded by the lots that
@@ -93,8 +86,6 @@ def level_series_demand(
         add(SecurityDistributionKey(symbol=asset_price_key(distribution.asset).symbol))
     for amount in amounts:
         _add_amount_series_key(amount, add)
-    for sale in sales:
-        add(asset_price_key(sale.asset))
     for policy in policies:
         for sleeve in policy.sleeves:
             add(asset_price_key_or_none(sleeve.asset))

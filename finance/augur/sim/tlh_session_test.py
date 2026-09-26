@@ -24,17 +24,7 @@ from finance.augur.sim.prepared import (
     PreparedTlhPortfolio,
 )
 from finance.augur.sim.results import Executed, Finished, InvalidRequest, Rejected, RejectedAction
-from finance.augur.sim.scenario import (
-    ORDINARY_INCOME,
-    Agent,
-    Currency,
-    InitialAccountBalance,
-    InterestIncome,
-    Scenario,
-    TaxProfile,
-    TlhCohort,
-    TlhPortfolioSpec,
-)
+from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile, TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tlh import TlhAssumptions, TlhMarketUpdate, TlhOpeningCohort, TlhPortfolio
@@ -307,30 +297,6 @@ def test_model_defect_closes_session_instead_of_becoming_a_rejected_action(monke
     live.close()
 
 
-def _scenario(*, horizon: int) -> Scenario:
-    """The same managed sleeve as an authored scenario, whose schema the last test checks."""
-    return Scenario(
-        agents=[Agent(agent_id=OWNER), Agent(agent_id=IRS)],
-        initial_cash=[
-            InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=Decimal(0))
-            for agent_id in (OWNER, IRS)
-        ],
-        tax_profiles=[TaxProfile(agent_id=OWNER, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS)],
-        horizon_months=horizon,
-        currency=Currency(quantum=QUANTUM),
-        tlh_portfolios=[
-            TlhPortfolioSpec(
-                portfolio_id="managed",
-                owner_agent_id=OWNER,
-                account_id=CHECKING,
-                asset=ASSET,
-                initial_cohorts=[TlhCohort(value=Decimal(100), cost_basis=Decimal(100), purchase_month_index=-24)],
-                assumptions=assumptions(harvest=True),
-            )
-        ],
-    )
-
-
 @pytest.mark.parametrize("capture", ["summary", "dense", "forensic"])
 @pytest.mark.parametrize("reject", [False, True])
 def test_closing_marks_and_product_projection_do_not_advance_the_model_early(capture: Capture, reject: bool) -> None:
@@ -470,11 +436,14 @@ def test_a_contribution_into_a_worthless_index_is_rejected_not_parked() -> None:
 
 
 def test_removed_or_misplaced_fields_cannot_silently_disable_the_model() -> None:
-    scenario = _scenario(horizon=2)
-    for name, value in (("harvest_policies", []), ("currency_quantum", "1")):
-        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-            Scenario.model_validate({**scenario.model_dump(), name: value})
-    [portfolio] = scenario.tlh_portfolios
+    portfolio = TlhPortfolioSpec(
+        portfolio_id="managed",
+        owner_agent_id=OWNER,
+        account_id=CHECKING,
+        asset=ASSET,
+        initial_cohorts=[TlhCohort(value=Decimal(100), cost_basis=Decimal(100), purchase_month_index=-24)],
+        assumptions=assumptions(harvest=True),
+    )
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         TlhPortfolioSpec.model_validate({**portfolio.model_dump(), "cumulative_harvest": 1})
 

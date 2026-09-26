@@ -118,7 +118,7 @@ def run(
         world.declare_account(account)
     if tax is not None:
         world.track(TaxAuthority(compile_profile(tax[0], jurisdictions, quantum=situation.currency.quantum)))
-    for pool in compile_holding_pools(pools=(), lots=product.lots, policies=(), tlh_portfolios=()):
+    for pool in compile_holding_pools(lots=product.lots, policies=(), tlh_portfolios=()):
         world.declare_pool(pool)
     for held in situation.lots:
         world.hold(held)

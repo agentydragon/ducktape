@@ -4,20 +4,18 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityKey
+from finance.augur.model.series import InflationKey, LevelSeriesKey
 from finance.augur.sim.compiler.series import level_series_demand
-from finance.augur.sim.scenario import BondHolding, HoldingPool
+from finance.augur.sim.scenario import BondHolding
 
 
-def demand(*, bonds: tuple[BondHolding, ...] = (), pools: tuple[HoldingPool, ...] = ()) -> tuple[LevelSeriesKey, ...]:
+def demand(*, bonds: tuple[BondHolding, ...]) -> tuple[LevelSeriesKey, ...]:
     return level_series_demand(
-        pools=pools,
         lots=(),
         tlh_portfolios=(),
         bonds=bonds,
         distributions=(),
         amounts=(),
-        sales=(),
         policies=(),
         tender_policies=(),
         purchases=(),
@@ -43,7 +41,7 @@ def bond(*, indexed: bool) -> BondHolding:
 def test_an_indexed_bond_demands_an_inflation_path() -> None:
     """The demand a TIPS makes that nothing else beside it need make.
 
-    Every other level-series demand comes from something PRICED — a lot, a sleeve, a sale. A
+    Every other level-series demand comes from something PRICED — a lot, a sleeve, a home. A
     bond has no price series at all, so an indexed one is the only instrument whose exogenous
     demand is invisible from the thing that carries it. Without it, the engine rejects a
     missing inflation path for any caller that derives its sampling request from the
@@ -57,11 +55,6 @@ def test_an_indexed_bond_demands_an_inflation_path() -> None:
     # And not otherwise: a nominal bond's cashflows are fixed by its terms, so demanding a
     # series it never reads would fail an unmodeled-inflation deployment for no reason.
     assert InflationKey() not in demand(bonds=(bond(indexed=False),))
-
-
-def test_empty_holding_pool_demands_a_price_before_sampling() -> None:
-    stock = SecurityKey(symbol="test-unheld-stock")
-    assert stock in demand(pools=(HoldingPool(agent_id="test-investor", account_id="brokerage", asset=stock),))
 
 
 if __name__ == "__main__":
