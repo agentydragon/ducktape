@@ -30,6 +30,7 @@ from cluster.cdk8s.agentplane import egress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 
 # The command box's SandboxTemplate, and both boxes' Pod name label and fence. The egress proxy's
 # policy spells it too (egress.py), since this module imports that one.
@@ -111,7 +112,7 @@ class CommandSandbox(Construct):
             volumes=[_BUILD_HOME],
         )
         # DNS and the egress proxy out, nothing in: `exec` reaches a box through the API server.
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "networkpolicy",
             metadata=metadata(NAME, namespace),
@@ -119,7 +120,7 @@ class CommandSandbox(Construct):
             ingress=[CiliumNetworkPolicySpecIngress()],
             egress=[
                 cilium.dns_egress(),
-                cilium.egress_to(cilium.endpoint_labels(namespace, egress.NAME), egress.PROXY_PORT),
+                EgressRule.to_endpoints(cilium.endpoint_labels(namespace, egress.NAME), egress.PROXY_PORT),
             ],
         )
 

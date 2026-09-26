@@ -46,6 +46,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, deny_all_egress
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 _NAMESPACE = "agentplane-testing"
@@ -291,18 +292,18 @@ def _add_http_route(scope: Construct) -> None:
 
 
 def _add_network_policy(scope: Construct) -> None:
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "networkpolicy",
         metadata=metadata(_NAME, _NAMESPACE),
         selector=_LABELS,
         ingress=[
-            cilium.ingress_from_gateway(_PORT),
-            cilium.ingress_from(cilium.endpoint_labels(_NAMESPACE, "agentplane-app"), ports=[_PORT]),
-            cilium.ingress_from(cilium.endpoint_labels(_NAMESPACE, "agentplane-oauth-fixture"), ports=[_PORT]),
+            IngressRule.from_gateway(_PORT),
+            IngressRule.from_endpoints(cilium.endpoint_labels(_NAMESPACE, "agentplane-app"), ports=[_PORT]),
+            IngressRule.from_endpoints(cilium.endpoint_labels(_NAMESPACE, "agentplane-oauth-fixture"), ports=[_PORT]),
         ],
         egress=[cilium.dns_egress()],
-        egress_deny=cilium.deny_all_egress(),
+        egress_deny=deny_all_egress(),
     )
 
 

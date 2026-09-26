@@ -44,6 +44,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name, settings_file
 
@@ -317,22 +318,24 @@ class Actions(Construct):
 
     def _add_network_policy(self) -> None:
         namespace = self.env.namespace
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "networkpolicy",
             metadata=metadata(_NAME, namespace),
             selector=_LABELS,
             ingress=[
-                cilium.ingress_from_gateway(CONTAINER_PORT),
-                cilium.ingress_from(cilium.endpoint_labels(namespace, "agentplane-egress"), ports=[CONTAINER_PORT]),
-                cilium.ingress_from(cilium.endpoint_labels(namespace, "agentplane-app"), ports=[CONTAINER_PORT]),
+                IngressRule.from_gateway(CONTAINER_PORT),
+                IngressRule.from_endpoints(
+                    cilium.endpoint_labels(namespace, "agentplane-egress"), ports=[CONTAINER_PORT]
+                ),
+                IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "agentplane-app"), ports=[CONTAINER_PORT]),
             ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
                 # Claude's credentialless CIMD document; no wildcard hosts, ports, or redirects.
-                cilium.egress_to_fqdns("claude.ai"),
-                cilium.egress_to_entities("kube-apiserver"),
-                cilium.egress_to(
+                EgressRule.to_fqdns("claude.ai"),
+                EgressRule.to_entities(Entity.KUBE_APISERVER),
+                EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,
                 ),

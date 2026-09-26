@@ -51,6 +51,7 @@ from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "haku-kube-api-proxy"
 HOSTNAME = "haku-kubeapi.allegedly.works"
@@ -220,21 +221,21 @@ class KubeApiProxy(Construct):
         # kubeconfigs authenticate, and it mounts no ServiceAccount token, so this is its only
         # kubectl path); egress to DNS for the console's name only, kube-apiserver, and the
         # public-TLS console authorization endpoint.
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "networkpolicy",
             metadata=metadata(NAME, console.NAMESPACE),
             selector=LABELS,
             ingress=[
-                cilium.ingress_from_gateway(_HTTP_PORT),
-                cilium.ingress_from(
+                IngressRule.from_gateway(_HTTP_PORT),
+                IngressRule.from_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": "haku-sandbox", "k8s:app.kubernetes.io/name": "haku-sandbox"},
                     ports=[_TLS_PORT],
                 ),
             ],
             egress=[
                 cilium.dns_egress(protocols=("ANY",), resolves=[console.HOSTNAME]),
-                cilium.egress_to_entities("kube-apiserver", ports=[443, 6443]),
+                EgressRule.to_entities(Entity.KUBE_APISERVER, ports=[443, 6443]),
                 # The console's public origin resolves to Gateway node addresses; the process
                 # is configured with exactly one authorization URL and rejects redirects.
                 cilium.egress_via_gateway(console.HOSTNAME),
