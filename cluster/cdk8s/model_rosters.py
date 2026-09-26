@@ -372,10 +372,16 @@ GEMINI_MAX_OUTPUT_TOKENS = 65_536
 # Each variant is served on both the OpenAI-compatible `/v1` and Ollama's native
 # wire; the context rides in the model segment (`ollama_chat_variant`) so the chat
 # entries stay distinct.
+#
+# qwen3.8-flash-next-q4: 125B-total/6B-active MoE, Unsloth Dynamic UD-Q4_K_XL quant
+# (metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL, 112GB), native 256K context. Only the
+# 128K variant is listed until ollama's own GPU-offload heuristics are verified against
+# it on wyrm2's 2 GPUs (setup-gpt-oss-v2.sh TODO) -- add larger variants once confirmed.
 OLLAMA_CHAT_MODELS: list[tuple[str, str, tuple[int, ...]]] = [
     ("gpt-oss-20b", "gpt-oss:20b", (128 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024)),
     ("gpt-oss-120b", "gpt-oss:120b", (128 * 1024,)),
     ("gemma4-31b-it-q8_0", "gemma4:31b-it-q8_0", (128 * 1024,)),
+    ("qwen3.8-flash-next-q4", "metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL", (128 * 1024,)),
 ]
 
 

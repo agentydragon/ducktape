@@ -24,7 +24,7 @@ import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import ToolResult
-from mcp.types import CallToolResult, ImageContent, TextContent
+from mcp.types import CallToolResult, ImageContent, TextContent, ToolAnnotations
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -103,7 +103,7 @@ async def _poll_state(store: ActionStore, request_id: Any, *, want: ActionState)
 async def test_start_mirrors_tool_catalog_into_the_action_group() -> None:
     mcp = FastMCP("demo")
 
-    @mcp.tool
+    @mcp.tool(title="Add numbers", annotations=ToolAnnotations(read_only_hint=True))
     def add(a: int, b: int) -> int:
         """Add two numbers."""
         return a + b
@@ -121,6 +121,8 @@ async def test_start_mirrors_tool_catalog_into_the_action_group() -> None:
         assert set(group.actions) == {"add", "greet"}
         assert group.actions["add"].description == "Add two numbers."
         assert group.actions["add"].input_schema["required"] == ["a", "b"]
+        assert group.actions["add"].title == "Add numbers"
+        assert group.actions["add"].annotations == ToolAnnotations(read_only_hint=True)
         assert group.available is True
     finally:
         await executor.close()

@@ -69,9 +69,12 @@ def _models_claim(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(name=_MODELS_CLAIM, namespace=_NAMESPACE),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
-            # OpenEBS LVM HDD on wyrm2 — co-located with GPUs
+            # OpenEBS LVM HDD on wyrm2 — co-located with GPUs. VG is 500GB
+            # (proxmox-vms.tf); this PVC plus the 20Gi public-coder-devbox PVC are its
+            # only other consumers. 350Gi covers the ~228GB roster
+            # (setup-gpt-oss-v2.sh) with headroom for future additions.
             storage_class_name="lvm-proxmox-hdd",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("200Gi")}),
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("350Gi")}),
         ),
     )
 
@@ -234,7 +237,7 @@ def _setup_job(scope: Construct) -> None:
         scope,
         "setup-gpt-oss",
         # Versioned so a changed bootstrap model list creates a fresh Job.
-        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v3", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v4", namespace=_NAMESPACE),
         spec=k8s.JobSpec(
             ttl_seconds_after_finished=86400,
             template=k8s.PodTemplateSpec(

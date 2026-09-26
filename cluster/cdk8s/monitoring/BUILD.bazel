@@ -3,10 +3,11 @@
 # gazelle:resolve py flux_helm //cluster/cdk8s/crd_bindings/flux:helmrelease
 # gazelle:resolve py flux_source //cluster/cdk8s/crd_bindings/flux:helmrepository
 # gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/crd_bindings/prometheus_operator:servicemonitor
+# gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor
 # gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/crd_bindings/prometheus_operator:prometheusrule
 # gazelle:resolve py cilium_crds //cluster/cdk8s/providers/cilium:ciliumnetworkpolicy
 # gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/providers/cnpg:cluster
-# gazelle:resolve py gateway_api_crds //cluster/cdk8s/crd_bindings/gateway_api:httproute
+# gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
 # gazelle:resolve py grafana_grafana_crds //cluster/cdk8s/crd_bindings/grafana_operator:grafana
 # gazelle:resolve py grafana_grafanadashboard_crds //cluster/cdk8s/crd_bindings/grafana_operator:grafanadashboard
 # gazelle:resolve py grafana_grafanadatasource_crds //cluster/cdk8s/crd_bindings/grafana_operator:grafanadatasource
@@ -208,11 +209,11 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/gateway_api:httproute",
         "//cluster/cdk8s/crd_bindings/grafana_operator:grafana",
         "//cluster/cdk8s/crd_bindings/grafana_operator:grafanadashboard",
         "//cluster/cdk8s/crd_bindings/grafana_operator:grafanadatasource",
         "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s/providers/gateway_api:httproute",
         "@pypi//cdk8s",
     ],
 )
@@ -268,6 +269,47 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_gateway_probe",
+    srcs = ["test_gateway_probe.py"],
+    data = [
+        "testdata/gateway_probe_rules.yaml",
+        "@multitool//tools/promtool",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":gateway_probe",
+        "//:conftest",
+        "//cluster/scripts:nebula_mesh",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "gateway_probe",
+    srcs = ["gateway_probe.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:fleet_rules",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor",
+        "//cluster/cdk8s/crd_bindings/prometheus_operator:prometheusrule",
+        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/scripts:nebula_mesh",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//pyyaml",
     ],
 )
