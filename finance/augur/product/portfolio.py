@@ -11,6 +11,7 @@ from finance.augur.api.portfolio import (
     BondHoldingConfig,
     HoldingKind,
     HoldingPositionConfig,
+    LabeledTlhPortfolio,
     PortfolioConfig,
     SecurityHoldingConfig,
 )
@@ -63,13 +64,38 @@ class ProductBondPosition(ApiModel):
     months_to_maturity_at_start: NonNegativeInt
 
 
+class ProductTlhCohort(ApiModel):
+    holding_period_months_at_start: NonNegativeInt
+    value_quanta: CurrencyQuanta
+    cost_basis_quanta: CurrencyQuanta
+
+
+class ProductTlhPortfolio(ApiModel):
+    """A managed tax-loss-harvesting portfolio: money and basis by cohort, with no units or unit price.
+
+    `asset` is the index whose price moves the portfolio's value; a sleeve weight names it by its symbol.
+    """
+
+    portfolio_id: str
+    owner_agent_id: str
+    account_id: str
+    account_label: str | None = None
+    label: str
+    asset: AssetKey
+    current_value_quanta: CurrencyQuanta
+    total_cost_basis_quanta: CurrencyQuanta
+    cohorts: tuple[ProductTlhCohort, ...]
+
+
 class ProductPortfolioResponse(ApiModel):
     as_of_date: str
     currency_code: str
     currency_quantum: str
     cash_quanta: CurrencyQuanta
     holdings: tuple[ProductPublicSecurityPosition, ...]
+    tlh_portfolios: tuple[ProductTlhPortfolio, ...]
     bonds: tuple[ProductBondPosition, ...] = ()
+    # Ordinary `holdings` only; TLH portfolios carry their own values.
     total_holdings_value_quanta: CurrencyQuanta
     total_holdings_cost_basis_quanta: CurrencyQuanta
     # Kept out of `total_holdings_value_quanta` on purpose — face on the books is not a mark.
@@ -80,6 +106,7 @@ def product_portfolio_response(
     *,
     snapshot: FinanceSnapshot,
     portfolio: PortfolioConfig,
+    tlh_portfolios: tuple[LabeledTlhPortfolio, ...],
     currency_code: str = "USD",
     currency_quantum: Decimal = Decimal("0.01"),
 ) -> ProductPortfolioResponse:
@@ -89,6 +116,14 @@ def product_portfolio_response(
             position, account_label=account_label_by_id.get(position.account_id), currency_quantum=currency_quantum
         )
         for position in portfolio.holdings
+    )
+    tlh = tuple(
+        _tlh_portfolio(
+            portfolio,
+            account_label=account_label_by_id.get(portfolio.spec.account_id),
+            currency_quantum=currency_quantum,
+        )
+        for portfolio in tlh_portfolios
     )
     bonds = tuple(
         _bond_position(bond, account_label=account_label_by_id.get(bond.account_id), currency_quantum=currency_quantum)
@@ -100,6 +135,7 @@ def product_portfolio_response(
         currency_quantum=format(currency_quantum, "f"),
         cash_quanta=_quanta(snapshot.cash, quantum=currency_quantum),
         holdings=holdings,
+        tlh_portfolios=tlh,
         bonds=bonds,
         total_holdings_value_quanta=_quanta(portfolio.total_holdings_value, quantum=currency_quantum),
         total_holdings_cost_basis_quanta=_quanta(
@@ -107,6 +143,34 @@ def product_portfolio_response(
             quantum=currency_quantum,
         ),
         total_bond_face_value_quanta=_quanta(portfolio.total_bond_face_value, quantum=currency_quantum),
+    )
+
+
+def _tlh_portfolio(
+    portfolio: LabeledTlhPortfolio, *, account_label: str | None, currency_quantum: Decimal
+) -> ProductTlhPortfolio:
+    spec = portfolio.spec
+    return ProductTlhPortfolio(
+        portfolio_id=spec.portfolio_id,
+        owner_agent_id=spec.owner_agent_id,
+        account_id=spec.account_id,
+        account_label=account_label,
+        label=portfolio.label,
+        asset=spec.asset,
+        current_value_quanta=_quanta(
+            sum((cohort.value for cohort in spec.initial_cohorts), start=Decimal(0)), quantum=currency_quantum
+        ),
+        total_cost_basis_quanta=_quanta(
+            sum((cohort.cost_basis for cohort in spec.initial_cohorts), start=Decimal(0)), quantum=currency_quantum
+        ),
+        cohorts=tuple(
+            ProductTlhCohort(
+                holding_period_months_at_start=-cohort.purchase_month_index,
+                value_quanta=_quanta(cohort.value, quantum=currency_quantum),
+                cost_basis_quanta=_quanta(cohort.cost_basis, quantum=currency_quantum),
+            )
+            for cohort in spec.initial_cohorts
+        ),
     )
 
 

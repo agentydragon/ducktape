@@ -134,6 +134,9 @@ loss adjustments. Component value is counted once in household wealth.
 Canonical accounting settles its financial effects and determines household tax.
 The approximation does not reconstruct constituent trades or establish statutory
 TLH fidelity. A month's harvest stands even if a later payment that month fails.
+The app reports such a portfolio by value, basis and holding-period cohorts, never
+as a holding with units or a unit price; a funding target names it by the index it
+tracks and draws on it in money.
 Model and numerical conventions: <sim/tlh.py>.
 
 ## Declared housing and private-equity capabilities and limits

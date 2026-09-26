@@ -23,15 +23,23 @@ from more_itertools import one
 
 from finance.augur.api.config import Config, DistributionTaxShareConfig, SecurityDistributionConfig
 from finance.augur.api.portfolio import HoldingKind, HoldingTaxLotConfig, SecurityHoldingConfig
+from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.deterministic import Constant
 from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.level_series_groups import SecurityDistributionGroups
 from finance.augur.model.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
-from finance.augur.model.series import SecuritySymbol
+from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.conftest import MakeProductService
-from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, security_distributions_from_portfolio
+from finance.augur.product.scenarios import (
+    PRIMARY_ACCOUNT_ID,
+    resolve_primary_agent_id,
+    security_distributions_from_portfolio,
+    sim_locations_from_config,
+)
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import RolloutRequest, ScenarioKey
+from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
+from finance.augur.sim.tlh import TlhAssumptions
 
 _SYMBOL = SecuritySymbol("bnd")
 _UNITS = 2_000.0
@@ -168,6 +176,57 @@ def test_a_declared_fund_pays_its_per_unit_distribution_into_cash(
     assert gain == [pytest.approx(month * _MONTHLY_PAYOUT_USD * 100) for month in range(len(declared))]
 
 
+def test_a_tlh_portfolio_of_a_declared_fund_is_paid_on_its_value(
+    augur_config: Config, catalog: CatalogResponse
+) -> None:
+    """A managed portfolio of the fund is a pool of its own, paid `per_unit / price x value`.
+
+    $36,500 at the fund's $73 price is 500 units' worth, so $110 a month on top of the
+    ordinary holding's 2,000 units; both arms carry both, so the gain is the declaration's.
+    """
+
+    def product(tax_character: tuple[DistributionTaxShareConfig, ...] | None) -> ProductService:
+        config = _with_bond_fund(augur_config, tax_character)
+        owner = resolve_primary_agent_id(config)
+        return ProductService(
+            portfolio=config.portfolio_sources.fixed.portfolio,
+            initial_cash=250_000,
+            primary_agent_id=owner,
+            security_distributions=config.security_distributions,
+            tlh_portfolios=(
+                TlhPortfolioSpec(
+                    portfolio_id="test-managed-bonds",
+                    owner_agent_id=owner,
+                    account_id="test_managed_brokerage",
+                    asset=SecurityKey(symbol=_SYMBOL),
+                    initial_cohorts=[
+                        TlhCohort(value=Decimal(36_500), cost_basis=Decimal(36_500), purchase_month_index=-24)
+                    ],
+                    assumptions=TlhAssumptions(
+                        peak_annual_yield=0,
+                        floor_annual_yield=0,
+                        maturity_decay_exponent=1,
+                        drawdown_sensitivity=0,
+                        short_term_fraction=1,
+                    ),
+                ),
+            ),
+            known_location_ids=catalog.location_ids,
+            locations=sim_locations_from_config(config.locations),
+            properties_by_id=catalog.properties_by_id,
+            models={"current_model": config.models[config.default_model_id].realize_model()},
+            max_rollout_samples=config.max_rollout_samples,
+            max_horizon_months=config.max_horizon_months,
+            result_cache_entries=0,
+        )
+
+    declared = _cash_path(product(_ALL_TREASURY))
+    undeclared = _cash_path(product(None))
+
+    gain = [after - before for before, after in zip(undeclared, declared, strict=True)]
+    assert gain == [pytest.approx(month * (_MONTHLY_PAYOUT_USD + 110) * 100) for month in range(len(declared))]
+
+
 def test_the_tax_character_fractions_reach_the_scenario(augur_config: Config) -> None:
     """The declaration's split survives the config-to-scenario conversion.
 
@@ -179,7 +238,10 @@ def test_the_tax_character_fractions_reach_the_scenario(augur_config: Config) ->
 
     config = _with_bond_fund(augur_config, _AGGREGATE)
     distributions = security_distributions_from_portfolio(
-        config.portfolio_sources.fixed.portfolio, config.security_distributions, primary_agent_id="agent_a"
+        config.portfolio_sources.fixed.portfolio,
+        config.security_distributions,
+        tlh_portfolios=(),
+        primary_agent_id="agent_a",
     )
 
     assert [(slice_.fraction, slice_.issuer_jurisdiction_id) for slice_ in one(distributions).tax_character] == [
@@ -196,7 +258,10 @@ def test_the_payout_is_scoped_to_the_pool_that_holds_it(augur_config: Config) ->
     config = _with_bond_fund(augur_config, _ALL_TREASURY)
     distribution = one(
         security_distributions_from_portfolio(
-            config.portfolio_sources.fixed.portfolio, config.security_distributions, primary_agent_id="agent_a"
+            config.portfolio_sources.fixed.portfolio,
+            config.security_distributions,
+            tlh_portfolios=(),
+            primary_agent_id="agent_a",
         )
     )
 
@@ -217,7 +282,10 @@ def test_a_declared_security_nobody_holds_contributes_nothing(augur_config: Conf
 
     assert (
         security_distributions_from_portfolio(
-            config.portfolio_sources.fixed.portfolio, config.security_distributions, primary_agent_id="agent_a"
+            config.portfolio_sources.fixed.portfolio,
+            config.security_distributions,
+            tlh_portfolios=(),
+            primary_agent_id="agent_a",
         )
         == ()
     )

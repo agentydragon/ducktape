@@ -293,6 +293,29 @@ function PortfolioPositionRow({ position, currency }) {
   );
 }
 
+// Money and basis by cohort, not units at a price: the columns a holding fills with a unit count
+// and a unit value carry the cohort count instead.
+function PortfolioTlhRow({ portfolio, currency }) {
+  const cohorts = portfolio.cohorts.length;
+  return (
+    <tr className="border-t border-slate-100 dark:border-slate-800">
+      <td className="py-1 pl-3">
+        <div className="truncate font-semibold augur-strong">{portfolio.label}</div>
+        <div className="truncate text-xs augur-muted">
+          {portfolio.asset.symbol} · {portfolio.accountLabel || portfolio.accountId}
+        </div>
+      </td>
+      <td colSpan={2} className="py-1 text-right augur-tabular augur-muted">
+        {cohorts} {cohorts === 1 ? "cohort" : "cohorts"}
+      </td>
+      <td className="py-1 text-right augur-tabular">{fmtQuanta(portfolio.totalCostBasisQuanta, currency)}</td>
+      <td className="py-1 text-right font-semibold augur-tabular">
+        {fmtQuanta(portfolio.currentValueQuanta, currency)}
+      </td>
+    </tr>
+  );
+}
+
 function PortfolioBondRow({ bond, currency }) {
   const periodsPerYear = 12 / bond.couponPeriodMonths;
   return (
@@ -338,11 +361,20 @@ export function ProductPortfolioPanel({ portfolio, error }) {
   const privateSecurityHoldings = holdings.filter(isPrivateSecurityPosition);
   const publicHoldingsValueQuanta = sumCurrentValueQuanta(publicHoldings);
   const privateSecurityValueQuanta = sumCurrentValueQuanta(privateSecurityHoldings);
+  // Managed portfolios are not holdings: `totalHoldingsValueQuanta` leaves them out.
+  const tlhPortfolios = portfolio?.tlhPortfolios ?? [];
+  const tlhValueQuanta = sumCurrentValueQuanta(tlhPortfolios);
   const cashQuanta = portfolio?.cashQuanta ?? "0";
   const bonds = portfolio?.bonds ?? [];
   const bondFaceQuanta = portfolio?.totalBondFaceValueQuanta ?? "0";
-  const totalQuanta = currencyQuantaAdd(cashQuanta, portfolio?.totalHoldingsValueQuanta ?? "0", bondFaceQuanta);
-  const hasAnything = currencyQuantaIsPositive(cashQuanta) || holdings.length > 0 || bonds.length > 0;
+  const totalQuanta = currencyQuantaAdd(
+    cashQuanta,
+    portfolio?.totalHoldingsValueQuanta ?? "0",
+    tlhValueQuanta,
+    bondFaceQuanta
+  );
+  const hasAnything =
+    currencyQuantaIsPositive(cashQuanta) || holdings.length > 0 || tlhPortfolios.length > 0 || bonds.length > 0;
   return (
     <div className="px-4 py-3">
       <button
@@ -412,6 +444,20 @@ export function ProductPortfolioPanel({ portfolio, error }) {
                 />
               </>
             )}
+            {tlhPortfolios.length > 0 && (
+              <>
+                <PortfolioGroupHeaderRow label="Managed (TLH)" />
+                {tlhPortfolios.map((managed) => (
+                  <PortfolioTlhRow key={managed.portfolioId} portfolio={managed} currency={currency} />
+                ))}
+                <PortfolioSubtotalRow
+                  label="Managed subtotal"
+                  valueQuanta={tlhValueQuanta}
+                  dataKey="tlh-portfolios"
+                  currency={currency}
+                />
+              </>
+            )}
             {bonds.length > 0 && (
               <>
                 <PortfolioGroupHeaderRow label="Bonds (held to maturity)" />
@@ -426,7 +472,7 @@ export function ProductPortfolioPanel({ portfolio, error }) {
                 />
               </>
             )}
-            {holdings.length === 0 && bonds.length === 0 && (
+            {holdings.length === 0 && tlhPortfolios.length === 0 && bonds.length === 0 && (
               <tr className="border-t border-slate-100 dark:border-slate-800">
                 <td colSpan={5} className="py-1 augur-muted">
                   No holdings

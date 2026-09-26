@@ -271,7 +271,11 @@ graph TD
   with them the `Scenario` adapters over the compiler's per-table pieces
   (`compile_tax`, `scenario_level_series_keys`, `collect_level_series_keys`,
   `validate_series_indexed_amounts`); the prepared record types stay as the
-  declaration vocabulary. `SCHEMA` closes here.
+  declaration vocabulary. With the authored `scenario.TlhCohort` gone, `sim/tlh.py`'s
+  `TlhOpeningCohort` takes the name `TlhCohort` as the one public cohort (value at a
+  mark, cost basis, purchase month), which the Plaid source builds directly;
+  `_Cohort` stays private and uses the same `purchase_month_index` name. `SCHEMA`
+  closes here.
 - **OFFERS.** Gated on GPE: which compulsory events run without a tender policy, and
   when forced proceeds become spendable. Then `Issuer` emits `TenderOffer` and
   `ForcedRecovery` from the path's series, the household answers inside the month,
