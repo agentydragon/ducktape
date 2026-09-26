@@ -149,8 +149,9 @@ spending the whole program optimizing one candidate.
 The operator reports that Flash-Next **completed a long, real knowledge-management
 task reasonably in OpenCode, without obvious bugs or breakages**. This is a useful
 end-to-end agent outcome, not just a favorable impression. It is operator-reported,
-not an independently scored coding task; the exact session settings have not yet
-been captured. Preserve OpenCode as the reference client and prioritize making that
+not an independently scored coding task. The operator-supplied
+[OpenCode and server recipes](runs/2026-09-26_harbor_review/README.md) are captured;
+effective client defaults and compaction behavior still need checking. Preserve OpenCode as the reference client and prioritize making that
 working everyday/overnight workflow reliable. Use small checks to investigate
 regressions and choose improvements. The interrupted Harbor benchmark is not a
 reason to reject a model that already did useful work.

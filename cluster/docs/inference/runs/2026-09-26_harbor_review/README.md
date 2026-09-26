@@ -6,6 +6,34 @@ not a prerequisite for the inference program. No jobs, containers or services we
 changed by this review. The original logs remain outside Git in
 `/home/agentydragon/code/ducktape/jobs/`.
 
+## Successful OpenCode reference supplied by the operator
+
+The operator reports that this model completed a long knowledge-management task
+reasonably in OpenCode, with no obvious bugs or breakages. This is a real useful
+agent outcome; it is not an independently scored coding benchmark. The concrete
+OpenCode configuration supplied in the conversation is preserved in
+[opencode.json](opencode.json). With the corresponding server running:
+
+```bash
+OPENCODE_CONFIG="$PWD/cluster/docs/inference/runs/2026-09-26_harbor_review/opencode.json" opencode
+```
+
+[operator_commands.txt](operator_commands.txt) preserves the user-referenced
+`./qwen3.8-flash-docker-cmd` file as read on September 26. It names the same pinned
+llama.cpp image and SSD checkpoint as our September 24 probe, with `--ctx-size 131072`, one slot and `--fit-target 1024,1024`. It also exposes the server on the
+Docker bridge for Harbor. Compared with our measured 32K run it reduces the desktop
+free-VRAM target from 8 GiB to 1 GiB and omits the container RAM/CPU limits. Preserve
+this as an operator recipe, not proof that every recorded job used every flag or a
+recommendation to reduce workstation headroom in future unattended experiments.
+
+The supplied OpenCode config sets the provider/model/URL but no explicit context,
+output, reasoning or compaction settings. Their effective values can also depend
+on OpenCode version, defaults and merged configuration; capture those next time.
+The file's alternate OpenCode example includes `parallelToolCalls: false`, while
+the conversation's exact command does not. Keep that distinction instead of
+assuming the successful session had this option. Parallel tool calls and concurrent
+model-serving slots are separate settings.
+
 ## Latest saved run
 
 `2026-09-25__01-06-09`, job ID `12fa69be-f9b3-49e0-af85-f0eb409e2548`, used
