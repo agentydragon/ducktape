@@ -9,7 +9,7 @@ from finance.augur.sim.compiler.distributions import distribution_income_categor
 from finance.augur.sim.compiler.income_sources import income_source_sort_key
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
-from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket, load_jurisdiction
+from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket, ThresholdTax, load_jurisdiction
 from finance.augur.sim.scenario import (
     BondHolding,
     FilingStatus,
@@ -48,6 +48,14 @@ class PreparedTaxBracket:
 
 
 @dataclass(frozen=True)
+class PreparedThresholdTax:
+    """A flat rate on the part of an income measure above `threshold` quanta."""
+
+    rate_ppb: int
+    threshold: int
+
+
+@dataclass(frozen=True)
 class PreparedTaxRules:
     """One jurisdiction's rules resolved for a taxpayer's filing status; money is integer quanta."""
 
@@ -60,6 +68,10 @@ class PreparedTaxRules:
     max_capital_loss_ordinary_offset: int
     # Positive caps federal-style unrecaptured depreciation; zero uses ordinary brackets.
     section_1250_rate_ppb: int
+    # Over modified adjusted gross income, on the lesser of the excess and net investment income.
+    net_investment_income_tax: PreparedThresholdTax | None = None
+    # Over taxable income.
+    taxable_income_surtax: PreparedThresholdTax | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +140,17 @@ def _brackets(brackets: Sequence[TaxBracket], *, quantum: Decimal) -> tuple[Prep
     )
 
 
+def _threshold_tax(
+    tax: ThresholdTax | None, filing_status: FilingStatus, *, quantum: Decimal
+) -> PreparedThresholdTax | None:
+    if tax is None:
+        return None
+    return PreparedThresholdTax(
+        rate_ppb=rate_to_ppb(tax.rate),
+        threshold=int(currency_amount_to_quanta(tax.threshold[filing_status], quantum=quantum)),
+    )
+
+
 def compile_profile(
     profile: TaxProfile, jurisdictions: Mapping[JurisdictionId, Jurisdiction], *, quantum: Decimal
 ) -> PreparedTaxProfile:
@@ -155,6 +178,12 @@ def compile_profile(
                 max_capital_loss_ordinary_offset=offset_cap,
                 section_1250_rate_ppb=rate_to_ppb(
                     SECTION_1250_FEDERAL_CAP_RATE if jurisdiction_id == SECTION_1250_FEDERAL_JURISDICTION_ID else 0.0
+                ),
+                net_investment_income_tax=_threshold_tax(
+                    jurisdiction.net_investment_income_tax, profile.filing_status, quantum=quantum
+                ),
+                taxable_income_surtax=_threshold_tax(
+                    jurisdiction.taxable_income_surtax, profile.filing_status, quantum=quantum
                 ),
             )
         )

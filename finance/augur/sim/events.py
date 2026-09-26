@@ -82,6 +82,10 @@ TAX_BREAKDOWN_EVENT_SCHEMA = pl.Schema(
         "capital_gain_taxable_quanta": pl.Int64(),
         "ordinary_tax_quanta": pl.Int64(),
         "capital_gain_tax_quanta": pl.Int64(),
+        # Additional taxes over a threshold, included in `total_tax_quanta`; zero where the
+        # jurisdiction levies none.
+        "net_investment_income_tax_quanta": pl.Int64(),
+        "taxable_income_surtax_quanta": pl.Int64(),
         "total_tax_quanta": pl.Int64(),
     }
 )
