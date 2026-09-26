@@ -20,6 +20,7 @@ py_library(
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
+        "//cluster/cdk8s/providers/volsync:replication_source",
         "//cluster/cdk8s/providers/volsync:replicationsource",
         "//homeassistant/provisioner:endpoint",
         "//homeassistant/provisioner:yaml_settings",
