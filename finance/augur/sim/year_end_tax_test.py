@@ -37,7 +37,7 @@ from finance.augur.sim.prepared import (
     _ScheduledSale,
     _SecuritySleeveTarget,
 )
-from finance.augur.sim.results import Finished, Rollout, UnpaidClaims
+from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -197,7 +197,7 @@ def compose(case: Situation) -> World:
 
 
 def run(case: Situation) -> Rollout:
-    """Alice sells on schedule and on her band, then pays each account's claims all or none."""
+    """Alice sells on schedule and on her band, then pays every due claim in full, in order."""
     household = ConfiguredHousehold(AgentId(ALICE), case.policies, scheduled_sales=case.scheduled_sales)
     session = ActionSession({0: compose(case)}, ALICE)
     try:
@@ -548,7 +548,7 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
 
 def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
     """When the tax-payment true-up exceeds the agent's cash plus
-    liquidity-policy sale proceeds, the unpaid claim stops the path.
+    liquidity-policy sale proceeds, the rejected payment stops the path.
     The "mandatory obligation that fails the scenario if unpaid" pattern
     works for any cash outflow — taxes here, rent in other tests, later
     mortgages."""
@@ -569,8 +569,7 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
     failures = rollout.trace.events.rollout_failures
     assert failures.height == 1
     assert failures.row(0, named=True)["month_index"] == 12
-    assert isinstance(rollout.stop, UnpaidClaims)
-    assert rollout.stop.month == 12
+    assert rollout.stop == RejectedAction(month=12, action_index=0)
 
 
 if __name__ == "__main__":

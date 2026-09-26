@@ -2,7 +2,7 @@
 
 Transfers, bills, a scheduled sale, a property purchase and its carrying costs, mortgage
 servicing and the year-end tax pass, on worlds composed from declared facts and driven by a
-household that pays each account's claims all or none.
+household that pays every due claim in full, in order.
 """
 
 from decimal import Decimal

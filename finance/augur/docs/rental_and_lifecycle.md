@@ -65,7 +65,7 @@ Configured purchases still precede the policy observation. A mortgage's first
 payment is due in the month after origination. A property sale pays off the current
 ledger principal before that month's servicing, so the sold property creates no
 later mortgage installment. This timing does not provide a household purchase
-action or change the configured all-or-none funding groups.
+action.
 
 The sim's authored records separate property use from property ownership:
 
