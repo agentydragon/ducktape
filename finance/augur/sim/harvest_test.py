@@ -18,6 +18,7 @@ from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import position_value
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -31,7 +32,7 @@ from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -153,14 +154,21 @@ def compose(case: Situation, rollout_id: int) -> World:
     for lot in lots:
         world.hold(lot)
     if case.with_harvest:
+        # The statement values the sleeve's lot at the opening mark, as the plain lot would be.
+        opening_price = world.market.value(f"security:{case.sleeve.asset_id}", 0)
         world.declare_portfolio(
             PreparedTlhPortfolio(
                 portfolio_id="alice-sp500",
                 owner_agent_id=ALICE,
                 account_id=BROKERAGE,
                 asset_id=case.sleeve.asset_id,
-                quantity_scale=case.sleeve.quantity_scale,
-                initial_cohorts=(case.sleeve,),
+                initial_cohorts=(
+                    TlhOpeningCohort(
+                        value=position_value(opening_price, case.sleeve.units, case.sleeve.quantity_scale),
+                        reported_tax_basis=case.sleeve.basis,
+                        purchase_month=case.sleeve.purchase_month,
+                    ),
+                ),
                 assumptions=case.assumptions,
             )
         )

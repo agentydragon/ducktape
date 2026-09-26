@@ -69,14 +69,7 @@ from finance.augur.sim.property import Housing, Properties, mortgage_terms
 from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill
 from finance.augur.sim.scenario import InterestIncome, TransferIncomeCategory
 from finance.augur.sim.tax_authority import Assessment, TaxAuthority
-from finance.augur.sim.tlh import (
-    ModeledRealizations,
-    TlhMarketUpdate,
-    TlhObservation,
-    TlhOpening,
-    TlhOpeningPosition,
-    TlhPortfolio,
-)
+from finance.augur.sim.tlh import ModeledRealizations, TlhMarketUpdate, TlhObservation, TlhOpening, TlhPortfolio
 
 type Capture = Literal["summary", "dense", "forensic"]
 
@@ -383,14 +376,7 @@ class World:
             raise ValueError(f"duplicate TLH portfolio {spec.portfolio_id!r}")
         portfolio = TlhPortfolio(
             spec.assumptions,
-            TlhOpening(
-                month=-1,
-                price=self.market.value(f"security:{spec.asset_id}", 0),
-                quantity_scale=spec.quantity_scale,
-                positions=tuple(
-                    TlhOpeningPosition(lot.units, lot.basis, lot.purchase_month) for lot in spec.initial_cohorts
-                ),
-            ),
+            TlhOpening(month=-1, price=self.market.value(f"security:{spec.asset_id}", 0), cohorts=spec.initial_cohorts),
         )
         if self.managed is None:
             self.managed = ManagedPortfolios(self.income_sources, self.jurisdictions)
@@ -632,7 +618,7 @@ class World:
                     continue
                 rate = self.market.value(f"security_distribution:{spec.asset_id}", self.month)
                 self.managed_portfolios().distribute(
-                    self.accounting, self.month, distribution, current._distribution(rate)
+                    self.accounting, self.month, distribution, current.distribution(rate)
                 )
             candidate = deepcopy(current)
             realized = candidate.advance(
@@ -739,10 +725,16 @@ class World:
                 return reject("TLH contribution exceeds available cash")
             if isinstance(action, Withdraw) and action.amount > current.observe().value:
                 return reject("TLH withdrawal exceeds portfolio value")
+            if (
+                isinstance(action, Contribute)
+                and action.amount
+                and not self.market.value(f"security:{spec.asset_id}", self.month)
+            ):
+                return reject("a worthless index takes no TLH contribution")
         candidate = deepcopy(current)
         if isinstance(action, Contribute):
-            contribution = candidate.contribute(action.amount)
-            effects = self.effects(spec, candidate, action.cash_account_id, -contribution.cash_paid)
+            candidate.contribute(action.amount)
+            effects = self.effects(spec, candidate, action.cash_account_id, -action.amount)
         else:
             withdrawal = candidate.withdraw(action.amount) if isinstance(action, Withdraw) else candidate.liquidate()
             effects = self.effects(

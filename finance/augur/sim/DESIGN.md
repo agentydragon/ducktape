@@ -96,7 +96,8 @@ buy these units, pay this claim. "Raise enough for at least this much cash" or "
 whatever settlement leaves" is a policy's intent, which it realises as a combination of
 exact orders sized from what it observes; no position, managed portfolio or ledger sizes
 an order on a policy's behalf, and an order the account cannot fund is rejected, not
-trimmed. `observations.py` owns frozen current facts and private claim authority. There is
+trimmed. A managed portfolio is denominated in money, so it takes or pays exactly the
+amount ordered, with no unit grid (<../docs/tlh.md>). `observations.py` owns frozen current facts and private claim authority. There is
 no second public native action/observation representation or native session driver.
 Configured allocators are not silently enabled through this API. The issuer
 protocol on a private holding (`sim/private_equity.py`) is a world phase: `close_month`

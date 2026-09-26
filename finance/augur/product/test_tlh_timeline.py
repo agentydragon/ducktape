@@ -1,7 +1,7 @@
 """Real component settlement survives dense capture and the product timeline.
 
-Stipulated flat $1 units and a 12% annual reduced-form loss yield give one $1
-modeled loss at month zero. These are trace/accounting controls, not a forecast.
+A flat index and a 12% annual reduced-form loss yield give the $100 opening
+cohort one $1 modeled loss at month zero. These are trace/accounting controls, not a forecast.
 """
 
 from decimal import Decimal
@@ -17,7 +17,7 @@ from finance.augur.product.wire import HoldingSaleEvent, TlhFinancialEffectEvent
 from finance.augur.sim.actions import Contribute, DecisionActions, Liquidate, Withdraw
 from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.results import Finished
-from finance.augur.sim.scenario import Currency, InitialLot, TaxProfile, TlhPortfolioSpec
+from finance.augur.sim.scenario import Currency, TaxProfile, TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.testing.fixtures import checking
@@ -39,17 +39,7 @@ def case() -> Case:
                     owner_agent_id="owner",
                     account_id="checking",
                     asset=asset,
-                    initial_lots=[
-                        InitialLot(
-                            lot_id="imported",
-                            agent_id="owner",
-                            account_id="checking",
-                            asset=asset,
-                            purchase_month_index=-24,
-                            quantity=100,
-                            cost_basis=Decimal(100),
-                        )
-                    ],
+                    initial_cohorts=[TlhCohort(value=Decimal(100), cost_basis=Decimal(100), purchase_month_index=-24)],
                     assumptions=TlhAssumptions(
                         peak_annual_yield=0.12,
                         floor_annual_yield=0,
@@ -140,8 +130,13 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(
 
 
 def test_zero_cash_liquidation_is_still_a_redemption(case: Case) -> None:
+    # A statement at a zero mark reports every cohort at zero value, its basis intact.
+    [portfolio] = case.scenario.tlh_portfolios
+    written_off = portfolio.model_copy(
+        update={"initial_cohorts": [TlhCohort(value=Decimal(0), cost_basis=Decimal(100), purchase_month_index=-24)]}
+    )
     worthless = Case(
-        scenario=case.scenario,
+        scenario=case.scenario.model_copy(update={"tlh_portfolios": [written_off]}),
         rollout_count=1,
         series={asset: levels([[Decimal(0), Decimal(0)]]) for asset in case.series},
     )

@@ -106,6 +106,7 @@ py_library(
         "//finance/augur/sim:locations",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:scenario",
+        "//finance/augur/sim:tlh",
         "@pypi//jaxtyping",
         "@pypi//numpy",
     ],

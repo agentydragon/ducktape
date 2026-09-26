@@ -21,7 +21,7 @@ from finance.augur.sim.prepared import (
     _AllocationPolicy,
     _SleeveTarget,
 )
-from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
 ALICE = "alice"
@@ -176,12 +176,12 @@ def test_a_purchase_is_sized_to_what_the_months_claim_payment_leaves() -> None:
 def test_a_projected_purchase_into_a_managed_sleeve_contributes_what_is_left() -> None:
     """The sleeve's holding account carries a TLH portfolio, so the order is an opaque contribution.
 
-    $1,000 of cash against a $400 claim and a zero band invests $600, and the contribution is
-    the quoted value of the 60 whole units that buys. No household-visible lot is created.
+    $1,000 of cash against a $400 claim and a zero band invests $600, all of it: at a price of 7
+    no whole number of units is worth $600, and none is needed. No household-visible lot is created.
     """
     output = run(
         Situation(
-            prices={"index": 10},
+            prices={"index": 7},
             policy=policy(sleeve("index", 1), ceiling=0, tolerance=None),
             opening_cash=1_000,
             portfolios=(
@@ -190,8 +190,7 @@ def test_a_projected_purchase_into_a_managed_sleeve_contributes_what_is_left() -
                     owner_agent_id=ALICE,
                     account_id=HOLDINGS,
                     asset_id="index",
-                    quantity_scale=1,
-                    initial_cohorts=(lot("opening-index", "index", units=10, basis=100),),
+                    initial_cohorts=(TlhOpeningCohort(value=100, reported_tax_basis=100, purchase_month=-24),),
                     assumptions=QUIET,
                 ),
             ),

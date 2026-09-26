@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 import pytest_bazel
@@ -268,9 +269,10 @@ def test_plaid_source_expands_holding_period_buckets(
     if managed:
         [portfolio] = resolved.tlh_portfolios
         assert portfolio.portfolio_id == "wealthfront_sp500"
-        assert [lot.quantity for lot in portfolio.initial_lots] == [0.25, 0.75]
-        assert [lot.cost_basis for lot in portfolio.initial_lots] == [300, 300]
-        assert [lot.purchase_month_index for lot in portfolio.initial_lots] == [-4, -16]
+        # The cohorts carry the statement's own value, not proxy units of it.
+        assert [
+            (cohort.value, cohort.cost_basis, cohort.purchase_month_index) for cohort in portfolio.initial_cohorts
+        ] == [(Decimal(250), Decimal(300), -4), (Decimal(750), Decimal(300), -16)]
         # Loss character is an explicit model assumption, not inferred from opening cohort weights.
         assert portfolio.assumptions.short_term_fraction == 0.75
     else:

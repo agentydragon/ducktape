@@ -8,12 +8,13 @@ All amounts and prices are integer currency quanta.
 """
 
 from dataclasses import dataclass, replace
+from fractions import Fraction
 from math import isqrt
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_for_value, rate_to_ppb
+from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, rate_to_ppb
 from finance.augur.sim.money import round_ratio
 
 
@@ -66,23 +67,22 @@ class TlhAssumptions(BaseModel):
 
 
 @dataclass(frozen=True)
-class TlhOpeningPosition:
-    """Imported financial facts, not a reconstruction of past modeled harvesting."""
+class TlhOpeningCohort:
+    """One tax lot as a direct-indexing statement reports it: value at the opening mark, adjusted basis and
+    purchase month. Imported facts, not a reconstruction of past modeled harvesting."""
 
-    units: int
+    value: int
     reported_tax_basis: int
     purchase_month: int
 
 
 @dataclass(frozen=True)
 class TlhOpening:
-    """State before the next advance; opening positions may enter that next month."""
+    """State before the next advance; opening cohorts may enter that next month."""
 
     month: int
     price: int
-    quantity_scale: int
-    positions: tuple[TlhOpeningPosition, ...]
-    cash: int = 0
+    cohorts: tuple[TlhOpeningCohort, ...]
 
 
 @dataclass(frozen=True)
@@ -106,11 +106,6 @@ class ModeledRealizations:
 
 
 @dataclass(frozen=True)
-class ContributionResult:
-    cash_paid: int
-
-
-@dataclass(frozen=True)
 class WithdrawalResult:
     cash_received: int
     realizations: ModeledRealizations
@@ -118,23 +113,26 @@ class WithdrawalResult:
 
 @dataclass(frozen=True)
 class _Cohort:
-    units: int
+    # Exposure is counted in units of the index level, so it is worth exactly `exposure * price` at
+    # any mark and rides the index ratio without rounding. Money is rounded only where it leaves.
+    exposure: Fraction
     basis: int
     purchase_month: int
 
 
-class TlhPortfolio:
-    """One rollout's opaque holdings and harvesting memory.
+def _money(amount: Fraction) -> int:
+    return round_ratio(amount.numerator, amount.denominator)
 
-    Advance once before each monthly decision. Contributions enter at the current
-    mark; withdrawals redeem FIFO at that mark and return an exact gross cash
-    amount. Share-grid overfill remains as cash inside the portfolio. A caller
+
+class TlhPortfolio:
+    """One rollout's opaque holdings and harvesting memory, denominated in money.
+
+    Advance once before each monthly decision. A contribution of X becomes exposure
+    worth exactly X at the current mark; a withdrawal of X sells exactly X of
+    exposure, FIFO, each cohort giving up basis in proportion to the value it sells.
+    Nothing is rounded to a share grid and nothing is kept back as cash. A caller
     needing transactional settlement can operate on a deepcopy, adopting it only
     when the accounting engine accepts its financial effects.
-
-    Each fill and remaining position is marked separately to the nearest currency
-    quantum. Splitting a fractional position can therefore differ by a rounding
-    quantum from liquidating it in one fill; basis is apportioned without loss.
 
     Sale character uses Augur's monthly holding-period convention (12 months is
     long-term). Harvested character is a model assumption; constituent holding
@@ -142,31 +140,29 @@ class TlhPortfolio:
     """
 
     def __init__(self, assumptions: TlhAssumptions, opening: TlhOpening) -> None:
-        _nonnegative(price=opening.price, cash=opening.cash, quantity_scale=opening.quantity_scale)
-        scale = opening.quantity_scale
-        while scale > 1 and scale % 10 == 0:
-            scale //= 10
-        if scale != 1:
-            raise ValueError("quantity_scale must be a positive power of ten")
-        for position in opening.positions:
-            _nonnegative(units=position.units, reported_tax_basis=position.reported_tax_basis)
-            if position.purchase_month > opening.month + 1:
-                raise ValueError("opening position cannot be purchased in the future")
-            if position.units == 0 and position.reported_tax_basis != 0:
-                raise ValueError("an empty opening position cannot have basis")
+        _nonnegative(price=opening.price)
+        for cohort in opening.cohorts:
+            _nonnegative(value=cohort.value, reported_tax_basis=cohort.reported_tax_basis)
+            if cohort.purchase_month > opening.month + 1:
+                raise ValueError("opening cohort cannot be purchased in the future")
+            if cohort.value and not opening.price:
+                raise ValueError("a zero opening mark values every cohort at zero")
         self._assumptions = assumptions
         self._month = opening.month
         self._price = opening.price
-        self._quantity_scale = opening.quantity_scale
-        self._cash = opening.cash
+        # A cohort reported at zero value holds no exposure: it keeps its basis until liquidation.
         self._cohorts = [
-            _Cohort(position.units, position.reported_tax_basis, position.purchase_month)
-            for position in sorted(opening.positions, key=lambda position: position.purchase_month)
-            if position.units
+            _Cohort(
+                Fraction(cohort.value, opening.price) if cohort.value else Fraction(0),
+                cohort.reported_tax_basis,
+                cohort.purchase_month,
+            )
+            for cohort in sorted(opening.cohorts, key=lambda cohort: cohort.purchase_month)
+            if cohort.value or cohort.reported_tax_basis
         ]
 
-    def _value(self, units: int) -> int:
-        return round_ratio(units * self._price, self._quantity_scale)
+    def _exposure(self) -> Fraction:
+        return sum((cohort.exposure for cohort in self._cohorts), Fraction(0))
 
     def observe(self) -> TlhObservation:
         return self._observe_at_price(self._price)
@@ -176,8 +172,7 @@ class TlhPortfolio:
 
         _nonnegative(price=price)
         return TlhObservation(
-            value=self._cash + sum(round_ratio(cohort.units * price, self._quantity_scale) for cohort in self._cohorts),
-            reported_tax_basis=self._cash + sum(cohort.basis for cohort in self._cohorts),
+            value=_money(self._exposure() * price), reported_tax_basis=sum(cohort.basis for cohort in self._cohorts)
         )
 
     def advance(self, market: TlhMarketUpdate) -> ModeledRealizations:
@@ -190,7 +185,7 @@ class TlhPortfolio:
         short_term = 0
         long_term = 0
         for cohort in self._cohorts:
-            value = round_ratio(cohort.units * market.price, self._quantity_scale)
+            value = _money(cohort.exposure * market.price)
             embedded_gain = round_ratio(max(0, value - cohort.basis) * scale, value) if value else 0
             fraction = self._assumptions.monthly_loss_fraction(embedded_gain_ppb=embedded_gain, drawdown_ppb=drawdown)
             loss = min(cohort.basis, round_ratio(value * fraction, scale))
@@ -203,14 +198,13 @@ class TlhPortfolio:
         self._price = market.price
         return ModeledRealizations(short_term, long_term)
 
-    def contribute(self, amount: int) -> ContributionResult:
+    def contribute(self, amount: int) -> None:
         _nonnegative(amount=amount)
-        units = quantity_for_value(amount, self._price, self._quantity_scale, round_up=False) if self._price else 0
-        invested = self._value(units)
-        if units:
-            self._cohorts.append(_Cohort(units, invested, self._month))
-        self._cash += amount - invested
-        return ContributionResult(cash_paid=amount)
+        if not amount:
+            return
+        if not self._price:
+            raise ValueError("a worthless index takes no contribution")
+        self._cohorts.append(_Cohort(Fraction(amount, self._price), amount, self._month))
 
     def withdraw(self, gross_amount: int) -> WithdrawalResult:
         _nonnegative(gross_amount=gross_amount)
@@ -221,54 +215,44 @@ class TlhPortfolio:
             raise ValueError("gross withdrawal exceeds portfolio value")
         if gross_amount == value:
             return self.liquidate()
-        cash = self._cash
-        units_to_sell = 0
+        # Below the rounded mark means below the exact worth, so the FIFO walk sells all of it.
+        remaining = Fraction(gross_amount, self._price)
+        shares = []
         for cohort in self._cohorts:
-            if cash >= gross_amount:
-                break
-            units = min(
-                cohort.units, quantity_for_value(gross_amount - cash, self._price, self._quantity_scale, round_up=True)
-            )
-            units_to_sell += units
-            cash += self._value(units)
-        if cash < gross_amount:
-            raise ValueError("share-grid rounding cannot fund the requested withdrawal")
-        redeemed = self._redeem(units_to_sell)
-        self._cash += redeemed.cash_received - gross_amount
-        return WithdrawalResult(gross_amount, redeemed.realizations)
+            sold = min(remaining, cohort.exposure)
+            shares.append(sold / cohort.exposure if cohort.exposure else Fraction(0))
+            remaining -= sold
+        return WithdrawalResult(gross_amount, self._sell(shares))
 
     def liquidate(self) -> WithdrawalResult:
-        redeemed = self._redeem(sum(cohort.units for cohort in self._cohorts))
-        cash = self._cash + redeemed.cash_received
-        self._cash = 0
-        return WithdrawalResult(cash, redeemed.realizations)
+        cash = self.observe().value
+        return WithdrawalResult(cash, self._sell([Fraction(1)] * len(self._cohorts)))
 
-    def _redeem(self, units: int) -> WithdrawalResult:
-        remaining = units
-        updated = []
-        cash = 0
+    def _sell(self, shares: list[Fraction]) -> ModeledRealizations:
+        """Sell each cohort's share of its exposure at the current mark."""
+        sold = Fraction(0)
+        paid = 0
+        kept = []
         short_term = 0
         long_term = 0
-        for cohort in self._cohorts:
-            sold = min(remaining, cohort.units)
-            proceeds = self._value(sold)
-            basis = round_ratio(cohort.basis * sold, cohort.units)
-            gain = proceeds - basis
+        for cohort, share in zip(self._cohorts, shares, strict=True):
+            # Each fill is the rounded running total less what earlier fills paid, so the fills
+            # sum to the order's cash exactly.
+            sold += cohort.exposure * share
+            proceeds = _money(sold * self._price) - paid
+            paid += proceeds
+            basis = _money(cohort.basis * share)
+            if share != 1:
+                kept.append(replace(cohort, exposure=cohort.exposure * (1 - share), basis=cohort.basis - basis))
             if self._month - cohort.purchase_month >= 12:
-                long_term += gain
+                long_term += proceeds - basis
             else:
-                short_term += gain
-            cash += proceeds
-            remaining -= sold
-            if sold < cohort.units:
-                updated.append(replace(cohort, units=cohort.units - sold, basis=cohort.basis - basis))
-        self._cohorts = updated
-        return WithdrawalResult(cash, ModeledRealizations(short_term, long_term))
+                short_term += proceeds - basis
+        self._cohorts = kept
+        return ModeledRealizations(short_term, long_term)
 
-    def _distribution(self, per_unit_rate: int) -> int:
-        """Cash paid externally, quoted in nano-quanta per unit on the input rate grid."""
+    def distribution(self, rate: int) -> int:
+        """Cash paid externally on a rate quoted in nano-quanta per unit of the index level: `rate / price × value`."""
 
-        _nonnegative(per_unit_rate=per_unit_rate)
-        return round_ratio(
-            sum(cohort.units for cohort in self._cohorts) * per_unit_rate, self._quantity_scale * MONEY_FACTOR_SCALE
-        )
+        _nonnegative(rate=rate)
+        return _money(self._exposure() * rate / MONEY_FACTOR_SCALE)

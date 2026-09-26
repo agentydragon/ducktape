@@ -94,6 +94,7 @@ from finance.augur.sim.scenario import (
     SeriesIndexedAmount,
     SetRentedFractionEvent,
 )
+from finance.augur.sim.tlh import TlhOpeningCohort
 
 _BASIS_POINT_SCALE = 10_000
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
@@ -650,8 +651,14 @@ def compile_run(
                     owner_agent_id=portfolio.owner_agent_id,
                     account_id=portfolio.account_id,
                     asset_id=_asset_id(portfolio.asset),
-                    quantity_scale=quantity_scale_for_asset(portfolio.asset),
-                    initial_cohorts=_initial_lots(portfolio.initial_lots, quantum=quantum),
+                    initial_cohorts=tuple(
+                        TlhOpeningCohort(
+                            value=int(currency_amount_to_quanta(cohort.value, quantum=quantum)),
+                            reported_tax_basis=int(currency_amount_to_quanta(cohort.cost_basis, quantum=quantum)),
+                            purchase_month=cohort.purchase_month_index,
+                        )
+                        for cohort in portfolio.initial_cohorts
+                    ),
                     assumptions=portfolio.assumptions,
                 )
                 for portfolio in scenario.tlh_portfolios

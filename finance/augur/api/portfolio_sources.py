@@ -27,7 +27,7 @@ from finance.augur.api.portfolio_source_config import (
     PlaidSp500ProxyGroupConfig,
 )
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey
-from finance.augur.sim.scenario import TlhPortfolioSpec
+from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
 from finance.plaid.db.read_model import (
     CurrentCashBalance,
     CurrentHolding,
@@ -125,17 +125,23 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
                 label=group.account_label,
             )
         )
-        proxy_holding = _sp500_proxy_holding(group, group_holdings)
-        holdings.append(proxy_holding)
+        buckets = _proxy_buckets(group, group_holdings)
+        holdings.append(_sp500_proxy_holding(group, buckets))
         if group.tlh_assumptions is not None:
-            opening = PortfolioConfig(accounts=(accounts[-1],), holdings=(proxy_holding,))
             tlh_portfolios.append(
                 TlhPortfolioSpec(
                     portfolio_id=group.position_id,
                     owner_agent_id=group.owner_agent_id,
                     account_id=group.portfolio_account_id,
                     asset=SecurityKey(symbol=SP500_SYMBOL),
-                    initial_lots=list(opening.to_initial_lots()),
+                    initial_cohorts=[
+                        TlhCohort(
+                            value=bucket.value,
+                            cost_basis=bucket.cost_basis,
+                            purchase_month_index=-bucket.holding_period_months_at_start,
+                        )
+                        for bucket in buckets
+                    ],
                     assumptions=group.tlh_assumptions,
                 )
             )
@@ -173,9 +179,17 @@ def _cash_total(plaid: PlaidPortfolioSourceConfig, balances: tuple[CurrentCashBa
     return total
 
 
-def _sp500_proxy_holding(
-    group: PlaidSp500ProxyGroupConfig, holdings: tuple[CurrentHolding, ...]
-) -> HoldingPositionConfig:
+@dataclass(frozen=True)
+class _ProxyBucket:
+    """One holding-period slice of the live Plaid aggregate: what it is worth and what it cost."""
+
+    lot_id: str
+    holding_period_months_at_start: int
+    value: Decimal
+    cost_basis: Decimal
+
+
+def _proxy_buckets(group: PlaidSp500ProxyGroupConfig, holdings: tuple[CurrentHolding, ...]) -> tuple[_ProxyBucket, ...]:
     total_value = Decimal(0)
     total_cost_basis = Decimal(0)
     missing_basis: list[str] = []
@@ -196,30 +210,12 @@ def _sp500_proxy_holding(
             group.position_id,
             sorted(missing_basis),
         )
-    # The sleeve IS the S&P series by definition (that is what a "SP500 proxy group" means), so
-    # its symbol is the index symbol, not whichever ticker the brokerage happens to hold. The
-    # configured ticker survives as the display label.
-    return SecurityHoldingConfig(
-        position_id=group.position_id,
-        account_id=group.portfolio_account_id,
-        label=group.label or group.symbol,
-        symbol=SP500_SYMBOL,
-        security_kind=group.security_kind,
-        unit_value=group.unit_value,
-        lots=_proxy_lots(group, total_value=total_value, total_cost_basis=total_cost_basis),
-    )
-
-
-def _proxy_lots(
-    group: PlaidSp500ProxyGroupConfig, *, total_value: Decimal, total_cost_basis: Decimal
-) -> tuple[HoldingTaxLotConfig, ...]:
-    unit_value = group.unit_value
     if not group.holding_period_buckets:
         return (
-            HoldingTaxLotConfig(
+            _ProxyBucket(
                 lot_id=f"{group.position_id}_plaid_aggregate",
                 holding_period_months_at_start=int(group.default_holding_period_months_at_start),
-                quantity=float(total_value / unit_value),
+                value=total_value,
                 cost_basis=total_cost_basis,
             ),
         )
@@ -233,7 +229,7 @@ def _proxy_lots(
         Decimal(str(bucket.cost_basis_fraction)) for bucket in buckets if bucket.cost_basis_fraction is not None
     ]
     basis_fraction_sum = sum(basis_fractions) if basis_fractions else market_value_fraction_sum
-    lots: list[HoldingTaxLotConfig] = []
+    sliced: list[_ProxyBucket] = []
     for bucket, market_value_fraction in zip(buckets, market_value_fractions, strict=True):
         market_value_weight = market_value_fraction / market_value_fraction_sum
         basis_weight = (
@@ -241,15 +237,38 @@ def _proxy_lots(
             if bucket.cost_basis_fraction is not None
             else market_value_weight
         )
-        lots.append(
-            HoldingTaxLotConfig(
+        sliced.append(
+            _ProxyBucket(
                 lot_id=f"{group.position_id}_plaid_{bucket.key}",
                 holding_period_months_at_start=int(bucket.holding_period_months_at_start),
-                quantity=float((total_value * market_value_weight) / unit_value),
+                value=total_value * market_value_weight,
                 cost_basis=total_cost_basis * basis_weight,
             )
         )
-    return tuple(lots)
+    return tuple(sliced)
+
+
+def _sp500_proxy_holding(group: PlaidSp500ProxyGroupConfig, buckets: tuple[_ProxyBucket, ...]) -> HoldingPositionConfig:
+    # The sleeve IS the S&P series by definition (that is what a "SP500 proxy group" means), so
+    # its symbol is the index symbol, not whichever ticker the brokerage happens to hold. The
+    # configured ticker survives as the display label.
+    return SecurityHoldingConfig(
+        position_id=group.position_id,
+        account_id=group.portfolio_account_id,
+        label=group.label or group.symbol,
+        symbol=SP500_SYMBOL,
+        security_kind=group.security_kind,
+        unit_value=group.unit_value,
+        lots=tuple(
+            HoldingTaxLotConfig(
+                lot_id=bucket.lot_id,
+                holding_period_months_at_start=bucket.holding_period_months_at_start,
+                quantity=float(bucket.value / group.unit_value),
+                cost_basis=bucket.cost_basis,
+            )
+            for bucket in buckets
+        ),
+    )
 
 
 def _holding_value(holding: CurrentHolding) -> Decimal:
