@@ -22,7 +22,7 @@ has the strongest direct user evidence here: successful long knowledge-managemen
 work with compaction. Terminus-2 offers an established neutral reference agent.
 Neither compacting setup has yet been verified against this local endpoint.
 
-Before a long attempt, force a compaction at a deliberately reduced declared window,
+If natural compaction does not occur or fails, force a compaction in a targeted test,
 retain the summary and before/after request sizes, and verify resumed actions recover
 facts needed by the task. Declare context and output limits explicitly; reserve room
 for summary output and subsequent prompts. Repeat the boundary once to test continued
@@ -35,10 +35,11 @@ llama.cpp's actual token counts and allow measured headroom; a default-enabled s
 is not proof that this Qwen endpoint compacts correctly. Inspect overflow recovery
 against the actual API error shape as well.
 
-The currently armed queue remains the frozen capacity probes plus one uncompacted
-Mini-SWE task per admitted weight format. This finding does not silently change its
-copied scripts. Those tasks are limited diagnostics, not a practical-workflow score.
-A verified compacting track is the next agent comparison, before expanding the suite.
+The user subsequently directed the queue to run one actual frozen Terminal-Bench
+job at 128K with Terminus-2 and observe natural compaction. The synthetic prerequisite
+was dropped. The [queue recipe](../2026-09-26_qwen38_queue/README.md) is authoritative
+for current limits and sequence. No compaction event is required for a completed task
+to count; absent events simply leave compaction unverified.
 
 ## Evidence portfolio
 

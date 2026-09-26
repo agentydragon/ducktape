@@ -1,82 +1,99 @@
-# Serial work after the quant downloads
+# One real task with natural compaction after the downloads
 
-Prepared September 26, 2026. This is a bounded local experiment, not an Artificial
-Analysis replication. The scripts have not yet completed inference validation.
-The user authorized downloads, GPU experiments, model SSD use, and pausing Ollama;
-PR [8070](https://github.com/agentydragon/ducktape/pull/8070) is merged and live
-Ollama replicas were verified zero. No reboot or NixOS activation is involved.
+September 26, 2026. The user approved replacing the initial uncompacted Mini-SWE
+queue, then directed us to observe compaction during a real eval task rather than
+build a synthetic prerequisite. The initial queue source is retained in commit
+83f4894913; this revision runs Terminus-2. No model-quality result is claimed yet.
+Ollama pause PR [8070](https://github.com/agentydragon/ducktape/pull/8070) is merged;
+live replicas were verified zero. No reboot or NixOS activation is involved.
 
-## Frozen order
+## Order and protocol
 
-1. Resume and SHA256-verify the pinned Q5_K_XL and IQ4_XS downloads from the
-   [capacity recipe](../2026-09-26_qwen38_capacity/README.md). Downloads and hash
-   checks are serial, rate limited to 40 MiB/s, with a 128 GiB SSD free-space floor.
-2. IQ4_XS: 128K allocation/retrieval probes with Q8_0, Q5_0, then Q4_0 KV.
-3. IQ4_XS: native 256K with Q8_0 KV; after successful retrieval, one Terminal-Bench
-   attempt on `interleaved-vigenere`, the first task in the outcome-independent
-   [CPU12 selection](../2026-09-26_harbor_review/cpu12_tasks.json).
-4. Repeat steps 2–3 with the existing Q4_K_XL weights.
+1. Resume and SHA256-verify Q5_K_XL and IQ4_XS from the
+   [capacity recipe](../2026-09-26_qwen38_capacity/README.md). Download/checks are
+   serial, downloads capped at 40 MiB/s, with a 128 GiB SSD free-space floor.
+2. Load IQ4_XS at 131,072 context, Q8_0 K/V, both GPUs, one slot.
+3. Run the first task in the outcome-independent
+   [CPU12 selection](../2026-09-26_harbor_review/cpu12_tasks.json),
+   `interleaved-vigenere`, with Terminus-2 summarization enabled.
+4. Stop the server and retain all artifacts. Review that attempt before expansion.
 
-The smaller weight format goes first because its host-memory requirement is lower,
-not because of observed task outcomes. Q5 is downloaded as a later quality control;
-its larger hot weight set makes it a poor first choice for this host's remaining RAM.
-Each run uses both GPUs for one model, one server slot, and one request at a time.
-No parallel inference is scheduled. Port 19080 is separate from the user's 18080.
+IQ4_XS starts because it has the lower host-memory requirement. This changes weights
+as well as the agent relative to the user's previous Q4/Mini-SWE run; differences
+cannot be attributed solely to compaction. Q4 is the later weight control. Native
+256K, smaller KV and Q5 comparisons are deferred until this first trajectory informs
+which experiment is useful. No parallel inference or synthetic compaction task is
+scheduled. Port 19080 is separate from the user's 18080.
 
-The 128K probes contain 120K filler tokens; the 256K probe contains 240K. Three
-fixed facts are inserted at separated positions and checked in the answer. This
-measures admission and simple retrieval, not agent quality or adequate long-context
-reasoning. Requests disable thinking for retrieval and retain complete payloads,
-responses, startup logs, effective server properties and GPU/RAM snapshots.
-Failure of the 256K probe stops the queue before a quality attempt.
+Harbor is 0.23.0, with installed Terminus-2 reporting 2.0.0. Pin/hash the installed
+adapter and backend source; preserve the generated job and Harbor resolved lock.
+The model uses xhigh reasoning, temperature 0.6, a 32,768-token output cap, and a
+3,600-second per-request timeout. Maximum agent turns: 500. No whole-task retries;
+the installed agent/backend may retry individual calls according to their code.
+Only the local endpoint and dummy key are supplied. Host-side Terminus uses
+`http://127.0.0.1:19080/v1`; the task has no model credentials to a paid endpoint.
+
+`model_info.max_input_tokens=98,304` reserves 32K of the physical window for output.
+`proactive_summarization_threshold=32,768` starts summarization after the estimated
+retained history passes 65,536 tokens, leaving additional room for the summary/Q&A
+calls. These are deliberately conservative local settings, not AA's protocol.
+The estimator can use a proxy tokenizer; actual server usage and overflow behavior
+must be inspected. Summary, question, and answer requests are serial. Neither a
+configured switch nor an incremented internal counter proves successful compaction.
+
+Inspect main `trajectory.json` system steps with
+`extra.context_management.type == "compaction"`, their saved subagent trajectories,
+actual prompt-token changes, subsequent tool calls, and the task verifier result.
+`store_all_messages` retains the final active history, not every pre-compaction
+request; the main and summary trajectories provide the earlier evidence. A run
+that finishes without compaction is still a valid task observation, but provides no
+compaction evidence. Do not require two events before accepting a real task result.
 
 ## Resource and stopping rules
 
-Server cgroup caps are 24 GiB RAM for IQ4_XS and 34 GiB for Q4, with no extra swap.
-Admission requires respectively 48 and 58 GiB MemAvailable: server cap plus two
-original 4 GiB task/verifier containers plus 16 GiB desktop reserve. Fit targets
-reserve 8 GiB on the desktop GPU and 2 GiB on the second GPU. Every 15 seconds during
-requests, the queue checks for at least 16 GiB available host RAM, 6 GiB free desktop
-VRAM, 1 GiB free second-GPU VRAM, and Ollama still paused. A failed check stops only
-this queue's inference and records a resource/service interruption, not a model fail.
-These checks reduce contention risk; they do not prove desktop latency is unaffected.
+IQ4_XS server cap: 24 GiB RAM with no extra swap; admission requires 48 GiB available
+host RAM (server cap, two original 4 GiB task/verifier containers, 16 GiB desktop
+reserve). GPU fit targets reserve 8 GiB on the desktop GPU and 2 GiB on the second.
+Every 15 seconds during the attempt, check at least 16 GiB available host RAM, 6 GiB
+free desktop VRAM, 1 GiB free second-GPU VRAM, and Ollama paused. A failed check stops
+owned work and records a resource/service interruption, not a model-quality failure.
+These guards reduce contention risk; they do not prove unaffected desktop latency.
 
-Admission waits at most 24 hours from queue start. The transient user service has a
-48-hour overall ceiling; interruption is not a benchmark timeout. It has low CPU/I/O
-priority. No automatic restart or inference retry is configured. Original task limits
+Admission has a 24-hour limit from queue start; the user service has a 48-hour overall
+ceiling, low CPU/I/O priority, and no automatic restart. Original real-task limits
 remain: 28,800-second agent deadline, 900-second build/verifier deadlines, 4 CPU and
-4 GiB per environment. No task starts before the admission checks pass.
-
-Harbor 0.23.0 uses Mini-SWE-Agent 2.4.6, step limit 500, output cap 32,768 tokens,
-zero retries and one task per invocation. The pinned Mini-SWE default agent has no
-compaction. Preserve context overflows as their own termination category. This cap
-and subset define a local protocol, not an AA score. Reasoning is set to `xhigh` in
-the server template; Harbor's `reasoning_effort` is deliberately unset because it
-switches the adapter to Responses. Only the local API URL and dummy key are supplied.
-The installed Harbor adapter sets a 3,600-second individual model-request timeout;
-the task deadline remains the outer bound. Installed adapter/config hashes are
-retained alongside the version, and Harbor retains its resolved job lock/config.
-A single task per quant cannot estimate model equivalence or a reliable pass rate.
+4 GiB per environment. A task may continue beyond the six-hour reporting checkpoint.
 
 ## Launch, observe and stop
 
-From the Nix devshell, after ensuring no earlier download process is writing these
-same `.partial` files:
+From the Nix devshell, after stopping any previous writer of these partial downloads:
 
 ```bash
-bash cluster/docs/inference/runs/2026-09-26_qwen38_queue/launch.sh /tmp/wyrm2-qwen38-queue-20260926
+bash cluster/docs/inference/runs/2026-09-26_qwen38_queue/launch.sh /tmp/wyrm2-qwen38-terminus-20260926
 systemctl --user status wyrm2-qwen38-serial-queue
 journalctl --user -u wyrm2-qwen38-serial-queue -f
 systemctl --user stop wyrm2-qwen38-serial-queue
 ```
 
-`launch.sh` copies scripts/manifests and records their hashes and source revision
-before launching. Subsequent edits do not alter that running copy. A runtime lock
-excludes a second queue. Output is private to the user, under the supplied directory;
-retain it for analysis and commit a result summary after reviewing for sensitive
-trajectory content. Stopping preserves verified and partial model downloads.
-Container cleanup is limited to the server's unique queue label and task compose
-projects whose unique trial names are recorded in this invocation's artifacts.
+The launcher copies scripts/manifests and records revision and hashes, so later edits
+do not mutate running code. A lock excludes a second queue. Artifacts are private to
+the user in the supplied directory. Stop preserves verified and partial downloads.
+Cleanup is limited to the server's unique queue label and compose projects named by
+this invocation's unique trial configs. `harbor_attempt.sh --help` is safe;
+`--config-only` writes configuration without starting a job, and `--install-only`
+prepares the actual task environment without model calls or verification.
+
+## Setup checks
+
+A read-only inspection of the pinned task environment found bash and apt-get but no
+tmux. Harbor's install-only run completed successfully in 16 seconds, with environment
+and agent setup timestamps, no exception, no agent/verifier result, and no leftover
+container. Evidence: `/tmp/terminus-real-task-install-20260926/jobs/attempt/`.
+This checks infrastructure readiness; it is not a model/compaction test.
+Shell syntax, Harbor JobConfig and Terminus2Options schema validation passed before
+launch. The [compaction research](../2026-09-26_harbor_review/COMPACTION.md) records
+source evidence and the tokenizer caveat. Practical OpenCode/repo tasks complement
+this bounded benchmark; there is no full-suite score or model-equivalence claim.
 
 ## RAM cleanup and preflight incident
 
@@ -104,7 +121,3 @@ cause. A cgroup below its memory limit alone does not rule out file-backed I/O s
 A later Ollama comparison should hold model bytes, SSD backing, placement, context,
 KV type and workload constant and record actual reads/faults and engine revision.
 This queue first establishes useful capacity on the known SSD/runtime combination.
-
-The [compaction follow-up](../2026-09-26_harbor_review/COMPACTION.md) identifies
-Terminus-2's default summarization and a practical OpenCode track. These are separate
-from the armed Mini-SWE diagnostic; verify actual compaction before expanding evals.

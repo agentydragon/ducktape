@@ -135,38 +135,15 @@ start_server() {
 note 'starting verified downloads before any inference'
 bash "$here/../2026-09-26_qwen38_capacity/download.sh"
 printf '%s\n' "$(date -Is)" >"$output/downloads-verified.txt"
-# Lower host-memory requirement first; task selection does not depend on outcomes.
-for quant in iq4xs q4; do
-  if [[ $quant == iq4xs ]]; then
-    model=qwen3.8-flash-next-iq4xs
-    model_file=Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
-    ram_gib=24
-  else
-    model=qwen3.8-flash-next-q4
-    model_file=Qwen3.8-Flash-Next-GGUF/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf
-    ram_gib=34
-  fi
-  # KV comparison is a retrieval/allocation probe, never a benchmark score.
-  for kv in q8_0 q5_0 q4_0; do
-    current_run="$output/$quant-128k-$kv"
-    mkdir -p "$current_run"
-    note "starting $quant 128K $kv admission probe"
-    start_server 131072 "$kv"
-    if ! run_guarded bash "$here/capacity_probe.sh" "$current_run/probe" "$model" 120000; then
-      note "admission probe failed; artifacts retained, not a coding score"
-      [[ ! -e "$current_run/termination.txt" ]] || exit 1
-    fi
-    stop_server
-  done
-  current_run="$output/$quant-256k-q8_0"
-  mkdir -p "$current_run"
-  note "starting $quant native-context admission probe"
-  start_server 262144 q8_0
-  run_guarded bash "$here/capacity_probe.sh" "$current_run/probe" "$model" 240000
-  # No model-quality run follows failed admission. Original task/verifier limits apply.
-  run_guarded bash "$here/harbor_attempt.sh" "$current_run/harbor" "$model"
-  stop_server
-  note "completed $quant job; retained artifacts under $current_run"
-done
-note 'queue completed'
+# One real task first. Observe natural compaction before expanding experiments.
+model=qwen3.8-flash-next-iq4xs
+model_file=Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+ram_gib=24
+current_run="$output/iq4xs-128k-q8_0-terminus"
+mkdir -p "$current_run"
+note 'starting one real Terminal-Bench task at 128K with Terminus-2 summarization'
+start_server 131072 q8_0
+run_guarded bash "$here/harbor_attempt.sh" "$current_run/harbor" "$model" 131072
+stop_server
+note 'real-task attempt finished; inspect reward and compaction artifacts before expanding'
 printf '%s\n' "$(date -Is)" >"$output/completed.txt"

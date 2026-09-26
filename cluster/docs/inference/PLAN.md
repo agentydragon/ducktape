@@ -281,11 +281,12 @@ provider scores establish the quality retained by the local quantization.
 
 The [September 26 capacity calculation](runs/2026-09-26_qwen38_capacity/README.md)
 uses actual GGUF metadata and pinned runtime source, including indexer and recurrent
-state. The [immediate serial queue](runs/2026-09-26_qwen38_queue/README.md) starts
-with Q8/Q5/Q4 KV comparisons at fixed IQ4_XS weights, then repeats with Q4 weights.
-IQ4_XS has the lower host-memory admission threshold. Q5 is a later quality control;
-Q5 and IQ4_XS downloads are progressing. The queue resumes them under a transient
-user service before inference, with explicit desktop RAM/VRAM reserves.
+state. The [immediate serial queue](runs/2026-09-26_qwen38_queue/README.md) now runs
+one frozen real task at 128K/Q8 with IQ4_XS and Terminus-2 summarization, following
+the user's direction to observe compaction naturally. IQ4_XS has the lower host-memory
+admission threshold. The KV sweep, native 256K and Q4/Q5 comparisons follow evidence
+from that first trajectory. Q5 and IQ4_XS downloads are progressing. The transient
+user service resumes them before inference, with explicit desktop RAM/VRAM reserves.
 Parallel-window numbers in that note are arithmetic only, not permission to run
 concurrent evaluations.
 
@@ -312,10 +313,12 @@ intuition.
 ### 4. Bounded local capability validation
 
 Terminal-Bench 4.0 is a substantial agent evaluation, worth a carefully controlled
-rerun. The immediate queue pairs one predetermined CPU-only task across IQ4_XS/Q4
-after capacity admission, preserving original task verifiers and deadlines. A later
-Q4/Q5 comparison can follow if placement is useful. Reserve 24–48 hours for the
-bounded queue and analysis. This is a compute budget,
+rerun. The immediate queue runs one predetermined CPU-only task with Terminus-2 at
+128K, preserving original task verifiers and deadlines, and observes natural context
+summarization. Review the first trajectory at the six-hour checkpoint; a task with
+an eight-hour deadline may still be running. Matched quant comparisons follow after
+this agent configuration is understood. Reserve up to 24–48 hours for a subsequent
+bounded batch and analysis. This is a compute budget,
 not a promise to finish every selected task. Record unfinished work explicitly.
 
 The [next-run protocol](runs/2026-09-26_harbor_review/NEXT_RUN.md) specifies preflight,
