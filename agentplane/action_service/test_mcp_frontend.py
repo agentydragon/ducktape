@@ -689,7 +689,9 @@ async def test_submission_deadline_and_wait_validation(frontend: Frontend) -> No
         assert len(await frontend.store.list_requests(OPERATOR)) == 1
 
 
-async def test_allowed_action_executes_and_returns_canonical_result(frontend: Frontend) -> None:
+async def test_allowed_action_executes_and_its_receipt_reports_the_execution_without_its_result(
+    frontend: Frontend,
+) -> None:
     async with frontend.client() as client:
         result = await client.call_tool(
             "request_action",
@@ -717,7 +719,9 @@ async def test_allowed_action_executes_and_returns_canonical_result(frontend: Fr
         ).structured_content
         assert finished is not None
         assert finished["state"] == ActionState.SUCCEEDED
-        assert finished["execution"]["result"] == {"echo": {"message": "test-result"}}
+        assert finished["execution"]["state"] == ExecutionState.SUCCEEDED
+        # The result is get_action_result's to return, as the tool answered; a receipt never nests it.
+        assert "result" not in finished["execution"]
 
 
 @dataclass
