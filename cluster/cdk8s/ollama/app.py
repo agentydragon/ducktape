@@ -90,6 +90,10 @@ def _ollama_container() -> k8s.Container:
             k8s.EnvVar(name="OLLAMA_KV_CACHE_TYPE", value="q8_0"),
             k8s.EnvVar(name="OLLAMA_FLASH_ATTENTION", value="1"),
             k8s.EnvVar(name="OLLAMA_CONTEXT_LENGTH", value="131072"),
+            # Default 5m is shorter than a cold read of the 112GB qwen3.8-flash-next-q4
+            # weights off HDD-backed lvm-proxmox-hdd; Ollama abandons the load attempt
+            # (and does not retry) once this elapses.
+            k8s.EnvVar(name="OLLAMA_LOAD_TIMEOUT", value="30m"),
         ],
         resources=k8s.ResourceRequirements(
             requests={
