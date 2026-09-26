@@ -62,17 +62,8 @@ from constructs import Construct
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
-from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import (
-    actions,
-    container_security,
-    database,
-    egress,
-    electric,
-    llm_ingress,
-    node_scheduling,
-    sandbox_pod,
-)
+from cluster.cdk8s import cilium, container_security, node_scheduling
+from cluster.cdk8s.agentplane import actions, database, egress, electric, llm_ingress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -324,7 +315,7 @@ class App(Construct):
             self,
             "httproute",
             metadata=metadata(namespace, namespace),
-            hostname=self.env.app.hostname,
+            hostnames=[self.env.app.hostname],
             backend=NAME,
             port=CONTAINER_PORT,
             # A session stream stays attached for as long as the tab is open.

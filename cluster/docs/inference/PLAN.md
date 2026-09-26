@@ -281,13 +281,15 @@ provider scores establish the quality retained by the local quantization.
 
 The [September 26 capacity calculation](runs/2026-09-26_qwen38_capacity/README.md)
 uses actual GGUF metadata and pinned runtime source, including indexer and recurrent
-state. The [immediate serial queue](runs/2026-09-26_qwen38_queue/README.md) now runs
-one frozen real task at 128K/Q8 with existing Q4 and Terminus-2 summarization, following
-the user's direction to observe compaction naturally and use the GPU while downloads
-continue. A separate download-only service cannot launch competing inference. The KV sweep, native 256K and Q4/Q5 comparisons follow evidence
-from that first trajectory. Q5 and IQ4_XS downloads are progressing. The transient
-user services run downloads alongside one inference job, with explicit desktop
-RAM/VRAM reserves and overlapping SSD traffic recorded as a latency confounder.
+state. The [serial queue](runs/2026-09-26_qwen38_queue/README.md) completed its first
+frozen task at 128K/Q8 with Q4 and Terminus-2:
+[reward 1.0, six verifier checks passed, two compactions](runs/2026-09-26_qwen38_q4_terminus_result/README.md)
+in 7h 40m total. Q5 and IQ4_XS downloads finished at 04:48 Pacific. The matched
+IQ4_XS task started at 12:10 and has no result yet. The KV sweep, native 256K and Q5
+comparison remain follow-ups. Desktop RAM/VRAM reserves remain enforced; overlapping
+download traffic in Q4's first hour is a latency confounder. Its wrapper guard failed
+after the passing result because the Kubernetes API was unreachable; distinguish
+that cleanup outcome from the completed evaluation.
 Parallel-window numbers in that note are arithmetic only, not permission to run
 concurrent evaluations.
 
@@ -314,11 +316,12 @@ intuition.
 ### 4. Bounded local capability validation
 
 Terminal-Bench 4.0 is a substantial agent evaluation, worth a carefully controlled
-rerun. The immediate queue runs one predetermined CPU-only task with Terminus-2 at
-128K, preserving original task verifiers and deadlines, and observes natural context
-summarization. Review the first trajectory at the six-hour checkpoint; a task with
-an eight-hour deadline may still be running. Matched quant comparisons follow after
-this agent configuration is understood. Reserve up to 24–48 hours for a subsequent
+rerun. The first predetermined CPU-only task passed with Terminus-2 at 128K,
+preserving original task verifiers and deadlines and recovering after two natural
+compactions. IQ4 now repeats that task serially. Compare its completion, token use,
+history recovery and elapsed time before choosing the next predetermined or practical
+OpenCode task. One success establishes feasibility, not a suite-level pass rate.
+Reserve up to 24–48 hours for a subsequent
 bounded batch and analysis. This is a compute budget,
 not a promise to finish every selected task. Record unfinished work explicitly.
 

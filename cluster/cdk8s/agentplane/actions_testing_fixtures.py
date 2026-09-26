@@ -32,8 +32,7 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import container_security
+from cluster.cdk8s import cilium, container_security
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
@@ -85,9 +84,7 @@ def _add_mcp_everything(scope: Construct) -> None:
             ephemeral_storage=EphemeralStorageResources(request=Size.gibibytes(1), limit=Size.gibibytes(1)),
         ),
         security_context=ContainerSecurityContextProps(
-            allow_privilege_escalation=False,
-            read_only_root_filesystem=True,
-            capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
+            read_only_root_filesystem=True, capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL])
         ),
     )
     apply_pod_spec_patches(deployment)

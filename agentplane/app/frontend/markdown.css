@@ -17,4 +17,13 @@
 
 .agentplane-markdown :where(code) {
   font-family: var(--mantine-font-family-monospace);
+  overflow-wrap: anywhere;
+}
+
+/* A `pre` does not wrap by default, so a fenced code block would otherwise overflow past the
+   message bubble instead of wrapping in place -- the same treatment `.agentplane-hljs` gives
+   highlighted code. */
+.agentplane-markdown :where(pre) {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

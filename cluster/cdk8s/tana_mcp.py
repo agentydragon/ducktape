@@ -338,7 +338,7 @@ def _facade(chart: Chart) -> None:
         chart,
         "facade-httproute",
         metadata=metadata(_FACADE, _NAMESPACE),
-        hostname="tana-mcp-facade.allegedly.works",
+        hostnames=["tana-mcp-facade.allegedly.works"],
         backend=_FACADE,
         port=_FACADE_PORT,
         timeout="60s",

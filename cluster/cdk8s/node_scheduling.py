@@ -1,6 +1,6 @@
-"""Node scheduling shared by every Agentplane staging/testing Deployment: all pin to
-the same OVH zone, and the two central services (llm-ingress, egress) also tolerate the
-control-plane taint to schedule there under pressure.
+"""Node scheduling shared across cluster/cdk8s: every pinned Deployment/Job attracts to
+the same OVH zone, and Agentplane's two central services (llm-ingress, egress) also
+tolerate the control-plane taint to schedule there under pressure.
 """
 
 from __future__ import annotations

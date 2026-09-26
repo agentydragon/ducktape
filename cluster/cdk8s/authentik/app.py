@@ -20,25 +20,17 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategyName,
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesFilters,
-    HttpRouteSpecRulesFiltersResponseHeaderModifier,
-    HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
-    HttpRouteSpecRulesFiltersType,
-)
+from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
 
 from cluster.cdk8s.authentik import db
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
@@ -221,41 +213,33 @@ def _host_config_map(chart: Chart) -> None:
 
 
 def _http_route(chart: Chart) -> None:
-    HttpRoute(
+    https_route(
         chart,
         "route",
         metadata=metadata(NAME, NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["auth.allegedly.works"],
-            rules=[
-                # Let the operator-owned Haku console (haku.allegedly.works) frame Authentik's
-                # pages, so the agent-authored Haku UI iframe (haku-ui.allegedly.works, a separate
-                # Authentik proxy app) can complete its first-time auth in-frame off the existing
-                # SSO session instead of forcing a separate top-level login. Authentik defaults to
-                # `X-Frame-Options: DENY` and sets no CSP; we swap that for a `frame-ancestors`
-                # whitelist so ONLY the console (and Authentik itself) may frame it — every other
-                # origin still can't. This does not let the framed app act as the console: that is
-                # cross-origin isolation (separate origins/cookies), independent of framing headers.
-                HttpRouteSpecRules(
-                    filters=[
-                        HttpRouteSpecRulesFilters(
-                            type=HttpRouteSpecRulesFiltersType.RESPONSE_HEADER_MODIFIER,
-                            response_header_modifier=HttpRouteSpecRulesFiltersResponseHeaderModifier(
-                                remove=["X-Frame-Options"],
-                                set=[
-                                    HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
-                                        name="Content-Security-Policy",
-                                        value="frame-ancestors 'self' https://haku.allegedly.works",
-                                    )
-                                ],
-                            ),
-                        )
-                    ],
-                    backend_refs=[HttpRouteSpecRulesBackendRefs(name="authentik-server", port=80)],
-                )
-            ],
-        ),
+        hostnames=["auth.allegedly.works"],
+        backend="authentik-server",
+        port=80,
+        hsts=False,
+        listener=None,
+        # Let the operator-owned Haku console (haku.allegedly.works) frame Authentik's pages, so
+        # the agent-authored Haku UI iframe (haku-ui.allegedly.works, a separate Authentik proxy
+        # app) can complete its first-time auth in-frame off the existing SSO session instead of
+        # forcing a separate top-level login. Authentik defaults to `X-Frame-Options: DENY` and
+        # sets no CSP; we swap that for a `frame-ancestors` whitelist so ONLY the console (and
+        # Authentik itself) may frame it — every other origin still can't. This does not let the
+        # framed app act as the console: that is cross-origin isolation (separate origins/cookies),
+        # independent of framing headers.
+        extra_filters=[
+            RouteFilter.response_header_modifier(
+                remove=["X-Frame-Options"],
+                set=[
+                    HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
+                        name="Content-Security-Policy", value="frame-ancestors 'self' https://haku.allegedly.works"
+                    )
+                ],
+            )
+        ],
     )
 
 

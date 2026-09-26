@@ -170,7 +170,7 @@ def _server(scope: Construct) -> None:
         scope,
         "route",
         metadata=metadata(NAMESPACE, NAMESPACE),
-        hostname="cache.allegedly.works",
+        hostnames=["cache.allegedly.works"],
         backend=NAME,
         port=_PORT,
         hsts=False,

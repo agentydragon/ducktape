@@ -192,7 +192,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        hostname="plaid-db.allegedly.works",
+        hostnames=["plaid-db.allegedly.works"],
         backend=_NAME,
         port=_HTTP_PORT,
         timeout="60s",
