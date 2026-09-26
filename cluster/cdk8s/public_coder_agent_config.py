@@ -26,6 +26,7 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s import external_creds, public_coder_proxy, public_coder_sshpiper
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, console_config, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -345,12 +346,6 @@ def _env(name: str, value: str) -> k8s.EnvVar:
     return k8s.EnvVar(name=name, value=value)
 
 
-def _secret_env(name: str, secret_name: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret_name, key=key))
-    )
-
-
 # Seed the GitOps config into the state PVC before startup. Remove the gateway's own config
 # backups so the ConfigMap remains authoritative; see
 # docs/personal_agents/findings/harness_behaviour.md F19.
@@ -446,11 +441,11 @@ def _openclaw_container() -> k8s.Container:
             # in the egress proxy and substituted solely in X-Subscription-Token requests to
             # api.search.brave.com.
             _env("BRAVE_API_KEY", public_coder_proxy.BRAVE_API_KEY_PLACEHOLDER),
-            _secret_env("OPENCLAW_LITELLM_API_KEY", "litellm-key-public-coder-agent", "api-key"),
+            secret_env_var("OPENCLAW_LITELLM_API_KEY", "litellm-key-public-coder-agent", "api-key"),
             # Authentik authenticates proxied browser traffic. OpenClaw's subagent completion
             # path calls the local gateway directly and therefore uses the documented
             # trusted-proxy local-password fallback instead of proxy identity headers.
-            _secret_env("OPENCLAW_GATEWAY_PASSWORD", _GATEWAY_PASSWORD_NAME, "password"),
+            secret_env_var("OPENCLAW_GATEWAY_PASSWORD", _GATEWAY_PASSWORD_NAME, "password"),
             # OpenClaw's password login puts this value in the Matrix JSON body. It is a proxy
             # placeholder: iron-proxy replaces it with the real controller-owned password only
             # on the Matrix login endpoint.

@@ -29,6 +29,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from agentplane.indexing.main import Settings
 from cluster.cdk8s import cnpg, forgejo_images
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -69,12 +70,6 @@ _CONFIG_MAP = ConfigMapArgs(
         }.items()
     ],
 )
-
-
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
 
 
 def _read_token(chart: Chart) -> None:
@@ -167,8 +162,8 @@ def _worker(
                             ),
                             env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_CONFIG_MAP.name))],
                             env=[
-                                _secret_env("DB_USERNAME", _DB_APP_SECRET, "username"),
-                                _secret_env("DB_PASSWORD", _DB_APP_SECRET, "password"),
+                                secret_env_var("DB_USERNAME", _DB_APP_SECRET, "username"),
+                                secret_env_var("DB_PASSWORD", _DB_APP_SECRET, "password"),
                                 k8s.EnvVar(
                                     name=env_name(Settings, "database_url"),
                                     value=(
@@ -179,7 +174,7 @@ def _worker(
                                 k8s.EnvVar(name=env_name(Settings, "repository_url"), value=url),
                                 k8s.EnvVar(name=env_name(Settings, "branch"), value=branch),
                                 *env,
-                                _secret_env(env_name(Settings, "read_token"), _READ_TOKEN, "token"),
+                                secret_env_var(env_name(Settings, "read_token"), _READ_TOKEN, "token"),
                             ],
                             ports=[k8s.ContainerPort(name="http", container_port=_PORT)],
                             volume_mounts=[k8s.VolumeMount(name="repository", mount_path=_REPOSITORY_MOUNT)],
@@ -257,8 +252,8 @@ def chart(app: App) -> Chart:
         url="http://forgejo-http.forgejo:3000/haku/haku-state.git",
         branch="main",
         env=(
-            _secret_env(env_name(Settings, "git_username"), "haku-forgejo-git", "username"),
-            _secret_env(env_name(Settings, "git_password"), "haku-forgejo-git", "password"),
+            secret_env_var(env_name(Settings, "git_username"), "haku-forgejo-git", "username"),
+            secret_env_var(env_name(Settings, "git_password"), "haku-forgejo-git", "password"),
         ),
     )
     return chart

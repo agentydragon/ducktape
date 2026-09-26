@@ -22,6 +22,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cnpg, external_creds, forgejo_images
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -48,12 +49,6 @@ _CONTROL_PLANE_TOLERATION = k8s.Toleration(
     key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
 )
 _ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
-
-
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
 
 
 def _database(scope: Construct) -> None:
@@ -119,10 +114,12 @@ def _server(scope: Construct) -> None:
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                             ),
                             env=[
-                                _secret_env("ATTIC_SERVER_DATABASE_URL", f"{_DB}-app", "uri"),
-                                _secret_env("ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64", "attic-jwt-token", "jwt-token"),
-                                _secret_env("AWS_ACCESS_KEY_ID", _S3_SECRET, "AWS_ACCESS_KEY_ID"),
-                                _secret_env("AWS_SECRET_ACCESS_KEY", _S3_SECRET, "AWS_SECRET_ACCESS_KEY"),
+                                secret_env_var("ATTIC_SERVER_DATABASE_URL", f"{_DB}-app", "uri"),
+                                secret_env_var(
+                                    "ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64", "attic-jwt-token", "jwt-token"
+                                ),
+                                secret_env_var("AWS_ACCESS_KEY_ID", _S3_SECRET, "AWS_ACCESS_KEY_ID"),
+                                secret_env_var("AWS_SECRET_ACCESS_KEY", _S3_SECRET, "AWS_SECRET_ACCESS_KEY"),
                             ],
                             args=["-f", "/config/server.toml", "--mode", "monolithic"],
                             ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
@@ -279,7 +276,7 @@ def _rotation(scope: Construct) -> None:
                                     name="rotate",
                                     image=_ROTATOR_IMAGE,
                                     args=["rotate", "--config", "/config/rotators.yaml"],
-                                    env=[_secret_env("GIT_TOKEN", _GITHUB_PAT_SECRET, "token")],
+                                    env=[secret_env_var("GIT_TOKEN", _GITHUB_PAT_SECRET, "token")],
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                                     ),

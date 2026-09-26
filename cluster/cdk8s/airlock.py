@@ -36,6 +36,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -53,12 +54,6 @@ _SECRET_WRITER = "airlock-secret-writer"
 # image-pins/ overrides the tag and copies it into AIRLOCK_IMAGE_TAG.
 _PLACEHOLDER_TAG = "unset"
 _CONFIG_MOUNT = "/etc/airlock"
-
-
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
 
 
 def _probe(path: str, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
@@ -94,20 +89,22 @@ def _deployment(chart: Chart) -> None:
                             env=[
                                 k8s.EnvVar(name="AIRLOCK_IMAGE_TAG", value=_PLACEHOLDER_TAG),
                                 k8s.EnvVar(name="CONFIG_PATH", value=f"{_CONFIG_MOUNT}/config.yaml"),
-                                _secret_env("AIRLOCK_OIDC_CLIENT_ID", "airlock-oidc-config", "client-id"),
-                                _secret_env("AIRLOCK_OIDC_CLIENT_SECRET", "airlock-oidc-config", "client-secret"),
-                                _secret_env("AIRLOCK_OIDC_SESSION_SECRET", _SESSION_SECRET, "session-secret"),
-                                _secret_env("OURA_CLIENT_ID", "oura-client-credentials", "client_id"),
-                                _secret_env("OURA_CLIENT_SECRET", "oura-client-credentials", "client_secret"),
-                                _secret_env("GOOGLE_CLIENT_ID", "google-client-credentials", "client_id"),
-                                _secret_env("GOOGLE_CLIENT_SECRET", "google-client-credentials", "client_secret"),
+                                secret_env_var("AIRLOCK_OIDC_CLIENT_ID", "airlock-oidc-config", "client-id"),
+                                secret_env_var("AIRLOCK_OIDC_CLIENT_SECRET", "airlock-oidc-config", "client-secret"),
+                                secret_env_var("AIRLOCK_OIDC_SESSION_SECRET", _SESSION_SECRET, "session-secret"),
+                                secret_env_var("OURA_CLIENT_ID", "oura-client-credentials", "client_id"),
+                                secret_env_var("OURA_CLIENT_SECRET", "oura-client-credentials", "client_secret"),
+                                secret_env_var("GOOGLE_CLIENT_ID", "google-client-credentials", "client_id"),
+                                secret_env_var("GOOGLE_CLIENT_SECRET", "google-client-credentials", "client_secret"),
                                 # The `google-write` provider reuses this same GCP OAuth client
                                 # (config.yaml); scope is a per-authorize-flow parameter, not fixed to
                                 # the client registration.
-                                _secret_env("GOOGLE_WRITE_CLIENT_ID", "google-client-credentials", "client_id"),
-                                _secret_env("GOOGLE_WRITE_CLIENT_SECRET", "google-client-credentials", "client_secret"),
-                                _secret_env("BSC_CLIENT_ID", "bsc-client-credentials", "client_id"),
-                                _secret_env("BSC_CLIENT_SECRET", "bsc-client-credentials", "client_secret"),
+                                secret_env_var("GOOGLE_WRITE_CLIENT_ID", "google-client-credentials", "client_id"),
+                                secret_env_var(
+                                    "GOOGLE_WRITE_CLIENT_SECRET", "google-client-credentials", "client_secret"
+                                ),
+                                secret_env_var("BSC_CLIENT_ID", "bsc-client-credentials", "client_id"),
+                                secret_env_var("BSC_CLIENT_SECRET", "bsc-client-credentials", "client_secret"),
                             ],
                             volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG_MOUNT, read_only=True)],
                             resources=k8s.ResourceRequirements(
