@@ -257,7 +257,7 @@ def chart(app: App) -> Chart:
         chart,
         "httproute",
         metadata=metadata(NAME, NAME),
-        hostname="airlock.allegedly.works",
+        hostnames=["airlock.allegedly.works"],
         backend=NAME,
         port=_PORT,
         timeout="120s",

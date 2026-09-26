@@ -218,7 +218,9 @@ class Ntfy(Construct):
         _alertmanager_webhook_secret(self)
         deployment = self._add_deployment()
         self._add_service(deployment)
-        https_route(self, "httproute", metadata=metadata("ntfy", NAMESPACE), hostname=HOSTNAME, backend=NAME, port=PORT)
+        https_route(
+            self, "httproute", metadata=metadata("ntfy", NAMESPACE), hostnames=[HOSTNAME], backend=NAME, port=PORT
+        )
         self._add_service_monitor()
 
     def _add_deployment(self) -> Deployment:

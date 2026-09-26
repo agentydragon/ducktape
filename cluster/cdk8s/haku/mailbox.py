@@ -467,7 +467,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        hostname="haku-mailbox.allegedly.works",
+        hostnames=["haku-mailbox.allegedly.works"],
         backend=NAME,
         port=_HTTP_PORT,
         timeout="60s",

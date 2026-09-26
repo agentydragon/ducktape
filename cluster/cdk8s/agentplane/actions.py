@@ -309,7 +309,7 @@ class Actions(Construct):
             self,
             "httproute",
             metadata=metadata(f"{_NAME}-mcp", self.env.namespace),
-            hostname=self.env.actions.hostname,
+            hostnames=[self.env.actions.hostname],
             backend=_NAME,
             port=CONTAINER_PORT,
             paths=_MCP_PATHS,

@@ -125,7 +125,7 @@ class KubeApiProxy(Construct):
                     "description": "Dedicated TLS-terminated Kubernetes API route for Haku-authorized Agent traffic."
                 },
             ),
-            hostname=HOSTNAME,
+            hostnames=[HOSTNAME],
             backend=NAME,
             port=_HTTP_PORT,
             timeout="3600s",

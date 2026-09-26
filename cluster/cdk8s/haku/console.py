@@ -483,7 +483,7 @@ class Console(Construct):
             self,
             "httproute",
             metadata=metadata(NAME, NAMESPACE),
-            hostname=HOSTNAME,
+            hostnames=[HOSTNAME],
             backend=STATIC_NAME,
             port=_STATIC_SERVICE_PORT,
             timeout="360s",

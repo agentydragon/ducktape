@@ -370,7 +370,7 @@ class LiteLLMProxy(Construct):
             self,
             "httproute",
             metadata=metadata(self.spec.name, self.spec.namespace),
-            hostname=hostname,
+            hostnames=[hostname],
             backend=self.spec.name,
             port=4000,
             timeout="600s",

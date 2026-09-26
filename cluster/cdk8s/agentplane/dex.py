@@ -285,7 +285,7 @@ def _add_http_route(scope: Construct) -> None:
         scope,
         "httproute",
         metadata=metadata(_NAME, _NAMESPACE),
-        hostname="agentplane-dex-testing.allegedly.works",
+        hostnames=["agentplane-dex-testing.allegedly.works"],
         backend=_NAME,
         port=_PORT,
     )

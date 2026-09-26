@@ -149,7 +149,7 @@ def chart(app: App) -> Chart:
         chart,
         "httproute",
         metadata=metadata(NAME, NAME),
-        hostname="kubectl-passthrough-mcp.allegedly.works",
+        hostnames=["kubectl-passthrough-mcp.allegedly.works"],
         backend=NAME,
         port=_PORT,
         timeout="60s",

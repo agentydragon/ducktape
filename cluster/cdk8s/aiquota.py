@@ -187,7 +187,7 @@ class Aiquota(Construct):
             self,
             "httproute",
             metadata=metadata(_API_NAME, NAMESPACE),
-            hostname=_HOSTNAME,
+            hostnames=[_HOSTNAME],
             backend=_API_NAME,
             port=_PORT,
             hsts=False,

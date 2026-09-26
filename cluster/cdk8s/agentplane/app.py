@@ -324,7 +324,7 @@ class App(Construct):
             self,
             "httproute",
             metadata=metadata(namespace, namespace),
-            hostname=self.env.app.hostname,
+            hostnames=[self.env.app.hostname],
             backend=NAME,
             port=CONTAINER_PORT,
             # A session stream stays attached for as long as the tab is open.
