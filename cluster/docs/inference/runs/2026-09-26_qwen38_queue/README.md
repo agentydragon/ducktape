@@ -123,3 +123,17 @@ cause. A cgroup below its memory limit alone does not rule out file-backed I/O s
 A later Ollama comparison should hold model bytes, SSD backing, placement, context,
 KV type and workload constant and record actual reads/faults and engine revision.
 This queue first establishes useful capacity on the known SSD/runtime combination.
+
+## First live Q4 turn
+
+Started September 26 at 03:44 Pacific; Harbor began at 03:46 after model loading.
+Artifacts: `/tmp/wyrm2-qwen38-q4-20260926/`, source `e623550133`.
+The server is healthy at one slot and 131,072 context. The first completed model
+response used 1,191 prompt / 314 completion tokens; native timings report 55.94
+prompt tokens/s and 27.09 generated tokens/s (32.85 seconds combined). The trajectory
+contains four shell commands and terminal observations, and the next model request
+was processing 2,403 tokens. This verifies a real agent/tool roundtrip, not completion
+of the task or compaction. At that check there were zero compaction events.
+Host MemAvailable was about 56 GiB, desktop GPU free memory about 8 GiB, second GPU
+about 2 GiB. Concurrent download hashing/SSD traffic makes these early latency numbers
+unsuitable for a controlled runtime comparison. The original task remains in progress.
