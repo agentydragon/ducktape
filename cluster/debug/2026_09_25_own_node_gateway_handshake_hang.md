@@ -175,8 +175,17 @@ cert-manager, Kyverno, SeaweedFS and CNPG instances among others. Which of them 
 | e. Upstream                                                                                                                           | Talos: no accept-mode invalid drop on CNI interfaces; Cilium: the one-sided NOTRACK | Not in our hands                                                                                                                                |
 
 The OVH edge and Game firewalls are not options: own-node traffic never leaves the host.
-Recommended: (a) now, and a design note for (c), since this is the fifth failure of the same
-hairpin.
+Binding the two components to each node's Nebula address instead of loopback (keeping the
+existing scrape targets) is not an option either: Talos generates their startup, liveness and
+readiness probes with a hardcoded `Host: "localhost"` (`k8stemplates/controller-manager.go`,
+`scheduler.go`), so a Nebula-only bind never goes ready.
+
+**Chosen 2026-09-26: (a).** Applying it needs `bazel run //cluster:bootstrap`. A design note for
+(c) is still open, since this is the fifth failure of the same hairpin.
+
+The `gateway-probe` DaemonSet (<../cdk8s/monitoring/gateway_probe.py>) repeats this dial from an
+ordinary Pod on every public node. `OwnNodeGatewayHandshakeFailing` should fire for the control
+planes until (a) is applied and clear after it.
 
 ## Mitigations
 

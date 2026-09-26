@@ -40,10 +40,10 @@ from agentplane.action_service.policy_evaluation import PolicySetDecisionProvide
 from agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer
 from agentplane.action_service.push import ActionPushNotifier, PushIdentity, PushSubscriptionStore, WebPushSettings
 from agentplane.action_service.runtime import running_executor
+from agentplane.action_service.sandbox.inventory import SandboxClients
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
-from agentplane.sandbox_actions.inventory import SandboxClients
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from mcp_infra.exec.kubernetes import KubernetesWebSocketExecRunner
 from util.kubernetes import CustomObjectsClient

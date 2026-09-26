@@ -37,6 +37,7 @@ from agentplane.action_service.catalog import (
     McpExecutorBinding,
 )
 from agentplane.action_service.client import WORKLOAD_CREDENTIAL_PLACEHOLDER
+from agentplane.action_service.conftest import ScriptedExecutor, lifespan_in_own_task
 from agentplane.action_service.db import ActionStore, make_sessionmaker
 from agentplane.action_service.mcp_frontend import CancellationView, PolicyField, Receipt, RequestField
 from agentplane.action_service.models import (
@@ -46,8 +47,6 @@ from agentplane.action_service.models import (
     CallerPrincipal,
     CancellationOutcome,
     DecisionInput,
-    ExecutionLease,
-    ExecutionRequest,
     ExecutionResult,
     ExecutionState,
     Executor,
@@ -58,11 +57,11 @@ from agentplane.action_service.models import (
 from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.policy_view import CallerActionPolicyView
+from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.models import ExecResult
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.test_fixtures.callers import in_sync_index
 from agentplane.action_service.updates import ActionUpdates
-from agentplane.sandbox_actions.binding import SandboxExecutorBinding
-from agentplane.sandbox_actions.models import ExecResult
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     POD_NAME_CLAIM,
@@ -259,28 +258,10 @@ async def _serve(
         callers=policies,
         updates=updates,
     )
-    # pytest-asyncio resumes yield-fixture teardown in another task. The MCP lifespan's
-    # AnyIO scopes must enter and exit in the same task, as they do under uvicorn.
-    started: asyncio.Future[None] = asyncio.get_running_loop().create_future()
-    stopping = asyncio.Event()
-
-    async def lifespan() -> None:
-        try:
-            async with app.router.lifespan_context(app):
-                started.set_result(None)
-                await stopping.wait()
-        except BaseException as error:
-            if not started.done():
-                started.set_exception(error)
-            raise
-
-    task = asyncio.create_task(lifespan())
     try:
-        await started
-        yield Frontend(app, store, service, authentication, core, updates, tokens)
+        async with lifespan_in_own_task(app):
+            yield Frontend(app, store, service, authentication, core, updates, tokens)
     finally:
-        stopping.set()
-        await task
         await service.close()
 
 
@@ -290,16 +271,6 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
         yield served
 
 
-class ScriptedExecutor(Executor):
-    """Answers each group's Actions with the result a test set for that group."""
-
-    def __init__(self) -> None:
-        self.results: dict[str, ExecutionResult] = {}
-
-    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
-        return self.results[request.action.group]
-
-
 # One group per executor kind, since how a result reads to an MCP caller depends on which ran it.
 RESULT_GROUPS: dict[str, ExecutorBinding] = {
     "test-mcp": McpExecutorBinding(description="test-mcp-executor"),
@@ -307,11 +278,6 @@ RESULT_GROUPS: dict[str, ExecutorBinding] = {
         description="test-sandbox-executor", namespace=NAMESPACE, templates={"test-template"}
     ),
 }
-
-
-@pytest.fixture
-def scripted() -> ScriptedExecutor:
-    return ScriptedExecutor()
 
 
 @pytest.fixture
@@ -954,7 +920,7 @@ async def test_action_result_relays_the_mcp_tools_own_answer(
         structured_content={"width": 1},
         is_error=True,
     )
-    scripted.results["test-mcp"] = ExecutionResult(
+    scripted.results[ActionIdentity(group="test-mcp", name="act")] = ExecutionResult(
         state=ExecutionState.SUCCEEDED, result=answer.model_dump(mode="json", by_alias=True, exclude_none=True)
     )
     request = await _submitted(results_frontend, "test-mcp")
@@ -973,7 +939,7 @@ async def test_action_result_presents_a_sandbox_result_as_a_returned_model(
     results_frontend: Frontend, scripted: ScriptedExecutor
 ) -> None:
     ran = ExecResult(exit=Exited(exit_code=1), stdout="", stderr="test-missing-file", duration_seconds=0.5)
-    scripted.results["test-sandbox"] = ExecutionResult(
+    scripted.results[ActionIdentity(group="test-sandbox", name="act")] = ExecutionResult(
         state=ExecutionState.SUCCEEDED, result=ran.model_dump(mode="json")
     )
     request = await _submitted(results_frontend, "test-sandbox")
@@ -1003,7 +969,7 @@ async def test_action_result_says_what_it_waits_on_and_why_nothing_ran(results_f
 async def test_action_result_of_a_failed_execution_carries_its_reason(
     results_frontend: Frontend, scripted: ScriptedExecutor
 ) -> None:
-    scripted.results["test-sandbox"] = ExecutionResult(
+    scripted.results[ActionIdentity(group="test-sandbox", name="act")] = ExecutionResult(
         state=ExecutionState.FAILED, error={"kind": "sandbox_unavailable", "message": "test box is not ready"}
     )
     request = await _submitted(results_frontend, "test-sandbox")

@@ -30,7 +30,7 @@ generic MCP, configured Identities, Connection grants, and OAuth/consent. The
 [workload authentication](../docs/workload_authentication.md),
 [launch presets](../docs/launch_presets.md), and [action policies](../docs/action_policies.md) own
 the other implemented contracts.
-[Sandbox Actions](../docs/sandbox_actions.md) owns the exec-target contract for agents hosted
+[Sandbox Actions](../action_service/sandbox/README.md) owns the exec-target contract for agents hosted
 outside the cluster: sandboxes that run as the calling ServiceAccount, and Kubernetes reach from
 inside one.
 [Thread, runner, and harness layering](../docs/thread_layering.md) owns the command/Event

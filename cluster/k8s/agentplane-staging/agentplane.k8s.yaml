@@ -73,6 +73,8 @@ data:
         - ollama/olm-chat/gpt-oss-120b-128k
         - ollama/oai-chat/gemma4-31b-it-q8_0-128k
         - ollama/olm-chat/gemma4-31b-it-q8_0-128k
+        - ollama/oai-chat/qwen3.8-flash-next-q4-128k
+        - ollama/olm-chat/qwen3.8-flash-next-q4-128k
       HARNESS_CODEX:
         - chatgpt/oai-responses/gpt-6-astra
         - chatgpt/oai-responses/gpt-6-sol
@@ -94,6 +96,8 @@ data:
         - ollama/olm-chat/gpt-oss-120b-128k
         - ollama/oai-chat/gemma4-31b-it-q8_0-128k
         - ollama/olm-chat/gemma4-31b-it-q8_0-128k
+        - ollama/oai-chat/qwen3.8-flash-next-q4-128k
+        - ollama/olm-chat/qwen3.8-flash-next-q4-128k
     agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
     thread_presets:
@@ -2409,6 +2413,13 @@ data:
             - agentplane-sandbox
             - agentplane-sandbox-build
             - agentplane-runner
+        direct_tools:
+          - create
+          - dispose
+          - exec
+          - get
+          - get_template
+          - list
       ssh:
         title: SSH
         description: SSH commands on configured targets; every Action remains subject to operator approval.
@@ -4053,8 +4064,8 @@ spec:
           - create
           - dispose
           - exec
+          - get
           - get_template
-          - info
           - list
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1

@@ -69,8 +69,8 @@ class HomeAssistantClient:
         response.raise_for_status()
         return response.json()
 
-    async def wait_until_ready(self) -> set[OnboardingStep] | None:
-        """Wait for the API and return completed onboarding steps, or None if complete."""
+    async def wait_until_ready(self) -> frozenset[OnboardingStep]:
+        """Wait for the API and return the onboarding steps still pending."""
         try:
             async for attempt in AsyncRetrying(
                 stop=stop_after_delay(self.readiness_timeout_secs),
@@ -82,7 +82,7 @@ class HomeAssistantClient:
                     await self._verify_api_ready()
         except httpx2.HTTPStatusError as exc:
             if exc.response.status_code == HTTPStatus.UNAUTHORIZED:
-                return await self.onboarding_status()
+                return await self.pending_onboarding_steps()
             raise TimeoutError("Home Assistant did not become available within 5 minutes") from exc
         except (httpx2.TransportError, TimeoutError) as exc:
             raise TimeoutError("Home Assistant did not become available within 5 minutes") from exc
@@ -101,16 +101,17 @@ class HomeAssistantClient:
         response.raise_for_status()
         return True
 
-    async def onboarding_status(self) -> set[OnboardingStep] | None:
-        """Return completed onboarding steps, or None when onboarding views are absent."""
+    async def pending_onboarding_steps(self) -> frozenset[OnboardingStep]:
+        """The onboarding steps not yet done: none once Home Assistant stops serving its onboarding
+        views, which it does when onboarding is complete."""
         try:
             response = await self.request_json("/api/onboarding", authenticated=False)
         except httpx2.HTTPStatusError as exc:
             if exc.response.status_code == HTTPStatus.NOT_FOUND:
-                return None
+                return frozenset()
             raise
         statuses = TypeAdapter(list[OnboardingStepStatus]).validate_python(response)
-        return {status.step for status in statuses if status.done}
+        return frozenset(OnboardingStep) - {status.step for status in statuses if status.done}
 
     @staticmethod
     def required_string(response: object, *path: str) -> str:

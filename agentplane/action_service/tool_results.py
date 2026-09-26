@@ -15,7 +15,7 @@ from mcp.types import CallToolResult, TextContent
 
 from agentplane.action_service.catalog import ExecutorBinding, McpExecutorBinding
 from agentplane.action_service.models import ActionRequestView, ActionState
-from agentplane.sandbox_actions.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 
 
 def tool_result(view: ActionRequestView, executor: ExecutorBinding) -> ToolResult:

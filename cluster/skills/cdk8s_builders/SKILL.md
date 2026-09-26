@@ -56,6 +56,24 @@ Check whether this repo already has a class doing this for another CRD and match
 
 Where a wrapper builds two objects (or two parts of one object) that must reference each other by a value with no Kubernetes meaning of its own — a workload's own pod-template labels and its own selector, a generated name a sibling resource must also carry — derive that value once from the construct's own identity and write it everywhere it's needed, rather than a user-supplied string or a hand-rolled hash either side could get subtly wrong. cdk8s's own `Names` helper (`Names.to_label_value(construct)`, `.to_dns_label(scope, extra=[...])`) is the exact primitive `cdk8s_plus_34`'s `Workload` base class uses to keep a resource's selector and its own pod template's labels from ever drifting apart, and it reappears wherever cdk8s-plus needs a stable name with no other natural source (aggregated `ClusterRole` label keys, an auto-generated `Volume` name). Two objects that must agree on a value belong on one shared derivation, never on two independently-typed string constants.
 
+## A caller-facing layer earns each function by changing something
+
+Splitting one wrapper into a schema-generic half and a caller-specific half (the
+placement question this skill's own repo may answer elsewhere) creates a second
+failure mode distinct from the ones above: carrying a function into the caller-specific
+half that doesn't actually need to be there. A function belongs in the caller-specific
+layer only if it binds something the generic layer doesn't know — a fixed label
+convention, a specific set of values, a workaround only one deployment needs. A
+function with the same name, the same signature, and the same docstring as the generic
+thing it calls adds nothing: it's a re-export wearing a definition. Delete it and have
+its callers import the generic name directly — the general rule "import a symbol from
+the module that defines it, not one that merely re-exports it" applies with full force
+here. This is easy to miss when the split is mechanical (moving CRD-schema code into
+one file, keeping every existing caller-facing function name for continuity, even the
+ones that turn out to need nothing caller-specific once the generic half exists).
+Check every remaining function in the caller-specific half against this test before
+calling the split done, not just the ones that looked complicated.
+
 ## Escape hatch stays tiered — don't over-build the wrapper
 
 A new wrapper's `__init__` doesn't need every field on day one. An uncovered field takes the CRD's own generated struct as a raw keyword value (never a bespoke dict) and becomes a named keyword the moment a second caller needs it.
@@ -72,6 +90,25 @@ field the schema declined to type. That value is exactly what the escape hatch j
 above is for: the wrapper's `__init__` takes it as a raw keyword, and the one caller
 that needs a specific shape builds it directly, rather than a factory invented to make
 an untyped, single-user value look like reusable schema structure.
+
+### Check the generated constructor before reaching for `add_json_patch`
+
+`ApiObject.add_json_patch(...)` is for a value the generated `<Kind>Spec`'s constructor
+genuinely cannot express — a field the CRD's schema doesn't surface at all, or a value
+only known after the whole tree is synthesized. It is not a stand-in for a field the
+generated struct already accepts as a real keyword. Before patching a field in after
+construction, check the generated constructor's own signature for it; a field the CRD
+schema defines — even with unusual enum casing, a deprecated status, or an
+awkward generated name — is almost always already a typed parameter there, and belongs
+passed straight through, not bolted on with a patch.
+
+One recurring trap: `cdk8s_import`'s codegen can collapse a schema enum's
+duplicate-cased members (`audit`/`Audit`) into one generated member whose wire value
+differs in case from the spelling a caller expects. A duplicate-cased `enum:` list in
+the schema is the tell that the CRD itself treats the two cases as synonyms — so the
+fix is to accept the generated enum's own casing, not bypass the generated field over a
+cosmetic mismatch. Reach for `add_json_patch` only once you've confirmed the field
+truly isn't reachable from the constructor at all.
 
 ## Don't invent a mechanism cdk8s/Kubernetes doesn't already have
 

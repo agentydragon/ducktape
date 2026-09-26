@@ -340,7 +340,7 @@ chosen credential boundary without exposing privileged credentials in evidence.
 
 **Planned identity:** `agentplane-staging/claude-ai` is the principal a Connection from the
 Claude.ai MCP connector acts as, and now also the account every sandbox this caller creates runs
-as ([sandbox Actions](../docs/sandbox_actions.md)). Its authority accreted from what each smoke
+as ([sandbox Actions](../action_service/sandbox/README.md)). Its authority accreted from what each smoke
 test needed rather than from a decision about what this caller should hold, and the sandbox surface
 changed what that authority reaches: the account is no longer only an Action caller, it is the
 identity of a shell somebody can run arbitrary commands in.
@@ -903,8 +903,8 @@ what the Action Service is missing, not the tool definitions.
 
 Use the implemented generic Action MCP frontend as the replacement surface; do not build a second
 frontend, approval coordinator, or authority store. The real-client proof (§ Tested on staging) is
-the client-compatibility evidence, not just a protocol fixture. The initial facade uses generic
-Action tools; per-Action projection may never be needed and is not required for migration.
+the client-compatibility evidence, not just a protocol fixture. Generic Action tools are the
+facade; the direct tools a group configures for external Connections are not required for migration.
 
 The retirements themselves are separate nodes: `RETIRE_MCP_CATALOG` waits on this one,
 `RETIRE_APPROVAL_QUEUE` does not.
@@ -1506,7 +1506,7 @@ Not deferred work with a node below, but scope this project is not pursuing:
   constraints are in
   [workload authentication § Access beyond Actions](../docs/workload_authentication.md#access-beyond-actions);
 - per-destination workload audiences until recipient isolation is required;
-- per-Action MCP projection and new generic-tool metadata such as output schemas;
+- per-Action output schemas on direct tools, or other new generic-tool metadata;
 - registration/enrollment retention cleanup, once actual growth is measured — bounded expiry that
   preserves historical attribution and replay tombstones, never a gate for client use;
 - broad profiles beyond the landed launch-preset slice;

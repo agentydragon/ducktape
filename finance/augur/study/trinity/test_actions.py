@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
@@ -9,76 +10,78 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import InflationKey, SecurityDistributionKey, SecurityKey
-from finance.augur.sim.compiler.execution import compile_run
+from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey, SecurityKey
 from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.results import Finished, RejectedAction
-from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
-from finance.augur.study.trinity.replay import BONDS, EQUITY, HORIZON_MONTHS, build_scenario, execute, sleeve_targets
+from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_to_quanta
+from finance.augur.sim.results import Finished, RejectedAction, Rollout
+from finance.augur.study.trinity.replay import (
+    BONDS,
+    EQUITY,
+    HORIZON_MONTHS,
+    INITIAL_PORTFOLIO,
+    QUANTUM,
+    compose,
+    drive,
+    opening_lots,
+    situation,
+    sleeve_targets,
+)
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
-def control(*, equity_share: float, quantity: float, annual: Decimal, horizon: int) -> Scenario:
-    base = build_scenario(equity_share=equity_share, withdrawal_rate=0.04)
-    return base.model_copy(
-        update={
-            "initial_lots": [base.initial_lots[0].model_copy(update={"quantity": quantity})],
-            "scheduled_obligations": [
-                claim.model_copy(
-                    update={
-                        "amount_due": SeriesIndexedAmount(
-                            base_amount=annual, series=InflationKey(), adjustment_period_months=12
-                        )
-                    }
-                )
-                for claim in base.scheduled_obligations
-                if claim.month < horizon
-            ],
-            "horizon_months": horizon,
-        }
+def control(
+    *,
+    equity_share: float,
+    quantity: float,
+    annual: Decimal,
+    horizon: int,
+    blocks: list[tuple[LevelSeriesKey, np.ndarray]],
+    cost_basis: Decimal = INITIAL_PORTFOLIO,
+) -> Rollout:
+    """One window on stipulated levels: the cell's single sleeve at `quantity` units, drawn down by `annual`."""
+    case = situation(
+        ExternalSeriesContext.from_level_blocks(blocks, rollout_count=1, horizon_months=horizon),
+        rollout_count=1,
+        horizon_months=horizon,
     )
+    lot = opening_lots(equity_share)[0]
+    lot = replace(
+        lot,
+        units=int(quantity_to_quanta(quantity, scale=lot.quantity_scale)),
+        basis=int(currency_amount_to_quanta(cost_basis, quantum=QUANTUM)),
+    )
+    world = compose(case, 0, lots=(lot,), annual_withdrawal=annual)
+    return drive({0: world}, targets=sleeve_targets(equity_share), capture="forensic")[0]
 
 
 def test_indexed_claims_use_original_base_not_previous_rounded_withdrawal() -> None:
-    scenario = control(equity_share=1, quantity=1, annual=Decimal("0.01"), horizon=25)
     cpi = np.full((1, 26), 3.0)
     cpi[:, 12:24] = 4
     cpi[:, 24:] = 5
-    run = compile_run(
-        scenario,
-        rollout_count=1,
-        jurisdictions={},
-        locations={},
-        external_series=ExternalSeriesContext.from_level_blocks(
-            [(SecurityKey(symbol=EQUITY), np.full((1, 26), 100.0)), (InflationKey(), cpi)],
-            rollout_count=1,
-            horizon_months=25,
-        ),
+    result = control(
+        equity_share=1,
+        quantity=1,
+        annual=Decimal("0.01"),
+        horizon=25,
+        blocks=[(SecurityKey(symbol=EQUITY), np.full((1, 26), 100.0)), (InflationKey(), cpi)],
     )
-    result = execute(run, targets=sleeve_targets(1), rollout_ids=[0], capture="forensic")[0]
     payments = result.summary.payments
     assert [(row.month, row.receipt.amount_paid) for row in payments] == [(0, 1), (12, 1), (24, 2)]
     assert result.stop is None
 
 
 def test_coupons_precede_claims_surplus_stays_cash_and_final_snapshot_does_not_pay() -> None:
-    scenario = control(equity_share=0, quantity=2, annual=Decimal(4), horizon=2)
-    run = compile_run(
-        scenario,
-        rollout_count=1,
-        jurisdictions={},
-        locations={},
-        external_series=ExternalSeriesContext.from_level_blocks(
-            [
-                (SecurityKey(symbol=BONDS), np.array([[100.0, 120.0, 110.0]])),
-                (SecurityDistributionKey(symbol=BONDS), np.array([[5.0, 2.0, 999.0]])),
-                (InflationKey(), np.ones((1, 3))),
-            ],
-            rollout_count=1,
-            horizon_months=2,
-        ),
+    result = control(
+        equity_share=0,
+        quantity=2,
+        annual=Decimal(4),
+        horizon=2,
+        blocks=[
+            (SecurityKey(symbol=BONDS), np.array([[100.0, 120.0, 110.0]])),
+            (SecurityDistributionKey(symbol=BONDS), np.array([[5.0, 2.0, 999.0]])),
+            (InflationKey(), np.ones((1, 3))),
+        ],
     )
-    result = execute(run, targets=sleeve_targets(0), rollout_ids=[0], capture="forensic")[0]
     assert result.stop is None
     assert result.summary.cash[0].values == [0, 600, 1000]
     assert result.summary.public_holdings[0].values == [20_000, 24_000, 22_000]
@@ -90,22 +93,14 @@ def test_coupons_precede_claims_surplus_stays_cash_and_final_snapshot_does_not_p
 
 
 def test_nondivisible_sale_uses_quantity_ceiling_and_canonical_basis() -> None:
-    scenario = control(equity_share=1, quantity=1, annual=Decimal(1), horizon=1)
-    scenario = scenario.model_copy(
-        update={"initial_lots": [scenario.initial_lots[0].model_copy(update={"cost_basis": Decimal(1)})]}
+    result = control(
+        equity_share=1,
+        quantity=1,
+        annual=Decimal(1),
+        horizon=1,
+        blocks=[(SecurityKey(symbol=EQUITY), np.full((1, 2), 3.0)), (InflationKey(), np.ones((1, 2)))],
+        cost_basis=Decimal(1),
     )
-    run = compile_run(
-        scenario,
-        rollout_count=1,
-        jurisdictions={},
-        locations={},
-        external_series=ExternalSeriesContext.from_level_blocks(
-            [(SecurityKey(symbol=EQUITY), np.full((1, 2), 3.0)), (InflationKey(), np.ones((1, 2)))],
-            rollout_count=1,
-            horizon_months=1,
-        ),
-    )
-    result = execute(run, targets=sleeve_targets(1), rollout_ids=[0], capture="forensic")[0]
     assert result.stop is None
     financial = result.trace
     assert financial is not None
@@ -120,22 +115,16 @@ def test_nondivisible_sale_uses_quantity_ceiling_and_canonical_basis() -> None:
 def test_final_exact_depletion_is_success_but_an_unpaid_final_withdrawal_is_not(
     portfolio_dollars: int, success: bool
 ) -> None:
-    scenario = control(equity_share=1, quantity=portfolio_dollars / 100, annual=Decimal(1), horizon=HORIZON_MONTHS)
-    run = compile_run(
-        scenario,
-        rollout_count=1,
-        jurisdictions={},
-        locations={},
-        external_series=ExternalSeriesContext.from_level_blocks(
-            [
-                (SecurityKey(symbol=EQUITY), np.full((1, HORIZON_MONTHS + 1), 100.0)),
-                (InflationKey(), np.ones((1, HORIZON_MONTHS + 1))),
-            ],
-            rollout_count=1,
-            horizon_months=HORIZON_MONTHS,
-        ),
+    result = control(
+        equity_share=1,
+        quantity=portfolio_dollars / 100,
+        annual=Decimal(1),
+        horizon=HORIZON_MONTHS,
+        blocks=[
+            (SecurityKey(symbol=EQUITY), np.full((1, HORIZON_MONTHS + 1), 100.0)),
+            (InflationKey(), np.ones((1, HORIZON_MONTHS + 1))),
+        ],
     )
-    result = execute(run, targets=sleeve_targets(1), rollout_ids=[0], capture="forensic")[0]
     assert (result.stop is None) == success
     payments = result.summary.payments
     assert [(row.month, row.receipt.amount_paid) for row in payments] == [

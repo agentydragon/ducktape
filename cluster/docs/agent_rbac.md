@@ -130,7 +130,7 @@ namespace or the separate `logs-configmaps-reader` class.
 The `claude-ai` ServiceAccount in `agentplane-staging` is the principal for Connections
 enrolled from the Claude.ai MCP connector (`cluster/cdk8s/agentplane/actions_staging_policies.py`);
 every sandbox it stamps through the sandbox Action group runs as it
-(`agentplane/docs/sandbox_actions.md`). Its access is the secret-free
+(`agentplane/action_service/sandbox/README.md`). Its access is the secret-free
 `cluster-diagnostics-reader` binding plus the metadata and pod-log readers of the
 `agent-readable-*` namespaces (section 4), and `get` on exactly one Secret,
 `agentplane-staging/coinbase-api-credentials`: the view-only Coinbase CDP key, which its

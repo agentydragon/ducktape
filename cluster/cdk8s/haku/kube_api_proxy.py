@@ -37,8 +37,6 @@ from cdk8s_plus_34 import (
     Volume,
 )
 from cert_manager_crds.io.cert_manager import (
-    Certificate,
-    CertificateSpec,
     CertificateSpecIssuerRef,
     CertificateSpecPrivateKey,
     CertificateSpecPrivateKeyAlgorithm,
@@ -52,6 +50,7 @@ from cluster.cdk8s.haku import console
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 
 NAME = "haku-kube-api-proxy"
 HOSTNAME = "haku-kubeapi.allegedly.works"
@@ -75,18 +74,17 @@ class KubeApiProxy(Construct):
         Certificate(
             self,
             "certificate",
-            metadata=metadata(_TLS_SECRET, namespace),
-            spec=CertificateSpec(
-                secret_name=_TLS_SECRET,
-                duration="2160h",
-                renew_before="720h",
-                private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256),
-                common_name=_SERVICE_FQDN,
-                dns_names=[_SERVICE_FQDN, f"{NAME}.{namespace}.svc"],
-                # Every sandbox trust bundle already carries cluster-root-ca, so kubeconfigs
-                # verify this leaf via their existing bundle.
-                issuer_ref=CertificateSpecIssuerRef(name="cluster-internal-ca", kind="ClusterIssuer"),
-            ),
+            name=_TLS_SECRET,
+            namespace=namespace,
+            secret_name=_TLS_SECRET,
+            duration="2160h",
+            renew_before="720h",
+            private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256),
+            common_name=_SERVICE_FQDN,
+            dns_names=[_SERVICE_FQDN, f"{NAME}.{namespace}.svc"],
+            # Every sandbox trust bundle already carries cluster-root-ca, so kubeconfigs
+            # verify this leaf via their existing bundle.
+            issuer_ref=CertificateSpecIssuerRef(name="cluster-internal-ca", kind="ClusterIssuer"),
         )
         # Execution identity for the proxy. Its projected token is rotated by Kubernetes and
         # never forwarded to, mounted into, or otherwise exposed to an Agent.

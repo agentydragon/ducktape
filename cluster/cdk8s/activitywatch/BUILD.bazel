@@ -26,7 +26,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/cilium:ciliumnetworkpolicy",
-        "//cluster/cdk8s/crd_bindings/gateway_api:httproute",
+        "//cluster/cdk8s/providers/gateway_api:httproute",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

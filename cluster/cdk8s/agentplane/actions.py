@@ -129,7 +129,7 @@ class Actions(Construct):
                 ),
                 # The sandbox ActionGroup stamps Sandboxes and runs commands in their Pods. This is
                 # namespace-wide and cannot say "only the boxes this Action made": that boundary is
-                # the executor's own label check (agentplane/sandbox_actions/inventory.py), which
+                # the executor's own label check (agentplane/action_service/sandbox/inventory.py), which
                 # is why it is an application rule tested as one rather than something RBAC states.
                 RolePolicyRule(
                     resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]

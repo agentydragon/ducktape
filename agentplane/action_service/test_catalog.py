@@ -95,6 +95,20 @@ def test_server_id_must_match_its_own_group_key() -> None:
         ActionCatalog(groups=yaml.safe_load(bad_yaml))
 
 
+def test_a_direct_tool_group_key_cannot_hold_the_name_separator() -> None:
+    group = yaml.safe_load(
+        textwrap.dedent("""
+            title: x
+            description: x
+            executor: {kind: mcp, description: x}
+            """)
+    )
+    # The key is fine where no tool name is split at it.
+    ActionCatalog(groups={"test__group": group})
+    with pytest.raises(ValidationError, match="must not contain"):
+        ActionCatalog(groups={"test__group": {**group, "direct_tools": ["act"]}})
+
+
 def test_namespaced_action_lookup_resolves_the_configured_definition() -> None:
     catalog = _catalog()
 
