@@ -16,7 +16,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 200Gi
+      storage: 350Gi
   storageClassName: lvm-proxmox-hdd
 ---
 apiVersion: apps/v1
