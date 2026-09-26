@@ -51,6 +51,9 @@ compaction evidence. Do not require two events before accepting a real task resu
 
 ## Resource and stopping rules
 
+The [settings audit](SETTINGS_AUDIT.md) records effective sampling and reasoning-history
+behavior. Future comparisons should distinguish those settings from the original pair.
+
 Q4 server cap: 34 GiB RAM with no extra swap; admission requires 58 GiB available
 host RAM (server cap, two original 4 GiB task/verifier containers, 16 GiB desktop
 reserve). Optional later IQ4 mode uses 24 GiB and requires 48 GiB available. GPU fit targets reserve 8 GiB on the desktop GPU and 2 GiB on the second.
@@ -58,6 +61,16 @@ Every 15 seconds during the attempt, check at least 16 GiB available host RAM, 6
 free desktop VRAM, 1 GiB free second-GPU VRAM, and Ollama paused. A failed check stops
 owned work and records a resource/service interruption, not a model-quality failure.
 These guards reduce contention risk; they do not prove unaffected desktop latency.
+
+The whole Ollama API command is bounded to 10 seconds plus a 1-second kill grace;
+kubectl's own request timeout does not bound repeated discovery requests. After a
+failed check, recheck phase exit and Harbor's final job result before classifying an
+interruption. A finished result releases the server and allows 30 seconds for
+Harbor cleanup before the existing TERM/KILL escalation. A stuck cleanup records
+`cleanup_timeout_after_result`, preserving the result; a child exit status is never
+converted into a model reward. Unfinished work still stops on a failed guard.
+Regression coverage: `bbr test //cluster/docs/inference/runs/2026-09-26_qwen38_queue:guard_test`.
+Tests use isolated child processes and fake service responses, without GPU/cluster access.
 
 Admission has a 24-hour limit from queue start; the user service has a 48-hour overall
 ceiling, low CPU/I/O priority, and no automatic restart. Original real-task limits

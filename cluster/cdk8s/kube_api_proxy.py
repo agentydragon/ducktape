@@ -167,7 +167,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        hostname="kubeapi.allegedly.works",
+        hostnames=["kubeapi.allegedly.works"],
         backend=_PROXY,
         port=_PORT,
         hsts=False,

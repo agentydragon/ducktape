@@ -201,7 +201,7 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=metadata(_NAME, _NAMESPACE),
-        hostname="status.allegedly.works",
+        hostnames=["status.allegedly.works"],
         backend=_NAME,
         port=80,
         hsts=False,

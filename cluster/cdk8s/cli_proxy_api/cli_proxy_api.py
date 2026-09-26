@@ -28,16 +28,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesMatches,
-    HttpRouteSpecRulesMatchesPath,
-    HttpRouteSpecRulesMatchesPathType,
-    HttpRouteSpecRulesTimeouts,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium
@@ -49,7 +39,7 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.forgejo_images import SECRET_NAME
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
@@ -255,34 +245,24 @@ def _service(scope: Construct) -> None:
 
 
 def _routes(scope: Construct) -> None:
-    HttpRoute(
+    # CLIProxyAPI streams model responses (incl. long Codex reasoning); allow long requests.
+    https_route(
         scope,
         "route",
         metadata=metadata(NAME, NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["cli-proxy-api.allegedly.works"],
-            rules=[
-                # CLIProxyAPI streams model responses (incl. long Codex reasoning); allow long requests.
-                HttpRouteSpecRules(
-                    timeouts=HttpRouteSpecRulesTimeouts(request="600s", backend_request="600s"),
-                    matches=[
-                        HttpRouteSpecRulesMatches(
-                            path=HttpRouteSpecRulesMatchesPath(
-                                type=HttpRouteSpecRulesMatchesPathType.PATH_PREFIX, value="/v1"
-                            )
-                        )
-                    ],
-                    backend_refs=[HttpRouteSpecRulesBackendRefs(name=NAME, port=PORT)],
-                )
-            ],
-        ),
+        hostnames=["cli-proxy-api.allegedly.works"],
+        backend=NAME,
+        port=PORT,
+        path_prefix="/v1",
+        timeout="600s",
+        hsts=False,
+        listener=None,
     )
     https_route(
         scope,
         "admin-route",
         metadata=metadata("cli-proxy-api-admin", NAMESPACE),
-        hostname="cli-proxy-api-admin.allegedly.works",
+        hostnames=["cli-proxy-api-admin.allegedly.works"],
         backend=NAME,
         port=PORT,
         hsts=False,

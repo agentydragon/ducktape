@@ -1,0 +1,9 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+sh_test(
+    name = "guard_test",
+    size = "medium",
+    srcs = ["guard_test.sh"],
+    args = ["$(location guard.sh)"],
+    data = ["guard.sh"],
+)

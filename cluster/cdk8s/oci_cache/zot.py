@@ -228,7 +228,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        hostname="oci-cache.allegedly.works",
+        hostnames=["oci-cache.allegedly.works"],
         backend=_NAMESPACE,
         port=_PUBLIC_AUTH_PORT,
         hsts=False,
