@@ -65,6 +65,23 @@ that policy permits traffic.
 Done per neighborhood: producer and consumers share labels without import cycles or a
 new peer registry.
 
+## Kyverno preconditions typed schema (v2beta1)
+
+`providers/kyverno/cluster_policy.py`'s `Validate.deny(conditions=...)` takes
+`preconditions`/`deny.conditions` as a raw dict because `ClusterPolicy`'s `v1` schema --
+the version `cdk8s_import` names plainly, and what this repo's `ClusterPolicySpecRules`
+types come from -- declares `preconditions` as `x-kubernetes-preserve-unknown-fields:
+true`, with no structure at all.
+
+The CRD's `v2beta1` schema (served, not storage; generated as suffixed
+`ClusterPolicyV2Beta1Spec*` types) has a real typed shape instead: `any`/`all` arrays of
+`{key, operator, value, message}`, with `operator` a genuine 14-value enum. Migrating
+the wrapper to `v2beta1` would let `Validate.deny()` grow a typed `preconditions`
+factory instead of a raw-dict escape hatch -- worth doing sometime, not urgent.
+
+Done: `providers/kyverno` targets `v2beta1` (or offers it alongside `v1`), and
+`preconditions` has a typed factory built from the real `any`/`all` shape.
+
 ## Haku setup-script contract
 
 `test_haku_sandbox_setup.py` checks the generated SandboxTemplate's environment against
