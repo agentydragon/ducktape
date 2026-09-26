@@ -4,6 +4,7 @@ resources:
   # cdk8s-generated (cluster/cdk8s/home_assistant/app.py).
   - home-assistant.k8s.yaml
   - break-glass-credentials.sops.yaml
+  - home-location.sops.yaml
 components:
   - ./image-pins
 generatorOptions:
