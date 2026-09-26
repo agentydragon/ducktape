@@ -567,7 +567,10 @@ def add_staging_action_policies(scope: Construct) -> None:
             name=_SANDBOX_SET,
             namespace=_NAMESPACE,
             annotations={
-                "description": "Auto-approves sandbox lifecycle and exec for a caller, which act only as that caller."
+                "description": (
+                    "Auto-approves every sandbox Action: a caller's own boxes, which act only as that caller, "
+                    "and reads of the templates they are made from."
+                )
             },
         ),
         spec=ActionPolicySetSpec(

@@ -33,6 +33,7 @@ from agentplane.sandbox_actions.models import (
     NameArgs,
     NoArgs,
     SandboxList,
+    TemplateArgs,
 )
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import PodExecError
@@ -50,6 +51,7 @@ class SandboxAction(StrEnum):
     these by value, which a module-level constant would silently capture into instead."""
 
     CREATE = "create"
+    GET_TEMPLATE = "get_template"
     EXEC = "exec"
     LIST = "list"
     INFO = "info"
@@ -63,9 +65,9 @@ def _schema(model: type[BaseModel]) -> dict[str, JsonValue]:
 def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> dict[str, ActionDefinition]:
     """What this group offers, declared from its own models rather than discovered over a wire.
 
-    The offered templates, with what each says of itself (`descriptions`), are rendered into the
-    description because they are deployment configuration an agent cannot otherwise see, and naming
-    a template that is not offered is the most likely way to get `create` wrong.
+    The offered templates, with what each says of itself (`descriptions`), are rendered into
+    `create`'s description so an agent can choose one without another call: naming a template that
+    is not offered is the most likely way to get `create` wrong.
     """
     offered = json.dumps(dict(sorted(descriptions.items())))
     return {
@@ -75,9 +77,18 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
                 "the object exists, before the box can run anything, so poll "
                 f'{SandboxAction.INFO} until its {READY_CONDITION!r} condition has status "True". '
                 f"Idempotent on the name, so polling with {SandboxAction.CREATE} would also work but "
-                f"tells you nothing more. Templates: {offered}."
+                f"tells you nothing more. Templates: {offered}. {SandboxAction.GET_TEMPLATE} shows one whole."
             ),
             input_schema=_schema(CreateArgs),
+        ),
+        SandboxAction.GET_TEMPLATE: ActionDefinition(
+            description=(
+                f"One template that {SandboxAction.CREATE} offers, whole, as the API server holds it: the "
+                "Pod each box made from it gets, with its images, resources, working directory, "
+                f"environment and volumes. {SandboxAction.CREATE} changes one thing in that Pod: the box "
+                "runs as your ServiceAccount, whatever `serviceAccountName` the template names."
+            ),
+            input_schema=_schema(TemplateArgs),
         ),
         SandboxAction.EXEC: ActionDefinition(
             description=(
@@ -159,6 +170,10 @@ class SandboxExecutor(Executor):
                 args = CreateArgs.model_validate(arguments)
                 info = await self._inventory.create(caller, args.name, args.template)
                 return _succeeded(info)
+            case SandboxAction.GET_TEMPLATE:
+                template_args = TemplateArgs.model_validate(arguments)
+                template = await self._inventory.get_template(template_args.template)
+                return ExecutionResult(state=ExecutionState.SUCCEEDED, result=cast(JsonValue, template))
             case SandboxAction.EXEC:
                 exec_args = ExecArgs.model_validate(arguments)
                 result = await self._inventory.execute(
