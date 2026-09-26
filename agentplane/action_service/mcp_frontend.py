@@ -308,7 +308,12 @@ def _result(model: BaseModel, *, exclude_none: bool = False, exclude_unset: bool
 
 
 def create_server(
-    service: ActionService, catalog: ActionCatalog, updates: ActionUpdates, verifier: CallerTokenVerifier
+    service: ActionService,
+    catalog: ActionCatalog,
+    updates: ActionUpdates,
+    verifier: CallerTokenVerifier,
+    *,
+    direct_wait_seconds: float = DIRECT_WAIT_SECONDS,
 ) -> FastMCP:
     waiter = ActionWaiter(service, updates)
     # strict_input_validation is left at FastMCP's own default (False): its own tool dispatch
@@ -388,11 +393,11 @@ def create_server(
             )
         except UndecidedRequestError as undecided:
             return refusal(action, str(undecided))
-        view = await wait_for_receipt(view.id, principal, WaitOptions(wait_seconds=DIRECT_WAIT_SECONDS))
+        view = await wait_for_receipt(view.id, principal, WaitOptions(wait_seconds=direct_wait_seconds))
         await revalidate(principal)
         return tool_result(view, catalog.groups[action.group].executor)
 
-    server.add_provider(DirectToolProvider(catalog, service, external_caller, call_direct))
+    server.add_provider(DirectToolProvider(catalog, service, external_caller, call_direct, direct_wait_seconds))
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
