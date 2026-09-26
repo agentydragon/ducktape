@@ -107,7 +107,7 @@ class Situation:
 
 
 # $100 of the index bought two years ago at a $100 basis.
-COHORT = TlhOpeningCohort(value=100, reported_tax_basis=100, purchase_month=-24)
+COHORT = TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-24)
 
 
 def compose(case: Situation, rollout_id: int) -> World:

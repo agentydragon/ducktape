@@ -34,9 +34,7 @@ def portfolio(assumptions: TlhAssumptions) -> TlhPortfolio:
     return TlhPortfolio(
         assumptions,
         TlhOpening(
-            month=-1,
-            price=100,
-            cohorts=(TlhOpeningCohort(value=10_000, reported_tax_basis=10_000, purchase_month=-24),),
+            month=-1, price=100, cohorts=(TlhOpeningCohort(value=10_000, cost_basis=10_000, purchase_month_index=-24),)
         ),
     )
 
@@ -101,7 +99,7 @@ def test_a_contribution_worth_less_than_one_unit_is_exposure_like_any_other(assu
 
 
 def test_a_worthless_index_takes_no_contribution_and_opens_only_worthless_cohorts(assumptions: TlhAssumptions) -> None:
-    written_off = TlhOpeningCohort(value=0, reported_tax_basis=5, purchase_month=-24)
+    written_off = TlhOpeningCohort(value=0, cost_basis=5, purchase_month_index=-24)
     portfolio = TlhPortfolio(assumptions, TlhOpening(month=-1, price=0, cohorts=(written_off,)))
     assert portfolio.observe() == TlhObservation(value=0, reported_tax_basis=5)
     with pytest.raises(ValueError, match="worthless"):
@@ -114,7 +112,7 @@ def test_imported_adjusted_basis_is_not_reconstructed(assumptions: TlhAssumption
     portfolio = TlhPortfolio(
         assumptions,
         TlhOpening(
-            month=0, price=100, cohorts=(TlhOpeningCohort(value=250, reported_tax_basis=151, purchase_month=-24),)
+            month=0, price=100, cohorts=(TlhOpeningCohort(value=250, cost_basis=151, purchase_month_index=-24),)
         ),
     )
     assert portfolio.observe() == TlhObservation(value=250, reported_tax_basis=151)
@@ -125,7 +123,7 @@ def test_split_withdrawals_deliver_the_value_and_gain_of_one_liquidation(assumpt
     # At a price of 3 the opening 10 is 10/3 units of the index: each withdrawal sells a fraction of one.
     portfolio = TlhPortfolio(
         assumptions,
-        TlhOpening(month=0, price=3, cohorts=(TlhOpeningCohort(value=10, reported_tax_basis=7, purchase_month=-24),)),
+        TlhOpening(month=0, price=3, cohorts=(TlhOpeningCohort(value=10, cost_basis=7, purchase_month_index=-24),)),
     )
     sales = [portfolio.withdraw(3) for _ in range(3)]
     sales.append(portfolio.liquidate())
@@ -167,7 +165,7 @@ def test_losses_cannot_reduce_basis_below_zero(assumptions: TlhAssumptions) -> N
     portfolio = TlhPortfolio(
         assumptions,
         TlhOpening(
-            month=-1, price=100, cohorts=(TlhOpeningCohort(value=1_000, reported_tax_basis=3, purchase_month=-24),)
+            month=-1, price=100, cohorts=(TlhOpeningCohort(value=1_000, cost_basis=3, purchase_month_index=-24),)
         ),
     )
     assert portfolio.advance(TlhMarketUpdate(month=0, price=100)).short_term_gain == -3
@@ -207,7 +205,7 @@ def test_financial_effects_balance_each_transition(assumptions: TlhAssumptions) 
     portfolio = TlhPortfolio(
         assumptions,
         TlhOpening(
-            month=-1, price=77, cohorts=(TlhOpeningCohort(value=3_889, reported_tax_basis=3_999, purchase_month=-24),)
+            month=-1, price=77, cohorts=(TlhOpeningCohort(value=3_889, cost_basis=3_999, purchase_month_index=-24),)
         ),
     )
     for month, price in enumerate((77, 43, 100, 99, 120, 3, 0, 50)):

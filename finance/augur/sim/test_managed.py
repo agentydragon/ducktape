@@ -30,7 +30,7 @@ def run() -> CompiledRun:
                 owner_agent_id=HOUSEHOLD,
                 account_id="custody",
                 asset_id="test_fund",
-                initial_cohorts=(TlhOpeningCohort(value=100, reported_tax_basis=80, purchase_month=-1),),
+                initial_cohorts=(TlhOpeningCohort(value=100, cost_basis=80, purchase_month_index=-1),),
                 assumptions=TlhAssumptions(
                     peak_annual_yield=0,
                     floor_annual_yield=0,

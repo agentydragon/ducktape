@@ -125,8 +125,8 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
                 label=group.account_label,
             )
         )
-        buckets = _proxy_buckets(group, group_holdings)
-        holdings.append(_sp500_proxy_holding(group, buckets))
+        cohorts = _proxy_cohorts(group, group_holdings)
+        holdings.append(_sp500_proxy_holding(group, cohorts))
         if group.tlh_assumptions is not None:
             tlh_portfolios.append(
                 TlhPortfolioSpec(
@@ -134,14 +134,7 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
                     owner_agent_id=group.owner_agent_id,
                     account_id=group.portfolio_account_id,
                     asset=SecurityKey(symbol=SP500_SYMBOL),
-                    initial_cohorts=[
-                        TlhCohort(
-                            value=bucket.value,
-                            cost_basis=bucket.cost_basis,
-                            purchase_month_index=-bucket.holding_period_months_at_start,
-                        )
-                        for bucket in buckets
-                    ],
+                    initial_cohorts=list(cohorts),
                     assumptions=group.tlh_assumptions,
                 )
             )
@@ -179,17 +172,9 @@ def _cash_total(plaid: PlaidPortfolioSourceConfig, balances: tuple[CurrentCashBa
     return total
 
 
-@dataclass(frozen=True)
-class _ProxyBucket:
-    """One holding-period slice of the live Plaid aggregate: what it is worth and what it cost."""
+def _proxy_cohorts(group: PlaidSp500ProxyGroupConfig, holdings: tuple[CurrentHolding, ...]) -> tuple[TlhCohort, ...]:
+    """The live Plaid aggregate split into holding-period cohorts, one per configured bucket (or one in all)."""
 
-    lot_id: str
-    holding_period_months_at_start: int
-    value: Decimal
-    cost_basis: Decimal
-
-
-def _proxy_buckets(group: PlaidSp500ProxyGroupConfig, holdings: tuple[CurrentHolding, ...]) -> tuple[_ProxyBucket, ...]:
     total_value = Decimal(0)
     total_cost_basis = Decimal(0)
     missing_basis: list[str] = []
@@ -212,15 +197,14 @@ def _proxy_buckets(group: PlaidSp500ProxyGroupConfig, holdings: tuple[CurrentHol
         )
     if not group.holding_period_buckets:
         return (
-            _ProxyBucket(
-                lot_id=f"{group.position_id}_plaid_aggregate",
-                holding_period_months_at_start=int(group.default_holding_period_months_at_start),
+            TlhCohort(
                 value=total_value,
                 cost_basis=total_cost_basis,
+                purchase_month_index=-int(group.default_holding_period_months_at_start),
             ),
         )
     # Distribute the live Plaid aggregate across the calibrated holding-period buckets. Normalize by
-    # the configured fraction sums (validated to ~1.0) so the lot totals still equal the Plaid
+    # the configured fraction sums (validated to ~1.0) so the cohort totals still equal the Plaid
     # snapshot exactly despite rounding in the authored fractions.
     buckets = group.holding_period_buckets
     market_value_fractions = [Decimal(str(bucket.market_value_fraction)) for bucket in buckets]
@@ -229,7 +213,7 @@ def _proxy_buckets(group: PlaidSp500ProxyGroupConfig, holdings: tuple[CurrentHol
         Decimal(str(bucket.cost_basis_fraction)) for bucket in buckets if bucket.cost_basis_fraction is not None
     ]
     basis_fraction_sum = sum(basis_fractions) if basis_fractions else market_value_fraction_sum
-    sliced: list[_ProxyBucket] = []
+    cohorts: list[TlhCohort] = []
     for bucket, market_value_fraction in zip(buckets, market_value_fractions, strict=True):
         market_value_weight = market_value_fraction / market_value_fraction_sum
         basis_weight = (
@@ -237,21 +221,23 @@ def _proxy_buckets(group: PlaidSp500ProxyGroupConfig, holdings: tuple[CurrentHol
             if bucket.cost_basis_fraction is not None
             else market_value_weight
         )
-        sliced.append(
-            _ProxyBucket(
-                lot_id=f"{group.position_id}_plaid_{bucket.key}",
-                holding_period_months_at_start=int(bucket.holding_period_months_at_start),
+        cohorts.append(
+            TlhCohort(
                 value=total_value * market_value_weight,
                 cost_basis=total_cost_basis * basis_weight,
+                purchase_month_index=-int(bucket.holding_period_months_at_start),
             )
         )
-    return tuple(sliced)
+    return tuple(cohorts)
 
 
-def _sp500_proxy_holding(group: PlaidSp500ProxyGroupConfig, buckets: tuple[_ProxyBucket, ...]) -> HoldingPositionConfig:
+def _sp500_proxy_holding(group: PlaidSp500ProxyGroupConfig, cohorts: tuple[TlhCohort, ...]) -> HoldingPositionConfig:
     # The sleeve IS the S&P series by definition (that is what a "SP500 proxy group" means), so
     # its symbol is the index symbol, not whichever ticker the brokerage happens to hold. The
     # configured ticker survives as the display label.
+    lot_ids = [f"{group.position_id}_plaid_{bucket.key}" for bucket in group.holding_period_buckets] or [
+        f"{group.position_id}_plaid_aggregate"
+    ]
     return SecurityHoldingConfig(
         position_id=group.position_id,
         account_id=group.portfolio_account_id,
@@ -261,12 +247,12 @@ def _sp500_proxy_holding(group: PlaidSp500ProxyGroupConfig, buckets: tuple[_Prox
         unit_value=group.unit_value,
         lots=tuple(
             HoldingTaxLotConfig(
-                lot_id=bucket.lot_id,
-                holding_period_months_at_start=bucket.holding_period_months_at_start,
-                quantity=float(bucket.value / group.unit_value),
-                cost_basis=bucket.cost_basis,
+                lot_id=lot_id,
+                holding_period_months_at_start=-cohort.purchase_month_index,
+                quantity=float(cohort.value / group.unit_value),
+                cost_basis=cohort.cost_basis,
             )
-            for bucket in buckets
+            for lot_id, cohort in zip(lot_ids, cohorts, strict=True)
         ),
     )
 

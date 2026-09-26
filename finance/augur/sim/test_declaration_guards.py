@@ -273,7 +273,7 @@ def test_a_zero_payout_is_valid_but_a_negative_one_is_not() -> None:
 
 
 def test_a_zero_mark_is_valid_only_where_the_asset_is_held_exclusively_through_a_manager() -> None:
-    written_off = TlhOpeningCohort(value=0, reported_tax_basis=100, purchase_month=-2)
+    written_off = TlhOpeningCohort(value=0, cost_basis=100, purchase_month_index=-2)
     spec = PreparedTlhPortfolio(
         portfolio_id="test-managed",
         owner_agent_id=HOLDER,
@@ -285,7 +285,7 @@ def test_a_zero_mark_is_valid_only_where_the_asset_is_held_exclusively_through_a
     managed = composed(prices(0, 0, 0))
     managed.declare_portfolio(spec)
     observed = managed.portfolios[spec.portfolio_id].observe()
-    assert (observed.value, observed.reported_tax_basis) == (0, written_off.reported_tax_basis)
+    assert (observed.value, observed.reported_tax_basis) == (0, written_off.cost_basis)
     # An ordinary purchase pool sharing the quote restores the positive-price requirement:
     # managed ownership is pool-scoped.
     with pytest.raises(ValueError, match="non-positive value"):

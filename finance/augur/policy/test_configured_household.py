@@ -190,7 +190,7 @@ def test_a_projected_purchase_into_a_managed_sleeve_contributes_what_is_left() -
                     owner_agent_id=ALICE,
                     account_id=HOLDINGS,
                     asset_id="index",
-                    initial_cohorts=(TlhOpeningCohort(value=100, reported_tax_basis=100, purchase_month=-24),),
+                    initial_cohorts=(TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-24),),
                     assumptions=QUIET,
                 ),
             ),

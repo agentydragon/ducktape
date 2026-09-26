@@ -654,8 +654,8 @@ def compile_run(
                     initial_cohorts=tuple(
                         TlhOpeningCohort(
                             value=int(currency_amount_to_quanta(cohort.value, quantum=quantum)),
-                            reported_tax_basis=int(currency_amount_to_quanta(cohort.cost_basis, quantum=quantum)),
-                            purchase_month=cohort.purchase_month_index,
+                            cost_basis=int(currency_amount_to_quanta(cohort.cost_basis, quantum=quantum)),
+                            purchase_month_index=cohort.purchase_month_index,
                         )
                         for cohort in portfolio.initial_cohorts
                     ),

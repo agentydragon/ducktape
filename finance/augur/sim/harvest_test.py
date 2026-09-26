@@ -165,8 +165,8 @@ def compose(case: Situation, rollout_id: int) -> World:
                 initial_cohorts=(
                     TlhOpeningCohort(
                         value=position_value(opening_price, case.sleeve.units, case.sleeve.quantity_scale),
-                        reported_tax_basis=case.sleeve.basis,
-                        purchase_month=case.sleeve.purchase_month,
+                        cost_basis=case.sleeve.basis,
+                        purchase_month_index=case.sleeve.purchase_month,
                     ),
                 ),
                 assumptions=case.assumptions,

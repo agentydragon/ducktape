@@ -85,8 +85,8 @@ class TlhOpeningCohort:
     value holds no exposure and keeps its basis until liquidation."""
 
     value: int
-    reported_tax_basis: int
-    purchase_month: int
+    cost_basis: int
+    purchase_month_index: int
 
 
 @dataclass(frozen=True)
@@ -163,8 +163,8 @@ class TlhPortfolio:
     def __init__(self, assumptions: TlhAssumptions, opening: TlhOpening) -> None:
         _nonnegative(price=opening.price)
         for cohort in opening.cohorts:
-            _nonnegative(value=cohort.value, reported_tax_basis=cohort.reported_tax_basis)
-            if cohort.purchase_month > opening.month + 1:
+            _nonnegative(value=cohort.value, cost_basis=cohort.cost_basis)
+            if cohort.purchase_month_index > opening.month + 1:
                 raise ValueError("opening cohort cannot be purchased in the future")
             if cohort.value and not opening.price:
                 raise ValueError("a zero opening mark values every cohort at zero")
@@ -175,11 +175,11 @@ class TlhPortfolio:
         self._cohorts = [
             _Cohort(
                 Fraction(cohort.value, opening.price) if cohort.value else Fraction(0),
-                cohort.reported_tax_basis,
-                cohort.purchase_month,
+                cohort.cost_basis,
+                cohort.purchase_month_index,
             )
-            for cohort in sorted(opening.cohorts, key=lambda cohort: cohort.purchase_month)
-            if cohort.value or cohort.reported_tax_basis
+            for cohort in sorted(opening.cohorts, key=lambda cohort: cohort.purchase_month_index)
+            if cohort.value or cohort.cost_basis
         ]
 
     def _exposure(self) -> Fraction:
