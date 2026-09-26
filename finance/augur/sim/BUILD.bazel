@@ -1034,6 +1034,7 @@ py_test(
     srcs = ["prepared_allocation_test.py"],
     deps = [
         ":artifacts",
+        ":external_series",
         ":jurisdictions",
         ":prepared",
         ":scenario",
@@ -1042,8 +1043,7 @@ py_test(
         "//finance/augur/model:series",
         "//finance/augur/policy:configured_allocation",
         "//finance/augur/sim/compiler:execution",
-        "//finance/augur/sim/testing:case",
-        "//finance/augur/sim/testing:fixtures",
+        "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

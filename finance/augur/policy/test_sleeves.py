@@ -1,22 +1,20 @@
 """Exact budgets and scoped proposals, settled by the real action executor."""
 
 from dataclasses import replace
-from decimal import Decimal
 from itertools import product
 
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import SecurityKey
 from finance.augur.policy import sleeves
 from finance.augur.sim.actions import Consume, DecisionActions, Sell, Transfer
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.prepared import CompiledRun
+from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedSeries
 from finance.augur.sim.results import Finished, RejectedAction
-from finance.augur.sim.scenario import InitialLot
+from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.testing.case import Case, flat, scenario
-from finance.augur.sim.testing.fixtures import checking
+from finance.augur.sim.world import World
 
 
 @pytest.mark.parametrize(
@@ -53,53 +51,60 @@ def test_small_integer_allocations_conserve_cash_and_capacity() -> None:
                 assert all(part >= 0 and (weight > 0 or part == 0) for part, weight in zip(given, weights, strict=True))
 
 
+OWNER = "test-owner"
+FIRST, SECOND = "test-first", "test-second"
+# Both securities stay at USD 0.03 for the whole horizon.
+PRICES = tuple(
+    PreparedSeries(series_id=f"security:{asset}", snapshots=3, values=(3, 3, 3)) for asset in (FIRST, SECOND)
+)
+# Same economic holdings on different valid grids: tenths in the portfolio, whole units outside.
+POOLS = tuple(
+    PreparedHoldingPool(agent_id=OWNER, account_id=account, asset_id=asset, quantity_scale=scale)
+    for account, asset, scale in (("portfolio", FIRST, 10), ("portfolio", SECOND, 10), ("outside", FIRST, 1))
+)
+
+
 @pytest.fixture
-def prepared() -> CompiledRun:
-    first = SecurityKey(symbol="test-first")
-    second = SecurityKey(symbol="test-second")
-    case = Case(
-        scenario(
-            checking(("test-owner", Decimal("0.07")), ("test-world", Decimal(0))),
-            horizon_months=2,
-            tax_profiles=[],
-            initial_lots=[
-                InitialLot(
-                    lot_id=lot,
-                    agent_id="test-owner",
-                    account_id=account,
-                    asset=asset,
-                    purchase_month_index=month,
-                    quantity=quantity,
-                    cost_basis=(quantity * Decimal("0.03")).quantize(Decimal("0.01")),
-                )
-                for account, asset, lot, month, quantity in (
-                    ("portfolio", first, "test-newer", -12, Decimal("0.4")),
-                    ("portfolio", first, "test-older", -24, Decimal("0.3")),
-                    ("portfolio", second, "test-second", -24, Decimal(1)),
-                    ("outside", first, "test-outside", -36, Decimal(1)),
-                )
-            ],
-        ),
-        rollout_count=1,
-        series={asset: flat(Decimal("0.03"), rollout_count=1, horizon_months=2) for asset in (first, second)},
+def lots() -> tuple[PreparedLot, ...]:
+    """0.4 and 0.3 of FIRST and one SECOND in the portfolio, one FIRST outside, each bought at USD 0.03 a unit."""
+    return tuple(
+        PreparedLot(
+            lot_id=lot_id,
+            agent_id=OWNER,
+            account_id=account,
+            asset_id=asset,
+            purchase_month=month,
+            quantity_scale=scale,
+            units=units,
+            basis=basis,
+        )
+        for account, asset, lot_id, month, scale, units, basis in (
+            ("portfolio", FIRST, "test-newer", -12, 10, 4, 1),
+            ("portfolio", FIRST, "test-older", -24, 10, 3, 1),
+            ("portfolio", SECOND, "test-second", -24, 10, 10, 3),
+            ("outside", FIRST, "test-outside", -36, 1, 1, 3),
+        )
     )
-    run = case.compiled_run
-    # Same economic holdings, different valid pool quantity grids at the native boundary.
-    pools = tuple(
-        replace(pool, quantity_scale=1 if pool.account_id == "outside" else 10) for pool in run.scenario.holding_pools
-    )
-    lots = tuple(
-        replace(lot, units=lot.units * scale // lot.quantity_scale, quantity_scale=scale)
-        for lot in run.scenario.initial_lots
-        for scale in [1 if lot.account_id == "outside" else 10]
-    )
-    return replace(run, scenario=replace(run.scenario, holding_pools=pools, initial_lots=lots))
 
 
-def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(prepared: CompiledRun) -> None:
-    session = ActionSession.from_run(prepared, "test-owner", [0])
+def session(lots: tuple[PreparedLot, ...]) -> ActionSession:
+    """The owner's USD 0.07 and `lots` over two months, spending into the world's account."""
+    world = World(MarketPath(PRICES, 0, rollout_count=1), horizon_months=2, income_sources=(ORDINARY_INCOME,))
+    for agent_id, balance in ((OWNER, 7), ("test-world", 0)):
+        world.declare_account(
+            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id="checking"), opening_balance=balance)
+        )
+    for pool in POOLS:
+        world.declare_pool(pool)
+    for lot in lots:
+        world.hold(lot)
+    return ActionSession({0: world}, OWNER)
+
+
+def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(lots: tuple[PreparedLot, ...]) -> None:
+    live = session(lots)
     try:
-        batch = session.start()
+        batch = live.start()
         assert not isinstance(batch, Finished)
         first = sleeves.withdraw(
             batch[0].observation,
@@ -108,7 +113,7 @@ def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(prepared: Comp
             amount=1,
             cause_id="first",
         )
-        batch = session.advance([DecisionActions(0, 0, first)])
+        batch = live.advance([DecisionActions(0, 0, first)])
         assert not isinstance(batch, Finished)
         remaining = sleeves.withdraw(
             batch[0].observation,
@@ -135,11 +140,11 @@ def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(prepared: Comp
                 amount=1,
             )
         )
-        finished = session.advance([DecisionActions(0, 1, remaining)])
+        finished = live.advance([DecisionActions(0, 1, remaining)])
         assert isinstance(finished, Finished)
         [result] = finished.rollouts
     finally:
-        session.close()
+        live.close()
     assert result.trace is not None
     sales = result.trace.events.lot_dispositions
     assert sales.select("lot_id", "units_sold", "cost_basis_consumed_quanta", "proceeds_quanta").rows() == [
@@ -148,15 +153,17 @@ def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(prepared: Comp
     ]
     assert result.stop == RejectedAction(month=1, action_index=1)
     assert result.summary.cash[0].values == [7, 8, 9]
-    lots = {lot.lot_id: lot for lot in result.summary.ending_book.lots}
-    assert lots["test-outside"].units_remaining == 1
-    assert lots["test-second"].units_remaining == 10
+    ending = {lot.lot_id: lot for lot in result.summary.ending_book.lots}
+    assert ending["test-outside"].units_remaining == 1
+    assert ending["test-second"].units_remaining == 10
 
 
-def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_grid(prepared: CompiledRun) -> None:
-    session = ActionSession.from_run(prepared, "test-owner", [0])
+def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_grid(
+    lots: tuple[PreparedLot, ...],
+) -> None:
+    live = session(lots)
     try:
-        batch = session.start()
+        batch = live.start()
         assert not isinstance(batch, Finished)
         actions = sleeves.withdraw_by_symbol(
             batch[0].observation,
@@ -168,9 +175,9 @@ def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_gr
         )
         # FIRST is 5 quanta across scales 10 and 1; SECOND is 3 quanta. Withdraw the
         # two-quanta overweight entirely from FIRST, using portfolio before outside.
-        batch = session.advance([DecisionActions(0, 0, actions)])
+        batch = live.advance([DecisionActions(0, 0, actions)])
         assert not isinstance(batch, Finished)
-        finished = session.advance([DecisionActions(0, 1, [])])
+        finished = live.advance([DecisionActions(0, 1, [])])
         assert isinstance(finished, Finished)
         result = finished.rollouts[0]
         assert result.trace is not None
@@ -179,20 +186,17 @@ def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_gr
         remaining = {lot.lot_id: lot.units_remaining for lot in result.summary.ending_book.lots}
         assert remaining == {"test-newer": 0, "test-older": 0, "test-second": 10, "test-outside": 1}
     finally:
-        session.close()
+        live.close()
 
 
 @pytest.mark.parametrize("dust", [False, True])
-def test_zero_target_full_exit_reentry_and_reserved_cash(prepared: CompiledRun, dust: bool) -> None:
+def test_zero_target_full_exit_reentry_and_reserved_cash(lots: tuple[PreparedLot, ...], dust: bool) -> None:
     if dust:
-        opening_lots = tuple(lot for lot in prepared.scenario.initial_lots if lot.lot_id != "test-newer")
-        prepared = replace(
-            prepared,
-            scenario=replace(prepared.scenario, initial_lots=(replace(opening_lots[0], units=1), *opening_lots[1:])),
-        )
-    session = ActionSession.from_run(prepared, "test-owner", [0])
+        opening_lots = tuple(lot for lot in lots if lot.lot_id != "test-newer")
+        lots = (replace(opening_lots[0], units=1), *opening_lots[1:])
+    live = session(lots)
     try:
-        batch = session.start()
+        batch = live.start()
         for month in (0, 1):
             assert not isinstance(batch, Finished)
             actions = sleeves.rebalance(
@@ -203,11 +207,11 @@ def test_zero_target_full_exit_reentry_and_reserved_cash(prepared: CompiledRun, 
                 tolerance_ppb=1_000_000_000,
                 cause_id=f"exit-{month}",
             )
-            batch = session.advance([DecisionActions(0, month, actions)])
+            batch = live.advance([DecisionActions(0, month, actions)])
         assert isinstance(batch, Finished)
         [result] = batch.rollouts
     finally:
-        session.close()
+        live.close()
     assert result.stop is None
     assert result.summary.cash[0].values == [7, 7, 7]
     assert result.trace is not None
@@ -216,35 +220,29 @@ def test_zero_target_full_exit_reentry_and_reserved_cash(prepared: CompiledRun, 
     ]
     assert sum(lot.units for sale in first_sales for lot in sale.lots) == (1 if dust else 7)
     assert result.trace.events.at_month(0).lot_dispositions.get_column("proceeds_quanta").sum() == (0 if dust else 2)
-    lots = result.summary.ending_book.lots
+    ending = result.summary.ending_book.lots
     assert all(
-        lot.units_remaining == lot.basis_remaining == 0 for lot in lots if lot.asset_id == "security:test-second"
+        lot.units_remaining == lot.basis_remaining == 0 for lot in ending if lot.asset_id == "security:test-second"
     )
-    [reentry] = [lot for lot in lots if lot.purchase_month == 1]
+    [reentry] = [lot for lot in ending if lot.purchase_month == 1]
     assert (reentry.units_remaining, reentry.basis_remaining) == ((10, 3) if dust else (16, 5))
-    assert next(lot for lot in lots if lot.lot_id == "test-outside").units_remaining == 1
+    assert next(lot for lot in ending if lot.lot_id == "test-outside").units_remaining == 1
 
 
 @pytest.mark.parametrize("unheld", [False, True])
-def test_deposit_reserves_cash_and_never_buys_zero_target(prepared: CompiledRun, unheld: bool) -> None:
+def test_deposit_reserves_cash_and_never_buys_zero_target(lots: tuple[PreparedLot, ...], unheld: bool) -> None:
     if unheld:
-        prepared = replace(
-            prepared,
-            scenario=replace(
-                prepared.scenario,
-                initial_lots=tuple(lot for lot in prepared.scenario.initial_lots if lot.asset_id != "test-second"),
-            ),
-        )
-    session = ActionSession.from_run(prepared, "test-owner", [0])
+        lots = tuple(lot for lot in lots if lot.asset_id != SECOND)
+    live = session(lots)
     try:
-        batch = session.start()
+        batch = live.start()
         assert not isinstance(batch, Finished)
         observation = batch[0].observation
         targets = {("portfolio", "test-first"): 0, ("portfolio", "test-second"): 1}
         actions = sleeves.deposit(
             observation, targets=targets, cash_account_id="checking", cash_budget=2, cause_id="deposit"
         )
-        batch = session.advance([DecisionActions(0, 0, actions)])
+        batch = live.advance([DecisionActions(0, 0, actions)])
         assert not isinstance(batch, Finished)
         assert batch[0].observation.cash == 5
         purchases = [lot for lot in batch[0].observation.public_positions if lot.purchase_month == 0]
@@ -268,13 +266,13 @@ def test_deposit_reserves_cash_and_never_buys_zero_target(prepared: CompiledRun,
         with pytest.raises(TypeError):
             sleeves.withdraw(observation, targets=targets, cash_account_id="checking", amount=True, cause_id="boolean")
     finally:
-        session.close()
+        live.close()
 
 
-def test_selected_pools_keep_their_own_economic_unit_scale(prepared: CompiledRun) -> None:
-    session = ActionSession.from_run(prepared, "test-owner", [0])
+def test_selected_pools_keep_their_own_economic_unit_scale(lots: tuple[PreparedLot, ...]) -> None:
+    live = session(lots)
     try:
-        batch = session.start()
+        batch = live.start()
         assert not isinstance(batch, Finished)
         actions = sleeves.withdraw(
             batch[0].observation,
@@ -283,7 +281,7 @@ def test_selected_pools_keep_their_own_economic_unit_scale(prepared: CompiledRun
             amount=3,
             cause_id="mixed-grids",
         )
-        batch = session.advance([DecisionActions(0, 0, actions)])
+        batch = live.advance([DecisionActions(0, 0, actions)])
         assert not isinstance(batch, Finished)
         assert batch[0].observation.cash == 12
         # Equal 3-quanta sleeves get budgets 2/1 after the stable residual rule.
@@ -292,11 +290,11 @@ def test_selected_pools_keep_their_own_economic_unit_scale(prepared: CompiledRun
         remaining = {(lot.account_id, lot.asset_id): lot.units for lot in batch[0].observation.public_positions}
         assert remaining[("portfolio", "test-second")] == 3
         assert ("outside", "test-first") not in remaining
-        finished = session.advance([DecisionActions(0, 1, [])])
+        finished = live.advance([DecisionActions(0, 1, [])])
         assert isinstance(finished, Finished)
         [result] = finished.rollouts
     finally:
-        session.close()
+        live.close()
     assert result.trace is not None
     sales = result.trace.events.lot_dispositions
     assert sales.select("units_sold", "proceeds_quanta").rows() == [(0.7, 2), (1.0, 3)]

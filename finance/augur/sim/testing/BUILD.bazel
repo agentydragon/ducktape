@@ -6,37 +6,6 @@ package(
 )
 
 py_library(
-    name = "case",
-    srcs = ["case.py"],
-    deps = [
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:external_series",
-        "//finance/augur/sim:jurisdictions",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:prepared",
-        "//finance/augur/sim:runtime",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim/compiler:execution",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "fixtures",
-    srcs = ["fixtures.py"],
-    deps = [
-        ":case",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
     name = "bonds",
     srcs = ["bonds.py"],
     deps = [
@@ -62,8 +31,6 @@ py_library(
     name = "security_distributions",
     srcs = ["security_distributions.py"],
     deps = [
-        ":case",
-        ":fixtures",
         "//finance/augur/model:series",
         "//finance/augur/sim:scenario",
     ],
