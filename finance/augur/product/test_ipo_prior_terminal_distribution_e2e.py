@@ -26,7 +26,7 @@ from finance.augur.model.provider_config import CompositeProviderConfig
 from finance.augur.model.series import IssuerId
 from finance.augur.product.conftest import MakeProductService
 from finance.augur.product.service import ProductService
-from finance.augur.product.wire import FundingPolicy, ProjectionSamplingRequest, ScenarioKey, SleeveWeight
+from finance.augur.product.wire import FundingPolicy, ProjectionSamplingRequest, ScenarioKey, SecuritySleeveWeight
 from finance.evidence.markets import Platform
 
 # One market, deadline six months after the catalog's model anchor. Its YES price is the whole
@@ -46,9 +46,9 @@ _SCENARIO = ScenarioKey(
         cash_ceiling=50000,
         cash_band_index_to_inflation=False,
         sleeve_weights=(
-            SleeveWeight(symbol="VOO", weight=1),
-            SleeveWeight(symbol="btc", weight=1),
-            SleeveWeight(symbol="eth", weight=1),
+            SecuritySleeveWeight(symbol="VOO", weight=1),
+            SecuritySleeveWeight(symbol="btc", weight=1),
+            SecuritySleeveWeight(symbol="eth", weight=1),
         ),
     ),
 )

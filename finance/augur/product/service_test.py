@@ -57,6 +57,7 @@ from finance.augur.product.wire import (
     HoaDuesPaymentEvent,
     HoldingSaleEvent,
     HomeownersInsurancePaymentEvent,
+    ManagedSleeveWeight,
     MetricName,
     MonthlyExpenseEvent,
     MortgageFinancing,
@@ -75,6 +76,7 @@ from finance.augur.product.wire import (
     RolloutFailureEvent,
     RolloutRequest,
     ScenarioKey,
+    SecuritySleeveWeight,
     SetPrimaryResidenceEventWire,
     SetPrimaryResidenceMarkerEvent,
     SetRentedFractionEventWire,
@@ -88,6 +90,8 @@ from finance.augur.sim.prepared import (
     PreparedIndexedAmount,
     PreparedPropertyCashflow,
     PreparedRecurringPropertyCashflow,
+    _ManagedSleeveTarget,
+    _SecuritySleeveTarget,
 )
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.scenario import InitialLot, TlhCohort, TlhPortfolioSpec
@@ -836,7 +840,10 @@ def test_product_zero_weight_excludes_a_holding_instead_of_requesting_its_exit(
         monthly_spend=300_000,
         spend_index="none",
         funding_policy=FundingPolicy(
-            sleeve_weights=(SleeveWeight(symbol="VOO", weight=0), SleeveWeight(symbol="btc", weight=btc_weight))
+            sleeve_weights=(
+                SecuritySleeveWeight(symbol="VOO", weight=0),
+                SecuritySleeveWeight(symbol="btc", weight=btc_weight),
+            )
         ),
     )
     detail = product.rollout(_rollout_request(scenario))
@@ -869,9 +876,9 @@ def test_a_zero_width_band_sells_exactly_what_the_month_needs(product: service.P
             cash_ceiling=0,
             cash_band_index_to_inflation=False,
             sleeve_weights=(
-                SleeveWeight(symbol="VOO", weight=1),
-                SleeveWeight(symbol="btc", weight=1),
-                SleeveWeight(symbol="eth", weight=1),
+                SecuritySleeveWeight(symbol="VOO", weight=1),
+                SecuritySleeveWeight(symbol="btc", weight=1),
+                SecuritySleeveWeight(symbol="eth", weight=1),
             ),
         ),
     )
@@ -1064,7 +1071,7 @@ def test_product_cash_band_refills_to_the_ceiling_from_the_overweight_sleeve(pro
             cash_floor=260_000,
             cash_ceiling=280_000,
             cash_band_index_to_inflation=False,
-            sleeve_weights=(SleeveWeight(symbol="VOO", weight=1), SleeveWeight(symbol="btc", weight=1)),
+            sleeve_weights=(SecuritySleeveWeight(symbol="VOO", weight=1), SecuritySleeveWeight(symbol="btc", weight=1)),
         ),
     )
 
@@ -1097,7 +1104,7 @@ def test_product_cash_band_sells_nothing_while_cash_sits_inside_it(product: serv
             cash_floor=100_000,
             cash_ceiling=300_000,
             cash_band_index_to_inflation=False,
-            sleeve_weights=(SleeveWeight(symbol="VOO", weight=1), SleeveWeight(symbol="btc", weight=1)),
+            sleeve_weights=(SecuritySleeveWeight(symbol="VOO", weight=1), SecuritySleeveWeight(symbol="btc", weight=1)),
         ),
     )
 
@@ -1107,17 +1114,16 @@ def test_product_cash_band_sells_nothing_while_cash_sits_inside_it(product: serv
     assert detail.rollout.monthly_metrics["cash_quanta"] == [_usd_quanta(value) for value in [250_000.0, 250_875.0]]
 
 
-def test_a_sleeve_weight_naming_a_tlh_index_makes_its_portfolio_a_managed_source(
+def test_a_managed_sleeve_weight_lowers_to_its_portfolio_and_draws_on_its_account(
     augur_config: Config, catalog: CatalogResponse
 ) -> None:
-    """The TLH portfolio is the only holder of its index, and still a sellable sleeve.
+    """A managed weight names the TLH portfolio by id; a security weight on its index names nothing held.
 
-    Its (account, asset) reaches the household's policy as a managed source, beside the
-    ordinary lots' accounts, and the opening book holds no lot of the index.
+    The portfolio's account joins the ordinary lots' accounts as a source, the opening book
+    holds no lot of the index, and the index symbol alone does not reach the portfolio.
     """
 
     owner = resolve_primary_agent_id(augur_config)
-    index = SecurityKey(symbol=SecuritySymbol("test-index"))
     ordinary = InitialLot(
         lot_id="test-ordinary",
         agent_id=owner,
@@ -1127,50 +1133,55 @@ def test_a_sleeve_weight_naming_a_tlh_index_makes_its_portfolio_a_managed_source
         quantity=10.0,
         cost_basis=Decimal(1_000),
     )
-    situation = build_situation(
-        ScenarioKey(
-            model_id="current_model",
-            horizon_months=1,
-            monthly_spend=1_000,
-            spend_index="none",
-            funding_policy=FundingPolicy(
-                sleeve_weights=(
-                    SleeveWeight(symbol="test-index", weight=3),
-                    SleeveWeight(symbol="test-other", weight=1),
-                )
+
+    def lowered(*sleeves: SleeveWeight) -> Situation:
+        return build_situation(
+            ScenarioKey(
+                model_id="current_model",
+                horizon_months=1,
+                monthly_spend=1_000,
+                spend_index="none",
+                funding_policy=FundingPolicy(sleeve_weights=sleeves),
             ),
-        ),
-        primary_agent_id=owner,
-        initial_cash=Decimal(1_000),
-        initial_lots=(ordinary,),
-        properties_by_id=catalog.properties_by_id,
-        locations=sim_locations_from_config(augur_config.locations),
-        tlh_portfolios=(
-            TlhPortfolioSpec(
-                portfolio_id="test-managed",
-                owner_agent_id=owner,
-                account_id="test_managed_brokerage",
-                asset=index,
-                initial_cohorts=[TlhCohort(value=Decimal(3_000), cost_basis=Decimal(3_000), purchase_month_index=-24)],
-                assumptions=TlhAssumptions(
-                    peak_annual_yield=0,
-                    floor_annual_yield=0,
-                    maturity_decay_exponent=1,
-                    drawdown_sensitivity=0,
-                    short_term_fraction=1,
+            primary_agent_id=owner,
+            initial_cash=Decimal(1_000),
+            initial_lots=(ordinary,),
+            properties_by_id=catalog.properties_by_id,
+            locations=sim_locations_from_config(augur_config.locations),
+            tlh_portfolios=(
+                TlhPortfolioSpec(
+                    portfolio_id="test-managed",
+                    owner_agent_id=owner,
+                    account_id="test_managed_brokerage",
+                    asset=SecurityKey(symbol=SecuritySymbol("test-index")),
+                    initial_cohorts=[
+                        TlhCohort(value=Decimal(3_000), cost_basis=Decimal(3_000), purchase_month_index=-24)
+                    ],
+                    assumptions=TlhAssumptions(
+                        peak_annual_yield=0,
+                        floor_annual_yield=0,
+                        maturity_decay_exponent=1,
+                        drawdown_sensitivity=0,
+                        short_term_fraction=1,
+                    ),
                 ),
             ),
-        ),
-    )
+        )
 
+    situation = lowered(
+        ManagedSleeveWeight(portfolio_id="test-managed", weight=3), SecuritySleeveWeight(symbol="test-other", weight=1)
+    )
     policy = one(situation.funding_policies)
     lot = one(situation.lots)
     assert lot.lot_id == ordinary.lot_id
-    assert [(sleeve.asset_id, sleeve.weight) for sleeve in policy.sleeves] == [
-        (one(situation.tlh_portfolios).asset_id, 3),
-        (lot.asset_id, 1),
-    ]
+    assert policy.sleeves == (
+        _ManagedSleeveTarget(portfolio_id="test-managed", weight=3),
+        _SecuritySleeveTarget(asset_id=lot.asset_id, weight=1, quantity_scale=lot.quantity_scale),
+    )
     assert policy.source_account_ids == ("test_ordinary_brokerage", "test_managed_brokerage")
+    assert lowered(SecuritySleeveWeight(symbol="test-index", weight=1)).funding_policies == ()
+    with pytest.raises(ValueError, match="unknown TLH portfolio 'test-absent'"):
+        lowered(ManagedSleeveWeight(portfolio_id="test-absent", weight=1))
 
 
 def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income(
@@ -1207,7 +1218,7 @@ def test_product_rollout_includes_federal_and_california_tax_events_for_holding_
             # gain worth taxing; the fixture's VOO lots carry ~$100/unit of appreciation.
             cash_ceiling=760_000,
             cash_band_index_to_inflation=False,
-            sleeve_weights=(SleeveWeight(symbol="VOO", weight=1), SleeveWeight(symbol="btc", weight=1)),
+            sleeve_weights=(SecuritySleeveWeight(symbol="VOO", weight=1), SecuritySleeveWeight(symbol="btc", weight=1)),
         ),
     )
 

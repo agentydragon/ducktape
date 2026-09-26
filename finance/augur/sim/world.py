@@ -75,7 +75,7 @@ from finance.augur.sim.property import Housing, Properties, mortgage_terms
 from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill
 from finance.augur.sim.scenario import InterestIncome, TransferIncomeCategory
 from finance.augur.sim.tax_authority import Assessment, TaxAuthority
-from finance.augur.sim.tlh import ModeledRealizations, TlhMarketUpdate, TlhObservation, TlhOpening, TlhPortfolio
+from finance.augur.sim.tlh import ModeledRealizations, TlhMarketUpdate, TlhOpening, TlhPortfolio
 
 type Capture = Literal["summary", "dense", "forensic"]
 
@@ -347,7 +347,7 @@ class World:
         )
         if self.managed is None:
             self.managed = ManagedPortfolios(self.income_sources, self.jurisdictions)
-        self.managed.open(self.accounting, spec, self.statement(spec, portfolio.observe()))
+        self.managed.open(self.accounting, spec, self.statement(spec, portfolio, 0))
         self.holdings.reserve(spec.owner_agent_id, spec.account_id, spec.asset_id)
         if self.distributions is not None:
             self.distributions.managed_slots.add((spec.owner_agent_id, spec.account_id, spec.asset_id))
@@ -516,8 +516,12 @@ class World:
                 f"series {amount.series_id!r} has zero base level at month {amount.base_month_index} for {label}"
             )
 
-    @staticmethod
-    def statement(spec: PreparedTlhPortfolio, value: TlhObservation) -> observations.TlhPortfolioObservation:
+    def statement(
+        self, spec: PreparedTlhPortfolio, portfolio: TlhPortfolio, month: int
+    ) -> observations.TlhPortfolioObservation:
+        """`portfolio` marked at `month`'s index level, which also decides whether it takes a contribution."""
+        price = self.market.value(f"security:{spec.asset_id}", month)
+        value = portfolio._observe_at_price(price)
         return observations.TlhPortfolioObservation(
             portfolio_id=spec.portfolio_id,
             owner_agent_id=spec.owner_agent_id,
@@ -525,6 +529,7 @@ class World:
             asset_id=spec.asset_id,
             value=value.value,
             reported_tax_basis=value.reported_tax_basis,
+            accepts_contributions=price > 0,
         )
 
     def effects(
@@ -536,7 +541,7 @@ class World:
         realizations: ModeledRealizations = _NO_REALIZATIONS,
     ) -> ComponentEffects:
         return ComponentEffects(
-            observation=self.statement(spec, candidate.observe()),
+            observation=self.statement(spec, candidate, self.month),
             cash_account_id=cash_account_id,
             cash_amount=cash_amount,
             short_term_gain=realizations.short_term_gain,
@@ -839,12 +844,7 @@ class World:
         if not self.failed and self.private_equity is not None:
             self.private_equity.advance(self.accounting, self.holdings, self.market, self.marks(), self.month)
         marks = [
-            self.statement(
-                spec,
-                self.portfolios[spec.portfolio_id]._observe_at_price(
-                    self.market.value(f"security:{spec.asset_id}", self.month + (not self.failed))
-                ),
-            )
+            self.statement(spec, self.portfolios[spec.portfolio_id], self.month + (not self.failed))
             for spec in self.specs.values()
         ]
         if self.managed is not None:

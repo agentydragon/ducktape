@@ -19,6 +19,8 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
     PreparedTlhPortfolio,
     _AllocationPolicy,
+    _ManagedSleeveTarget,
+    _SecuritySleeveTarget,
     _SleeveTarget,
 )
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
@@ -47,8 +49,8 @@ class Situation:
     horizon_months: int = 1
 
 
-def sleeve(asset_id: str, weight: int) -> _SleeveTarget:
-    return _SleeveTarget(asset_id=asset_id, weight=weight, quantity_scale=1)
+def sleeve(asset_id: str, weight: int) -> _SecuritySleeveTarget:
+    return _SecuritySleeveTarget(asset_id=asset_id, weight=weight, quantity_scale=1)
 
 
 def policy(*sleeves: _SleeveTarget, ceiling: int, tolerance: int | None) -> _AllocationPolicy:
@@ -109,11 +111,12 @@ def run(case: Situation) -> FinancialOutput:
         world.declare_account(
             PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=opening)
         )
-    # Every sleeve gets a pool: the household reads its quotes off the positions it observes.
-    for asset_id in case.prices:
-        world.declare_pool(
-            PreparedHoldingPool(agent_id=ALICE, account_id=HOLDINGS, asset_id=asset_id, quantity_scale=1)
-        )
+    # Every security sleeve gets a pool: the household reads its quotes off the positions it observes.
+    for target in case.policy.sleeves:
+        if isinstance(target, _SecuritySleeveTarget):
+            world.declare_pool(
+                PreparedHoldingPool(agent_id=ALICE, account_id=HOLDINGS, asset_id=target.asset_id, quantity_scale=1)
+            )
     for holding in case.lots:
         world.hold(holding)
     for spec in case.portfolios:
@@ -172,27 +175,30 @@ def test_a_purchase_is_sized_to_what_the_months_claim_payment_leaves() -> None:
     assert [disposition.units for disposition in output.dispositions] == [1]
 
 
+def managed_portfolio(opening: TlhOpeningCohort) -> PreparedTlhPortfolio:
+    return PreparedTlhPortfolio(
+        portfolio_id="managed",
+        owner_agent_id=ALICE,
+        account_id=HOLDINGS,
+        asset_id="index",
+        initial_cohorts=(opening,),
+        assumptions=QUIET,
+    )
+
+
 def test_a_projected_purchase_into_a_managed_sleeve_contributes_what_is_left() -> None:
-    """The sleeve's holding account carries a TLH portfolio, so the order is an opaque contribution.
+    """The sleeve names a TLH portfolio, so the order is an opaque contribution.
 
     $1,000 of cash against a $400 claim and a zero band invests $600, all of it: at a price of 7
-    no whole number of units is worth $600, and none is needed. No household-visible lot is created.
+    no whole number of units is worth $600, and none is needed. No household-visible lot is created,
+    and no pool quotes the index: the sleeve has no unit price to read.
     """
     output = run(
         Situation(
             prices={"index": 7},
-            policy=policy(sleeve("index", 1), ceiling=0, tolerance=None),
+            policy=policy(_ManagedSleeveTarget(portfolio_id="managed", weight=1), ceiling=0, tolerance=None),
             opening_cash=1_000,
-            portfolios=(
-                PreparedTlhPortfolio(
-                    portfolio_id="managed",
-                    owner_agent_id=ALICE,
-                    account_id=HOLDINGS,
-                    asset_id="index",
-                    initial_cohorts=(TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-24),),
-                    assumptions=QUIET,
-                ),
-            ),
+            portfolios=(managed_portfolio(TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-24)),),
             claims=(claim(400),),
         )
     )
@@ -201,6 +207,31 @@ def test_a_projected_purchase_into_a_managed_sleeve_contributes_what_is_left() -
     assert one(closed.tlh_portfolios).value == 700  # The $100 opening mark plus the $600 contribution.
     assert closed.lots == []
     assert (balance(closed, ALICE), balance(closed, CREDITOR)) == (0, 400)
+
+
+def test_a_portfolio_at_a_zero_index_mark_is_not_offered_the_surplus() -> None:
+    """At a zero mark the portfolio refuses money, which the world would answer by stopping the path.
+
+    Its written-off cohort shows value 0 like an empty portfolio would, so only the statement's
+    flag keeps the household from contributing the $600 surplus; the path runs to the end with
+    the cash left idle.
+    """
+    output = run(
+        Situation(
+            prices={"index": 0},
+            policy=policy(_ManagedSleeveTarget(portfolio_id="managed", weight=1), ceiling=0, tolerance=None),
+            opening_cash=1_000,
+            portfolios=(managed_portfolio(TlhOpeningCohort(value=0, cost_basis=100, purchase_month_index=-24)),),
+            claims=(claim(400),),
+            horizon_months=2,
+        )
+    )
+    closed = output.months[-1]
+    assert closed.tlh_portfolios is not None
+    assert one(closed.tlh_portfolios).value == 0
+    assert (balance(closed, ALICE), balance(closed, CREDITOR)) == (600, 400)
+    assert output.tlh_financial_effects is not None
+    assert [effect.operation for effect in output.tlh_financial_effects] == ["modeled_realization"] * 2
 
 
 if __name__ == "__main__":

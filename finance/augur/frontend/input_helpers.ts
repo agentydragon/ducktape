@@ -277,7 +277,25 @@ export function buildLifecycleEvents(events) {
     });
 }
 
-// Weights are seeded from what the owner currently HOLDS: each sellable position's share of
+// A sleeve is a held security, named by the series symbol the sim prices it by, or a managed TLH
+// portfolio, named by its id: the portfolio tracks an index but is not a holding of it, so lots of
+// that index are a separate sleeve. `null` for anything else, which is not a sleeve.
+export function sleeveIdentity(sleeve) {
+  if (sleeve?.kind === "security" && sleeve.symbol) return { kind: "security", symbol: sleeve.symbol };
+  if (sleeve?.kind === "managed_portfolio" && sleeve.portfolioId) {
+    return { kind: "managed_portfolio", portfolioId: sleeve.portfolioId };
+  }
+  return null;
+}
+
+// One string per sleeve identity, for maps and React keys.
+export function sleeveKey(sleeve) {
+  const identity = sleeveIdentity(sleeve);
+  if (identity == null) return null;
+  return identity.kind === "security" ? `security:${identity.symbol}` : `managed_portfolio:${identity.portfolioId}`;
+}
+
+// Weights are seeded from what the owner currently HOLDS: each sellable sleeve's share of
 // total holding value, as an integer out of 100. Opening the editor and changing nothing then
 // means "hold what you have" — the target matches today's portfolio, so the first sale does not
 // silently rebalance a 90/10 split to 50/50.
@@ -285,11 +303,11 @@ export function buildLifecycleEvents(events) {
 // `max(1, ...)` keeps a holding too small to round to 1% inside the target rather than silently
 // outside it — weight 0 means "never sell this", which is not what "you own a little of it" says.
 export function seedSleeveWeights(sellable) {
-  const held = (sellable ?? []).filter((row) => row.symbol && BigInt(row.valueQuanta ?? 0) > 0n);
+  const held = (sellable ?? []).filter((row) => BigInt(row.valueQuanta ?? 0) > 0n);
   const total = held.reduce((sum, row) => sum + BigInt(row.valueQuanta), 0n);
   if (total === 0n) return [];
   return held.map((row) => ({
-    symbol: row.symbol,
+    ...row.sleeve,
     weight: Math.max(1, Number((100n * BigInt(row.valueQuanta) + total / 2n) / total)),
   }));
 }
@@ -301,8 +319,8 @@ export function seedSleeveWeights(sellable) {
 export function resolveSleeveWeights(sleeveWeights, sellable) {
   if (sleeveWeights == null) return seedSleeveWeights(sellable);
   return sleeveWeights
-    .filter((sleeve) => sleeve.symbol)
-    .map((sleeve) => ({ symbol: sleeve.symbol, weight: Math.max(0, Math.trunc(Number(sleeve.weight) || 0)) }));
+    .filter((sleeve) => sleeveIdentity(sleeve) != null)
+    .map((sleeve) => ({ ...sleeveIdentity(sleeve), weight: Math.max(0, Math.trunc(Number(sleeve.weight) || 0)) }));
 }
 
 export function productScenario(input, bootstrap, modelId, horizonMonths, sellable) {
@@ -434,8 +452,9 @@ function deserializeOverrides(raw) {
 }
 
 // Bump when the `?scenarios=` payload shape changes; an unrecognized version falls back to a
-// default base-only set rather than misreading fields. v2 = base input + per-variant override diffs.
-const SCENARIO_SET_VERSION = 2;
+// default base-only set rather than misreading fields. v3 = base input + per-variant override diffs,
+// with each sleeve weight naming its kind.
+const SCENARIO_SET_VERSION = 3;
 
 function decodeScenarioSet(packed, bootstrap) {
   let payload;
@@ -463,7 +482,7 @@ function decodeScenarioSet(packed, bootstrap) {
   return { base, variants, activeId: "base" };
 }
 
-// Encode the set to a single `?scenarios=` JSON param (`v: 2`): the Base full input plus per-variant
+// Encode the set to a single `?scenarios=` JSON param (`v: 3`): the Base full input plus per-variant
 // override diffs. A lone Base (variants: []) uses the same form — one URL format for every set.
 export function scenarioSetToSearch(base, variants) {
   const payload = {

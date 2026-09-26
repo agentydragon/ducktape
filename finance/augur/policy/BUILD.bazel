@@ -68,10 +68,10 @@ py_library(
         ":sleeves",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:holdings",
         "//finance/augur/sim:observations",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:world",
-        "@pypi//more_itertools",
     ],
 )
 

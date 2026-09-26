@@ -173,10 +173,23 @@ class _ScheduledSale:
 
 
 @dataclass(frozen=True, kw_only=True)
-class _SleeveTarget:
+class _SecuritySleeveTarget:
+    """Lots of one security across the policy's source accounts, traded in whole units at its quote."""
+
     asset_id: str
     weight: int
     quantity_scale: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class _ManagedSleeveTarget:
+    """One managed portfolio, sized in money: it has a value but no units and no unit price."""
+
+    portfolio_id: str
+    weight: int
+
+
+type _SleeveTarget = _SecuritySleeveTarget | _ManagedSleeveTarget
 
 
 @dataclass(frozen=True, kw_only=True)

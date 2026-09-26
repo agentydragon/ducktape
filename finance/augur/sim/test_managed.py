@@ -47,6 +47,7 @@ def opening() -> TlhPortfolioObservation:
         asset_id="test_fund",
         value=100,
         reported_tax_basis=80,
+        accepts_contributions=True,
     )
 
 

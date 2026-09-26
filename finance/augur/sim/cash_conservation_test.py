@@ -67,7 +67,7 @@ from finance.augur.sim.prepared import (
     _PropertyPurchase,
     _PropertySale,
     _ScheduledSale,
-    _SleeveTarget,
+    _SecuritySleeveTarget,
     _TenderPolicy,
 )
 from finance.augur.sim.property import Housing
@@ -264,7 +264,7 @@ VTI_BAND = _AllocationPolicy(
     agent_id=ALICE,
     account_id=CHECKING,
     source_account_ids=(),
-    sleeves=(_SleeveTarget(asset_id=str(VTI.symbol), weight=1, quantity_scale=VTI_SCALE),),
+    sleeves=(_SecuritySleeveTarget(asset_id=str(VTI.symbol), weight=1, quantity_scale=VTI_SCALE),),
     cash_floor=0,
     cash_ceiling=0,
     cause_id_prefix="allocation_sale",

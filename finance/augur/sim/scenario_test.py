@@ -16,8 +16,8 @@ from finance.augur.sim.scenario import (
     ScheduledPropertyCashflow,
     ScheduledPropertyPurchase,
     SecurityDistribution,
+    SecuritySleeveTarget,
     SeriesIndexedAmount,
-    SleeveTarget,
     TargetAllocationPolicy,
 )
 
@@ -60,7 +60,7 @@ def test_allocation_rejects_repeated_sources_and_empty_cause(sources: tuple[str,
             agent_id="alice",
             account_id="checking",
             source_account_ids=sources,
-            sleeves=[SleeveTarget(asset=SecurityKey(symbol="stock"), weight=1)],
+            sleeves=[SecuritySleeveTarget(asset=SecurityKey(symbol="stock"), weight=1)],
             cause_id_prefix=cause,
             cash_ceiling=0,
             allow_purchases=False,
