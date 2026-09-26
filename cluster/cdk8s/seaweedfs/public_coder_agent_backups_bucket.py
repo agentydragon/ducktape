@@ -11,7 +11,8 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.providers.seaweedfs.s3 import Identity
+from cluster.cdk8s.seaweedfs import cluster, namespace as seaweedfs_namespace
 
 NAME = "public-coder-agent-backups"
 OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs/public-coder-agent-backups-bucket"
@@ -20,7 +21,14 @@ _CHART = "public-coder-agent-backups-bucket"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _CHART, disable_resource_name_hashes=True)
-    s3.Identity(chart, "identity", name=NAME)
+    Identity(
+        chart,
+        "identity",
+        name=NAME,
+        namespace=seaweedfs_namespace.NAME,
+        cluster_name=cluster.NAME,
+        cluster_namespace=seaweedfs_namespace.NAME,
+    )
     return chart
 
 
