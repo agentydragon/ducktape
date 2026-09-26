@@ -2,6 +2,9 @@
 
 Started September 24, 2026 (September 25 UTC). Initial protocol and throughput results below; coding-task quality remains unmeasured.
 
+[Download and probe reproduction commands](REPRODUCE.md) complement the pinned
+launch scripts and captured responses below.
+
 ## Scope
 
 Compare a resident Qwen3.8-27B Q8 control with Qwen3.8-Flash-Next Q4 using both
@@ -32,8 +35,9 @@ data. Report observed interference. Do not change drivers or kernel for these tr
   `--device=nvidia.com/gpu=GPU-6154a49f-2cad-6b72-1e85-09b8006d08b5` launched the
   server's version/help commands successfully. No host runtime changes were made.
 - [Ollama pause PR #7907](https://github.com/agentydragon/ducktape/pull/7907) has
-  merged as `afe5c6437f7ade63dccfafd3fdd91e8fea4dcf27`. Live Deployment is 0/0,
-  Flux Ready/Healthy, model PVC remains Bound, and GPU1 usage fell to 5 MiB.
+  merged as `afe5c6437f7ade63dccfafd3fdd91e8fea4dcf27`. At the September 24 experiment checkpoint, Deployment was 0/0,
+  Flux was Ready/Healthy, the model PVC remained Bound, and GPU1 usage fell to 5 MiB.
+  Ollama was subsequently re-enabled by #8000; this is historical run state.
   Deployment zero replicas and bootstrap Job omission retain credentials and routing.
 
 ## Initial resident dense results
@@ -187,6 +191,20 @@ caching: the initial run had no fixed seed, and both controlled variants succeed
 See the `flash_tool_followup_uncached_*` and `flash_tool_followup_cached42_*` artifacts.
 Do not promote this model from parameter count, one clean retry or token rate alone.
 
+## Flash-Next 32K follow-up
+
+The same launcher with `CONTEXT_SIZE=32768` completed the 24,132-token input
+used for the dense comparison. The response stopped normally after 1,697 output
+tokens: prefill **126.703 s / 190.46 tokens/s**, decode **55.217 s / 30.72 tokens/s**,
+combined server time **181.920 s**. This is a single sample with zero cached input
+tokens, medium reasoning effort, and a 2,048-token output cap. The generated code
+was not executed or scored. [Raw response](flash_dual_32k_long.json).
+
+The model alias was changed to `qwen3.8-flash-next-q4`; the source payload and coding
+instruction match the dense long-input probe. At 32K configured context this
+measures a filled 24K input, not 128K capacity or long-context retrieval quality.
+The prefill cost makes prompt reuse a priority for subsequent agent experiments.
+
 ## Agentplane evidence to reuse
 
 [PR #7898](https://github.com/agentydragon/ducktape/pull/7898) adds a deployed
@@ -200,11 +218,8 @@ correctness, prefill, reasoning/decode, and total task completion time.
 
 ## Next evidence
 
-1. Measure Flash-Next at 32K after the successful 8K feasibility run.
-2. Evaluate alternate two-GPU splitting where supported; 32K filled-input baseline is recorded above.
-3. Connect an authenticated private host endpoint through LiteLLM to Agentplane;
-   validate real shell tools and coding tasks through both harnesses.
-4. Run Flash-Next Q4 with asymmetric GPU headroom and bounded CPU memory; compare
-   against the resident control on the same coding tasks and harness.
-5. Record exact launch arguments, termination reasons, resource peaks, failures, and
-   results here before promoting any configuration.
+The September 26 restart plan and the operator's subsequent Harbor/Ollama
+observations are in [the program plan](../../PLAN.md). In particular, first compare
+fresh prefill with growing cached conversations, then map 128K/256K and concurrent
+slots. Keep coding task definitions and scoring outside Agentplane; shared gateway
+integration is optional and follows a useful configuration.

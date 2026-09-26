@@ -37,7 +37,7 @@ input and 68.23 at 24,132 input tokens, with 32K configured context (`local~`).
 Output lengths changed, so this is not a matched-output task-speed comparison.
 See the same run for the build recipe, failure logs and measurements.
 
-The GPU1 reasoning-enabled synthetic tool roundtrip passed. Real Agentplane coding
+The GPU1 reasoning-enabled synthetic tool roundtrip passed. Real coding-task
 screening remains pending. See PLAN for limitations of historical measurements below;
 their numbers are not directly comparable with this screen.
 
@@ -46,7 +46,9 @@ their numbers are not directly comparable with this screen.
 Flash-Next Q4 runs on both GPUs with CPU offload and lazy mmap embeddings under a
 38 GiB container cap. At 8K configured context and 102 input tokens, a 1,776-token
 coding generation decoded at 32.73 tokens/s (`local~`). Coding correctness is unscored.
-Its first synthetic tool-result answer invented file content; two seeded repeats
+At 32K configured context with 24,132 actual input tokens, prefill took 126.703 s
+and decode was 30.72 tokens/s (1,697 output tokens, normal stop, zero cached input).
+This is not a 128K measurement. Its first synthetic tool-result answer invented file content; two seeded repeats
 returned grounded answers. This is a retained failure, not a passed agent-quality
 gate. [Exact inputs, responses, launch and limits](runs/2026-09-24_qwen38_ssd/README.md).
 

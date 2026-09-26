@@ -1,0 +1,26 @@
+{
+  "gpt-6-sol-low": {
+    "name": "GPT-6 Sol (low)",
+    "slug": "gpt-6-sol-low",
+    "intelligenceIndex": 33.9008505585733,
+    "terminalBench40": 0.0909090909090909,
+    "contextWindowTokens": 872000,
+    "intelligenceIndexIsEstimated": false
+  },
+  "gpt-6-sol-medium": {
+    "name": "GPT-6 Sol (medium)",
+    "slug": "gpt-6-sol-medium",
+    "intelligenceIndex": 39.7820971749522,
+    "terminalBench40": 0.186868686868687,
+    "contextWindowTokens": 872000,
+    "intelligenceIndexIsEstimated": false
+  },
+  "qwen3-8-flash-next": {
+    "name": "Qwen3.8-Flash-Next",
+    "slug": "qwen3-8-flash-next",
+    "intelligenceIndex": 39.8223021864741,
+    "terminalBench40": 0.252525252525253,
+    "contextWindowTokens": 256000,
+    "intelligenceIndexIsEstimated": false
+  }
+}

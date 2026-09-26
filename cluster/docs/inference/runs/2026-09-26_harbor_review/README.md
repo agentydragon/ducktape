@@ -1,0 +1,80 @@
+# Harbor follow-up: bounded review, September 26
+
+This is a read-only review of the operator's local `jobs/` directory, not a new
+evaluation run. It informs whether to reuse Harbor; repairing every failure is
+not a prerequisite for the inference program. No jobs, containers or services were
+changed by this review. The original logs remain outside Git in
+`/home/agentydragon/code/ducktape/jobs/`.
+
+## Latest saved run
+
+`2026-09-25__01-06-09`, job ID `12fa69be-f9b3-49e0-af85-f0eb409e2548`, used
+Terminal-Bench 4.0 and mini-swe-agent with `openai/qwen3.8-flash-next-q4`.
+The saved result has no finish timestamp: 12 completed trials, 54 pending,
+6 errors, 1 pass (`react-lead-form`) and mean 0.08333. This is a later snapshot
+than the operator's 1/11 report. It is not a completed 66-task benchmark.
+
+All six recorded `NonZeroAgentExitCodeError` exceptions end in
+`litellm.ContextWindowExceededError`. The backend reports a 131,072-token limit:
+
+| Task                      | Rejected request tokens |
+| ------------------------- | ----------------------: |
+| layout-config-recreation2 |                  131298 |
+| biped-contact-dynamics    |                  131679 |
+| lake-temp-glm             |                  132138 |
+| takens-embedding-lean     |                  131408 |
+| satb-audio-transcription  |                  131864 |
+| fin-saccr-rwa             |                  132258 |
+
+These errors are context exhaustion, not Harbor's total-task timeout. They do not
+establish that a compactor ran and failed. Before another eval, check the installed
+agent's compaction support/configuration, context trigger, output reserve and error
+policy, and exercise it on a disposable short trajectory. Harbor orchestration and
+the selected agent's history-management policy are different layers.
+
+The saved aggregate counters are 36,399,090 input tokens, 35,719,420 cached input
+tokens (~98.1%), and 1,326,739 output tokens. At the separately measured ~30 tokens/s,
+the recorded output alone represents ~12.3 hours of decoding. This is illustrative
+arithmetic, not a measured server-time breakdown: context-dependent speed varies,
+and these harness counters have not been independently reconciled with server logs.
+High reported cache reuse argues against simply assuming every turn re-prefills
+all history. Long reasoning/action trajectories themselves deserve measurement.
+
+Do not turn 1/12 into a model-only quality estimate, or turn 1/6 after dropping
+errors into a corrected score. Report the failures and attempted denominator;
+only a controlled rerun can show what those tasks would have done without overflow.
+
+## Earlier runs and the GPU error
+
+The two September 24 job directories are also incomplete. Their saved aggregate
+results are dominated by `NetworkConnectionError`; the second also includes two
+nonzero agent exits. These are not additional clean model-quality observations.
+
+The operator's later `Task requires 1 GPU(s) ... DOCKER ... does not support GPU
+allocation` traceback is an environment capability check. It is separate from
+inference-server GPU access and from the six context errors above. Running the LLM
+on host GPUs does not grant a Harbor task container its requested GPU. Do not
+silently force GPU-dependent tasks to CPU and compare the result to a full-suite
+leaderboard. A declared CPU-only subset can be useful for local screening.
+
+## External comparison and next decision
+
+[Selected AA rows](aa_selected_rows.json) were fetched from the public
+[Artificial Analysis leaderboard](https://artificialanalysis.ai/leaderboards/models)
+on September 26, 2026. Only the three comparison rows are retained. Qwen3.8-Flash-Next
+has index 39.82 and Terminal-Bench 4.0 25.25%; Sol low has 33.90 / 9.09%, and Sol
+medium 39.78 / 18.69%. These are external served-model measurements, not our local Q4.
+The local user's modified AA snapshot files were read for orientation and left intact;
+these rows were independently refreshed from the public source.
+
+AA's [methodology](https://artificialanalysis.ai/methodology/intelligence-benchmarking)
+specifies 66 tasks, three repeats per task, 500 agent steps, upstream task deadlines,
+and **no context compaction or summarization** in mini-swe-agent. Adding compaction
+may improve practical local agents, but changes that protocol. The aggregate index
+also combines multiple evaluations, so it is not a Terminal-Bench pass percentage.
+
+The next decision is a small clean screen, not another full suite. Preflight a
+few CPU-only environments; verify tool roundtrips and context handling; then compare
+matched tasks at explicit context, reasoning, output and wall-time budgets. Keep
+infrastructure failure, context exhaustion and task failure separate. Detailed
+context/concurrency/precision experiments are in [PLAN.md](../../PLAN.md).
