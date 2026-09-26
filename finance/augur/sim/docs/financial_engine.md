@@ -41,7 +41,8 @@ multi-taxpayer capabilities beyond what a world declares.
 
 The native behavior inventory and its independently checked Python counterparts
 are in <../../plans/native_test_mapping.md>. Retained financial acceptance suites
-live in <../testing/>. Product and experiment callers use the same Python world.
+live beside the code in <../>, over shared cases in <../testing/>. Product and
+experiment callers use the same Python world.
 
 Use <../session.py> for ordinary batch actions, a tracked `EconomicAgent` on
 `World.step()` for a household that decides each month, and <../artifacts.py> for
