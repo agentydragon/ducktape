@@ -120,6 +120,9 @@ py_test(
         ":binding",
         "//:conftest",
         "//agentplane/action_service:conftest",
+        "@pypi//jsonschema",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//referencing",
     ],
 )

@@ -44,6 +44,15 @@ def _schema(model: type[BaseModel]) -> dict[str, JsonValue]:
     return cast(dict[str, JsonValue], model.model_json_schema())
 
 
+def _exec_schema(binding: SandboxExecutorBinding) -> dict[str, JsonValue]:
+    """`ExecArgs` with this deployment's caps as its maxima, so submission refuses a request the
+    executor would cut short, and says why, instead of the run ending early."""
+    schema = ExecArgs.model_json_schema()
+    schema["properties"]["timeout_seconds"]["maximum"] = binding.max_timeout_seconds
+    schema["properties"]["max_output_bytes"]["maximum"] = binding.max_output_bytes
+    return cast(dict[str, JsonValue], schema)
+
+
 def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> dict[str, ActionDefinition]:
     """What this group offers, declared from its own models rather than discovered over a wire.
 
@@ -75,10 +84,10 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
         SandboxAction.EXEC: ActionDefinition(
             description=(
                 "Run one bounded Bash script in a ready sandbox of yours. A nonzero exit is a normal "
-                f"result, not a failure. Timeout is capped at {binding.max_timeout_seconds}s and "
-                f"retained output at {binding.max_output_bytes} bytes per stream, whatever you ask for."
+                f"result, not a failure. Timeout is at most {binding.max_timeout_seconds}s and "
+                f"retained output at most {binding.max_output_bytes} bytes per stream."
             ),
-            input_schema=_schema(ExecArgs),
+            input_schema=_exec_schema(binding),
         ),
         SandboxAction.LIST: ActionDefinition(
             description="Every sandbox you have here. Another account's are not listed and not reachable.",
