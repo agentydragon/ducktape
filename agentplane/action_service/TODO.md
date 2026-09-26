@@ -25,3 +25,9 @@ delegation tools.
 it is, the sandbox executor's own JSON models the way FastMCP presents a returned model. Unifying
 the executors behind MCP, with the sandbox executor answering as an MCP tool and storing a
 `CallToolResult` too, would leave one result shape and remove that dispatch.
+
+## Direct tools per Connection
+
+Every external Connection sees the same configured `direct_tools`, narrowed only by its
+ServiceAccount's policy. A client that should see a different set, or a workload that should see
+any, needs a per-caller selection, e.g. on the ServiceAccount or the Connection.
