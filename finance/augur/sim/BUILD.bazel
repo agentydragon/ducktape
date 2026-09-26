@@ -185,20 +185,6 @@ py_library(
     srcs = ["enums.py"],
 )
 
-py_library(
-    name = "product_metrics",
-    srcs = ["product_metrics.py"],
-    deps = [
-        ":holdings",
-        ":metric_composition",
-        ":money",
-        ":quantiles",
-        ":world",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
 py_test(
     name = "scenario_test",
     srcs = ["scenario_test.py"],
@@ -212,12 +198,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
-)
-
-py_library(
-    name = "metric_composition",
-    srcs = ["metric_composition.py"],
-    deps = ["@pypi//numpy"],
 )
 
 py_library(
@@ -684,13 +664,11 @@ py_library(
         ":fixed_point",
         ":holdings",
         ":managed",
-        ":observations",
         ":payments",
         ":private_equity",
         ":property",
         ":world",
         "@pypi//polars",
-        "@pypi//pydantic",
     ],
 )
 
@@ -860,7 +838,6 @@ py_test(
         ":mortgage",
         ":observations",
         ":prepared",
-        ":product_metrics",
         ":results",
         ":session",
         ":tax_authority",
@@ -1070,7 +1047,6 @@ py_test(
         ":ids",
         ":market_path",
         ":prepared",
-        ":product_metrics",
         ":property",
         ":results",
         ":world",

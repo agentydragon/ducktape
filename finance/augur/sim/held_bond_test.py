@@ -10,7 +10,7 @@ import pytest_bazel
 
 from finance.augur.model.series import InflationKey
 from finance.augur.sim.actions import Action, Consume, DecisionActions, PayClaim
-from finance.augur.sim.books import AccountRef
+from finance.augur.sim.books import AccountRef, BondState, Book
 from finance.augur.sim.observations import Decision, FixedCoupon, IndexedCoupon
 from finance.augur.sim.results import BondSeries, Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.scenario import BondHolding, Currency
@@ -34,6 +34,11 @@ def execute(
         return batch.rollouts
     finally:
         session.close()
+
+
+def held_bonds(book: Book) -> list[BondState]:
+    assert book.bonds is not None
+    return book.bonds
 
 
 def held_case(*, indexed: bool = False, future_cpi: float = 2.0, rollout_count: int = 1) -> Case:
@@ -142,7 +147,8 @@ def test_indexed_principal_stopped_marks_and_replay_exclude_unobserved_cpi() -> 
             financial = row.trace
             assert financial is not None
             assert row.summary.bond_principal[0].values == [
-                next(bond.principal for bond in book.bonds if bond.agent_id == "alice") for book in financial.books
+                next(bond.principal for bond in held_bonds(book) if bond.agent_id == "alice")
+                for book in financial.books
             ]
     stopped = baseline[0]
     assert stopped == execute(held_case(indexed=True, future_cpi=99.0, rollout_count=2), policy, ids=[0])[0]
@@ -229,6 +235,7 @@ def test_compiled_fixed_coupon_funds_both_controls(
     [actor] = execute(case, spend, "dense")
     expected = [(period, coupon, 0), (2 * period, coupon, face)] if coupon else [(2 * period, 0, face)]
     assert actor.trace is not None
+    assert actor.trace.bond_cashflows is not None
     assert [(row.month, row.coupon, row.redemption) for row in actor.trace.bond_cashflows] == expected
     assert all(row.accretion == 0 for row in actor.trace.bond_cashflows)
     assert actor.stop is None
@@ -246,6 +253,7 @@ def test_indexed_accretion_income_is_preserved_without_claiming_final_period_cov
     assert taxes["federal_us"] > 0
     assert taxes["california"] == 0
     assert result.trace is not None
+    assert result.trace.bond_cashflows is not None
     accretion = next(row for row in result.trace.bond_cashflows if row.month == 6)
     assert (accretion.accretion, accretion.coupon, accretion.redemption) == (100_000_000, 4_000_000, 0)
 

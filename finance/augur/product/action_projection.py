@@ -11,9 +11,9 @@ from collections.abc import Sequence
 import numpy as np
 from numpy.typing import NDArray
 
-from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
+from finance.augur.product.metric_composition import BASE_METRIC_NAMES
+from finance.augur.product.metrics import ProductMetricArrays
 from finance.augur.sim.prepared import CompiledRun
-from finance.augur.sim.product_metrics import ProductMetricArrays
 from finance.augur.sim.results import CashSeries, ConsumptionTarget, InsufficientCash, PaymentRejected, Rollout, Summary
 
 
@@ -80,7 +80,11 @@ def metric_arrays(run: CompiledRun, rollouts: Sequence[Rollout], *, primary_agen
         if ending.properties or ending.mortgages:
             raise ValueError("ending book contains a domain without captured historical product values")
         captured_bonds = {row.bond_id: row.account.account_id for row in summary.bond_principal}
-        ending_bonds = {bond.bond_id: bond.account_id for bond in ending.bonds if bond.agent_id == primary_agent_id}
+        ending_bonds = (
+            {}
+            if ending.bonds is None
+            else {bond.bond_id: bond.account_id for bond in ending.bonds if bond.agent_id == primary_agent_id}
+        )
         if (
             len(captured_bonds) != len(summary.bond_principal)
             or captured_bonds != bond_accounts

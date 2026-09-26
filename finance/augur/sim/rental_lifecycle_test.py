@@ -902,7 +902,9 @@ class TestRentalIncomeTaxation:
         [rollout] = run(situation)
         # Cumulative depreciation grows monotonically; at the post-horizon snapshot it has
         # accrued 12 months' worth = $400,000 / 27.5 = $14,545.45.
-        assert len([row for row in book_at(rollout, 12).properties if row.active]) == 1
+        properties = book_at(rollout, 12).properties
+        assert properties is not None
+        assert len([row for row in properties if row.active]) == 1
         # Federal ordinary income: $60,000 rental - $14,545.45 depreciation = $45,454.55.
         assert breakdown(rollout, month=11, jurisdiction=FEDERAL)["ordinary_income_quanta"] / 100 == pytest.approx(
             45_454.55, abs=0.02

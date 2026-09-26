@@ -12,6 +12,7 @@ import numpy as np
 import polars as pl
 
 from finance.augur.model.asset_key import AssetKey, parse_asset_key
+from finance.augur.product.metrics import ProductMetricArrays
 from finance.augur.product.wire import (
     ROLLOUT_EVENT_KIND_ORDER,
     CapitalImprovementMarkerEvent,
@@ -37,7 +38,6 @@ from finance.augur.product.wire import (
     TlhFinancialEffectEvent,
 )
 from finance.augur.sim.events import EventLog, TlhOperation
-from finance.augur.sim.product_metrics import ProductMetricArrays
 from finance.augur.sim.scenario import ObligationType
 
 _TAX_PAYMENT_OBLIGATION_TYPES = frozenset((ObligationType.ESTIMATED_TAX, ObligationType.TAX_TRUE_UP))

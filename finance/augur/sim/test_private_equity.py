@@ -115,9 +115,7 @@ def execute(run: CompiledRun, build: Callable[[CompiledRun], World]) -> tuple[Wo
         capture.record()
         if not world.finished:
             world.open_month()
-    financial = capture.financial()
-    assert financial is not None
-    return world, financial
+    return world, capture.financial()
 
 
 @pytest.mark.parametrize(

@@ -66,9 +66,10 @@ declaration, holding, contract or attached table needs them, and every phase ski
 an absent one. `World` has no capture
 mode, no named subject and no history: component outcome lists (`accounting.journal`, `holdings.dispositions`, …)
 hold the current month and are cleared when the next month opens, so a caller that
-wants a history copies them between steps. `ActionSession` records the summary and
-trace it returns; the app's runner records `WorldResult` through
-`capture.FinancialCapture`; an experiment records only what it measures. Each path is stateful;
+wants a history copies them between steps. `capture.FinancialCapture` is the
+library's detailed record for a caller that wants one; `ActionSession` records the
+summary and trace it returns through it, the app records its own `WorldResult` and
+metric slab in <../product/>, and an experiment records only what it measures. Each path is stateful;
 parallel paths do not make future months independent. Policies see current
 actor-scoped facts, not future sampled market trajectories. `World` owns the
 month/phase sequencing, receipts and fatal-stop lifecycle of one path; `ActionSession`
@@ -113,7 +114,9 @@ not reconstructed by replaying event descriptions. `books.py` and `results.py`
 define typed books, receipts, stops and completed results; receipts reuse the
 request definitions in `actions.py`. `events.py` defines
 the columnar event frames. Compact and dense/forensic capture are choices of the
-recorder outside the world, over the same financial execution.
+recorder outside the world, over the same financial execution. A domain the world
+does not have is `None` in `Book` and `FinancialOutput`, not an empty channel;
+`event_log` still emits every frame, empty for an absent domain.
 
 Opening snapshot zero precedes events. A stopped event month `f` has an ending
 book at snapshot `f + 1`, marked at the already observed month `f`; no future

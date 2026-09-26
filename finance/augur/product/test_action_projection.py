@@ -15,6 +15,7 @@ import pytest_bazel
 
 from finance.augur.model.series import InflationKey
 from finance.augur.product.action_projection import metric_arrays
+from finance.augur.product.metrics import OutcomeBasis, projection_summaries
 from finance.augur.product.projection import ProductRolloutProjection, project_product_rollout
 from finance.augur.product.wire import HoldingSaleEvent, MonthlyExpenseEvent, RolloutFailureEvent, TaxAccrualEvent
 from finance.augur.sim.actions import Consume, DecisionActions
@@ -22,7 +23,6 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import CompiledRun
-from finance.augur.sim.product_metrics import OutcomeBasis, projection_summaries
 from finance.augur.sim.results import Finished, PaymentRejection, PaymentRequestError, Rejected, Rollout
 from finance.augur.sim.scenario import BondHolding, InitialAccountBalance
 from finance.augur.sim.session import ActionSession
@@ -325,7 +325,9 @@ def test_redemption_replaces_principal_with_cash_without_changing_product_net_wo
     ).compiled_run
     rollouts = _run(compiled, [0], capture, _hold)
     assert rollouts[0].stop is None
-    assert [bond.active for bond in rollouts[0].summary.ending_book.bonds] == [False]
+    ending_bonds = rollouts[0].summary.ending_book.bonds
+    assert ending_bonds is not None
+    assert [bond.active for bond in ending_bonds] == [False]
     assert rollouts[0].summary.cash[0].values[-1] == 10_000
     metrics = metric_arrays(compiled, rollouts, primary_agent_id="example-household").metric_arrays()
     assert metrics["cash_quanta"][:, 0].tolist() == [0, 0, 10_000]

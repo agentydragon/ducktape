@@ -226,13 +226,11 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
     capture = FinancialCapture(world, capture="forensic")
     capture.record()
     financial = capture.financial()
-    assert financial is not None
     assert len(financial.mortgage_payments) == 2
     assert all(row.from_account_id == "savings" for row in financial.mortgage_payments)
-    assert (financial.property_sales[0].mortgage_payoff, financial.property_sales[0].net_cash_to_owner) == (
-        58_000,
-        122_000,
-    )
+    assert financial.properties is not None
+    sale = financial.properties.sales[0]
+    assert (sale.mortgage_payoff, sale.net_cash_to_owner) == (58_000, 122_000)
     assert world.account_balance(HOUSEHOLD, "savings") == 1000
     assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in financial.journal)
 
