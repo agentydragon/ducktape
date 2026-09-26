@@ -47,7 +47,7 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
@@ -144,7 +144,7 @@ class KubeApiProxy(Construct):
                 annotations={
                     "description": "Fail-closed Haku Agent Kubernetes authorization boundary.",
                     # cert-manager rotates the TLS Secret; the listener loads it once at start.
-                    "reloader.stakater.com/auto": "true",
+                    **RELOADER_AUTO,
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=LABELS),

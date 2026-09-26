@@ -70,7 +70,7 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
@@ -480,9 +480,7 @@ class Egress(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME, self.env.namespace, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-            ),
+            metadata=metadata(NAME, self.env.namespace, labels=_LABELS, annotations=RELOADER_AUTO),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=self.env.replicas.count,
             strategy=self.env.replicas.strategy,

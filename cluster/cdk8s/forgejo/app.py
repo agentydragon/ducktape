@@ -39,7 +39,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.seaweedfs import s3
@@ -278,8 +278,7 @@ def _values() -> dict[str, object]:
         },
         # Trust cluster CA bundle (includes Let's Encrypt staging CA)
         "deployment": {
-            # Reloader: auto-restart pods when secrets change
-            "annotations": {"reloader.stakater.com/auto": "true"},
+            "annotations": RELOADER_AUTO,
             "env": [{"name": "SSL_CERT_FILE", "value": "/etc/ssl/certs/cluster-ca/ca-certificates.crt"}],
         },
         # Mount CA bundle (includes Let's Encrypt staging CA when in staging mode)

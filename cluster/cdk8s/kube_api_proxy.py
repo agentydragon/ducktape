@@ -19,7 +19,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 
 NAME = "kube-api-proxy"
 NAMESPACE = "default"
@@ -77,7 +77,7 @@ def _deployment(chart: Chart) -> None:
             namespace=NAMESPACE,
             annotations={
                 # Restart pods when the config changes (subPath mounts don't hot-reload).
-                "reloader.stakater.com/auto": "true",
+                **RELOADER_AUTO,
                 "description": (
                     "nginx reverse proxy: HTTP 8080 → HTTPS kubernetes.default.svc:443.\n"
                     "Bridges the gap between Cilium Gateway (TLS terminate) and the\n"

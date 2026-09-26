@@ -24,7 +24,7 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ollama"
@@ -138,9 +138,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations=RELOADER_AUTO),
         spec=k8s.DeploymentSpec(
             replicas=0 if _PAUSED_FOR_HOST_EXPERIMENTS else 1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),

@@ -19,6 +19,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.metadata import RELOADER_AUTO
 from cluster.scripts import nebula_mesh
 
 NAME = "proxmox-proxy"
@@ -99,7 +100,7 @@ def chart(app: App) -> Chart:
             selector=k8s.LabelSelector(match_labels=_LABELS),
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(annotations={"reloader.stakater.com/auto": "true"}, labels=_LABELS),
+                metadata=k8s.ObjectMeta(annotations=RELOADER_AUTO, labels=_LABELS),
                 spec=k8s.PodSpec(
                     node_selector={"topology.kubernetes.io/region": "proxmox"},
                     containers=[

@@ -38,7 +38,7 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s import cilium
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -136,7 +136,7 @@ class SshMcp(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(NAME, NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}),
+            metadata=metadata(NAME, NAMESPACE, labels=LABELS, annotations=RELOADER_AUTO),
             pod_metadata=ApiObjectMetadata(labels=LABELS),
             replicas=1,
             select=False,

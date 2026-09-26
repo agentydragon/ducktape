@@ -66,7 +66,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import sops_decryption, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -231,7 +231,7 @@ class Ntfy(Construct):
                 labels=_LABELS,
                 annotations={
                     "description": "Single ntfy server backed by the two-instance ntfy PostgreSQL cluster.",
-                    "reloader.stakater.com/auto": "true",
+                    **RELOADER_AUTO,
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),

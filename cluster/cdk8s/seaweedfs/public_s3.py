@@ -42,7 +42,7 @@ from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomizatio
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 from cluster.cdk8s.seaweedfs import (
     cluster,
     drivefs_artifacts_bucket,
@@ -168,7 +168,7 @@ def _gateway(scope: Construct) -> None:
             namespace=namespace.NAME,
             labels=_LABELS,
             annotations={
-                "reloader.stakater.com/auto": "true",
+                **RELOADER_AUTO,
                 "description": (
                     "Single public-facing SeaweedFS S3 gateway (s3.allegedly.works). Mounts a static config for"
                     " bootstrap and public-specific identities. Filer-backed IAM identities are also valid here,"

@@ -50,7 +50,7 @@ from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix"
 NAMESPACE = "matrix"
@@ -195,8 +195,7 @@ def _synapse(scope: Construct) -> None:
                 # ignored (which is why the previous `region: proxmox` never pinned
                 # anything, and Synapse only landed on wyrm2 by chance).
                 "nodeSelector": {"topology.kubernetes.io/zone": _ZONE},
-                # Reloader: auto-restart pods when secrets change
-                "annotations": {"reloader.stakater.com/auto": "true"},
+                "annotations": RELOADER_AUTO,
             },
             # macaroonSecretKey and registrationSharedSecret injected via valuesFrom;
             # extraConfig with oidc_providers is injected via valuesFrom from the
@@ -299,7 +298,7 @@ def _element(scope: Construct) -> None:
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_ELEMENT_LABELS),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_ELEMENT_LABELS, annotations={"reloader.stakater.com/auto": "true"}),
+                metadata=k8s.ObjectMeta(labels=_ELEMENT_LABELS, annotations=RELOADER_AUTO),
                 spec=k8s.PodSpec(
                     containers=[
                         k8s.Container(

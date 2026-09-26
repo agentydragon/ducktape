@@ -19,7 +19,7 @@ from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/app"
@@ -119,7 +119,7 @@ def _deployment(chart: Chart) -> None:
                     " bespoke Plaid MCP tools are exposed in v0. The app writes access-token Secrets and syncs"
                     " linked Items into the plaid-mcp Postgres database."
                 ),
-                "reloader.stakater.com/auto": "true",
+                **RELOADER_AUTO,
             },
         ),
         spec=k8s.DeploymentSpec(

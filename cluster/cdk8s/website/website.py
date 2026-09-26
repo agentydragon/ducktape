@@ -19,7 +19,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/website"
 _NAME = "website"
@@ -168,7 +168,7 @@ def chart(app: App) -> Chart:
             replicas=2,
             selector=k8s.LabelSelector(match_labels=_LABELS),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}),
+                metadata=k8s.ObjectMeta(labels=_LABELS, annotations=RELOADER_AUTO),
                 spec=k8s.PodSpec(
                     containers=[
                         k8s.Container(

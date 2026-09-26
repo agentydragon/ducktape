@@ -32,6 +32,7 @@ from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.metadata import RELOADER_AUTO
 
 NAME = "mitmproxy"
 NAMESPACE = egress_fences.MITMPROXY_NAMESPACE
@@ -87,9 +88,7 @@ class Mitmproxy(Construct):
         k8s.KubeDeployment(
             self,
             "deployment",
-            metadata=k8s.ObjectMeta(
-                name=NAME, namespace=NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-            ),
+            metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_LABELS, annotations=RELOADER_AUTO),
             spec=k8s.DeploymentSpec(
                 replicas=1,
                 selector=k8s.LabelSelector(match_labels=_LABELS),

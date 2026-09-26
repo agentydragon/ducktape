@@ -66,7 +66,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, f
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.home_assistant.app import HA_MCP_TOKEN
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
@@ -213,7 +213,7 @@ class HaMcpApp(Construct):
                         "The upstream HA token remains server-side, and the Action Service applies its own "
                         "per-call approval policy."
                     ),
-                    "reloader.stakater.com/auto": "true",
+                    **RELOADER_AUTO,
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_APP_LABELS),

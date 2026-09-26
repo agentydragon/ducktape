@@ -17,7 +17,7 @@ from cdk8s_plus_34 import Cpu, k8s
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.valkey import valkey_instance
 
@@ -64,7 +64,7 @@ def _deployment(chart: Chart) -> None:
                     " intentionally unauthenticated for Docker registry-mirror compatibility; the public"
                     " endpoint is authenticated by the nginx sidecar."
                 ),
-                "reloader.stakater.com/auto": "true",
+                **RELOADER_AUTO,
             },
         ),
         spec=k8s.DeploymentSpec(

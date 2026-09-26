@@ -29,7 +29,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
@@ -104,7 +104,7 @@ def _helm_release(scope: Construct) -> None:
                 "LITELLM_API_KEY": {"valueFrom": {"secretKeyRef": {"name": "litellm-master-key", "key": "api-key"}}},
             },
             "envFrom": [{"secretRef": {"name": "gatus-oidc-secret"}}],
-            "podAnnotations": {"reloader.stakater.com/auto": "true"},
+            "podAnnotations": RELOADER_AUTO,
             "ingress": {"enabled": False},
             # Storage moved off the local SQLite PVC onto the gatus-db CNPG
             # cluster on OVH-HA (the Cluster above).

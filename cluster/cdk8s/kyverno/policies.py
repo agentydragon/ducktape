@@ -37,6 +37,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.kyverno import proxy_injection
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.metadata import RELOADER_ANNOTATION
 from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Validate, match_resources
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/policies"
@@ -706,7 +707,7 @@ def ignore_cnpg_jobs_for_reloader_chart(app: App) -> Chart:
                     )
                 ),
                 mutate=ClusterPolicySpecRulesMutate(
-                    patch_strategic_merge={"metadata": {"annotations": {"reloader.stakater.com/auto": "false"}}}
+                    patch_strategic_merge={"metadata": {"annotations": {RELOADER_ANNOTATION: "false"}}}
                 ),
             )
         ],

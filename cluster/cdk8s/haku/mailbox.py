@@ -37,7 +37,7 @@ from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustom
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
@@ -139,7 +139,7 @@ def _add_deployment(chart: Chart) -> None:
             labels=_LABELS,
             # Restart on rotation of the mounted STARTTLS certificate and DB credentials so the
             # normal server re-reads them.
-            annotations={"reloader.stakater.com/auto": "true"},
+            annotations=RELOADER_AUTO,
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,
@@ -288,7 +288,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                     "Per-public-node port-25 TCP ingress. Preserves the sending MTA address through "
                     "PROXY protocol so Stalwart's SPF gate remains meaningful."
                 ),
-                "reloader.stakater.com/auto": "true",
+                **RELOADER_AUTO,
             },
         ),
         spec=k8s.DaemonSetSpec(

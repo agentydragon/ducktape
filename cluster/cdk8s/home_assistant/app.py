@@ -50,7 +50,7 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_ANNOTATION, metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
@@ -368,7 +368,7 @@ def _onboarding_job(scope: Construct) -> None:
                 # cluster-wide reload would also recreate it when a ConfigMap or Secret it reads
                 # changes, and in an apply that changes both, the two replacements race.
                 "kustomize.toolkit.fluxcd.io/force": "enabled",
-                "reloader.stakater.com/auto": "false",
+                RELOADER_ANNOTATION: "false",
             },
         ),
         spec=k8s.JobSpec(

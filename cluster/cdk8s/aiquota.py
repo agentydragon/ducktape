@@ -69,7 +69,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, f
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -232,7 +232,7 @@ class Aiquota(Construct):
                 labels=_LABELS,
                 annotations={
                     "description": "Claude and Codex subscription quota API via the CLIProxyAPI integration.",
-                    "reloader.stakater.com/auto": "true",
+                    **RELOADER_AUTO,
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),

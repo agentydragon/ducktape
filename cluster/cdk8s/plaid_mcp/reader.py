@@ -19,7 +19,7 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.metadata import RELOADER_AUTO, metadata
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -68,7 +68,7 @@ def _deployment(chart: Chart) -> None:
                     "Read-only Postgres MCP over the Plaid sync database, fronted by mcp-oauth-facade. The"
                     " upstream MCP uses Streamable HTTP and connects with the plaid_ro role."
                 ),
-                "reloader.stakater.com/auto": "true",
+                **RELOADER_AUTO,
             },
         ),
         spec=k8s.DeploymentSpec(
