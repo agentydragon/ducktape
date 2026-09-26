@@ -89,6 +89,7 @@ py_library(
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/cnpg:objectstore",
         "//cluster/cdk8s/providers/cnpg:scheduledbackup",
+        "//cluster/cdk8s/providers/seaweedfs:s3",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",

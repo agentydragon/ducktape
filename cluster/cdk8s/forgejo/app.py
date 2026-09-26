@@ -42,6 +42,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.seaweedfs.s3 import SecretKeyFields
 from cluster.cdk8s.seaweedfs import s3
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/app"
@@ -99,7 +100,7 @@ def _object_storage(scope: Construct) -> None:
     identity.credentials(
         namespace=_NAMESPACE,
         secret=_S3_CREDENTIALS_SECRET,
-        key_fields=s3.SecretKeyFields(access_key="accessKey", secret_key="secretKey"),
+        key_fields=SecretKeyFields(access_key="accessKey", secret_key="secretKey"),
         description="Forgejo's SeaweedFS S3 credentials.",
     )
 

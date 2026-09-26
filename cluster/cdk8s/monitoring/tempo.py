@@ -14,6 +14,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
+from cluster.cdk8s.providers.seaweedfs.s3 import AWS_ENV_KEY_FIELDS
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "tempo"
@@ -36,7 +37,7 @@ def _storage(chart: Chart) -> None:
     identity.credentials(
         namespace=_NAMESPACE,
         secret=_CREDENTIALS_SECRET,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        key_fields=AWS_ENV_KEY_FIELDS,
         description="Tempo's tenant-local SeaweedFS credentials.",
     )
     # Retain the previous credential Secret during the staged handoff. The old

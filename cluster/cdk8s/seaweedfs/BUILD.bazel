@@ -230,6 +230,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/providers/seaweedfs:s3",
         "//cluster/cdk8s/providers/seaweedfs:s3policy",
         "//cluster/cdk8s/providers/seaweedfs:s3policybinding",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
@@ -249,14 +250,11 @@ py_library(
     srcs = ["s3.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/seaweedfs:bucket",
         "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",
-        "//cluster/cdk8s/providers/seaweedfs:s3credentials",
-        "//cluster/cdk8s/providers/seaweedfs:s3identity",
+        "//cluster/cdk8s/providers/seaweedfs:s3",
         "//cluster/cdk8s/seaweedfs:cluster",
         "//cluster/cdk8s/seaweedfs:namespace",
-        "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )

@@ -34,6 +34,7 @@ from cluster.cdk8s.openclaw_gateway import (
     trusted_proxy_gateway,
 )
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.providers.seaweedfs.s3 import AWS_ENV_KEY_FIELDS
 from cluster.cdk8s.seaweedfs import s3
 
 _NAMESPACE = "haku-openclaw-spike"
@@ -601,7 +602,7 @@ def _backup_bucket(scope: Construct) -> None:
         namespace=_NAMESPACE,
         # Generated directly where the VolSync SecretStore reads it.
         secret="haku-openclaw-spike-volsync-s3-credentials",
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        key_fields=AWS_ENV_KEY_FIELDS,
         description="Haku OpenClaw spike VolSync SeaweedFS credentials.",
     )
 

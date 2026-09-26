@@ -29,6 +29,7 @@ py_library(
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/seaweedfs:s3",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

@@ -19,6 +19,7 @@ py_library(
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/seaweedfs:s3",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",

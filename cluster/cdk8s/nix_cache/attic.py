@@ -27,6 +27,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.providers.seaweedfs.s3 import AWS_ENV_KEY_FIELDS
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "attic"
@@ -86,7 +87,7 @@ def _storage(scope: Construct) -> None:
     )
     identity = s3.Identity(scope, "identity", name=NAME)
     bucket.grant_read_write(identity)
-    identity.credentials(namespace=NAMESPACE, secret=_S3_SECRET, key_fields=s3.AWS_ENV_KEY_FIELDS)
+    identity.credentials(namespace=NAMESPACE, secret=_S3_SECRET, key_fields=AWS_ENV_KEY_FIELDS)
 
 
 def _server(scope: Construct) -> None:
