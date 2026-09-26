@@ -39,6 +39,7 @@ from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecStorageVolumeClaimTemplateSpec,
     RedisReplicationSpecStorageVolumeClaimTemplateSpecResources,
     RedisReplicationSpecStorageVolumeClaimTemplateSpecResourcesRequests,
+    RedisReplicationSpecTolerations,
 )
 
 # Replicas spread across nodes by hostname; this is a stable structural choice for the kind, not a
@@ -80,6 +81,7 @@ class RedisReplication(_RedisReplication):
             RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution
         ]
         | None,
+        tolerations: Sequence[RedisReplicationSpecTolerations] | None = None,
     ) -> None:
         if metadata.name is None:
             raise ValueError("RedisReplication requires metadata.name (the pod anti-affinity match label uses it)")
@@ -89,6 +91,7 @@ class RedisReplication(_RedisReplication):
             metadata=metadata,
             spec=RedisReplicationSpec(
                 cluster_size=cluster_size,
+                tolerations=list(tolerations) if tolerations is not None else None,
                 kubernetes_config=RedisReplicationSpecKubernetesConfig(
                     image=image,
                     image_pull_policy="IfNotPresent",

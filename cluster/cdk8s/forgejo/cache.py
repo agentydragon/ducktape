@@ -5,8 +5,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart, JsonPatch, Size
+from cdk8s import App, Chart, Size
 from cdk8s_plus_34 import Cpu
+from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import RedisReplicationSpecTolerations
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -34,11 +35,11 @@ def _chart(app: App) -> Chart:
         max_memory_percent_of_limit=80,
         storage_class="local-path-ovh",
         storage_size=Size.gibibytes(2),
-    ).add_json_patch(
-        JsonPatch.add(
-            "/spec/tolerations",
-            [{"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}],
-        )
+        tolerations=[
+            RedisReplicationSpecTolerations(
+                key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
+            )
+        ],
     )
     return chart
 
