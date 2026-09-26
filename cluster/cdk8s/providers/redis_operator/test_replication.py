@@ -4,21 +4,17 @@ anti-affinity from `metadata.name`, and leaves optional CRD fields unset on `Non
 from typing import Any, cast
 
 import pytest_bazel
-from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting
+from cdk8s import ApiObjectMetadata, Size, Testing as Cdk8sTesting
+from cdk8s_plus_34 import Cpu
 from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
     RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
-    RedisReplicationSpecKubernetesConfigResources,
-    RedisReplicationSpecKubernetesConfigResourcesRequests,
 )
 
 from cluster.cdk8s.providers.redis_operator.replication import RedisReplication
 
-_RESOURCES = RedisReplicationSpecKubernetesConfigResources(
-    requests={"memory": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("64Mi")}
-)
 _ZONE_MATCH = [
     RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
         key="topology.kubernetes.io/zone", operator="In", values=["test-zone"]
@@ -53,7 +49,10 @@ def _synth(
         metadata=ApiObjectMetadata(name="test-redis", namespace="test-namespace"),
         image="valkey/valkey:9-alpine",
         cluster_size=2,
-        resources=_RESOURCES,
+        cpu_request=Cpu.millis(50),
+        cpu_limit=Cpu.units(1),
+        memory_request=Size.mebibytes(64),
+        memory_limit=Size.gibibytes(1),
         max_memory_percent_of_limit=max_memory_percent_of_limit,
         storage_class="test-storage-class",
         storage_size="1Gi",
@@ -62,6 +61,13 @@ def _synth(
     )
     (redis_replication,) = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     return redis_replication
+
+
+def test_resources_render_as_kubernetes_quantities() -> None:
+    redis_replication = _synth(max_memory_percent_of_limit=None, preferred_node_affinity=None)
+    resources = redis_replication["spec"]["kubernetesConfig"]["resources"]
+    assert resources["requests"] == {"cpu": "50m", "memory": "64Mi"}
+    assert resources["limits"] == {"cpu": "1", "memory": "1024Mi"}
 
 
 def test_pod_anti_affinity_is_derived_from_metadata_name_not_a_parameter() -> None:

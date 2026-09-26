@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import App, Chart, Size
+from cdk8s_plus_34 import Cpu, k8s
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -21,9 +21,6 @@ from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
     RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
-    RedisReplicationSpecKubernetesConfigResources,
-    RedisReplicationSpecKubernetesConfigResourcesLimits,
-    RedisReplicationSpecKubernetesConfigResourcesRequests,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -82,9 +79,9 @@ def valkey_instance(
     name: str,
     namespace: str,
     description: str,
-    memory_request: str,
-    cpu_limit: str,
-    memory_limit: str,
+    memory_request: Size,
+    cpu_limit: Cpu,
+    memory_limit: Size,
     max_memory_percent_of_limit: int | None,
     storage_class: str,
     storage_size: str,
@@ -99,16 +96,10 @@ def valkey_instance(
         metadata=metadata(name, namespace, annotations={"description": description}),
         image="valkey/valkey:9-alpine",
         cluster_size=2,
-        resources=RedisReplicationSpecKubernetesConfigResources(
-            requests={
-                "cpu": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string("50m"),
-                "memory": RedisReplicationSpecKubernetesConfigResourcesRequests.from_string(memory_request),
-            },
-            limits={
-                "cpu": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string(cpu_limit),
-                "memory": RedisReplicationSpecKubernetesConfigResourcesLimits.from_string(memory_limit),
-            },
-        ),
+        cpu_request=Cpu.millis(50),
+        cpu_limit=cpu_limit,
+        memory_request=memory_request,
+        memory_limit=memory_limit,
         max_memory_percent_of_limit=max_memory_percent_of_limit,
         storage_class=storage_class,
         storage_size=storage_size,

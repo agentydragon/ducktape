@@ -22,6 +22,7 @@ py_library(
     deps = [
         ":redisreplication",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )
@@ -36,6 +37,7 @@ py_test(
         ":replication",
         "//:conftest",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -5,7 +5,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart, JsonPatch
+from cdk8s import App, Chart, JsonPatch, Size
+from cdk8s_plus_34 import Cpu
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -27,9 +28,9 @@ def _chart(app: App) -> Chart:
             "OVH Valkey for Forgejo cache + queue (shared, HA-ready replacement for per-instance memory cache /"
             " leveldb queue)"
         ),
-        memory_request="128Mi",
-        cpu_limit="500m",
-        memory_limit="512Mi",
+        memory_request=Size.mebibytes(128),
+        cpu_limit=Cpu.millis(500),
+        memory_limit=Size.mebibytes(512),
         max_memory_percent_of_limit=80,
         storage_class="local-path-ovh",
         storage_size="2Gi",
