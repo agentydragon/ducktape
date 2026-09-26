@@ -13,17 +13,8 @@ import { createRoot } from "react-dom/client";
 
 import App from "../app";
 import { sampleConnection } from "../connections_fixture";
-import type {
-  ActionGroupView,
-  ActionPolicyView,
-  ActionRequestView,
-  BindingView,
-  Decision,
-  McpLinkageView,
-  PolicyView,
-  SandboxView,
-  ThreadView,
-} from "../client";
+import type { BindingView, Decision, McpLinkageView, PolicyView, SandboxView, ThreadView } from "../client";
+import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
 import { EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
 import { CommandSchema } from "../../../protocol/command_pb";
@@ -539,7 +530,7 @@ const ACTIONS: ActionRequestView[] = [
   },
   {
     id: "70000000-0000-4000-8000-000000000006",
-    // The ssh group in MCP_GROUPS: its `exec` Action has widgets of its own (action_rendering/ssh.tsx).
+    // The ssh group in MCP_GROUPS: its `exec` Action has widgets of its own (actions/rendering/ssh.tsx).
     action: { group: "ssh", name: "exec" },
     arguments: {
       host: "test-archive-host",

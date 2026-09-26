@@ -1,10 +1,11 @@
 import { Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 
-import { renderArguments } from "./action_rendering/index";
-import { serviceAccountKey, type ActionRequestView } from "./client";
-import { JsonView } from "./json_view";
-import { RawSwitch } from "./raw_switch";
+import { serviceAccountKey } from "../client";
+import { JsonView } from "../json_view";
+import { RawSwitch } from "../raw_switch";
+import type { ActionRequestView } from "./client";
+import { renderArguments } from "./rendering/index";
 
 /** The grant fields, folded inside `RequestAuditDetails`' disclosure rather than shown
  * unconditionally: verbose per-request provenance an operator deciding needs occasionally, not on

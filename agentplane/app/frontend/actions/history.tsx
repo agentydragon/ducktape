@@ -1,20 +1,20 @@
 import { type JSX, type ReactNode, useEffect, useState } from "react";
 import { Alert, Badge, Code, Paper, Stack, Text, Title } from "@mantine/core";
 
-import { ActionCall } from "./action_call";
-import { renderMcpResult } from "./action_rendering/index";
-import { stateLabel, useActionRequests } from "./actions";
+import { displayableError } from "../client";
+import { JsonView } from "../json_view";
+import { StaleNotice } from "../stream_status";
+import { ActionCall } from "./call";
 import { parseCallToolResult } from "./call_tool_result";
 import {
   actionGroupService,
   actionService,
-  displayableError,
   type ActionGroupService,
   type ActionRequestView,
   type ActionService,
 } from "./client";
-import { JsonView } from "./json_view";
-import { StaleNotice } from "./stream_status";
+import { renderMcpResult } from "./rendering/index";
+import { stateLabel, useActionRequests } from "./requests";
 
 /** The stored result: its pretty rendering unless it has none or the action is switched to Raw, and
  * otherwise its stored JSON. */

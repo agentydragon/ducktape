@@ -59,6 +59,16 @@ ts_library(
 )
 
 ts_library(
+    name = "actions_client",
+    srcs = ["actions/client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":schema",
+    ],
+)
+
+ts_library(
     name = "consent_client",
     srcs = ["consent_client.ts"],
     tsconfig = TSCONFIG,
@@ -100,11 +110,12 @@ ts_library(
 )
 
 ts_library(
-    name = "action_call",
-    srcs = ["action_call.tsx"],
+    name = "actions_call",
+    srcs = ["actions/call.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_rendering",
+        ":actions_client",
+        ":actions_rendering",
         ":client",
         ":json_view",
         ":raw_switch",
@@ -115,11 +126,12 @@ ts_library(
 )
 
 ts_library(
-    name = "actions",
-    srcs = ["actions.tsx"],
+    name = "actions_requests",
+    srcs = ["actions/requests.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_call",
+        ":actions_call",
+        ":actions_client",
         ":client",
         ":live_stream",
         ":stream_status",
@@ -130,14 +142,14 @@ ts_library(
 )
 
 ts_library(
-    name = "actions_test",
+    name = "actions_requests_test",
     testonly = True,
-    srcs = ["actions.test.tsx"],
+    srcs = ["actions/requests.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions",
+        ":actions_client",
+        ":actions_requests",
         ":actions_testing",
-        ":client",
         ":stream_status",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -147,13 +159,14 @@ ts_library(
 
 ts_library(
     name = "actions_history",
-    srcs = ["actions_history.tsx"],
+    srcs = ["actions/history.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_call",
-        ":action_rendering",
-        ":actions",
-        ":call_tool_result",
+        ":actions_call",
+        ":actions_call_tool_result",
+        ":actions_client",
+        ":actions_rendering",
+        ":actions_requests",
         ":client",
         ":json_view",
         ":stream_status",
@@ -175,8 +188,8 @@ ts_library(
 )
 
 ts_library(
-    name = "call_tool_result",
-    srcs = ["call_tool_result.tsx"],
+    name = "actions_call_tool_result",
+    srcs = ["actions/call_tool_result.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":json_view",
@@ -188,36 +201,25 @@ ts_library(
 )
 
 # Widgets for particular Actions' requests and responses, registered by the Action's identity:
-# action_rendering/index.tsx dispatches, and each group's widgets are a module beside it.
+# actions/rendering/index.tsx dispatches, and each group's widgets are a module beside it.
 ts_library(
-    name = "action_rendering",
-    srcs = ["action_rendering/index.tsx"],
+    name = "actions_rendering",
+    srcs = ["actions/rendering/index.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_rendering_entry",
-        ":action_rendering_result_entry",
-        ":action_rendering_ssh",
-        ":call_tool_result",
-        ":client",
+        ":actions_call_tool_result",
+        ":actions_client",
+        ":actions_rendering_entry",
+        ":actions_rendering_result_entry",
+        ":actions_rendering_ssh",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
 ts_library(
-    name = "action_rendering_entry",
-    srcs = ["action_rendering/entry.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-ts_library(
-    name = "action_rendering_result_entry",
-    srcs = ["action_rendering/result_entry.tsx"],
+    name = "actions_rendering_entry",
+    srcs = ["actions/rendering/entry.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@types/react",
@@ -227,12 +229,23 @@ ts_library(
 )
 
 ts_library(
-    name = "action_rendering_ssh",
-    srcs = ["action_rendering/ssh.tsx"],
+    name = "actions_rendering_result_entry",
+    srcs = ["actions/rendering/result_entry.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_rendering_entry",
-        ":action_rendering_result_entry",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "actions_rendering_ssh",
+    srcs = ["actions/rendering/ssh.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_rendering_entry",
+        ":actions_rendering_result_entry",
         ":syntax_highlight",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -242,28 +255,28 @@ ts_library(
 )
 
 ts_library(
-    name = "action_rendering_test",
+    name = "actions_rendering_test",
     testonly = True,
-    srcs = ["action_rendering/index.test.tsx"],
+    srcs = ["actions/rendering/index.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_rendering",
+        ":actions_call_tool_result",
+        ":actions_rendering",
         ":actions_testing",
-        ":call_tool_result",
         "//:node_modules/@types/react",
         "//:node_modules/vitest",
     ],
 )
 
 ts_library(
-    name = "action_rendering_ssh_test",
+    name = "actions_rendering_ssh_test",
     testonly = True,
-    srcs = ["action_rendering/ssh.test.tsx"],
+    srcs = ["actions/rendering/ssh.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_rendering_entry",
-        ":action_rendering_result_entry",
-        ":action_rendering_ssh",
+        ":actions_rendering_entry",
+        ":actions_rendering_result_entry",
+        ":actions_rendering_ssh",
         ":actions_testing",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -272,12 +285,12 @@ ts_library(
 )
 
 ts_library(
-    name = "call_tool_result_test",
+    name = "actions_call_tool_result_test",
     testonly = True,
-    srcs = ["call_tool_result.test.tsx"],
+    srcs = ["actions/call_tool_result.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":call_tool_result",
+        ":actions_call_tool_result",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -290,13 +303,13 @@ ts_library(
 ts_library(
     name = "actions_history_test",
     testonly = True,
-    srcs = ["actions_history.test.tsx"],
+    srcs = ["actions/history.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions",
+        ":actions_client",
         ":actions_history",
+        ":actions_requests",
         ":actions_testing",
-        ":client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",
@@ -306,10 +319,10 @@ ts_library(
 ts_library(
     name = "actions_testing",
     testonly = True,
-    srcs = ["actions_testing.tsx"],
+    srcs = ["actions/testing.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
+        ":actions_client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -336,6 +349,7 @@ ts_library(
     srcs = ["settings/mcp_servers.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_client",
         ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -349,6 +363,7 @@ ts_library(
     srcs = ["settings/mcp_servers.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_client",
         ":client",
         ":mcp_servers",
         "//:node_modules/@mantine/core",
@@ -571,7 +586,8 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_policy",
+        ":actions_client",
+        ":actions_policy",
         ":client",
         ":launch_presets",
         ":lifecycle",
@@ -678,11 +694,11 @@ ts_library(
 )
 
 ts_library(
-    name = "action_policy",
-    srcs = ["action_policy.tsx"],
+    name = "actions_policy",
+    srcs = ["actions/policy.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
+        ":actions_client",
         ":egress",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -691,13 +707,13 @@ ts_library(
 )
 
 ts_library(
-    name = "action_policy_test",
+    name = "actions_policy_test",
     testonly = True,
-    srcs = ["action_policy.test.tsx"],
+    srcs = ["actions/policy.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_policy",
-        ":client",
+        ":actions_client",
+        ":actions_policy",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -718,7 +734,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_policy",
+        ":actions_policy",
         ":client",
         ":egress",
         ":json_view",
@@ -743,6 +759,7 @@ ts_library(
     srcs = ["sandbox_page.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":live",
         ":sandbox_page",
         "//:node_modules/@mantine/core",
@@ -1143,8 +1160,8 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions",
         ":actions_history",
+        ":actions_requests",
         ":consent",
         ":projected_session",
         ":sandbox_page",
@@ -1191,6 +1208,7 @@ ts_library(
     srcs = ["sandboxes.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_client",
         ":client",
         ":sandboxes",
         "//:node_modules/@mantine/core",
@@ -1210,12 +1228,12 @@ vitest_bin.vitest_test(
     data = [
         "test_setup.ts",
         "vitest.config.mts",
-        ":action_policy_test",
-        ":action_rendering_ssh_test",
-        ":action_rendering_test",
+        ":actions_policy_test",
+        ":actions_rendering_ssh_test",
+        ":actions_rendering_test",
         ":actions_history_test",
-        ":actions_test",
-        ":call_tool_result_test",
+        ":actions_requests_test",
+        ":actions_call_tool_result_test",
         ":client_test",
         ":command_state_test",
         ":connections_test",
@@ -1267,6 +1285,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_client",
         ":app",
         ":client",
         ":connections_fixture",

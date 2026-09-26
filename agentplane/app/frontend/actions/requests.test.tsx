@@ -3,10 +3,10 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ActionRequests, stateLabel } from "./actions";
-import { button, render, request, SSH_EXEC_ARGUMENTS, sshExec, unmountLast } from "./actions_testing";
+import { STALE_AFTER_MS } from "../stream_status";
 import { actionService, type ActionRequestView, type ActionService } from "./client";
-import { STALE_AFTER_MS } from "./stream_status";
+import { ActionRequests, stateLabel } from "./requests";
+import { button, render, request, SSH_EXEC_ARGUMENTS, sshExec, unmountLast } from "./testing";
 
 describe("ActionRequests", () => {
   it("shows structured list errors without an empty-state claim", async () => {

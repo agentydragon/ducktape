@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { Alert, Badge, Code, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 
+import { expiry } from "../egress";
 import type {
   ActionPolicyBindingView,
   ActionPolicySetView,
@@ -9,7 +10,6 @@ import type {
   EffectivePolicyView,
   ReadyConditionView,
 } from "./client";
-import { expiry } from "./egress";
 
 const PROVENANCE: Record<ActionPolicyBindingView["provenance"], string> = {
   git: "from git",

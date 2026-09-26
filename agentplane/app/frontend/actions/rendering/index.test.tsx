@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
-import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../actions_testing";
 import { type CallToolResult, parseCallToolResult } from "../call_tool_result";
+import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing";
 import { renderArguments, renderMcpResult } from "./index";
 
 const SSH_EXEC = { group: "ssh", name: "exec" };

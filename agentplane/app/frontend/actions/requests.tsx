@@ -1,17 +1,11 @@
 import { Badge, Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState } from "react";
 
-import { ActionCall } from "./action_call";
-import {
-  actionService,
-  displayableError,
-  type ActionRequestView,
-  type ActionService,
-  type ActionState,
-  type Verdict,
-} from "./client";
-import { followStream, type StreamConnection } from "./live_stream";
-import { StaleNotice, useStreamStatus, type StreamStatus } from "./stream_status";
+import { displayableError } from "../client";
+import { followStream, type StreamConnection } from "../live_stream";
+import { StaleNotice, useStreamStatus, type StreamStatus } from "../stream_status";
+import { ActionCall } from "./call";
+import { actionService, type ActionRequestView, type ActionService, type ActionState, type Verdict } from "./client";
 
 const STATE_COLORS: Partial<Record<ActionState, string>> = {
   decision_pending: "yellow",
@@ -142,7 +136,7 @@ function PendingActionCard({
 }
 
 /** The primary, actionable view: ActionRequests still awaiting an operator decision. Decided and
- * terminal requests live on the separate `ActionHistory` view (`actions_history.tsx`) instead of
+ * terminal requests live on the separate `ActionHistory` view (`history.tsx`) instead of
  * alongside these. */
 export function ActionRequests({ service = actionService }: { service?: ActionService }): JSX.Element {
   const { requests, error, loading, stream, deciding, decide } = useActionRequests(service);

@@ -2,7 +2,7 @@
 import { act, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 
-import { mount } from "../actions_testing";
+import { mount } from "../testing";
 import { renderPreview } from "./entry";
 import { renderResultPreview } from "./result_entry";
 import { execArgumentsPreview, execResultPreview } from "./ssh";

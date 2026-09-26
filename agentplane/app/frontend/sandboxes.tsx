@@ -19,12 +19,11 @@ import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertica
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { readiness } from "./action_policy";
+import { readiness } from "./actions/policy";
 import {
   api,
   displayableError,
   models,
-  type ActionPolicySetView,
   type Condition,
   type ModelCatalog,
   type NewSandbox,
@@ -32,6 +31,7 @@ import {
   type SandboxView,
   type ThreadDefaults,
 } from "./client";
+import type { ActionPolicySetView } from "./actions/client";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 import { StaleNotice } from "./stream_status";

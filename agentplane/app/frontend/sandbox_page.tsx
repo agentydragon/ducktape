@@ -32,7 +32,7 @@ import {
   type SandboxView,
   type ThreadView,
 } from "./client";
-import { ActionPolicySection } from "./action_policy";
+import { ActionPolicySection } from "./actions/policy";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";

@@ -46,20 +46,11 @@ export type ObservationPage = components["schemas"]["ObservationPage"];
 export type ArchivedObservationEntry = components["schemas"]["ArchivedObservationEntry"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
-export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
-export type ActionPolicyUnavailable = components["schemas"]["ActionPolicyUnavailable"];
-export type ActionPolicyBindingView = components["schemas"]["ActionPolicyBindingView"];
-export type ActionPolicySetView = components["schemas"]["ActionPolicySetView"];
-export type EffectivePolicyView = components["schemas"]["EffectivePolicyView"];
-export type ReadyConditionView = components["schemas"]["ReadyConditionView"];
 export type SandboxPresetView = components["schemas"]["SandboxPresetView"];
 export type ThreadDefaults = components["schemas"]["ThreadDefaults"];
 export type Harness = components["schemas"]["Harness"];
 export type ModelCatalog = Record<Harness, string[]>;
 export type Decision = components["schemas"]["Decision"];
-export type ActionRequestView = components["schemas"]["ActionRequestView"];
-export type ActionState = components["schemas"]["ActionState"];
-export type Verdict = components["schemas"]["Verdict"];
 export type Connection = components["schemas"]["Connection"];
 export type CallerServiceAccount = components["schemas"]["ServiceAccountRef"];
 
@@ -243,42 +234,6 @@ export const mcpLinkageService: McpLinkageService = {
   async disconnect(serverId) {
     const { data, error, response } = await api.POST("/mcp-servers/{server_id}/linkage/disconnect", {
       params: { path: { server_id: serverId } },
-    });
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
-};
-
-export type ActionGroupView = components["schemas"]["ActionGroupView"];
-
-export interface ActionGroupService {
-  list(): Promise<ActionGroupView[]>;
-}
-
-export const actionGroupService: ActionGroupService = {
-  async list() {
-    const { data, error, response } = await api.GET("/action-groups");
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
-};
-
-export interface ActionService {
-  list(): Promise<ActionRequestView[]>;
-  decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView>;
-}
-
-export const actionService: ActionService = {
-  async list(): Promise<ActionRequestView[]> {
-    const { data, error, response } = await api.GET("/actions");
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
-
-  async decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView> {
-    const { data, error, response } = await api.POST("/actions/{request_id}/decision", {
-      params: { path: { request_id: request.id } },
-      body: { verdict, expected_version: request.version, idempotency_key: crypto.randomUUID(), decision_note: null },
     });
     if (error) throw new Error(httpError(response, error));
     return data;
