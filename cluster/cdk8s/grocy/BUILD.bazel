@@ -22,6 +22,8 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s/providers/volsync:replication_destination",
+        "//cluster/cdk8s/providers/volsync:replication_source",
         "//cluster/cdk8s/providers/volsync:replicationdestination",
         "//cluster/cdk8s/providers/volsync:replicationsource",
         "@pypi//cdk8s",

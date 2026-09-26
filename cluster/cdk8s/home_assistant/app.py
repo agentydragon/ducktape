@@ -27,8 +27,6 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpointsAuthorizationCredentials,
 )
 from volsync_replicationsource_crds.backube.volsync import (
-    ReplicationSource,
-    ReplicationSourceSpec,
     ReplicationSourceSpecRestic,
     ReplicationSourceSpecResticCacheCapacity,
     ReplicationSourceSpecResticCopyMethod,
@@ -56,6 +54,7 @@ from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
+from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
 from homeassistant.provisioner.components import settings as components
@@ -586,50 +585,46 @@ def _backup(scope: Construct) -> None:
         scope,
         "backup",
         metadata=metadata(_BACKUP, _NAMESPACE),
-        spec=ReplicationSourceSpec(
-            source_pvc=_CONFIG_CLAIM,
-            trigger=ReplicationSourceSpecTrigger(schedule="17 */6 * * *"),
-            restic=ReplicationSourceSpecRestic(
-                repository="home-assistant-config-restic-tenant",
-                copy_method=ReplicationSourceSpecResticCopyMethod.DIRECT,
-                prune_interval_days=7,
-                retain=ReplicationSourceSpecResticRetain(daily=7, weekly=4, monthly=6),
-                cache_storage_class_name=_STORAGE_CLASS,
-                cache_access_modes=["ReadWriteOnce"],
-                cache_capacity=ReplicationSourceSpecResticCacheCapacity.from_string("1Gi"),
-                mover_pod_labels=_BACKUP_LABELS,
-                mover_resources=ReplicationSourceSpecResticMoverResources(
-                    requests={
-                        "cpu": ReplicationSourceSpecResticMoverResourcesRequests.from_string("250m"),
-                        "memory": ReplicationSourceSpecResticMoverResourcesRequests.from_string("512Mi"),
-                    },
-                    limits={
-                        "cpu": ReplicationSourceSpecResticMoverResourcesLimits.from_string("1"),
-                        "memory": ReplicationSourceSpecResticMoverResourcesLimits.from_string("1Gi"),
-                    },
-                ),
-                mover_security_context=ReplicationSourceSpecResticMoverSecurityContext(
-                    run_as_user=0,
-                    run_as_group=0,
-                    seccomp_profile=ReplicationSourceSpecResticMoverSecurityContextSeccompProfile(
-                        type="RuntimeDefault"
-                    ),
-                ),
-                mover_affinity=ReplicationSourceSpecResticMoverAffinity(
-                    node_affinity=ReplicationSourceSpecResticMoverAffinityNodeAffinity(
-                        required_during_scheduling_ignored_during_execution=ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                            node_selector_terms=[
-                                ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                                    match_expressions=[
-                                        ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                            key="kubernetes.io/hostname", operator="In", values=["optiplex"]
-                                        )
-                                    ]
-                                )
-                            ]
-                        )
+        source_pvc=_CONFIG_CLAIM,
+        trigger=ReplicationSourceSpecTrigger(schedule="17 */6 * * *"),
+        mover=ReplicationSourceSpecRestic(
+            repository="home-assistant-config-restic-tenant",
+            copy_method=ReplicationSourceSpecResticCopyMethod.DIRECT,
+            prune_interval_days=7,
+            retain=ReplicationSourceSpecResticRetain(daily=7, weekly=4, monthly=6),
+            cache_storage_class_name=_STORAGE_CLASS,
+            cache_access_modes=["ReadWriteOnce"],
+            cache_capacity=ReplicationSourceSpecResticCacheCapacity.from_string("1Gi"),
+            mover_pod_labels=_BACKUP_LABELS,
+            mover_resources=ReplicationSourceSpecResticMoverResources(
+                requests={
+                    "cpu": ReplicationSourceSpecResticMoverResourcesRequests.from_string("250m"),
+                    "memory": ReplicationSourceSpecResticMoverResourcesRequests.from_string("512Mi"),
+                },
+                limits={
+                    "cpu": ReplicationSourceSpecResticMoverResourcesLimits.from_string("1"),
+                    "memory": ReplicationSourceSpecResticMoverResourcesLimits.from_string("1Gi"),
+                },
+            ),
+            mover_security_context=ReplicationSourceSpecResticMoverSecurityContext(
+                run_as_user=0,
+                run_as_group=0,
+                seccomp_profile=ReplicationSourceSpecResticMoverSecurityContextSeccompProfile(type="RuntimeDefault"),
+            ),
+            mover_affinity=ReplicationSourceSpecResticMoverAffinity(
+                node_affinity=ReplicationSourceSpecResticMoverAffinityNodeAffinity(
+                    required_during_scheduling_ignored_during_execution=ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                        node_selector_terms=[
+                            ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                                match_expressions=[
+                                    ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                        key="kubernetes.io/hostname", operator="In", values=["optiplex"]
+                                    )
+                                ]
+                            )
+                        ]
                     )
-                ),
+                )
             ),
         ),
     )
