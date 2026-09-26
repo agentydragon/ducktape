@@ -1,4 +1,4 @@
-"""One taxpayer's annual facts, with jurisdiction-specific assessment at year close."""
+"""Each taxpayer's facts for the open tax year, which settlement records and the year close reads."""
 
 from __future__ import annotations
 
@@ -6,13 +6,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 from finance.augur.sim.books import TaxAccrual
-from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
-from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
-from finance.augur.sim.mortgage import Mortgage
-from finance.augur.sim.prepared import PreparedJurisdiction, _MortgageInterestDeduction, _SaltDeduction
-from finance.augur.sim.scenario import InterestIncome, OrdinaryIncome, TransferIncomeCategory
-from finance.augur.sim.tax import IncomeLedger, TaxFacts, assess, net_capital_gains, taxes_interest_from
+from finance.augur.sim.money import checked_count, mul_div
+from finance.augur.sim.scenario import TransferIncomeCategory
+from finance.augur.sim.tax import IncomeLedger
 
 
 @dataclass
@@ -27,37 +24,28 @@ class TaxYear:
 
 
 class TaxBook:
-    """Per-taxpayer year state and the rules the close assesses under.
+    """Each enrolled taxpayer's facts for the open tax year, recorded as settlement posts them.
 
-    Taxpayers are enrolled one profile at a time. The configured deduction policies are
-    scenario tables the import adapter attaches; a composed world leaves them empty.
+    A settlement path writes a copy and swaps it in with its journal entries, so the facts
+    commit with the money they describe. The taxpayer's `TaxAuthority` reads them to close
+    the year and resets them when it posts the assessment.
     """
 
-    def __init__(
-        self, sources: Sequence[TransferIncomeCategory], jurisdictions: Sequence[PreparedJurisdiction]
-    ) -> None:
-        self.jurisdictions = tuple(jurisdictions)
-        self.profiles: list[PreparedTaxProfile] = []
+    def __init__(self, sources: Sequence[TransferIncomeCategory]) -> None:
         self.years: dict[str, TaxYear] = {}
         self.income = IncomeLedger(sources)
-        self.salt_policies: tuple[_SaltDeduction, ...] = ()
-        self.mortgage_interest_policies: tuple[_MortgageInterestDeduction, ...] = ()
 
-    def enroll(self, profile: PreparedTaxProfile) -> None:
-        if profile.agent_id in self.years:
-            raise ValueError(f"taxpayer {profile.agent_id!r} is already enrolled")
-        self.profiles.append(profile)
-        self.years[profile.agent_id] = TaxYear()
-        self.income.enroll(profile.agent_id)
+    def enroll(self, agent_id: str) -> None:
+        if agent_id in self.years:
+            raise ValueError(f"taxpayer {agent_id!r} is already enrolled")
+        self.years[agent_id] = TaxYear()
+        self.income.enroll(agent_id)
 
     def copy(self) -> TaxBook:
         """Years and income rows hold only ints: fresh containers detach the copy from the book."""
-        clone = TaxBook(self.income.sources, self.jurisdictions)
-        clone.profiles = list(self.profiles)
+        clone = TaxBook(self.income.sources)
         clone.years = {agent: replace(year) for agent, year in self.years.items()}
         clone.income = self.income.copy()
-        clone.salt_policies = self.salt_policies
-        clone.mortgage_interest_policies = self.mortgage_interest_policies
         return clone
 
     def gain(self, agent: str, amount: int, *, long_term: bool) -> None:
@@ -77,134 +65,7 @@ class TaxBook:
             year = self.years[agent]
             year.property_tax_paid = checked_count(year.property_tax_paid + owner, "money addition")
 
-    def assessments(self, month: int, mortgages: Sequence[Mortgage]) -> list[TaxAccrual]:
-        """Quote the whole close without mutating income, carryovers, or financial balances."""
-        income = self.income.copy()
-        rows: list[TaxAccrual] = []
-        levels = {jurisdiction.jurisdiction_id: jurisdiction.level for jurisdiction in self.jurisdictions}
-        for profile in self.profiles:
-            year = self.years[profile.agent_id]
-            gains = net_capital_gains(
-                year.short_term_gain,
-                year.long_term_gain,
-                year.capital_loss_carryforward,
-                profile.jurisdictions[0].max_capital_loss_ordinary_offset,
-            )
-            for deduction in (year.depreciation_deduction, year.rental_interest_deduction, gains.ordinary_offset):
-                income.deduct_from_ordinary(profile.agent_id, deduction)
-            annual = []
-            for rules in profile.jurisdictions:
-                taxable = 0
-                for (agent, source), amount in income.by_source.items():
-                    if agent != profile.agent_id:
-                        continue
-                    if isinstance(source, OrdinaryIncome) or (
-                        isinstance(source, InterestIncome)
-                        and taxes_interest_from(
-                            rules,
-                            source.issuer_jurisdiction_id,
-                            levels.get(source.issuer_jurisdiction_id) if source.issuer_jurisdiction_id else None,
-                        )
-                    ):
-                        taxable = checked_count(taxable + amount, "money addition")
-                mortgage_deduction = mortgage_interest_deduction(
-                    self.mortgage_interest_policies, mortgages, profile.agent_id, rules.jurisdiction_id
-                )
-                facts = TaxFacts(
-                    taxable_ordinary_income=taxable,
-                    short_term_gain=gains.short_term,
-                    long_term_gain=gains.long_term,
-                    section_1250_recapture=year.section_1250_recapture,
-                    itemized_deduction=mortgage_deduction,
-                    mortgage_interest_deduction=mortgage_deduction,
-                    rental_interest_deduction=year.rental_interest_deduction,
-                    depreciation_deduction=year.depreciation_deduction,
-                    property_tax_paid=year.property_tax_paid,
-                )
-                annual.append((rules, facts, assess(facts, rules)))
-            policy = next((policy for policy in self.salt_policies if policy.profile_id == profile.agent_id), None)
-            if policy is not None:
-                state_tax = 0
-                for rules, _, assessment in annual:
-                    if rules.jurisdiction_id != policy.federal_jurisdiction_id:
-                        state_tax = checked_count(state_tax + assessment.total_tax, "money addition")
-                caps = [cap for cap in policy.cap_schedule if cap.effective_year_index <= month // 12]
-                cap = (
-                    max(caps, key=lambda cap: cap.effective_year_index).cap
-                    if caps
-                    else (0 if policy.cap_schedule else MAX_COUNT)
-                )
-                for index, (rules, facts, _) in enumerate(annual):
-                    if rules.jurisdiction_id == policy.federal_jurisdiction_id:
-                        facts.salt_deduction = min(
-                            cap, checked_count(facts.property_tax_paid + state_tax, "money addition")
-                        )
-                        facts.itemized_deduction = checked_count(
-                            facts.mortgage_interest_deduction + facts.salt_deduction, "money addition"
-                        )
-                        annual[index] = (rules, facts, assess(facts, rules))
-            for rules, facts, assessment in annual:
-                rows.append(
-                    TaxAccrual(
-                        month=month,
-                        cause_id=f"{profile.agent_id}_{rules.jurisdiction_id}_year_end_accrual_m{month}",
-                        agent_id=profile.agent_id,
-                        jurisdiction_id=rules.jurisdiction_id,
-                        tax_year_end_month=month,
-                        ordinary_income=checked_count(
-                            income.ordinary(profile.agent_id) - assessment.ordinary_loss_offset, "money subtraction"
-                        ),
-                        short_term_gain=assessment.short_term_gain,
-                        long_term_gain=assessment.long_term_gain,
-                        section_1250_recapture=facts.section_1250_recapture,
-                        rental_interest_deduction=facts.rental_interest_deduction,
-                        depreciation_deduction=facts.depreciation_deduction,
-                        standard_deduction=rules.standard_deduction,
-                        mortgage_interest_deduction=facts.mortgage_interest_deduction,
-                        salt_deduction=facts.salt_deduction,
-                        itemized_deduction=facts.itemized_deduction,
-                        ordinary_taxable=assessment.ordinary_taxable,
-                        long_term_capital_gain_taxable=assessment.long_term_capital_gain_taxable,
-                        ordinary_tax=assessment.ordinary_tax,
-                        capital_gain_tax=assessment.capital_gain_tax,
-                        section_1250_tax=assessment.section_1250_tax,
-                        total_tax=assessment.total_tax,
-                        capital_loss_carryforward=gains.carryforward,
-                    )
-                )
-        return rows
-
     def reset(self, assessments: Sequence[TaxAccrual]) -> None:
         for assessment in assessments:
             self.years[assessment.agent_id] = TaxYear(capital_loss_carryforward=assessment.capital_loss_carryforward)
             self.income.reset(assessment.agent_id)
-
-
-def mortgage_interest_deduction(
-    policies: Sequence[_MortgageInterestDeduction], mortgages: Sequence[Mortgage], agent: str, jurisdiction: str
-) -> int:
-    numerator = 0
-    by_id = {mortgage.terms.liability_id: mortgage for mortgage in mortgages}
-    for policy in policies:
-        if policy.owner_agent_id != agent or policy.liability_id not in by_id:
-            continue
-        mortgage = by_id[policy.liability_id]
-        principal = mortgage.terms.origination_principal
-        cap = (
-            policy.per_jurisdiction_principal_cap.get(jurisdiction, 0)
-            if policy.per_jurisdiction_principal_cap
-            else principal
-        )
-        factor = (
-            0
-            if policy.debt_class == "home_equity"
-            else mul_div(min(cap, principal), MONEY_FACTOR_SCALE, principal, "mortgage-interest principal factor")
-        )
-        owner_interest = checked_count(
-            mortgage.interest_paid_ytd - mortgage.rental_interest_paid_ytd, "money subtraction"
-        )
-        numerator = checked_wide(
-            numerator + checked_wide(owner_interest * factor, "mortgage-interest scaled deduction"),
-            "mortgage-interest aggregate deduction",
-        )
-    return checked_count(round_ratio(numerator, MONEY_FACTOR_SCALE), "mortgage-interest aggregate deduction")

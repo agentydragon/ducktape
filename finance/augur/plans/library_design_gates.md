@@ -18,7 +18,6 @@ graph TD
     TLHCOHORT["TLHCOHORT: one public TLH cohort type"]
     OFFERS["OFFERS: Issuer, TenderOffer, Accept/Decline (GPE gate)"]
     DRAIN["DRAIN: emit/accept check on track(), per-month drain budget"]
-    TAXCLOSE["TAXCLOSE: the tax year closes inside TaxAuthority"]
     SEASONED["SEASONED: tracked contracts originated before month zero (GHOUSE)"]
     PROPERTY["PROPERTY: a tracked property component; rented share on tracked loans (GHOUSE)"]
     VECTOR["VECTOR: World gains a rollout axis; ActionSession and its delegates go"]
@@ -46,9 +45,6 @@ graph TD
   breach raises an error naming the loop. `track()` checks that every message an
   actor can emit has an acceptor. Settlement stays synchronous: the world never sends
   a retry, and an intra-month quote is a helper call, not a message.
-- **TAXCLOSE.** The tax book becomes `TaxAuthority`'s state;
-  `Accounting.close_tax_year` moves into the authority, which posts the assessment it
-  computes.
 - **SEASONED.** A tracked `Mortgage` may carry an `origination_month` before the
   world's origin; the ledger opens with the outstanding balance and the amortisation
   schedule is honoured from there. A contract a household's decision originates

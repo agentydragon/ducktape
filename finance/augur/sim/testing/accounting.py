@@ -55,7 +55,7 @@ def accounting(
     accounts: Sequence[PreparedAccount] = ACCOUNTS, taxpayers: Sequence[PreparedTaxProfile] = TAXPAYERS
 ) -> Accounting:
     """The accounts and taxpayers on a fresh ledger."""
-    books = Accounting(INCOME_SOURCES, ())
+    books = Accounting(INCOME_SOURCES)
     for account in accounts:
         books.declare(account)
     for profile in taxpayers:
