@@ -286,9 +286,9 @@ export function Sidebar({
 }: {
   settingsOpen: boolean;
   onOpenSettings: () => void;
-  /** Whether the sidebar is showing as a phone-width overlay drawer (UISHELL_MOBILE,
-   * agentplane/plans/task_dag.md). No effect at desktop width, where the sidebar is always
-   * visible regardless of this prop -- sidebar.css's phone media query is what makes it matter. */
+  /** Whether the sidebar is showing as a phone-width overlay drawer. No effect at desktop width,
+   * where the sidebar is always visible regardless of this prop -- sidebar.css's phone media query
+   * is what makes it matter. */
   mobileOpen: boolean;
   onMobileClose: () => void;
 }): JSX.Element {
