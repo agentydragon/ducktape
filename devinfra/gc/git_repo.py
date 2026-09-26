@@ -53,8 +53,18 @@ def _normalize_remote_url(url: str) -> str:
 
 def remote_urls(repo: Path) -> set[str]:
     """Every remote configured on `repo`, normalized for cross-repo comparison — not just
-    `origin`, since a clone may track the same project under a different remote name."""
-    pg = pygit2.Repository(os.fspath(repo))
+    `origin`, since a clone may track the same project under a different remote name.
+
+    A caller may have already confirmed `repo` opens (e.g. `_find_repo_root`'s pygit2 check)
+    moments before this independent open — a real TOCTOU gap for a foreign, untrusted path like
+    a scratch clone under `/tmp` that another process can delete or rewrite between the two
+    calls. Treat a repo that no longer opens as having no remotes rather than crashing the scan.
+    """
+    try:
+        pg = pygit2.Repository(os.fspath(repo))
+    except pygit2.GitError as error:
+        logger.warning("cannot open %s to read its remotes: %s", repo, error)
+        return set()
     return {_normalize_remote_url(remote.url) for remote in pg.remotes if remote.url}
 
 
