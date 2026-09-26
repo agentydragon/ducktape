@@ -135,7 +135,7 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
         ):
             world.declare_account(account)
         world.track(TaxAuthority(compile_profile(profile, jurisdictions, quantum=CURRENCY.quantum)))
-        for pool in compile_holding_pools(lots=[lot], policies=(), tlh_portfolios=()):
+        for pool in compile_holding_pools(lots=[lot]):
             world.declare_pool(pool)
         for held in compile_lots([lot], quantum=CURRENCY.quantum):
             world.hold(held)

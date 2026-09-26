@@ -38,6 +38,8 @@ from finance.augur.model.testing import (
     int_matrix_with_step,
     level_matrix_with_step,
 )
+from finance.augur.policy.cash_band_household import CashBandHousehold, ManagedSleeve, SecuritySleeve
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.product import service
 from finance.augur.product.conftest import MakeProductService
 from finance.augur.product.metrics import ProductMetricFanSummary, ProductTerminalSummary
@@ -90,8 +92,6 @@ from finance.augur.sim.prepared import (
     PreparedIndexedAmount,
     PreparedPropertyCashflow,
     PreparedRecurringPropertyCashflow,
-    _ManagedSleeveTarget,
-    _SecuritySleeveTarget,
 )
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.scenario import InitialLot, TlhCohort, TlhPortfolioSpec
@@ -1171,15 +1171,16 @@ def test_a_managed_sleeve_weight_lowers_to_its_portfolio_and_draws_on_its_accoun
     situation = lowered(
         ManagedSleeveWeight(portfolio_id="test-managed", weight=3), SecuritySleeveWeight(symbol="test-other", weight=1)
     )
-    policy = one(situation.funding_policies)
+    household = situation.household()
     lot = one(situation.lots)
     assert lot.lot_id == ordinary.lot_id
-    assert policy.sleeves == (
-        _ManagedSleeveTarget(portfolio_id="test-managed", weight=3),
-        _SecuritySleeveTarget(asset_id=lot.asset_id, weight=1, quantity_scale=lot.quantity_scale),
+    assert isinstance(household, CashBandHousehold)
+    assert household.sleeves == (
+        ManagedSleeve(portfolio_id="test-managed", weight=3),
+        SecuritySleeve(asset_id=lot.asset_id, weight=1),
     )
-    assert policy.source_account_ids == ("test_ordinary_brokerage", "test_managed_brokerage")
-    assert lowered(SecuritySleeveWeight(symbol="test-index", weight=1)).funding_policies == ()
+    assert household.source_account_ids == ("test_ordinary_brokerage", "test_managed_brokerage")
+    assert isinstance(lowered(SecuritySleeveWeight(symbol="test-index", weight=1)).household(), ClaimPayer)
     with pytest.raises(ValueError, match="unknown TLH portfolio 'test-absent'"):
         lowered(ManagedSleeveWeight(portfolio_id="test-absent", weight=1))
 

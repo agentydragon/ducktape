@@ -167,7 +167,7 @@ def test_a_purchase_is_sized_to_what_the_months_claim_payment_leaves() -> None:
         )
     )
     closed = output.months[1]
-    bought = holding(closed, "fund_buy_p0_s1_0")
+    bought = holding(closed, "fund_buy_s1_0")
     assert (bought.units_remaining, bought.basis_remaining, bought.purchase_month) == (100, 100, 0)
     assert holding(closed, "opening-coarse").units_remaining == 4
     assert (balance(closed, ALICE), balance(closed, CREDITOR)) == (0, 50)

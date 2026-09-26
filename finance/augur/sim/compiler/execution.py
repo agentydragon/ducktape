@@ -56,9 +56,7 @@ from finance.augur.sim.prepared import (
     PreparedRecurringPropertyCashflow,
     PreparedSeries,
     PreparedTlhPortfolio,
-    _AllocationPolicy,
     _CapitalImprovement,
-    _ManagedSleeveTarget,
     _MortgageFinancing,
     _MortgageInterestDeduction,
     _PrimaryResidence,
@@ -67,14 +65,12 @@ from finance.augur.sim.prepared import (
     _PropertySale,
     _PropertyTax,
     _RentedFraction,
-    _SecuritySleeveTarget,
     _TenderPolicy,
 )
 from finance.augur.sim.property import Housing
 from finance.augur.sim.scenario import (
     BondHolding,
     CapitalImprovementEvent,
-    DriftBand,
     FixedAmount,
     InitialAccountBalance,
     InitialLot,
@@ -89,11 +85,9 @@ from finance.augur.sim.scenario import (
     ScheduledPropertyCashflow,
     ScheduledPropertyPurchase,
     SecurityDistribution,
-    SecuritySleeveTarget,
     SeriesIndexedAmount,
     SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
-    TargetAllocationPolicy,
     TlhPortfolioSpec,
 )
 from finance.augur.sim.tlh import TlhOpeningCohort
@@ -278,35 +272,20 @@ def compile_accounts(balances: Iterable[InitialAccountBalance], *, quantum: Deci
     )
 
 
-def compile_holding_pools(
-    *,
-    lots: Iterable[InitialLot],
-    policies: Iterable[TargetAllocationPolicy],
-    tlh_portfolios: Iterable[TlhPortfolioSpec],
-) -> tuple[PreparedHoldingPool, ...]:
-    """Every pool a lot or allocation sleeve names; a sleeve's pool on a managed slot is left out.
+def compile_holding_pools(*, lots: Iterable[InitialLot]) -> tuple[PreparedHoldingPool, ...]:
+    """Every pool a lot names, once.
 
     A lot's pool on a managed slot stays, so the world refuses the lot beside the portfolio.
     """
     prepared: dict[tuple[str, str, str], PreparedHoldingPool] = {}
-    managed = {(p.owner_agent_id, p.account_id, _asset_id(p.asset)) for p in tlh_portfolios}
-
-    def add(agent_id: str, account_id: str, asset: AssetKey) -> None:
-        asset_id = _asset_id(asset)
-        prepared[agent_id, account_id, asset_id] = PreparedHoldingPool(
-            agent_id=agent_id, account_id=account_id, asset_id=asset_id, quantity_scale=quantity_scale_for_asset(asset)
-        )
-
     for lot in lots:
-        add(lot.agent_id, lot.account_id, lot.asset)
-    for policy in policies:
-        account_id = policy.source_account_ids[0] if policy.source_account_ids else policy.account_id
-        for sleeve in policy.sleeves:
-            if (
-                isinstance(sleeve, SecuritySleeveTarget)
-                and (policy.agent_id, account_id, _asset_id(sleeve.asset)) not in managed
-            ):
-                add(policy.agent_id, account_id, sleeve.asset)
+        asset_id = _asset_id(lot.asset)
+        prepared[lot.agent_id, lot.account_id, asset_id] = PreparedHoldingPool(
+            agent_id=lot.agent_id,
+            account_id=lot.account_id,
+            asset_id=asset_id,
+            quantity_scale=quantity_scale_for_asset(lot.asset),
+        )
     return tuple(prepared.values())
 
 
@@ -385,35 +364,6 @@ def compile_tlh_portfolio(portfolio: TlhPortfolioSpec, *, quantum: Decimal) -> P
             for cohort in portfolio.initial_cohorts
         ),
         assumptions=portfolio.assumptions,
-    )
-
-
-def compile_allocation_policy(policy: TargetAllocationPolicy, *, quantum: Decimal) -> _AllocationPolicy:
-    return _AllocationPolicy(
-        agent_id=policy.agent_id,
-        account_id=policy.account_id,
-        source_account_ids=tuple(policy.source_account_ids),
-        sleeves=tuple(
-            _SecuritySleeveTarget(
-                asset_id=_asset_id(sleeve.asset),
-                weight=int(sleeve.weight),
-                quantity_scale=quantity_scale_for_asset(sleeve.asset),
-            )
-            if isinstance(sleeve, SecuritySleeveTarget)
-            else _ManagedSleeveTarget(portfolio_id=sleeve.portfolio_id, weight=int(sleeve.weight))
-            for sleeve in policy.sleeves
-        ),
-        cash_floor=_amount(
-            policy.cash_floor, quantum=quantum, context=f"target-allocation floor for {policy.agent_id!r}"
-        ),
-        cash_ceiling=_amount(
-            policy.cash_ceiling, quantum=quantum, context=f"target-allocation ceiling for {policy.agent_id!r}"
-        ),
-        cause_id_prefix=policy.cause_id_prefix,
-        allow_purchases=policy.allow_purchases,
-        rebalance_tolerance_ppb=(
-            rate_to_ppb(policy.rebalancing.tolerance) if isinstance(policy.rebalancing, DriftBand) else None
-        ),
     )
 
 

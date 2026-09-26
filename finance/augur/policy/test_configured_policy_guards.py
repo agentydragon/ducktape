@@ -75,11 +75,11 @@ def check(world: World, *policies: _AllocationPolicy) -> None:
 
 
 def test_generated_purchase_namespace_is_reserved() -> None:
-    reserved = holding(lot_id="fund_buy_p0_s0_1000000")
-    with pytest.raises(ValueError, match="reserved allocation-purchase identity"):
+    reserved = holding(lot_id="fund_buy_s0_1000000")
+    with pytest.raises(ValueError, match="reserved purchase identity"):
         check(reserved, POLICY)
     check(reserved, replace(POLICY, allow_purchases=False))
-    check(holding(lot_id="fund_buy_p0_s0_1000000x"), POLICY)
+    check(holding(lot_id="fund_buy_s0_1000000x"), POLICY)
 
 
 @pytest.mark.parametrize(
@@ -98,7 +98,7 @@ def test_generated_purchase_namespace_is_reserved() -> None:
         ((replace(POLICY, account_id="undeclared"),), "declared funding account"),
         ((replace(POLICY, cause_id_prefix=" "),), "nonempty cause"),
         ((POLICY, POLICY), "duplicate allocation funding account"),
-        ((replace(POLICY, sleeves=POLICY.sleeves * 2),), "duplicate allocation sleeve"),
+        ((replace(POLICY, sleeves=POLICY.sleeves * 2),), "duplicate funding sleeve"),
         (
             (replace(POLICY, sleeves=(_SecuritySleeveTarget(asset_id=STOCK, weight=0, quantity_scale=SCALE),)),),
             "positive target",
@@ -109,7 +109,7 @@ def test_generated_purchase_namespace_is_reserved() -> None:
         ),
         ((replace(POLICY, allow_purchases=False, rebalance_tolerance_ppb=0),), "drift requires purchases"),
         ((replace(POLICY, cash_floor=1),), "must not exceed"),
-        ((replace(POLICY, cash_ceiling=replace(INDEX, adjustment_period_months=0)),), "invalid base month or reset"),
+        ((replace(POLICY, cash_ceiling=replace(INDEX, adjustment_period_months=0)),), "invalid reset period"),
         ((replace(POLICY, cash_ceiling=replace(INDEX, base_month_index=1)),), "starts before its base month"),
         ((replace(POLICY, cash_ceiling=INDEX),), "missing series"),
     ],

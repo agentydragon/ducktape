@@ -11,14 +11,7 @@ from finance.augur.sim.scenario import BondHolding
 
 def demand(*, bonds: tuple[BondHolding, ...]) -> tuple[LevelSeriesKey, ...]:
     return level_series_demand(
-        lots=(),
-        tlh_portfolios=(),
-        bonds=bonds,
-        distributions=(),
-        amounts=(),
-        policies=(),
-        tender_policies=(),
-        purchases=(),
+        lots=(), tlh_portfolios=(), bonds=bonds, distributions=(), amounts=(), tender_policies=(), purchases=()
     )
 
 
