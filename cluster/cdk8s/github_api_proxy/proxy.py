@@ -48,10 +48,6 @@ from gateway_api_tlsroute_crds.io.k8s.networking.gateway import (
     TlsRouteSpecRules,
     TlsRouteSpecRulesBackendRefs,
 )
-from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
-    PrometheusRuleSpecGroupsRules,
-    PrometheusRuleSpecGroupsRulesExpr,
-)
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
@@ -61,7 +57,7 @@ from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, group
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 
 _IDENTITY_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/identity"
 _APP_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/app"
@@ -80,122 +76,100 @@ _CLIENTS = ("wyrm2", "rugged")
 _TLS_LISTENER = "proxy-tls"
 
 _RULES = [
-    PrometheusRuleSpecGroupsRules(
-        alert="GitHubProxyCaptureWriteFailed",
-        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
-            'max by (channel) (github_api_proxy_capture_write_failures_total{namespace="github-api-proxy"}) > 0'
-        ),
+    Rule.alert(
+        "GitHubProxyCaptureWriteFailed",
+        'max by (channel) (github_api_proxy_capture_write_failures_total{namespace="github-api-proxy"}) > 0',
         labels={"severity": "warning"},
-        annotations={
-            "summary": "Central GitHub proxy capture has lost {{ $labels.channel }} observations",
-            "description": (
-                "A private capture append failed. Readiness stays false until a controlled restart, but existing "
-                "connections may continue and the quota mitigation remains active. Inspect storage and preserve the "
-                "incomplete evidence before restarting; do not count this interval as complete observation coverage.\n"
-            ),
-        },
-    ),
-    PrometheusRuleSpecGroupsRules(
-        alert="GitHubProxyMetricsScrapeFailed",
-        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
-            'max(up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy"}) == 0'
+        summary="Central GitHub proxy capture has lost {{ $labels.channel }} observations",
+        description=(
+            "A private capture append failed. Readiness stays false until a controlled restart, but existing "
+            "connections may continue and the quota mitigation remains active. Inspect storage and preserve the "
+            "incomplete evidence before restarting; do not count this interval as complete observation coverage.\n"
         ),
+    ),
+    Rule.alert(
+        "GitHubProxyMetricsScrapeFailed",
+        'max(up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy"}) == 0',
         for_="2m",
         labels={"severity": "warning"},
-        annotations={
-            "summary": "Central GitHub proxy metrics cannot be scraped",
-            "description": (
-                "All discovered proxy metrics targets have failed for two minutes. Check the Pod, private metrics "
-                "listener and Alloy network path.\n"
-            ),
-        },
-    ),
-    PrometheusRuleSpecGroupsRules(
-        alert="GitHubProxyMetricsMissing",
-        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
-            'absent_over_time(up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy"}[5m])'
+        summary="Central GitHub proxy metrics cannot be scraped",
+        description=(
+            "All discovered proxy metrics targets have failed for two minutes. Check the Pod, private metrics "
+            "listener and Alloy network path.\n"
         ),
-        labels={"severity": "warning"},
-        annotations={
-            "summary": "Central GitHub proxy observations are missing",
-            "description": (
-                "No proxy scrape result has been retained for five minutes. Check Pod discovery, the PodMonitor, Alloy "
-                "collection and remote write. Missing telemetry cannot establish a healthy proxy or quiet quota.\n"
-            ),
-        },
     ),
-    PrometheusRuleSpecGroupsRules(
-        record="github_api_proxy:capture_collection_physical_storage_budget:ratio",
-        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
-            dedent(
-                """\
-                sum by (namespace, persistentvolumeclaim) (
-                  label_replace(
-                    sum by (collection) (
-                      max by (collection, instance) (
-                        SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="normal"}
-                      )
-                    ),
-                    "volumename", "$1", "collection", "(.+)"
+    Rule.alert(
+        "GitHubProxyMetricsMissing",
+        'absent_over_time(up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy"}[5m])',
+        labels={"severity": "warning"},
+        summary="Central GitHub proxy observations are missing",
+        description=(
+            "No proxy scrape result has been retained for five minutes. Check Pod discovery, the PodMonitor, Alloy "
+            "collection and remote write. Missing telemetry cannot establish a healthy proxy or quiet quota.\n"
+        ),
+    ),
+    Rule.record(
+        "github_api_proxy:capture_collection_physical_storage_budget:ratio",
+        dedent(
+            """\
+            sum by (namespace, persistentvolumeclaim) (
+              label_replace(
+                sum by (collection) (
+                  max by (collection, instance) (
+                    SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="normal"}
                   )
-                  * on (volumename) group_left(namespace, persistentvolumeclaim)
-                    max by (volumename, namespace, persistentvolumeclaim) (
-                      kube_persistentvolumeclaim_info{
-                        namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture",
-                        storageclass="seaweedfs-ovh"
-                      }
-                    )
+                ),
+                "volumename", "$1", "collection", "(.+)"
+              )
+              * on (volumename) group_left(namespace, persistentvolumeclaim)
+                max by (volumename, namespace, persistentvolumeclaim) (
+                  kube_persistentvolumeclaim_info{
+                    namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture",
+                    storageclass="seaweedfs-ovh"
+                  }
                 )
-                / on (namespace, persistentvolumeclaim)
-                  (
-                    max by (namespace, persistentvolumeclaim) (
-                      kube_persistentvolumeclaim_resource_requests_storage_bytes{
-                        namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"
-                      }
-                    ) > 0
-                  )
-                """
             )
+            / on (namespace, persistentvolumeclaim)
+              (
+                max by (namespace, persistentvolumeclaim) (
+                  kube_persistentvolumeclaim_resource_requests_storage_bytes{
+                    namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"
+                  }
+                ) > 0
+              )
+            """
         ),
     ),
-    PrometheusRuleSpecGroupsRules(
-        alert="GitHubProxyCaptureCollectionStorageBudgetHigh",
-        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
-            "github_api_proxy:capture_collection_physical_storage_budget:ratio > 0.85"
+    Rule.alert(
+        "GitHubProxyCaptureCollectionStorageBudgetHigh",
+        "github_api_proxy:capture_collection_physical_storage_budget:ratio > 0.85",
+        for_="5m",
+        labels={"severity": "warning"},
+        summary="Central GitHub proxy collection exceeds 85% of its physical storage budget",
+        description=(
+            "Reported normal-volume bytes, including replicas, exceed 85% of the PVC storage request. This is an "
+            "operational budget, not free space or guaranteed write capacity. Captures append without automatic "
+            "deletion. Check volume-server telemetry and arrange explicit retention or expansion; preserve "
+            "investigation evidence.\n"
+        ),
+    ),
+    Rule.alert(
+        "GitHubProxyCaptureStorageBudgetInputsMissing",
+        dedent(
+            """\
+            absent(github_api_proxy:capture_collection_physical_storage_budget:ratio{
+              namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"
+            })
+            """
         ),
         for_="5m",
         labels={"severity": "warning"},
-        annotations={
-            "summary": "Central GitHub proxy collection exceeds 85% of its physical storage budget",
-            "description": (
-                "Reported normal-volume bytes, including replicas, exceed 85% of the PVC storage request. This is an "
-                "operational budget, not free space or guaranteed write capacity. Captures append without automatic "
-                "deletion. Check volume-server telemetry and arrange explicit retention or expansion; preserve "
-                "investigation evidence.\n"
-            ),
-        },
-    ),
-    PrometheusRuleSpecGroupsRules(
-        alert="GitHubProxyCaptureStorageBudgetInputsMissing",
-        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
-            dedent(
-                """\
-                absent(github_api_proxy:capture_collection_physical_storage_budget:ratio{
-                  namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"
-                })
-                """
-            )
+        summary="Central GitHub proxy collection storage budget cannot be observed",
+        description=(
+            "The collection byte metric, PVC-to-collection mapping or positive PVC storage request is missing. Check "
+            "SeaweedFS volume-server scrapes and kube-state-metrics. Absence is not zero usage. Partial volume-server "
+            "loss can still undercount a present budget ratio.\n"
         ),
-        for_="5m",
-        labels={"severity": "warning"},
-        annotations={
-            "summary": "Central GitHub proxy collection storage budget cannot be observed",
-            "description": (
-                "The collection byte metric, PVC-to-collection mapping or positive PVC storage request is missing. Check "
-                "SeaweedFS volume-server scrapes and kube-state-metrics. Absence is not zero usage. Partial volume-server "
-                "loss can still undercount a present budget ratio.\n"
-            ),
-        },
     ),
 ]
 

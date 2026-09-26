@@ -826,7 +826,6 @@ py_library(
         ":valkey",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
-        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

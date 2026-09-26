@@ -17,17 +17,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
-    PrometheusRuleSpecGroupsRules,
-    PrometheusRuleSpecGroupsRulesExpr,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, group
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.seaweedfs import namespace
 
 NAME = "seaweedfs-monitoring"
@@ -53,27 +49,23 @@ def chart(app: App) -> Chart:
                     # gauge (labels: collection, id) = 1 when a volume's replica count/placement
                     # does not match its target (under- or over-replicated), else 0. Only the
                     # leader emits it, so `sum()` counts mismatched volumes cluster-wide.
-                    PrometheusRuleSpecGroupsRules(
-                        alert="SeaweedFSReplicaPlacementMismatch",
-                        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
-                            "sum(SeaweedFS_master_replica_placement_mismatch) > 0"
-                        ),
+                    Rule.alert(
+                        "SeaweedFSReplicaPlacementMismatch",
+                        "sum(SeaweedFS_master_replica_placement_mismatch) > 0",
                         for_="15m",
                         labels={"severity": "warning"},
-                        annotations={
-                            "summary": "SeaweedFS has {{ $value }} volume(s) off their replica count",
-                            "description": (
-                                "{{ $value }} SeaweedFS volume(s) have not matched their target replica "
-                                "placement for 15m (replication 001 = 2 copies). The replication-repair "
-                                "AdminScript attempts copy-only repair hourly; check its CronJob/Job status and "
-                                "available volume slots if the mismatch persists. It never trims excess or "
-                                "misplaced replicas, so review those deliberately. Suspend the AdminScript and "
-                                "wait for any active Job before planned volume-server maintenance. For an "
-                                "immediate manual repair, inspect `volume.list` and run "
-                                "`volume.fix.replication -apply -doDelete=false` under `lock` from a master pod "
-                                "(`weed shell` reads commands on stdin)."
-                            ),
-                        },
+                        summary="SeaweedFS has {{ $value }} volume(s) off their replica count",
+                        description=(
+                            "{{ $value }} SeaweedFS volume(s) have not matched their target replica "
+                            "placement for 15m (replication 001 = 2 copies). The replication-repair "
+                            "AdminScript attempts copy-only repair hourly; check its CronJob/Job status and "
+                            "available volume slots if the mismatch persists. It never trims excess or "
+                            "misplaced replicas, so review those deliberately. Suspend the AdminScript and "
+                            "wait for any active Job before planned volume-server maintenance. For an "
+                            "immediate manual repair, inspect `volume.list` and run "
+                            "`volume.fix.replication -apply -doDelete=false` under `lock` from a master pod "
+                            "(`weed shell` reads commands on stdin)."
+                        ),
                     )
                 ],
             )

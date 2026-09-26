@@ -22,10 +22,6 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecPodMetricsEndpoints,
     PodMonitorSpecPodMetricsEndpointsRelabelings,
 )
-from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
-    PrometheusRuleSpecGroupsRules,
-    PrometheusRuleSpecGroupsRulesExpr,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
@@ -40,7 +36,7 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import PodMonitor
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, group
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.scripts.nebula_mesh import Mesh
 
 NAMESPACE = "monitoring"
@@ -199,40 +195,34 @@ def _own_node_endpoint(dial: Dial, targets: dict[str, str]) -> PodMonitorSpecPod
     )
 
 
-def _rules(nodes: list[str]) -> list[PrometheusRuleSpecGroupsRules]:
+def _rules(nodes: list[str]) -> list[Rule]:
     probe = f'probe_success{{job="{_JOB}", dial=~"{_OWN_NODE_DIALS}"}}'
     return [
-        PrometheusRuleSpecGroupsRules(
-            alert="OwnNodeGatewayHandshakeFailing",
-            expr=PrometheusRuleSpecGroupsRulesExpr.from_string(f"{probe} == 0"),
+        Rule.alert(
+            "OwnNodeGatewayHandshakeFailing",
+            f"{probe} == 0",
             for_="5m",
             labels={"severity": "warning"},
-            annotations={
-                "summary": "A Pod on {{ $labels.node }} cannot complete a TLS handshake with its own node's Gateway",
-                "description": (
-                    "The {{ $labels.dial }} dial to {{ $labels.instance }} has failed for 5 minutes. Pods on "
-                    "{{ $labels.node }} that resolve an *.allegedly.works name to this node hang (#7918). If the same "
-                    f"node's {Dial.GATEWAY_SERVICE} dial fails too, the Gateway or the probe Pod's own network is down "
-                    "instead."
-                ),
-            },
-        ),
-        PrometheusRuleSpecGroupsRules(
-            alert="OwnNodeGatewayProbeMissing",
-            expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
-                f'group by (node) (kube_node_info{{job="kube-state-metrics", node=~"{"|".join(nodes)}"}}) '
-                f"unless on (node) group by (node) ({probe})"
+            summary="A Pod on {{ $labels.node }} cannot complete a TLS handshake with its own node's Gateway",
+            description=(
+                "The {{ $labels.dial }} dial to {{ $labels.instance }} has failed for 5 minutes. Pods on "
+                "{{ $labels.node }} that resolve an *.allegedly.works name to this node hang (#7918). If the same "
+                f"node's {Dial.GATEWAY_SERVICE} dial fails too, the Gateway or the probe Pod's own network is down "
+                "instead."
             ),
+        ),
+        Rule.alert(
+            "OwnNodeGatewayProbeMissing",
+            f'group by (node) (kube_node_info{{job="kube-state-metrics", node=~"{"|".join(nodes)}"}}) '
+            f"unless on (node) group by (node) ({probe})",
             for_="15m",
             labels={"severity": "warning"},
-            annotations={
-                "summary": "No own-node Gateway probe results from {{ $labels.node }}",
-                "description": (
-                    "{{ $labels.node }} is in public DNS but has reported no gateway-probe result for 15 minutes, so "
-                    "a broken own-node Gateway path there would go unnoticed. Check the gateway-probe DaemonSet Pod "
-                    "on that node (a new taint keeps it off) and its scrape."
-                ),
-            },
+            summary="No own-node Gateway probe results from {{ $labels.node }}",
+            description=(
+                "{{ $labels.node }} is in public DNS but has reported no gateway-probe result for 15 minutes, so "
+                "a broken own-node Gateway path there would go unnoticed. Check the gateway-probe DaemonSet Pod "
+                "on that node (a new taint keeps it off) and its scrape."
+            ),
         ),
     ]
 

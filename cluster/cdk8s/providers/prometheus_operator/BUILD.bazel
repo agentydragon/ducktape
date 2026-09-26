@@ -98,7 +98,6 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":prometheus_rule",
-        ":prometheusrule",
         "//:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",

@@ -26,10 +26,6 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpointsAuthorization,
     ServiceMonitorSpecEndpointsAuthorizationCredentials,
 )
-from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
-    PrometheusRuleSpecGroupsRules,
-    PrometheusRuleSpecGroupsRulesExpr,
-)
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSource,
     ReplicationSourceSpec,
@@ -58,7 +54,7 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, group
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
@@ -568,17 +564,13 @@ def _monitoring(scope: Construct) -> None:
             group(
                 _NAME,
                 [
-                    PrometheusRuleSpecGroupsRules(
-                        alert="HomeAssistantUnavailable",
-                        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
-                            'up{namespace="home-assistant", service="home-assistant"} == 0'
-                        ),
+                    Rule.alert(
+                        "HomeAssistantUnavailable",
+                        'up{namespace="home-assistant", service="home-assistant"} == 0',
                         for_="10m",
                         labels={"severity": "warning"},
-                        annotations={
-                            "summary": "Home Assistant is unavailable",
-                            "description": "Prometheus has been unable to scrape Home Assistant for 10 minutes.",
-                        },
+                        summary="Home Assistant is unavailable",
+                        description="Prometheus has been unable to scrape Home Assistant for 10 minutes.",
                     )
                 ],
             )

@@ -233,7 +233,6 @@ py_library(
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
-        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "@pypi//cdk8s",
     ],
 )
@@ -313,7 +312,6 @@ py_library(
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
-        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

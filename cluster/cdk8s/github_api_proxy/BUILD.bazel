@@ -33,7 +33,6 @@ py_library(
         "//cluster/cdk8s/providers/gateway_api:tlsroute",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
-        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
