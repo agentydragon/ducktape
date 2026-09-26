@@ -42,8 +42,8 @@ reader migrations remain allowed. It does not block preserving supported behavio
 | COMPOSE | The remaining `World` slices in [the gate note's graph](library_design_gates.md#remaining-work-in-dependency-order): one public TLH cohort type; the offers slice and drain; the tax-year close in `TaxAuthority`; seasoned contracts and a tracked property; the rollout axis. | The gate note's graph; its offers slice waits on GPE and its seasoned-contract and property slices on GHOUSE. No replacement giant config schema. |
 | P12     | Retire configured strategy orchestration: the app's configured household, its allocation proposer and funding-policy lowering.                                                                                                                                                  | Continue independently landable slices on settled contracts; full P12 still needs HOUSING and PE for their readers.                               |
 
-The tax-year close, the rollout axis and P12's public-portfolio slices can start
-now, in parallel. Keep older financial capability branches scoped as below. No
+The tax-year close and P12's public-portfolio slices can start now, in parallel;
+the rollout axis is postponed. Keep older financial capability branches scoped as below. No
 dependency is introduced merely because files overlap or a rebase will be needed.
 
 ## Destination and stopping conditions
@@ -458,8 +458,9 @@ all the others to be solved first.
 
 ## Current dispatch and priorities
 
-1. **COMPOSE**: the tax-year close and the rollout axis are ready now; the TLH
-   cohort type is postponed and waits on the open question in its gate-note entry.
+1. **COMPOSE**: the tax-year close is ready now; the rollout axis is postponed until a
+   real large-N workload needs it; the TLH cohort type is postponed and waits on the
+   open question in its gate-note entry.
    **P12**'s public-portfolio reader slices proceed on settled contracts.
 2. **MA3** remains a runnable paired TLH comparison on the existing Python
    component/session. Continue **STUDY** consumers alongside cleanup. Scope GT/GS

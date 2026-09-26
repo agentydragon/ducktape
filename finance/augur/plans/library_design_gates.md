@@ -21,7 +21,7 @@ graph TD
     TAXCLOSE["TAXCLOSE: the tax year closes inside TaxAuthority"]
     SEASONED["SEASONED: tracked contracts originated before month zero (GHOUSE)"]
     PROPERTY["PROPERTY: a tracked property component; rented share on tracked loans (GHOUSE)"]
-    VECTOR["VECTOR: World gains a rollout axis; ActionSession and its delegates go"]
+    VECTOR["VECTOR: World gains a rollout axis; ActionSession and its delegates go (postponed)"]
     OFFERS --> DRAIN
 ```
 
@@ -56,7 +56,8 @@ graph TD
 - **PROPERTY.** A property held at month zero is a tracked component with its own
   statements; a tracked loan's rented share comes from it instead of being zero,
   and a tracked bill may name it.
-- **VECTOR.** Policies act on a rollout axis: `World` carries N paths, reactive
+- **VECTOR** (postponed by the operator: no optimization until an actual large-N
+  workload shows `ActionSession` is the bottleneck). Policies act on a rollout axis: `World` carries N paths, reactive
   months make rounds ragged across rollouts, and selected replay re-creates agents
   with fresh state on the same paths. The batch session and its delegate households
   are deleted, and these `ActionSession` callers move to `World`: `x/monthly_actions`,
