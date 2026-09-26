@@ -106,8 +106,8 @@ def main() -> None:
             raise ValueError(f"invalid pinned revision for {repo}")
 
         for item in repository["files"]:
-            remote_file = _manifest_path(item["path"])
-            relative = directory / remote_file
+            remote_path = _manifest_path(item["path"])
+            relative = directory / remote_path
             target = root.joinpath(*relative.parts)
             _inside(root, target)
             partial = target.with_name(target.name + ".partial")
@@ -137,7 +137,7 @@ def main() -> None:
             if partial_size == size and not _matches(partial, size=size, sha256=sha256):
                 raise ValueError(f"complete partial checkpoint has the wrong SHA-256: {relative}")
             required_bytes += size - partial_size
-            pending.append((repo, revision, str(remote_file), target, partial, size, sha256, partial_size))
+            pending.append((repo, revision, str(remote_path), target, partial, size, sha256, partial_size))
 
     free_bytes = shutil.disk_usage(output).free
     needed_bytes = required_bytes + (HEADROOM_BYTES if required_bytes else 0)
