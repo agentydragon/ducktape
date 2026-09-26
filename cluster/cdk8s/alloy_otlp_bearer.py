@@ -10,17 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
-    ClusterExternalSecret,
-    ClusterExternalSecretSpec,
-    ClusterExternalSecretSpecExternalSecretSpec,
-    ClusterExternalSecretSpecExternalSecretSpecData,
-    ClusterExternalSecretSpecExternalSecretSpecDataRemoteRef,
-    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef,
-    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind,
-    ClusterExternalSecretSpecExternalSecretSpecTarget,
-)
+from cdk8s import App, Chart
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import (
@@ -32,6 +22,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.external_secrets.external_secret import ClusterExternalSecret, cluster_remote_data
 
 NAME = "alloy-otlp-bearer"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/alloy-otlp-bearer"
@@ -42,25 +33,12 @@ def chart(app: App) -> Chart:
     ClusterExternalSecret(
         chart,
         NAME,
-        metadata=ApiObjectMetadata(name=NAME),
-        spec=ClusterExternalSecretSpec(
-            # Least privilege: only namespaces whose sessions run the OTLP forwarder.
-            namespaces=["claude-sandbox", "haku-sandbox"],
-            external_secret_spec=ClusterExternalSecretSpecExternalSecretSpec(
-                refresh_interval="1m",
-                secret_store_ref=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef(
-                    name="kubernetes-flux-system-secret-store",
-                    kind=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                ),
-                target=ClusterExternalSecretSpecExternalSecretSpecTarget(name=NAME),
-                data=[
-                    ClusterExternalSecretSpecExternalSecretSpecData(
-                        secret_key="token",
-                        remote_ref=ClusterExternalSecretSpecExternalSecretSpecDataRemoteRef(key=NAME, property="token"),
-                    )
-                ],
-            ),
-        ),
+        name=NAME,
+        # Least privilege: only namespaces whose sessions run the OTLP forwarder.
+        namespaces=["claude-sandbox", "haku-sandbox"],
+        store_name="kubernetes-flux-system-secret-store",
+        refresh="1m",
+        data=[cluster_remote_data(NAME, "token")],
     )
     return chart
 

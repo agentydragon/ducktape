@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
 from cilium_crds.io.cilium import (
@@ -21,16 +21,6 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
-from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
-    ClusterExternalSecret,
-    ClusterExternalSecretSpec,
-    ClusterExternalSecretSpecExternalSecretSpec,
-    ClusterExternalSecretSpecExternalSecretSpecData,
-    ClusterExternalSecretSpecExternalSecretSpecDataRemoteRef,
-    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef,
-    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind,
-    ClusterExternalSecretSpecExternalSecretSpecTarget,
-)
 
 from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
@@ -40,6 +30,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.external_secrets.external_secret import ClusterExternalSecret, cluster_remote_data
 
 NAME = "haku-mailbox"
 NAMESPACE = "haku-mailbox"
@@ -482,26 +473,11 @@ def chart(app: App) -> Chart:
     ClusterExternalSecret(
         chart,
         "mail-token",
-        metadata=ApiObjectMetadata(name="haku-mail-token"),
-        spec=ClusterExternalSecretSpec(
-            namespaces=[namespace.NAMESPACE],
-            external_secret_spec=ClusterExternalSecretSpecExternalSecretSpec(
-                refresh_interval="1m",
-                secret_store_ref=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef(
-                    name="kubernetes-flux-system-secret-store",
-                    kind=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                ),
-                target=ClusterExternalSecretSpecExternalSecretSpecTarget(name="haku-mail-token"),
-                data=[
-                    ClusterExternalSecretSpecExternalSecretSpecData(
-                        secret_key="jwt",
-                        remote_ref=ClusterExternalSecretSpecExternalSecretSpecDataRemoteRef(
-                            key="haku-mail-token", property="jwt"
-                        ),
-                    )
-                ],
-            ),
-        ),
+        name="haku-mail-token",
+        namespaces=[namespace.NAMESPACE],
+        store_name="kubernetes-flux-system-secret-store",
+        refresh="1m",
+        data=[cluster_remote_data("haku-mail-token", "jwt")],
     )
     return chart
 
