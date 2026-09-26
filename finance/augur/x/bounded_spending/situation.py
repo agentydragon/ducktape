@@ -56,7 +56,9 @@ def compose(case: Situation, rollout_id: int, *, equity_share: float) -> World:
                 holding_account_id=BROKERAGE,
                 asset_id=AssetId(BONDS),
                 to_account_id=CHECKING,
-                tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), issuer_jurisdiction_id=None),),
+                tax_character=(
+                    PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), income_category=InterestIncome()),
+                ),
             )
         )
     return world

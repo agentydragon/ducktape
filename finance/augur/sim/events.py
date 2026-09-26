@@ -251,7 +251,7 @@ TLH_FINANCIAL_EFFECT_SCHEMA = pl.Schema(
         "short_term_gain_quanta": pl.Int64(),
         "long_term_gain_quanta": pl.Int64(),
         "basis_change_quanta": pl.Int64(),
-        "interest_income_quanta": pl.Int64(),
+        "income_quanta": pl.Int64(),
     }
 )
 

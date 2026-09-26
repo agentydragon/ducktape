@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.sim.ids import JurisdictionId
-from finance.augur.sim.scenario import DistributionTaxSlice
+from finance.augur.sim.scenario import DistributionTaxSlice, InterestIncome, QualifiedDividendIncome
 
 HORIZON = 13
 SYMBOL = SecuritySymbol("bnd")
@@ -29,14 +29,25 @@ def payout_quanta(per_unit: Decimal) -> int:
 
 MONTHLY_PAYOUT_QUANTA = payout_quanta(PER_UNIT)
 
-TREASURY = (DistributionTaxSlice(fraction=1.0, issuer_jurisdiction_id=JurisdictionId("federal_us")),)
-CALIFORNIA_MUNI = (DistributionTaxSlice(fraction=1.0, issuer_jurisdiction_id=JurisdictionId("california")),)
-CORPORATE = (DistributionTaxSlice(fraction=1.0),)
+TREASURY = (
+    DistributionTaxSlice(
+        fraction=1.0, income_category=InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us"))
+    ),
+)
+CALIFORNIA_MUNI = (
+    DistributionTaxSlice(
+        fraction=1.0, income_category=InterestIncome(issuer_jurisdiction_id=JurisdictionId("california"))
+    ),
+)
+CORPORATE = (DistributionTaxSlice(fraction=1.0, income_category=InterestIncome()),)
 # An aggregate fund: part Treasury, part corporate. The case a single tag cannot express.
 AGGREGATE = (
-    DistributionTaxSlice(fraction=0.4, issuer_jurisdiction_id=JurisdictionId("federal_us")),
-    DistributionTaxSlice(fraction=0.6),
+    DistributionTaxSlice(
+        fraction=0.4, income_category=InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us"))
+    ),
+    DistributionTaxSlice(fraction=0.6, income_category=InterestIncome()),
 )
 TREASURY_SHARE, CORPORATE_SHARE = Decimal("0.4"), Decimal("0.6")
+QUALIFIED_DIVIDENDS = (DistributionTaxSlice(fraction=1.0, income_category=QualifiedDividendIncome()),)
 # Snapshot `m` opens month `m`, so month 11 has months 0..10 behind it: eleven payouts.
 YEAR_END, PAYOUTS_BY_YEAR_END = 11, 11

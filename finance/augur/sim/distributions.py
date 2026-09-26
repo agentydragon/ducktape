@@ -5,13 +5,13 @@ from copy import deepcopy
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, DistributionOutcome, JournalEntry, Posting
+from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import Holdings
 from finance.augur.sim.ids import AccountId, AgentId, AssetId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, distribution_value, mul_div
 from finance.augur.sim.prepared import PreparedDistribution
-from finance.augur.sim.scenario import InterestIncome
 
 
 class Distributions:
@@ -58,9 +58,7 @@ class Distributions:
                         ],
                     )
                 )
-                tax.income.accrue(
-                    spec.agent_id, InterestIncome(issuer_jurisdiction_id=slice_.issuer_jurisdiction_id), amount
-                )
+                tax.income.accrue(spec.agent_id, slice_.income_category, amount)
                 outcomes.append(
                     DistributionOutcome(
                         month=month,
@@ -69,7 +67,7 @@ class Distributions:
                         asset_id=spec.asset_id,
                         slice_index=index,
                         fraction_ppb=slice_.fraction_ppb,
-                        issuer_jurisdiction_id=slice_.issuer_jurisdiction_id,
+                        income_source=income_source_wire_id(slice_.income_category),
                         units=units,
                         amount=amount,
                     )

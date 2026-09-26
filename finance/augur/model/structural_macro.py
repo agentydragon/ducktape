@@ -238,10 +238,9 @@ class StructuralMacroModel:
             keys.add(SecurityKey(symbol=spec.symbol))
             keys.add(SecurityDistributionKey(symbol=spec.symbol))
         if self._config.equity is not None:
-            # Equity emits a PRICE only. It pays dividends in reality, but `IncomeCategory`
-            # has no qualified-dividend rate, so an equity distribution routed through the
-            # interest path would be overtaxed as ordinary income. Emitting nothing is the
-            # honest option until that third category exists.
+            # Equity emits a PRICE only. It pays dividends in reality, but its price is total
+            # return: a payout beside it would count the dividends twice until the path is
+            # split into price return plus payout.
             keys.add(SecurityKey(symbol=self._config.equity.instrument.symbol))
         return frozenset(keys)
 

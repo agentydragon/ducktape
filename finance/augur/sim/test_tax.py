@@ -9,7 +9,7 @@ from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules,
 from finance.augur.sim.ids import AgentId, JurisdictionId
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.money import MAX_COUNT
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome
+from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, QualifiedDividendIncome
 from finance.augur.sim.tax import (
     IncomeLedger,
     NettedGains,
@@ -165,8 +165,9 @@ def test_niit_is_a_separate_component_of_the_total(federal: PreparedTaxRules) ->
     assert assessment.total_tax == 4_100_100
 
 
-def test_only_interest_is_investment_income() -> None:
+def test_interest_and_qualified_dividends_are_investment_income() -> None:
     assert is_investment_income(InterestIncome(issuer_jurisdiction_id=JurisdictionId("test_state")))
+    assert is_investment_income(QualifiedDividendIncome())
     assert not is_investment_income(ORDINARY_INCOME)
 
 

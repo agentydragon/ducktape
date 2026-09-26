@@ -39,7 +39,7 @@ from finance.augur.product.scenarios import (
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import RolloutRequest, ScenarioKey, SpendIndex
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId, PortfolioId
-from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
+from finance.augur.sim.scenario import InterestIncome, TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.tlh import TlhAssumptions
 
 _SYMBOL = SecuritySymbol("bnd")
@@ -250,9 +250,9 @@ def test_the_tax_character_fractions_reach_the_scenario(augur_config: Config) ->
         primary_agent_id=AgentId("agent_a"),
     )
 
-    assert [(slice_.fraction, slice_.issuer_jurisdiction_id) for slice_ in one(distributions).tax_character] == [
-        (0.4, "federal_us"),
-        (0.6, None),
+    assert [(slice_.fraction, slice_.income_category) for slice_ in one(distributions).tax_character] == [
+        (0.4, InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us"))),
+        (0.6, InterestIncome()),
     ]
 
 

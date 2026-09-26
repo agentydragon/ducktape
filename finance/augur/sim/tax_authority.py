@@ -12,7 +12,7 @@ from finance.augur.sim.ids import AccountId, JurisdictionId
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 from finance.augur.sim.mortgage import Mortgage
 from finance.augur.sim.prepared import PreparedJurisdiction, _MortgageInterestDeduction, _SaltDeduction
-from finance.augur.sim.scenario import InterestIncome, OrdinaryIncome
+from finance.augur.sim.scenario import OrdinaryIncome, QualifiedDividendIncome
 from finance.augur.sim.tax import TaxFacts, assess, is_investment_income, taxes_interest_from
 from finance.augur.sim.tax_year import TaxBook
 
@@ -126,26 +126,32 @@ class TaxAuthority(Actor[MonthOpened | TaxLiabilityStatement, Assessment]):
         annual = []
         for rules in profile.jurisdictions:
             taxable = 0
+            qualified_dividends = 0
             investment = 0
             for (owner, source), amount in income.by_source.items():
                 if owner != agent:
                     continue
-                if isinstance(source, OrdinaryIncome) or (
-                    isinstance(source, InterestIncome)
-                    and taxes_interest_from(
+                if not (
+                    isinstance(source, OrdinaryIncome | QualifiedDividendIncome)
+                    or taxes_interest_from(
                         rules,
                         source.issuer_jurisdiction_id,
                         levels.get(source.issuer_jurisdiction_id) if source.issuer_jurisdiction_id else None,
                     )
                 ):
+                    continue
+                if isinstance(source, QualifiedDividendIncome):
+                    qualified_dividends = checked_count(qualified_dividends + amount, "money addition")
+                else:
                     taxable = checked_count(taxable + amount, "money addition")
-                    if is_investment_income(source):
-                        investment = checked_count(investment + amount, "money addition")
+                if is_investment_income(source):
+                    investment = checked_count(investment + amount, "money addition")
             mortgage_deduction = mortgage_interest_deduction(
                 self.mortgage_interest_policies, mortgages, rules.jurisdiction_id
             )
             facts = TaxFacts(
                 taxable_ordinary_income=taxable,
+                qualified_dividends=qualified_dividends,
                 investment_income=investment,
                 short_term_gain=year.short_term_gain,
                 long_term_gain=year.long_term_gain,

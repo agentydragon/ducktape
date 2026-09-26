@@ -1,9 +1,9 @@
 # California state income tax — 2024 tax-year brackets.
 #
-# Single filer only. CA taxes long-term capital gains at ordinary
-# income rates (no separate LTCG bracket), so `ltcg_brackets` is
-# omitted here — the tax layer will fall through to the ordinary
-# bracket when no LTCG-specific brackets are configured.
+# Single filer only. CA taxes long-term capital gains and qualified
+# dividends at ordinary income rates (no separate LTCG bracket), so
+# `ltcg_brackets` is omitted here — the tax layer will fall through to
+# the ordinary bracket when no LTCG-specific brackets are configured.
 jurisdiction_id: california
 
 ordinary_income_brackets:
