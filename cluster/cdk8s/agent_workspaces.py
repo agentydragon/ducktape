@@ -11,8 +11,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
-    SandboxTemplate,
-    SandboxTemplateSpec,
     SandboxTemplateSpecNetworkPolicyManagement,
     SandboxTemplateSpecPodTemplate,
     SandboxTemplateSpecPodTemplateMetadata,
@@ -68,6 +66,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 
 NAME = "agent-workspaces"
 NAMESPACE = "agent-workspaces"
@@ -86,100 +85,97 @@ def _codex_template(chart: Chart) -> SandboxTemplate:
     return SandboxTemplate(
         chart,
         "codex",
-        metadata=metadata("codex", NAMESPACE),
-        spec=SandboxTemplateSpec(
-            network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
-            pod_template=SandboxTemplateSpecPodTemplate(
-                metadata=SandboxTemplateSpecPodTemplateMetadata(labels={"app.kubernetes.io/name": "agent-workspace"}),
-                spec=SandboxTemplateSpecPodTemplateSpec(
-                    dns_policy="ClusterFirst",
-                    image_pull_secrets=[
-                        SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=forgejo_images.SECRET_NAME)
-                    ],
-                    # No explicit region nodeSelector: the workspace volumeClaimTemplate's
-                    # seaweedfs-ovh StorageClass already pins scheduling to
-                    # topology.kubernetes.io/zone=hil-ovh via WaitForFirstConsumer +
-                    # allowedTopologies (seaweedfs_csi/driver.py).
-                    automount_service_account_token=False,
-                    security_context=SandboxTemplateSpecPodTemplateSpecSecurityContext(
-                        run_as_non_root=True,
-                        run_as_user=1000,
-                        run_as_group=1000,
-                        fs_group=1000,
-                        seccomp_profile=SandboxTemplateSpecPodTemplateSpecSecurityContextSeccompProfile(
-                            type="RuntimeDefault"
-                        ),
+        name="codex",
+        namespace=NAMESPACE,
+        network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
+        pod_template=SandboxTemplateSpecPodTemplate(
+            metadata=SandboxTemplateSpecPodTemplateMetadata(labels={"app.kubernetes.io/name": "agent-workspace"}),
+            spec=SandboxTemplateSpecPodTemplateSpec(
+                dns_policy="ClusterFirst",
+                image_pull_secrets=[
+                    SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=forgejo_images.SECRET_NAME)
+                ],
+                # No explicit region nodeSelector: the workspace volumeClaimTemplate's
+                # seaweedfs-ovh StorageClass already pins scheduling to
+                # topology.kubernetes.io/zone=hil-ovh via WaitForFirstConsumer +
+                # allowedTopologies (seaweedfs_csi/driver.py).
+                automount_service_account_token=False,
+                security_context=SandboxTemplateSpecPodTemplateSpecSecurityContext(
+                    run_as_non_root=True,
+                    run_as_user=1000,
+                    run_as_group=1000,
+                    fs_group=1000,
+                    seccomp_profile=SandboxTemplateSpecPodTemplateSpecSecurityContextSeccompProfile(
+                        type="RuntimeDefault"
                     ),
-                    containers=[
-                        SandboxTemplateSpecPodTemplateSpecContainers(
-                            name="workspace",
-                            # image-pins/ sets the tag.
-                            image="git.allegedly.works/ducktape-ci/agent-workspace:unset",
-                            command=["sleep", "infinity"],
-                            working_dir="/workspace",
-                            security_context=SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(
-                                allow_privilege_escalation=False,
-                                capabilities=SandboxTemplateSpecPodTemplateSpecContainersSecurityContextCapabilities(
-                                    drop=["ALL"]
-                                ),
-                            ),
-                            env=[
-                                # LiteLLM virtual key (alias agent-workspaces-codex,
-                                # `chatgpt/oai-responses/*` models, no budget cap) minted by
-                                # tf/gitops/litellm-keys and reflected into this namespace; deleting
-                                # that TF resource is the lane's kill switch.
-                                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                                    name="LITELLM_API_KEY",
-                                    value_from=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFrom(
-                                        secret_key_ref=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFromSecretKeyRef(
-                                            name="litellm-key-agent-workspaces-codex", key="api-key"
-                                        )
-                                    ),
-                                )
-                            ],
-                            resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
-                                requests={
-                                    "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string(
-                                        "500m"
-                                    ),
-                                    "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string(
-                                        "1Gi"
-                                    ),
-                                },
-                                limits={
-                                    "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("2"),
-                                    "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string(
-                                        "4Gi"
-                                    ),
-                                },
-                            ),
-                            volume_mounts=[
-                                SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
-                                    name="workspace", mount_path="/workspace"
-                                )
-                            ],
-                        )
-                    ],
                 ),
-            ),
-            volume_claim_templates_policy=SandboxTemplateSpecVolumeClaimTemplatesPolicy.OVERRIDES,
-            volume_claim_templates=[
-                SandboxTemplateSpecVolumeClaimTemplates(
-                    metadata=SandboxTemplateSpecVolumeClaimTemplatesMetadata(name="workspace"),
-                    spec=SandboxTemplateSpecVolumeClaimTemplatesSpec(
-                        storage_class_name="seaweedfs-ovh",
-                        access_modes=["ReadWriteOnce"],
-                        resources=SandboxTemplateSpecVolumeClaimTemplatesSpecResources(
-                            requests={
-                                "storage": SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests.from_string(
-                                    "10Gi"
-                                )
-                            }
+                containers=[
+                    SandboxTemplateSpecPodTemplateSpecContainers(
+                        name="workspace",
+                        # image-pins/ sets the tag.
+                        image="git.allegedly.works/ducktape-ci/agent-workspace:unset",
+                        command=["sleep", "infinity"],
+                        working_dir="/workspace",
+                        security_context=SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(
+                            allow_privilege_escalation=False,
+                            capabilities=SandboxTemplateSpecPodTemplateSpecContainersSecurityContextCapabilities(
+                                drop=["ALL"]
+                            ),
                         ),
-                    ),
-                )
-            ],
+                        env=[
+                            # LiteLLM virtual key (alias agent-workspaces-codex,
+                            # `chatgpt/oai-responses/*` models, no budget cap) minted by
+                            # tf/gitops/litellm-keys and reflected into this namespace; deleting
+                            # that TF resource is the lane's kill switch.
+                            SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                                name="LITELLM_API_KEY",
+                                value_from=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFrom(
+                                    secret_key_ref=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFromSecretKeyRef(
+                                        name="litellm-key-agent-workspaces-codex", key="api-key"
+                                    )
+                                ),
+                            )
+                        ],
+                        resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
+                            requests={
+                                "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string(
+                                    "500m"
+                                ),
+                                "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string(
+                                    "1Gi"
+                                ),
+                            },
+                            limits={
+                                "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("2"),
+                                "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string(
+                                    "4Gi"
+                                ),
+                            },
+                        ),
+                        volume_mounts=[
+                            SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+                                name="workspace", mount_path="/workspace"
+                            )
+                        ],
+                    )
+                ],
+            ),
         ),
+        volume_claim_templates_policy=SandboxTemplateSpecVolumeClaimTemplatesPolicy.OVERRIDES,
+        volume_claim_templates=[
+            SandboxTemplateSpecVolumeClaimTemplates(
+                metadata=SandboxTemplateSpecVolumeClaimTemplatesMetadata(name="workspace"),
+                spec=SandboxTemplateSpecVolumeClaimTemplatesSpec(
+                    storage_class_name="seaweedfs-ovh",
+                    access_modes=["ReadWriteOnce"],
+                    resources=SandboxTemplateSpecVolumeClaimTemplatesSpecResources(
+                        requests={
+                            "storage": SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests.from_string("10Gi")
+                        }
+                    ),
+                ),
+            )
+        ],
     )
 
 

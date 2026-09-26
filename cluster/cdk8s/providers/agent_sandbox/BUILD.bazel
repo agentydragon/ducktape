@@ -1,7 +1,9 @@
-# gazelle:resolve py agent_sandbox_sandboxtemplate_crds //cluster/cdk8s/crd_bindings/agent_sandbox:sandboxtemplate
-# gazelle:resolve py agent_sandbox_sandboxwarmpool_crds //cluster/cdk8s/crd_bindings/agent_sandbox:sandboxwarmpool
+# gazelle:ignore
+# gazelle:resolve py agent_sandbox_sandboxtemplate_crds //cluster/cdk8s/providers/agent_sandbox:sandboxtemplate
+# gazelle:resolve py agent_sandbox_sandboxwarmpool_crds //cluster/cdk8s/providers/agent_sandbox:sandboxwarmpool
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+load("//devinfra/python:defs.bzl", "py_library")
 
 cdk8s_import(
     name = "sandboxtemplate",
@@ -28,4 +30,15 @@ cdk8s_import(
     module_name = "agent_sandbox_sandboxwarmpool_crds",
     module_path = "io/x_k8s/agents/extensions",
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "sandbox_template",
+    srcs = ["sandbox_template.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":sandboxtemplate",
+        "//cluster/cdk8s:metadata",
+        "@pypi//constructs",
+    ],
 )
