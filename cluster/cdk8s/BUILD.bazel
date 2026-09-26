@@ -43,6 +43,7 @@ py_library(
     name = "model_rosters",
     srcs = ["model_rosters.py"],
     visibility = [
+        "//agentplane/acceptance:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/cdk8s/litellm:__pkg__",
         "//haku/x/dispatch/deploy/litellm:__pkg__",
