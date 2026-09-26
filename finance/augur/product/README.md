@@ -19,7 +19,10 @@ Property and private-equity histories remain unsupported and raise explicitly.
 household's accounts, holdings, home, counterparties and funding policy as prepared
 declarations), samples the series that situation reads, and composes one world per path
 (`compose`) with the configured household (<../policy/configured_household.py>) tracked on
-it; <simulation.py> steps each world. These projection functions do not route between
+it; <simulation.py> steps each world. The funding policy's sleeves come in two kinds: a
+security sleeve names a held symbol and sells its lots in whole units at the quote, and a
+managed sleeve names a TLH portfolio by `portfolio_id` and withdraws exact money from it.
+The two never merge, even when the portfolio tracks a held symbol's index. These projection functions do not route between
 engines. Between steps the runner records each path's `WorldResult`: the <metrics.py>
 `product_row` slab every month, and under dense/forensic capture the library's
 `FinancialCapture` output and event log. Metric definitions and the stop boundary:

@@ -152,9 +152,13 @@ class TlhPortfolio:
     A contribution of X becomes exposure worth exactly X at the current mark; a
     withdrawal of X sells exactly X of exposure, FIFO, each cohort giving up basis in
     proportion to the value it sells. Nothing is rounded to a share grid and nothing
-    is kept back as cash, so there is no grid for a policy to size against. A caller
-    needing transactional settlement operates on a deepcopy and adopts it only when
-    the accounting engine accepts its financial effects.
+    is kept back as cash, so there is no grid for a policy to size against, and a
+    funding policy names the portfolio itself, never the index that moves its value.
+    At a zero mark there is no exposure to buy, so a contribution raises; the owner's
+    statement carries that as `accepts_contributions`, since a worthless portfolio and
+    an empty one can both report value and basis 0. A caller needing transactional
+    settlement operates on a deepcopy and adopts it only when the accounting engine
+    accepts its financial effects.
 
     Sale character uses Augur's monthly holding-period convention (12 months is
     long-term); the harvested character is the assumptions' short-term fraction.
