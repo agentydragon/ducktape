@@ -110,16 +110,39 @@ Historical replay of the 2006 rules runs this package on three
 sleeves, not Table 1's eight. Targets are the 65%-equity column with its six equity
 sleeves merged:
 
-| Sleeve | Target | Annual series, in the style of [Damodaran's history][damodaran] |
-| ------ | -----: | --------------------------------------------------------------- |
-| Cash   |    10% | 3-month T-bill return                                           |
-| Bonds  |    25% | 10-year Treasury bond total return                              |
-| Equity |    65% | S&P 500 total return, dividends included                        |
+| Sleeve | Target | Annual series, in the style of [Damodaran's history][damodaran]                        |
+| ------ | -----: | -------------------------------------------------------------------------------------- |
+| Cash   |    10% | 3-month T-bill return, all of it interest                                              |
+| Bonds  |    25% | 10-year Treasury: coupon at the prior year-end yield, and the rest of its total return |
+| Equity |    65% | S&P 500: dividends over the prior year-end index level, and price return               |
 
-Spending indexes to annual CPI change. Each sleeve is a tax-free total-return proxy
-unit: cash earns its bill return, dividends are already in the equity return, and the
-proxies do not support taxable stock simulation. No investor taxes or added fees, as
-the paper control above. What this adaptation cannot claim:
+Spending indexes to annual CPI change. `--taxes none` is the paper control: each
+sleeve is a tax-free total-return proxy unit, with no investor taxes or added fees.
+`--taxes federal-ca` declares a taxable variant, not a paper replication:
+
+- **Split returns.** Units move by price return; each year's income is paid in its
+  December into the sleeve's income account. Bill and bond interest is Treasury
+  interest, federally taxable and California-exempt; dividends are qualified, at the
+  federal long-term rates and California's ordinary ones. Sales realize FIFO lot gains,
+  long term from 12 months as the engine counts them (statute: more than a year).
+- **W is gross.** The withdrawal leaves the portfolio and its year's tax is paid out of
+  it: spendable = W − tax. Guardrails test W / V as in the paper. The TAXES reading
+  below schedules the payments.
+- **Brackets fixed.** The bundled federal and California single-filer tables (2024
+  law, with NIIT and California's 1% surtax) hold in nominal dollars in every historical
+  year, and every window starts with $1M nominal. Early start years thus pay 2024
+  nominal thresholds at a far lower price level, and inflation pushes a window's
+  constant real income into higher brackets.
+- **Taxpayer.** A single California resident with no other income, on the standard
+  deduction (state tax is not itemized), with no prior-year tax: no estimated
+  instalments, so each year's whole tax falls due at the next January review.
+
+`records.json` carries each year's W, federal tax (NIIT included), California tax,
+their total and spendable, nominal and in the window's January dollars; the study
+summary leads with real spendable. Because W is gross and income reinvests where it
+was earned, the taxed portfolio tracks the untaxed control up to rounding and the final
+year's tax its reserve does not cover: taxes show in spending, not in wealth or
+guardrail triggers. What this adaptation cannot claim:
 
 - PMR's last funding stage ranks remaining equities by prior-year performance; with
   one equity sleeve that ranking collapses.
@@ -128,6 +151,9 @@ the paper control above. What this adaptation cannot claim:
 - The 10-year Treasury stands in for the aggregate bond index; duration and credit
   differ.
 - Overlapping January-start windows share years; they are not independent trials.
+- Taxed, it omits CPI-indexed brackets, estimated instalments, the qualified-dividend
+  holding period, wash sales, the SALT deduction and fund expense ratios or fees; the
+  bond coupon is the prior year-end yield on the unit's value, not a held bond's par.
 
 ## Decisions still needed before a faithful label
 
@@ -148,8 +174,8 @@ complete statutory treatment follows from these studies.
 ### Policy readings of the three-sleeve adaptation
 
 <policy.py> pins one reading of ORDER, PORTFOLIO and
-OPENING for the declared cash/bond/single-equity adaptation. The faithful-label
-decisions above stay open.
+OPENING for the declared cash/bond/single-equity adaptation, and of tax payment for its
+taxable variant. The faithful-label decisions above stay open.
 
 - **ORDER.** Scale last year's withdrawal by the preceding year's CPI ratio;
   deflation lowers it, since the freeze text names only increases. The freeze
@@ -174,6 +200,19 @@ decisions above stay open.
   returns, so nothing is overweight and the first withdrawal comes from cash.
   Capital preservation applies at zero-based year index `t < years - 15`: in 30
   years, the first 15 withdrawals.
+- **PORTFOLIO, taxed.** A sleeve is its lots plus its unspent payouts. It rises when
+  its total return, price change plus payouts, was positive, as the untaxed proxy's
+  price does. Funding and the sweep draw a sleeve's payouts before selling its lots;
+  what they leave reinvests in that sleeve, so sleeve values match the proxy's.
+- **TAXES, prior-year reserve.** Each review first keeps invested the part of W that
+  repays tax the portfolio advanced, then moves the last closed year's assessed tax
+  (none in year 0) into the tax reserve, outside `V`, and spends the rest. Tax
+  claims are paid from the reserve; what it lacks is advanced through the funding
+  stages (overweight stages only at a review), and repaid from the next withdrawals.
+  The review after a tax year closes spends the reserve's remainder once that year's
+  claims are paid. So a year's spending is W less its tax, the portfolio's net outflow
+  is W, and the investment-return test adds advances back. The final year's settlement
+  falls past the horizon: terminal wealth nets the tax its reserve does not cover.
 
 ## Outputs that make comparisons meaningful
 
