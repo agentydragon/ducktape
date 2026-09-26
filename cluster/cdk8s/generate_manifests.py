@@ -292,6 +292,7 @@ def generate_manifests(root: Path) -> None:
     dns_automation.write_manifests(root, mesh)
     litellm_keys.write_manifests(root)
     litellm_namespace.write_manifests(root)
+    litellm_proxy.write_manifests(root)
     agentplane_index_workers.write_manifests(root)
     atuin_server.write_manifests(root)
     atuin_user_provisioner.write_manifests(root)
@@ -1256,7 +1257,6 @@ def generate_manifests(root: Path) -> None:
     litellm_kustomization = litellm_proxy.litellm(
         flux_chart,
         litellm_artifact,
-        root,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
