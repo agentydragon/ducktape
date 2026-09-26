@@ -116,9 +116,9 @@ class SandboxExecutor(Executor):
             case SandboxAction.LIST:
                 NoArgs.model_validate(arguments)
                 return _succeeded(SandboxList(sandboxes=await self._inventory.list(caller)))
-            case SandboxAction.INFO:
+            case SandboxAction.GET:
                 name_args = NameArgs.model_validate(arguments)
-                return _succeeded(await self._inventory.info(caller, name_args.name))
+                return _succeeded(await self._inventory.get(caller, name_args.name))
             case SandboxAction.DISPOSE:
                 dispose_args = NameArgs.model_validate(arguments)
                 existed = await self._inventory.dispose(caller, dispose_args.name)

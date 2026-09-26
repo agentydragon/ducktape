@@ -36,7 +36,7 @@ class SandboxAction(StrEnum):
     GET_TEMPLATE = "get_template"
     EXEC = "exec"
     LIST = "list"
-    INFO = "info"
+    GET = "get"
     DISPOSE = "dispose"
 
 
@@ -57,7 +57,7 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
             description=(
                 "Create or reach a sandbox that runs as your own ServiceAccount. Returns as soon as "
                 "the object exists, before the box can run anything, so poll "
-                f'{SandboxAction.INFO} until its {READY_CONDITION!r} condition has status "True". '
+                f'{SandboxAction.GET} until its {READY_CONDITION!r} condition has status "True". '
                 f"Idempotent on the name, so polling with {SandboxAction.CREATE} would also work but "
                 f"tells you nothing more. Templates: {offered}. {SandboxAction.GET_TEMPLATE} shows one whole."
             ),
@@ -84,7 +84,7 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
             description="Every sandbox you have here. Another account's are not listed and not reachable.",
             input_schema=_schema(NoArgs),
         ),
-        SandboxAction.INFO: ActionDefinition(
+        SandboxAction.GET: ActionDefinition(
             description=(
                 "Inspect one sandbox of yours without changing it: the controller's own conditions, "
                 f'verbatim. Poll it until {READY_CONDITION!r} has status "True"; until then that '
