@@ -136,37 +136,9 @@ For transient sidecar diagnosis, `--test_env=OLLAMA_SMOKE_HOLD_SECONDS=30` retai
 the isolated Sandbox for at most 30 seconds after the turn result is written, before
 normal fixture cleanup.
 
-`//agentplane/acceptance:test_local_coding` is a manual readiness screen for the configured local
-coding route `llama-cpp/oai-chat/qwen3.8-27b-q8`. It runs two small fixed tasks—stable topological
-ordering and a Unicode-aware JSONL transform—on both Claude and Codex, for four cells total. Each
-cell creates its own Sandbox and task repository, asks the agent to edit the implementation and run
-its visible unittest suite, then has the test controller restore and byte-check the canonical tests,
-run those fixed tests inside the Sandbox, and capture a source diff against the seeded implementation.
-The controller trusts neither the test files left by the agent nor its final prose. Each evidence
-file also includes the full Git status and diff from the task repository's initial commit, including
-untracked and ignored path names. Test results and the controller-generated diff are written to
-`bazel-testlogs/agentplane/acceptance/test_local_coding/test.outputs/` for review. This is a small
-coding-quality readiness screen, not a benchmark or a general SWE-bench claim.
-
-The test controller uses the caller's inherited kubeconfig only to `kubectl exec` into the
-disposable Sandbox Pod for test restoration, test execution, and source readback. Generated code
-and fixed tests execute inside that Pod. Run from a controlled host with `kubectl` access to
-`agentplane-testing`; the target is `manual` / `no-remote-exec` and is not selected by CI or RBE.
-Each model turn is bounded at 600 seconds (about 30,000 generated tokens at the observed
-50-token/second rate). A full matrix may take up to an hour including four Sandbox startup waits.
-Set AGENTPLANE_CODING_MODEL to override the default route with another model offered for the
-selected harnesses.
-To run one cell, set `AGENTPLANE_CODING_CASE` to `harness_codex-stable-topological-order`,
-`harness_codex-jsonl-transform`, `harness_claude-stable-topological-order`, or
-`harness_claude-jsonl-transform`. For example:
-
-```bash
-bazelisk test //agentplane/acceptance:test_local_coding --test_env=AGENTPLANE_CODING_CASE=harness_codex-stable-topological-order --test_output=streamed
-```
-
-Run one cell per Bazel invocation so each process gets a fresh acceptance token. The default
-ServiceAccount token lifetime is 1800 seconds, which may expire during a full four-cell run; if
-supplying `AGENTPLANE_ACCEPTANCE_TOKEN` directly, make sure it remains valid for the entire cell.
+The optional local-LLM coding smoke eval is owned and documented under
+[`x/local_llm/eval`](../../x/local_llm/eval/README.md). This deployed acceptance suite does not
+run it.
 
 By default it tests `https://agentplane-testing.allegedly.works` and mints its own bearer token with
 `kubectl -n agentplane-testing create token agentplane-agent --audience=agentplane`. That call needs

@@ -14,6 +14,10 @@ py_library(
     name = "agent",
     testonly = True,
     srcs = ["agent.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/local_llm/eval:__pkg__",
+    ],
     deps = [
         "//agentplane/app:client",
         "//agentplane/protocol:command_pb2",
@@ -30,6 +34,10 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/local_llm/eval:__pkg__",
+    ],
     deps = [
         "//agentplane/app:client",
         "//agentplane/app:inventory",
@@ -156,44 +164,6 @@ py_test(
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
         "//cluster/cdk8s:model_rosters",
-        "//util/testing:undeclared_outputs",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-# Manual local-model coding acceptance. The controller creates disposable Sandboxes, uses its
-# inherited kubeconfig only for kubectl exec into each Sandbox, restores the fixed tests, and runs
-# them there after the agent turn. Each selected cell can take ten minutes of model time plus up
-# to five minutes for its Sandbox to become ready, so the four-cell matrix is `eternal`.
-py_test(
-    name = "test_local_coding",
-    timeout = "eternal",
-    srcs = ["test_local_coding.py"],
-    env_inherit = [
-        "AGENTPLANE_ACCEPTANCE_NAMESPACE",
-        "AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT",
-        "AGENTPLANE_ACCEPTANCE_TOKEN",
-        "AGENTPLANE_ACCEPTANCE_URL",
-        "AGENTPLANE_CODING_CASE",
-        "AGENTPLANE_CODING_MODEL",
-        "HOME",
-        "KUBECONFIG",
-    ],
-    tags = [
-        "manual",
-        "no-remote-exec",
-    ],
-    deps = [
-        ":agent",
-        ":conftest",
-        "//:conftest",
-        "//agentplane/app:client",
-        "//agentplane/app:inventory",
-        "//agentplane/app:presets",
-        "//agentplane/protocol:event_pb2",
-        "//agentplane/runner:protocol_pb2",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",

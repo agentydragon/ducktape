@@ -1,4 +1,4 @@
-"""Manual local-model coding acceptance against fixed tasks in disposable Sandboxes."""
+"""Optional small coding-readiness smoke eval against fixed tasks in disposable Sandboxes."""
 
 from __future__ import annotations
 
@@ -26,10 +26,16 @@ from agentplane.runner import protocol_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep //agentplane/acceptance:agent
+# gazelle:include_dep //agentplane/acceptance:conftest
+
+# Explicitly reuse the deployed Agentplane client and disposable-Sandbox lifecycle outside its
+# acceptance package; this smoke eval remains owned by x/local_llm.
+pytest_plugins = ("agentplane.acceptance.conftest",)
 
 LOCAL_CODING_ROUTE = "llama-cpp/oai-chat/qwen3.8-27b-q8"
-MODEL_ENV = "AGENTPLANE_CODING_MODEL"
-CASE_ENV = "AGENTPLANE_CODING_CASE"
+MODEL_ENV = "LOCAL_LLM_CODING_MODEL"
+CASE_ENV = "LOCAL_LLM_CODING_CASE"
 NAMESPACE_ENV = "AGENTPLANE_ACCEPTANCE_NAMESPACE"
 DEFAULT_NAMESPACE = "agentplane-testing"
 

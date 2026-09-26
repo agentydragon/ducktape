@@ -78,12 +78,20 @@ py_library(
 py_library(
     name = "presets",
     srcs = ["presets.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/local_llm/eval:__pkg__",
+    ],
     deps = ["@pypi//pydantic"],
 )
 
 py_library(
     name = "inventory",
     srcs = ["inventory.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/local_llm/eval:__pkg__",
+    ],
     deps = [
         ":presets",
         "//agentplane:subjects",
@@ -702,6 +710,10 @@ py_library(
     name = "client",
     testonly = True,
     srcs = ["client.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/local_llm/eval:__pkg__",
+    ],
     deps = [
         ":api",
         ":decisions",
