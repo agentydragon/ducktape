@@ -2,7 +2,7 @@
 
 The shared proposal arithmetic has unit controls in `policy/configured_allocation_test.py`.
 These flat-price worlds exercise the household's whole monthly batch: pre-claim sales, the
-all-or-none claim payments, and the purchases sized from what both leave.
+full claim payments in order, and the purchases sized from what both leave.
 """
 
 from dataclasses import dataclass, replace

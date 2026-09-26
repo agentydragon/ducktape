@@ -411,7 +411,7 @@ def test_unfundable_optional_cash_band_is_not_a_claim(rent: Situation) -> None:
 
 
 def test_first_payment_survives_later_rejection_and_subsequent_action_is_skipped(rent: Situation) -> None:
-    """Two $500 claims against $600 are ordered payments, not an all-or-none group."""
+    """Two $500 claims against $600 are paid in order: the first settles, the second is rejected."""
     rent.accounts[0] = account("alice", balance=Decimal(600))
     rent.lots = []
     rent.accounts.append(account("utility"))

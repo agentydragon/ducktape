@@ -206,7 +206,7 @@ def drive(world: World, *payers: str) -> Recorded:
 
 
 def run(world: World) -> Recorded:
-    """One tracked household paying each account's claims all or none, month by month."""
+    """One tracked household paying every due claim in full, in order, month by month."""
     world.track(ConfiguredHousehold(AgentId(ALICE), ()))
     recorded = Recorded.opening(world)
     world.start()
