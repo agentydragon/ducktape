@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+resources:
+  - gateway-probe.k8s.yaml
+configMapGenerator:
+  - name: gateway-probe-config
+    namespace: monitoring
+    literals:
+      - |
+        blackbox.yml=modules:
+          gateway_tls:
+            prober: tcp
+            tcp:
+              preferred_ip_protocol: ip4
+              tls: true
+              tls_config:
+                insecure_skip_verify: true
+                server_name: www.allegedly.works
+            timeout: 5s

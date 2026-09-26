@@ -194,6 +194,7 @@ from cluster.cdk8s.monitoring import (
     alloy_otlp_bearer_token,
     cilium_monitoring,
     flux_kustomizations as monitoring_flux_kustomizations,
+    gateway_probe,
     grafana_helmrepository,
     grafana_instance,
     grafana_operator,
@@ -345,6 +346,7 @@ def generate_manifests(root: Path) -> None:
     vm_images_publisher_publisher.write_manifests(root)
     grafana_operator.write_manifests(root)
     cilium_monitoring.write_manifests(root)
+    gateway_probe.write_manifests(root, mesh)
     monitoring_rules.write_manifests(root)
     monitoring_stack.write_manifests(root)
     alloy.write_manifests(root)
@@ -545,6 +547,8 @@ def generate_manifests(root: Path) -> None:
     cilium_monitoring.cilium_monitoring(flux_chart, monitoring_cilium_artifact, monitoring_crds_kustomization)
     monitoring_etcd_artifact = artifact("monitoring-etcd", etcd.OUTPUT_DIR)
     etcd.etcd_monitoring(flux_chart, monitoring_etcd_artifact, root, mesh, monitoring_crds_kustomization)
+    monitoring_gateway_probe_artifact = artifact("monitoring-gateway-probe", gateway_probe.OUTPUT_DIR)
+    gateway_probe.gateway_probe(flux_chart, monitoring_gateway_probe_artifact, monitoring_crds_kustomization)
     monitoring_rules_artifact = artifact("monitoring-rules", monitoring_rules.OUTPUT_DIR)
     monitoring_rules.monitoring_rules(flux_chart, monitoring_rules_artifact, monitoring_crds_kustomization)
     grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
@@ -1616,6 +1620,7 @@ def generate_manifests(root: Path) -> None:
             monitoring_alloy_otlp_bearer_token_tf_artifact,
             monitoring_cilium_artifact,
             monitoring_etcd_artifact,
+            monitoring_gateway_probe_artifact,
             monitoring_loki_artifact,
             monitoring_mimir_artifact,
             monitoring_rules_artifact,

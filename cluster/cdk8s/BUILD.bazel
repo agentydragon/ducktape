@@ -1495,6 +1495,7 @@ py_library(
         "//cluster/cdk8s/monitoring:alloy_otlp_bearer_token",
         "//cluster/cdk8s/monitoring:cilium_monitoring",
         "//cluster/cdk8s/monitoring:flux_kustomizations",
+        "//cluster/cdk8s/monitoring:gateway_probe",
         "//cluster/cdk8s/monitoring:grafana_helmrepository",
         "//cluster/cdk8s/monitoring:grafana_instance",
         "//cluster/cdk8s/monitoring:grafana_operator",
