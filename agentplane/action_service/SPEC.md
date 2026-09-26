@@ -143,9 +143,10 @@ admission, Decision, Execution, and receipt authority as its HTTP interface. Its
 discover Actions, submit/cancel requests, read receipts and results, and page durable events. A result
 reads as the tool that ran answered, an MCP backend's own result exactly with every content block, and a
 request without one says what it is waiting on or why it has none. A submission answers the same way once
-its bounded wait ends, unless its caller asks for the receipt. Catalog responses omit input schemas
-and full descriptions unless explicitly requested. Lists and wait durations are bounded, and backend
-configuration is never exposed.
+its bounded wait ends, unless its caller asks for the receipt. A receipt reports an execution's state,
+error and timing but never its result, which is only ever answered as the tool answered it. Catalog
+responses omit input schemas and full descriptions unless explicitly requested. Lists and wait
+durations are bounded, and backend configuration is never exposed.
 
 A caller on an external Connection also sees direct tools: the Actions its group's reviewed
 configuration names, each as an MCP tool of its own, listed where a policy bound to the caller could

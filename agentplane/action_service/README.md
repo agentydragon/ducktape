@@ -258,14 +258,14 @@ claim, without a version parameter. It returns the canonical outcome (`cancelled
 executor. The cancelled receipt stays readable by request ID or submission key. It is independent
 of cancelling or disconnecting a wait.
 
-`get_action_result` returns an outcome as the tool that ran answered (`tool_results.py`), where a
-receipt carries it as JSON: an MCP group's stored `CallToolResult` exactly, every content block
-included, and a sandbox result the way FastMCP presents a returned model, the object as structured
-content and as one JSON text block, so a nonzero exit is not an error result. A request still
-waiting on its decision or execution says so as an ordinary result; a denied, cancelled, failed or
-unknown one is an error result carrying the decision's note or reason, or the executor's error.
-`request_action` answers the same way once its wait ends unless asked for its receipt, so an Action a
-policy approves comes back as its tool's own answer from the one call.
+`get_action_result` returns an outcome as the tool that ran answered (`tool_results.py`): an MCP
+group's stored `CallToolResult` exactly, every content block included, and a sandbox result the way
+FastMCP presents a returned model, the object as structured content and as one JSON text block, so
+a nonzero exit is not an error result. A request still waiting on its decision or execution says so
+as an ordinary result; a denied, cancelled, failed or unknown one is an error result carrying the
+decision's note or reason, or the executor's error. `request_action` answers the same way once its
+wait ends unless asked for its receipt, so an Action a policy approves comes back as its tool's own
+answer from the one call. A receipt's `execution` has its state, error and timing but no result.
 
 Submission, receipt and result reads take one shared `wait` object (`wait_seconds`, 0–30 default 0;
 `wait_until`, `decision` or `terminal` default terminal) rather than two flat parameters each.
