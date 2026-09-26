@@ -117,22 +117,6 @@ class BayesianMintStreamsPriors:
 
 
 @dataclass(frozen=True)
-class PrimaryRoundEvent:
-    """A primary-round event derived from a `valuation_observation` with valuation_kind='primary'.
-
-    `month_idx_from_origin` is the rounded month index from the fit window's origin.
-    `log_v_post_obs` and `log_v_post_sigma` are the observed log post-money valuation and
-    its uncertainty. `cash_raised_usd` is the cash injection used to compute V_pre = V_post -
-    cash; cash/V_pre is the observed round-size ratio whose distribution the model fits.
-    """
-
-    month_idx_from_origin: int
-    log_v_post_obs: float
-    log_v_post_sigma: float
-    cash_raised_usd: float
-
-
-@dataclass(frozen=True)
 class BayesianMintStreamsPosterior:
     """Posterior summary mapping onto the issuer config knobs.
 

@@ -84,7 +84,7 @@ Wide and narrow symmetry examples share one parameterized Python test.
 - `exact_selection_is_not_fifo_and_full_lot_basis_reconciles` → `sim/test_holdings.py::test_exact_selection_is_not_fifo_and_full_lot_basis_reconciles` (passed in focused RBE run)
 - `total_proceeds_use_the_same_basis_and_tax_commit` → `sim/test_holdings.py::test_total_proceeds_use_the_same_basis_and_tax_commit` (passed in focused RBE run)
 - `rejected_total_cashouts_leave_lots_cash_tax_and_capture_unchanged` → `sim/test_holdings.py::test_rejected_total_cashouts_leave_lots_cash_tax_and_capture_unchanged` (passed in focused RBE run)
-- `fifo_scheduled_sale_matches_the_same_explicit_selection` → `sim/test_holdings.py::test_fifo_scheduled_sale_matches_the_same_explicit_selection` (passed in focused RBE run)
+- `fifo_scheduled_sale_matches_the_same_explicit_selection` → `sim/test_holdings.py::test_fifo_selection_sells_the_oldest_lot_first` (passed in focused RBE run)
 - `invalid_exact_lot_requests_leave_every_book_unchanged` → `sim/test_holdings.py::test_invalid_exact_lot_requests_leave_every_book_unchanged` (passed in focused RBE run)
 - `overflow_after_first_lot_or_jurisdiction_cannot_partially_commit` → `sim/test_holdings.py::test_overflow_after_first_lot_or_jurisdiction_cannot_partially_commit` (passed in focused RBE run)
 - `rejected_scheduled_sale_preserves_every_book` → `sim/test_holdings.py::test_rejected_scheduled_sale_preserves_every_book` (passed in focused RBE run)

@@ -10,9 +10,8 @@ from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Buy, LotSale, Sell
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting
 from finance.augur.sim.holdings import Holdings
-from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import MAX_COUNT
-from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedSeries, _ScheduledSale
+from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot
 from finance.augur.sim.testing.accounting import ACCOUNTS, CASH, EXOGENOUS, HOUSEHOLD, accounting, taxpayer
 
 BROKERAGE = AccountRef(agent_id=HOUSEHOLD, account_id="brokerage")
@@ -22,7 +21,6 @@ BROKERAGE = AccountRef(agent_id=HOUSEHOLD, account_id="brokerage")
 class Books:
     accounting: Accounting
     holdings: Holdings
-    market: MarketPath
 
     def snapshot(self) -> tuple[object, ...]:
         return (
@@ -56,10 +54,7 @@ def books() -> Books:
                 basis=basis,
             ),
         )
-    market = MarketPath(
-        (PreparedSeries(series_id="security:test_fund", snapshots=26, values=(10,) * 26),), 0, rollout_count=1
-    )
-    return Books(accounting_, holdings, market)
+    return Books(accounting_, holdings)
 
 
 def sale(lot: str, units: int) -> Sell:
@@ -86,18 +81,6 @@ def purchase() -> Buy:
         lot_id="bought",
         quantity_scale=10,
         units=15,
-    )
-
-
-def scheduled(units: int) -> _ScheduledSale:
-    return _ScheduledSale(
-        month=0,
-        cause_id="sale",
-        agent_id=HOUSEHOLD,
-        account_id="brokerage",
-        asset_id="test_fund",
-        units=units,
-        proceeds_account_id="checking",
     )
 
 
@@ -155,13 +138,10 @@ def test_rejected_total_cashouts_leave_lots_cash_tax_and_capture_unchanged(books
     assert books.snapshot() == before
 
 
-def test_fifo_scheduled_sale_matches_the_same_explicit_selection(books: Books) -> None:
-    other = deepcopy(books)
+def test_fifo_selection_sells_the_oldest_lot_first(books: Books) -> None:
     selected = books.holdings.fifo([1, 0], 13)
     assert selected[0].lot_id == "old"
     books.holdings.sell(books.accounting, 0, sale("old", 13).model_copy(update={"lots": selected}), price=10)
-    other.holdings.scheduled_sale(other.accounting, other.market, scheduled(13))
-    assert books.snapshot() == other.snapshot()
     assert [(row.lot_id, row.units, row.basis) for row in books.holdings.dispositions] == [
         ("old", 10, 17),
         ("new", 3, 10),
@@ -250,7 +230,7 @@ def test_invalid_or_unfunded_purchase_does_not_create_lot_or_debit_cash(
 def test_oversell_is_rejected_before_any_disposition(books: Books) -> None:
     before = books.snapshot()
     with pytest.raises(ValueError, match="exceeds available"):
-        books.holdings.scheduled_sale(books.accounting, books.market, scheduled(21))
+        books.holdings.fifo([1, 0], 21)
     assert books.snapshot() == before
 
 

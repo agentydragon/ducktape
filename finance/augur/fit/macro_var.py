@@ -86,18 +86,6 @@ class MacroVarFit:
             spread = transition @ spread @ transition.T + covariance
         return mean, spread
 
-    @property
-    def inflation_pass_through(self) -> float:
-        """Long-run rise in the short rate per point of permanently higher inflation.
-
-        The Taylor principle says a stable policy rule has this ABOVE ONE — the nominal rate
-        must outrun inflation or real rates fall as inflation rises, which is destabilizing.
-        Nothing here imposes that; it is a property of the fit, and therefore a check on it.
-        """
-
-        own_lag = self.transition[0][0]
-        return self.transition[0][2] / (1.0 - own_lag)
-
 
 def as_state_vector(values: Sequence[float]) -> MacroStateVector:
     """A numpy row as a genuine 3-tuple: unpacking (rather than `tuple(values)`) is what

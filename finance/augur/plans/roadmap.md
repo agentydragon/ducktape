@@ -419,10 +419,9 @@ Current legacy readers make that retirement concrete:
   world (`check_policies`); retire those with the configured household, not the shared
   sleeve calculations. The compiler's strategy-derived pool and first-source-account
   lowering (`compile_holding_pools`) retires with that input.
-- `sim/holdings.py::Holdings.scheduled_sale` serves
-  `sim/holdings.py` scheduled sales and
-  `sim/private_equity.py` recovery/forced/tender flows: their respective
-  P12 public/expanded-product migrations remove the legacy selection strategy.
+- `sim/holdings.py::Holdings.fifo` serves
+  `sim/private_equity.py` recovery/forced/tender flows: their
+  P12 expanded-product migration removes the legacy selection strategy.
 
 P12 must also preserve the product shell's explicit exclusion authority: its current
 zero weight means "do not sell this holding", whereas a zero target in a selected

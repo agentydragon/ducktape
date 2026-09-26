@@ -154,16 +154,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "stock_like_priors",
-    srcs = ["stock_like_priors.py"],
-    deps = [
-        "//finance/augur/model:schemas",
-        "@pypi//numpy",
-        "@pypi//pydantic",
-    ],
-)
-
 py_binary(
     name = "train_private_equity",
     main_module = "finance.augur.fit.private_equity",
@@ -219,20 +209,6 @@ py_test(
         "//finance/augur/model:series",
         "//finance/augur/model:trained_private_equity",
         "//util/testing:jsonl",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "stock_like_priors_test",
-    srcs = ["stock_like_priors_test.py"],
-    deps = [
-        ":conftest",
-        ":stock_like_priors",
-        "//:conftest",
-        "//finance/augur:conftest",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

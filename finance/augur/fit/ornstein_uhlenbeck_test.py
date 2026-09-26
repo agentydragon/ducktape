@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.fit.ornstein_uhlenbeck import OrnsteinUhlenbeckFit, fit_ornstein_uhlenbeck, fit_rates_block
+from finance.augur.fit.ornstein_uhlenbeck import fit_ornstein_uhlenbeck, fit_rates_block
 from finance.augur.fit.synthetic_rates import TRUE_MEAN, TRUE_REVERSION, TRUE_SIGMA, months, ou_path
 from finance.augur.model.structural_macro import MINIMUM_MONTHS, PERCENT_TO_DECIMAL
 from finance.evidence.loading import MonthlyLevel
@@ -60,22 +60,6 @@ def test_the_starting_level_is_todays_observation_not_the_fitted_mean() -> None:
     assert fit.latest_level == path[-1].value
     assert fit.latest_month == path[-1].month
     assert fit.sample_months == 600
-
-
-def test_half_life_follows_from_the_reversion() -> None:
-    """A pure function of the fitted reversion, so it is constructed rather than estimated —
-    routing it through a fit would test the estimator again and call it a half-life test."""
-
-    fit = OrnsteinUhlenbeckFit(
-        reversion_per_month=1.0 - 0.5 ** (1 / 60),
-        long_run_mean=0.03,
-        monthly_sigma=0.002,
-        latest_level=0.04,
-        latest_month=date(2026, 7, 1),
-        sample_months=600,
-    )
-
-    assert fit.half_life_years == pytest.approx(5.0)
 
 
 def test_a_non_reverting_series_is_rejected_rather_than_given_a_long_run_mean() -> None:

@@ -68,8 +68,6 @@ class PrivateEquityBoolChannel(StrEnum):
     LIQUIDITY_BLOCKED = "liquidity_blocked"
 
 
-type PrivateEquityChannel = PrivateEquityFloatChannel | PrivateEquityIntChannel | PrivateEquityBoolChannel
-
 PRIVATE_EQUITY_BUNDLE_SCHEMA = pl.Schema(
     {
         "rollout_index": pl.Int64(),
