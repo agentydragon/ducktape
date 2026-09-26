@@ -37,6 +37,7 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.seaweedfs.s3 import SecretKeyFields
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.valkey import valkey_instance
 
@@ -102,7 +103,7 @@ def _storage(scope: Construct) -> None:
         # A new Secret during the staged handoff: the existing one is populated by the old
         # cross-namespace S3Credentials object and cannot be adopted here.
         secret=_S3_CREDENTIALS_SECRET,
-        key_fields=s3.SecretKeyFields(access_key="s3-access-key-id", secret_key="s3-secret-access-key"),
+        key_fields=SecretKeyFields(access_key="s3-access-key-id", secret_key="s3-secret-access-key"),
         description="Langfuse's tenant-local SeaweedFS credentials.",
     )
 

@@ -81,7 +81,10 @@ py_library(
     deps = [
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/seaweedfs:bucket",
+        "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",
+        "//cluster/cdk8s/providers/seaweedfs:s3credentials",
         "//cluster/cdk8s/providers/seaweedfs:s3identity",
+        "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )

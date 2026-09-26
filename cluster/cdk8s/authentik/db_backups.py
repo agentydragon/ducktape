@@ -32,6 +32,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.seaweedfs.s3 import AWS_ENV_KEY_FIELDS
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "authentik-db-backups"
@@ -56,7 +57,7 @@ def chart(app: App) -> Chart:
         # The operator creates and owns this Secret in the credential's namespace, where the
         # ObjectStore below consumes it.
         secret=_CREDENTIALS_SECRET,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        key_fields=AWS_ENV_KEY_FIELDS,
     )
     s3.Bucket(
         chart,

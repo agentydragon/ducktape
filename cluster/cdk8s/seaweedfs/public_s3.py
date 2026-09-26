@@ -43,6 +43,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.seaweedfs.s3 import SecretKeyFields
 from cluster.cdk8s.seaweedfs import (
     cluster,
     drivefs_artifacts_bucket,
@@ -73,7 +74,7 @@ def _external_identity(scope: Construct, name: str, *, secret: str, access_key: 
         namespace=namespace.NAME,
         secret=secret,
         secret_namespace=external_credentials.NAMESPACE,
-        key_fields=s3.SecretKeyFields(access_key=access_key, secret_key=secret_key),
+        key_fields=SecretKeyFields(access_key=access_key, secret_key=secret_key),
     )
 
 

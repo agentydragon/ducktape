@@ -33,6 +33,7 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from cluster.cdk8s.providers.seaweedfs.s3 import AWS_ENV_KEY_FIELDS
 from cluster.cdk8s.seaweedfs import s3
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant/backup"
@@ -134,7 +135,7 @@ def chart(app: App) -> Chart:
     identity.credentials(
         namespace=_NAMESPACE,
         secret=_S3_CREDENTIALS_SECRET,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        key_fields=AWS_ENV_KEY_FIELDS,
         description="Home Assistant's tenant-local SeaweedFS backup credentials.",
     )
     _repository(chart)

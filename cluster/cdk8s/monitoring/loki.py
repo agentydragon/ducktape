@@ -38,6 +38,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.providers.seaweedfs.s3 import AWS_ENV_KEY_FIELDS
 from cluster.cdk8s.seaweedfs import namespace, s3
 
 NAME = "loki"
@@ -107,7 +108,7 @@ def _storage(chart: Chart) -> None:
         namespace=namespace.NAME,
         secret=_LEGACY_CREDENTIALS_SECRET,
         secret_namespace=NAME,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        key_fields=AWS_ENV_KEY_FIELDS,
     )
     # Single bucket "loki" carrying chunks, ruler, and admin sub-paths
     # (Loki splits them internally by key prefix). See the HelmRelease's
@@ -139,7 +140,7 @@ def _storage(chart: Chart) -> None:
         # A new Secret during the staged handoff: the existing one is populated by the old
         # cross-namespace S3Credentials object and cannot be adopted here.
         secret=_CREDENTIALS_SECRET,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
+        key_fields=AWS_ENV_KEY_FIELDS,
         description="Loki's tenant-local SeaweedFS credentials.",
     )
 
