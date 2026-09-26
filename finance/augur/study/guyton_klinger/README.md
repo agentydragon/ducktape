@@ -104,6 +104,57 @@ Use January starts with complete windows for the historical extension. Do not
 inherit Trinity's every-month starts, impute missing years, or manufacture IID
 uncertainty from overlapping retirements. The 1973 reference is one path.
 
+## Declared three-sleeve adaptation
+
+Historical replay of the 2006 rules runs this package on three
+sleeves, not Table 1's eight. Targets are the 65%-equity column with its six equity
+sleeves merged:
+
+| Sleeve | Target | Annual series, in the style of [Damodaran's history][damodaran]                        |
+| ------ | -----: | -------------------------------------------------------------------------------------- |
+| Cash   |    10% | 3-month T-bill return, all of it interest                                              |
+| Bonds  |    25% | 10-year Treasury: coupon at the prior year-end yield, and the rest of its total return |
+| Equity |    65% | S&P 500: dividends over the prior year-end index level, and price return               |
+
+Spending indexes to annual CPI change. `--taxes none` is the paper control: each
+sleeve is a tax-free total-return proxy unit, with no investor taxes or added fees.
+`--taxes federal-ca` declares a taxable variant, not a paper replication:
+
+- **Split returns.** Units move by price return; each year's income is paid in its
+  December into the sleeve's income account. Bill and bond interest is Treasury
+  interest, federally taxable and California-exempt; dividends are qualified, at the
+  federal long-term rates and California's ordinary ones. Sales realize FIFO lot gains,
+  long term from 12 months as the engine counts them (statute: more than a year).
+- **W is gross.** The withdrawal leaves the portfolio and its year's tax is paid out of
+  it: spendable = W − tax. Guardrails test W / V as in the paper. The TAXES reading
+  below schedules the payments.
+- **Brackets fixed.** The bundled federal and California single-filer tables (2024
+  law, with NIIT and California's 1% surtax) hold in nominal dollars in every historical
+  year, and every window starts with $1M nominal. Early start years thus pay 2024
+  nominal thresholds at a far lower price level, and inflation pushes a window's
+  constant real income into higher brackets.
+- **Taxpayer.** A single California resident with no other income, on the standard
+  deduction (state tax is not itemized), with no prior-year tax: no estimated
+  instalments, so each year's whole tax falls due at the next January review.
+
+`records.json` carries each year's W, federal tax (NIIT included), California tax,
+their total and spendable, nominal and in the window's January dollars; the study
+summary leads with real spendable. Because W is gross and income reinvests where it
+was earned, the taxed portfolio tracks the untaxed control up to rounding and the final
+year's tax its reserve does not cover: taxes show in spending, not in wealth or
+guardrail triggers. What this adaptation cannot claim:
+
+- PMR's last funding stage ranks remaining equities by prior-year performance; with
+  one equity sleeve that ranking collapses.
+- Its results are not comparable with the paper's tables, which come from a fitted
+  eight-sleeve Monte Carlo.
+- The 10-year Treasury stands in for the aggregate bond index; duration and credit
+  differ.
+- Overlapping January-start windows share years; they are not independent trials.
+- Taxed, it omits CPI-indexed brackets, estimated instalments, the qualified-dividend
+  holding period, wash sales, the SALT deduction and fund expense ratios or fees; the
+  bond coupon is the prior year-end yield on the unit's value, not a held bond's par.
+
 ## Decisions still needed before a faithful label
 
 | ID        | Specific ambiguity / required decision                                                                                                                                                                                                                                                                                  |
@@ -111,7 +162,7 @@ uncertainty from overlapping retirements. The 1973 reference is one path.
 | ORDER     | GK2006 describes guardrail triggers using the rules in effect, then says other rules apply to the adjusted amount. Figure 1 is not execution pseudocode. Pin the candidate used by each comparison, inflation/freeze/guardrail order and deflation handling; retain threshold-crossing controls for competing readings. |
 | PORTFOLIO | Pin overweight denominator and timing, performance ranking direction/ties, and funding versus surplus reinvestment. G2004's sweep names equities; GK2006's first PMR bullet says asset classes. Do not hide this variant.                                                                                               |
 | OPENING   | Preserve G2004's explicit withdrawal reserve for its replication. Establish whether GK2006 inherited it; its Table 1 does not restate the exclusion. Specify the final-15-year boundary by year index.                                                                                                                  |
-| DATA      | Recover the exact panel or approve named replacements. Resolve 2004's 30-year/through-2003/2004–2012 endpoint bookkeeping before matching its terminal tables. Replacing its stipulated tail with subsequently observed returns is another experiment.                                                                  |
+| DATA      | Recover the exact panel; the three-sleeve adaptation above names replacements for historical replay only. Resolve 2004's 30-year/through-2003/2004–2012 endpoint bookkeeping before matching its terminal tables. Replacing its stipulated tail with subsequently observed returns is another experiment.               |
 | METRICS   | Pin the trigger-count population and source Table 7 heading interpretation. Initial wealth/rounding and sample-statistic conventions are needed before digit-level stochastic comparisons.                                                                                                                              |
 
 Start the paper control without investor taxes or added trading/advisory fees,
@@ -119,6 +170,49 @@ labeling that modeling choice; do not infer zero embedded fund expenses from the
 mixed fund/index history. A taxable personal extension needs actual price/payout
 character and tax coverage and is not the paper replication. No source claim of
 complete statutory treatment follows from these studies.
+
+### Policy readings of the three-sleeve adaptation
+
+<policy.py> pins one reading of ORDER, PORTFOLIO and
+OPENING for the declared cash/bond/single-equity adaptation, and of tax payment for its
+taxable variant. The faithful-label decisions above stay open.
+
+- **ORDER.** Scale last year's withdrawal by the preceding year's CPI ratio;
+  deflation lowers it, since the freeze text names only increases. The freeze
+  withholds an increase when the preceding year's investment return was
+  negative and the inflated amount exceeds `w0 * V`. At most one guardrail then
+  tests that candidate against `V`; its result is next year's basis. The rate
+  tested is thus the rate that would be taken, and inflation applies once.
+  Investment return compares the next opening wealth with the settled wealth
+  just after the withdrawal, so a withdrawal is never a loss and a 0% year is
+  not negative. The basis stays exact; each payment rounds half up to the
+  currency quantum.
+- **PORTFOLIO.** A sleeve's overweight is its value above its target share of
+  `V`, at the review's prices before any trade, and counts only if the sleeve's
+  unit price rose over the preceding year: GK2006's "asset classes", so bonds
+  sweep too. Funding: rising-overweight equity, rising-overweight bonds,
+  checking then the cash sleeve, remaining bonds, remaining equity, FIFO lots
+  within a sleeve, each unit reserved once. A losing sleeve therefore funds only
+  after cash and bonds run out. After the withdrawal, what funding left of the
+  rising sleeves' excess sells into the cash sleeve; nothing is bought back.
+- **OPENING.** Targets cover all opening wealth, without G2004's first-withdrawal
+  reserve, which GK2006 Table 1 does not restate. Year 0 has no prior-year
+  returns, so nothing is overweight and the first withdrawal comes from cash.
+  Capital preservation applies at zero-based year index `t < years - 15`: in 30
+  years, the first 15 withdrawals.
+- **PORTFOLIO, taxed.** A sleeve is its lots plus its unspent payouts. It rises when
+  its total return, price change plus payouts, was positive, as the untaxed proxy's
+  price does. Funding and the sweep draw a sleeve's payouts before selling its lots;
+  what they leave reinvests in that sleeve, so sleeve values match the proxy's.
+- **TAXES, prior-year reserve.** Each review first keeps invested the part of W that
+  repays tax the portfolio advanced, then moves the last closed year's assessed tax
+  (none in year 0) into the tax reserve, outside `V`, and spends the rest. Tax
+  claims are paid from the reserve; what it lacks is advanced through the funding
+  stages (overweight stages only at a review), and repaid from the next withdrawals.
+  The review after a tax year closes spends the reserve's remainder once that year's
+  claims are paid. So a year's spending is W less its tax, the portfolio's net outflow
+  is W, and the investment-return test adds advances back. The final year's settlement
+  falls past the horizon: terminal wealth nets the tax its reserve does not cover.
 
 ## Outputs that make comparisons meaningful
 
