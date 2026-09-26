@@ -72,4 +72,4 @@ spec:
       validate:
         deny: {}
         message: "Direct resource creation/modification blocked. All changes must go through GitOps (commit to git repository). Resource: {{request.object.kind}}/{{request.object.metadata.name}} User: {{request.userInfo.username}}"
-  validationFailureAction: Audit
+  validationFailureAction: audit
