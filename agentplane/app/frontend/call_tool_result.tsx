@@ -17,7 +17,8 @@ export type ContentBlock =
 /** An MCP `tools/call` result, which is what the Action Service stores for an MCP-backed Action. */
 export interface CallToolResult {
   content: ContentBlock[];
-  /** Absent unless the tool returned structured content. */
+  /** The tool's structured return value, absent unless it returned one. FastMCP's `{result: …}`
+   * envelope around a return that is not an object is unwrapped. */
   structuredContent?: unknown;
   isError: boolean;
 }
@@ -44,27 +45,42 @@ const callToolResultSchema = z.object({
   content: z.array(z.unknown()),
   structuredContent: z.unknown().optional(),
   isError: z.boolean().default(false),
+  _meta: z.object({ fastmcp: z.object({ wrap_result: z.boolean().optional() }).optional() }).optional(),
 });
+
+/** FastMCP wraps a return that is not an object as `{result: …}`, and says so in `_meta`. */
+function unwrapped(structured: unknown, wrapped: boolean): unknown {
+  if (!wrapped || structured === null || typeof structured !== "object" || Array.isArray(structured)) return structured;
+  const keys = Object.keys(structured);
+  return keys.length === 1 && keys[0] === "result" ? (structured as { result: unknown }).result : structured;
+}
 
 /** `value` as a `CallToolResult`, or `null` when it is not one. */
 export function parseCallToolResult(value: unknown): CallToolResult | null {
   const parsed = callToolResultSchema.safeParse(value);
   if (!parsed.success) return null;
-  const { content, structuredContent, isError } = parsed.data;
+  const { content, structuredContent, isError, _meta } = parsed.data;
   return {
     content: content.map((block): ContentBlock => {
       const drawn = drawnBlockSchema.safeParse(block);
       return drawn.success ? drawn.data : { type: "unrecognized", block };
     }),
-    structuredContent,
+    structuredContent: unwrapped(structuredContent, _meta?.fastmcp?.wrap_result === true),
     isError,
   };
 }
 
 /** A `CallToolResult` the way the tool answered it: its content blocks in order, then its
- * structured content. All of it is the tool's untrusted output: text renders as text, never as
- * markup, an `<img>` loads only an `image/*` data URI, and a link opens only a web URL. */
+ * structured content, shown once. A text block that only restates the structured value, as FastMCP
+ * writes one for clients that read content alone, is left out. All of it is the tool's untrusted
+ * output: text renders as text, never as markup, an `<img>` loads only an `image/*` data URI, and a
+ * link opens only a web URL. */
 export function CallToolResultView({ result }: { result: CallToolResult }): JSX.Element {
+  const structured = result.structuredContent;
+  const blocks =
+    structured === undefined
+      ? result.content
+      : result.content.filter((block) => block.type !== "text" || !restates(block.text, structured));
   return (
     <Stack gap="xs">
       {result.isError && (
@@ -72,22 +88,22 @@ export function CallToolResultView({ result }: { result: CallToolResult }): JSX.
           <Badge color="red">Tool error</Badge>
         </div>
       )}
-      {result.content.length === 0 && result.structuredContent === undefined && (
+      {blocks.length === 0 && structured === undefined && (
         <Text size="sm" c="dimmed">
           The tool returned no content.
         </Text>
       )}
-      {result.content.map((block, index) => (
+      {blocks.map((block, index) => (
         <div key={index}>
           <ContentBlockView block={block} />
         </div>
       ))}
-      {result.structuredContent !== undefined && (
+      {structured !== undefined && (
         <div>
           <Text size="xs" c="dimmed" mb={4}>
             Structured content
           </Text>
-          <JsonView value={result.structuredContent} />
+          <JsonView value={structured} />
         </div>
       )}
     </Stack>
@@ -147,12 +163,31 @@ function TextBlock({ text }: { text: string }): JSX.Element {
   return structure === undefined ? <HighlightedText text={text} /> : <JsonView value={structure} />;
 }
 
-function jsonStructure(text: string): unknown {
-  if (!looksLikeJson(text)) return undefined;
+/** Whether `text` says nothing but `value`: its JSON, or the string itself. */
+function restates(text: string, value: unknown): boolean {
+  if (typeof value === "string" && text === value) return true;
+  const parsed = parsedJson(text);
+  return parsed !== undefined && canonicalJson(parsed) === canonicalJson(value);
+}
+
+function parsedJson(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch (error) {
     if (error instanceof SyntaxError) return undefined;
     throw error;
   }
+}
+
+/** JSON with every object's keys sorted, so two serializations of one value compare equal. */
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, nested: unknown) =>
+    nested !== null && typeof nested === "object" && !Array.isArray(nested)
+      ? Object.fromEntries(Object.entries(nested).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : nested
+  );
+}
+
+function jsonStructure(text: string): unknown {
+  return looksLikeJson(text) ? parsedJson(text) : undefined;
 }

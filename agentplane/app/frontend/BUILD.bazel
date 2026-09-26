@@ -150,7 +150,19 @@ ts_library(
         ":call_tool_result",
         ":client",
         ":json_view",
+        ":presentation",
         ":stream_status",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "presentation",
+    srcs = ["presentation.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",

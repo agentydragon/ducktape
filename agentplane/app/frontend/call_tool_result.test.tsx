@@ -88,6 +88,35 @@ describe("CallToolResultView", () => {
     expect(container.textContent).toMatch(/test caption.*Structured content.*"test_width": 32/s);
   });
 
+  it("shows a structured value once, leaving out the text block that only restates it", async () => {
+    const container = await render({
+      content: [{ type: "text", text: '{"test_b": 2, "test_a": 1}' }],
+      structuredContent: { test_a: 1, test_b: 2 },
+      isError: false,
+    });
+    expect(container.textContent?.match(/"test_a": 1/g)).toHaveLength(1);
+  });
+
+  it("keeps a text block that says more than the structured value", async () => {
+    const container = await render({
+      content: [{ type: "text", text: "test summary" }],
+      structuredContent: { test_a: 1 },
+      isError: false,
+    });
+    expect(container.textContent).toMatch(/test summary.*"test_a": 1/s);
+  });
+
+  it("unwraps FastMCP's envelope around a return that is not an object", async () => {
+    const container = await render({
+      content: [{ type: "text", text: "test-returned-string" }],
+      structuredContent: { result: "test-returned-string" },
+      isError: false,
+      _meta: { fastmcp: { wrap_result: true } },
+    });
+    expect(container.textContent?.match(/test-returned-string/g)).toHaveLength(1);
+    expect(container.textContent).not.toContain('"result"');
+  });
+
   it("links a resource link only when it is a web URL", async () => {
     const container = await render({
       content: [

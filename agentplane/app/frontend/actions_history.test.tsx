@@ -203,6 +203,26 @@ describe("ActionHistory", () => {
     expect(container.textContent).not.toContain('"content"');
   });
 
+  it("switches an MCP result between the tool's answer and its stored JSON", async () => {
+    const container = await render(
+      { list: async () => [succeeded("test_mcp", IMAGE_RESULT)], decide: vi.fn() },
+      historyOver(async () => [group("test_mcp", "mcp")])
+    );
+    const raw = container.querySelector<HTMLInputElement>('input[value="raw"]');
+    expect(raw).not.toBeNull();
+    await act(async () => raw!.click());
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain('"mimeType": "image/png"');
+  });
+
+  it("offers no Pretty/Raw switch where the stored JSON is the only rendering", async () => {
+    const container = await render(
+      { list: async () => [succeeded("test_sandbox", IMAGE_RESULT)], decide: vi.fn() },
+      historyOver(async () => [group("test_sandbox", "sandbox")])
+    );
+    expect(container.querySelector('input[value="raw"]')).toBeNull();
+  });
+
   it("keeps a sandbox group's result as its stored JSON, even one shaped like a CallToolResult", async () => {
     const container = await render(
       { list: async () => [succeeded("test_sandbox", IMAGE_RESULT)], decide: vi.fn() },

@@ -2,7 +2,7 @@ import { type JSX, useEffect, useState } from "react";
 import { Accordion, Alert, Badge, Code, Group, Paper, Stack, Text, Title } from "@mantine/core";
 
 import { ActionCaller, ActionContext, RequestAuditDetails, stateLabel, useActionRequests } from "./actions";
-import { CallToolResultView, parseCallToolResult } from "./call_tool_result";
+import { type CallToolResult, CallToolResultView, parseCallToolResult } from "./call_tool_result";
 import {
   actionGroupService,
   actionService,
@@ -12,22 +12,28 @@ import {
   type ActionService,
 } from "./client";
 import { JsonView } from "./json_view";
+import { type Presentation, PresentationControl } from "./presentation";
 import { StaleNotice } from "./stream_status";
 
 import "./actions_history.css";
 
-/** The stored result, drawn as the tool answered when the Action's group runs on an MCP backend (the
- * Action Service stores its whole `CallToolResult`), and as its JSON otherwise: a sandbox group's
- * own models, or a group this page cannot place. The group's executor decides, as it does for the
- * Action Service's own answer to MCP callers (`agentplane/action_service/tool_results.py`). */
-function ExecutionResult({ result, mcp }: { result: unknown; mcp: boolean }): JSX.Element {
-  const call = mcp ? parseCallToolResult(result) : null;
+/** The stored result: pretty, drawn as the tool answered when `call` holds it decoded, and otherwise
+ * its stored JSON, which is also what raw shows. */
+function ExecutionResult({
+  result,
+  call,
+  presentation,
+}: {
+  result: unknown;
+  call: CallToolResult | null;
+  presentation: Presentation;
+}): JSX.Element {
   return (
     <div>
       <Text size="sm" fw={600} mb={4}>
         Result
       </Text>
-      {call === null ? <JsonView value={result} /> : <CallToolResultView result={call} />}
+      {call !== null && presentation === "pretty" ? <CallToolResultView result={call} /> : <JsonView value={result} />}
     </div>
   );
 }
@@ -38,6 +44,12 @@ function ExecutionResult({ result, mcp }: { result: unknown; mcp: boolean }): JS
 function HistoryCard({ request, mcp }: { request: ActionRequestView; mcp: boolean }): JSX.Element {
   const decision = request.decision;
   const policySet = decision?.policy_evidence?.matched.policy_set;
+  const [presentation, setPresentation] = useState<Presentation>("pretty");
+  const result = request.execution?.result;
+  // An MCP group's result is its stored CallToolResult, drawn as the tool answered, the same authority
+  // the Action Service answers MCP callers by (`agentplane/action_service/tool_results.py`). Anything
+  // else, a sandbox group's own models or a group this page cannot place, has no rendering but its JSON.
+  const call = mcp && result !== null && result !== undefined ? parseCallToolResult(result) : null;
   return (
     <Paper withBorder p="md">
       <Stack gap="sm">
@@ -54,6 +66,7 @@ function HistoryCard({ request, mcp }: { request: ActionRequestView; mcp: boolea
                 {decision.verdict === "allow" ? "Allowed" : "Denied"}
               </Badge>
             )}
+            {call !== null && <PresentationControl value={presentation} onChange={setPresentation} />}
           </Group>
           <ActionContext request={request} />
           <Text size="xs" c="dimmed">
@@ -76,8 +89,8 @@ function HistoryCard({ request, mcp }: { request: ActionRequestView; mcp: boolea
             </Accordion.Panel>
           </Accordion.Item>
         </Accordion>
-        {request.execution?.result !== null && request.execution?.result !== undefined && (
-          <ExecutionResult result={request.execution.result} mcp={mcp} />
+        {result !== null && result !== undefined && (
+          <ExecutionResult result={result} call={call} presentation={presentation} />
         )}
         {request.execution?.error && (
           <div>
