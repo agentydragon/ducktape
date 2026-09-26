@@ -1,9 +1,11 @@
-# gazelle:resolve py cert_manager_crds //cluster/cdk8s/crd_bindings/cert_manager:certificate
-# gazelle:resolve py trust_manager_crds //cluster/cdk8s/crd_bindings/cert_manager:bundle
-# gazelle:resolve py cert_manager_clusterissuer_crds //cluster/cdk8s/crd_bindings/cert_manager:clusterissuer
-# gazelle:resolve py cert_manager_issuer_crds //cluster/cdk8s/crd_bindings/cert_manager:issuer
+# gazelle:ignore
+# gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
+# gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
+# gazelle:resolve py cert_manager_clusterissuer_crds //cluster/cdk8s/providers/cert_manager:clusterissuer
+# gazelle:resolve py cert_manager_issuer_crds //cluster/cdk8s/providers/cert_manager:issuer
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+load("//devinfra/python:defs.bzl", "py_library")
 
 cdk8s_import(
     name = "certificate",
@@ -41,4 +43,26 @@ cdk8s_import(
     module_name = "cert_manager_issuer_crds",
     module_path = "io/cert_manager",
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "cert_manager_certificate",
+    srcs = ["certificate.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":certificate",
+        "//cluster/cdk8s:metadata",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "cluster_issuer",
+    srcs = ["cluster_issuer.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":clusterissuer",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
 )
