@@ -28,7 +28,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpointsScheme,
 )
 
-from cluster.cdk8s import external_creds, forgejo_images
+from cluster.cdk8s import container_security, external_creds, forgejo_images
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
@@ -149,7 +149,7 @@ def _rest_exporter(chart: Chart, account: str) -> None:
             security_context=k8s.SecurityContext(
                 allow_privilege_escalation=False,
                 read_only_root_filesystem=True,
-                capabilities=k8s.Capabilities(drop=["ALL"]),
+                capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
             ),
             env=[
                 k8s.EnvVar(name="GITHUB_TOKEN_FILE", value=f"{_TOKEN_DIR}/token"),
@@ -188,7 +188,7 @@ def _graphql_exporter(chart: Chart, account: str) -> None:
                 # aspect_rules_py launcher materialises its venv at startup inside the
                 # image's own runfiles directory, so the root filesystem has to be
                 # writable or the container exits before serving anything.
-                capabilities=k8s.Capabilities(drop=["ALL"]),
+                capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
             ),
             env=[
                 k8s.EnvVar(name="GITHUB_ACCOUNT", value=account),

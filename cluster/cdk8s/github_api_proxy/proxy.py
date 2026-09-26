@@ -47,7 +47,7 @@ from gateway_api_tlsroute_crds.io.k8s.networking.gateway import (
     TlsRouteSpecRulesBackendRefs,
 )
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, container_security
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -265,7 +265,7 @@ def _proxy_container() -> k8s.Container:
             k8s.ContainerPort(name="metrics", container_port=_METRICS_PORT, protocol="TCP"),
         ],
         security_context=k8s.SecurityContext(
-            allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
+            allow_privilege_escalation=False, capabilities=container_security.K8S_DROP_ALL_CAPABILITIES
         ),
         resources=k8s.ResourceRequirements(
             requests={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("256Mi")},

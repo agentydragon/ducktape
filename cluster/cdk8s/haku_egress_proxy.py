@@ -33,7 +33,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from cluster.cdk8s import cilium, egress_fences, external_creds
+from cluster.cdk8s import cilium, container_security, egress_fences, external_creds
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
@@ -304,7 +304,8 @@ def _iron_proxy(chart: Chart, name: str, *, description: str, config: dict, port
                                 k8s.ContainerPort(name="metrics", container_port=9090),
                             ],
                             security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
+                                allow_privilege_escalation=False,
+                                capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                             ),
                             resources=k8s.ResourceRequirements(
                                 requests=_quantities(cpu="50m", memory="128Mi"),

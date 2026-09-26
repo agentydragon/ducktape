@@ -15,6 +15,7 @@ from pathlib import Path
 from cdk8s import App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
 
+from cluster.cdk8s import container_security
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -46,7 +47,7 @@ def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
 def _container_security_context() -> k8s.SecurityContext:
     return k8s.SecurityContext(
         allow_privilege_escalation=False,
-        capabilities=k8s.Capabilities(drop=["ALL"]),
+        capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
         run_as_non_root=True,
         run_as_group=1000,
         run_as_user=1000,

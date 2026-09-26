@@ -22,12 +22,10 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
-    Capability,
     ConfigMap,
     ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -54,6 +52,7 @@ from external_secrets_crds.io.external_secrets import (
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpoints
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import container_security
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
@@ -250,7 +249,7 @@ class HaMcpApp(Construct):
             readiness=http_probe("/healthz", port=_APP_UPSTREAM_PORT, initial_delay_seconds=5),
             liveness=http_probe("/healthz", port=_APP_UPSTREAM_PORT, initial_delay_seconds=20, period_seconds=20),
             security_context=ContainerSecurityContextProps(
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]), user=999, group=999
+                capabilities=container_security.DROP_ALL_CAPABILITIES, user=999, group=999
             ),
         )
         deployment.containers[0].mount("/tmp", tmp_volume)

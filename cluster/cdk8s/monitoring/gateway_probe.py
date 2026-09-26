@@ -24,6 +24,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import container_security
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -139,7 +140,7 @@ def _daemon_set(scope: Chart, nodes: list[str]) -> None:
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
                                 read_only_root_filesystem=True,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
+                                capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                             ),
                             volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True)],
                             resources=k8s.ResourceRequirements(

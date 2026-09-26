@@ -22,7 +22,7 @@ from cilium_crds.io.cilium import (
 )
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 
-from cluster.cdk8s import cilium, cnpg, forgejo_images, gateway
+from cluster.cdk8s import cilium, cnpg, container_security, forgejo_images, gateway
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku import namespace
@@ -196,7 +196,8 @@ def _add_deployment(chart: Chart) -> None:
                             liveness_probe=_curl_probe("/healthz/live", period_seconds=30),
                             readiness_probe=_curl_probe("/healthz/ready", period_seconds=10),
                             security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
+                                allow_privilege_escalation=False,
+                                capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                             ),
                         )
                     ],
@@ -330,7 +331,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                             ),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
+                                capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                                 read_only_root_filesystem=True,
                                 run_as_non_root=True,
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),

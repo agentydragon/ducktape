@@ -200,6 +200,7 @@ py_library(
     visibility = ["//cluster/cdk8s/litellm:__pkg__"],
     deps = [
         ":config_format",
+        ":container_security",
         ":forgejo_images",
         ":generation",
         ":manifest_roots",
@@ -273,6 +274,7 @@ py_library(
     deps = [
         ":cilium",
         ":config_format",
+        ":container_security",
         ":external_creds",
         ":forgejo_images",
         ":generation",
@@ -297,6 +299,7 @@ py_library(
     srcs = ["public_coder_sshpiper.py"],
     deps = [
         ":cilium",
+        ":container_security",
         ":flux",
         ":generation",
         ":manifest_roots",
@@ -438,6 +441,7 @@ py_library(
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
     deps = [
         ":artifact_generators",
+        ":container_security",
         ":fleet_rules",
         ":flux",
         ":forgejo_images",
@@ -530,6 +534,7 @@ py_library(
     deps = [
         ":artifact_generators",
         ":cilium",
+        ":container_security",
         ":flux",
         ":forgejo_images",
         ":generation",
@@ -546,6 +551,7 @@ py_library(
     name = "forgejo_token_rotation",
     srcs = ["forgejo_token_rotation.py"],
     deps = [
+        ":container_security",
         ":forgejo_images",
         ":generation",
         ":manifest_roots",
@@ -558,6 +564,7 @@ py_library(
     name = "authentik_jwt_rotation",
     srcs = ["authentik_jwt_rotation.py"],
     deps = [
+        ":container_security",
         ":external_creds",
         ":forgejo_images",
         ":generation",
@@ -595,6 +602,7 @@ py_library(
     deps = [
         ":cilium",
         ":config_format",
+        ":container_security",
         ":egress_fences",
         ":external_creds",
         ":forgejo_images",
@@ -634,6 +642,7 @@ py_library(
     deps = [
         ":artifact_generators",
         ":cilium",
+        ":container_security",
         ":fleet_rules",
         ":flux",
         ":forgejo_images",
@@ -725,6 +734,7 @@ py_library(
     ],
     deps = [
         ":artifact_generators",
+        ":container_security",
         ":fleet_rules",
         ":flux",
         ":forgejo_images",
@@ -973,6 +983,7 @@ py_library(
     deps = [
         ":artifact_generators",
         ":cnpg",
+        ":container_security",
         ":fleet_rules",
         ":flux",
         ":gateway",
@@ -1301,6 +1312,7 @@ py_library(
     srcs = ["kube_api_proxy.py"],
     deps = [
         ":artifact_generators",
+        ":container_security",
         ":flux",
         ":gateway",
         ":generation",

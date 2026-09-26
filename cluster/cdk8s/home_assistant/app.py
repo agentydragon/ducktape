@@ -44,6 +44,7 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
+from cluster.cdk8s import container_security
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
@@ -504,7 +505,8 @@ def _token_provisioner(scope: Construct) -> None:
                                         limits=_quantities(memory="256Mi"),
                                     ),
                                     security_context=k8s.SecurityContext(
-                                        allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
+                                        allow_privilege_escalation=False,
+                                        capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                                     ),
                                     volume_mounts=[_settings_mount("settings")],
                                 )

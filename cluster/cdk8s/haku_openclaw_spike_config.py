@@ -21,6 +21,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
+from cluster.cdk8s import container_security
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import config_map_chart, write_charts
@@ -227,7 +228,7 @@ _HAKU_GIT_PASSWORD = _env("HAKU_GIT_PASSWORD", "proxy-haku-forgejo-placeholder")
 _GH_PAT = _env("GH_PAT", "proxy-github-placeholder")
 
 _CONTAINER_SECURITY_CONTEXT = k8s.SecurityContext(
-    allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
+    allow_privilege_escalation=False, capabilities=container_security.K8S_DROP_ALL_CAPABILITIES
 )
 
 

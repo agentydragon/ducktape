@@ -38,6 +38,7 @@ from seaweed_s3policybinding_crds.com.seaweedfs.seaweed import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import container_security
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -228,7 +229,7 @@ def _gateway(scope: Construct) -> None:
                                 run_as_non_root=True,
                                 run_as_user=65532,
                                 run_as_group=65532,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
+                                capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                             ),
                             volume_mounts=[k8s.VolumeMount(name="s3-config", mount_path=_CONFIG_DIR, read_only=True)],
                         )

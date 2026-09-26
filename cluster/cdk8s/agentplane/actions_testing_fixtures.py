@@ -7,11 +7,9 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
-    Capability,
     ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -86,7 +84,7 @@ def _add_mcp_everything(scope: Construct) -> None:
         security_context=ContainerSecurityContextProps(
             allow_privilege_escalation=False,
             read_only_root_filesystem=True,
-            capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
+            capabilities=container_security.DROP_ALL_CAPABILITIES,
         ),
     )
     apply_pod_spec_patches(deployment)

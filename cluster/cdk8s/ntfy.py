@@ -12,11 +12,9 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
-    Capability,
     ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -55,7 +53,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cnpg, fleet_rules, node_scheduling
+from cluster.cdk8s import cnpg, container_security, fleet_rules, node_scheduling
 from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
@@ -269,7 +267,7 @@ class Ntfy(Construct):
             readiness=http_probe("/v1/health", port=PORT, initial_delay_seconds=10, failure_threshold=12),
             liveness=http_probe("/v1/health", port=PORT, initial_delay_seconds=20, period_seconds=20),
             security_context=ContainerSecurityContextProps(
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
+                capabilities=container_security.DROP_ALL_CAPABILITIES,
                 user=65532,
                 group=65532,
                 read_only_root_filesystem=True,

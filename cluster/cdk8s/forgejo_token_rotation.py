@@ -13,6 +13,7 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
+from cluster.cdk8s import container_security
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -89,7 +90,8 @@ def chart(app: App) -> Chart:
                                     image=_IMAGE,
                                     args=["--config", "/config/tokens.yaml"],
                                     security_context=k8s.SecurityContext(
-                                        allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
+                                        allow_privilege_escalation=False,
+                                        capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                                     ),
                                     volume_mounts=[
                                         k8s.VolumeMount(name="rotations-config", mount_path="/config", read_only=True),

@@ -33,7 +33,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from cluster.cdk8s import cilium, external_creds, public_coder_devbox
+from cluster.cdk8s import cilium, container_security, external_creds, public_coder_devbox
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import yaml_config
@@ -293,7 +293,7 @@ def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
             k8s.ContainerPort(name="metrics", container_port=_METRICS_PORT),
         ],
         security_context=k8s.SecurityContext(
-            allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
+            allow_privilege_escalation=False, capabilities=container_security.K8S_DROP_ALL_CAPABILITIES
         ),
         volume_mounts=[
             k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True),

@@ -14,6 +14,7 @@ from pathlib import Path
 from cdk8s import App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
 
+from cluster.cdk8s import container_security
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -115,7 +116,7 @@ def _deployment(chart: Chart) -> None:
                                 run_as_user=65532,
                                 run_as_group=65532,
                                 read_only_root_filesystem=True,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
+                                capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                             ),
                         ),
                         # Public basic-auth wrapper. Zot itself must stay unauthenticated on the
@@ -147,7 +148,7 @@ def _deployment(chart: Chart) -> None:
                                 run_as_non_root=True,
                                 run_as_user=101,
                                 run_as_group=101,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
+                                capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                             ),
                         ),
                     ],

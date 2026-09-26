@@ -47,7 +47,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cilium, forgejo_images
+from cluster.cdk8s import cilium, container_security, forgejo_images
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -224,7 +224,7 @@ def chart(app: App) -> Chart:
                                     # a writable root filesystem despite the other hardening here.
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False,
-                                        capabilities=k8s.Capabilities(drop=["ALL"]),
+                                        capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                                         seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                                     ),
                                     args=[

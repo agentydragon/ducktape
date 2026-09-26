@@ -36,6 +36,7 @@ py_library(
         ":config",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:container_security",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s:pod_spec_patches",

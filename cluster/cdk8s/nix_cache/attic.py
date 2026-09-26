@@ -21,7 +21,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
-from cluster.cdk8s import cnpg, external_creds, forgejo_images
+from cluster.cdk8s import cnpg, container_security, external_creds, forgejo_images
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -115,7 +115,7 @@ def _server(scope: Construct) -> None:
                                 run_as_group=1000,
                                 run_as_non_root=True,
                                 allow_privilege_escalation=False,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
+                                capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                             ),
                             env=[
@@ -281,7 +281,8 @@ def _rotation(scope: Construct) -> None:
                                     args=["rotate", "--config", "/config/rotators.yaml"],
                                     env=[_secret_env("GIT_TOKEN", _GITHUB_PAT_SECRET, "token")],
                                     security_context=k8s.SecurityContext(
-                                        allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
+                                        allow_privilege_escalation=False,
+                                        capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                                     ),
                                     volume_mounts=[
                                         k8s.VolumeMount(name="rotators-config", mount_path="/config", read_only=True)
@@ -347,7 +348,8 @@ def _rotation(scope: Construct) -> None:
                                 "--keypair-dir=/secrets/cache-keys",
                             ],
                             security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
+                                allow_privilege_escalation=False,
+                                capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                             ),
                             resources=k8s.ResourceRequirements(
                                 requests={

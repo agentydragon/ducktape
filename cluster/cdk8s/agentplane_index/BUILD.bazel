@@ -22,6 +22,7 @@ py_library(
     deps = [
         "//agentplane/indexing:main",
         "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:container_security",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:generation",

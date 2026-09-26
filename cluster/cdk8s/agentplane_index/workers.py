@@ -28,7 +28,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from agentplane.indexing.main import Settings
-from cluster.cdk8s import cnpg, forgejo_images
+from cluster.cdk8s import cnpg, container_security, forgejo_images
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -163,7 +163,8 @@ def _worker(
                             name="index",
                             image=_IMAGE,
                             security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
+                                allow_privilege_escalation=False,
+                                capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                             ),
                             env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_CONFIG_MAP.name))],
                             env=[

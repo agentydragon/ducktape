@@ -13,11 +13,9 @@ from __future__ import annotations
 
 from cdk8s import Size
 from cdk8s_plus_34 import (
-    Capability,
     ContainerProps,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     EnvValue,
@@ -30,6 +28,8 @@ from cdk8s_plus_34 import (
     VolumeMount,
 )
 from constructs import Construct
+
+from cluster.cdk8s import container_security
 
 NAME = "clickhouse"  # the ClickHouseInstallation and the Service clients connect through
 NAMESPACE = "clickhouse"
@@ -77,7 +77,7 @@ def queries_file_container(scope: Construct, name: str, *, schema: IConfigMap, c
             memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
         ),
         security_context=ContainerSecurityContextProps(
-            capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]), read_only_root_filesystem=True
+            capabilities=container_security.DROP_ALL_CAPABILITIES, read_only_root_filesystem=True
         ),
         volume_mounts=[
             VolumeMount(

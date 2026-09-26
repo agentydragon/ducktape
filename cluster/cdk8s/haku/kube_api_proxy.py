@@ -13,11 +13,9 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
-    Capability,
     ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -39,7 +37,7 @@ from cdk8s_plus_34 import (
 from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
 from constructs import Construct
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, container_security
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console
@@ -203,7 +201,7 @@ class KubeApiProxy(Construct):
             ),
             security_context=ContainerSecurityContextProps(
                 allow_privilege_escalation=False,
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
+                capabilities=container_security.DROP_ALL_CAPABILITIES,
                 read_only_root_filesystem=True,
             ),
         )

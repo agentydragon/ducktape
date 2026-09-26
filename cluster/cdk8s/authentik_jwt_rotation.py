@@ -20,7 +20,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
-from cluster.cdk8s import external_creds
+from cluster.cdk8s import container_security, external_creds
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -111,7 +111,8 @@ def _cronjob(chart: Chart) -> None:
                                     image=_IMAGE,
                                     args=["--config", "/config/rotations.yaml"],
                                     security_context=k8s.SecurityContext(
-                                        allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
+                                        allow_privilege_escalation=False,
+                                        capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                                     ),
                                     volume_mounts=[
                                         _mount("rotations-config", "/config"),

@@ -20,6 +20,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:container_security",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",

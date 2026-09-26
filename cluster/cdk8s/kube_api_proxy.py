@@ -15,6 +15,7 @@ from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import container_security
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -116,7 +117,7 @@ def _deployment(chart: Chart) -> None:
                             ),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
+                                capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                                 read_only_root_filesystem=True,
                                 run_as_non_root=True,
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),

@@ -17,12 +17,10 @@ from pathlib import Path
 import tomli_w
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
-    Capability,
     ConfigMap,
     ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -52,7 +50,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from aiquota.api import Settings
 from aiquota.config import Config
-from cluster.cdk8s import public_coder_proxy
+from cluster.cdk8s import container_security, public_coder_proxy
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app  # aiquota()'s parameter is its Kustomization
 from cluster.cdk8s.clickhouse import client
@@ -300,8 +298,7 @@ class Aiquota(Construct):
             readiness=http_probe("/readyz", port=_PORT, initial_delay_seconds=5, failure_threshold=12),
             liveness=http_probe("/healthz", port=_PORT, initial_delay_seconds=10, period_seconds=20),
             security_context=ContainerSecurityContextProps(
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                read_only_root_filesystem=False,
+                capabilities=container_security.DROP_ALL_CAPABILITIES, read_only_root_filesystem=False
             ),
             volume_mounts=[
                 VolumeMount(

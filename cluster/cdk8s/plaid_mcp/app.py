@@ -14,7 +14,7 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, container_security
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts, write_yaml
@@ -64,7 +64,7 @@ def _env() -> list[k8s.EnvVar]:
 def _container_security_context() -> k8s.SecurityContext:
     return k8s.SecurityContext(
         allow_privilege_escalation=False,
-        capabilities=k8s.Capabilities(drop=["ALL"]),
+        capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
         run_as_group=1000,
         run_as_non_root=True,
         run_as_user=1000,

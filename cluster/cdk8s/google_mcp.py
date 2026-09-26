@@ -27,11 +27,9 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
-    Capability,
     ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -58,7 +56,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, container_security
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     Kustomization,
@@ -167,7 +165,7 @@ class GoogleMcpApp(Construct):
             liveness=http_probe("/healthz", port=_HTTP_PORT, initial_delay_seconds=15, period_seconds=20),
             security_context=ContainerSecurityContextProps(
                 allow_privilege_escalation=False,
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
+                capabilities=container_security.DROP_ALL_CAPABILITIES,
                 ensure_non_root=True,
                 user=1000,
                 group=1000,

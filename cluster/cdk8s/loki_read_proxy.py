@@ -15,7 +15,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, container_security
 from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
@@ -127,7 +127,8 @@ def _deployment(chart: Chart) -> None:
                             image=_IMAGE,
                             image_pull_policy="Always",
                             security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
+                                allow_privilege_escalation=False,
+                                capabilities=container_security.K8S_DROP_ALL_CAPABILITIES,
                             ),
                             ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
                             env=[

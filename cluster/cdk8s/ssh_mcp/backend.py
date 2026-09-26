@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch, Size
 from cdk8s_plus_34 import (
-    Capability,
     ConfigMap,
     ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -35,7 +33,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, container_security
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
@@ -168,7 +166,7 @@ class SshMcp(Construct):
             liveness=http_probe("/healthz", port=HTTP_PORT, initial_delay_seconds=15, period_seconds=20),
             security_context=ContainerSecurityContextProps(
                 allow_privilege_escalation=False,
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
+                capabilities=container_security.DROP_ALL_CAPABILITIES,
                 ensure_non_root=True,
                 user=1000,
                 group=1000,

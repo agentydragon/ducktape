@@ -7,11 +7,9 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
-    Capability,
     ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -40,7 +38,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMetadata,
 )
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, container_security
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
@@ -255,7 +253,7 @@ def _add_deployment(scope: Construct) -> Deployment:
         security_context=ContainerSecurityContextProps(
             allow_privilege_escalation=False,
             read_only_root_filesystem=True,
-            capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
+            capabilities=container_security.DROP_ALL_CAPABILITIES,
         ),
     )
     config_secret = Secret.from_secret_name(scope, "config-secret", "agentplane-testing-acceptance-operator")
