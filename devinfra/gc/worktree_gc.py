@@ -4,9 +4,12 @@ Mirrors output_base_gc's PRUNE/KEEP/REVIEW model. A worktree is prunable only wh
 clean (no tracked *or* untracked changes), idle (not the main checkout, not the invoking
 worktree, no process cwd'd inside), and its work is already in the main branch —
 established by git (HEAD is an ancestor of main; merging HEAD into main is a no-op, which
-catches squash/rebase-merges; or the branch is empty) or by a merged GitHub PR for its
-branch. Everything else is kept (dirty/active/live/open-PR) or reported for manual review
-(clean but unique unmerged work, detached HEAD with unique commits, undeterminable main).
+catches squash/rebase-merges; or the branch is empty) or by a merged or closed GitHub PR
+for its branch — a closed-not-merged PR means a human already decided not to land this
+work, and removing the worktree loses nothing since its branch (and any commits on it, even
+past the PR's head) stays reachable through the branch ref. Everything else is kept
+(dirty/active/live/open-PR) or reported for manual review (clean but unique unmerged work,
+detached HEAD with unique commits, undeterminable main).
 
 Repo-level git plumbing lives in `git_repo`; the PR model in `pull_request`. PR state is an
 injected mapping so this module needs no network; the CLI (workspace_gc) fills it from
@@ -147,7 +150,11 @@ def classify_worktree(
         return keep("uncommitted changes" + (f" ({pr_phrase(pr)})" if pr is not None else ""))
     if pr is not None and pr.state is PrState.OPEN:
         return keep(pr_phrase(pr))
-    if pr is not None and pr.state is PrState.MERGED:
+    if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED):
+        # Removing a worktree never touches its branch, so this is safe regardless of
+        # whether the branch has advanced past the PR's head — an advanced branch is
+        # caught separately by branch_gc, which does have to care (deleting a branch ref
+        # is destructive).
         return prune(pr_phrase(pr))
     if content_in_main(pg, pg.head.peel(pygit2.Commit).id, main):
         return prune(f"changes already in {main}")
