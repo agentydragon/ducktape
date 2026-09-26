@@ -11,9 +11,9 @@ from collections.abc import Sequence
 import numpy as np
 from numpy.typing import NDArray
 
+from finance.augur.product.metric_composition import BASE_METRIC_NAMES
+from finance.augur.product.metrics import ProductMetricArrays
 from finance.augur.sim.holdings import private_issuer
-from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
-from finance.augur.sim.product_metrics import ProductMetricArrays
 from finance.augur.sim.results import CashSeries, ConsumptionTarget, InsufficientCash, PaymentRejected, Rollout, Summary
 
 
@@ -82,7 +82,11 @@ def metric_arrays(
             raise ValueError("private-equity histories are not captured for product action projection")
         # The ending book lists every bond the world holds, redeemed ones included.
         captured_bonds = {row.bond_id: row.account.account_id for row in summary.bond_principal}
-        ending_bonds = {bond.bond_id: bond.account_id for bond in ending.bonds if bond.agent_id == primary_agent_id}
+        ending_bonds = (
+            {}
+            if ending.bonds is None
+            else {bond.bond_id: bond.account_id for bond in ending.bonds if bond.agent_id == primary_agent_id}
+        )
         if len(captured_bonds) != len(summary.bond_principal) or captured_bonds != ending_bonds:
             raise ValueError("held-bond principal history must cover each declared actor bond/account exactly once")
         series["cash_quanta"][:observed, column] = _total_series(summary.cash, primary_agent_id, observed)

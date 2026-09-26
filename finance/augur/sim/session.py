@@ -120,8 +120,6 @@ class _Record:
         trace = None
         if self.financial is not None:
             financial = self.financial.financial()
-            if financial is None:
-                raise RuntimeError("detailed capture requires financial output")
             trace = results.Trace(
                 events=capture.event_log(financial),
                 books=financial.months,

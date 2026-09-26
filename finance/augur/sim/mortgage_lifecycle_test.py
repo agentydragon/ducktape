@@ -1,7 +1,7 @@
 """A tracked home loan from origination to payoff: the installment, the carry, and the sale that closes it.
 
 Every fact is read from the world the test composed — the books it keeps between months, the
-property component's own purchase and sale outcomes, and the app's per-month property mark.
+property component's own purchase and sale outcomes, and its mark of the held home each month.
 """
 
 from __future__ import annotations
@@ -33,7 +33,6 @@ from finance.augur.sim.prepared import (
     _PropertySale,
     _PropertyTax,
 )
-from finance.augur.sim.product_metrics import product_row
 from finance.augur.sim.property import Housing, Purchase, Sale
 from finance.augur.sim.results import Rejected
 from finance.augur.sim.world import World
@@ -50,7 +49,6 @@ SF = PreparedLocation(
     annual_special_assessment=0,
 )
 SF_HOME = HomeValueKey(location_id=LocationId("sf"))
-PROPERTY_VALUE = 3  # product_row's `property_value_quanta` slot.
 
 
 def money(amount: Decimal | int) -> int:
@@ -132,19 +130,37 @@ def compose(
     return world
 
 
+def home_value_of(world: World) -> int:
+    """Alice's held homes at the closed month's mark, as the property component values them.
+
+    A home not yet bought or already sold counts nothing, and so does one on a path the test
+    gave no home-value series.
+    """
+    properties = world.properties
+    assert properties is not None
+    return sum(
+        properties.market_value(purchase, world.market, world.mark_month)
+        for purchase in properties.housing.purchases
+        if purchase.buyer_agent_id == ALICE
+        and purchase.property_id in properties.properties
+        and properties.properties[purchase.property_id].state.active
+        and f"home_value:{purchase.location_id}" in world.market.series
+    )
+
+
 @dataclass
 class Recorded:
     """What the caller keeps between months; the world holds only the current one."""
 
     books: list[Book]
-    rows: list[tuple[int, ...]]
+    home_values: list[int]
     journal: list[JournalEntry] = field(default_factory=list)
     purchases: list[Purchase] = field(default_factory=list)
     sales: list[Sale] = field(default_factory=list)
 
     @classmethod
     def opening(cls, world: World) -> Recorded:
-        return cls(books=[world.book()], rows=[product_row(world, ALICE)])
+        return cls(books=[world.book()], home_values=[home_value_of(world)])
 
     def month(self, world: World) -> None:
         """Read the closed month's outcomes, before the next one clears them."""
@@ -153,7 +169,7 @@ class Recorded:
             self.purchases.extend(world.properties.purchases)
             self.sales.extend(world.properties.sales)
         self.books.append(world.book())
-        self.rows.append(product_row(world, ALICE))
+        self.home_values.append(home_value_of(world))
 
 
 def drive(world: World, *payers: str) -> Recorded:
@@ -244,6 +260,7 @@ def test_financed_purchase_and_first_installment_match_contract() -> None:
 
     assert not recorded.books[0].mortgages
     opening, ending = recorded.books[1], recorded.books[2]
+    assert opening.properties is not None
     assert opening.properties[0].adjusted_basis == 51_000_000
     assert opening.mortgages[0].monthly_payment == 239_820
     assert opening.mortgages[0].principal == 40_000_000
@@ -300,15 +317,16 @@ def test_sale_pays_off_ledger_principal_before_the_sale_months_installment(
         assert world.failed_month is None
         [purchase_outcome] = recorded.purchases
         assert purchase_outcome.purchase_price == 100_000
+        assert books[3].properties is not None
         assert books[3].properties[0].adjusted_basis == 100_000
-        assert [row[PROPERTY_VALUE] for row in recorded.rows] == [0, 0, 0, 120_000, 150_000, 180_000, 0]
+        assert recorded.home_values == [0, 0, 0, 120_000, 150_000, 180_000, 0]
         [sale] = recorded.sales
         assert sale.gross_proceeds == 180_000 - seller_cost
         assert sale.mortgage_payoff == payoff
         assert sale.net_cash_to_owner == 180_000 - seller_cost - payoff
         assert sale.realized_gain == 80_000 - seller_cost
         assert sale.depreciation_recapture == sale.section_121_exclusion == 0
-        assert sale.gross_proceeds + seller_cost == recorded.rows[5][PROPERTY_VALUE]
+        assert sale.gross_proceeds + seller_cost == recorded.home_values[5]
         assert balanced(recorded.journal)
         assert not books[2].mortgages
         if financed:

@@ -15,6 +15,7 @@ from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.series import InflationKey
 from finance.augur.model.testing import ConstantFrameModel
+from finance.augur.product.metrics import OutcomeBasis
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import (
     MetricName,
@@ -23,7 +24,6 @@ from finance.augur.product.wire import (
     RolloutRequest,
     ScenarioKey,
 )
-from finance.augur.sim.product_metrics import OutcomeBasis
 
 
 def _product(*, future_cpi: float = 10) -> ProductService:

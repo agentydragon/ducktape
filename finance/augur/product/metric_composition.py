@@ -1,4 +1,4 @@
-"""Financial metric arithmetic shared by engine adapters and result consumers.
+"""The app's metric arithmetic, shared by its runner's slab and the action-result projection.
 
 Derive wealth measures and terminal reductions from integer-money base series.
 Valuation of lots, properties and bonds remains the executor's responsibility.
