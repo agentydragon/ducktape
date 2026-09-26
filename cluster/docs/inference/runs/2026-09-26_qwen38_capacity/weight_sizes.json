@@ -1,0 +1,112 @@
+[
+  {
+    "quant": "UD-IQ1_S",
+    "total_bytes": 72546461344,
+    "ple": {
+      "file": "UD-IQ1_S/Qwen3.8-Flash-Next-UD-IQ1_S-00002-of-00003.gguf",
+      "type": 20,
+      "dimensions": [160, 320001536],
+      "bytes": 28800138240
+    },
+    "non_ple_bytes": 43746323104
+  },
+  {
+    "quant": "UD-IQ1_M",
+    "total_bytes": 74538755776,
+    "ple": {
+      "file": "UD-IQ1_M/Qwen3.8-Flash-Next-UD-IQ1_M-00002-of-00003.gguf",
+      "type": 20,
+      "dimensions": [160, 320001536],
+      "bytes": 28800138240
+    },
+    "non_ple_bytes": 45738617536
+  },
+  {
+    "quant": "UD-Q2_K_XL",
+    "total_bytes": 78869128864,
+    "ple": {
+      "file": "UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00002-of-00003.gguf",
+      "type": 20,
+      "dimensions": [160, 320001536],
+      "bytes": 28800138240
+    },
+    "non_ple_bytes": 50068990624
+  },
+  {
+    "quant": "UD-IQ3_XXS",
+    "total_bytes": 81961823936,
+    "ple": {
+      "file": "UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00002-of-00003.gguf",
+      "type": 20,
+      "dimensions": [160, 320001536],
+      "bytes": 28800138240
+    },
+    "non_ple_bytes": 53161685696
+  },
+  {
+    "quant": "UD-Q3_K_XL",
+    "total_bytes": 89986353824,
+    "ple": {
+      "file": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00002-of-00003.gguf",
+      "type": 20,
+      "dimensions": [160, 320001536],
+      "bytes": 28800138240
+    },
+    "non_ple_bytes": 61186215584
+  },
+  {
+    "quant": "UD-IQ4_XS",
+    "total_bytes": 93682584224,
+    "ple": {
+      "file": "UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00003.gguf",
+      "type": 20,
+      "dimensions": [160, 320001536],
+      "bytes": 28800138240
+    },
+    "non_ple_bytes": 64882445984
+  },
+  {
+    "quant": "UD-Q4_K_XL",
+    "total_bytes": 111334654784,
+    "ple": {
+      "file": "UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00002-of-00004.gguf",
+      "type": 20,
+      "dimensions": [160, 320001536],
+      "bytes": 28800138240
+    },
+    "non_ple_bytes": 82534516544
+  },
+  {
+    "quant": "UD-Q5_K_XL",
+    "total_bytes": 158286406650,
+    "ple": {
+      "file": "UD-Q5_K_XL/Qwen3.8-Flash-Next-UD-Q5_K_XL-00003-of-00006.gguf",
+      "type": 8,
+      "dimensions": [160, 320001536],
+      "bytes": 54400261120
+    },
+    "non_ple_bytes": 103886145530
+  },
+  {
+    "quant": "UD-Q6_K_XL",
+    "total_bytes": 169165382688,
+    "ple": {
+      "file": "UD-Q6_K_XL/Qwen3.8-Flash-Next-UD-Q6_K_XL-00003-of-00006.gguf",
+      "type": 8,
+      "dimensions": [160, 320001536],
+      "bytes": 54400261120
+    },
+    "non_ple_bytes": 114765121568
+  },
+  {
+    "quant": "Q8_0",
+    "total_bytes": 188225033248,
+    "ple": {
+      "file": "Q8_0/Qwen3.8-Flash-Next-Q8_0-00003-of-00006.gguf",
+      "type": 8,
+      "dimensions": [160, 320001536],
+      "bytes": 54400261120
+    },
+    "non_ple_bytes": 133824772128
+  }
+]

@@ -279,6 +279,13 @@ provider scores establish the quality retained by the local quantization.
 
 ### 3. Trade precision and reasoning against context and latency
 
+The [September 26 capacity calculation](runs/2026-09-26_qwen38_capacity/README.md)
+uses actual GGUF metadata and pinned runtime source, including indexer and recurrent
+state. Start with serial Q8/Q5/Q4 KV comparisons at fixed Q4 weights; then compare
+IQ4_XS for capacity and Q5 weights for quality. Q5 and IQ4_XS downloads are queued.
+Parallel-window numbers in that note are arithmetic only, not permission to run
+concurrent evaluations.
+
 Vary one axis at a time. 'Lower quant' can mean either fewer bits (smaller/faster)
 or less quantization (more precision); these address different hypotheses.
 [Current GGUF sizes](https://unsloth.ai/docs/models/qwen3.8-next): Q4_K_XL 111.3 GB,
