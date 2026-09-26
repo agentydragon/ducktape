@@ -157,6 +157,18 @@ def test_a_lot_needs_a_declared_pool_on_its_own_quantity_scale() -> None:
     assert [held.spec.lot_id for held in world.holdings.lots] == ["test-lot"]
 
 
+def test_a_pool_holds_one_opening_lot_per_purchase_month() -> None:
+    world = composed(prices(100, 100, 100))
+    world.declare_pool(pool())
+    world.declare_pool(pool(account_id=CHECKING))
+    world.hold(lot("test-first"))
+    # Another month in the pool, or the same month in another pool, leaves FIFO ordered by month.
+    world.hold(replace(lot("test-older"), purchase_month=-3))
+    world.hold(lot("test-elsewhere", account_id=CHECKING))
+    with pytest.raises(ValueError, match=r"'test-first' and 'test-twin' share holding\.purchase_month=-2"):
+        world.hold(lot("test-twin"))
+
+
 # A par bond paying a fixed semiannual coupon over two whole periods.
 BOND = PreparedBond(
     bond_id="test-bond",
@@ -559,12 +571,15 @@ MANAGED = PreparedTlhPortfolio(
     initial_cohorts=(TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-2),),
     assumptions=FLAT,
 )
+SOLE_OWNER = "must have exactly one component owner and no ordinary holdings"
 
 
 def test_a_managed_portfolio_has_a_declared_owner_a_price_path_and_one_manager() -> None:
     world = composed(prices(100, 100, 100))
     world.declare_portfolio(MANAGED)
-    with pytest.raises(ValueError, match="another manager"):
+    with pytest.raises(ValueError, match="duplicate TLH portfolio"):
+        world.declare_portfolio(replace(MANAGED, account_id=CHECKING))
+    with pytest.raises(ValueError, match=SOLE_OWNER):
         world.declare_portfolio(replace(MANAGED, portfolio_id="test-second"))
     with pytest.raises(ValueError, match="unknown owner"):
         composed(prices(100, 100, 100)).declare_portfolio(replace(MANAGED, owner_agent_id="test-stranger"))
@@ -574,6 +589,27 @@ def test_a_managed_portfolio_has_a_declared_owner_a_price_path_and_one_manager()
     composed(prices(100, 0, 0)).declare_portfolio(MANAGED)
     with pytest.raises(ValueError, match="index price must be nonnegative, got -1 at month 2"):
         composed(prices(100, 100, -1)).declare_portfolio(MANAGED)
+
+
+def test_a_managed_portfolio_holds_its_pool_alone_whichever_is_declared_first() -> None:
+    managed_first = composed(prices(100, 100, 100))
+    managed_first.declare_portfolio(MANAGED)
+    with pytest.raises(ValueError, match=SOLE_OWNER):
+        managed_first.declare_pool(pool())
+    with pytest.raises(ValueError, match="references no declared holding pool"):
+        managed_first.hold(lot())
+    # Ownership is pool-scoped: the same security in another account is an ordinary holding.
+    managed_first.declare_pool(pool(account_id=CHECKING))
+    managed_first.hold(lot(account_id=CHECKING))
+
+    lot_first = holding_stock(payout=payouts(0, 0, 0))
+    with pytest.raises(ValueError, match=SOLE_OWNER):
+        lot_first.declare_portfolio(MANAGED)
+    assert lot_first.managed is None
+    pool_first = composed(prices(100, 100, 100))
+    pool_first.declare_pool(pool())
+    with pytest.raises(ValueError, match=SOLE_OWNER):
+        pool_first.declare_portfolio(MANAGED)
 
 
 ISSUER = "test-issuer"
