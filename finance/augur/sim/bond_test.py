@@ -10,7 +10,6 @@ from itertools import pairwise
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import InflationKey
 from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.books import IncomeState
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
@@ -24,15 +23,15 @@ from finance.augur.sim.testing.bonds import (
     MUNI,
     NOMINAL_COUPON,
     TREASURY,
+    Situation,
     bond_case,
-    bond_scenario,
+    compose,
 )
-from finance.augur.sim.testing.case import Case, levels
 
 
-def execute(case: Case) -> Rollout:
+def execute(case: Situation) -> Rollout:
     """Pay only observed due claims in order; no native configured policy or rescue."""
-    session = ActionSession.from_run(case.compiled_run, "alice", [0], capture="forensic")
+    session = ActionSession({0: compose(case)}, "alice", capture="forensic")
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -160,13 +159,8 @@ def test_a_bond_paying_into_a_nonexistent_account_is_rejected() -> None:
     invariant cannot catch it and an explicit rejection has to.
     """
 
-    mistyped = Case(
-        scenario=bond_scenario(account_id="brokerage"),
-        rollout_count=1,
-        series={InflationKey(): levels([[Decimal(str(level)) for level in CPI_FLAT]])},
-    )
-    with pytest.raises(ValueError, match="references unknown account alice:brokerage"):
-        execute(mistyped)
+    with pytest.raises(ValueError, match="bond 'rung' references an unknown account"):
+        compose(bond_case(account_id="brokerage"))
 
 
 def test_an_indexed_coupon_rides_the_indexed_principal() -> None:
