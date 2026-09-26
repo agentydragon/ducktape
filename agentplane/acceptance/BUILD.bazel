@@ -14,6 +14,10 @@ py_library(
     name = "agent",
     testonly = True,
     srcs = ["agent.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/local_llm/eval:__pkg__",
+    ],
     deps = [
         "//agentplane/app:client",
         "//agentplane/protocol:command_pb2",
@@ -30,6 +34,10 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/local_llm/eval:__pkg__",
+    ],
     deps = [
         "//agentplane/app:client",
         "//agentplane/app:inventory",

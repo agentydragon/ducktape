@@ -136,6 +136,10 @@ For transient sidecar diagnosis, `--test_env=OLLAMA_SMOKE_HOLD_SECONDS=30` retai
 the isolated Sandbox for at most 30 seconds after the turn result is written, before
 normal fixture cleanup.
 
+The optional local-LLM coding smoke eval is owned and documented under
+[`x/local_llm/eval`](../../x/local_llm/eval/README.md). This deployed acceptance suite does not
+run it.
+
 By default it tests `https://agentplane-testing.allegedly.works` and mints its own bearer token with
 `kubectl -n agentplane-testing create token agentplane-agent --audience=agentplane`. That call needs
 RBAC on `serviceaccounts/token`, and the app only admits subjects its `AGENTPLANE_TOKEN_SUBJECTS`

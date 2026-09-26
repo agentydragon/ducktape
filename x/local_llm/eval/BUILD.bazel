@@ -1,0 +1,37 @@
+load("//devinfra/python:defs.bzl", "py_test")
+
+package(default_testonly = True)
+
+py_test(
+    name = "test_local_coding",
+    timeout = "eternal",
+    srcs = ["test_local_coding.py"],
+    env_inherit = [
+        "AGENTPLANE_ACCEPTANCE_NAMESPACE",
+        "AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT",
+        "AGENTPLANE_ACCEPTANCE_TOKEN",
+        "AGENTPLANE_ACCEPTANCE_URL",
+        "LOCAL_LLM_CODING_CASE",
+        "LOCAL_LLM_CODING_MODEL",
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        "//:conftest",
+        "//agentplane/acceptance:agent",
+        "//agentplane/acceptance:conftest",
+        "//agentplane/app:client",
+        "//agentplane/app:inventory",
+        "//agentplane/app:presets",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

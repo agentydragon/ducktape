@@ -31,6 +31,11 @@ Config: <../../nix/home/opencode/default.nix>
 - Ollama models: `/wyrmhdd/ollama-models`
 - HuggingFace cache: `/wyrmhdd/huggingface`
 
+## Optional coding smoke eval
+
+The small fixed-task coding readiness screen is documented under [`eval/`](eval/README.md). It is
+an optional smoke eval, not a benchmark or a focus of the current program.
+
 ## Creating Ollama Model Variants
 
 ```bash
