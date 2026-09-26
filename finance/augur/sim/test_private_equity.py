@@ -82,9 +82,7 @@ def execute(world: World) -> FinancialOutput:
         capture.record()
         if not world.finished:
             world.open_month()
-    financial = capture.financial()
-    assert financial is not None
-    return financial
+    return capture.financial()
 
 
 @pytest.mark.parametrize(

@@ -1,9 +1,8 @@
 """Resolve filing-status schedules and income categories into exact, variable-length tax records."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Protocol
 
 from finance.augur.sim.compiler.bonds import bond_income_categories
 from finance.augur.sim.compiler.distributions import distribution_income_categories
@@ -11,10 +10,16 @@ from finance.augur.sim.compiler.income_sources import income_source_sort_key
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket, load_jurisdiction
 from finance.augur.sim.scenario import (
+    BondHolding,
     FilingStatus,
     InterestIncome,
     OrdinaryIncome,
+    RecurringPropertyCashflow,
+    RecurringTransfer,
     Scenario,
+    ScheduledPropertyCashflow,
+    ScheduledTransfer,
+    SecurityDistribution,
     TaxProfile,
     TransferIncomeCategory,
 )
@@ -80,26 +85,28 @@ class TaxCompileOutput:
     income_sources: tuple[TransferIncomeCategory, ...]
 
 
-class IncomeTagged(Protocol):
-    """The common income tag on transfers and property cashflows."""
+def compile_income_sources(
+    *,
+    flows: Iterable[ScheduledTransfer | RecurringTransfer | ScheduledPropertyCashflow | RecurringPropertyCashflow],
+    bonds: Iterable[BondHolding],
+    distributions: Iterable[SecurityDistribution],
+) -> tuple[TransferIncomeCategory, ...]:
+    """Ordinary income plus every category cashflows, held bonds or fund distributions name, in reporting order."""
 
-    income_category: TransferIncomeCategory | None
-
-
-def collect_income_sources(scenario: Scenario) -> set[TransferIncomeCategory]:
-    """Every income category referenced by cashflows, held bonds or fund distributions."""
-
-    tagged: tuple[IncomeTagged, ...] = (
-        *scenario.scheduled_transfers,
-        *scenario.recurring_transfers,
-        *scenario.scheduled_property_cashflows,
-        *scenario.recurring_property_cashflows,
+    sources = sorted(
+        {
+            OrdinaryIncome(),
+            *(item.income_category for item in flows if item.income_category is not None),
+            *bond_income_categories(bonds),
+            *distribution_income_categories(distributions),
+        },
+        key=income_source_sort_key,
     )
-    return (
-        {item.income_category for item in tagged if item.income_category is not None}
-        | bond_income_categories(scenario)
-        | distribution_income_categories(scenario)
-    )
+    # Every named issuer must resolve, including issuers found only on cashflows.
+    for source in sources:
+        if isinstance(source, InterestIncome) and source.issuer_jurisdiction_id is not None:
+            load_jurisdiction(source.issuer_jurisdiction_id)
+    return tuple(sources)
 
 
 def _agreed_capital_loss_offset_cap(
@@ -176,10 +183,16 @@ def compile_profile(
 
 def compile_tax(scenario: Scenario, jurisdictions: Mapping[str, Jurisdiction]) -> TaxCompileOutput:
     quantum = scenario.currency.quantum
-    profiles = [compile_profile(profile, jurisdictions, quantum=quantum) for profile in scenario.tax_profiles]
-    sources = tuple(sorted({OrdinaryIncome(), *collect_income_sources(scenario)}, key=income_source_sort_key))
-    # Every named issuer must resolve, including issuers found only on cashflows.
-    for source in sources:
-        if isinstance(source, InterestIncome) and source.issuer_jurisdiction_id is not None:
-            load_jurisdiction(source.issuer_jurisdiction_id)
-    return TaxCompileOutput(profiles=tuple(profiles), income_sources=sources)
+    return TaxCompileOutput(
+        profiles=tuple(compile_profile(profile, jurisdictions, quantum=quantum) for profile in scenario.tax_profiles),
+        income_sources=compile_income_sources(
+            flows=(
+                *scenario.scheduled_transfers,
+                *scenario.recurring_transfers,
+                *scenario.scheduled_property_cashflows,
+                *scenario.recurring_property_cashflows,
+            ),
+            bonds=scenario.initial_bonds,
+            distributions=scenario.security_distributions,
+        ),
+    )

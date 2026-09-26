@@ -3,6 +3,7 @@
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from itertools import pairwise
+from typing import Literal
 
 import pytest
 import pytest_bazel
@@ -13,7 +14,7 @@ from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.agent import EconomicAgent, assemble
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.capture import FinancialCapture, WorldResult, event_log
+from finance.augur.sim.capture import FinancialCapture, FinancialOutput, event_log
 from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxProfile
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.ids import AgentId
@@ -30,7 +31,6 @@ from finance.augur.sim.prepared import (
     PreparedTransfer,
     _ScheduledSale,
 )
-from finance.augur.sim.product_metrics import product_row
 from finance.augur.sim.results import ConsumptionTarget, Executed, Finished, Rejected, RejectedAction, UnpaidClaims
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, taxpayer, world_on
@@ -117,11 +117,12 @@ def view(world: World) -> Observation:
     return assemble(HOUSEHOLD, world.month, world.open_mail(HOUSEHOLD))
 
 
-def next_month(world: World, capture: FinancialCapture, *, failed: bool = False) -> None:
+def next_month(world: World, capture: FinancialCapture | None, *, failed: bool = False) -> None:
     """Close the open month the way `step` does, record it, and open the next one unless finished."""
     world.failed = world.failed or failed
     world.close_month()
-    capture.record()
+    if capture is not None:
+        capture.record()
     if not world.finished:
         world.open_month()
 
@@ -196,7 +197,6 @@ def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_on
     assert (observation.public_holdings, observation.cash) == (4000, 500)
     next_month(world, capture)
     financial = capture.financial()
-    assert financial is not None
     [lot] = financial.months[-1].lots
     assert (lot.units_remaining, lot.basis_remaining, lot.account_id) == (2_000_000, 2000, "empty-brokerage")
     assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in financial.journal)
@@ -204,10 +204,9 @@ def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_on
 
 def test_declaring_an_empty_pool_does_not_invest_cash_without_an_action(cash_only: Situation) -> None:
     world = world_for(cash_only)
-    capture = FinancialCapture(world, capture="summary")
     balances = [checking(world)]
     for _ in range(2):
-        next_month(world, capture)
+        next_month(world, None)
         balances.append(checking(world))
     assert world.finished
     assert not world.book().lots
@@ -233,7 +232,6 @@ def test_an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation(
     next_month(world, capture)
     assert world.finished
     financial = capture.financial()
-    assert financial is not None
     assert not financial.months[-1].lots
     assert all(entry.cause_id != "invalid-purchase" for entry in financial.journal)
 
@@ -302,7 +300,6 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
         assert not world.unpaid_claims(HOUSEHOLD)
         next_month(world, capture)
     financial = capture.financial()
-    assert financial is not None
     assert len(financial.months) == 14
     sale = financial.dispositions[0]
     assert (sale.proceeds, sale.basis, sale.realized_gain) == (30_000, 15_000, 15_000)
@@ -328,7 +325,6 @@ def test_ordered_actions_can_buy_before_transferring_and_buy_again() -> None:
     assert (observation.cash, observation.public_holdings) == (0, 105_000)
     next_month(world, capture)
     financial = capture.financial()
-    assert financial is not None
     chosen = [action.cause_id for action in actions]
     assert [entry.cause_id for entry in financial.journal if entry.cause_id in chosen] == chosen
 
@@ -345,8 +341,6 @@ def test_rejected_financial_request_preserves_prior_sale_and_independent_world()
         assert isinstance(live.execute(HOUSEHOLD, consume(1000)).outcome, Executed)
         next_month(live, live_capture)
     failed_output, live_output = failed_capture.financial(), live_capture.financial()
-    assert failed_output is not None
-    assert live_output is not None
     assert len(failed_output.dispositions) == 1
     assert not failed_output.transfers
     assert len(failed_output.months) == 2
@@ -421,7 +415,7 @@ def test_compact_capture_replays_observed_prefixes_and_canonical_payment_identit
 def test_unpaid_claims_keep_occurrence_and_source_without_hidden_sales(mode: Capture) -> None:
     run = situation(3)
     world = world_for(replace(run, obligations=(bill(5000), bill(7000))))
-    capture = FinancialCapture(world, capture=mode)
+    capture = recorded(world, mode)
     unpaid = world.unpaid_claims(HOUSEHOLD)
     assert len(unpaid) == 2
     assert unpaid[0].id != unpaid[1].id
@@ -433,7 +427,7 @@ def test_unpaid_claims_keep_occurrence_and_source_without_hidden_sales(mode: Cap
     assert (first.from_account, first.to_account, first.amount_due, second.amount_due) == (CASH, EXOGENOUS, 5000, 7000)
     assert not world.payments
     assert checking(world) == 10_000
-    financial = capture.financial()
+    financial = None if capture is None else capture.financial()
     assert (financial is None) == (mode == "summary")
     if financial is not None:
         assert not financial.dispositions
@@ -441,16 +435,18 @@ def test_unpaid_claims_keep_occurrence_and_source_without_hidden_sales(mode: Cap
         assert all(row.amount_paid == 0 for row in financial.obligations)
 
 
-def assert_same_result(actual: WorldResult, expected: WorldResult) -> None:
-    # Compare every result field; Polars frames need explicit value equality.
-    assert replace(actual, events=None) == replace(expected, events=None)
-    if expected.events is None:
-        assert actual.events is None
-    else:
-        assert actual.events is not None
-        assert actual.events.rollout_ids == expected.events.rollout_ids
+def recorded(world: World, mode: Capture) -> FinancialCapture | None:
+    return None if mode == "summary" else FinancialCapture(world, capture=mode)
+
+
+def assert_same_result(actual: FinancialOutput | None, expected: FinancialOutput | None) -> None:
+    # Compare every recorded field and the frames projected from them; Polars frames need explicit value equality.
+    assert actual == expected
+    if actual is not None and expected is not None:
+        events, expected_events = event_log(actual), event_log(expected)
+        assert events.rollout_ids == expected_events.rollout_ids
         for spec in EVENT_FRAME_SPECS:
-            assert actual.events.frame(spec).equals(expected.events.frame(spec))
+            assert events.frame(spec).equals(expected_events.frame(spec))
 
 
 @pytest.fixture
@@ -511,7 +507,6 @@ def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(yea
             assert not settlement.failed
             next_month(world, capture)
         output = capture.financial()
-        assert output is not None
         assert output.failed_month is None
         assert [(p.month, p.amount_paid) for p in output.tax_payments] == [(12, tax_paid)]
         assert sum(e.cause_id == f"opening:{HOUSEHOLD}:checking" for e in output.journal) == 1
@@ -548,34 +543,18 @@ def session_for(run: Situation, rollout_ids: list[int], *, capture: Capture = "f
     return ActionSession({id_: composed(run, id_) for id_ in rollout_ids}, HOUSEHOLD, capture=capture)
 
 
-def recorded(world: World, mode: Capture) -> tuple[FinancialCapture, list[tuple[int, int, int, int, int, int, int]]]:
-    return FinancialCapture(world, capture=mode), [product_row(world, HOUSEHOLD)]
-
-
-def result_of(
-    world: World, capture: FinancialCapture, mode: Capture, rows: list[tuple[int, int, int, int, int, int, int]]
-) -> WorldResult:
-    financial = capture.financial()
-    return WorldResult(
-        world.rollout_id,
-        financial,
-        event_log(financial) if financial is not None else None,
-        capture.configured_summary() if mode == "summary" else None,
-        rows,
-    )
-
-
-def stepped(run: Situation, mode: Capture, *, rollout: int = 0, sales: tuple[_ScheduledSale, ...] = ()) -> WorldResult:
+def stepped(
+    run: Situation, mode: Literal["dense", "forensic"], *, rollout: int = 0, sales: tuple[_ScheduledSale, ...] = ()
+) -> FinancialOutput:
     """One composed rollout to its horizon under a household that makes the scheduled sales."""
     world = composed(run, rollout)
     world.track(ConfiguredHousehold(HOUSEHOLD, (), scheduled_sales=sales))
-    capture, rows = recorded(world, mode)
+    capture = FinancialCapture(world, capture=mode)
     world.start()
     while not world.finished:
         world.step()
         capture.record()
-        rows.append(product_row(world, HOUSEHOLD))
-    return result_of(world, capture, mode, rows)
+    return capture.financial()
 
 
 @pytest.mark.parametrize("stopped", [False, True])
@@ -612,7 +591,7 @@ def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
     phased = composed(run)
     actor = household()
     phased.track(actor)
-    phased_capture, phased_rows = recorded(phased, mode)
+    phased_capture = recorded(phased, mode)
     phased.start()
     while not phased.finished:
         actions = actor.handle(MonthOpened(month=phased.month))
@@ -621,45 +600,40 @@ def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
             if isinstance(phased.execute(HOUSEHOLD, action).outcome, Rejected):
                 break
         phased.close_month()
-        phased_capture.record()
-        phased_rows.append(product_row(phased, HOUSEHOLD))
+        if phased_capture is not None:
+            phased_capture.record()
         if not phased.finished:
             phased.open_month()
 
     path = composed(run)
     path.track(household())
-    capture, rows = recorded(path, mode)
+    capture = recorded(path, mode)
     path.start()
     while not path.finished:
         if path.month == 12:
             assert path.accounting.tax_liabilities[0].amount_owed == (50 if stopped else 2000)
         path.step()
-        capture.record()
-        rows.append(product_row(path, HOUSEHOLD))
-    result = result_of(path, capture, mode, rows)
-    assert_same_result(result, result_of(phased, phased_capture, mode, phased_rows))
+        if capture is not None:
+            capture.record()
+    financial = None if capture is None else capture.financial()
+    assert_same_result(financial, None if phased_capture is None else phased_capture.financial())
+    assert (path.book(), path.failed_month) == (phased.book(), phased.failed_month)
 
     stopped_book = deepcopy(path.book())
     with pytest.raises(ValueError, match="finished"):
         path.open_month()
     assert path.book() == stopped_book
-    if mode == "summary":
-        assert result.configured_summary is not None
-        assert result.configured_summary.failed_month == (12 if stopped else None)
-    else:
-        assert result.financial is not None
-        assert result.financial.failed_month == (12 if stopped else None)
-    if result.financial is not None:
-        assert len(result.financial.months) == 14
-        assert [(p.month, p.amount_paid) for p in result.financial.tax_payments] == (
-            [(12, 0)] if stopped else [(12, 2000)]
-        )
+    assert path.failed_month == (12 if stopped else None)
+    if financial is not None:
+        assert financial.failed_month == (12 if stopped else None)
+        assert len(financial.months) == 14
+        assert [(p.month, p.amount_paid) for p in financial.tax_payments] == ([(12, 0)] if stopped else [(12, 2000)])
         if mode == "dense":
-            assert not result.financial.journal
+            assert not financial.journal
 
 
-@pytest.mark.parametrize("mode", ["forensic", "dense", "summary"])
-def test_transfer_and_fifo_sale_remain_balanced(mode: Capture) -> None:
+@pytest.mark.parametrize("mode", ["forensic", "dense"])
+def test_transfer_and_fifo_sale_remain_balanced(mode: Literal["dense", "forensic"]) -> None:
     run = situation(2, 2)
     run = replace(
         run,
@@ -694,25 +668,12 @@ def test_transfer_and_fifo_sale_remain_balanced(mode: Capture) -> None:
     )
     for index in range(2):
         expected = stepped(run, "forensic", rollout=index, sales=sales)
-        output = stepped(run, mode, rollout=index, sales=sales)
-        assert output.product_metrics == expected.product_metrics
-        financial = expected.financial
-        assert financial is not None
-        [sale] = financial.dispositions
-        if mode == "summary":
-            assert output.financial is None
-            assert output.configured_summary is not None
-            assert output.configured_summary.rollout_id == index
-            assert output.configured_summary.ending_balances == financial.months[-1].balances
-            assert output.configured_summary.failed_month is None
-            assert output.configured_summary.disposition_count == len(financial.dispositions) == 1
-            assert output.configured_summary.journal_entry_count == len(financial.journal)
-        else:
-            assert output.financial is not None
-            assert output.financial.rollout_id == financial.rollout_id == index
-            assert output.financial.months == financial.months
-            assert output.financial.dispositions == financial.dispositions
-            assert output.financial.journal == ([] if mode == "dense" else financial.journal)
+        financial = stepped(run, mode, rollout=index, sales=sales)
+        [sale] = expected.dispositions
+        assert financial.rollout_id == expected.rollout_id == index
+        assert financial.months == expected.months
+        assert financial.dispositions == expected.dispositions
+        assert financial.journal == ([] if mode == "dense" else expected.journal)
         proceeds = (15_000, 20_000)[index]
         assert (sale.proceeds, sale.basis, sale.units, sale.realized_gain) == (
             proceeds,
@@ -721,14 +682,8 @@ def test_transfer_and_fifo_sale_remain_balanced(mode: Capture) -> None:
             proceeds - 10_000,
         )
         assert next(b.balance for b in financial.months[-1].balances if b.account == CASH) == 1500 + proceeds
-        assert all(sum(p.amount for p in entry.postings) == 0 for entry in financial.journal)
-        if mode == "summary":
-            assert output.financial is None
-        elif mode == "dense":
-            assert output.financial is not None
-            assert output.financial == replace(financial, journal=[])
-        else:
-            assert output.financial == financial
+        assert all(sum(p.amount for p in entry.postings) == 0 for entry in expected.journal)
+        assert financial == (replace(expected, journal=[]) if mode == "dense" else expected)
 
 
 class _Household(EconomicAgent):
@@ -926,12 +881,15 @@ def test_a_composed_world_has_only_the_domains_it_declares() -> None:
     assert world.stop is None
     assert checking(world) == 9500
     book = world.book()
-    assert (book.bonds, book.properties, book.mortgages, book.tlh_portfolios) == ([], [], [], [])
+    assert (book.bonds, book.properties, book.mortgages, book.tlh_portfolios) == (None, None, [], None)
     financial = capture.financial()
-    assert financial is not None
-    assert not financial.bond_cashflows
-    assert not financial.property_purchases
-    assert not financial.tlh_financial_effects
+    assert (
+        financial.tlh_financial_effects,
+        financial.private_equity,
+        financial.bond_cashflows,
+        financial.distributions,
+        financial.properties,
+    ) == (None,) * 5
     with pytest.raises(ValueError, match="no managed portfolio"):
         world.managed_portfolios()
     with pytest.raises(ValueError, match="before starting"):

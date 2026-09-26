@@ -1,4 +1,4 @@
-"""Product metric arrays and pure reductions, independent of trajectory execution."""
+"""The app's metric slab read from a world after each close, its arrays and their pure reductions."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from enum import StrEnum
 import numpy as np
 from jaxtyping import Bool, Int64
 
-from finance.augur.sim.holdings import private_issuer
-from finance.augur.sim.metric_composition import (
+from finance.augur.product.metric_composition import (
     BASE_METRIC_NAMES,
     DERIVED_METRIC_NAMES,
     compose_metric,
     terminal_series,
 )
+from finance.augur.sim.holdings import private_issuer
 from finance.augur.sim.money import checked_count, position_value
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.world import World

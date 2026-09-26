@@ -171,6 +171,9 @@ Typed common results retain original path IDs, request/claim/component/account
 identities, attempted receipts, canonical tax facts and exact stopped/ending books.
 Optional detailed capture includes books, journal and columnar events; compact
 capture does not require those histories. Missing capture is not zero activity.
+A domain the experiment did not declare (bonds, housing, managed portfolios,
+private equity, distributions) is absent from its books and detailed capture, not
+present and empty.
 
 A stopped event month has a closing book valued at its already-observed marks,
 not at an unobserved future price. Post-stop months are unobserved. Selected

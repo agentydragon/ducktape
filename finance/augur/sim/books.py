@@ -104,18 +104,22 @@ class TlhPortfolioState(Record):
 
 
 class Book(Record):
-    """Snapshot after events before `month`; a stopped book uses the result's stop mark."""
+    """Snapshot after events before `month`; a stopped book uses the result's stop mark.
+
+    A domain the world does not have is `None`, not empty: `bonds` until a bond is held,
+    `properties` until housing is declared, `tlh_portfolios` until a portfolio is declared.
+    """
 
     month: int
     balances: list[AccountBalance]
     income: list[IncomeState]
     lots: list[SecurityLotState]
-    bonds: list[BondState]
-    properties: list[PropertyState]
+    bonds: list[BondState] | None = None
+    properties: list[PropertyState] | None = None
     mortgages: list[MortgageState]
     tax_liabilities: list[TaxLiabilityState]
     capital_gains: list[CapitalGainState]
-    tlh_portfolios: list[TlhPortfolioState]
+    tlh_portfolios: list[TlhPortfolioState] | None = None
     failed: bool
 
 

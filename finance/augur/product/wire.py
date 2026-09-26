@@ -26,9 +26,9 @@ from finance.augur.api.schemas import (
 )
 from finance.augur.model.asset_key import AssetKey
 from finance.augur.model.series import SecuritySymbol
+from finance.augur.product.metrics import OutcomeBasis
 from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.fixed_point import validate_currency_quantum
-from finance.augur.sim.product_metrics import OutcomeBasis
 
 
 class SpendIndex(StrEnum):

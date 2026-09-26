@@ -10,6 +10,8 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LocationId, SecurityKey, SecuritySymbol
+from finance.augur.product.metric_composition import METRIC_NAMES
+from finance.augur.product.metrics import metric_fan, projection_summaries, terminal_summary
 from finance.augur.product.simulation import (
     execute,
     project_events,
@@ -21,9 +23,7 @@ from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.locations import Location
-from finance.augur.sim.metric_composition import METRIC_NAMES
 from finance.augur.sim.prepared import CompiledRun
-from finance.augur.sim.product_metrics import metric_fan, projection_summaries, terminal_summary
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
     Agent,
@@ -106,7 +106,7 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> CompiledRun:
         rollout_count=rollout_count,
         horizon_months=HORIZON_MONTHS,
     )
-    jurisdictions = load_jurisdictions_for(scenario)
+    jurisdictions = load_jurisdictions_for(scenario.tax_profiles)
     return compile_run(
         scenario,
         rollout_count=rollout_count,
@@ -164,7 +164,7 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> CompiledRun:
             location_id=LOCATION, display_name="Acceptance Town", jurisdiction_ids=[], annual_property_tax_rate=0.0
         )
     }
-    jurisdictions = load_jurisdictions_for(scenario)
+    jurisdictions = load_jurisdictions_for(scenario.tax_profiles)
     return compile_run(
         scenario, rollout_count=1, external_series=external_series, jurisdictions=jurisdictions, locations=locations
     )
@@ -314,7 +314,6 @@ def test_completed_capture_projects_same_financial_metrics(capture: Capture) -> 
         with pytest.raises(RuntimeError, match="event projection requires"):
             project_events(completed)
     else:
-        assert all(result.configured_summary is None for result in completed)
         assert project_events(completed) == simulate_events(run, AGENT)
         assert all(result.financial is not None for result in completed)
         for result in completed:

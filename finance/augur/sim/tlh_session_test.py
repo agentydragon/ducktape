@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.sim.actions import Action, Contribute, DecisionActions, Liquidate, Withdraw
-from finance.augur.sim.books import AccountRef, TlhPortfolioState
+from finance.augur.sim.books import AccountRef, Book, TlhPortfolioState
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.jurisdictions import load_jurisdiction
@@ -142,6 +142,11 @@ def compose(case: Situation, rollout_id: int) -> World:
     return world
 
 
+def portfolios(book: Book) -> list[TlhPortfolioState]:
+    assert book.tlh_portfolios is not None
+    return book.tlh_portfolios
+
+
 def session(case: Situation, actor: str = OWNER, *, capture: Capture = "forensic") -> ActionSession:
     return ActionSession(
         {rollout_id: compose(case, rollout_id) for rollout_id in range(case.rollouts)}, actor, capture=capture
@@ -170,7 +175,7 @@ def test_managed_opening_is_not_an_ordinary_lot_and_sale_follows_same_month_loss
     [rollout] = result.rollouts
     assert rollout.stop is None
     assert rollout.trace is not None
-    assert rollout.trace.books[0].tlh_portfolios[0].reported_tax_basis == 100
+    assert portfolios(rollout.trace.books[0])[0].reported_tax_basis == 100
     assert rollout.summary.ending_book.tlh_portfolios == [
         TlhPortfolioState(
             portfolio_id="managed",
@@ -227,7 +232,7 @@ def test_rejected_contribution_preserves_harvest_and_earlier_withdrawal_without_
     assert stopped.trace is not None
     assert len(stopped.trace.books) == 2
     assert [type(receipt.outcome) for receipt in stopped.trace.receipts] == [Executed, Rejected]
-    [portfolio] = stopped.summary.ending_book.tlh_portfolios
+    [portfolio] = portfolios(stopped.summary.ending_book)
     assert (portfolio.value, portfolio.reported_tax_basis) == (90, 89)
     assert stopped.summary.cash[0].values == [0, 10]
     assert stopped.summary.ending_book.capital_gains[0].short_term_gain == -1
@@ -260,7 +265,7 @@ def test_invalid_withdrawal_changes_no_component_state(amount: int) -> None:
         live.close()
     [rollout] = result.rollouts
     assert rollout.stop == RejectedAction(month=0, action_index=0)
-    [portfolio] = rollout.summary.ending_book.tlh_portfolios
+    [portfolio] = portfolios(rollout.summary.ending_book)
     assert (portfolio.value, portfolio.reported_tax_basis) == (100, 100)
     assert rollout.summary.cash[0].values[-1] == 0
 
@@ -285,7 +290,7 @@ def test_another_actors_component_is_neither_observed_nor_redeemable() -> None:
         live.close()
     [rollout] = result.rollouts
     assert rollout.stop == RejectedAction(month=0, action_index=0)
-    assert rollout.summary.ending_book.tlh_portfolios[0].value == 100
+    assert portfolios(rollout.summary.ending_book)[0].value == 100
 
 
 def test_model_defect_closes_session_instead_of_becoming_a_rejected_action(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -346,7 +351,7 @@ def test_closing_marks_and_product_projection_do_not_advance_the_model_early(cap
     finally:
         live.close()
     [rollout] = result.rollouts
-    [portfolio] = rollout.summary.ending_book.tlh_portfolios
+    [portfolio] = portfolios(rollout.summary.ending_book)
     assert portfolio.value == (100 if reject else 200)
     assert portfolio.reported_tax_basis == 99
     assert rollout.summary.ending_book.capital_gains[0].short_term_gain == -1
@@ -386,11 +391,12 @@ def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> No
         live.close()
     [rollout] = result.rollouts
     assert rollout.trace is not None
+    assert rollout.trace.distributions is not None
     assert [(row.issuer_jurisdiction_id, row.units, row.amount) for row in rollout.trace.distributions] == [
         (FEDERAL, None, 1),
         (None, None, 1),
     ]
-    assert rollout.summary.ending_book.tlh_portfolios[0].value == 100
+    assert portfolios(rollout.summary.ending_book)[0].value == 100
     assert {(row.income_source, row.income) for row in rollout.summary.ending_book.income} == {
         ("ordinary", 0),  # The income ledger retains every declared source, including zero buckets.
         ("interest:federal_us", 1),
@@ -425,7 +431,7 @@ def test_contribution_is_first_harvested_in_the_next_month() -> None:
         live.close()
     [rollout] = result.rollouts
     assert rollout.trace is not None
-    assert rollout.trace.books[1].tlh_portfolios[0].reported_tax_basis == 199
+    assert portfolios(rollout.trace.books[1])[0].reported_tax_basis == 199
     assert rollout.summary.ending_book.capital_gains[0].short_term_gain == -3
 
 

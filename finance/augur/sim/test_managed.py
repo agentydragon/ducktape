@@ -187,7 +187,9 @@ def test_component_marks_keep_explicit_stop_marks_and_independent_books(
     assert stopped_values == [100, 100]
     assert live_values == [100, 110, 120]
     assert (stopped.mark_month, live.mark_month) == (0, 2)
-    [mark] = stopped.book().tlh_portfolios
+    stopped_marks = stopped.book().tlh_portfolios
+    assert stopped_marks is not None
+    [mark] = stopped_marks
     assert (mark.value, mark.reported_tax_basis, mark.portfolio_id) == (100, 80, "managed")
     assert stopped.managed_portfolios().marks == {"managed": opening}
     assert stopped.book().failed
