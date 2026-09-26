@@ -8,7 +8,7 @@ as its slices land; the [roadmap](roadmap.md) owns cross-component dependencies.
 ## Composition on current Augur primitives
 
 - <../study/trinity/replay.py> demonstrates materialize-once paths, annual cadence,
-  typed `compile_run` / `ActionSession`, original-ID replay and CLI artifacts.
+  worlds composed per path, `ActionSession`, original-ID replay and CLI artifacts.
   Its sales-only funding, coupon cash, success boundary and monthly windows are
   **not** GK defaults.
 - <../sim/external_series.py> accepts typed multi-asset level blocks directly.
@@ -30,7 +30,7 @@ as its slices land; the [roadmap](roadmap.md) owns cross-component dependencies.
 ## Desired experiment shell
 
 **Sketch only.** Imports below exist; `load_history`, `annual_paths`,
-`make_scenario`, `annual_actions` and `Memory` are proposed ordinary study-local
+`compose_world`, `annual_actions` and `Memory` are proposed ordinary study-local
 code, not new library APIs. The small module split is evidence/path preparation,
 annual policy, and run/report. Configuration names the resolved conventions.
 
@@ -38,20 +38,13 @@ annual policy, and run/report. Configuration names the resolved conventions.
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.results import Finished
 
 history = load_history(source_files)  # Named, validated annual returns and CPI.
 paths = annual_paths(history, start_years=start_years, years=years)
 
 for cell in cells:
-    prepared = compile_run(
-        make_scenario(cell),
-        rollout_count=len(start_years),
-        external_series=paths,
-        jurisdictions={},
-        locations={},
-    )
+    worlds = {rollout_id: compose_world(cell, paths[rollout_id]) for rollout_id in selected_ids}
     memory = {rollout_id: Memory(cell) for rollout_id in selected_ids}
 
     def policy(batch: list[Decision]) -> list[DecisionActions]:
@@ -64,7 +57,7 @@ for cell in cells:
             for decision in batch
         ]
 
-    session = ActionSession(prepared, "retiree", selected_ids, capture="summary")
+    session = ActionSession(worlds, "retiree", capture="summary")
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
