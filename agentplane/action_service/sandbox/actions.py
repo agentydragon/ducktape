@@ -48,6 +48,8 @@ def _schema(model: type[BaseModel]) -> dict[str, JsonValue]:
 def _exec_schema(binding: SandboxExecutorBinding) -> dict[str, JsonValue]:
     """`ExecArgs` with this deployment's caps as its maxima, so submission refuses a request the
     executor would cut short, and says why, instead of the run ending early."""
+    # TODO: find a way to carry the caps into the schema other than overwriting the maxima
+    # `ExecArgs` generates by hand.
     schema = ExecArgs.model_json_schema()
     schema["properties"]["timeout_seconds"]["maximum"] = binding.max_timeout_seconds
     schema["properties"]["max_output_bytes"]["maximum"] = binding.max_output_bytes
@@ -89,8 +91,7 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
         SandboxAction.EXEC: ActionDefinition(
             description=(
                 "Run one bounded Bash script in a ready sandbox of yours. A nonzero exit is a normal "
-                f"result, not a failure. Timeout is at most {binding.max_timeout_seconds}s and "
-                f"retained output at most {binding.max_output_bytes} bytes per stream."
+                "result, not a failure."
             ),
             input_schema=_exec_schema(binding),
             title="Run script in sandbox",
