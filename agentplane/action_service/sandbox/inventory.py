@@ -194,7 +194,7 @@ class SandboxInventory:
 
         Returns once the object exists rather than waiting for the box to come up: a cold start
         outlasts the execution lease the Action Service grants, so waiting here reports an unknown
-        outcome for a box that is in fact fine. `info` is how a caller follows one from `not_ready`
+        outcome for a box that is in fact fine. `get` is how a caller follows one from `not_ready`
         to `ready`, carrying the controller's own reason.
 
         Idempotent: an existing sandbox of that name is returned as it stands, whatever template it
@@ -244,7 +244,7 @@ class SandboxInventory:
                 return
             raise
 
-    async def info(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
+    async def get(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
         sandbox = await self._sandbox(caller, name)
         if sandbox is None:
             raise SandboxActionError(f"no sandbox named {name!r}; create it first")
