@@ -106,7 +106,7 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> CompiledRun:
         rollout_count=rollout_count,
         horizon_months=HORIZON_MONTHS,
     )
-    jurisdictions = load_jurisdictions_for(scenario)
+    jurisdictions = load_jurisdictions_for(scenario.tax_profiles)
     return compile_run(
         scenario,
         rollout_count=rollout_count,
@@ -164,7 +164,7 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> CompiledRun:
             location_id=LOCATION, display_name="Acceptance Town", jurisdiction_ids=[], annual_property_tax_rate=0.0
         )
     }
-    jurisdictions = load_jurisdictions_for(scenario)
+    jurisdictions = load_jurisdictions_for(scenario.tax_profiles)
     return compile_run(
         scenario, rollout_count=1, external_series=external_series, jurisdictions=jurisdictions, locations=locations
     )

@@ -7,7 +7,7 @@ paths used by execution-input preparation, without allocating financial-state sl
 from __future__ import annotations
 
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any, NamedTuple
 
 import numpy as np
@@ -23,20 +23,68 @@ from finance.augur.model.series import (
     SecurityKey,
 )
 from finance.augur.sim.fixed_point import sampled_array_to_per_unit_rate, sampled_array_to_quanta
-from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
+from finance.augur.sim.scenario import (
+    AmountSpec,
+    BondHolding,
+    HoldingPool,
+    InitialLot,
+    PrivateEquityTenderPolicy,
+    Scenario,
+    ScheduledAssetSale,
+    ScheduledPropertyPurchase,
+    SecurityDistribution,
+    SeriesIndexedAmount,
+    TargetAllocationPolicy,
+    TlhPortfolioSpec,
+)
 
 
 def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]:
-    """Every level series the scenario REFERENCES — its exogenous demand.
+    """Every level series the scenario REFERENCES — its exogenous demand."""
 
-    Derivable before anything is sampled, which is the point: it lets the caller ask the
-    exogenous model for exactly this set instead of re-deriving the same fact from the
-    product wire type in a second, drifting implementation.
+    return level_series_demand(
+        pools=scenario.holding_pools,
+        lots=scenario.initial_lots,
+        tlh_portfolios=scenario.tlh_portfolios,
+        bonds=scenario.initial_bonds,
+        distributions=scenario.security_distributions,
+        amounts=(
+            *(transfer.amount for transfer in scenario.scheduled_transfers),
+            *(transfer.amount for transfer in scenario.recurring_transfers),
+            *(cashflow.amount for cashflow in scenario.scheduled_property_cashflows),
+            *(cashflow.amount for cashflow in scenario.recurring_property_cashflows),
+            *(obligation.amount_due for obligation in scenario.scheduled_obligations),
+            *(obligation.amount_due for obligation in scenario.recurring_obligations),
+        ),
+        sales=scenario.scheduled_asset_sales,
+        policies=scenario.target_allocation_policies,
+        tender_policies=scenario.private_equity_tender_policies,
+        purchases=scenario.scheduled_property_purchases,
+    )
 
-    Must stay exhaustive over the compiler's series lookups. Each entry below corresponds to
-    a `series_index_by_id[...]` in `compiler/`; a demand missing here surfaces as a `NO_CODE`
-    series index, which the engine rejects for holdings and which
-    `_reject_missing_property_sale_home_values` rejects for property sales.
+
+def level_series_demand(
+    *,
+    pools: Iterable[HoldingPool],
+    lots: Iterable[InitialLot],
+    tlh_portfolios: Iterable[TlhPortfolioSpec],
+    bonds: Iterable[BondHolding],
+    distributions: Iterable[SecurityDistribution],
+    amounts: Iterable[AmountSpec],
+    sales: Iterable[ScheduledAssetSale],
+    policies: Iterable[TargetAllocationPolicy],
+    tender_policies: Iterable[PrivateEquityTenderPolicy],
+    purchases: Iterable[ScheduledPropertyPurchase],
+) -> tuple[LevelSeriesKey, ...]:
+    """Every level series these declarations REFERENCE — their exogenous demand.
+
+    `amounts` are the cashflows' and obligations' amounts. Derivable before anything is
+    sampled, which is the point: it lets the caller ask the exogenous model for exactly this
+    set instead of re-deriving the same fact from the product wire type in a second, drifting
+    implementation.
+
+    Must stay exhaustive over the series the declarations read: a demand missing here is a
+    series the path does not carry, which the declaration that reads it refuses.
     """
 
     keys: list[LevelSeriesKey] = []
@@ -47,52 +95,42 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
             seen.add(key)
             keys.append(key)
 
-    for pool in scenario.holding_pools:
+    for pool in pools:
         add(asset_price_key_or_none(pool.asset))
     # Holdings are marked every month off their asset-price series.
-    for lot in scenario.initial_lots:
+    for lot in lots:
         add(asset_price_key_or_none(lot.asset))
-    for portfolio in scenario.tlh_portfolios:
+    for portfolio in tlh_portfolios:
         add(asset_price_key_or_none(portfolio.asset))
     # A TIPS' principal rides CPI, so an inflation-indexed bond DEMANDS inflation even when
-    # nothing else in the scenario does. Without this, the engine rejects a missing inflation
-    # path for any scenario that does not happen to want CPI for another
-    # reason — a CPI-indexed spend, cash band, tender floor, or property obligation.
+    # nothing else does. Without this, the declaration rejects a missing inflation path for
+    # any holding that does not happen to want CPI for another reason — a CPI-indexed spend,
+    # cash band, tender floor, or property obligation.
     #
     # Demand side only, deliberately: the supply-side twin must NOT add this. Inflation reaches
     # the cube by having been SAMPLED; adding the key there when nobody sampled it would give
     # the TIPS an all-NaN price row instead of the loud raise, which is strictly worse.
-    if any(bond.inflation_indexed for bond in scenario.initial_bonds):
+    if any(bond.inflation_indexed for bond in bonds):
         add(InflationKey())
     # A distributing security demands TWO series: its price (already demanded by the lots that
     # hold it) and its dollars-per-unit payout, which nothing else references.
-    for distribution in scenario.security_distributions:
+    for distribution in distributions:
         add(SecurityDistributionKey(symbol=asset_price_key(distribution.asset).symbol))
-    for scheduled_transfer in scenario.scheduled_transfers:
-        _add_amount_series_key(scheduled_transfer.amount, add)
-    for recurring_transfer in scenario.recurring_transfers:
-        _add_amount_series_key(recurring_transfer.amount, add)
-    for scheduled_cashflow in scenario.scheduled_property_cashflows:
-        _add_amount_series_key(scheduled_cashflow.amount, add)
-    for recurring_cashflow in scenario.recurring_property_cashflows:
-        _add_amount_series_key(recurring_cashflow.amount, add)
-    for scheduled_obligation in scenario.scheduled_obligations:
-        _add_amount_series_key(scheduled_obligation.amount_due, add)
-    for recurring_obligation in scenario.recurring_obligations:
-        _add_amount_series_key(recurring_obligation.amount_due, add)
-    for sale in scenario.scheduled_asset_sales:
+    for amount in amounts:
+        _add_amount_series_key(amount, add)
+    for sale in sales:
         add(asset_price_key(sale.asset))
-    for policy in scenario.target_allocation_policies:
+    for policy in policies:
         for sleeve in policy.sleeves:
             add(asset_price_key_or_none(sleeve.asset))
         # Both band bounds, not just the floor: the ceiling is the refill TARGET, so a raise
         # cannot be sized without it, and an indexed ceiling needs its series sampled.
         _add_amount_series_key(policy.cash_floor, add)
         _add_amount_series_key(policy.cash_ceiling, add)
-    for pe_policy in scenario.private_equity_tender_policies:
+    for pe_policy in tender_policies:
         _add_amount_series_key(pe_policy.liquid_net_worth_floor, add)
     # A property is valued at sale off its location's home-value series.
-    for purchase in scenario.scheduled_property_purchases:
+    for purchase in purchases:
         add(HomeValueKey(location_id=LocationId(purchase.location_id)))
     return tuple(keys)
 

@@ -223,7 +223,7 @@ class ProductService:
         self._validate_scenario_key(scenario_key)
         scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
         external_series = materialize_sampled_exogenous(sampled)
-        jurisdictions = load_jurisdictions_for(scenario)
+        jurisdictions = load_jurisdictions_for(scenario.tax_profiles)
         return (
             compile_run(
                 scenario,
