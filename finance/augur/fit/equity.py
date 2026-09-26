@@ -15,7 +15,7 @@ from itertools import pairwise
 
 import numpy as np
 
-from finance.augur.model.structural_macro import MINIMUM_MONTHS, MONTHS_PER_YEAR
+from finance.augur.model.structural_macro import MINIMUM_MONTHS
 from finance.evidence.loading import MonthlyLevel
 
 
@@ -28,14 +28,6 @@ class LogReturnFit:
     sample_months: int
     first_month: date
     last_month: date
-
-    @property
-    def annualized_nominal_return(self) -> float:
-        return float(np.expm1(self.monthly_log_mu * MONTHS_PER_YEAR))
-
-    @property
-    def annualized_volatility(self) -> float:
-        return float(np.sqrt(MONTHS_PER_YEAR) * self.monthly_log_sigma)
 
 
 def fit_log_returns(levels: Sequence[MonthlyLevel]) -> LogReturnFit:

@@ -1,0 +1,58 @@
+# gazelle:ignore
+# gazelle:resolve py cilium_crds //cluster/cdk8s/providers/cilium:ciliumnetworkpolicy
+# gazelle:resolve py cilium_clusterwide_crds //cluster/cdk8s/providers/cilium:ciliumclusterwidenetworkpolicy
+# gazelle:resolve py cilium_envoyconfig_crds //cluster/cdk8s/providers/cilium:ciliumenvoyconfig
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+cdk8s_import(
+    name = "ciliumnetworkpolicy",
+    crd = "@cilium_networkpolicy_crd//file",
+    module_name = "cilium_crds",
+    module_path = "io/cilium",
+    visibility = ["//visibility:public"],
+)
+
+# A separate Python package: the generated struct names differ from the namespaced policy's.
+cdk8s_import(
+    name = "ciliumclusterwidenetworkpolicy",
+    crd = "@cilium_clusterwide_networkpolicy_crd//file",
+    module_name = "cilium_clusterwide_crds",
+    module_path = "io/cilium",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "ciliumenvoyconfig",
+    crd = "@cilium_envoyconfig_crd//file",
+    module_name = "cilium_envoyconfig_crds",
+    module_path = "io/cilium",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "network_policy",
+    srcs = ["network_policy.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":ciliumnetworkpolicy",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_network_policy",
+    srcs = ["test_network_policy.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":ciliumnetworkpolicy",
+        ":network_policy",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -15,7 +15,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     AIQUOTA_READ_POLICY,
     BASIC_POLICY,
     FORGEJO_HAKU_POLICY,
-    GITHUB_PUBLIC_POLICY,
+    GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
@@ -49,7 +49,9 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
 ) -> None:
     manifests = agentplane_manifests[testing.ENV.namespace]
     github = one(
-        doc for doc in manifests if doc["kind"] == "EgressPolicy" and doc["metadata"]["name"] == GITHUB_PUBLIC_POLICY
+        doc
+        for doc in manifests
+        if doc["kind"] == "EgressPolicy" and doc["metadata"]["name"] == GITHUB_AGENTYDRAGON_AGENT_POLICY
     )
     github_rule = one(github["spec"]["rules"])
     assert "codeload.github.com" in github_rule["hosts"]

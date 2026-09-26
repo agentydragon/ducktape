@@ -1,14 +1,14 @@
-"""Full payments or typed rejections; grouped funding remains distinct from ordered actions."""
+"""Full payments or typed rejections."""
 
-from collections import defaultdict
 from dataclasses import dataclass
 
 from finance.augur.sim import results
 from finance.augur.sim.accounting import Accounting, MortgagePaymentOutcome, TransferOutcome
-from finance.augur.sim.actions import ClaimId, Consume, PayClaim
+from finance.augur.sim.actions import Consume, PayClaim
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, TaxPaymentOutcome, TaxSettlementOutcome
 from finance.augur.sim.claims import Claim, Claims, OrdinaryDeduction, PropertyTax, TaxPayment, TaxTrueUp
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.mortgage import MortgagePayment
 
@@ -27,13 +27,6 @@ class ObligationOutcome:
     failure_active: bool
 
 
-@dataclass(frozen=True)
-class Settlement:
-    failed: bool
-    product_shortfall: int
-    obligations: list[ObligationOutcome]
-
-
 def receipt(request: PayClaim | Consume, reason: results.PaymentFailure | None) -> results.PaymentReceipt:
     target = (
         results.ClaimTarget(month=request.claim.month, index=request.claim.index)
@@ -49,7 +42,7 @@ def receipt(request: PayClaim | Consume, reason: results.PaymentFailure | None) 
 
 
 def prepare(
-    accounting: Accounting, month: int, claims: Claims, actor: str, request: PayClaim | Consume
+    accounting: Accounting, month: int, claims: Claims, actor: AgentId, request: PayClaim | Consume
 ) -> Claim | results.PaymentRequestError:
     if request.from_account.agent_id != actor:
         return results.PaymentRequestError(kind="WrongActor")
@@ -83,7 +76,7 @@ def prepare(
 
 
 def execute(
-    accounting: Accounting, month: int, claims: Claims, actor: str, request: PayClaim | Consume
+    accounting: Accounting, month: int, claims: Claims, actor: AgentId, request: PayClaim | Consume
 ) -> results.PaymentReceipt:
     claim = prepare(accounting, month, claims, actor, request)
     if isinstance(claim, results.PaymentRequestError):
@@ -120,10 +113,13 @@ def post_payment(accounting: Accounting, month: int, claim: Claim, source: Accou
             postings.extend(
                 [
                     Posting(
-                        account=AccountRef(agent_id=profile.agent_id, account_id="asset:tax-prepayments"), amount=amount
+                        account=AccountRef(agent_id=profile.agent_id, account_id=AccountId("asset:tax-prepayments")),
+                        amount=amount,
                     ),
                     Posting(
-                        account=AccountRef(agent_id=profile.tax_authority_agent_id, account_id="income:tax-payments"),
+                        account=AccountRef(
+                            agent_id=profile.tax_authority_agent_id, account_id=AccountId("income:tax-payments")
+                        ),
                         amount=checked_count(-amount, "money negation"),
                     ),
                 ]
@@ -146,7 +142,8 @@ def post_payment(accounting: Accounting, month: int, claim: Claim, source: Accou
                     settlement_postings.append(
                         Posting(
                             account=AccountRef(
-                                agent_id=liability.agent_id, account_id=f"liability:tax:{liability.jurisdiction_id}"
+                                agent_id=liability.agent_id,
+                                account_id=AccountId(f"liability:tax:{liability.jurisdiction_id}"),
                             ),
                             amount=liability.amount_owed,
                         )
@@ -156,7 +153,7 @@ def post_payment(accounting: Accounting, month: int, claim: Claim, source: Accou
             if total:
                 settlement_postings.append(
                     Posting(
-                        account=AccountRef(agent_id=profile.agent_id, account_id="asset:tax-prepayments"),
+                        account=AccountRef(agent_id=profile.agent_id, account_id=AccountId("asset:tax-prepayments")),
                         amount=checked_count(-total, "money negation"),
                     )
                 )
@@ -171,7 +168,7 @@ def post_payment(accounting: Accounting, month: int, claim: Claim, source: Accou
     elif isinstance(effect, MortgagePayment):
         terms = effect.terms
         mortgage_liability = AccountRef(
-            agent_id=terms.borrower.agent_id, account_id=f"liability:mortgage:{terms.liability_id}"
+            agent_id=terms.borrower.agent_id, account_id=AccountId(f"liability:mortgage:{terms.liability_id}")
         )
         if effect.principal > checked_count(-accounting.ledger.balance(mortgage_liability), "money negation"):
             raise ValueError("installment exceeds ledger principal")
@@ -180,19 +177,22 @@ def post_payment(accounting: Accounting, month: int, claim: Claim, source: Accou
                 Posting(account=mortgage_liability, amount=effect.principal),
                 Posting(
                     account=AccountRef(
-                        agent_id=terms.borrower.agent_id, account_id=f"expense:mortgage-interest:{terms.liability_id}"
+                        agent_id=terms.borrower.agent_id,
+                        account_id=AccountId(f"expense:mortgage-interest:{terms.liability_id}"),
                     ),
                     amount=effect.interest,
                 ),
                 Posting(
                     account=AccountRef(
-                        agent_id=terms.lender.agent_id, account_id=f"asset:mortgage-receivable:{terms.liability_id}"
+                        agent_id=terms.lender.agent_id,
+                        account_id=AccountId(f"asset:mortgage-receivable:{terms.liability_id}"),
                     ),
                     amount=checked_count(-effect.principal, "money negation"),
                 ),
                 Posting(
                     account=AccountRef(
-                        agent_id=terms.lender.agent_id, account_id=f"income:mortgage-interest:{terms.liability_id}"
+                        agent_id=terms.lender.agent_id,
+                        account_id=AccountId(f"income:mortgage-interest:{terms.liability_id}"),
                     ),
                     amount=checked_count(-effect.interest, "money negation"),
                 ),
@@ -239,67 +239,3 @@ def post_payment(accounting: Accounting, month: int, claim: Claim, source: Accou
         )
     if amount > 0:
         accounting.transfers.append(TransferOutcome(month, cause, source, claim.to_account, amount, None))
-
-
-def settle_grouped(accounting: Accounting, claims: Claims, product_actor: str | None) -> Settlement:
-    requests = [
-        PayClaim(
-            request_id=index + 1,
-            cause_id=claim.cause_id,
-            claim=ClaimId(month=claims.month, index=index),
-            from_account=claim.from_account,
-            amount=claim.amount_due,
-        )
-        for index, claim in enumerate(claims.entries)
-        if not claim.paid
-    ]
-    due: defaultdict[AccountRef, int] = defaultdict(int)
-    for request in requests:
-        due[request.from_account] = checked_count(due[request.from_account] + request.amount, "money addition")
-    rejections = {
-        source: results.UnfundedGroup(available=accounting.ledger.balance(source), due=amount)
-        for source, amount in due.items()
-        if accounting.ledger.balance(source) < amount
-    }
-    failed = False
-    shortfall = 0
-    obligations = []
-    for request in requests:
-        outcome = (
-            receipt(request, rejections[request.from_account])
-            if request.from_account in rejections
-            else execute(accounting, claims.month, claims, request.from_account.agent_id, request)
-        )
-        claim = claims.entries[request.claim.index]
-        gap = checked_count(outcome.amount_requested - outcome.amount_paid, "money subtraction")
-        rejected = isinstance(outcome.outcome, results.PaymentRejected)
-        failed |= rejected
-        if rejected and isinstance(claim.effect, TaxPayment | TaxTrueUp):
-            accounting.tax_payments.append(
-                TaxPaymentOutcome(
-                    month=claims.month,
-                    cause_id=request.cause_id,
-                    agent_id=request.from_account.agent_id,
-                    obligation_type=claim.obligation_type,
-                    amount_due=request.amount,
-                    amount_paid=0,
-                    shortfall=gap,
-                )
-            )
-        obligations.append(
-            ObligationOutcome(
-                claims.month,
-                request.cause_id,
-                request.cause_id,
-                claim.obligation_type,
-                request.from_account,
-                claim.to_account,
-                request.amount,
-                outcome.amount_paid,
-                gap,
-                rejected,
-            )
-        )
-        if request.from_account.agent_id == product_actor:
-            shortfall = checked_count(shortfall + gap, "money addition")
-    return Settlement(failed, shortfall, obligations)

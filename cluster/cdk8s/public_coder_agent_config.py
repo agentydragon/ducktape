@@ -31,11 +31,13 @@ from cluster.cdk8s.haku import console, console_config, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.model_rosters import (
+    ANTIGRAVITY_MODELS,
     GEMINI_CONTEXT_WINDOW,
     GEMINI_MAX_OUTPUT_TOKENS,
     GEMINI_MODELS,
     OLLAMA_EMBEDDING_MODEL,
     OPENCLAW_CODEX_MODELS,
+    AntigravityModel,
     ApiShape,
     CodexModel,
     GeminiModel,
@@ -119,6 +121,23 @@ def _gemini_model_entry(model: GeminiModel) -> dict:
         "input": ["text", "image"],
         "maxTokens": GEMINI_MAX_OUTPUT_TOKENS,
         "name": f"{model.display_name} (Google AI via LiteLLM)",
+        "reasoning": model.reasoning,
+    }
+
+
+# Only the Antigravity models with a known context_window/max_tokens (model_rosters.py
+# cites the source): gemini-3.1-flash-image and gemini-3.5-flash-lite are left out
+# until that's filled in, rather than guessing.
+_ANTIGRAVITY_OPENCLAW_MODELS = [model for model in ANTIGRAVITY_MODELS if model.context_window is not None]
+
+
+def _antigravity_model_entry(model: AntigravityModel) -> dict:
+    return {
+        "contextWindow": model.context_window,
+        "id": exposed_name(Provider.ANTIGRAVITY, ApiShape.ANT_MESSAGES, model.id),
+        "input": ["text", "image"],
+        "maxTokens": model.max_tokens,
+        "name": f"{model.display_name} (Google Antigravity via LiteLLM)",
         "reasoning": model.reasoning,
     }
 
@@ -222,6 +241,7 @@ def config() -> dict:
                     "models": [
                         *(_codex_model_entry(model) for model in OPENCLAW_CODEX_MODELS),
                         *(_gemini_model_entry(model) for model in GEMINI_MODELS),
+                        *(_antigravity_model_entry(model) for model in _ANTIGRAVITY_OPENCLAW_MODELS),
                     ],
                     "request": {"allowPrivateNetwork": True},
                 }

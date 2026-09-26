@@ -1,42 +1,64 @@
 """The authored rule reserves already-due claims before proposing an opening buy."""
 
-from decimal import Decimal
-
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import SecurityKey
+from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.fixed_point import quantity_scale_for_asset
+from finance.augur.sim.ids import AccountId, AssetId
+from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedObligation, PreparedSeries
 from finance.augur.sim.results import Finished, RejectedAction
-from finance.augur.sim.scenario import HoldingPool
+from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.testing.case import Case, flat, scenario
-from finance.augur.sim.testing.fixtures import cash_spend, checking
+from finance.augur.sim.world import World
 from finance.augur.x.monthly_actions.policy import decide
+from finance.augur.x.monthly_actions.run import CREDITOR, HOUSEHOLD, STOCK
 
 
 @pytest.fixture
-def opening_case(bill_dollars: int) -> Case:
-    stock = SecurityKey(symbol="example-stock")
-    return Case(
-        scenario=scenario(
-            checking(("example-household", Decimal(200)), ("example-creditor", Decimal(0))),
-            horizon_months=1,
-            tax_profiles=[],
-            holding_pools=[HoldingPool(agent_id="example-household", account_id="brokerage", asset=stock)],
-            scheduled_obligations=[
-                cash_spend(
-                    "opening-bill",
-                    month=0,
-                    agent_id="example-household",
-                    to_agent_id="example-creditor",
-                    amount_due=Decimal(bill_dollars),
-                )
-            ],
+def opening(bill_dollars: int) -> World:
+    """USD 200 in checking, an empty brokerage pool of a USD 100 stock, and a bill due at month 0."""
+    world = World(
+        MarketPath(
+            (PreparedSeries(series_id=f"security:{STOCK.symbol}", snapshots=2, values=(10_000, 10_000)),),
+            0,
+            rollout_count=1,
         ),
-        rollout_count=1,
-        series={stock: flat(Decimal(100), rollout_count=1, horizon_months=1)},
+        horizon_months=1,
+        income_sources=(ORDINARY_INCOME,),
     )
+    for agent_id, balance in ((HOUSEHOLD, 20_000), (CREDITOR, 0)):
+        world.declare_account(
+            PreparedAccount(
+                account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=balance
+            )
+        )
+    world.declare_pool(
+        PreparedHoldingPool(
+            agent_id=HOUSEHOLD,
+            account_id=AccountId("brokerage"),
+            asset_id=AssetId(STOCK.symbol),
+            quantity_scale=quantity_scale_for_asset(STOCK),
+        )
+    )
+    world.track(
+        Biller(
+            PreparedObligation(
+                month=0,
+                obligation_id="opening-bill",
+                obligation_type=ObligationType.CASH_SPEND,
+                from_account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("checking")),
+                to_account=AccountRef(agent_id=CREDITOR, account_id=AccountId("checking")),
+                amount_due=bill_dollars * 100,
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
+            )
+        )
+    )
+    return world
 
 
 @pytest.mark.parametrize(
@@ -44,9 +66,9 @@ def opening_case(bill_dollars: int) -> Case:
     [(150, 500_000, 15_000, 0), (200, 0, 20_000, 0), (250, 0, 0, 20_000)],
 )
 def test_opening_investment_reserves_claims_and_does_not_rescue_shortfalls(
-    opening_case: Case, bought_units: int, paid: int, ending_cash: int
+    opening: World, bought_units: int, paid: int, ending_cash: int
 ) -> None:
-    session = ActionSession(opening_case.compiled_run, "example-household", [0])
+    session = ActionSession({0: opening}, HOUSEHOLD)
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)
@@ -66,7 +88,7 @@ def test_opening_investment_reserves_claims_and_does_not_rescue_shortfalls(
         next(
             row.balance
             for row in closing.balances
-            if row.account == AccountRef(agent_id="example-household", account_id="checking")
+            if row.account == AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("checking"))
         )
         == ending_cash
     )

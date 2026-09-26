@@ -11,7 +11,7 @@ exclusion. The proxy that enforces the result is <../egress/SPEC.md>; the kinds 
 
 - **`EgressPolicy`** is a named, subject-free rule set. `spec.rules` is inline — there is no
   `EgressRule` object, so a rule belongs to exactly one policy (N:1). The policy is therefore the
-  unit of reuse, which is why `github-public` is a policy rather than a rule.
+  unit of reuse, which is why `github-agentydragon-agent` is a policy rather than a rule.
 - **`EgressCredential`** is its own object, unlike a rule, because a credential is referenced by
   many rules across many policies and has no such N:1 relation to any of them. Naming it is also
   what makes its placeholder unique: the placeholder is `agentplane-credential-<name>`, derived and
@@ -46,8 +46,8 @@ Each gets one binding:
 
 ```text
 docs-writer-h2n4q   subjects: [docs-writer]   policies: [pypi-readonly]
-pr-bot-8fj3d        subjects: [pr-bot]        policies: [github-public]
-researcher-4m9tz    subjects: [researcher]    policies: [github-public, open-internet]
+pr-bot-8fj3d        subjects: [pr-bot]        policies: [github-agentydragon-agent]
+researcher-4m9tz    subjects: [researcher]    policies: [github-agentydragon-agent, open-internet]
 ```
 
 "Extra on top" is a longer policy list, not a second mechanism:
@@ -61,7 +61,7 @@ spec:
   subjects:
     - sandbox:
         name: researcher
-  policies: [github-public, open-internet]
+  policies: [github-agentydragon-agent, open-internet]
 ```
 
 The specific, credentialed policy is listed first. Why that order matters, and why it should not
@@ -102,7 +102,7 @@ Where the first matching rule decides, adding a broad policy to a subject that a
 credentialed one can stop the credentialed traffic instead of widening it.
 
 Take `researcher` above with the list reversed, so a credential-less `open-internet` rule
-(`hosts: ["*.com"]`) precedes `github-public`. A request to `api.github.com` carrying
+(`hosts: ["*.com"]`) precedes `github-agentydragon-agent`. A request to `api.github.com` carrying
 `Authorization: Bearer agentplane-credential-github-pat`:
 
 1. `open-internet`'s rule matches first. It names no credential, so nothing is substituted.

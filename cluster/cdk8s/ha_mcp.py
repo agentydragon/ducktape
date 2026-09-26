@@ -52,15 +52,9 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpoints
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cilium
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization
@@ -71,12 +65,14 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     DataFrom,
     ExternalSecret,
     SecretStoreRef,
     remote_data,
 )
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 
 _NAMESPACE = "ha-mcp"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/ha-mcp/app"
@@ -305,7 +301,7 @@ class HaMcpApp(Construct):
         )
 
     def _add_network_policy(self) -> None:
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "networkpolicy",
             metadata=metadata(
@@ -321,10 +317,12 @@ class HaMcpApp(Construct):
             ),
             selector=_APP_LABELS,
             ingress=[
-                cilium.ingress_from(
+                IngressRule.from_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": "agentplane-staging"}, ports=[_APP_FACADE_PORT]
                 ),
-                cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_APP_METRICS_PORT]),
+                IngressRule.from_endpoints(
+                    {"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_APP_METRICS_PORT]
+                ),
             ],
         )
 
@@ -333,10 +331,8 @@ class HaMcpApp(Construct):
             self,
             "servicemonitor",
             metadata=metadata(_APP_NAME, _NAMESPACE),
-            spec=ServiceMonitorSpec(
-                selector=ServiceMonitorSpecSelector(match_labels=_APP_LABELS),
-                endpoints=[ServiceMonitorSpecEndpoints(port="metrics")],
-            ),
+            selector=_APP_LABELS,
+            endpoints=[ServiceMonitorSpecEndpoints(port="metrics")],
         )
 
 

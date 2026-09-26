@@ -20,15 +20,17 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
-from collections.abc import Callable
+import subprocess
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pygit2
 
-from devinfra.gc import branch_gc, git_repo, output_base_gc, worktree_gc
+from devinfra.gc import branch_gc, foreign_clone_gc, git_repo, output_base_gc, worktree_gc
 from devinfra.gc.branch_gc import BranchClassification, Holder, MainCheckout, PrunableBranch, RetainedBranch
+from devinfra.gc.foreign_clone_gc import ForeignCloneClassification
 from devinfra.gc.output_base_gc import Inspection, RetainedBase
 from devinfra.gc.pull_request import PrInfo
 from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressCategory, ProgressSink
@@ -36,7 +38,9 @@ from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWo
 
 logger = logging.getLogger(__name__)
 
-_BRANCH_WORKERS = 8  # content_in_main runs pygit2 merges (GIL released), so threads help
+# pygit2/git calls release the GIL, so threads give real concurrency; configurable (the CLI
+# exposes `--workers`) since the right count depends on the machine and disk, not the code.
+DEFAULT_CLASSIFY_WORKERS = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +48,7 @@ class WorkspaceScan:
     worktrees: list[Classification]
     branches: list[BranchClassification]
     bases: list[Inspection]
+    foreign_clones: list[ForeignCloneClassification] = field(default_factory=list)
 
 
 def pr_branch_candidates(repo: Path) -> set[str]:
@@ -94,6 +99,65 @@ def _branch_category(classification: BranchClassification) -> ProgressCategory:
     return "REVIEW"
 
 
+def foreign_clone_category(classification: ForeignCloneClassification) -> ProgressCategory:
+    if isinstance(classification, foreign_clone_gc.PrunableForeignClone):
+        return "PRUNE"
+    if isinstance(classification, foreign_clone_gc.RetainedForeignClone):
+        return "KEEP"
+    return "REVIEW"
+
+
+def parallel_classify[T, R](
+    items: Sequence[T],
+    make_classify_one: Callable[[], Callable[[T], R]],
+    *,
+    phase: str,
+    noun: str,
+    progress: ProgressSink,
+    category_of: Callable[[R], ProgressCategory],
+    describe: Callable[[T], str],
+    workers: int,
+) -> list[R]:
+    """Classify `items` in up to `workers`-way parallel contiguous slices.
+
+    `make_classify_one` is called once per *worker thread*, not once per item: a classifier
+    that needs a shared per-slice resource — a single `pygit2.Repository`, say, since handles
+    aren't shareable across threads — opens it once and reuses it across its whole slice; one
+    with nothing to share (each item opens its own resources independently) just returns the
+    same function every time.
+
+    Real concurrency despite being threads, not processes: the pygit2/git calls each
+    classifier makes release the GIL. Each worker classifies its own slice in order, so the
+    flattened result stays in `items` order regardless of which slice finishes first;
+    `progress` (thread-safe) is updated as each item completes, from whichever worker
+    finishes it.
+    """
+    items = list(items)
+    total = len(items)
+    if total:
+        progress.start_phase(phase, total)
+
+    def classify_slice(args: tuple[int, list[T]]) -> list[R]:
+        offset, slice_items = args
+        classify_one = make_classify_one()
+        results: list[R] = []
+        for index, item in enumerate(slice_items, start=offset + 1):
+            logger.info("Scanning %s %d/%d %s", noun, index, total, describe(item))
+            result = classify_one(item)
+            results.append(result)
+            logger.info("Finished %s %d/%d %s", noun, index, total, describe(item))
+            progress.record(phase, category_of(result))
+        return results
+
+    workers = min(workers, total)
+    if workers <= 1:
+        return classify_slice((0, items))
+    step = -(-total // workers)  # ceil → `workers` contiguous slices
+    slices = [(i, items[i : i + step]) for i in range(0, total, step)]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return [result for chunk in pool.map(classify_slice, slices) for result in chunk]
+
+
 def _classify_branches(
     main_path: Path,
     names: list[str],
@@ -102,41 +166,29 @@ def _classify_branches(
     default_branch: str,
     pr_states: dict[str, PrInfo],
     holder_for: Callable[[str], Holder],
+    workers: int,
     progress: ProgressSink,
 ) -> list[BranchClassification]:
-    """Classify every local branch, parallelizing the pygit2 content-in-main merges.
-
-    Each worker opens its own `pygit2.Repository` — handles aren't shareable across threads —
-    and classifies a contiguous slice, so the flattened result stays in `names` order. `done`
-    below counts completions across all workers (unlike a slice's own `index`, it advances
-    monotonically for `progress`, regardless of which slice finishes an item first).
-    """
-
-    total = len(names)
-    if total:
-        progress.start_phase("branches", total)
-
-    def classify_slice(args: tuple[int, list[str]]) -> list[BranchClassification]:
-        offset, slice_names = args
+    def make_classify_one() -> Callable[[str], BranchClassification]:
         pg = pygit2.Repository(os.fspath(main_path))
-        results: list[BranchClassification] = []
-        for index, name in enumerate(slice_names, start=offset + 1):
-            logger.info("Scanning branch %d/%d %s", index, total, name)
-            result = branch_gc.classify_branch(
+
+        def classify_one(name: str) -> BranchClassification:
+            return branch_gc.classify_branch(
                 name, pg=pg, main=main, default_branch=default_branch, pr=pr_states.get(name), holder=holder_for(name)
             )
-            results.append(result)
-            logger.info("Finished branch %d/%d %s", index, total, name)
-            progress.record("branches", _branch_category(result))
-        return results
 
-    workers = min(_BRANCH_WORKERS, len(names))
-    if workers <= 1:
-        return classify_slice((0, names))
-    step = -(-len(names) // workers)  # ceil → `workers` contiguous slices
-    slices = [(i, names[i : i + step]) for i in range(0, len(names), step)]
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        return [item for chunk in pool.map(classify_slice, slices) for item in chunk]
+        return classify_one
+
+    return parallel_classify(
+        names,
+        make_classify_one,
+        phase="branches",
+        noun="branch",
+        progress=progress,
+        category_of=_branch_category,
+        describe=str,
+        workers=workers,
+    )
 
 
 def base_workspace_branches(repo: Path, bases: list[Inspection]) -> set[str]:
@@ -155,6 +207,35 @@ def _retained_workspaces(bases: list[Inspection]) -> set[Path]:
     )
 
 
+def _known_worktree_paths(repo: Path) -> set[Path]:
+    return _resolved({wt.path for wt in git_repo.list_worktrees(repo)})
+
+
+def foreign_clone_roots(repo: Path, output_user_root: Path) -> list[Path]:
+    """Roots of foreign clones of `repo`'s project found among Bazel output-base workspaces.
+
+    Filesystem-only (no network): re-scans output bases purely to learn candidate workspace
+    paths, independent of the main scan's own later bases pass — cheap without `--sizes`, so
+    duplicating it here is simpler than threading a shared scan through both call sites (the
+    bases-only CLI path already does the analogous two-pass thing for its PR-annotation step).
+    """
+    bases = output_base_gc.scan_output_user_root(output_user_root)
+    return foreign_clone_gc.discover_foreign_clones(
+        _retained_workspaces(bases), known_paths=_known_worktree_paths(repo), repo=repo
+    )
+
+
+def foreign_clone_branch_candidates(roots: Sequence[Path]) -> set[str]:
+    """Branch names worth a PR lookup across every worktree these foreign clones hold."""
+    names: set[str] = set()
+    for root in roots:
+        try:
+            names.update(wt.branch for wt in git_repo.list_worktrees(root) if wt.branch)
+        except OSError, subprocess.CalledProcessError:
+            continue
+    return names
+
+
 def _worktrees_at(repo: Path, workspaces: set[Path]) -> list[git_repo.Worktree]:
     """The linked worktrees sitting at one of `workspaces` (already resolved)."""
     if not workspaces:
@@ -171,6 +252,7 @@ def annotate_bases(
     pr_states: dict[str, PrInfo],
     active_path: Path | None = None,
     proc_root: Path = Path("/proc"),
+    workers: int = DEFAULT_CLASSIFY_WORKERS,
     progress: ProgressSink = NULL_PROGRESS,
 ) -> list[Inspection]:
     """Flag each retained base whose workspace is a prunable worktree.
@@ -182,13 +264,11 @@ def annotate_bases(
     if not candidates:
         return bases
 
-    progress.start_phase("workspaces", len(candidates))
     main_path = git_repo.main_worktree(repo)
     live = worktree_gc.processes_by_worktree((wt.path for wt in candidates), proc_root=proc_root)
-    prunable_paths: set[Path] = set()
-    for index, wt in enumerate(candidates, start=1):
-        logger.info("Annotating base workspace %d/%d %s", index, len(candidates), wt.path)
-        classification = worktree_gc.classify_worktree(
+
+    def classify_one(wt: git_repo.Worktree) -> Classification:
+        return worktree_gc.classify_worktree(
             wt,
             main=main,
             pr_states=pr_states,
@@ -196,11 +276,20 @@ def annotate_bases(
             active_path=active_path,
             live_pids=live.get(wt.path, []),
         )
-        logger.info("Finished base workspace %d/%d %s", index, len(candidates), wt.path)
-        progress.record("workspaces", _worktree_category(classification))
-        if isinstance(classification, PrunableWorktree):
-            prunable_paths.add(wt.path)
-    prunable = _resolved(prunable_paths)
+
+    classifications = parallel_classify(
+        candidates,
+        lambda: classify_one,
+        phase="workspaces",
+        noun="base workspace",
+        progress=progress,
+        category_of=_worktree_category,
+        describe=lambda wt: str(wt.path),
+        workers=workers,
+    )
+    prunable = _resolved(
+        {wt.path for wt, c in zip(candidates, classifications, strict=True) if isinstance(c, PrunableWorktree)}
+    )
     return [_annotate_base(base, prunable) for base in bases]
 
 
@@ -212,8 +301,10 @@ def scan_workspace(
     pr_states: dict[str, PrInfo],
     active_path: Path | None = None,
     output_user_root: Path | None = None,
+    foreign_clone_roots: Sequence[Path] = (),
     proc_root: Path = Path("/proc"),
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
+    workers: int = DEFAULT_CLASSIFY_WORKERS,
     progress: ProgressSink = NULL_PROGRESS,
 ) -> WorkspaceScan:
     main_path = git_repo.main_worktree(repo)
@@ -221,13 +312,10 @@ def scan_workspace(
 
     linked = [wt for wt in git_repo.list_worktrees(repo) if wt.path != main_path]
     logger.info("Scanning %d linked worktrees", len(linked))
-    if linked:
-        progress.start_phase("worktrees", len(linked))
     live = worktree_gc.processes_by_worktree((wt.path for wt in linked), proc_root=proc_root)
-    worktrees: list[Classification] = []
-    for index, wt in enumerate(linked, start=1):
-        logger.info("Scanning worktree %d/%d %s", index, len(linked), wt.path)
-        classification = worktree_gc.classify_worktree(
+
+    def classify_worktree_one(wt: git_repo.Worktree) -> Classification:
+        return worktree_gc.classify_worktree(
             wt,
             main=main,
             pr_states=pr_states,
@@ -235,9 +323,17 @@ def scan_workspace(
             active_path=active_path,
             live_pids=live.get(wt.path, []),
         )
-        worktrees.append(classification)
-        logger.info("Finished worktree %d/%d %s", index, len(linked), wt.path)
-        progress.record("worktrees", _worktree_category(classification))
+
+    worktrees = parallel_classify(
+        linked,
+        lambda: classify_worktree_one,
+        phase="worktrees",
+        noun="worktree",
+        progress=progress,
+        category_of=_worktree_category,
+        describe=lambda wt: str(wt.path),
+        workers=workers,
+    )
     logger.info("Worktree scan complete: %d linked worktrees", len(linked))
 
     holders = branch_gc.branch_holders(repo)
@@ -260,6 +356,7 @@ def scan_workspace(
         default_branch=default_branch,
         pr_states=pr_states,
         holder_for=holder_for,
+        workers=workers,
         progress=progress,
     )
     logger.info("Branch scan complete: %d local branches", len(branches))
@@ -279,4 +376,23 @@ def scan_workspace(
         ]
         logger.info("Bazel output-base scan complete: %d bases", len(bases))
 
-    return WorkspaceScan(worktrees=worktrees, branches=branches, bases=bases)
+    logger.info("Scanning %d foreign clones", len(foreign_clone_roots))
+
+    def classify_foreign_clone_one(root: Path) -> ForeignCloneClassification:
+        return foreign_clone_gc.classify_foreign_clone(
+            root, pr_states=pr_states, active_path=active_path, proc_root=proc_root
+        )
+
+    foreign_clones = parallel_classify(
+        foreign_clone_roots,
+        lambda: classify_foreign_clone_one,
+        phase="foreign_clones",
+        noun="foreign clone",
+        progress=progress,
+        category_of=foreign_clone_category,
+        describe=str,
+        workers=workers,
+    )
+    logger.info("Foreign-clone scan complete: %d clones", len(foreign_clones))
+
+    return WorkspaceScan(worktrees=worktrees, branches=branches, bases=bases, foreign_clones=foreign_clones)

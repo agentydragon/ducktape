@@ -34,6 +34,7 @@ from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/activitywatch"
 _NAME = "activitywatch"
@@ -245,7 +246,7 @@ def _network_policy(scope: Construct) -> None:
     # ActivityWatch central query + write server.
     # Ingress: kube-apiserver (health probes), Authentik proxy (read-only proxy 5601),
     # the Gateway (bearer-gated bearer-proxy: write 5602, read 5603). Egress: DNS only.
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "network-policy",
         metadata=metadata(_NAME, _NAMESPACE),
@@ -264,7 +265,7 @@ def _network_policy(scope: Construct) -> None:
                 ],
             ),
             # Read-only proxy through Authentik embedded outpost (nginx on 5601).
-            cilium.ingress_from(
+            IngressRule.from_endpoints(
                 {
                     "k8s:io.kubernetes.pod.namespace": "authentik",
                     "app.kubernetes.io/name": "authentik",
@@ -275,7 +276,7 @@ def _network_policy(scope: Construct) -> None:
             # Public write + read routes: the Gateway (Envoy, hostNetwork) reaches the
             # bearer-gated bearer-proxy sidecar on 5602 (write) and 5603 (read).
             # See docs/cilium_network_policy.md (fromEntities: ingress).
-            cilium.ingress_from_gateway(_WRITE_PORT, _READ_PORT),
+            IngressRule.from_gateway(_WRITE_PORT, _READ_PORT),
         ],
         egress=[cilium.dns_egress()],
     )

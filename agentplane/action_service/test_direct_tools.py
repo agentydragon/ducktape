@@ -38,7 +38,7 @@ from agentplane.action_service.catalog import (
 from agentplane.action_service.conftest import ScriptedExecutor, lifespan_in_own_task
 from agentplane.action_service.connections import ConnectionAuthority, Grant, GrantBinding, NewConnection
 from agentplane.action_service.db import ActionStore, make_sessionmaker
-from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE
+from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE, DIRECT_WAIT_SECONDS
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.mcp_frontend import TransportDisconnects, create_server
 from agentplane.action_service.models import ActionState, CallerPrincipal, ExecutionResult, ExecutionState
@@ -188,11 +188,17 @@ class Direct:
 
 
 @pytest.fixture
+def direct_wait_seconds() -> float:
+    return DIRECT_WAIT_SECONDS
+
+
+@pytest.fixture
 async def direct(
     engine: AsyncEngine,
     db_url: str,
     scripted: ScriptedExecutor,
     github_visibility: Callable[..., RepositoryVisibilityService],
+    direct_wait_seconds: float,
 ) -> AsyncIterator[Direct]:
     policies = _policies()
     authority = ConnectionAuthority(make_sessionmaker(engine), policies)
@@ -217,9 +223,9 @@ async def direct(
         policies=policies,
     )
     updates = ActionUpdates(db_url)
-    mcp_app = create_server(service, catalog, updates, ConnectionBearers(grant, policies)).http_app(
-        path="/mcp", stateless_http=True, json_response=False
-    )
+    mcp_app = create_server(
+        service, catalog, updates, ConnectionBearers(grant, policies), direct_wait_seconds=direct_wait_seconds
+    ).http_app(path="/mcp", stateless_http=True, json_response=False)
 
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
@@ -284,6 +290,30 @@ async def test_direct_call_runs_the_action_and_answers_as_its_tool_did(
         assert request.external_grant == direct.grant.provenance()
         assert request.decision is not None
         assert request.decision.provider == PROVIDER_NAME
+
+
+@pytest.mark.parametrize("direct_wait_seconds", [0.5])
+async def test_direct_call_still_running_after_its_wait_answers_with_its_request(
+    direct: Direct, scripted: ScriptedExecutor
+) -> None:
+    ran = ExecResult(exit=Exited(exit_code=0), stdout="test-late-output", stderr="", duration_seconds=0.1)
+    scripted.results[EXEC] = ExecutionResult(state=ExecutionState.SUCCEEDED, result=ran.model_dump(mode="json"))
+    scripted.release.clear()
+    async with direct.client(EXTERNAL_TOKEN) as client:
+        pending = await client.call_tool("test-sandbox__exec", {})
+        scripted.release.set()
+        assert pending.structured_content is not None
+        finished = await client.call_tool(
+            "get_action_result", {"request_id": pending.structured_content["request_id"], "wait": {"wait_seconds": 10}}
+        )
+    # The call answered while its Action was approved and still running, and the Action went on to finish.
+    assert not pending.is_error
+    assert ActionState(pending.structured_content["state"]) in {
+        ActionState.ALLOWED,
+        ActionState.DISPATCHING,
+        ActionState.RUNNING,
+    }
+    assert ExecResult.model_validate(finished.structured_content) == ran
 
 
 async def test_call_no_policy_approves_is_refused_with_its_reason_and_leaves_nothing(direct: Direct) -> None:

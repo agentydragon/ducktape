@@ -2,7 +2,7 @@
 
 The [roadmap](roadmap.md) owns dispatch. **MA3** is a runnable paired
 harvesting/no-harvest comparison using the existing Python `TlhPortfolio` and
-common action session. Reuse [the TLH contract](../docs/tlh.md), not a second
+common action session. Reuse [the TLH component](../sim/tlh.py), not a second
 managed-account abstraction or financial executor.
 
 ## Remaining acceptance
@@ -19,11 +19,6 @@ managed-account abstraction or financial executor.
 This study does not wait for the app's housing/PE branches, unrelated configured
 reader retirement or performance work. BIND/TAX gate expanded product/statutory
 claims, not clearly labeled synthetic controls.
-
-Tax-aware investor rules additionally need CAP's
-[recorded-tax observation slice](policy_interfaces.md#observationspy): current
-Python observations expose component value/basis but not the household's tax
-facts. Fixed-flow harvesting/no-harvest comparisons need not wait for that slice.
 
 Empirical calibration, wash sales, fees and constituent modeling remain
 [future research](future_work.md#reduced-form-tlh-portfolios), not prerequisites

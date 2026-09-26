@@ -40,7 +40,7 @@ from agentplane.action_service.models import (
     CallerPrincipal,
     CancellationOutcome,
     DecisionView,
-    ExecutionView,
+    ExecutionState,
     ExternalGrantProvenance,
 )
 from agentplane.action_service.policy_view import SELF, PolicyTarget
@@ -52,7 +52,7 @@ from agentplane.action_service.service import (
 )
 from agentplane.action_service.tool_results import tool_result
 from agentplane.action_service.updates import ActionUpdates, UpdatesUnavailableError
-from agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitSeconds
+from agentplane.action_service.waits import ActionWaiter, WaitOptions
 from agentplane.subjects import ServiceAccountRef
 
 PageSize = Annotated[int, Field(ge=1, le=100, description="Maximum entries in this page (1-100).")]
@@ -84,6 +84,13 @@ class RequestField(StrEnum):
     EXTERNAL_GRANT = "external_grant"
     DECISION = "decision"
     EXECUTION = "execution"
+
+
+class ResponseForm(StrEnum):
+    """What request_action answers with once its wait ends."""
+
+    RECEIPT = "receipt"
+    RESULT = "result"
 
 
 DEFAULT_RECEIPT_FIELDS: Final[list[RequestField]] = [
@@ -141,6 +148,19 @@ class RequestInput(BaseModel):
     description: str | None
 
 
+class ExecutionReceipt(BaseModel):
+    """An Execution as a receipt reports it: state, error and timing. Its result is only ever answered
+    as its tool answered it, by get_action_result or request_action, never as JSON nested in a receipt."""
+
+    id: UUID
+    state: ExecutionState
+    error: dict[str, JsonValue] | None
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    reconciled_at: datetime | None
+
+
 class Receipt(BaseModel):
     """The MCP-facing projection of an ActionRequestView; every field is gated by include_fields."""
 
@@ -155,7 +175,7 @@ class Receipt(BaseModel):
     caller: ServiceAccountRef | None = None
     external_grant: ExternalGrantProvenance | None = None
     decision: DecisionView | None = None
-    execution: ExecutionView | None = None
+    execution: ExecutionReceipt | None = None
 
 
 class CancellationView(BaseModel):
@@ -297,7 +317,9 @@ def _receipt(view: ActionRequestView, fields: set[RequestField]) -> Receipt:
     if RequestField.DECISION in fields:
         values["decision"] = view.decision
     if RequestField.EXECUTION in fields:
-        values["execution"] = view.execution
+        values["execution"] = (
+            None if view.execution is None else ExecutionReceipt.model_validate(view.execution, from_attributes=True)
+        )
     return Receipt.model_construct(**values)
 
 
@@ -308,7 +330,12 @@ def _result(model: BaseModel, *, exclude_none: bool = False, exclude_unset: bool
 
 
 def create_server(
-    service: ActionService, catalog: ActionCatalog, updates: ActionUpdates, verifier: CallerTokenVerifier
+    service: ActionService,
+    catalog: ActionCatalog,
+    updates: ActionUpdates,
+    verifier: CallerTokenVerifier,
+    *,
+    direct_wait_seconds: float = DIRECT_WAIT_SECONDS,
 ) -> FastMCP:
     waiter = ActionWaiter(service, updates)
     # strict_input_validation is left at FastMCP's own default (False): its own tool dispatch
@@ -388,11 +415,11 @@ def create_server(
             )
         except UndecidedRequestError as undecided:
             return refusal(action, str(undecided))
-        view = await wait_for_receipt(view.id, principal, WaitOptions(wait_seconds=DIRECT_WAIT_SECONDS))
+        view = await wait_for_receipt(view.id, principal, WaitOptions(wait_seconds=direct_wait_seconds))
         await revalidate(principal)
         return tool_result(view, catalog.groups[action.group].executor)
 
-    server.add_provider(DirectToolProvider(catalog, service, external_caller, call_direct))
+    server.add_provider(DirectToolProvider(catalog, service, external_caller, call_direct, direct_wait_seconds))
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
@@ -469,19 +496,24 @@ def create_server(
         request: ActionRequestInput,
         wait: WaitOptions = DEFAULT_WAIT,
         include_fields: list[RequestField] = DEFAULT_RECEIPT_FIELDS,
+        respond_with: ResponseForm = ResponseForm.RESULT,
         caller: Caller = CALLER,
     ) -> ToolResult:
         """Submit one Action for policy evaluation, human decision if needed, and single-shot execution.
         Supply a stable idempotency_key with structured action group/name, validated arguments, and a title the deciding operator reads.
-        Returns a compact receipt (id, state, version, created_at, updated_at) immediately by default; wait.wait_seconds (0-30) optionally waits for wait.wait_until ("decision" or "terminal", default terminal).
-        include_fields is a pure allowlist: input (the submitted idempotency_key/action/arguments/title/description as one unit), origin, correlation, caller, external_grant, decision, and execution widen it.
-        Pending is not success. A key this caller already used is refused; after response loss read the request with get_action_request(idempotency_key=...), never submit a new key.
+        Answers once wait ends as get_action_result would: a finished Action's own result exactly as its tool answered, otherwise what it waits on or why it has none. wait.wait_seconds (0-30, default 0) optionally waits for wait.wait_until ("decision" or "terminal", default terminal).
+        respond_with="receipt" answers with a compact receipt (id, state, version, created_at, updated_at) instead. include_fields, for a receipt only, is a pure allowlist: input (the submitted idempotency_key/action/arguments/title/description as one unit), origin, correlation, caller, external_grant, decision, and execution (state, error and timing, never the result) widen it.
+        Pending is not success. A key this caller already used is refused; after response loss read the request with get_action_request or get_action_result(idempotency_key=...), never submit a new key.
         """
+        if respond_with is ResponseForm.RESULT and set(include_fields) != set(DEFAULT_RECEIPT_FIELDS):
+            raise ToolError('include_fields shapes a receipt; pass respond_with="receipt" to get one.')
         principal = caller.principal
         view = await service.submit(request, principal, external_grant=caller.external_grant)
         if wait.wait_seconds:
             view = await wait_for_receipt(view.id, principal, wait)
             await revalidate(principal)
+        if respond_with is ResponseForm.RESULT:
+            return tool_result(view, catalog.groups[view.action.group].executor)
         return _result(_receipt(view, set(include_fields)), exclude_unset=True)
 
     @server.tool(annotations={"readOnlyHint": True})
@@ -493,10 +525,10 @@ def create_server(
         include_fields: list[RequestField] = DEFAULT_RECEIPT_FIELDS,
         caller: Caller = CALLER,
     ) -> ToolResult:
-        """Read your submitted Action's current receipt, Decision, and safe execution result/error.
+        """Read your submitted Action's current receipt: its Decision and its execution's state and error; read the result with get_action_result.
         Name the request by exactly one of the request ID returned by request_action or the idempotency_key you submitted it under; the key recovers a submission whose response was lost.
         wait.wait_seconds (0-30) optionally waits for wait.wait_until ("decision" or "terminal", default terminal); a deadline returns the current pending receipt.
-        Returns a compact receipt by default -- see request_action for what include_fields widens; request decision/execution once state is terminal to read the outcome.
+        Returns a compact receipt by default -- see request_action for what include_fields widens; request decision/execution once state is terminal to see how it ended.
         This never submits, retries, or cancels execution, and other callers' requests are not readable.
         """
         principal = caller.principal
@@ -510,23 +542,19 @@ def create_server(
     async def get_action_result(
         request_id: UUID | None = None,
         idempotency_key: IdempotencyKey | None = None,
-        wait_seconds: WaitSeconds = 0,
+        wait: WaitOptions = DEFAULT_WAIT,
         caller: Caller = CALLER,
     ) -> ToolResult:
         """Read your Action's outcome as the tool it ran answered: its own content blocks, images included, and
-        structured content, where get_action_request returns receipt JSON.
+        structured content. No receipt carries the result.
         Name the request by exactly one of request_id or idempotency_key, as for get_action_request.
-        wait_seconds (0-30) waits for it to finish; until then the result says what it waits on and is not an error.
+        wait.wait_seconds (0-30) optionally waits for wait.wait_until ("decision" or "terminal", default terminal); until it finishes the result says what it waits on and is not an error.
         Denied, cancelled, failed and unknown outcomes are error results; unknown means it may have run.
         This never submits, retries, or cancels execution, and other callers' requests are not readable.
         """
         principal = caller.principal
-        view = await wait_for_receipt(
-            await named_request(request_id, idempotency_key, principal),
-            principal,
-            WaitOptions(wait_seconds=wait_seconds),
-        )
-        if wait_seconds:
+        view = await wait_for_receipt(await named_request(request_id, idempotency_key, principal), principal, wait)
+        if wait.wait_seconds:
             await revalidate(principal)
         group = catalog.groups.get(view.action.group)
         if group is None:

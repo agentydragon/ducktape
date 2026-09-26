@@ -668,6 +668,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":data_helpers",
+        ":input_helpers",
         "//:node_modules/vitest",
     ],
 )

@@ -16,6 +16,7 @@ from finance.augur.api.portfolio import (
     BondHoldingConfig,
     HoldingPositionConfig,
     HoldingTaxLotConfig,
+    LabeledTlhPortfolio,
     PortfolioAccountConfig,
     PortfolioConfig,
     SecurityHoldingConfig,
@@ -27,7 +28,8 @@ from finance.augur.api.portfolio_source_config import (
     PlaidSp500ProxyGroupConfig,
 )
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey
-from finance.augur.sim.scenario import TlhPortfolioSpec
+from finance.augur.sim.ids import AccountId
+from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
 from finance.plaid.db.read_model import (
     CurrentCashBalance,
     CurrentHolding,
@@ -48,7 +50,7 @@ class _PortfolioContribution:
     # Bonds ride the merge alongside holdings so `_merge_contributions` re-validates them as
     # part of one `PortfolioConfig`. Plaid contributes none: it imports positions, not terms.
     bonds: tuple[BondHoldingConfig, ...]
-    tlh_portfolios: tuple[TlhPortfolioSpec, ...]
+    tlh_portfolios: tuple[LabeledTlhPortfolio, ...]
     latest_captured_at: datetime | None
 
 
@@ -56,7 +58,7 @@ class _PortfolioContribution:
 class ResolvedPortfolioSources:
     snapshot: FinanceSnapshot
     portfolio: PortfolioConfig
-    tlh_portfolios: tuple[TlhPortfolioSpec, ...]
+    tlh_portfolios: tuple[LabeledTlhPortfolio, ...]
 
 
 def resolve_portfolio_sources(config: Config) -> ResolvedPortfolioSources:
@@ -79,7 +81,7 @@ def resolve_portfolio_sources(config: Config) -> ResolvedPortfolioSources:
         as_of_date=_merged_as_of_date(present),
         cash=sum((contribution.cash for contribution in present), start=Decimal(0)),
     )
-    tlh_portfolios = tuple(policy for contribution in present for policy in contribution.tlh_portfolios)
+    tlh_portfolios = tuple(portfolio for contribution in present for portfolio in contribution.tlh_portfolios)
     return ResolvedPortfolioSources(snapshot=snapshot, portfolio=portfolio, tlh_portfolios=tlh_portfolios)
 
 
@@ -110,7 +112,7 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
 
     accounts: list[PortfolioAccountConfig] = []
     holdings: list[HoldingPositionConfig] = []
-    tlh_portfolios: list[TlhPortfolioSpec] = []
+    tlh_portfolios: list[LabeledTlhPortfolio] = []
     for group in plaid.sp500_proxy_groups:
         group_holdings = tuple(
             holding for account_id in group.plaid_account_ids for holding in holdings_by_account.get(account_id, ())
@@ -125,18 +127,21 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
                 label=group.account_label,
             )
         )
-        proxy_holding = _sp500_proxy_holding(group, group_holdings)
-        holdings.append(proxy_holding)
-        if group.tlh_assumptions is not None:
-            opening = PortfolioConfig(accounts=(accounts[-1],), holdings=(proxy_holding,))
+        cohorts = _proxy_cohorts(group, group_holdings)
+        if group.tlh_assumptions is None:
+            holdings.append(_sp500_proxy_holding(group, cohorts))
+        else:
             tlh_portfolios.append(
-                TlhPortfolioSpec(
-                    portfolio_id=group.position_id,
-                    owner_agent_id=group.owner_agent_id,
-                    account_id=group.portfolio_account_id,
-                    asset=SecurityKey(symbol=SP500_SYMBOL),
-                    initial_lots=list(opening.to_initial_lots()),
-                    assumptions=group.tlh_assumptions,
+                LabeledTlhPortfolio(
+                    spec=TlhPortfolioSpec(
+                        portfolio_id=group.position_id,
+                        owner_agent_id=group.owner_agent_id,
+                        account_id=group.portfolio_account_id,
+                        asset=SecurityKey(symbol=SP500_SYMBOL),
+                        initial_cohorts=list(cohorts),
+                        assumptions=group.tlh_assumptions,
+                    ),
+                    label=group.label or group.symbol,
                 )
             )
 
@@ -173,9 +178,9 @@ def _cash_total(plaid: PlaidPortfolioSourceConfig, balances: tuple[CurrentCashBa
     return total
 
 
-def _sp500_proxy_holding(
-    group: PlaidSp500ProxyGroupConfig, holdings: tuple[CurrentHolding, ...]
-) -> HoldingPositionConfig:
+def _proxy_cohorts(group: PlaidSp500ProxyGroupConfig, holdings: tuple[CurrentHolding, ...]) -> tuple[TlhCohort, ...]:
+    """The live Plaid aggregate split into holding-period cohorts, one per configured bucket (or one in all)."""
+
     total_value = Decimal(0)
     total_cost_basis = Decimal(0)
     missing_basis: list[str] = []
@@ -196,35 +201,16 @@ def _sp500_proxy_holding(
             group.position_id,
             sorted(missing_basis),
         )
-    # The sleeve IS the S&P series by definition (that is what a "SP500 proxy group" means), so
-    # its symbol is the index symbol, not whichever ticker the brokerage happens to hold. The
-    # configured ticker survives as the display label.
-    return SecurityHoldingConfig(
-        position_id=group.position_id,
-        account_id=group.portfolio_account_id,
-        label=group.label or group.symbol,
-        symbol=SP500_SYMBOL,
-        security_kind=group.security_kind,
-        unit_value=group.unit_value,
-        lots=_proxy_lots(group, total_value=total_value, total_cost_basis=total_cost_basis),
-    )
-
-
-def _proxy_lots(
-    group: PlaidSp500ProxyGroupConfig, *, total_value: Decimal, total_cost_basis: Decimal
-) -> tuple[HoldingTaxLotConfig, ...]:
-    unit_value = group.unit_value
     if not group.holding_period_buckets:
         return (
-            HoldingTaxLotConfig(
-                lot_id=f"{group.position_id}_plaid_aggregate",
-                holding_period_months_at_start=int(group.default_holding_period_months_at_start),
-                quantity=float(total_value / unit_value),
+            TlhCohort(
+                value=total_value,
                 cost_basis=total_cost_basis,
+                purchase_month_index=-group.default_holding_period_months_at_start,
             ),
         )
     # Distribute the live Plaid aggregate across the calibrated holding-period buckets. Normalize by
-    # the configured fraction sums (validated to ~1.0) so the lot totals still equal the Plaid
+    # the configured fraction sums (validated to ~1.0) so the cohort totals still equal the Plaid
     # snapshot exactly despite rounding in the authored fractions.
     buckets = group.holding_period_buckets
     market_value_fractions = [Decimal(str(bucket.market_value_fraction)) for bucket in buckets]
@@ -233,7 +219,7 @@ def _proxy_lots(
         Decimal(str(bucket.cost_basis_fraction)) for bucket in buckets if bucket.cost_basis_fraction is not None
     ]
     basis_fraction_sum = sum(basis_fractions) if basis_fractions else market_value_fraction_sum
-    lots: list[HoldingTaxLotConfig] = []
+    cohorts: list[TlhCohort] = []
     for bucket, market_value_fraction in zip(buckets, market_value_fractions, strict=True):
         market_value_weight = market_value_fraction / market_value_fraction_sum
         basis_weight = (
@@ -241,15 +227,40 @@ def _proxy_lots(
             if bucket.cost_basis_fraction is not None
             else market_value_weight
         )
-        lots.append(
-            HoldingTaxLotConfig(
-                lot_id=f"{group.position_id}_plaid_{bucket.key}",
-                holding_period_months_at_start=int(bucket.holding_period_months_at_start),
-                quantity=float((total_value * market_value_weight) / unit_value),
+        cohorts.append(
+            TlhCohort(
+                value=total_value * market_value_weight,
                 cost_basis=total_cost_basis * basis_weight,
+                purchase_month_index=-bucket.holding_period_months_at_start,
             )
         )
-    return tuple(lots)
+    return tuple(cohorts)
+
+
+def _sp500_proxy_holding(group: PlaidSp500ProxyGroupConfig, cohorts: tuple[TlhCohort, ...]) -> HoldingPositionConfig:
+    # The sleeve IS the S&P series by definition (that is what a "SP500 proxy group" means), so
+    # its symbol is the index symbol, not whichever ticker the brokerage happens to hold. The
+    # configured ticker survives as the display label.
+    lot_ids = [f"{group.position_id}_plaid_{bucket.key}" for bucket in group.holding_period_buckets] or [
+        f"{group.position_id}_plaid_aggregate"
+    ]
+    return SecurityHoldingConfig(
+        position_id=group.position_id,
+        account_id=group.portfolio_account_id,
+        label=group.label or group.symbol,
+        symbol=SP500_SYMBOL,
+        security_kind=group.security_kind,
+        unit_value=group.unit_value,
+        lots=tuple(
+            HoldingTaxLotConfig(
+                lot_id=lot_id,
+                holding_period_months_at_start=-cohort.purchase_month_index,
+                quantity=float(cohort.value / group.unit_value),
+                cost_basis=cohort.cost_basis,
+            )
+            for lot_id, cohort in zip(lot_ids, cohorts, strict=True)
+        ),
+    )
 
 
 def _holding_value(holding: CurrentHolding) -> Decimal:
@@ -278,7 +289,7 @@ def _merge_contributions(contributions: tuple[_PortfolioContribution, ...]) -> P
     accounts: list[PortfolioAccountConfig] = []
     holdings: list[HoldingPositionConfig] = []
     bonds: list[BondHoldingConfig] = []
-    account_ids: set[str] = set()
+    account_ids: set[AccountId] = set()
     for contribution in contributions:
         for account in contribution.accounts:
             if account.account_id in account_ids:

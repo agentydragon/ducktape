@@ -13,6 +13,7 @@ py_library(
     deps = [
         "//finance/augur/sim:actions",
         "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:observations",
     ],
 )
@@ -37,15 +38,15 @@ py_test(
         ":sleeves",
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/model:series",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:books",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:market_path",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim:session",
-        "//finance/augur/sim/testing:case",
-        "//finance/augur/sim/testing:fixtures",
+        "//finance/augur/sim:world",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -57,6 +58,7 @@ py_library(
     deps = [
         ":sleeves",
         "//finance/augur/sim:actions",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:observations",
     ],
 )
@@ -69,8 +71,11 @@ py_library(
         ":sleeves",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:holdings",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:observations",
         "//finance/augur/sim:prepared",
+        "//finance/augur/sim:world",
     ],
 )
 
@@ -84,8 +89,62 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:books",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:observations",
         "//finance/augur/sim:prepared",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "configured_household",
+    srcs = ["configured_household.py"],
+    deps = [
+        ":configured_allocation",
+        ":funding",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:agent",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:money",
+        "//finance/augur/sim:observations",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:world",
+    ],
+)
+
+py_test(
+    name = "test_configured_household",
+    srcs = ["test_configured_household.py"],
+    deps = [
+        ":configured_household",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:bills",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:capture",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:tlh",
+        "//finance/augur/sim:world",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_configured_policy_guards",
+    srcs = ["test_configured_policy_guards.py"],
+    deps = [
+        ":configured_household",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:world",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

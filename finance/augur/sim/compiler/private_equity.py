@@ -10,7 +10,7 @@ import numpy as np
 from jaxtyping import Int64
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
-from finance.augur.model.series import PrivateEquityEventKindCode
+from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
 from finance.augur.sim.compiler.helpers import NO_CODE
 from finance.augur.sim.fixed_point import sampled_array_to_quanta
 
@@ -42,7 +42,7 @@ class PEChannels:
 
 
 def compile_pe_channels(
-    issuer_ids: tuple[str, ...],
+    issuer_ids: tuple[IssuerId, ...],
     *,
     private_equity: PrivateEquityBundle,
     rollout_count: int,

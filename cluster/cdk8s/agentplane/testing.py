@@ -38,6 +38,7 @@ from cluster.cdk8s.agentplane.environment import (
 from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
 _NAMESPACE = "agentplane-testing"
 _HOSTNAME = "agentplane-testing.allegedly.works"
@@ -133,7 +134,7 @@ ENV = Environment(
             # MCP OAuth discovery/token exchange/tool calls for the linked "example" fixture:
             # cluster-internal only, unlike the real GitHub/Kubernetes MCP OAuth providers
             # linked in staging.
-            cilium.egress_to(cilium.endpoint_labels(_NAMESPACE, OAUTH_FIXTURE_NAME), OAUTH_FIXTURE_PORT),
+            EgressRule.to_endpoints(cilium.endpoint_labels(_NAMESPACE, OAUTH_FIXTURE_NAME), OAUTH_FIXTURE_PORT),
         ],
     ),
 )
@@ -147,13 +148,13 @@ def chart(app: App) -> Chart:
     rbac.AcceptanceToken(chart, "acceptance-token", ENV)
     # claude-ai's boxes reach this app through staging's egress proxy, by its Service rather than its
     # public name, which would hairpin out through the Gateway and back.
-    cilium.network_policy(
+    NetworkPolicy(
         chart,
         "networkpolicy-app-from-staging-egress",
         metadata=metadata(f"{app_component.NAME}-from-staging-egress", ENV.namespace),
         selector={"app.kubernetes.io/name": app_component.NAME},
         ingress=[
-            cilium.ingress_from(
+            IngressRule.from_endpoints(
                 cilium.endpoint_labels("agentplane-staging", egress.NAME), ports=[app_component.CONTAINER_PORT]
             )
         ],

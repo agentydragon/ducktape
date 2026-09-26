@@ -61,6 +61,18 @@ data:
         - anthropic-max20/ant-messages/claude-sonnet-5
         - anthropic-max20/ant-messages/claude-fable-5
         - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
+        - antigravity/ant-messages/claude-opus-4-6-thinking
+        - antigravity/ant-messages/claude-sonnet-4-6
+        - antigravity/ant-messages/gemini-3.6-flash-high
+        - antigravity/ant-messages/gemini-3.7-flash-high
+        - antigravity/ant-messages/gemini-3.8-flash-high
+        - antigravity/ant-messages/gemini-3-flash
+        - antigravity/ant-messages/gemini-3.1-flash-image
+        - antigravity/ant-messages/gemini-pro-agent
+        - antigravity/ant-messages/gemini-3.1-pro-low
+        - antigravity/ant-messages/gpt-oss-120b-medium
+        - antigravity/ant-messages/gemini-3.1-flash-lite
+        - antigravity/ant-messages/gemini-3.5-flash-lite
         - ollama/oai-chat/gpt-oss-20b-128k
         - ollama/olm-chat/gpt-oss-20b-128k
         - ollama/oai-chat/gpt-oss-20b-256k
@@ -114,7 +126,8 @@ data:
         template: agentplane-runner
         policies:
           - basic
-          - github-public
+          - github-agentydragon-agent
+          - github-clone
         action_policy_sets:
           - public-github-reads
           - public-ducktape-reads
@@ -1373,7 +1386,7 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
-  name: github-public
+  name: github-agentydragon-agent
   namespace: agentplane-staging
 spec:
   rules:
@@ -1387,6 +1400,24 @@ spec:
         - POST
       credentialRef:
         name: github-pat
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: github-clone
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - github.com
+      methods:
+        - GET
+        - POST
+      paths:
+        - /*/*.git/info/refs
+        - /*/*.git/git-upload-pack
+        - /*/*/info/refs
+        - /*/*/git-upload-pack
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -4019,6 +4050,7 @@ spec:
         - codeload.github.com
         - objects.githubusercontent.com
         - release-assets.githubusercontent.com
+        - raw.githubusercontent.com
       methods:
         - GET
         - HEAD
@@ -4048,6 +4080,7 @@ spec:
     - coinbase
     - agentplane-testing
     - github-downloads
+    - github-clone
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet

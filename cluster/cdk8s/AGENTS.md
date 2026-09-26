@@ -62,12 +62,13 @@ Model with constructs, deploy with one props object per environment.
   `x/` or `haku/` imports `cluster/`. A project's own `deploy/` may hold a props-driven
   construct (tested with synthetic props); the cluster's instantiation of it lives here.
 - **One helper per repeated shape.** When the same dozen generated-struct lines appear
-  twice, name the shape once: `cilium.py` (`ingress_from_gateway`, `egress_to`,
-  `egress_to_fqdns`, `egress_via_gateway`, `dns_egress`, `fqdn_fence`,
-  `deny_all_egress`, ...), `gateway.https_route`, `probes.http_probe`,
-  `agentplane/migrate_container.py`, `agentplane/node_scheduling.py`,
-  `pod_spec_patches.py`, `api_resource.custom_resource`. Parameterize the variation the
-  call sites have (SNI list, listener, timeout), not variation nobody uses.
+  twice, name the shape once: `cilium.py` (`egress_via_gateway`, `dns_egress`,
+  `fqdn_fence`, ...) for this cluster's own facts, `providers/cilium/network_policy.py`'s
+  `EgressRule`/`IngressRule` for the generic shapes; `gateway.https_route`,
+  `probes.http_probe`, `agentplane/migrate_container.py`,
+  `agentplane/node_scheduling.py`, `pod_spec_patches.py`, `api_resource.custom_resource`.
+  Parameterize the variation the call sites have (SNI list, listener, timeout), not
+  variation nobody uses.
 - **A value that feeds two artifacts lives once.** The web-push hosts feed both the
   Action Service allowlist and its egress rule from one tuple in `staging.py`. When
   two artifacts must agree, derive both from one value; never write a test that reads
@@ -257,7 +258,7 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
 - `cdk8s import` names a multi-version CRD's _first listed_ version plainly and
   suffixes the others, regardless of which is the storage version: tofu-controller's
   `Terraform` is v1alpha1, the cluster's CRs are `TerraformV1Alpha2`
-  (`//cluster/cdk8s/crd_bindings/tofu_controller:test_terraform_import` pins it).
+  (`//cluster/cdk8s/providers/tofu_controller:test_terraform_import` pins it).
 
 ## Ecosystem (checked 2026-09-18)
 
@@ -419,7 +420,7 @@ first. **Confirmed, not theoretical**: this race deleted `ha-mcp`'s entire names
 self-heal; a `PersistentVolumeClaim` can permanently lose its volume (depends on
 `reclaimPolicy`) and won't auto-rebind to an orphaned `PersistentVolume`.
 
-Fix: `//cluster/cdk8s/crd_bindings/flux:kustomization`'s `KustomizationSpec` has
+Fix: `//cluster/cdk8s/providers/flux:kustomization`'s `KustomizationSpec` has
 `deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN`. Land in two changes:
 
 1. Set `deletionPolicy: Orphan` on the _old_ Kustomization(s) being folded away, nothing

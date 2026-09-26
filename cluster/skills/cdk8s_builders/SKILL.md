@@ -52,9 +52,29 @@ Check whether this repo already has a class doing this for another CRD and match
 
 `container.mount()` earns its keep because a pod is built across many separate calls over its lifetime — containers and volumes get added one at a time, sometimes long after construction, and the actual aggregation happens later, at synthesis. Most wrappers aren't built that way: every value the object needs arrives in one constructor call, with no caller ever adding to it afterward. A single-shot wrapper wants a single-shot `__init__` that builds the whole spec immediately — internal mutable state and a deferred synthesis step are overhead with nothing left to defer. Reach for the incremental shape only when real callers actually build the object piece by piece; don't add it speculatively just because a resource elsewhere in the codebase happens to need it.
 
+Confirming the incremental shape only answers _whether_ to reach for `add_json_patch` on a later call — it says nothing about _what_ to patch with. The patch's value is still bound by the same typed-constructs rule as everything else on this page: build it from the CRD's generated struct for that field, never a raw dict, and check for that struct before assuming one doesn't exist (a well-typed, fixed-shape schema field almost always has one, even for an item appended one at a time rather than supplied all at once in the constructor).
+
 ## Derive a shared identity once, don't ask two objects to agree on a string
 
 Where a wrapper builds two objects (or two parts of one object) that must reference each other by a value with no Kubernetes meaning of its own — a workload's own pod-template labels and its own selector, a generated name a sibling resource must also carry — derive that value once from the construct's own identity and write it everywhere it's needed, rather than a user-supplied string or a hand-rolled hash either side could get subtly wrong. cdk8s's own `Names` helper (`Names.to_label_value(construct)`, `.to_dns_label(scope, extra=[...])`) is the exact primitive `cdk8s_plus_34`'s `Workload` base class uses to keep a resource's selector and its own pod template's labels from ever drifting apart, and it reappears wherever cdk8s-plus needs a stable name with no other natural source (aggregated `ClusterRole` label keys, an auto-generated `Volume` name). Two objects that must agree on a value belong on one shared derivation, never on two independently-typed string constants.
+
+## A caller-facing layer earns each function by changing something
+
+Splitting one wrapper into a schema-generic half and a caller-specific half (the
+placement question this skill's own repo may answer elsewhere) creates a second
+failure mode distinct from the ones above: carrying a function into the caller-specific
+half that doesn't actually need to be there. A function belongs in the caller-specific
+layer only if it binds something the generic layer doesn't know — a fixed label
+convention, a specific set of values, a workaround only one deployment needs. A
+function with the same name, the same signature, and the same docstring as the generic
+thing it calls adds nothing: it's a re-export wearing a definition. Delete it and have
+its callers import the generic name directly — the general rule "import a symbol from
+the module that defines it, not one that merely re-exports it" applies with full force
+here. This is easy to miss when the split is mechanical (moving CRD-schema code into
+one file, keeping every existing caller-facing function name for continuity, even the
+ones that turn out to need nothing caller-specific once the generic half exists).
+Check every remaining function in the caller-specific half against this test before
+calling the split done, not just the ones that looked complicated.
 
 ## Escape hatch stays tiered — don't over-build the wrapper
 
@@ -72,6 +92,49 @@ field the schema declined to type. That value is exactly what the escape hatch j
 above is for: the wrapper's `__init__` takes it as a raw keyword, and the one caller
 that needs a specific shape builds it directly, rather than a factory invented to make
 an untyped, single-user value look like reusable schema structure.
+
+### Check the generated constructor before reaching for `add_json_patch`
+
+`ApiObject.add_json_patch(...)` is for a value the generated `<Kind>Spec`'s constructor
+genuinely cannot express — a field the CRD's schema doesn't surface at all, or a value
+only known after the whole tree is synthesized. It is not a stand-in for a field the
+generated struct already accepts as a real keyword. Before patching a field in after
+construction, check the generated constructor's own signature for it; a field the CRD
+schema defines — even with unusual enum casing, a deprecated status, or an
+awkward generated name — is almost always already a typed parameter there, and belongs
+passed straight through, not bolted on with a patch.
+
+One recurring trap: `cdk8s_import`'s codegen can collapse a schema enum's
+duplicate-cased members (`audit`/`Audit`) into one generated member whose wire value
+differs in case from the spelling a caller expects. A duplicate-cased `enum:` list in
+the schema is the tell that the CRD itself treats the two cases as synonyms — so the
+fix is to accept the generated enum's own casing, not bypass the generated field over a
+cosmetic mismatch. Reach for `add_json_patch` only once you've confirmed the field
+truly isn't reachable from the constructor at all.
+
+## Build a Kubernetes quantity from `Cpu`/`Size`, never a hand-typed string
+
+A CRD-generated resources field (`<Kind>...ResourcesRequests`/`...ResourcesLimits`, or any
+other field typed as a Kubernetes `Quantity`) only takes its value through
+`.from_string(...)`/`.from_number(...)` — there is no way to hand it `cdk8s_plus_34`'s own
+`ContainerResources`/`CpuResources`/`MemoryResources` directly, since those are
+`cdk8s_plus_34.Container`'s own types, not the CRD's. That is not a reason to fall back to a
+literal string (`"50m"`, `"512Mi"`) at the call site: build the same value
+`cdk8s_plus_34.Container` builds internally (`container.ts`'s `_toKube()`), then hand the CRD's
+constructor the resulting string instead of one hand-typed by eye.
+
+- **CPU**: `cdk8s_plus_34.Cpu.millis(50).amount` — `amount` is a public field, already the exact
+  wire string (`Cpu.units(1).amount` gives `"1"`).
+- **Memory**: `cdk8s.Size.mebibytes(512)` normalizes to whole mebibytes the same way
+  `cdk8s_plus_34.Container` does — `f"{size.to_mebibytes()}Mi"`.
+- **Ephemeral storage**: the same, in whole gibibytes — `f"{size.to_gibibytes()}Gi"` (this repo's
+  own `EphemeralStorageResources` gotcha above is this exact rounding rule, one layer up).
+
+Constructing `cdk8s_plus_34.Container`'s own `resources=` keeps passing `Cpu`/`Size` objects
+straight through (`CpuResources(request=Cpu.millis(50))`, already the established pattern
+throughout this repo, e.g. `agentplane/actions.py`) — `Container` does the extraction above
+internally. A raw CRD field has no such internal step, so the wrapper does it once, explicitly,
+rather than a caller silently retyping `"50m"` by hand at every call site.
 
 ## Don't invent a mechanism cdk8s/Kubernetes doesn't already have
 

@@ -2,8 +2,8 @@
 
 Synthetic cash-only control: both paths start with $2,000 and pay $500 at m0.
 One stays at the opening CPI; the other jumps to 10 at m1 and cannot pay $5,000.
-All-or-none settlement leaves its $1,500 cash intact and records $5,000 unpaid,
-not the $3,500 additional funding that would have made that group payable.
+The rejected payment leaves its $1,500 cash intact and records $5,000 unpaid,
+not the $3,500 additional funding that would have made it payable.
 """
 
 import numpy as np
@@ -15,6 +15,7 @@ from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.series import InflationKey
 from finance.augur.model.testing import ConstantFrameModel
+from finance.augur.product.metrics import OutcomeBasis
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import (
     MetricName,
@@ -23,7 +24,7 @@ from finance.augur.product.wire import (
     RolloutRequest,
     ScenarioKey,
 )
-from finance.augur.sim.product_metrics import OutcomeBasis
+from finance.augur.sim.ids import AgentId
 
 
 def _product(*, future_cpi: float = 10) -> ProductService:
@@ -38,7 +39,7 @@ def _product(*, future_cpi: float = 10) -> ProductService:
     return ProductService(
         portfolio=PortfolioConfig(),
         initial_cash=2000,
-        primary_agent_id="household",
+        primary_agent_id=AgentId("household"),
         known_location_ids=(),
         locations={},
         properties_by_id={},

@@ -17,6 +17,7 @@ from finance.augur.sim.books import (
     TaxSettlementOutcome,
 )
 from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
+from finance.augur.sim.ids import AgentId, AssetId, BondId
 
 
 class RejectedAction(Record):
@@ -51,13 +52,7 @@ class InsufficientCash(Record):
     available: int
 
 
-class UnfundedGroup(Record):
-    kind: Literal["UnfundedGroup"] = "UnfundedGroup"
-    available: int
-    due: int
-
-
-type PaymentFailure = Annotated[PaymentRequestError | InsufficientCash | UnfundedGroup, Field(discriminator="kind")]
+type PaymentFailure = Annotated[PaymentRequestError | InsufficientCash, Field(discriminator="kind")]
 
 
 class Paid(Record):
@@ -121,11 +116,11 @@ class CashSeries(Record):
 
 
 class HoldingSeries(CashSeries):
-    asset_id: str
+    asset_id: AssetId
 
 
 class BondSeries(CashSeries):
-    bond_id: str
+    bond_id: BondId
 
 
 class PaymentTarget(Record):
@@ -156,7 +151,7 @@ class UnpaidClaim(Record):
 class Summary(Record):
     """Opening plus observed closings only. Post-stop padding is not financial data."""
 
-    actor_id: str
+    actor_id: AgentId
     cash: list[CashSeries]
     public_holdings: list[HoldingSeries]
     bond_principal: list[BondSeries]
@@ -178,11 +173,13 @@ class EventPayload(Record):
 
 
 class Trace(Record):
+    """`bond_cashflows` and `distributions` are `None` when the world has no such domain."""
+
     events: InstanceOf[EventLog]
     books: list[Book]
     journal: list[JournalEntry]
-    bond_cashflows: list[BondCashflowOutcome]
-    distributions: list[DistributionOutcome]
+    bond_cashflows: list[BondCashflowOutcome] | None = None
+    distributions: list[DistributionOutcome] | None = None
     receipts: list[Receipt]
 
     @field_validator("events", mode="before")

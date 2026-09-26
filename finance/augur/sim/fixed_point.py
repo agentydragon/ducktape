@@ -132,22 +132,6 @@ def round_currency_amount(value: Any, *, quantum: Any) -> Decimal:
     return count * currency_quantum
 
 
-def ratio_to_money_factor(numerator: int | np.integer[Any], denominator: int | np.integer[Any]) -> np.int64:
-    """Compile one exact integer ratio to the simulator's dimensionless factor scale."""
-
-    numerator_int = int(numerator)
-    denominator_int = int(denominator)
-    if denominator_int <= 0:
-        raise ValueError("money factor denominator must be positive")
-    factor = (Decimal(numerator_int) * MONEY_FACTOR_SCALE / Decimal(denominator_int)).quantize(
-        Decimal(1), rounding=ROUND_HALF_UP
-    )
-    try:
-        return np.int64(int(factor))
-    except OverflowError as exc:
-        raise ValueError(f"money factor {factor} does not fit in int64") from exc
-
-
 def _quantize_sampled(values: Any, *, quantum: Any, subdivision: int) -> Int64[np.ndarray, " ..."]:
     arr = np.asarray(values)
     out = np.empty(arr.shape, dtype=np.int64)
@@ -206,15 +190,3 @@ def quantity_scale_for_asset(asset: AssetKey) -> int:
 def quantity_to_quanta(value: Any, *, scale: int) -> np.int64:
     quanta = (Decimal(str(value)) * scale).quantize(Decimal(1), rounding=ROUND_HALF_UP)
     return np.int64(quanta)
-
-
-def quantity_array_to_quanta(values: Any, *, scale: int) -> Int64[np.ndarray, " ..."]:
-    arr = np.asarray(values)
-    out = np.empty(arr.shape, dtype=np.int64)
-    for idx in np.ndindex(arr.shape):
-        out[idx] = quantity_to_quanta(arr[idx], scale=scale)
-    return out
-
-
-def quanta_array_to_quantity(values: Any, *, scale: int) -> Float64[np.ndarray, " ..."]:
-    return np.asarray(values, dtype=np.float64) / float(scale)

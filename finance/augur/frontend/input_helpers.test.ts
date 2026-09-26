@@ -155,22 +155,25 @@ test("an unrecognized ?scenarios= version falls back to a base with no variants"
 // -- Target allocation: seeding, and what reaches the wire ---------------------
 
 const SELLABLE = [
-  { symbol: "spy", label: "S&P 500", valueQuanta: "900000" },
-  { symbol: "btc", label: "Bitcoin", valueQuanta: "100000" },
+  { key: "security:spy", sleeve: { kind: "security", symbol: "spy" }, label: "S&P 500", valueQuanta: "900000" },
+  { key: "security:btc", sleeve: { kind: "security", symbol: "btc" }, label: "Bitcoin", valueQuanta: "100000" },
 ];
 
 test("an unedited target allocation seeds from what is held, not equal weights", () => {
   // The whole reason the seed exists: equal weights would make the first refill a rebalance the
   // owner never asked for, dumping a 90/10 split to 50/50 the first time cash crosses the floor.
   expect(resolveSleeveWeights(null, SELLABLE)).toEqual([
-    { symbol: "spy", weight: 90 },
-    { symbol: "btc", weight: 10 },
+    { kind: "security", symbol: "spy", weight: 90 },
+    { kind: "security", symbol: "btc", weight: 10 },
   ]);
 });
 
 test("a holding too small to round to one percent stays inside the target", () => {
   // Weight 0 means "never sell this", which is not what "you own a little of it" says.
-  const weights = resolveSleeveWeights(null, [...SELLABLE, { symbol: "doge", label: "Doge", valueQuanta: "100" }]);
+  const weights = resolveSleeveWeights(null, [
+    ...SELLABLE,
+    { key: "security:doge", sleeve: { kind: "security", symbol: "doge" }, label: "Doge", valueQuanta: "100" },
+  ]);
   expect(weights.find((sleeve) => sleeve.symbol === "doge").weight).toBe(1);
 });
 
@@ -183,7 +186,9 @@ test("an explicit empty target stays empty, and is not re-seeded", () => {
 test("an explicit zero weight survives to the wire", () => {
   // Zero puts a holding OUTSIDE the target: never sold, and not counted when measuring what is
   // overweight. Dropping it here would put it back in the denominator.
-  expect(resolveSleeveWeights([{ symbol: "btc", weight: 0 }], SELLABLE)).toEqual([{ symbol: "btc", weight: 0 }]);
+  expect(resolveSleeveWeights([{ kind: "security", symbol: "btc", weight: 0 }], SELLABLE)).toEqual([
+    { kind: "security", symbol: "btc", weight: 0 },
+  ]);
 });
 
 test("the scenario always carries an explicit sleeve list, never the unedited null", () => {
@@ -197,8 +202,8 @@ test("the scenario always carries an explicit sleeve list, never the unedited nu
     SELLABLE
   );
   expect(scenario.fundingPolicy.sleeveWeights).toEqual([
-    { symbol: "spy", weight: 90 },
-    { symbol: "btc", weight: 10 },
+    { kind: "security", symbol: "spy", weight: 90 },
+    { kind: "security", symbol: "btc", weight: 10 },
   ]);
 });
 

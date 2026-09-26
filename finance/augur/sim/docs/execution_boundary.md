@@ -1,11 +1,11 @@
 # Execution input and ownership
 
-`sim.compiler.execution.compile_run` prepares a typed `sim.prepared.CompiledRun`
-from an authored scenario, materialized paths, jurisdiction rules, and locations.
-Preparation does not fetch evidence, fit models, or reinterpret tax law.
-`sim.validation` validates supported financial inputs before world construction.
+The per-table lowerings in `sim.compiler` turn authored records, materialized paths,
+jurisdiction rules and locations into the typed `sim.prepared` records a composed world
+declares. Preparation does not fetch evidence, fit models, or reinterpret tax law. Each
+declaration refuses the financial inputs it cannot execute where it is declared.
 
-`sim.session` and `sim.configured` call `sim.world.World` directly with Python
+`sim.session` and `product.simulation` call `sim.world.World` directly with Python
 records. Actions, claims, observations, mortgage servicing facts, and completed
 results are not serialized through a private binding layer. The Python world
 owns authoritative books, exact transactions, taxes, and contractual consequences;
@@ -15,16 +15,10 @@ Public declarations, not an executing strategy, determine available account/asse
 pools. An explicitly declared empty pool can be observed and purchased. Unsupported
 prices, account references, distributions, or contract terms reject before execution.
 
-## Reproducible artifacts
+## Serialization
 
-`sim.artifacts.write_prepared_input` persists the typed prepared value.
-`read_prepared_input` decodes it back into the same strict records. Money remains
-integer currency quanta in the artifact; float money and unknown fields reject.
-The compiler does not retain a second mutable input document or source scenario.
-
-JSON remains appropriate for explicit file and HTTP boundaries. Configured
-financial exports serve artifact readers and retained acceptance projections;
-in-process event and metric projections consume completed records directly.
+JSON remains appropriate for explicit file and HTTP boundaries; in-process event and
+metric projections consume completed records directly.
 
 ## Precision
 

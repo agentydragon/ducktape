@@ -33,13 +33,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFromKind,
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecEndpointsBearerTokenSecret,
-    ServiceMonitorSpecSelector,
-)
 
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
@@ -48,6 +41,7 @@ from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.seaweedfs import s3
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/app"
@@ -467,17 +461,9 @@ def chart(app: App) -> Chart:
         chart,
         "service-monitor",
         metadata=metadata(_NAME, _NAMESPACE),
-        spec=ServiceMonitorSpec(
-            # Helm release name; robust regardless of the chart's app name label.
-            selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/instance": _NAME}),
-            endpoints=[
-                ServiceMonitorSpecEndpoints(
-                    port="http",
-                    path="/metrics",
-                    bearer_token_secret=ServiceMonitorSpecEndpointsBearerTokenSecret(name=_METRICS_TOKEN, key="token"),
-                )
-            ],
-        ),
+        # Helm release name; robust regardless of the chart's app name label.
+        selector={"app.kubernetes.io/instance": _NAME},
+        endpoints=[Endpoint.bearer_token_secret(port="http", secret_name=_METRICS_TOKEN, key="token")],
     )
     _metrics_token(chart)
     _ssh_listener(chart)

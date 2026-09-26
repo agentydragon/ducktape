@@ -26,6 +26,13 @@ it is, the sandbox executor's own JSON models the way FastMCP presents a returne
 the executors behind MCP, with the sandbox executor answering as an MCP tool and storing a
 `CallToolResult` too, would leave one result shape and remove that dispatch.
 
+## Submit only if a policy decides
+
+An agent that would rather not spend the operator's attention has no way to ask `request_action`
+to run an Action only if a policy decides it, and to be told the refusal instead of queuing it for
+a human. `ActionService.submit_decided` already refuses that way for direct tools, before anything
+is persisted.
+
 ## Direct tools per Connection
 
 Every external Connection sees the same configured `direct_tools`, narrowed only by its

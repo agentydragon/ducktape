@@ -8,7 +8,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from grafana_grafana_crds.org.integreatly.grafana import Grafana, GrafanaSpec, GrafanaSpecClient, GrafanaSpecExternal
 from grafana_grafanaserviceaccount_crds.org.integreatly.grafana import (
     GrafanaServiceAccount,
     GrafanaServiceAccountSpec,
@@ -21,6 +20,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 
 NAME = "flux-grafana-secrets"
 OUTPUT_DIR = f"{GENERATED_ROOT}/flux-grafana-secrets"
@@ -30,16 +30,13 @@ _GRAFANA = "grafana"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    Grafana(
+    Grafana.external(
         chart,
         "grafana",
         metadata=metadata(_GRAFANA, _NAMESPACE),
-        spec=GrafanaSpec(
-            external=GrafanaSpecExternal(
-                url="http://grafana-service.monitoring.svc.cluster.local:3000", tenant_namespace=_NAMESPACE
-            ),
-            client=GrafanaSpecClient(use_kube_auth=True),
-        ),
+        url="http://grafana-service.monitoring.svc.cluster.local:3000",
+        tenant_namespace=_NAMESPACE,
+        use_kube_auth=True,
     )
     GrafanaServiceAccount(
         chart,
