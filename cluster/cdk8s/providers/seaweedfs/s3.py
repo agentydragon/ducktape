@@ -29,6 +29,7 @@ from constructs import Construct
 from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     Bucket as _Bucket,
     BucketSpec,
+    BucketSpecAccess,
     BucketSpecAccessActions,
     BucketSpecClusterRef,
     BucketSpecReclaimPolicy,
@@ -107,7 +108,9 @@ class _ClusterGrant(Construct):
         if kind not in self._kinds:
             self._kinds.append(kind)
             self._resource.add_json_patch(
-                JsonPatch.add("/spec/from/-", {"group": _GROUP, "kind": kind, "namespace": self._namespace})
+                JsonPatch.add(
+                    "/spec/from/-", ResourceReferenceGrantSpecFrom(group=_GROUP, kind=kind, namespace=self._namespace)
+                )
             )
 
 
@@ -269,7 +272,7 @@ class Bucket(Construct):
 
     def grant(self, user: IdentityRef | str, *actions: BucketSpecAccessActions) -> None:
         """Adds a `spec.access` entry for an identity or a plain IAM user name (`anonymous`)."""
-        entry = {"user": user.name if isinstance(user, IdentityRef) else user, "actions": list(actions)}
+        entry = BucketSpecAccess(user=user.name if isinstance(user, IdentityRef) else user, actions=list(actions))
         self._resource.add_json_patch(
             JsonPatch.add("/spec/access/-", entry) if self._has_access else JsonPatch.add("/spec/access", [entry])
         )
