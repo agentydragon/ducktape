@@ -254,23 +254,24 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ["details"],
   },
   // The image is an MCP result drawn as the tool answered, which also waits on the Action groups.
+  // Each history viewport is tall enough to keep the last card in frame.
   actions_history: {
     element: "#app",
     route: "/actions/history",
-    viewport: { width: 1200, height: 1600 },
+    viewport: { width: 1200, height: 1760 },
     readySelectors: ["details", 'img[src^="data:image/"]'],
   },
   actions_history_phone: {
     element: "#app",
     route: "/actions/history",
-    viewport: { width: 390, height: 1900 },
+    viewport: { width: 390, height: 2000 },
     readySelectors: ["details", 'img[src^="data:image/"]'],
   },
   // The MCP result's card switched to Raw: the stored CallToolResult, image data and all.
   actions_history_raw: {
     element: "#app",
     route: "/actions/history",
-    viewport: { width: 1200, height: 1600 },
+    viewport: { width: 1200, height: 2000 },
     readySelectors: ["details", 'input[type="checkbox"]:checked'],
     openRaw: true,
   },
@@ -278,7 +279,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   actions_history_groups_unavailable: {
     element: "#app",
     route: "/actions/history",
-    viewport: { width: 1200, height: 1400 },
+    viewport: { width: 1200, height: 2220 },
     actionGroupsUnavailable: true,
     readySelectors: ["details", '[role="alert"]'],
   },

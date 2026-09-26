@@ -36,8 +36,9 @@ describe("ActionRequests", () => {
     };
     const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
 
+    expect(container.textContent).toContain("requested by agentplane-test/test-caller");
     expect(container.textContent).toContain("Authenticated external caller at submission");
-    for (const value of ["agentplane-test/test-caller", grant.issuer, grant.client_id, grant.connection_id]) {
+    for (const value of [grant.issuer, grant.client_id, grant.connection_id]) {
       expect(container.textContent).toContain(value);
     }
     expect(container.textContent).not.toContain("forged-");
@@ -62,7 +63,7 @@ describe("ActionRequests", () => {
         origin: { identity_id: "forged-origin-identity" },
       };
       const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
-      expect(container.textContent).toContain(`${row.caller!.namespace}/${row.caller!.name}`);
+      expect(container.textContent).toContain(`requested by ${row.caller!.namespace}/${row.caller!.name}`);
       expect(container.textContent).not.toContain("Authenticated external caller");
       expect(container.textContent).not.toContain("forged-origin-identity");
       // The request-id disclosure exists regardless of external_grant, but carries only the id --
