@@ -50,6 +50,8 @@ The batch form drives one such world per selected path:
 The caller owns the time loop; a tracked agent owns its memory, a batch policy's
 memory belongs to the caller. Everything tracked is an `Actor[In, Out]` (<actor.py>):
 it receives the typed messages addressed to it and returns the messages it emits.
+Each actor's messages are a closed typed union defined beside it, not a generic bus,
+subscription protocol or global event registry.
 When a month opens the counterparties act first: each `Biller`, `Mortgage`,
 `PropertyTaxAuthority` and `TaxAuthority` is posted the statement it reads
 (`PropertyStatement`, `ServicingStatement`, `TaxLiabilityStatement`) and
@@ -70,7 +72,9 @@ hold the current month and are cleared when the next month opens, so a caller th
 wants a history copies them between steps. `capture.FinancialCapture` is the
 library's detailed record for a caller that wants one; `ActionSession` records the
 summary and trace it returns through it, the app records its own `WorldResult` and
-metric slab in <../product/>, and an experiment records only what it measures. Each path is stateful;
+metric slab in <../product/>, and an experiment records only what it measures. A component field
+stays only if a later month reads it; there is no observer class, collector protocol or
+event bus, and a shared recording helper is extracted only from code that repeats. Each path is stateful;
 parallel paths do not make future months independent. Policies see current
 actor-scoped facts, not future sampled market trajectories. `World` owns the
 month/phase sequencing, receipts and fatal-stop lifecycle of one path; `ActionSession`
@@ -142,3 +146,22 @@ before applying <../product/projection.py>; in-process event projection consumes
 captured rows directly, without a JSON export/decode round trip. The app's
 projections do not define the financial capabilities or output shape required by
 every experiment.
+
+## Rejected designs
+
+- **Explicit guarded composition without a `World`.** Consistency checks across
+  agents, contracts and tax treatment need one registration point; every sketch of
+  the lighter form reinvented it.
+- **A fixed global phase list.** It must be the union of every domain's phases and
+  runs them even where the domain is absent.
+- **"Re-ask every actor until all are quiet" as the drain rule.** Termination would
+  depend on every agent's politeness, and batched policies would face ragged rounds
+  even when nothing reactive happened.
+- **A ledger that is itself an actor with a mailbox.** Atomic rejection and
+  caller-ordered execution are transaction semantics against one ledger and would
+  change meaning as asynchronous messages.
+- **Arbitrary bookkeeping calls as the public API, or a universal component/plugin
+  framework.** Experiments declare and track concrete domain objects.
+
+A separable state-container/step-coordinator split is deferred until a consumer
+needs it; forwarding alone does not justify it.

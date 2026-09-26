@@ -35,6 +35,19 @@ spec:
   vars:
     - name: model_allowlists
       value:
+        antigravity_client_models:
+          - antigravity/ant-messages/claude-opus-4-6-thinking
+          - antigravity/ant-messages/claude-sonnet-4-6
+          - antigravity/ant-messages/gemini-3.6-flash-high
+          - antigravity/ant-messages/gemini-3.7-flash-high
+          - antigravity/ant-messages/gemini-3.8-flash-high
+          - antigravity/ant-messages/gemini-3-flash
+          - antigravity/ant-messages/gemini-3.1-flash-image
+          - antigravity/ant-messages/gemini-pro-agent
+          - antigravity/ant-messages/gemini-3.1-pro-low
+          - antigravity/ant-messages/gpt-oss-120b-medium
+          - antigravity/ant-messages/gemini-3.1-flash-lite
+          - antigravity/ant-messages/gemini-3.5-flash-lite
         cheap_experiments_models:
           - google/goog-generate/gemini-3.7-flash
           - google/goog-generate/gemini-3.5-flash-lite

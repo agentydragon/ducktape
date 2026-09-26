@@ -17,22 +17,15 @@ and responsibility docstrings beside the implementing modules.
 
 ## Committed library cleanups
 
-The public composition is decided: a coordinating `World` over tracked components,
-recorded in [the design gates](library_design_gates.md) with GMETRICS (every caller
-records what it wants between steps) and the graph of the remaining `World` slices.
-This roadmap alone owns dispatch and dependencies.
+The composition is a coordinating `World` over tracked actors, described in
+[the simulator design](../sim/DESIGN.md); [the gate note](library_design_gates.md)
+holds the graph of the remaining `World` slices. This roadmap alone owns dispatch
+and dependencies.
 
 Committed and still open: retire configured implicit strategies. Keep useful
 preparation, canonical accounting, explicit tax treatment and independent financial
 assertions. These cleanups do not authorize new financial features or silent timing
 changes.
-
-**World is the selected composition.** The experiment tracks agents, contracts
-and components on an empty `World` and loops over `World.step()`: open, drain a
-deterministic queue of typed messages to quiescence, close. Each tracked
-`EconomicAgent` handles `MonthOpened` once per month over the statements it was posted;
-settlement stays synchronous with fatal rejection; untracked domains are absent,
-not empty. Financial duties never depend on what a caller records.
 
 ### Expansion freeze and executable landing slices
 
@@ -76,19 +69,9 @@ dependency is introduced merely because files overlap or a rebase will be needed
   Existing contracts survive a policy change; experiments need not implement
   optimizing lenders, landlords, or a general-equilibrium economy.
 
-The near-term policy milestone is **one batch action interface and Python-controlled
-outer loops everywhere**, including examples and the app. A Python
-`run(...)` convenience function uses the same session as an experiment-owned loop.
-`World.step()` owns the month's phase order and the financial books, settlement
-and taxes; `ActionSession` drives N worlds for a batch policy. The experiment owns
-its outer loop without having to reproduce accounting rules or silently skip
-mandatory financial duties. P12 moves the app's configured household to an ordinary
-policy and deletes its implicit strategy.
-
 The priority is **domain modeling and experiment APIs, not large-N performance**.
-Prefer Python for a clear, inspectable object model and composable financial steps.
-Further moves follow actual TLH-portfolio and FIRE-study needs,
-not a queue of easily ported kernels. Correctness
+Prefer Python for a clear, inspectable object model and composable financial steps;
+further domain moves follow actual TLH-portfolio and FIRE-study needs. Correctness
 and atomic caller migration remain gates; GL and RUNTIME/GE are parked future
 optimization work and do not block this phase.
 
@@ -129,32 +112,20 @@ cannot make it disappear.
 
 Reuse `World` composition on caller-supplied paths, shared market/product construction,
 scoring without simulator output, canonical lot/tax/payment operations and
-purchase-anchored property marks. `sim/world.py` owns the month and the financial
-books; `sim/session.py` owns batch selected paths, receipts and stop lifecycle.
-`sim/actions.py` and `sim/observations.py` own requests and current facts.
-`x/monthly_actions` owns its Python policy and outer loop, including population, selected replay and profile
-entrypoints. Its generated financial controls run in CI.
+purchase-anchored property marks ([the simulator design](../sim/DESIGN.md)).
+`x/monthly_actions` owns its Python policy and outer loop, including population,
+selected replay and profile entrypoints; its generated financial controls run in CI.
+The batch session returns compact account/pool series, payment identities, taxes,
+stop books and optional dense/forensic traces; reuse that capture for new consumers.
+`policy/{cash_band,sleeves}.py` and `sim/fixed_point.py::quantity_for_value` propose
+withdrawal/deposit/rebalance trades with scoped FIFO selection; none executes trades.
 
-The session observes after cashflows/claims and returns compact account/pool
-series, payment identities, taxes, stop books and optional dense/forensic traces.
-Receipt feedback is limited to the previous month. Reuse this capture for new
-consumers; CAP's broader domain selection/app projection work remains separate.
-`policy/cash_band.py`, `policy/sleeves.py` and
-`sim/fixed_point.py::quantity_for_value` provide Python proposal calculations,
-including withdrawal/deposit/rebalance and scoped FIFO selection; none executes trades.
-Declared account/asset pools expose current prices even before a first purchase.
-
-`study/trinity` and `x/{bounded_spending,allocation_glide,joint_spending_allocation}` use that same
-Python action session. Bounded spending reads current CPI, and its scalar-adapted
-and batch-authored rule comparison uses one session, including its profiler. The
-joint example varies both policy dimensions on shared synthetic taxable paths, records intentions separately from actual requests and
-payments, and verifies selected replay. An unattempted request remains absent;
-its observed paid amount is zero, while post-stop months remain unobserved.
-P12 owns retirement of the remaining implicit policy input.
-Its Python `policy/configured_allocation.py` proposer uses shared sleeve helpers
-for rounded funding, selected zero targets and full exits, including rounded-zero
-dust. An all-zero target vector remains invalid;
-product-shell exclusion is distinct from a selected core zero target.
+`study/trinity` and `x/{bounded_spending,allocation_glide}` drive the batch session.
+Bounded spending reads current CPI, and its scalar-adapted and batch-authored rule
+comparison uses one session, including its profiler. `x/joint_spending_allocation`
+steps one tracked household per `World`, varies both policy dimensions on shared
+synthetic taxable paths, records intentions separately from actual requests and
+payments, and verifies selected replay.
 
 Reuse [Trinity](../study/trinity/README.md),
 [bounded spending](../x/bounded_spending/README.md),
@@ -180,7 +151,7 @@ docstrings on the resulting modules, as in the interface sketches.
 | Policies              | Actor-observable information and path-local memory → economic action requests. Budgets, target weights and funding/rebalancing/lot-selection algorithms belong inside policies or optional helpers. | Direct book mutation or private settlement. Python authors the batch policy; measured native calculation kernels are optional. The engine does not silently choose extra trades.                       |
 | Execution and state   | Opening financial facts, scheduling, validated execution/settlement, isolated rollout state and actual results; financial steps behind the common Python-controlled session.                        | Actor strategy, outer rollout loops, evidence loading, market fitting, sweep selection or HTTP. Enforce contracts and explicit standing instructions; keep financial state in the canonical executor.  |
 | Results               | Account/actor-scoped financial measures, experiment-selected reductions, traces and reproduction inputs.                                                                                            | A universal objective or every metric ever needed in an engine enum. Reuse event frames and compact capture; app projections sit above them.                                                           |
-| Experiment/app shells | Explicit composition, Python-controlled decision loops, parameter grids, model/policy selection, storage and presentation.                                                                          | New financial semantics or a separate app executor. `study/`, `x/`, downstream code and the web app are peer consumers of the same action session.                                                     |
+| Experiment/app shells | Explicit composition, Python-controlled decision loops, parameter grids, model/policy selection, storage and presentation.                                                                          | New financial semantics or a separate app executor. `study/`, `x/`, downstream code and the web app are peer consumers of the same `World`.                                                            |
 
 Code dependencies point from shells to these blocks, never from settlement into
 `product/`, HTTP, datasets or a particular forecast provider. Models and policies
@@ -191,13 +162,12 @@ plugin protocol. Presampled markets assume these actors do not move market price
 Spending-tier ladders and their transition rules belong in experiment policy code,
 not a central structured ladder policy or engine-owned fallback.
 
-The [actor-facing interface plan](policy_interfaces.md) specifies the proposed
-observation/action loop and module docstrings. Its economic boundary is agreed;
-one batch-shaped policy function is also settled. An optional scalar-to-batch
-helper uses that same interface. Exact batch layout, adapter cost and usability
-remain decisions for GL. The first household example's monthly timing is
-settled in [the timing contract](policy_timing.md). GP gates expanded product/housing
-and cross-actor timing, not the initial ordered-action integration.
+The settled policy contract (one batch-shaped policy, ordered monthly actions,
+fatal rejection) is in <../SPEC.md>. The [actor-facing interface plan](policy_interfaces.md)
+keeps the observation and action extensions not yet built; exact batch layout and
+adapter cost remain decisions for GL. [The grouped-funding controls](policy_timing.md)
+pin the configured household's all-or-none funding against ordered actions for P12.
+GP gates expanded product/housing and cross-actor timing.
 
 ## Antipatterns to remove
 
@@ -207,7 +177,7 @@ Paths are relative to `finance/augur/`. Each row names the change that removes i
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
 | Known contract/tax views are not yet selected domain capture.                                                                                                    | CAP adds concrete missing financial observations.                                                                                                                | CAP            |
 | The app still lowers funding policies (`product/scenarios.py::_target_allocation_policies_from_funding_policy`) for `policy/configured_household.py` to consult. | Migrate consumers to common actions; remove configured policy schemas, lowering and orchestration with their last caller, reusing the shared Python helpers.     | P12; GP        |
-| Configured settlement still groups generated claims by source account under all-or-none funding, including scheduled spending claims.                            | Contracts generate claims; actors choose funding and ordered payments through the common session. Resolve each consumer's grouping convention explicitly.        | P12, HOUSE; GP |
+| The app household pays each account's month of claims all or none, including scheduled spending claims.                                                          | Contracts generate claims; actors choose funding and ordered payments through the common session. Resolve each consumer's grouping convention explicitly.        | P12, HOUSE; GP |
 | A total-return equity proxy can look like a taxable security, and `SecurityDistribution` treats payouts as interest.                                             | Explicit product bindings and supported distribution character; separate price return from payouts for taxed holdings.                                           | BIND, TAX      |
 | `BondHolding` means par-bought, unmarked and unsellable; a portfolio choice is encoded as an instrument invariant.                                               | The same dated position can pay coupons, sell partially, or redeem; hold/sell/roll are choices. Keep the old constant-maturity approximation explicitly labeled. | BOND           |
 | Tax surface is narrower than the intended fidelity: single filing status; missing NIIT/qualified-dividend support; no effective-year schedule in `Jurisdiction`. | Declared supported-case matrix, dated rules and opening tax state; unsupported relevant cases reject. Existing loss netting/carryforward is not reimplemented.   | GT, TAX        |
@@ -313,30 +283,16 @@ not certify RUN's broader tax/residency scope. Pricing BOND does not wait for a
 generative curve or BIND's payout work. RUN/ROBUST do not wait for MODEL or every
 study; existing limited models can already expose disagreement.
 
-### Converge the Python policy boundary now
+### Converge configured consumers on the policy boundary
 
-The [interface plan](policy_interfaces.md) defines the destination: actor-visible
-observations, executable policies, economic actions and execution results.
-Configured consumers must use the existing action session and optional Python
-proposal helpers. GP and BOND/HOUSE define the scoped action/execution contracts.
-
-Reuse the canonical Python financial steps while migrating consumers; no native
-counterpart remains to port. Domain changes should serve an actual consumer.
-RUNTIME/GE are later optimization choices, not owners of the language boundary.
-The sole policy callable accepts and returns batches. GL compares optional
-scalar adaptation against directly batch-authored functions on that same boundary.
-Data layout and costs remain open, not the number of supported policy shapes.
+Configured consumers move to the existing action session or a tracked agent, with
+optional Python proposal helpers; GP and BOND/HOUSE define the scoped
+action/execution contracts. Domain changes serve an actual consumer.
 
 For each configured consumer, preserve its financial cadence and identify changes
 caused by post-claims timing or explicit ordered funding. Grouped-funding behavior
 is not a compatibility contract. Its Python policy owns proposal ordering,
 spending/tax reserves and the chosen cash-band/drift convention.
-
-Keep exact currency units, scoped facts and explicit completed/stopped status.
-Original actor/path/decision identities are runner routing, not economic
-observations. Policy memory is actor/path-local; execution-dependent updates use
-actual results. Batch/chunk ordering must not change independent paths' decisions
-or outcomes, and stopped paths receive no later calls.
 
 Use the simplest clear typed representation that serves actual experiments.
 Current acceptance is correctness, notebook-friendly composition and coherent
@@ -345,21 +301,7 @@ when a real workload needs it; it cannot multiply policy interfaces or justify
 padding all variable-sized domain objects into a universal shape.
 
 These consumer migrations need in-memory continuation, not serialized checkpoints,
-forkable worlds, nested forecasts or a general plugin/action framework. They add
-no tax or settlement implementation in Python.
-
-### Python financial execution
-
-The financial world, its domain objects, and all session calls are Python-owned.
-The native implementation and extension have been removed; the test mapping is
-retained as cutover evidence. Stateful trajectories still advance sequentially
-through time, while independent paths can run in parallel. The current contract
-and ownership are documented in [the simulator design](../sim/DESIGN.md).
-
-Remaining work is consumer/capability driven: P12 retires configured policy
-inputs and preserves unsupported common-action domains, while CAP adds only facts
-needed by an actual consumer. COMPOSE's remaining slices finish the `World`. No new
-evaluator or native fallback is implied.
+forkable worlds, nested forecasts or a general plugin/action framework.
 
 ### Policy-interface PRs and acceptance
 
@@ -386,47 +328,16 @@ complete P12 retirement, but does not gate public-portfolio experiments,
 funding, reporting or TLH-component work. Do not start their implementation merely
 to finish P12.
 
-Scheduled public sales are a separate generic scenario migration, not
-an input currently constructed by `ProductService`. Move their author-specified
-decisions to explicit actions and remove the legacy scheduled FIFO reader with
-its last consumer; public funding does not depend on that work.
-
 ### Concrete cleanup slices
 
-The [reader and input cleanup plan](cleanup_migration.md) specifies live paths,
-atomic caller updates and deletion criteria.
+[The P12 reader list](cleanup_migration.md) names the configured strategy's live
+readers and their deletion criteria.
 
 | Unit    | Change                                                     | Needs |
 | ------- | ---------------------------------------------------------- | ----- |
 | IDTYPES | Distinct entity IDs beyond `AgentId`, not prefix renaming. | None  |
 
 The [entity-ID note](typed_series_config.md) scopes IDTYPES without turning artifact/wire churn into an active cleanup prerequisite.
-
-### P12: retire configured helper readers
-
-Reuse `policy/{cash_band,sleeves}.py` for public-portfolio proposals. Their tests
-cover exact allocation, reserved cash, zero targets/full exits, FIFO scoping and
-quantity scales. Configured allocation now calls these helpers from Python;
-P12 removes its implicit input/orchestration, not an unfinished language port.
-A newly required product-specific calculation must have a real
-Python consumer and independent financial checks. In particular, do not promote
-mixed-scale raw-quantity PE selection to a generic helper contract.
-
-Current legacy readers make that retirement concrete:
-
-- `policy/configured_allocation.py` proposes sales and purchases for
-  `policy/configured_household.py` and checks its policies against the composed
-  world (`check_policies`); retire those with the configured household, not the shared
-  sleeve calculations. The compiler's strategy-derived pool and first-source-account
-  lowering (`compile_holding_pools`) retires with that input.
-- `sim/holdings.py::Holdings.fifo` serves
-  `sim/private_equity.py` recovery/forced/tender flows: their
-  P12 expanded-product migration removes the legacy selection strategy.
-
-P12 must also preserve the product shell's explicit exclusion authority: its current
-zero weight means "do not sell this holding", whereas a zero target in a selected
-core portfolio means "exit this sleeve". Make exclusion and target weight distinct
-when migrating that shell; do not silently turn an excluded holding into a sale.
 
 ### Deletion checkpoints, not another interface family
 
@@ -479,12 +390,9 @@ claims in that PR; no transition shims in this monorepo.
 
 ## Decision gates
 
-The [tax-coverage checklist](tax_coverage.md) and
-[executable policy-timing cases](policy_timing.md) supply evidence and concrete
-choices for GT and the remaining GP scope.
-The common Python loop submits one batch per month; each live path supplies one
-action list in caller order. An unexecutable action stops only its rollout, preserving successful earlier
-actions. There is no within-month retry or policy callback.
+The [tax-coverage checklist](tax_coverage.md) supplies evidence and concrete
+choices for GT. GP extends the settled monthly contract (<../SPEC.md>) without
+within-month retries or policy callbacks.
 The checklist's [housing-basis mismatch](tax_coverage.md#housing-basis-reconciliation)
 is a GT/TAX slice for affected housing arms, independent of runtime-language research.
 
@@ -551,7 +459,8 @@ all the others to be solved first.
 ## Current dispatch and priorities
 
 1. **COMPOSE**: the tax-year close and the rollout axis are ready now; the TLH
-   cohort type waits on the open question in its gate-note entry.
+   cohort type is postponed and waits on the open question in its gate-note entry.
+   **P12**'s public-portfolio reader slices proceed on settled contracts.
 2. **MA3** remains a runnable paired TLH comparison on the existing Python
    component/session. Continue **STUDY** consumers alongside cleanup. Scope GT/GS
    and continue independent BIND/SCORE work. **domain composition** selects further domain
@@ -565,7 +474,7 @@ all the others to be solved first.
    New evidence-fetch/cache infrastructure waits for observed throttling; richer
    PE app controls are dropped, not a deferred product feature.
 
-Existing stepping and the Python bridge provide in-memory continuation, not complete checkpoints or nested
+Existing stepping provides in-memory continuation, not complete checkpoints or nested
 forecast feedback. Those later capabilities must additionally preserve pending
 contracts, tax state, reporting basis and policy memory across save/restore or
 forks. They are not prerequisites for this migration or cross-model studies.
