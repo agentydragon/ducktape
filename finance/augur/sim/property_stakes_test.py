@@ -24,7 +24,7 @@ from more_itertools import one
 from finance.augur.model.series import HomeValueKey, LocationId
 from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.actions import DecisionActions
-from finance.augur.sim.books import AccountRef, Book
+from finance.augur.sim.books import AccountRef, Book, PropertyState
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
@@ -244,6 +244,11 @@ def books(rollout: Rollout) -> list[Book]:
     return rollout.trace.books
 
 
+def properties(book: Book) -> list[PropertyState]:
+    assert book.properties is not None
+    return book.properties
+
+
 def book(rollout: Rollout, month: int) -> Book:
     return one(entry for entry in books(rollout) if entry.month == month)
 
@@ -380,7 +385,7 @@ def test_property_stakes_are_not_cross_assigned_across_properties() -> None:
         state
         for rollout in run(two_property_case())
         for entry in books(rollout)
-        for state in entry.properties
+        for state in properties(entry)
         if state.active
     ]
 
@@ -461,6 +466,7 @@ def test_the_rental_sale_carries_its_own_basis_and_not_the_home_s_exclusion(life
 
 def test_the_sold_property_leaves_and_the_held_one_stays(lifecycle: Rollout) -> None:
     terminal = book(lifecycle, LIFECYCLE_HORIZON)
+    assert terminal.properties is not None
     held = [state for state in terminal.properties if state.active]
     assert [state.property_id for state in held] == ["home"]
     assert held[0].adjusted_basis == 50_000_000

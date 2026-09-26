@@ -12,6 +12,8 @@ import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LocationId, SecurityKey, SecuritySymbol
 from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.product.metric_composition import METRIC_NAMES
+from finance.augur.product.metrics import ProductMetricArrays, metric_fan, projection_summaries, terminal_summary
 from finance.augur.product.simulation import (
     execute,
     project_events,
@@ -35,8 +37,6 @@ from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.metric_composition import METRIC_NAMES
-from finance.augur.sim.product_metrics import ProductMetricArrays, metric_fan, projection_summaries, terminal_summary
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
@@ -358,7 +358,6 @@ def test_completed_capture_projects_same_financial_metrics(capture: Capture) -> 
         with pytest.raises(RuntimeError, match="event projection requires"):
             project_events(completed)
     else:
-        assert all(result.configured_summary is None for result in completed)
         assert project_events(completed) == simulate_events(run(), AGENT)
         assert all(result.financial is not None for result in completed)
         for result in completed:

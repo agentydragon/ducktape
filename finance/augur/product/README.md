@@ -1,10 +1,11 @@
 # Product projections
 
 `action_projection.metric_arrays` reduces finished `ActionSession` outcomes into
-the arrays consumed by `sim.product_metrics` fan/terminal reducers, checked against a
-world composed like the session's. It owns no session or policy. On a dense/forensic result, `trace.events` carries the same
-rollout's columnar event log; `projection.project_product_rollout` combines
-those events with the arrays using only the original `rollout_id`. Metric arrays
+the arrays consumed by the <metrics.py> fan/terminal reducers, checked against a world
+composed like the session's. It owns no session or policy. On a dense/forensic result,
+`trace.events` carries the same rollout's columnar event log;
+`projection.project_product_rollout` combines those events with the arrays using only
+the original `rollout_id`. Metric arrays
 retain their ordered IDs; `select(ids)` subsets/reorders those IDs with their
 columns. Event logs retain owning IDs even for eventless paths. A projection
 rejects an ID absent from either input; array-column positions are internal.
@@ -19,7 +20,10 @@ household's accounts, holdings, home, counterparties and funding policy as prepa
 declarations), samples the series that situation reads, and composes one world per path
 (`compose`) with the configured household (<../policy/configured_household.py>) tracked on
 it; <simulation.py> steps each world. These projection functions do not route between
-engines.
+engines. Between steps the runner records each path's `WorldResult`: the <metrics.py>
+`product_row` slab every month, and under dense/forensic capture the library's
+`FinancialCapture` output and event log. Metric definitions and the stop boundary:
+<docs/metrics.md>.
 
 `shortfall_quanta` sums unpaid due claims and valid attempted consumption gaps,
 not additional cash needed to fund payment or newly incurred debt. Malformed

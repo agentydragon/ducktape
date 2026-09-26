@@ -14,7 +14,9 @@ that exists then, and loops over `world.step()`. An authored `Scenario` reaches
 the same world through `compile_run` in <compiler/execution.py> and
 `World.from_run`. Alternatively it starts the common `ActionSession` and submits
 one batch of ordered actions per decision month. Both read typed results from
-<results.py> and books from <books.py>. Exact requests are defined in
+<results.py> and books from <books.py>; a caller wanting a detailed history
+records it between steps with `FinancialCapture` (<capture.py>). A domain the
+world does not have is `None` in both, not empty. Exact requests are defined in
 <actions.py>; the statements and dues an actor is posted when a month opens are
 defined beside their emitters (`accounting.AccountStatement`,
 `holdings.PositionStatement`, `claims.BillDue`, `mortgage.InstallmentDue`, …) and

@@ -45,8 +45,8 @@ later month reads plus this month's outcomes, and every caller records what it
 wants between steps; typed statements and dues posted at open, a month-zero
 `Mortgage` as a tracked contract, the scenario's bills, property tax and tax
 authority as counterparty actors, a World composed from declared facts with
-`compile_run` as an import adapter, and untracked domains absent from the world.
-Remaining: absent domains absent from the result and capture shapes, with RECORD.
+`compile_run` as an import adapter, and untracked domains absent from the world,
+its books and its capture.
 
 The experiment constructs an empty `World`, tracks the economic objects that take
 part, then owns the loop around `World.step()`:
@@ -215,7 +215,7 @@ which callers each slice moves.
 | Contracts as tracked actors — **landed**: `Mortgage` is an `Actor` that quotes on `MonthOpened` from the `ServicingStatement` it was posted and books an `InstallmentPaid`; `World.track(mortgage)` opens the ledger with the contract's month-zero balance, and configured purchases' loans run through the same messages. A tracked contract's property is not a component, so its rented share is zero until GHOUSE.                                                                                                                                                              | `sim/test_world.py` gains the household-servicing example from the gate evidence; `sim/test_world_mortgages.py` keeps exercising the configured path.                                                                                                                                 |
 | Counterparties as tracked actors — **landed**: `bills.Biller`, `property_tax.PropertyTaxAuthority` and `tax_authority.TaxAuthority` emit typed demands on `MonthOpened` from the statements they are posted (`PropertyStatement`, `TaxLiabilityStatement`); the world registers demands as claims in tier order and `claims.assemble` is gone. `World.track(biller)` takes a bill that exists at month zero. The world still constructs the scenario's counterparties itself until the constructor slice; a property-linked bill needs the property tracked, which waits for GHOUSE. | `sim/test_payments.py` assesses through `TaxAuthority`; the acceptance suites are unchanged because registration order matches the old assembly order.                                                                                                                                |
 | Constructor over tracked actors — **landed**: `World(market, horizon_months=…, income_sources=…, jurisdictions=…)` starts empty; the caller declares accounts, pools, lots, bonds and TLH portfolios and tracks agents, contracts, bills and tax authorities. Every component owns the facts it reads. `World.from_run` is the import adapter over the prepared scenario, and `compile_series`/`compile_profile` are the compiler pieces a composed world still needs. `x/joint_spending_allocation` is composed with no `Scenario`.                                                 | Every experiment and study is composed onto `World` and `ActionSession(worlds, actor)`: `x/{joint_spending_allocation,allocation_glide,monthly_actions,bounded_spending,bond_policies}` and `study/trinity`; none writes an execution-input artifact any more, the situation is code. |
-| Untracked domains absent — **landed at the world**: `World.properties`, `bonds`, `managed`, `private_equity` and `distributions` are `None` until something is declared, held, tracked or attached, and the month loop, statements, book and capture skip an absent domain. The `Book` and `FinancialOutput` shapes keep their channels, empty when the domain is absent: making those fields absent changes what the app's event frames and the acceptance decoders read, so it moves with RECORD.                                                                                  | `capture.FinancialCapture`, `ActionSession`'s record and `product_metrics.product_row` guard the absent domains; the acceptance decoders are untouched because their channels are still present.                                                                                      |
+| Untracked domains absent — **landed**: `World.properties`, `bonds`, `managed`, `private_equity` and `distributions` are `None` until something is declared, held, tracked or attached, and the month loop, statements, book and capture skip an absent domain. `Book.bonds`, `properties` and `tlh_portfolios`, the `FinancialOutput` channels (property and private-equity outcomes grouped per domain) and `Trace.bond_cashflows`/`distributions` are `None` for an absent domain; `event_log` still emits every frame, empty, so the app's wire is unchanged.                     | `capture.FinancialCapture`, `ActionSession`'s record and `product.metrics.product_row` guard the absent domains; the acceptance decoders and `product/action_projection.py` read `None` where a domain is absent.                                                                     |
 | Offers: `Issuer` emits `TenderOffer` and `ForcedRecovery`; the household replies with `Accept` or `Decline` inside the month. **Landed short of the actor shape**: holding a private lot brings the issuer protocol onto a composed world (its series checked on the path), `declare_tender_policy` is the owner's standing answer, and `close_month` runs the protocol after settlement for every driver.                                                                                                                                                                           | The configured PE tender path (`sim/private_equity.py`, the app's declared tender policy); this is the GPE boundary and waits for it.                                                                                                                                                 |
 
 Callers by surface today, so the burn-down can be checked off:
@@ -240,8 +240,10 @@ Callers by surface today, so the burn-down can be checked off:
   itself and of the prepared-input file. Every sim, policy, product and experiment suite
   composes its worlds, and the app lowers through the compiler's per-table pieces.
   Leaves with RUN.
-- **App recording (`capture.FinancialCapture`, `product_metrics.product_row`):** leaves to
-  `product/` with RECORD.
+- **Recording between steps:** the app's `WorldResult` and `product_row` slab live in
+  `product/simulation.py` and `product/metrics.py`; `sim/capture.py::FinancialCapture`
+  is the library's detailed record, read by `ActionSession`'s trace, the app's
+  dense/forensic runs and the sim tests.
 
 ### Remaining work, in dependency order
 
@@ -253,7 +255,6 @@ parallel. Each node leaves this section when it lands.
 graph TD
     TLH_MONEY["TLH-MONEY: the managed portfolio is denominated in money, not proxy units"]
     RUN_GONE["RUN: delete CompiledRun, compile_run, from_run, validation.py"]
-    RECORD["RECORD: app recording lives in product/; absent domains absent from books"]
     OFFERS["OFFERS: Issuer, TenderOffer, Accept/Decline (GPE gate)"]
     DRAIN["DRAIN: emit/accept check on track(), per-month drain budget"]
     TAXCLOSE["TAXCLOSE: the tax year closes inside TaxAuthority"]
@@ -285,9 +286,6 @@ graph TD
   (`compile_tax`, `scenario_level_series_keys`, `collect_level_series_keys`,
   `validate_series_indexed_amounts`); the prepared record types stay as the
   declaration vocabulary. `SCHEMA` closes here.
-- **RECORD.** `capture.FinancialCapture`, `WorldResult` and `product_row` move to
-  `product/`; `Book` and `FinancialOutput` drop the channels of absent domains, and
-  the app's event frames and decoders read the new shape.
 - **OFFERS.** Gated on GPE: which compulsory events run without a tender policy, and
   when forced proceeds become spendable. Then `Issuer` emits `TenderOffer` and
   `ForcedRecovery` from the path's series, the household answers inside the month,
@@ -311,51 +309,9 @@ Selected 2026-09-12. The world exposes present state and each component's outcom
 for the current month; it assembles no frame, log, summary or metric on anyone's
 behalf. A caller reads the values it cares about before or after `step()` and keeps
 them itself: the batch session builds the `Summary` and `Trace` its `Finished`
-promises, the app's runner builds `WorldResult` through
-`capture.FinancialCapture`, an experiment records only what it measures. Inside a
+promises, the app's runner builds its `WorldResult` and metric slab in `product/`,
+an experiment records only what it measures. Inside a
 component the rule is: a field stays if a later month reads it to compute the
 future; a log nothing reads is history and leaves. No observer class, collector
 protocol or event bus is introduced; if repetition across callers earns a shared
-helper later, it is extracted from the code that actually repeats. The rest of this
-section is the comparison that led here, kept until RECORD moves the app's slab.
-
-The operator's pull-style example is a candidate:
-
-```python
-# Illustrative only: neither this account API nor a collector API is finalized.
-metrics.append({"account_balance": accounts["foo"].balance})
-```
-
-Compare it with optional observers/recorders over committed outcomes and a hybrid
-of minimal per-step outcomes plus caller-authored pull measurements. A World may
-provide coherent observation points or invoke observers; that does not make it
-owner of the experiment's measurement definitions. Do not select a mandatory
-callback, event bus, subscription protocol or global metric registry in advance.
-
-The comparison must settle:
-
-- Opening, pre-decision, post-settlement and closing measurement times; currency,
-  quantity and inflation bases; stable actor/path identity.
-- How recording distinguishes policy intent, attempted actions, payments, unpaid
-  liabilities, observed zeros and unobserved post-stop periods.
-- Read-only/copy-safe observations: appending a row must not accidentally retain
-  mutable live state or mutate financial books. Policy views cannot gain future
-  path access merely because the experiment records broader outcomes.
-- Which receipts/bookkeeping facts are required for financial correctness and
-  which histories or derived metrics are optional. Disabling metrics must not
-  disable taxes, settlement checks or visible failure state.
-- How optional recording avoids duplicate financial execution, replayed tax/basis
-  calculations, and mandatory whole-horizon capture for a per-step consumer.
-  Collector errors are not silently classified as investment ruin.
-
-Compare two consumers using the same execution: a small per-step experiment
-recording selected values and the existing product fan/detail projection. Check
-stopped paths, exact monetary values, selected replay and unchanged financial
-outcomes with collection on/off. No benchmark contest is required to decide
-ownership, though obvious unnecessary copies should be identified.
-
-Close GMETRICS only after the operator chooses a scoped observation/collection
-contract. RECORD then migrates the affected collectors and projections atomically.
-If a chosen recording API depends on new lifecycle hooks, that slice also needs
-the relevant COMPOSE step boundary. Existing typed-result reader cleanup and CAP's
-specific missing financial observations do not wait for either entire redesign.
+helper later, it is extracted from the code that actually repeats.

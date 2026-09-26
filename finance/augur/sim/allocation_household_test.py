@@ -208,7 +208,6 @@ def run(case: Situation) -> list[FinancialOutput]:
         world.start()
         step_to_horizon(world, recorder)
         output = recorder.financial()
-        assert output is not None
         outputs.append(output)
     return outputs
 

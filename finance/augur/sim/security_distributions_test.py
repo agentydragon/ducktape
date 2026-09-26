@@ -382,6 +382,7 @@ def test_current_payout_funds_an_explicit_same_month_claim() -> None:
     assert payment.receipt.amount_paid == 200_000
     assert isinstance(payment.receipt.outcome, Paid)
     assert result.trace is not None
+    assert result.trace.distributions is not None
     [payout] = [row for row in result.trace.distributions if row.month == 0]
     assert (payout.asset_id, payout.amount, payout.issuer_jurisdiction_id) == ("bnd", 200_000, "federal_us")
 

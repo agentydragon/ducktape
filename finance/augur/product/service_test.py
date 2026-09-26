@@ -40,6 +40,7 @@ from finance.augur.model.testing import (
 )
 from finance.augur.product import service
 from finance.augur.product.conftest import MakeProductService
+from finance.augur.product.metrics import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.product.scenarios import (
     Home,
     Situation,
@@ -88,7 +89,6 @@ from finance.augur.sim.prepared import (
     PreparedPropertyCashflow,
     PreparedRecurringPropertyCashflow,
 )
-from finance.augur.sim.product_metrics import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.world import World
 

@@ -25,6 +25,15 @@ from finance.augur.model.exogenous import (
     level_series_request_channels,
     validate_sample_satisfies_request,
 )
+from finance.augur.product.metrics import (
+    OutcomeBasis,
+    ProductMetricFanSummary,
+    ProductProjectionSummaries,
+    ProductTerminalSummary,
+    metric_fan,
+    projection_summaries,
+    terminal_summary,
+)
 from finance.augur.product.projection import project_product_rollout
 from finance.augur.product.scenarios import (
     Situation,
@@ -52,15 +61,6 @@ from finance.augur.product.wire import (
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.product_metrics import (
-    OutcomeBasis,
-    ProductMetricFanSummary,
-    ProductProjectionSummaries,
-    ProductTerminalSummary,
-    metric_fan,
-    projection_summaries,
-    terminal_summary,
-)
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.scenario import TlhPortfolioSpec
 from finance.augur.sim.world import World

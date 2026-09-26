@@ -127,7 +127,6 @@ def run(case: Situation) -> FinancialOutput:
         world.step()
         recorder.record()
     output = recorder.financial()
-    assert output is not None
     assert output.failed_month is None
     return output
 
@@ -199,6 +198,7 @@ def test_a_projected_purchase_into_a_managed_sleeve_contributes_what_is_left() -
         )
     )
     closed = output.months[1]
+    assert closed.tlh_portfolios is not None
     assert one(closed.tlh_portfolios).value == 700  # The $100 opening mark plus the $600 contribution.
     assert closed.lots == []
     assert (balance(closed, ALICE), balance(closed, CREDITOR)) == (0, 400)

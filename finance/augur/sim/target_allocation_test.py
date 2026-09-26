@@ -184,9 +184,7 @@ def run(case: Situation) -> FinancialOutput:
     while not world.finished:
         world.step()
         recorder.record()
-    output = recorder.financial()
-    assert output is not None
-    return output
+    return recorder.financial()
 
 
 def units(output: FinancialOutput, *, month: int) -> dict[str, float]:
