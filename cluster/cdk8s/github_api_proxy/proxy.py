@@ -55,9 +55,6 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecSelector,
 )
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
-    PrometheusRule,
-    PrometheusRuleSpec,
-    PrometheusRuleSpecGroups,
     PrometheusRuleSpecGroupsRules,
     PrometheusRuleSpecGroupsRulesExpr,
 )
@@ -69,6 +66,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, group
 
 _IDENTITY_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/identity"
 _APP_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/app"
@@ -533,7 +531,7 @@ def _monitoring(scope: Construct) -> None:
         scope,
         "prometheus-rule",
         metadata=metadata(_NAME, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        spec=PrometheusRuleSpec(groups=[PrometheusRuleSpecGroups(name=_NAME, rules=_RULES)]),
+        groups=[group(_NAME, _RULES)],
     )
 
 

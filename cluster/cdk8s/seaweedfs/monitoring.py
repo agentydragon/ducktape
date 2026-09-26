@@ -18,9 +18,6 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
-    PrometheusRule,
-    PrometheusRuleSpec,
-    PrometheusRuleSpecGroups,
     PrometheusRuleSpecGroupsRules,
     PrometheusRuleSpecGroupsRulesExpr,
 )
@@ -30,6 +27,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, group
 from cluster.cdk8s.seaweedfs import namespace
 
 NAME = "seaweedfs-monitoring"
@@ -42,46 +40,44 @@ def chart(app: App) -> Chart:
         chart,
         "seaweedfs-replication",
         metadata=metadata("seaweedfs-replication", namespace.NAME, labels={"release": "kube-prometheus-stack"}),
-        spec=PrometheusRuleSpec(
-            groups=[
-                PrometheusRuleSpecGroups(
-                    name="seaweedfs-replication",
-                    rules=[
-                        # SeaweedFS master does not self-heal under-replicated volumes. The operator's
-                        # replication-repair AdminScript attempts hourly, copy-only repair; this alert
-                        # still exposes stalled jobs, missing destination slots, and any excess or
-                        # misplaced replicas, which the script deliberately does not delete.
-                        #
-                        # `SeaweedFS_master_replica_placement_mismatch` is a leader-only, per-volume
-                        # gauge (labels: collection, id) = 1 when a volume's replica count/placement
-                        # does not match its target (under- or over-replicated), else 0. Only the
-                        # leader emits it, so `sum()` counts mismatched volumes cluster-wide.
-                        PrometheusRuleSpecGroupsRules(
-                            alert="SeaweedFSReplicaPlacementMismatch",
-                            expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
-                                "sum(SeaweedFS_master_replica_placement_mismatch) > 0"
+        groups=[
+            group(
+                "seaweedfs-replication",
+                [
+                    # SeaweedFS master does not self-heal under-replicated volumes. The operator's
+                    # replication-repair AdminScript attempts hourly, copy-only repair; this alert
+                    # still exposes stalled jobs, missing destination slots, and any excess or
+                    # misplaced replicas, which the script deliberately does not delete.
+                    #
+                    # `SeaweedFS_master_replica_placement_mismatch` is a leader-only, per-volume
+                    # gauge (labels: collection, id) = 1 when a volume's replica count/placement
+                    # does not match its target (under- or over-replicated), else 0. Only the
+                    # leader emits it, so `sum()` counts mismatched volumes cluster-wide.
+                    PrometheusRuleSpecGroupsRules(
+                        alert="SeaweedFSReplicaPlacementMismatch",
+                        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
+                            "sum(SeaweedFS_master_replica_placement_mismatch) > 0"
+                        ),
+                        for_="15m",
+                        labels={"severity": "warning"},
+                        annotations={
+                            "summary": "SeaweedFS has {{ $value }} volume(s) off their replica count",
+                            "description": (
+                                "{{ $value }} SeaweedFS volume(s) have not matched their target replica "
+                                "placement for 15m (replication 001 = 2 copies). The replication-repair "
+                                "AdminScript attempts copy-only repair hourly; check its CronJob/Job status and "
+                                "available volume slots if the mismatch persists. It never trims excess or "
+                                "misplaced replicas, so review those deliberately. Suspend the AdminScript and "
+                                "wait for any active Job before planned volume-server maintenance. For an "
+                                "immediate manual repair, inspect `volume.list` and run "
+                                "`volume.fix.replication -apply -doDelete=false` under `lock` from a master pod "
+                                "(`weed shell` reads commands on stdin)."
                             ),
-                            for_="15m",
-                            labels={"severity": "warning"},
-                            annotations={
-                                "summary": "SeaweedFS has {{ $value }} volume(s) off their replica count",
-                                "description": (
-                                    "{{ $value }} SeaweedFS volume(s) have not matched their target replica "
-                                    "placement for 15m (replication 001 = 2 copies). The replication-repair "
-                                    "AdminScript attempts copy-only repair hourly; check its CronJob/Job status and "
-                                    "available volume slots if the mismatch persists. It never trims excess or "
-                                    "misplaced replicas, so review those deliberately. Suspend the AdminScript and "
-                                    "wait for any active Job before planned volume-server maintenance. For an "
-                                    "immediate manual repair, inspect `volume.list` and run "
-                                    "`volume.fix.replication -apply -doDelete=false` under `lock` from a master pod "
-                                    "(`weed shell` reads commands on stdin)."
-                                ),
-                            },
-                        )
-                    ],
-                )
-            ]
-        ),
+                        },
+                    )
+                ],
+            )
+        ],
     )
     return chart
 

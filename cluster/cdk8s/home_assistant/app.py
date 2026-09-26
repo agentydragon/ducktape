@@ -30,9 +30,6 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
-    PrometheusRule,
-    PrometheusRuleSpec,
-    PrometheusRuleSpecGroups,
     PrometheusRuleSpecGroupsRules,
     PrometheusRuleSpecGroupsRulesExpr,
 )
@@ -64,6 +61,7 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, group
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
 from homeassistant.provisioner.components import settings as components
@@ -570,27 +568,25 @@ def _monitoring(scope: Construct) -> None:
         scope,
         "prometheus-rule",
         metadata=metadata(_NAME, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        spec=PrometheusRuleSpec(
-            groups=[
-                PrometheusRuleSpecGroups(
-                    name=_NAME,
-                    rules=[
-                        PrometheusRuleSpecGroupsRules(
-                            alert="HomeAssistantUnavailable",
-                            expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
-                                'up{namespace="home-assistant", service="home-assistant"} == 0'
-                            ),
-                            for_="10m",
-                            labels={"severity": "warning"},
-                            annotations={
-                                "summary": "Home Assistant is unavailable",
-                                "description": "Prometheus has been unable to scrape Home Assistant for 10 minutes.",
-                            },
-                        )
-                    ],
-                )
-            ]
-        ),
+        groups=[
+            group(
+                _NAME,
+                [
+                    PrometheusRuleSpecGroupsRules(
+                        alert="HomeAssistantUnavailable",
+                        expr=PrometheusRuleSpecGroupsRulesExpr.from_string(
+                            'up{namespace="home-assistant", service="home-assistant"} == 0'
+                        ),
+                        for_="10m",
+                        labels={"severity": "warning"},
+                        annotations={
+                            "summary": "Home Assistant is unavailable",
+                            "description": "Prometheus has been unable to scrape Home Assistant for 10 minutes.",
+                        },
+                    )
+                ],
+            )
+        ],
     )
 
 

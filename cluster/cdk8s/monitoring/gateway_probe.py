@@ -26,9 +26,6 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecSelector,
 )
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
-    PrometheusRule,
-    PrometheusRuleSpec,
-    PrometheusRuleSpecGroups,
     PrometheusRuleSpecGroupsRules,
     PrometheusRuleSpecGroupsRulesExpr,
 )
@@ -45,6 +42,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, group
 from cluster.scripts.nebula_mesh import Mesh
 
 NAMESPACE = "monitoring"
@@ -267,7 +265,7 @@ def chart(app: App, mesh: Mesh) -> Chart:
         chart,
         "prometheus-rule",
         metadata=metadata(_NAME, NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        spec=PrometheusRuleSpec(groups=[PrometheusRuleSpecGroups(name=_NAME, rules=_rules(nodes))]),
+        groups=[group(_NAME, _rules(nodes))],
     )
     add_fleet_rules(chart)
     return chart

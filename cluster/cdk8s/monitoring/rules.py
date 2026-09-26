@@ -7,9 +7,6 @@ from textwrap import dedent
 
 from cdk8s import App, Chart
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
-    PrometheusRule,
-    PrometheusRuleSpec,
-    PrometheusRuleSpecGroups,
     PrometheusRuleSpecGroupsRules,
     PrometheusRuleSpecGroupsRulesExpr,
 )
@@ -19,6 +16,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, group
 
 NAME = "monitoring-rules"
 NAMESPACE = "monitoring"
@@ -708,56 +706,52 @@ def chart(app: App) -> Chart:
         chart,
         "control-plane-io-alerts",
         metadata=metadata("control-plane-io-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        spec=PrometheusRuleSpec(groups=[PrometheusRuleSpecGroups(name="control-plane-io", rules=_CONTROL_PLANE_IO)]),
+        groups=[group("control-plane-io", _CONTROL_PLANE_IO)],
     )
     PrometheusRule(
         chart,
         "external-secrets-alerts",
         metadata=metadata("external-secrets-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        spec=PrometheusRuleSpec(groups=[PrometheusRuleSpecGroups(name="external-secrets", rules=_EXTERNAL_SECRETS)]),
+        groups=[group("external-secrets", _EXTERNAL_SECRETS)],
     )
     PrometheusRule(
         chart,
         "flux-alerts",
         metadata=metadata("flux-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        spec=PrometheusRuleSpec(groups=[PrometheusRuleSpecGroups(name="flux", rules=_FLUX)]),
+        groups=[group("flux", _FLUX)],
     )
     PrometheusRule(
         chart,
         "github-quota-alerts",
         metadata=metadata("github-quota-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        spec=PrometheusRuleSpec(groups=[PrometheusRuleSpecGroups(name="github-quota", rules=_GITHUB_QUOTA)]),
+        groups=[group("github-quota", _GITHUB_QUOTA)],
     )
     PrometheusRule(
         chart,
         "grocy-mcp-alerts",
         metadata=metadata("grocy-mcp-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        spec=PrometheusRuleSpec(groups=[PrometheusRuleSpecGroups(name="grocy-mcp", rules=_GROCY_MCP)]),
+        groups=[group("grocy-mcp", _GROCY_MCP)],
     )
     PrometheusRule(
         chart,
         "haku-console-connection-alerts",
         metadata=metadata("haku-console-connection-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        spec=PrometheusRuleSpec(
-            groups=[PrometheusRuleSpecGroups(name="haku-console-connections", rules=_HAKU_CONSOLE_CONNECTIONS)]
-        ),
+        groups=[group("haku-console-connections", _HAKU_CONSOLE_CONNECTIONS)],
     )
     PrometheusRule(
         chart,
         "mcp-auth-alerts",
         metadata=metadata("mcp-auth-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        spec=PrometheusRuleSpec(groups=[PrometheusRuleSpecGroups(name="mcp-auth", rules=_MCP_AUTH)]),
+        groups=[group("mcp-auth", _MCP_AUTH)],
     )
     PrometheusRule(
         chart,
         "roaming-node-alerts",
         metadata=metadata("roaming-node-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        spec=PrometheusRuleSpec(
-            groups=[
-                PrometheusRuleSpecGroups(name="roaming-node-alerts", rules=_ROAMING_NODE),
-                PrometheusRuleSpecGroups(name="roaming-node-workload-alerts", rules=_ROAMING_NODE_WORKLOAD),
-            ]
-        ),
+        groups=[
+            group("roaming-node-alerts", _ROAMING_NODE),
+            group("roaming-node-workload-alerts", _ROAMING_NODE_WORKLOAD),
+        ],
     )
     return chart
 
