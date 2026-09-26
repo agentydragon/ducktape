@@ -62,8 +62,8 @@ Wide and narrow symmetry examples share one parameterized Python test.
 - [x] `month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode` → `sim/test_world.py::test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books`
 - [x] `claim_views_keep_assembled_amount_identity_and_payer_scope` → `sim/test_observations.py::test_claim_views_keep_assembled_amount_identity_and_payer_scope`
 - [x] `rejects_invalid_fixture_metadata` → `sim/test_declaration_guards.py::{test_a_world_needs_a_positive_horizon_every_series_covers,test_a_path_admits_only_dense_series_named_once}` and `sim/fixed_point_test.py::test_currency_quantum_accepts_exact_inputs_and_rejects_implicit_float_money`
-- [x] `series_indexed_amounts_follow_rollout_specific_reset_boundaries` → `sim/testing/indexed_payments_test.py::test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout`
-- [x] `series_indexed_amount_validation_rejects_invalid_paths` → `sim/testing/indexed_payments_test.py::{test_series_indexed_amount_cannot_fire_before_base_month,test_series_indexed_amount_requires_external_series_coverage,test_series_indexed_amount_rejects_zero_base_level}`
+- [x] `series_indexed_amounts_follow_rollout_specific_reset_boundaries` → `sim/indexed_payments_test.py::test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout`
+- [x] `series_indexed_amount_validation_rejects_invalid_paths` → `sim/indexed_payments_test.py::{test_series_indexed_amount_cannot_fire_before_base_month,test_series_indexed_amount_requires_external_series_coverage,test_series_indexed_amount_rejects_zero_base_level}`
 - [x] `bond_principal_remains_until_redemption_event` → `sim/test_held_bonds.py::{test_no_month_zero_coupon_and_redemption_keeps_the_maturity_coupon,test_stopped_bond_snapshot_uses_the_last_observed_index}`
 - [x] `nominal_and_indexed_bonds_follow_coupon_redemption_and_accretion_contracts` → `sim/test_held_bonds.py::test_tips_deflation_changes_income_but_redemption_has_a_face_floor`
 - [x] `bond_validation_rejects_non_par_and_missing_index_paths` → `sim/test_declaration_guards.py::test_a_dated_bond_is_bought_at_par_over_whole_coupon_periods`
@@ -76,7 +76,7 @@ Wide and narrow symmetry examples share one parameterized Python test.
 - [x] `transfer_and_fifo_sale_remain_balanced` → `sim/test_world.py::test_transfer_and_fifo_sale_remain_balanced`
 - [x] `mid_horizon_property_mark_and_sale_share_the_purchase_anchor` → `sim/test_world_mortgages.py::test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor`
 - [x] `oversell_is_rejected_before_any_disposition` → `sim/test_holdings.py::test_oversell_is_rejected_before_any_disposition`
-- [x] `failure_stops_future_actions_and_preserves_the_observed_book` → `sim/testing/obligations_test.py::test_failed_path_skips_future_transfers_and_policy_calls_while_other_path_continues`
+- [x] `failure_stops_future_actions_and_preserves_the_observed_book` → `sim/obligations_test.py::test_failed_path_skips_future_transfers_and_policy_calls_while_other_path_continues`
 - [x] `same_source_recurring_obligations_settle_all_or_none` → `sim/test_payments.py::{test_grouped_funding_is_decided_before_incoming_claim_payments,test_funded_group_does_not_rescue_a_source_that_was_unfunded_at_preflight}`
 
 ## `rust/engine/trades_test.rs`
@@ -102,7 +102,7 @@ Wide and narrow symmetry examples share one parameterized Python test.
 
 ## `rust/execution.rs`
 
-- [x] `money_crosses_the_wire_only_as_an_integer` → `sim/testing/test_invocation.py::{test_file_decode_rejects_invalid_prepared_facts,test_prepared_input_retains_original_path_cpi_and_selected_replay}`
+- [x] `money_crosses_the_wire_only_as_an_integer` → `sim/test_invocation.py::{test_file_decode_rejects_invalid_prepared_facts,test_prepared_input_retains_original_path_cpi_and_selected_replay}`
 
 ## `rust/ledger.rs`
 
@@ -147,7 +147,7 @@ Wide and narrow symmetry examples share one parameterized Python test.
 ## Retained coverage and evidence
 
 All 95 native declarations have Python counterparts above. Existing Python tests
-formerly under `rust/` are retained under `sim/testing/`; artifact helpers live
+formerly under `rust/` are retained under `sim/`; artifact helpers live
 in `sim/artifacts.py`. The native source, extension, stubs and private codecs are
 removed. This mapping preserves review traceability, not a second implementation.
 
