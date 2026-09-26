@@ -287,7 +287,7 @@ def pod_spec(
 ) -> SandboxTemplateSpecPodTemplateSpec:
     """`workload` beside the egress sidecar, as uid 1000, with no ServiceAccount token in the Pod: the
     projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
-    several boxes out of the container a command runs in (agentplane/docs/sandbox_actions.md).
+    several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
     `service_account_name` is the template's own; whoever stamps a Sandbox from it may replace it.
     `workload_volumes` are Pod volumes the workload mounts beyond the egress path's own."""
     return SandboxTemplateSpecPodTemplateSpec(

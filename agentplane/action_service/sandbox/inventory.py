@@ -16,8 +16,8 @@ from typing import Any, cast
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiException, CoreV1Api
 
-from agentplane.sandbox_actions.binding import DESCRIPTION_ANNOTATION, PREFIX, SandboxExecutorBinding
-from agentplane.sandbox_actions.models import READY_CONDITION, SandboxInfo
+from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION, PREFIX, SandboxExecutorBinding
+from agentplane.action_service.sandbox.models import READY_CONDITION, SandboxInfo
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import CommandResult, ExecRunner
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL, condition, pod_name
@@ -194,7 +194,7 @@ class SandboxInventory:
 
         Returns once the object exists rather than waiting for the box to come up: a cold start
         outlasts the execution lease the Action Service grants, so waiting here reports an unknown
-        outcome for a box that is in fact fine. `info` is how a caller follows one from `not_ready`
+        outcome for a box that is in fact fine. `get` is how a caller follows one from `not_ready`
         to `ready`, carrying the controller's own reason.
 
         Idempotent: an existing sandbox of that name is returned as it stands, whatever template it
@@ -244,7 +244,7 @@ class SandboxInventory:
                 return
             raise
 
-    async def info(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
+    async def get(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
         sandbox = await self._sandbox(caller, name)
         if sandbox is None:
             raise SandboxActionError(f"no sandbox named {name!r}; create it first")

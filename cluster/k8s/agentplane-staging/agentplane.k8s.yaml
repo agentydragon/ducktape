@@ -4060,8 +4060,8 @@ spec:
           - create
           - dispose
           - exec
+          - get
           - get_template
-          - info
           - list
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1

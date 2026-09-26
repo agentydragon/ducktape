@@ -19,7 +19,7 @@ py_library(
     name = "catalog",
     srcs = ["catalog.py"],
     deps = [
-        "//agentplane/sandbox_actions:binding",
+        "//agentplane/action_service/sandbox:binding",
         "@pypi//mcp",
         "@pypi//mcp_types",
         "@pypi//pydantic",
@@ -198,7 +198,7 @@ py_library(
         ":updates",
         "//agentplane:kubernetes_watch",
         "//agentplane/action_service/github_policy:visibility",
-        "//agentplane/sandbox_actions:inventory",
+        "//agentplane/action_service/sandbox:inventory",
         "//agentplane/workload_auth:principal",
         "//mcp_infra/exec:kubernetes",
         "//util:kubernetes",
@@ -457,9 +457,10 @@ py_library(
         ":mcp_executor",
         ":mcp_linkage",
         ":models",
-        ":sandbox_executor",
-        "//agentplane/sandbox_actions:binding",
-        "//agentplane/sandbox_actions:inventory",
+        "//agentplane/action_service/sandbox:actions",
+        "//agentplane/action_service/sandbox:binding",
+        "//agentplane/action_service/sandbox:executor",
+        "//agentplane/action_service/sandbox:inventory",
         "@pypi//pydantic",
     ],
 )
@@ -769,9 +770,9 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
+        "//agentplane/action_service/sandbox:binding",
+        "//agentplane/action_service/sandbox:models",
         "//agentplane/action_service/test_fixtures:callers",
-        "//agentplane/sandbox_actions:binding",
-        "//agentplane/sandbox_actions:models",
         "//agentplane/workload_auth:principal",
         "//mcp_infra/exec:models",
         "@pypi//fastapi",
@@ -1084,58 +1085,12 @@ py_library(
 )
 
 py_library(
-    name = "sandbox_executor",
-    srcs = ["sandbox_executor.py"],
-    # The group key and its Action names, so the staging policy that auto-approves them is written
-    # from the roster that offers them rather than from a second copy.
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
-    deps = [
-        ":catalog",
-        ":models",
-        ":service",
-        "//agentplane:subjects",
-        "//agentplane/sandbox_actions:binding",
-        "//agentplane/sandbox_actions:inventory",
-        "//agentplane/sandbox_actions:models",
-        "//mcp_infra/exec:kubernetes",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_sandbox_executor",
-    srcs = ["test_sandbox_executor.py"],
-    deps = [
-        ":catalog",
-        ":conftest",
-        ":models",
-        ":sandbox_executor",
-        ":service",
-        "//:conftest",
-        "//agentplane:subjects",
-        "//agentplane/sandbox_actions:binding",
-        "//agentplane/sandbox_actions:inventory",
-        "//agentplane/sandbox_actions:models",
-        "//mcp_infra/exec:kubernetes",
-        "//mcp_infra/exec:models",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "tool_results",
     srcs = ["tool_results.py"],
     deps = [
         ":catalog",
         ":models",
-        "//agentplane/sandbox_actions:binding",
+        "//agentplane/action_service/sandbox:binding",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//mcp_types",
@@ -1177,9 +1132,9 @@ py_test(
         "//:conftest",
         "//agentplane/action_service/github_policy:visibility",
         "//agentplane/action_service/policies:resources",
+        "//agentplane/action_service/sandbox:binding",
+        "//agentplane/action_service/sandbox:models",
         "//agentplane/action_service/test_fixtures:callers",
-        "//agentplane/sandbox_actions:binding",
-        "//agentplane/sandbox_actions:models",
         "//agentplane/workload_auth:principal",
         "//mcp_infra/exec:models",
         "@pypi//fastmcp_slim",

@@ -45,11 +45,11 @@ from agentplane.action_service.models import ActionState, CallerPrincipal, Execu
 from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_evaluation import PROVIDER_NAME, PolicySetDecisionProvider
 from agentplane.action_service.policy_informer import PolicyIndex
+from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.models import ExecResult
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, TEST_NAMESPACE, admitted_callers
 from agentplane.action_service.updates import ActionUpdates
-from agentplane.sandbox_actions.binding import SandboxExecutorBinding
-from agentplane.sandbox_actions.models import ExecResult
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from mcp_infra.exec.models import Exited
 

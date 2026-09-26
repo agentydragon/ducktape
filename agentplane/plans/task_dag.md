@@ -340,7 +340,7 @@ chosen credential boundary without exposing privileged credentials in evidence.
 
 **Planned identity:** `agentplane-staging/claude-ai` is the principal a Connection from the
 Claude.ai MCP connector acts as, and now also the account every sandbox this caller creates runs
-as ([sandbox Actions](../docs/sandbox_actions.md)). Its authority accreted from what each smoke
+as ([sandbox Actions](../action_service/sandbox/README.md)). Its authority accreted from what each smoke
 test needed rather than from a decision about what this caller should hold, and the sandbox surface
 changed what that authority reaches: the account is no longer only an Action caller, it is the
 identity of a shell somebody can run arbitrary commands in.

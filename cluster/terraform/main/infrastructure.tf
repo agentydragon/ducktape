@@ -161,42 +161,21 @@ locals {
     ]
   }
 
-  # Host ingress firewall for kube-controller-manager/kube-scheduler metrics.
-  # Those static pods must bind off loopback for ServiceMonitor scrapes, but the
-  # metrics ports should remain unreachable from public node IPs.
-  control_plane_metrics_firewall_config = yamlencode({
-    apiVersion = "v1alpha1"
-    kind       = "NetworkRuleConfig"
-    name       = "kube-control-plane-metrics"
-    portSelector = {
-      protocol = "tcp"
-      ports    = [10257, 10259]
-    }
-    ingress = [
-      { subnet = "10.42.0.0/16" },
-      { subnet = "10.244.0.0/16" },
-    ]
-  })
-
   # Controlplane cluster config — includes etcd, apiServer, and inline
   # manifests that Talos rejects on worker nodes.
+  #
+  # kube-controller-manager and kube-scheduler keep Talos's loopback bind, so nothing
+  # public listens on 10257/10259 and no host firewall is needed. Keep it that way: any
+  # NetworkRuleConfig makes Talos install an ingress chain that breaks Pods dialing their
+  # own node's Gateway (#7918), and binding them to another address (the Nebula IP) fails
+  # Talos's own probes, which target localhost.
   common_cluster_config = {
     allowSchedulingOnControlPlanes = false
     apiServer                      = local.api_server_config
-    controllerManager = {
-      extraArgs = {
-        "bind-address" = "0.0.0.0"
-      }
-    }
-    discovery = { enabled = true }
-    etcd      = { advertisedSubnets = ["10.42.0.0/16"] }
-    network   = { cni = { name = "none" } }
-    proxy     = { disabled = true }
-    scheduler = {
-      extraArgs = {
-        "bind-address" = "0.0.0.0"
-      }
-    }
+    discovery                      = { enabled = true }
+    etcd                           = { advertisedSubnets = ["10.42.0.0/16"] }
+    network                        = { cni = { name = "none" } }
+    proxy                          = { disabled = true }
     # Talos CCM as inline manifest — removes cloud-provider taint before Flux.
     # Cilium stays as a null_resource helm install because it is large and is
     # easier to manage once the k8s API is reachable.

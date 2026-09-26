@@ -61,9 +61,9 @@ from cdk8s_plus_34 import (
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
+from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
-from agentplane.sandbox_actions.binding import DESCRIPTION_ANNOTATION
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
     actions,

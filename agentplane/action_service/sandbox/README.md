@@ -39,12 +39,12 @@ intended consequences.
 create, because they are one principal. The operation is closed: no chain gains authority.
 
 **Egress attribution collapses per principal in the app's view, not in the record.**
-`DecisionsClient.recent` (<../app/decisions.py>) asks the proxy for decisions _by ServiceAccount_
+`DecisionsClient.recent` (<../../app/decisions.py>) asks the proxy for decisions _by ServiceAccount_
 and projects a `Decision` with no Pod field, so `GET /sandboxes/{name}/egress/decisions` returns one
 combined stream for every sandbox of one account. The proxy's own record does carry
-`source_pod_uid`, persisted with the rest (<../egress/decisions.py>), so per-box attribution is a
+`source_pod_uid`, persisted with the rest (<../../egress/decisions.py>), so per-box attribution is a
 field the app's projection does not read rather than evidence nobody has. Accounts still differ from
-each other. This knowingly deviates from the [egress specification](../egress/SPEC.md)'s "bind only
+each other. This knowingly deviates from the [egress specification](../../egress/SPEC.md)'s "bind only
 an account dedicated to one workload".
 
 **The workload must never read the token.** `automountServiceAccountToken: false`, with the
@@ -55,14 +55,14 @@ invariant; breaking it costs the whole account's authority rather than one box's
 ## Separation from the integration app
 
 **Its own label and selector.** Not `agentplane.allegedly.works/managed`, which the app lists,
-watches and gates operations on (<../app/inventory.py>, <../app/live.py>). An exec target carrying
+watches and gates operations on (<../../app/inventory.py>, <../../app/live.py>). An exec target carrying
 it joins the app's fleet view and its ingestion coordinator, which then discovers a runner the box
 does not have.
 
 **Its own template set**: a caller names a SandboxTemplate, but only one the group's reviewed
 configuration offers, at the same operator cadence as `action_groups`. A free-form choice would let
 a caller stamp any template in the namespace. Staging offers its own `agentplane-sandbox` template
-on the plain sandbox image (<../../cluster/cdk8s/agentplane/command_sandbox.py>), a build-sized
+on the plain sandbox image (<../../../cluster/cdk8s/agentplane/command_sandbox.py>), a build-sized
 box, and the app's runner template, and a caller always names one. Each template describes itself:
 its `sandbox-actions.agentplane.allegedly.works/description` annotation is what `create` tells an
 agent, read once when the service starts, and a command runs in the container `kubectl exec` would
@@ -74,7 +74,7 @@ references Secrets and never inlines one.
 **Its own inventory code**, reusing the CRD shapes rather than `SandboxInventory`, which hardcodes
 the per-sandbox account, the app's label and the app's ownership model. The CRD vocabulary both
 share — API coordinates, the `agents.x-k8s.io/pod-name` annotation, condition lookup — is
-<../../util/agent_sandbox.py>.
+<../../../util/agent_sandbox.py>.
 
 ## Kubernetes from inside the box
 
@@ -87,9 +87,9 @@ proxy's own audience (`agentplane-egress`), and the API server validates against
 `--api-audiences`, so that token is refused there. The sidecar therefore projects a _second_ token
 carrying the API server's audience, mounted by the sidecar alone and rotated by kubelet, presented
 on the hop for the proxy to substitute into `Authorization` on the rules that name it — the
-`projectedWorkloadToken` credential source (<../egress/SPEC.md>). The proxy gains no Kubernetes
+`projectedWorkloadToken` credential source (<../../egress/SPEC.md>). The proxy gains no Kubernetes
 rights, the workload sees neither token, and the container boundary holding it is the one the design
-already rests on ([identity evidence](sandbox_egress_identity_evidence.md)). Before substituting,
+already rests on ([identity evidence](../../docs/sandbox_egress_identity_evidence.md)). Before substituting,
 the proxy reviews that token against the API server audience and requires it to resolve to the same
 Pod it authenticated, so a substituted credential provably belongs to the caller being decided.
 
@@ -111,8 +111,8 @@ own API proxy answers `501` to the upgrade verbs, so that is where to expect tro
 
 ## Tool surface
 
-`create`, `exec` and `list`, with `info`, `get_template` and `dispose`. `create` returns once the
-object exists and the caller polls `info` for the controller's conditions.
+`create`, `exec` and `list`, with `get`, `get_template` and `dispose`. `create` returns once the
+object exists and the caller polls `get` for the controller's conditions.
 
 **Conditions are passed through as the controller wrote them**, not summarised into a state. A
 reading taken here would be a second opinion that can disagree with the authority and carries less
@@ -122,7 +122,7 @@ not ready", and only the controller's own `reason` distinguishes them.
 
 **`create` does not wait for readiness.** A box can stay unready indefinitely -- refused by the
 namespace quota, or stopped on another `ReconcilerError` -- so a waiting `create` would spend its
-whole timeout to report a deadline, where `info` reports the controller's own reason for it.
+whole timeout to report a deadline, where `get` reports the controller's own reason for it.
 
 **Gotcha: a box the quota refused does not start when the quota frees.** agent-sandbox (v0.5.5)
 returns the Pod-create error from its reconcile, so controller-runtime retries that Sandbox on its
@@ -133,7 +133,7 @@ while `dispose` + `create` of it reached `Ready` in about 45 s. So an exceeded-q
 `ReconcilerError` is the caller's cue to `list` its sandboxes, `dispose` the ones it has finished
 with, then `dispose` + `create` the refused one.
 
-Shapes follow <../../haku/console/tools/sandbox.py>, the surface already in daily use: one
+Shapes follow <../../../haku/console/tools/sandbox.py>, the surface already in daily use: one
 bounded Bash script per call, a per-environment ceiling on timeout and retained output patched into
 the advertised schema, and a nonzero exit reported as a result rather than a transport error.
 
@@ -148,7 +148,7 @@ otherwise misreads every call:
   every command waits for a human, which is not an exec loop.
 
 Staging also offers each of them to external Connections as a direct tool (`sandbox__exec` and so on;
-[Action Service README](../action_service/README.md) § Direct tools): a call answers with its result,
+[Action Service README](../README.md) § Direct tools): a call answers with its result,
 the model as structured content and as JSON text, or with its request once 30 seconds have passed,
 for `get_action_result` to wait on. A command that outlives the wait keeps running; answering with
 the request rather than holding the call open keeps a client that gives up first from running the
@@ -180,7 +180,7 @@ account. It breaks a property the egress specification states plainly — "creat
 act of allowing, and deleting it the whole act of taking that back" — because deleting the source
 takes back nothing already copied. Kubernetes cannot repair that: garbage collection deletes a
 dependent when its _last_ owner goes, and revocation needs the _first_. Renewal by the provisioning
-component is already rejected in [egress composition](egress_composition.md) for putting that
+component is already rejected in [egress composition](../../docs/egress_composition.md) for putting that
 component back in the enforcement path. What is left is a bounded expiry on every derived binding,
 and revocation complete only within that window.
 

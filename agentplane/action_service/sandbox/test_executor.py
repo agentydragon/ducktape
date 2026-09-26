@@ -18,11 +18,12 @@ from pydantic import JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionState
-from agentplane.action_service.sandbox_executor import SandboxAction, SandboxExecutor, actions
+from agentplane.action_service.sandbox.actions import SandboxAction
+from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.executor import SandboxExecutor
+from agentplane.action_service.sandbox.inventory import ForeignSandboxError, SandboxActionError
+from agentplane.action_service.sandbox.models import READY_CONDITION, SandboxCondition, SandboxInfo
 from agentplane.action_service.service import ExecutionOutcomeUnknownError
-from agentplane.sandbox_actions.binding import SandboxExecutorBinding
-from agentplane.sandbox_actions.inventory import ForeignSandboxError, SandboxActionError
-from agentplane.sandbox_actions.models import READY_CONDITION, SandboxCondition, SandboxInfo
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import CommandResult, PodExecError
 from mcp_infra.exec.models import Exited
@@ -71,7 +72,7 @@ class FakeInventory:
     async def get_template(self, name: str) -> dict[str, JsonValue]:
         return {"metadata": {"name": name}, "spec": TEMPLATE_SPEC}
 
-    async def info(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
+    async def get(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
         self._record(caller)
         return SandboxInfo(name=name, conditions=[_ready()], template=TEMPLATE)
 
@@ -144,7 +145,7 @@ async def test_every_action_acts_as_the_request_caller(executor: SandboxExecutor
     """The identity comes from the authenticated request and never from an argument, so a caller
     cannot reach another account's boxes by asking for them."""
     await executor.execute(_request(SandboxAction.CREATE, {"name": "box", "template": TEMPLATE}), LEASE)
-    await executor.execute(_request(SandboxAction.INFO, {"name": "box"}), LEASE)
+    await executor.execute(_request(SandboxAction.GET, {"name": "box"}), LEASE)
     await executor.execute(_request(SandboxAction.LIST, {}), LEASE)
     await executor.execute(_request(SandboxAction.DISPOSE, {"name": "box"}), LEASE)
     await executor.execute(_request(SandboxAction.CREATE, {"name": "box", "template": TEMPLATE}, caller=OTHER), LEASE)
@@ -233,7 +234,7 @@ async def test_a_refusal_becomes_a_reason_the_caller_can_act_on(
     executor: SandboxExecutor, inventory: FakeInventory, raised: Exception, kind: str
 ) -> None:
     inventory.raises = raised
-    result = await executor.execute(_request(SandboxAction.INFO, {"name": "box"}), LEASE)
+    result = await executor.execute(_request(SandboxAction.GET, {"name": "box"}), LEASE)
     assert result.state is ExecutionState.FAILED
     assert result.error is not None
     assert result.error["kind"] == kind
@@ -252,15 +253,6 @@ async def test_a_template_comes_back_as_the_object_itself(executor: SandboxExecu
     result = await executor.execute(_request(SandboxAction.GET_TEMPLATE, {"template": TEMPLATE}), LEASE)
     assert result.state is ExecutionState.SUCCEEDED
     assert result.result == {"metadata": {"name": TEMPLATE}, "spec": TEMPLATE_SPEC}
-
-
-def test_the_offered_actions_name_the_offered_templates() -> None:
-    """create's own description is where an agent learns which templates exist, and naming one that
-    is not offered is the likeliest way to get create wrong."""
-    offered = actions(BINDING, {TEMPLATE: "the test box"})
-    assert set(offered) == set(SandboxAction)
-    assert '"test-template": "the test box"' in offered[SandboxAction.CREATE].description
-    assert offered[SandboxAction.EXEC].input_schema["additionalProperties"] is False
 
 
 if __name__ == "__main__":

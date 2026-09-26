@@ -12,7 +12,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from agentplane.sandbox_actions.binding import DESCRIPTION_ANNOTATION, SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION, SandboxExecutorBinding
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 

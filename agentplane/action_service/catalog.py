@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
-from agentplane.sandbox_actions.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 
 _KEY = r"^[a-z][a-z0-9_-]*$"
 Key = Annotated[str, StringConstraints(pattern=_KEY, min_length=1, max_length=200)]
