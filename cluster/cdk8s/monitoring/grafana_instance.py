@@ -20,7 +20,6 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesBackendRefs,
 )
 from grafana_grafana_crds.org.integreatly.grafana import (
-    Grafana,
     GrafanaSpec,
     GrafanaSpecClient,
     GrafanaSpecDeployment,
@@ -34,25 +33,20 @@ from grafana_grafana_crds.org.integreatly.grafana import (
     GrafanaSpecDeploymentSpecTemplateSpecContainersEnvValueFromSecretKeyRef,
 )
 from grafana_grafanadashboard_crds.org.integreatly.grafana import (
-    GrafanaDashboard,
-    GrafanaDashboardSpec,
     GrafanaDashboardSpecConfigMapRef,
     GrafanaDashboardSpecDatasources,
     GrafanaDashboardSpecGrafanaCom,
-    GrafanaDashboardSpecInstanceSelector,
 )
-from grafana_grafanadatasource_crds.org.integreatly.grafana import (
-    GrafanaDatasource,
-    GrafanaDatasourceSpec,
-    GrafanaDatasourceSpecDatasource,
-    GrafanaDatasourceSpecInstanceSelector,
-)
+from grafana_grafanadatasource_crds.org.integreatly.grafana import GrafanaDatasourceSpecDatasource
 
 from cluster.cdk8s import cnpg
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
+from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
+from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
 
 _NAME = "grafana"
 _NAMESPACE = "monitoring"
@@ -208,10 +202,8 @@ def _datasource(chart: Chart, name: str, datasource: GrafanaDatasourceSpecDataso
         chart,
         f"datasource-{name}",
         metadata=metadata(name, _NAMESPACE),
-        spec=GrafanaDatasourceSpec(
-            instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
-            datasource=datasource,
-        ),
+        instance_selector_labels=_INSTANCE_LABELS,
+        datasource=datasource,
     )
 
 
@@ -283,19 +275,17 @@ def _dashboard(
         chart,
         f"dashboard-{name}",
         metadata=metadata(name, _NAMESPACE),
-        spec=GrafanaDashboardSpec(
-            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
-            datasources=[
-                GrafanaDashboardSpecDatasources(input_name=input_name, datasource_name=datasource)
-                for input_name, datasource in datasources.items()
-            ]
-            if datasources
-            else None,
-            config_map_ref=GrafanaDashboardSpecConfigMapRef(name=f"{name}-dashboard", key=f"{name}.json")
-            if config_map
-            else None,
-            grafana_com=grafana_com,
-        ),
+        instance_selector_labels=_INSTANCE_LABELS,
+        datasources=[
+            GrafanaDashboardSpecDatasources(input_name=input_name, datasource_name=datasource)
+            for input_name, datasource in datasources.items()
+        ]
+        if datasources
+        else None,
+        config_map_ref=GrafanaDashboardSpecConfigMapRef(name=f"{name}-dashboard", key=f"{name}.json")
+        if config_map
+        else None,
+        grafana_com=grafana_com,
     )
 
 
