@@ -326,6 +326,17 @@ py_library(
 )
 
 py_library(
+    name = "service",
+    srcs = ["service.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "forgejo_images",
     srcs = ["forgejo_images.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -629,6 +640,7 @@ py_library(
         ":metadata",
         ":pod_spec_patches",
         ":probes",
+        ":service",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -722,6 +734,7 @@ py_library(
         ":pod_spec_patches",
         ":probes",
         ":public_coder_proxy",
+        ":service",
         "//aiquota:api",
         "//aiquota:config",
         "//cluster/cdk8s/agentplane:egress_credentials",
@@ -968,6 +981,7 @@ py_library(
         ":metadata",
         ":pod_spec_patches",
         ":probes",
+        ":service",
         "//cluster/cdk8s/agentplane:node_scheduling",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/external_secrets:clustersecretstore",

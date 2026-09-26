@@ -29,8 +29,6 @@ from cdk8s_plus_34 import (
     Protocol,
     Secret,
     SecretValue,
-    Service,
-    ServicePort,
 )
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
@@ -71,6 +69,7 @@ from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.service import simple_http_service
 
 NAME = "ntfy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ntfy"
@@ -278,12 +277,8 @@ class Ntfy(Construct):
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
-        Service(
-            self,
-            "service",
-            metadata=metadata(NAME, NAMESPACE, labels=_LABELS),
-            selector=deployment,
-            ports=[ServicePort(name="http", port=PORT, target_port=PORT, protocol=Protocol.TCP)],
+        simple_http_service(
+            self, "service", metadata=metadata(NAME, NAMESPACE, labels=_LABELS), deployment=deployment, port=PORT
         )
 
     def _add_service_monitor(self) -> None:

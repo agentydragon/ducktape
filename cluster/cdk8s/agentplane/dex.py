@@ -24,8 +24,6 @@ from cdk8s_plus_34 import (
     Protocol,
     Secret,
     SecretValue,
-    Service,
-    ServicePort,
     Volume,
 )
 from constructs import Construct
@@ -48,6 +46,7 @@ from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, deny_all_egress
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.service import simple_http_service
 
 _NAMESPACE = "agentplane-testing"
 _NAME = "agentplane-testing-dex"
@@ -271,13 +270,7 @@ def _add_deployment(scope: Construct) -> Deployment:
 
 
 def _add_service(scope: Construct, deployment: Deployment) -> None:
-    Service(
-        scope,
-        "service",
-        metadata=metadata(_NAME, _NAMESPACE),
-        selector=deployment,
-        ports=[ServicePort(name="http", port=_PORT, target_port=_PORT, protocol=Protocol.TCP)],
-    )
+    simple_http_service(scope, "service", metadata=metadata(_NAME, _NAMESPACE), deployment=deployment, port=_PORT)
 
 
 def _add_http_route(scope: Construct) -> None:

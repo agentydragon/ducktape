@@ -22,8 +22,6 @@ from cdk8s_plus_34 import (
     PodSecurityContextProps,
     Probe,
     Protocol,
-    Service,
-    ServicePort,
 )
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEndpointSelector,
@@ -38,6 +36,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy, deny_all_egress
+from cluster.cdk8s.service import simple_http_service
 
 _NAMESPACE = "agentplane-testing"
 
@@ -91,14 +90,12 @@ def _add_mcp_everything(scope: Construct) -> None:
         ),
     )
     apply_pod_spec_patches(deployment)
-    Service(
+    simple_http_service(
         scope,
         "mcp-everything-service",
         metadata=metadata(MCP_EVERYTHING_NAME, _NAMESPACE),
-        selector=deployment,
-        ports=[
-            ServicePort(name="http", port=MCP_EVERYTHING_PORT, target_port=MCP_EVERYTHING_PORT, protocol=Protocol.TCP)
-        ],
+        deployment=deployment,
+        port=MCP_EVERYTHING_PORT,
     )
     # Only the testing control-plane callers may reach this no-auth upstream reference
     # server. Runner isolation stays unchanged; there is no public route or fixture egress.
@@ -189,14 +186,12 @@ def _add_oauth_fixture(scope: Construct) -> None:
         security_context=container_security.WRITABLE_ROOT,
     )
     apply_pod_spec_patches(deployment)
-    Service(
+    simple_http_service(
         scope,
         "oauth-fixture-service",
         metadata=metadata(OAUTH_FIXTURE_NAME, _NAMESPACE),
-        selector=deployment,
-        ports=[
-            ServicePort(name="http", port=OAUTH_FIXTURE_PORT, target_port=OAUTH_FIXTURE_PORT, protocol=Protocol.TCP)
-        ],
+        deployment=deployment,
+        port=OAUTH_FIXTURE_PORT,
     )
     # Cluster-internal only, no public route. The Action Service reaches it for
     # protected-resource discovery and tool calls. The fixture fetches Dex's signing

@@ -35,8 +35,6 @@ from cdk8s_plus_34 import (
     Protocol,
     Secret,
     SecretValue,
-    Service,
-    ServicePort,
     Volume,
     VolumeMount,
     k8s,
@@ -74,6 +72,7 @@ from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.service import simple_http_service
 from util.settings_contract import checked_value, env_name, settings_file
 
 NAME = "aiquota"
@@ -319,7 +318,7 @@ class Aiquota(Construct):
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
-        Service(
+        simple_http_service(
             self,
             "service",
             metadata=metadata(
@@ -333,8 +332,8 @@ class Aiquota(Construct):
                     )
                 },
             ),
-            selector=deployment,
-            ports=[ServicePort(name="http", port=_PORT, target_port=_PORT, protocol=Protocol.TCP)],
+            deployment=deployment,
+            port=_PORT,
         )
 
     def _add_service_monitor(self) -> None:

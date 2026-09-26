@@ -24,9 +24,7 @@ from cdk8s_plus_34 import (
     RolePolicyRule,
     Secret,
     SecretValue,
-    Service,
     ServiceAccount,
-    ServicePort,
     Volume,
 )
 from constructs import Construct
@@ -45,6 +43,7 @@ from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.service import simple_http_service
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name, settings_file
 
@@ -294,12 +293,8 @@ class Actions(Construct):
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
-        Service(
-            self,
-            "service",
-            metadata=metadata(_NAME, self.env.namespace),
-            selector=deployment,
-            ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
+        simple_http_service(
+            self, "service", metadata=metadata(_NAME, self.env.namespace), deployment=deployment, port=CONTAINER_PORT
         )
 
     def _add_http_route(self) -> None:

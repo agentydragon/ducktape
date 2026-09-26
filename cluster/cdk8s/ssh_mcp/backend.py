@@ -21,8 +21,6 @@ from cdk8s_plus_34 import (
     Protocol,
     Secret,
     SecretValue,
-    Service,
-    ServicePort,
     Volume,
     k8s,
 )
@@ -43,6 +41,7 @@ from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.service import simple_http_service
 from cluster.cdk8s.ssh_mcp.config import (
     BEARER_SECRET_KEY,
     BEARER_SECRET_NAME,
@@ -205,13 +204,7 @@ class SshMcp(Construct):
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
-        Service(
-            self,
-            "service",
-            metadata=metadata(NAME, NAMESPACE),
-            selector=deployment,
-            ports=[ServicePort(name="http", port=HTTP_PORT, target_port=HTTP_PORT, protocol=Protocol.TCP)],
-        )
+        simple_http_service(self, "service", metadata=metadata(NAME, NAMESPACE), deployment=deployment, port=HTTP_PORT)
 
     def _add_network_policy(self, config: SshMcpConfig, mesh: Mesh) -> None:
         NetworkPolicy(

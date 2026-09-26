@@ -17,8 +17,6 @@ from cdk8s_plus_34 import (
     Protocol,
     Secret,
     SecretValue,
-    Service,
-    ServicePort,
     Volume,
 )
 from constructs import Construct
@@ -30,6 +28,7 @@ from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.service import simple_http_service
 
 NAME = "agentplane-electric"
 PORT = 3000
@@ -97,12 +96,8 @@ class Electric(Construct):
         node_scheduling.attract_to_zone(deployment)
         apply_pod_spec_patches(deployment)
 
-        Service(
-            self,
-            "service",
-            metadata=metadata(NAME, env.namespace, labels=_LABELS),
-            selector=deployment,
-            ports=[ServicePort(name="http", port=PORT, target_port=PORT, protocol=Protocol.TCP)],
+        simple_http_service(
+            self, "service", metadata=metadata(NAME, env.namespace, labels=_LABELS), deployment=deployment, port=PORT
         )
         NetworkPolicy(
             self,
