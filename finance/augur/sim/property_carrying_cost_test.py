@@ -10,7 +10,7 @@ import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import LocationId
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
@@ -143,7 +143,7 @@ def compose(case: Situation) -> World:
 
 def run(case: Situation) -> Rollout:
     """Alice pays every due claim in full, in order: here the installment and the property tax."""
-    household = ConfiguredHousehold(AgentId(ALICE), ())
+    household = ClaimPayer(AgentId(ALICE))
     session = ActionSession({0: compose(case)}, ALICE)
     try:
         batch = session.start()

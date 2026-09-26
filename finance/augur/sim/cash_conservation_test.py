@@ -37,7 +37,8 @@ from finance.augur.model.series import (
     SecurityKey,
     SecuritySymbol,
 )
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.cash_band_household import CashBandHousehold, SecuritySleeve
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import Action, DecisionActions, LotSale, Sell
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
@@ -61,12 +62,10 @@ from finance.augur.sim.prepared import (
     PreparedLot,
     PreparedRecurringObligation,
     PreparedSeries,
-    _AllocationPolicy,
     _CapitalImprovement,
     _MortgageFinancing,
     _PropertyPurchase,
     _PropertySale,
-    _SecuritySleeveTarget,
     _TenderPolicy,
 )
 from finance.augur.sim.property import Housing
@@ -159,12 +158,10 @@ def hold_vti(world: World, lot: PreparedLot) -> None:
     world.hold(lot)
 
 
-def run(
-    world: World, *, policies: tuple[_AllocationPolicy, ...] = (), script: Mapping[int, Sequence[Action]] = {}
-) -> Rollout:
-    """Alice makes her scripted trades, sells on her funding policy, then pays every due claim in full, in order."""
+def run(world: World, *, funded_by: SecurityKey | None = None, script: Mapping[int, Sequence[Action]] = {}) -> Rollout:
+    """Alice makes her scripted trades, sells `funded_by` as her claims need, then pays every due claim in full, in order."""
 
-    household = Scripted(ConfiguredHousehold(AgentId(ALICE), policies), script)
+    household = Scripted(ClaimPayer(ALICE) if funded_by is None else sell_into_cash(funded_by), script)
     session = ActionSession({0: world}, ALICE)
     try:
         batch = session.start()
@@ -260,17 +257,18 @@ def target_allocation_world() -> World:
     return world
 
 
-VTI_BAND = _AllocationPolicy(
-    agent_id=ALICE,
-    account_id=CHECKING,
-    source_account_ids=(),
-    sleeves=(_SecuritySleeveTarget(asset_id=AssetId(VTI.symbol), weight=1, quantity_scale=VTI_SCALE),),
-    cash_floor=0,
-    cash_ceiling=0,
-    cause_id_prefix="allocation_sale",
-    allow_purchases=False,
-    rebalance_tolerance_ppb=None,
-)
+def sell_into_cash(asset: SecurityKey) -> CashBandHousehold:
+    """A band with no floor and no ceiling: Alice holds no spare cash and funds her claims by selling."""
+    return CashBandHousehold(
+        ALICE,
+        cash_account_id=CHECKING,
+        floor=0,
+        ceiling=0,
+        sleeves=(SecuritySleeve(asset_id=AssetId(asset.symbol), weight=1),),
+        source_account_ids=(CHECKING,),
+        reinvest=None,
+        cause_id_prefix="allocation_sale",
+    )
 
 
 def private_equity_tender_world() -> World:
@@ -436,7 +434,7 @@ def test_a_target_allocation_sale_brings_in_exactly_its_proceeds() -> None:
 
     world = target_allocation_world()
     accounts = declared(world)
-    rollout = run(world, policies=(VTI_BAND,))
+    rollout = run(world, funded_by=VTI)
     raised = proceeds(rollout, month=RENT_MONTH)
 
     assert raised > 0

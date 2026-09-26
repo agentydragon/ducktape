@@ -431,7 +431,7 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
-        "//finance/augur/policy:configured_household",
+        "//finance/augur/policy:funding",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:events",
         "//finance/augur/sim:external_series",

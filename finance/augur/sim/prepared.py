@@ -174,39 +174,6 @@ class PreparedLocation:
 
 
 @dataclass(frozen=True, kw_only=True)
-class _SecuritySleeveTarget:
-    """Lots of one security across the policy's source accounts, traded in whole units at its quote."""
-
-    asset_id: AssetId
-    weight: int
-    quantity_scale: int
-
-
-@dataclass(frozen=True, kw_only=True)
-class _ManagedSleeveTarget:
-    """One managed portfolio, sized in money: it has a value but no units and no unit price."""
-
-    portfolio_id: PortfolioId
-    weight: int
-
-
-type _SleeveTarget = _SecuritySleeveTarget | _ManagedSleeveTarget
-
-
-@dataclass(frozen=True, kw_only=True)
-class _AllocationPolicy:
-    agent_id: AgentId
-    account_id: AccountId
-    source_account_ids: tuple[AccountId, ...]
-    sleeves: tuple[_SleeveTarget, ...]
-    cash_floor: PreparedAmount
-    cash_ceiling: PreparedAmount
-    cause_id_prefix: str
-    allow_purchases: bool
-    rebalance_tolerance_ppb: int | None
-
-
-@dataclass(frozen=True, kw_only=True)
 class _TenderPolicy:
     owner_agent_id: AgentId
     proceeds_account_id: AccountId

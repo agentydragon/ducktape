@@ -22,7 +22,7 @@ import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import HomeValueKey, LocationId
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book, PropertyState
 from finance.augur.sim.compiler.execution import compile_series
@@ -228,7 +228,7 @@ def compose(case: Situation, rollout_id: int) -> World:
 
 def run(case: Situation) -> list[Rollout]:
     """Alice pays every due claim in full, in order: her installments and her property taxes."""
-    household = ConfiguredHousehold(AgentId(ALICE), ())
+    household = ClaimPayer(AgentId(ALICE))
     session = ActionSession({id_: compose(case, id_) for id_ in range(case.rollout_count)}, ALICE)
     try:
         batch = session.start()

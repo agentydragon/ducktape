@@ -7,13 +7,14 @@ no deductions. Assertions pin accounting/timing, not statutory fidelity.
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
+from functools import partial
 
 import pytest
 import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.cash_band_household import CashBandHousehold, CpiIndexed, Reinvest, SecuritySleeve
 from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, SecurityLotState
@@ -36,8 +37,6 @@ from finance.augur.sim.prepared import (
     PreparedRecurringObligation,
     PreparedSeries,
     PreparedTransfer,
-    _AllocationPolicy,
-    _SecuritySleeveTarget,
 )
 from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -121,41 +120,35 @@ def claim(month: int, amount: Decimal | int, identifier: str = "spending") -> Pr
     )
 
 
-def allocation(
-    *assets: SecurityKey,
-    account_id: AccountId = CHECKING,
-    prefix: str = "fund",
-    purchases: bool = False,
-    zero_exit: bool = False,
-    floor: int = 0,
-    ceiling: int = 0,
-) -> _AllocationPolicy:
-    return _AllocationPolicy(
-        agent_id=ALICE,
-        account_id=account_id,
-        source_account_ids=(BROKERAGE,),
+def allocation(*assets: SecurityKey, purchases: bool, zero_exit: bool) -> partial[CashBandHousehold]:
+    """An equal-weight band at zero on `assets`; with `zero_exit`, the first is a zero-weight sleeve drift exits."""
+    if zero_exit and not purchases:
+        raise ValueError("a drift exit rebalances, which needs purchases")
+    return partial(
+        CashBandHousehold,
+        ALICE,
+        cash_account_id=CHECKING,
+        floor=0,
+        ceiling=0,
         sleeves=tuple(
-            _SecuritySleeveTarget(
-                asset_id=AssetId(asset.symbol), weight=0 if zero_exit and index == 0 else 1, quantity_scale=SCALE
-            )
+            SecuritySleeve(asset_id=AssetId(asset.symbol), weight=0 if zero_exit and index == 0 else 1)
             for index, asset in enumerate(assets)
         ),
-        cash_floor=floor,
-        cash_ceiling=ceiling,
-        cause_id_prefix=prefix,
-        allow_purchases=purchases,
-        rebalance_tolerance_ppb=0 if zero_exit else None,
+        source_account_ids=(BROKERAGE,),
+        reinvest=Reinvest(rebalance_tolerance_ppb=0 if zero_exit else None) if purchases else None,
+        cause_id_prefix="fund",
     )
 
 
 @dataclass(frozen=True)
 class Situation:
-    """The books, counterparties and funding policies every path declares."""
+    """The books, counterparties and funding household every path declares."""
 
     horizon_months: int
     series: tuple[PreparedSeries, ...]
     accounts: tuple[PreparedAccount, ...]
-    policies: tuple[_AllocationPolicy, ...]
+    # A fresh household per path: it keeps the path's CPI history and purchase identities.
+    funding: partial[CashBandHousehold]
     pools: tuple[PreparedHoldingPool, ...] = ()
     lots: tuple[PreparedLot, ...] = ()
     distributions: tuple[PreparedDistribution, ...] = ()
@@ -196,7 +189,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         world.declare_flow(flow)
     for obligation in case.claims:
         world.track(Biller(obligation))
-    world.track(Scripted(ConfiguredHousehold(AgentId(ALICE), case.policies), case.sales))
+    world.track(Scripted(case.funding(), case.sales))
     return world
 
 
@@ -235,13 +228,13 @@ def spending_paid(output: FinancialOutput) -> int:
 
 
 def base(*, purchases: bool = False, zero_exit: bool = False, single: bool = False) -> Situation:
-    """One funding policy on a flat $10 market: a $500 bill now, a $50 bill and $100 a year later."""
+    """One funding household on a flat $10 market: a $500 bill now, a $50 bill and $100 a year later."""
     assets = (STOCK,) if single else (STOCK, SECOND)
     return Situation(
         horizon_months=13,
         series=tuple(flat(asset, 10, snapshots=14) for asset in assets),
         accounts=(account(ALICE, balance=100), account(WORLD, balance=100)),
-        policies=(allocation(*assets, purchases=purchases, zero_exit=zero_exit),),
+        funding=allocation(*assets, purchases=purchases, zero_exit=zero_exit),
         pools=tuple(pool(asset) for asset in assets),
         lots=tuple(lot(asset, units=100 // len(assets), basis=500 // len(assets)) for asset in assets),
         claims=(claim(0, 500), claim(12, 50)),
@@ -376,7 +369,7 @@ def test_empty_buyable_pool_pays_coupon_only_after_first_purchase() -> None:
     assert [row.basis_remaining for row in lots(output, 2, purchased_in=1)] == [200]
 
 
-def test_fifo_across_two_policy_purchase_dates_preserves_basis_and_tax_character() -> None:
+def test_fifo_across_two_purchase_dates_preserves_basis_and_tax_character() -> None:
     case = base(purchases=True, single=True)
     [output] = run(
         replace(
@@ -388,18 +381,9 @@ def test_fifo_across_two_policy_purchase_dates_preserves_basis_and_tax_character
                     values=(money(100), money(150)) + (money(200),) * 12,
                 ),
             ),
-            accounts=(
-                account(ALICE),
-                account(WORLD, balance=300),
-                account(ALICE, AccountId("early-cash"), balance=200),
-                account(ALICE, AccountId("proceeds")),
-            ),
+            accounts=(account(ALICE, balance=200), account(WORLD, balance=300), account(ALICE, AccountId("proceeds"))),
             lots=(),
             claims=(),
-            policies=(
-                allocation(STOCK, purchases=True),
-                allocation(STOCK, account_id=AccountId("early-cash"), prefix="early", purchases=True),
-            ),
             transfers=(
                 PreparedTransfer(
                     month=1,
@@ -419,8 +403,8 @@ def test_fifo_across_two_policy_purchase_dates_preserves_basis_and_tax_character
                         proceeds_account_id=AccountId("proceeds"),
                         asset_id=AssetId(STOCK.symbol),
                         lots=(
-                            LotSale(account_id=BROKERAGE, lot_id=LotId("early_buy_s0_0"), units=2 * SCALE),
-                            LotSale(account_id=BROKERAGE, lot_id=LotId("fund_buy_s0_0"), units=1 * SCALE),
+                            LotSale(account_id=BROKERAGE, lot_id=LotId("fund_buy_s0_0"), units=2 * SCALE),
+                            LotSale(account_id=BROKERAGE, lot_id=LotId("fund_buy_s0_1"), units=1 * SCALE),
                         ),
                     ),
                 )
@@ -438,7 +422,6 @@ def test_fifo_across_two_policy_purchase_dates_preserves_basis_and_tax_character
 def indexed_bounds() -> Situation:
     """One-quantum shares and a three/four-quantum band, so half ties are hand-checkable."""
     case = base(purchases=True, single=True)
-    floor = PreparedIndexedAmount(base_amount=3, series_id="inflation", base_month_index=0, adjustment_period_months=2)
     return replace(
         case,
         horizon_months=6,
@@ -452,7 +435,11 @@ def indexed_bounds() -> Situation:
         claims=(),
         transfers=(),
         taxed=False,
-        policies=(replace(case.policies[0], cash_floor=floor, cash_ceiling=replace(floor, base_amount=4)),),
+        funding=partial(
+            case.funding,
+            floor=CpiIndexed(base_amount=3, adjustment_period_months=2),
+            ceiling=CpiIndexed(base_amount=4, adjustment_period_months=2),
+        ),
     )
 
 
@@ -470,15 +457,13 @@ def test_indexed_bounds_keep_exact_cash_across_path_specific_resets() -> None:
 
 def test_indexed_bound_overflow_remains_an_error_not_a_financial_stop() -> None:
     case = indexed_bounds()
-    index = PreparedIndexedAmount(
-        base_amount=MAX_COUNT, series_id="inflation", base_month_index=0, adjustment_period_months=2
-    )
+    index = CpiIndexed(base_amount=MAX_COUNT, adjustment_period_months=2)
     world = compose(
         replace(
             case,
             accounts=(PreparedAccount(account=ref(ALICE), opening_balance=MAX_COUNT), account(WORLD)),
             lots=(),
-            policies=(replace(case.policies[0], cash_floor=index, cash_ceiling=index),),
+            funding=partial(case.funding, floor=index, ceiling=index),
         ),
         0,
     )

@@ -12,7 +12,8 @@ import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.cash_band_household import CashBandHousehold, SecuritySleeve
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions, LotSale, Sell
 from finance.augur.sim.books import AccountRef, Book, TaxLiabilityState
 from finance.augur.sim.compiler.execution import compile_series
@@ -33,8 +34,6 @@ from finance.augur.sim.prepared import (
     PreparedJurisdiction,
     PreparedLot,
     PreparedRecurringTransfer,
-    _AllocationPolicy,
-    _SecuritySleeveTarget,
 )
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, TaxProfile
@@ -109,22 +108,17 @@ def monthly(
     )
 
 
-def sell_into_cash(asset: SecurityKey) -> _AllocationPolicy:
+def sell_into_cash(asset: SecurityKey) -> CashBandHousehold:
     """A band with no floor and no ceiling: Alice holds no spare cash and funds her claims by selling."""
-    return _AllocationPolicy(
-        agent_id=ALICE,
-        account_id=CHECKING,
-        source_account_ids=(),
-        sleeves=(
-            _SecuritySleeveTarget(
-                asset_id=AssetId(asset.symbol), weight=1, quantity_scale=quantity_scale_for_asset(asset)
-            ),
-        ),
-        cash_floor=0,
-        cash_ceiling=0,
+    return CashBandHousehold(
+        ALICE,
+        cash_account_id=CHECKING,
+        floor=0,
+        ceiling=0,
+        sleeves=(SecuritySleeve(asset_id=AssetId(asset.symbol), weight=1),),
+        source_account_ids=(CHECKING,),
+        reinvest=None,
         cause_id_prefix="allocation_sale",
-        allow_purchases=False,
-        rebalance_tolerance_ppb=None,
     )
 
 
@@ -139,7 +133,8 @@ class Situation:
     recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
     lots: tuple[PreparedLot, ...] = ()
     sales: Mapping[int, tuple[Sell, ...]] = field(default_factory=dict)
-    policies: tuple[_AllocationPolicy, ...] = ()
+    # The holding Alice sells to fund her claims; with none, she only pays them.
+    funded_by: SecurityKey | None = None
     prices: Mapping[SecurityKey, Sequence[float]] = field(default_factory=dict)
 
 
@@ -198,7 +193,7 @@ def compose(case: Situation) -> World:
 
 def run(case: Situation) -> Rollout:
     """Alice makes her scripted sales, sells on her band, then pays every due claim in full, in order."""
-    household = Scripted(ConfiguredHousehold(AgentId(ALICE), case.policies), case.sales)
+    household = Scripted(ClaimPayer(ALICE) if case.funded_by is None else sell_into_cash(case.funded_by), case.sales)
     session = ActionSession({0: compose(case)}, ALICE)
     try:
         batch = session.start()
@@ -462,7 +457,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability() 
                 monthly("alice_paycheck", PAYROLL, ALICE, wage(50_000), income=True),
                 monthly("alice_rent", ALICE, LANDLORD, wage(50_000), income=False),
             ),
-            policies=(sell_into_cash(VTI),),
+            funded_by=VTI,
             prices={VTI: [100.0] * 14},
         )
     )

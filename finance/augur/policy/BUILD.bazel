@@ -65,57 +65,6 @@ py_library(
 )
 
 py_library(
-    name = "configured_household",
-    srcs = ["configured_household.py"],
-    deps = [
-        ":cash_band_household",
-        "//finance/augur/sim:actions",
-        "//finance/augur/sim:agent",
-        "//finance/augur/sim:ids",
-        "//finance/augur/sim:observations",
-        "//finance/augur/sim:prepared",
-        "//finance/augur/sim:world",
-    ],
-)
-
-py_test(
-    name = "test_configured_household",
-    srcs = ["test_configured_household.py"],
-    deps = [
-        ":configured_household",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/sim:bills",
-        "//finance/augur/sim:books",
-        "//finance/augur/sim:capture",
-        "//finance/augur/sim:ids",
-        "//finance/augur/sim:market_path",
-        "//finance/augur/sim:prepared",
-        "//finance/augur/sim:tlh",
-        "//finance/augur/sim:world",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_configured_policy_guards",
-    srcs = ["test_configured_policy_guards.py"],
-    deps = [
-        ":configured_household",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/sim:books",
-        "//finance/augur/sim:ids",
-        "//finance/augur/sim:market_path",
-        "//finance/augur/sim:prepared",
-        "//finance/augur/sim:world",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "cash_band_household",
     srcs = ["cash_band_household.py"],
     deps = [
@@ -145,6 +94,27 @@ py_test(
         "//finance/augur/sim:books",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:observations",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_cash_band_household_world",
+    srcs = ["test_cash_band_household_world.py"],
+    deps = [
+        ":cash_band_household",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:bills",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:capture",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:tlh",
+        "//finance/augur/sim:world",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
