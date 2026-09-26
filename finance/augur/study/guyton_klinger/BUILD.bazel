@@ -1,9 +1,112 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "panel",
+    srcs = ["panel.py"],
+)
+
+py_library(
+    name = "paths",
+    srcs = ["paths.py"],
+    deps = [
+        ":panel",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:world",
+        "//finance/augur/sim/compiler:execution",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "run",
+    srcs = ["run.py"],
+    deps = [
+        ":panel",
+        ":paths",
+        ":synthetic",
+        "//finance/augur/policy:sleeves",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:observations",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:session",
+        "//finance/augur/sim:world",
+    ],
+)
+
+py_binary(
+    name = "run_bin",
+    main_module = "finance.augur.study.guyton_klinger.run",
+    deps = [":run"],
+)
+
+py_library(
+    name = "synthetic",
+    srcs = ["synthetic.py"],
+    deps = [
+        ":panel",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "test_panel",
+    srcs = ["test_panel.py"],
+    deps = [
+        ":panel",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_paths",
+    srcs = ["test_paths.py"],
+    deps = [
+        ":panel",
+        ":paths",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:market_path",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_run",
+    srcs = ["test_run.py"],
+    data = [":run_bin"],
+    deps = [
+        ":panel",
+        ":paths",
+        ":run",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:results",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
 
 py_library(
     name = "policy",
     srcs = ["policy.py"],
     deps = [
+        ":panel",
+        ":paths",
         "//finance/augur/policy:sleeves",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:books",
@@ -17,6 +120,8 @@ py_test(
     name = "test_policy",
     srcs = ["test_policy.py"],
     deps = [
+        ":panel",
+        ":paths",
         ":policy",
         "//:conftest",
         "//finance/augur:conftest",

@@ -14,42 +14,31 @@ import pytest_bazel
 
 from finance.augur.sim.actions import Action, Buy, Consume, LotSale, Sell
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedSeries
 from finance.augur.sim.results import Executed, Finished, Receipt, Rejected, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
+from finance.augur.study.guyton_klinger.panel import Sleeve
+from finance.augur.study.guyton_klinger.paths import BROKERAGE, CHECKING, RETIREE, WORLD
 from finance.augur.study.guyton_klinger.policy import (
     Cell,
     Guardrail,
     Inflation,
     Policy,
-    Sleeve,
     Spending,
     Stage,
     YearRecord,
     apply_rules,
 )
 
-RETIREE = AgentId("test-retiree")
-SPENDING = AccountRef(agent_id=AgentId("test-spending"), account_id=AccountId("test-sink"))
-CHECKING = AccountId("test-checking")
-BROKERAGE = AccountId("test-brokerage")
-ASSETS = {sleeve: AssetId(f"test-{sleeve}") for sleeve in Sleeve}
 OPENING_UNITS = {Sleeve.CASH: 100, Sleeve.BONDS: 250, Sleeve.EQUITY: 650}
 FLAT = [100, 100, 100, 100]
 
 
 def cell(years: int) -> Cell:
-    return Cell(
-        initial_rate=Fraction(1, 20),
-        years=years,
-        brokerage=BROKERAGE,
-        checking=CHECKING,
-        consumption_to=SPENDING,
-        sleeves=ASSETS,
-    )
+    return Cell(initial_rate=Fraction(1, 20), years=years)
 
 
 @dataclass(frozen=True)
@@ -71,9 +60,9 @@ def world(paths: list[Path], rollout_id: int) -> World:
     years = len(paths[0].cpi) - 1
     levels = {
         "inflation": [path.cpi for path in paths],
-        f"security:{ASSETS[Sleeve.CASH]}": [FLAT[: years + 1] for _ in paths],
-        f"security:{ASSETS[Sleeve.BONDS]}": [path.bonds for path in paths],
-        f"security:{ASSETS[Sleeve.EQUITY]}": [path.equity for path in paths],
+        f"security:{Sleeve.CASH}": [FLAT[: years + 1] for _ in paths],
+        f"security:{Sleeve.BONDS}": [path.bonds for path in paths],
+        f"security:{Sleeve.EQUITY}": [path.equity for path in paths],
     }
     result = World(
         MarketPath(
@@ -90,15 +79,13 @@ def world(paths: list[Path], rollout_id: int) -> World:
         ),
         horizon_months=12 * years,
     )
-    for account in (
-        AccountRef(agent_id=RETIREE, account_id=CHECKING),
-        AccountRef(agent_id=RETIREE, account_id=BROKERAGE),
-        SPENDING,
-    ):
-        result.declare_account(PreparedAccount(account=account, opening_balance=0))
-    for asset in ASSETS.values():
+    for agent_id in (RETIREE, WORLD):
+        result.declare_account(
+            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
+        )
+    for sleeve in Sleeve:
         result.declare_pool(
-            PreparedHoldingPool(agent_id=RETIREE, account_id=BROKERAGE, asset_id=asset, quantity_scale=1)
+            PreparedHoldingPool(agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(sleeve), quantity_scale=1)
         )
     lots = [
         (Sleeve.CASH, "cash", OPENING_UNITS[Sleeve.CASH]),
@@ -111,7 +98,7 @@ def world(paths: list[Path], rollout_id: int) -> World:
                 lot_id=LotId(lot),
                 agent_id=RETIREE,
                 account_id=BROKERAGE,
-                asset_id=ASSETS[sleeve],
+                asset_id=AssetId(sleeve),
                 purchase_month=index - len(lots),
                 quantity_scale=1,
                 units=units,
@@ -263,7 +250,7 @@ def test_a_loss_freezes_the_increase_with_no_later_catch_up() -> None:
     ]
     assert paid(rollout) == [(0, 5000), (12, 5000), (24, 5200)]
     # The losing equity sleeve stays untouched while cash and then bonds fund the withdrawals.
-    assert sold(rollout, 24) == [(ASSETS[Sleeve.BONDS], (sale("bonds", 52),))]
+    assert sold(rollout, 24) == [(AssetId(Sleeve.BONDS), (sale("bonds", 52),))]
 
 
 @pytest.mark.parametrize(
@@ -275,19 +262,19 @@ def test_a_loss_freezes_the_increase_with_no_later_catch_up() -> None:
             [100, 120, 120],
             [100, 104, 104],
             ((Stage.OVERWEIGHT_EQUITY, 5040),),
-            [(ASSETS[Sleeve.EQUITY], (sale("equity", 42),)), (ASSETS[Sleeve.EQUITY], (sale("equity", 18),))],
+            [(AssetId(Sleeve.EQUITY), (sale("equity", 42),)), (AssetId(Sleeve.EQUITY), (sale("equity", 18),))],
             21,
         ),
         # 86_750 opens year 1: equity 61_750 is over its 56_387.5 target but fell, so it is neither
         # a funding source before cash nor swept.
-        ([100, 95, 95], [100, 80, 80], ((Stage.CASH, 5000),), [(ASSETS[Sleeve.CASH], (sale("cash", 50),))], 0),
+        ([100, 95, 95], [100, 80, 80], ((Stage.CASH, 5000),), [(AssetId(Sleeve.CASH), (sale("cash", 50),))], 0),
         # 93_500 opens year 1: bonds 30_000 are 6625 over 23_375 and rose; equity fell. 42 bond units
         # (5040) fund 5000; the 1585 left sells as 14 units (1680) and buys 16 cash units.
         (
             [100, 90, 90],
             [100, 120, 120],
             ((Stage.OVERWEIGHT_BONDS, 5040),),
-            [(ASSETS[Sleeve.BONDS], (sale("bonds", 42),)), (ASSETS[Sleeve.BONDS], (sale("bonds", 14),))],
+            [(AssetId(Sleeve.BONDS), (sale("bonds", 42),)), (AssetId(Sleeve.BONDS), (sale("bonds", 14),))],
             16,
         ),
     ],
@@ -331,11 +318,11 @@ def test_funding_stages_reserve_each_unit_once() -> None:
         (Stage.EQUITY, 13_640),
     )
     assert sold(rollout, 12) == [
-        (ASSETS[Sleeve.EQUITY], (sale("old", 36),)),
-        (ASSETS[Sleeve.BONDS], (sale("bonds", 14),)),
-        (ASSETS[Sleeve.CASH], (sale("cash", 50),)),
-        (ASSETS[Sleeve.BONDS], (sale("bonds", 236),)),
-        (ASSETS[Sleeve.EQUITY], (sale("old", 64), sale("new", 60))),
+        (AssetId(Sleeve.EQUITY), (sale("old", 36),)),
+        (AssetId(Sleeve.BONDS), (sale("bonds", 14),)),
+        (AssetId(Sleeve.CASH), (sale("cash", 50),)),
+        (AssetId(Sleeve.BONDS), (sale("bonds", 236),)),
+        (AssetId(Sleeve.EQUITY), (sale("old", 64), sale("new", 60))),
     ]
     assert paid(rollout) == [(0, 5000), (12, 50_000)]
     assert rollout.summary.cash[0].values[-1] == 100
@@ -354,7 +341,7 @@ def test_unfunded_withdrawal_stops_after_its_sales_settle() -> None:
     ]
     assert paid(rollout) == [(0, 5000), (12, 0)]
     summary = rollout.summary
-    assert [series.values[-1] for series in summary.cash] == [95_000, 0]
+    assert [series.values[-1] for series in summary.cash] == [95_000]
     assert [series.values[-1] for series in summary.public_holdings] == [0, 0, 0]
 
 

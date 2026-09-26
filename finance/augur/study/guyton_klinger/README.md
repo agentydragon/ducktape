@@ -104,6 +104,31 @@ Use January starts with complete windows for the historical extension. Do not
 inherit Trinity's every-month starts, impute missing years, or manufacture IID
 uncertainty from overlapping retirements. The 1973 reference is one path.
 
+## Declared three-sleeve adaptation
+
+Historical replay of the 2006 rules runs this package on three
+sleeves, not Table 1's eight. Targets are the 65%-equity column with its six equity
+sleeves merged:
+
+| Sleeve | Target | Annual series, in the style of [Damodaran's history][damodaran] |
+| ------ | -----: | --------------------------------------------------------------- |
+| Cash   |    10% | 3-month T-bill return                                           |
+| Bonds  |    25% | 10-year Treasury bond total return                              |
+| Equity |    65% | S&P 500 total return, dividends included                        |
+
+Spending indexes to annual CPI change. Each sleeve is a tax-free total-return proxy
+unit: cash earns its bill return, dividends are already in the equity return, and the
+proxies do not support taxable stock simulation. No investor taxes or added fees, as
+the paper control above. What this adaptation cannot claim:
+
+- PMR's last funding stage ranks remaining equities by prior-year performance; with
+  one equity sleeve that ranking collapses.
+- Its results are not comparable with the paper's tables, which come from a fitted
+  eight-sleeve Monte Carlo.
+- The 10-year Treasury stands in for the aggregate bond index; duration and credit
+  differ.
+- Overlapping January-start windows share years; they are not independent trials.
+
 ## Decisions still needed before a faithful label
 
 | ID        | Specific ambiguity / required decision                                                                                                                                                                                                                                                                                  |
@@ -111,7 +136,7 @@ uncertainty from overlapping retirements. The 1973 reference is one path.
 | ORDER     | GK2006 describes guardrail triggers using the rules in effect, then says other rules apply to the adjusted amount. Figure 1 is not execution pseudocode. Pin the candidate used by each comparison, inflation/freeze/guardrail order and deflation handling; retain threshold-crossing controls for competing readings. |
 | PORTFOLIO | Pin overweight denominator and timing, performance ranking direction/ties, and funding versus surplus reinvestment. G2004's sweep names equities; GK2006's first PMR bullet says asset classes. Do not hide this variant.                                                                                               |
 | OPENING   | Preserve G2004's explicit withdrawal reserve for its replication. Establish whether GK2006 inherited it; its Table 1 does not restate the exclusion. Specify the final-15-year boundary by year index.                                                                                                                  |
-| DATA      | Recover the exact panel or approve named replacements. Resolve 2004's 30-year/through-2003/2004–2012 endpoint bookkeeping before matching its terminal tables. Replacing its stipulated tail with subsequently observed returns is another experiment.                                                                  |
+| DATA      | Recover the exact panel; the three-sleeve adaptation above names replacements for historical replay only. Resolve 2004's 30-year/through-2003/2004–2012 endpoint bookkeeping before matching its terminal tables. Replacing its stipulated tail with subsequently observed returns is another experiment.               |
 | METRICS   | Pin the trigger-count population and source Table 7 heading interpretation. Initial wealth/rounding and sample-statistic conventions are needed before digit-level stochastic comparisons.                                                                                                                              |
 
 Start the paper control without investor taxes or added trading/advisory fees,
@@ -122,7 +147,7 @@ complete statutory treatment follows from these studies.
 
 ### Policy readings of the three-sleeve adaptation
 
-<../study/guyton_klinger/policy.py> pins one reading of ORDER, PORTFOLIO and
+<policy.py> pins one reading of ORDER, PORTFOLIO and
 OPENING for the declared cash/bond/single-equity adaptation. The faithful-label
 decisions above stay open.
 

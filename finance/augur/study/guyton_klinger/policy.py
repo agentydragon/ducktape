@@ -1,9 +1,10 @@
 """Guyton-Klinger 2006 four-rule annual policy over one cash, one bond and one equity sleeve.
 
-The declared adaptation (<../../docs/guyton_klinger.md>): targets 10/25/65, all three sleeves
-tax-free total-return proxy units in one brokerage account, the retiree's checking account only
-settlement cash. Reviews fall at months 0, 12, …; the month after a review records the settled
-post-withdrawal wealth as the next investment-return denominator, and no other month trades.
+Runs on the declared adaptation (<README.md>) as <paths.py> composes it: `ADAPTATION_TARGET_PERCENT`,
+each sleeve's pool in `BROKERAGE` named by its `Sleeve` value, `CHECKING` only settlement cash, and
+withdrawals consumed into `WORLD`'s checking. Reviews fall at months 0, 12, …; the month after a
+review records the settled post-withdrawal wealth as the next investment-return denominator, and
+no other month trades.
 
 Readings of the source contract's open decisions, recorded with reasons in that doc:
 
@@ -18,7 +19,6 @@ Readings of the source contract's open decisions, recorded with reasons in that 
   is below `years - PRESERVATION_OFF_FINAL_YEARS`.
 """
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from fractions import Fraction
@@ -28,19 +28,17 @@ from finance.augur.policy.sleeves import quoted_value, sale_lots
 from finance.augur.sim.actions import Action, Buy, Consume, DecisionActions, Sell
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import quantity_for_value
-from finance.augur.sim.ids import AccountId, AssetId, LotId
+from finance.augur.sim.ids import AssetId, LotId
 from finance.augur.sim.observations import Decision, Observation, PublicPosition
+from finance.augur.study.guyton_klinger.panel import Sleeve
+from finance.augur.study.guyton_klinger.paths import (
+    ADAPTATION_TARGET_PERCENT,
+    BROKERAGE,
+    CHECKING,
+    MONTHS_PER_YEAR,
+    WORLD,
+)
 
-MONTHS_PER_YEAR = 12
-
-
-class Sleeve(StrEnum):
-    CASH = "cash"
-    BONDS = "bonds"
-    EQUITY = "equity"
-
-
-TARGETS = {Sleeve.CASH: Fraction(1, 10), Sleeve.BONDS: Fraction(1, 4), Sleeve.EQUITY: Fraction(13, 20)}
 PRESERVATION_TRIGGER = Fraction(6, 5)
 PROSPERITY_TRIGGER = Fraction(4, 5)
 CUT = Fraction(9, 10)
@@ -86,16 +84,10 @@ class Cell:
     # w0: the year-0 withdrawal over year-0 opening wealth.
     initial_rate: Fraction
     years: int
-    brokerage: AccountId
-    checking: AccountId
-    consumption_to: AccountRef
-    sleeves: Mapping[Sleeve, AssetId]
 
     def __post_init__(self) -> None:
         if self.initial_rate <= 0 or self.years <= 0:
             raise ValueError("a cell needs a positive initial rate and horizon")
-        if set(self.sleeves) != set(Sleeve):
-            raise ValueError("a cell names exactly one asset per sleeve")
 
 
 @dataclass(frozen=True)
@@ -164,20 +156,19 @@ def _round(amount: Fraction) -> int:
 class _Reservations:
     """Units each lot has left for this review's later stages, so no unit is sold twice."""
 
-    def __init__(self, observation: Observation, cell: Cell, year: int) -> None:
+    def __init__(self, observation: Observation, year: int) -> None:
         self.observation = observation
-        self.cell = cell
         self.year = year
         self.lots = {
             sleeve: sorted(
                 (
                     lot
                     for lot in observation.public_positions
-                    if lot.account_id == cell.brokerage and lot.asset_id == asset
+                    if lot.account_id == BROKERAGE and lot.asset_id == AssetId(sleeve)
                 ),
                 key=lambda lot: (lot.purchase_month, lot.lot_id),
             )
-            for sleeve, asset in cell.sleeves.items()
+            for sleeve in Sleeve
         }
         self.remaining = {lot.lot_id: lot.units for lots in self.lots.values() for lot in lots}
 
@@ -197,8 +188,8 @@ class _Reservations:
         sale = Sell(
             cause_id=f"gk-y{self.year}-{label}",
             agent_id=self.observation.agent_id,
-            proceeds_account_id=self.cell.checking,
-            asset_id=self.cell.sleeves[sleeve],
+            proceeds_account_id=CHECKING,
+            asset_id=AssetId(sleeve),
             lots=tuple(lots),
         )
         return [sale] if lots else [], proceeds
@@ -206,8 +197,8 @@ class _Reservations:
 
 def annual_actions(observation: Observation, cell: Cell, memory: Memory) -> list[Action]:
     """Review months emit funding sales, the withdrawal, then the sweep's sales and cash-sleeve purchase."""
-    pools = {pool.asset_id: pool for pool in observation.holding_pools if pool.account_id == cell.brokerage}
-    prices = {sleeve: pools[asset].price for sleeve, asset in cell.sleeves.items()}
+    pools = {pool.asset_id: pool for pool in observation.holding_pools if pool.account_id == BROKERAGE}
+    prices = {sleeve: pools[AssetId(sleeve)].price for sleeve in Sleeve}
     wealth = observation.cash + observation.public_holdings
     year, offset = divmod(observation.month, MONTHS_PER_YEAR)
     last = memory.last
@@ -240,8 +231,11 @@ def annual_actions(observation: Observation, cell: Cell, memory: Memory) -> list
         )
         rising = {sleeve for sleeve in (Sleeve.EQUITY, Sleeve.BONDS) if prices[sleeve] > last.prices[sleeve]}
 
-    reservations = _Reservations(observation, cell, year)
-    excess = {sleeve: max(0, reservations.value(sleeve) - ceil(TARGETS[sleeve] * wealth)) for sleeve in rising}
+    reservations = _Reservations(observation, year)
+    excess = {
+        sleeve: max(0, reservations.value(sleeve) - ceil(Fraction(ADAPTATION_TARGET_PERCENT[sleeve] * wealth, 100)))
+        for sleeve in rising
+    }
     requested = _round(spending.withdrawal)
     need = requested
     actions: list[Action] = []
@@ -250,7 +244,7 @@ def annual_actions(observation: Observation, cell: Cell, memory: Memory) -> list
         sleeve = _STAGE_SLEEVE[stage]
         if need <= 0 or (stage in _OVERWEIGHT and sleeve not in rising):
             continue
-        raised = min(need, dict(observation.accounts)[cell.checking]) if stage is Stage.CASH else 0
+        raised = min(need, dict(observation.accounts)[CHECKING]) if stage is Stage.CASH else 0
         sales, proceeds = reservations.sell(
             sleeve, min(need, excess[sleeve]) if stage in _OVERWEIGHT else need - raised, stage
         )
@@ -265,8 +259,8 @@ def annual_actions(observation: Observation, cell: Cell, memory: Memory) -> list
             request_id=0,
             cause_id=f"gk-y{year}-withdrawal",
             component_id="guyton_klinger_withdrawal",
-            from_account=AccountRef(agent_id=observation.agent_id, account_id=cell.checking),
-            to_account=cell.consumption_to,
+            from_account=AccountRef(agent_id=observation.agent_id, account_id=CHECKING),
+            to_account=AccountRef(agent_id=WORLD, account_id=CHECKING),
             amount=requested,
         )
     )
@@ -275,14 +269,14 @@ def annual_actions(observation: Observation, cell: Cell, memory: Memory) -> list
         sales, proceeds = reservations.sell(sleeve, excess[sleeve], f"sweep-{sleeve}")
         actions.extend(sales)
         swept += proceeds
-    cash_pool = pools[cell.sleeves[Sleeve.CASH]]
+    cash_pool = pools[AssetId(Sleeve.CASH)]
     if units := quantity_for_value(swept, cash_pool.price, cash_pool.quantity_scale, round_up=False):
         actions.append(
             Buy(
                 cause_id=f"gk-y{year}-sweep-buy",
                 agent_id=observation.agent_id,
-                cash_account_id=cell.checking,
-                holding_account_id=cell.brokerage,
+                cash_account_id=CHECKING,
+                holding_account_id=BROKERAGE,
                 asset_id=cash_pool.asset_id,
                 lot_id=LotId(f"gk-y{year}-sweep"),
                 quantity_scale=cash_pool.quantity_scale,
