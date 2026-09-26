@@ -36,11 +36,7 @@ from cdk8s_plus_34 import (
     ServicePort,
     Volume,
 )
-from cert_manager_crds.io.cert_manager import (
-    CertificateSpecIssuerRef,
-    CertificateSpecPrivateKey,
-    CertificateSpecPrivateKeyAlgorithm,
-)
+from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
 from constructs import Construct
 
 from cluster.cdk8s import cilium
@@ -50,7 +46,7 @@ from cluster.cdk8s.haku import console
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "haku-kube-api-proxy"
@@ -80,7 +76,7 @@ class KubeApiProxy(Construct):
             secret_name=_TLS_SECRET,
             duration="2160h",
             renew_before="720h",
-            private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256),
+            private_key=CertificatePrivateKey.ecdsa_p256(),
             common_name=_SERVICE_FQDN,
             dns_names=[_SERVICE_FQDN, f"{NAME}.{namespace}.svc"],
             # Every sandbox trust bundle already carries cluster-root-ca, so kubeconfigs
