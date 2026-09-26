@@ -927,7 +927,7 @@ async def test_action_result_relays_the_mcp_tools_own_answer(
     await _decide(results_frontend, request, Verdict.ALLOW)
     async with results_frontend.client() as client:
         result = await client.call_tool(
-            "get_action_result", {"request_id": str(request.id), "wait_seconds": 10}, raise_on_error=False
+            "get_action_result", {"request_id": str(request.id), "wait": {"wait_seconds": 10}}, raise_on_error=False
         )
     # The tool's own error answer stays an error, beside the image the receipt could only carry as text.
     assert result.content == answer.content
@@ -945,7 +945,9 @@ async def test_action_result_presents_a_sandbox_result_as_a_returned_model(
     request = await _submitted(results_frontend, "test-sandbox")
     await _decide(results_frontend, request, Verdict.ALLOW)
     async with results_frontend.client() as client:
-        result = await client.call_tool("get_action_result", {"request_id": str(request.id), "wait_seconds": 10})
+        result = await client.call_tool(
+            "get_action_result", {"request_id": str(request.id), "wait": {"wait_seconds": 10}}
+        )
     # A nonzero exit is the command's answer, not a failed call.
     assert not result.is_error
     assert ExecResult.model_validate(result.structured_content) == ran
@@ -958,7 +960,7 @@ async def test_action_result_says_what_it_waits_on_and_why_nothing_ran(results_f
         pending = await client.call_tool("get_action_result", {"idempotency_key": request.idempotency_key})
         await _decide(results_frontend, request, Verdict.DENY, note="test-denial-note")
         denied = await client.call_tool(
-            "get_action_result", {"request_id": str(request.id), "wait_seconds": 10}, raise_on_error=False
+            "get_action_result", {"request_id": str(request.id), "wait": {"wait_seconds": 10}}, raise_on_error=False
         )
     assert not pending.is_error
     assert pending.structured_content == {"request_id": str(request.id), "state": ActionState.DECISION_PENDING}
@@ -976,7 +978,7 @@ async def test_action_result_of_a_failed_execution_carries_its_reason(
     await _decide(results_frontend, request, Verdict.ALLOW)
     async with results_frontend.client() as client:
         result = await client.call_tool(
-            "get_action_result", {"request_id": str(request.id), "wait_seconds": 10}, raise_on_error=False
+            "get_action_result", {"request_id": str(request.id), "wait": {"wait_seconds": 10}}, raise_on_error=False
         )
     assert result.is_error
     assert "sandbox_unavailable" in _text(result.content)

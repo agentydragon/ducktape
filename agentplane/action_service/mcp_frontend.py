@@ -52,7 +52,7 @@ from agentplane.action_service.service import (
 )
 from agentplane.action_service.tool_results import tool_result
 from agentplane.action_service.updates import ActionUpdates, UpdatesUnavailableError
-from agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitSeconds
+from agentplane.action_service.waits import ActionWaiter, WaitOptions
 from agentplane.subjects import ServiceAccountRef
 
 PageSize = Annotated[int, Field(ge=1, le=100, description="Maximum entries in this page (1-100).")]
@@ -515,23 +515,19 @@ def create_server(
     async def get_action_result(
         request_id: UUID | None = None,
         idempotency_key: IdempotencyKey | None = None,
-        wait_seconds: WaitSeconds = 0,
+        wait: WaitOptions = DEFAULT_WAIT,
         caller: Caller = CALLER,
     ) -> ToolResult:
         """Read your Action's outcome as the tool it ran answered: its own content blocks, images included, and
         structured content, where get_action_request returns receipt JSON.
         Name the request by exactly one of request_id or idempotency_key, as for get_action_request.
-        wait_seconds (0-30) waits for it to finish; until then the result says what it waits on and is not an error.
+        wait.wait_seconds (0-30) optionally waits for wait.wait_until ("decision" or "terminal", default terminal); until it finishes the result says what it waits on and is not an error.
         Denied, cancelled, failed and unknown outcomes are error results; unknown means it may have run.
         This never submits, retries, or cancels execution, and other callers' requests are not readable.
         """
         principal = caller.principal
-        view = await wait_for_receipt(
-            await named_request(request_id, idempotency_key, principal),
-            principal,
-            WaitOptions(wait_seconds=wait_seconds),
-        )
-        if wait_seconds:
+        view = await wait_for_receipt(await named_request(request_id, idempotency_key, principal), principal, wait)
+        if wait.wait_seconds:
             await revalidate(principal)
         group = catalog.groups.get(view.action.group)
         if group is None:

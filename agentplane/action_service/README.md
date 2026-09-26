@@ -230,7 +230,7 @@ live workload validation and egress substitution; OAuth does not grant an operat
 | `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both.                      |
 | `request_action`             | The existing request envelope under `request`, validated as on HTTP; a key this caller already used is refused.                                                        |
 | `get_action_request`         | One own-caller receipt by exactly one of `request_id` or `idempotency_key`; the key lookup recovers a submission whose response was lost.                              |
-| `get_action_result`          | The outcome as the tool that ran answered, named like `get_action_request`, with `wait_seconds` (0–30, default 0); see below.                                          |
+| `get_action_result`          | The outcome as the tool that ran answered, named and waited on like `get_action_request`; see below.                                                                   |
 | `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                                             |
 | `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                                                  |
 
@@ -263,7 +263,7 @@ content and as one JSON text block, so a nonzero exit is not an error result. A 
 waiting on its decision or execution says so as an ordinary result; a denied, cancelled, failed or
 unknown one is an error result carrying the decision's note or reason, or the executor's error.
 
-Both submission and receipt reads take one shared `wait` object (`wait_seconds`, 0–30 default 0;
+Submission, receipt and result reads take one shared `wait` object (`wait_seconds`, 0–30 default 0;
 `wait_until`, `decision` or `terminal` default terminal) rather than two flat parameters each.
 Waits use commit notifications rather than periodic queries. A deadline returns a receipt, not a
 cancellation. On an ambiguous response, reuse the original request/key; transport or notification
