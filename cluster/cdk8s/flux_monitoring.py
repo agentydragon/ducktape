@@ -11,18 +11,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
-    PodMonitor,
-    PodMonitorSpec,
-    PodMonitorSpecPodMetricsEndpoints,
-    PodMonitorSpecSelector,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 
 NAME = "flux-monitoring"
 OUTPUT_DIR = f"{GENERATED_ROOT}/flux-monitoring"
@@ -38,10 +33,8 @@ def chart(app: App) -> Chart:
         chart,
         "flux-system",
         metadata=metadata("flux-system", "flux-system", labels=_FLUX_LABELS),
-        spec=PodMonitorSpec(
-            selector=PodMonitorSpecSelector(match_labels=_FLUX_LABELS),
-            pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="http-prom", path="/metrics")],
-        ),
+        selector=_FLUX_LABELS,
+        pod_metrics_endpoints=[Endpoint.plain(port="http-prom")],
     )
     return chart
 
