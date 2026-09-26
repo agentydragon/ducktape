@@ -205,7 +205,7 @@ def _proxy_cohorts(group: PlaidSp500ProxyGroupConfig, holdings: tuple[CurrentHol
             TlhCohort(
                 value=total_value,
                 cost_basis=total_cost_basis,
-                purchase_month_index=-int(group.default_holding_period_months_at_start),
+                purchase_month_index=-group.default_holding_period_months_at_start,
             ),
         )
     # Distribute the live Plaid aggregate across the calibrated holding-period buckets. Normalize by
@@ -230,7 +230,7 @@ def _proxy_cohorts(group: PlaidSp500ProxyGroupConfig, holdings: tuple[CurrentHol
             TlhCohort(
                 value=total_value * market_value_weight,
                 cost_basis=total_cost_basis * basis_weight,
-                purchase_month_index=-int(bucket.holding_period_months_at_start),
+                purchase_month_index=-bucket.holding_period_months_at_start,
             )
         )
     return tuple(cohorts)

@@ -297,7 +297,7 @@ class PortfolioConfig(PortfolioConfigModel):
                 agent_id=account_by_id[position.account_id].owner_agent_id,
                 account_id=position.account_id,
                 asset=position.asset,
-                purchase_month_index=-int(lot.holding_period_months_at_start),
+                purchase_month_index=-lot.holding_period_months_at_start,
                 quantity=float(lot.quantity),
                 cost_basis=lot.cost_basis,
             )
@@ -375,8 +375,8 @@ class PortfolioConfig(PortfolioConfigModel):
                 annual_coupon_rate=bond.annual_coupon_rate,
                 coupon_period_months=bond.coupon_period_months,
                 inflation_indexed=bond.inflation_indexed,
-                purchase_month_index=-int(bond.holding_period_months_at_start),
-                maturity_month_index=int(bond.months_to_maturity_at_start),
+                purchase_month_index=-bond.holding_period_months_at_start,
+                maturity_month_index=bond.months_to_maturity_at_start,
             )
             for bond in self.bonds
         )
