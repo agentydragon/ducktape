@@ -149,6 +149,10 @@ _TOKENS = (HA_MCP_TOKEN, AGENTPLANE_READER_TOKEN)
 _BREAK_GLASS_PASSWORD = k8s.EnvVarSource(
     secret_key_ref=k8s.SecretKeySelector(name="home-assistant-break-glass", key="password")
 )
+# The home zone's `latitude` and `longitude`, kept out of this public repository: the operator
+# creates it, as a SOPS file beside break-glass-credentials.sops.yaml. Optional, so onboarding leaves
+# the location as set in the UI until it exists.
+_LOCATION_SECRET = "home-assistant-location"
 
 
 def _quantities(**values: str) -> dict[str, k8s.Quantity]:
@@ -332,6 +336,7 @@ def _onboarding_job(scope: Construct) -> None:
                 ssl_profile="modern",
                 use_x_frame_options=True,
             ).model_dump(),
+            "core_config": onboarding.CoreConfig(time_zone="America/Los_Angeles").model_dump(exclude_none=True),
         },
         supplied=(("owner_password",),),
     )
@@ -346,7 +351,7 @@ def _onboarding_job(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(
                     # Bump when bootstrap behavior changes so Flux replaces the immutable Job.
-                    annotations={"home-assistant.allegedly.works/bootstrap-revision": "4"},
+                    annotations={"home-assistant.allegedly.works/bootstrap-revision": "5"},
                     labels={"app.kubernetes.io/name": _ONBOARDING},
                 ),
                 spec=k8s.PodSpec(
@@ -363,6 +368,17 @@ def _onboarding_job(scope: Construct) -> None:
                                 k8s.EnvVar(
                                     name=env_name(onboarding.Settings, "owner_password"),
                                     value_from=_BREAK_GLASS_PASSWORD,
+                                ),
+                                *(
+                                    k8s.EnvVar(
+                                        name=env_name(onboarding.Settings, "core_config", "location", key),
+                                        value_from=k8s.EnvVarSource(
+                                            secret_key_ref=k8s.SecretKeySelector(
+                                                name=_LOCATION_SECRET, key=key, optional=True
+                                            )
+                                        ),
+                                    )
+                                    for key in ("latitude", "longitude")
                                 ),
                             ],
                             resources=k8s.ResourceRequirements(

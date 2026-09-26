@@ -68,13 +68,13 @@ async def test_websocket_command_authenticates_and_executes(endpoint: HomeAssist
     "response",
     [[{"step": "future_step", "done": False}], [{"step": "user", "done": 1}], {"step": "user", "done": True}],
 )
-async def test_onboarding_status_validates_response(
+async def test_pending_onboarding_steps_validates_response(
     httpx2_mock: respx.Router, home_assistant_client, endpoint: HomeAssistantEndpoint, response
 ):
     route = httpx2_mock.get(f"{endpoint.url}/api/onboarding").respond(json=response)
 
     with pytest.raises(ValidationError):
-        await home_assistant_client.onboarding_status()
+        await home_assistant_client.pending_onboarding_steps()
     assert route.called
 
 
