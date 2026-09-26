@@ -10,6 +10,7 @@
 let
   cfg = config.ducktape.codex;
   execPolicyRules = import ./execpolicy-rules.nix { inherit lib; };
+  mcpServers = import ../mcp-servers.nix;
   codexNpmCache = "${config.xdg.cacheHome}/codex/npm";
   codexNixCache = "${config.xdg.cacheHome}/nix";
   codexBazelCache = "${config.xdg.cacheHome}/bazel";
@@ -81,14 +82,14 @@ let
     history = {
       persistence = "save-all";
     };
-    mcp_servers = {
-      "haku-console" = {
-        url = "https://haku.allegedly.works/mcp";
+    mcp_servers =
+      lib.mapAttrs (name: server: {
+        inherit (server) url;
         auth = "oauth";
-        default_tools_approval_mode = "approve";
-      };
-    }
-    // chatgptMcpServers;
+        # Auto-approve every tool of every SSOT-configured MCP server.
+        default_tools_approval_mode = "auto";
+      }) mcpServers
+      // chatgptMcpServers;
     apps = {
       ${githubCodexAppsConnectorId} = {
         tools = {
