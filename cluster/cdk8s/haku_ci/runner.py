@@ -41,8 +41,8 @@ from keda_scaledjob_crds.sh.keda import (
     ScaledJobSpecJobTargetRefTemplateSpecInitContainersResourcesRequests as InitRequest,
     ScaledJobSpecJobTargetRefTemplateSpecInitContainersSecurityContext as InitSecurityContext,
     ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbe as InitStartupProbe,
-    ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbeTcpSocket as InitProbeTcpSocket,
-    ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbeTcpSocketPort as InitProbePort,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbeHttpGet as InitProbeHttpGet,
+    ScaledJobSpecJobTargetRefTemplateSpecInitContainersStartupProbeHttpGetPort as InitProbePort,
     ScaledJobSpecJobTargetRefTemplateSpecInitContainersVolumeMounts as InitMount,
     ScaledJobSpecJobTargetRefTemplateSpecVolumes as Volume,
     ScaledJobSpecJobTargetRefTemplateSpecVolumesConfigMap as VolumeConfigMap,
@@ -300,7 +300,11 @@ def _dind() -> InitContainer:
 
     The startupProbe gates the runner on dockerd actually listening -- under a Deployment a
     too-early runner just crash-looped until dind was up, but with restartPolicy: Never that first
-    crash would fail the whole Job.
+    crash would fail the whole Job. It probes `httpGet /_ping` rather than a bare `tcpSocket`
+    connect: dockerd opens its listener before it can serve requests, so a TCP-only check can pass
+    while an actual API call still gets "connection reset by peer" (observed: runner start raced
+    dind and failed this way). `_ping` is the same endpoint the runner's own docker client calls
+    first, so the probe only succeeds once the daemon can genuinely answer it.
 
     privileged: true is the documented requirement for docker:dind-rootless -- it provides /dev
     (incl. /dev/net/tun for RootlessKit) and disables the mount masks that otherwise hide those
@@ -346,7 +350,7 @@ def _dind() -> InitContainer:
             *(InitEnv(name=name, value=value) for name, value in {**_PROXY_ENV, "SSL_CERT_FILE": _CA_FILE}.items()),
         ],
         startup_probe=InitStartupProbe(
-            tcp_socket=InitProbeTcpSocket(port=InitProbePort.from_number(_DOCKER_PORT)),
+            http_get=InitProbeHttpGet(path="/_ping", port=InitProbePort.from_number(_DOCKER_PORT)),
             period_seconds=2,
             failure_threshold=90,
         ),
