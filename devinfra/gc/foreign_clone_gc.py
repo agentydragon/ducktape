@@ -24,10 +24,13 @@ back the whole clone.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import pygit2
 
 from devinfra.gc import git_repo, worktree_gc
 from devinfra.gc.git_repo import GitError, Worktree
@@ -76,11 +79,21 @@ def _find_repo_root(path: Path) -> Path | None:
     Covers a Bazel workspace that is a *subdirectory* of a clone — a vendored third_party
     checkout built as its own Bazel workspace but not its own git repo — by resolving it to
     the clone that owns it, rather than treating it as its own (nonexistent) foreign clone.
+
+    A `.git` entry alone isn't proof: an interrupted `git init` (or a stray one, e.g. directly
+    at `/tmp`) leaves a `.git` directory that doesn't actually open as a repository, so this
+    verifies with pygit2 before accepting a candidate rather than crashing every later step
+    that assumes a valid repo.
     """
     for candidate in (path, *path.parents):
         git_entry = candidate / ".git"
-        if git_entry.is_file() or git_entry.is_dir():
-            return candidate
+        if not (git_entry.is_file() or git_entry.is_dir()):
+            continue
+        try:
+            pygit2.Repository(os.fspath(candidate))
+        except pygit2.GitError:
+            continue
+        return candidate
     return None
 
 

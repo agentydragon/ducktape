@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest_bazel
 
 from devinfra.gc import foreign_clone_gc as fcg
@@ -23,6 +25,21 @@ def test_discover_foreign_clones_finds_matching_clone(repo: GitRepo) -> None:
     roots = fcg.discover_foreign_clones({foreign.path}, known_paths=set(), repo=repo.path)
 
     assert roots == [foreign.path]
+
+
+def test_discover_foreign_clones_ignores_a_git_dir_that_does_not_open(repo: GitRepo, tmp_path: Path) -> None:
+    """A `.git` entry alone isn't proof of a repository — an interrupted `git init` (or a stray
+    one, e.g. directly at `/tmp` on a real machine) leaves a `.git` directory that doesn't
+    actually open. This must be skipped, not crash the whole scan."""
+    repo.set_origin(_ORIGIN)
+    broken = tmp_path / "broken"
+    (broken / ".git").mkdir(parents=True)
+    nested = broken / "some" / "workspace"
+    nested.mkdir(parents=True)
+
+    roots = fcg.discover_foreign_clones({nested}, known_paths=set(), repo=repo.path)
+
+    assert roots == []
 
 
 def test_discover_foreign_clones_excludes_known_paths(repo: GitRepo) -> None:
