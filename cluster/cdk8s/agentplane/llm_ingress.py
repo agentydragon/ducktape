@@ -35,6 +35,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name, settings_file
 
@@ -166,20 +167,20 @@ class LlmIngress(Construct):
         # Only central egress can call the workload-authenticated listener. The
         # ingress can reach only DNS, TokenReview at the API server, and the
         # existing LiteLLM Service.
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "networkpolicy",
             metadata=metadata(_NAME, self.env.namespace),
             selector=_LABELS,
             ingress=[
-                cilium.ingress_from(
+                IngressRule.from_endpoints(
                     cilium.endpoint_labels(self.env.namespace, "agentplane-egress"), ports=[CONTAINER_PORT]
                 )
             ],
             egress=[
                 cilium.dns_egress(),
-                cilium.egress_to_entities("kube-apiserver"),
-                cilium.egress_to(
+                EgressRule.to_entities("kube-apiserver"),
+                EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": "litellm", "k8s:app.kubernetes.io/name": "litellm"}, 4000
                 ),
             ],

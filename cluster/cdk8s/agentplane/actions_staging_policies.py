@@ -62,6 +62,7 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GITHUB_READS_SET,
 )
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 _NAMESPACE = "agentplane-staging"
@@ -462,13 +463,13 @@ def add_staging_action_policies(scope: Construct) -> None:
             ]
         ),
     )
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "networkpolicy-egress-to-testing-app",
         metadata=metadata(f"{egress.NAME}-to-testing-app", _NAMESPACE),
         selector={"app.kubernetes.io/name": egress.NAME},
         egress=[
-            cilium.egress_to(
+            EgressRule.to_endpoints(
                 cilium.endpoint_labels(testing.ENV.namespace, app_component.NAME), app_component.CONTAINER_PORT
             )
         ],

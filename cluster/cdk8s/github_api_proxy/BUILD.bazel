@@ -29,6 +29,7 @@ py_library(
         "//cluster/cdk8s/crd_bindings/prometheus_operator:podmonitor",
         "//cluster/cdk8s/crd_bindings/prometheus_operator:prometheusrule",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/gateway_api:gateway",
         "//cluster/cdk8s/providers/gateway_api:tlsroute",
         "@pypi//cdk8s",

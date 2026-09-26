@@ -82,6 +82,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name, settings_file
 
@@ -626,7 +627,7 @@ class Egress(Construct):
 
     def _add_network_policy(self) -> None:
         namespace = self.env.namespace
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "networkpolicy",
             metadata=metadata(NAME, namespace),
@@ -634,31 +635,33 @@ class Egress(Construct):
             ingress=[
                 # Runner Pods, and the sandbox Actions' command boxes (command_sandbox.py, which
                 # imports this module).
-                cilium.ingress_from(
+                IngressRule.from_endpoints(
                     cilium.endpoint_labels(namespace, "agentplane-runner"),
                     cilium.endpoint_labels(namespace, "agentplane-sandbox"),
                     ports=[PROXY_PORT],
                 ),
-                cilium.ingress_from(cilium.endpoint_labels(namespace, "agentplane-app"), ports=[ADMIN_PORT]),
-                cilium.ingress_from(cilium.endpoint_labels(namespace, NAME), ports=[_AGENT_API_PORT]),
+                IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "agentplane-app"), ports=[ADMIN_PORT]),
+                IngressRule.from_endpoints(cilium.endpoint_labels(namespace, NAME), ports=[_AGENT_API_PORT]),
             ],
             egress=[
-                cilium.egress_to(
+                EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,
                 ),
                 cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
-                cilium.egress_to_entities("kube-apiserver"),
-                cilium.egress_to(cilium.endpoint_labels(namespace, NAME), _AGENT_API_PORT),
-                cilium.egress_to(
+                EgressRule.to_entities("kube-apiserver"),
+                EgressRule.to_endpoints(cilium.endpoint_labels(namespace, NAME), _AGENT_API_PORT),
+                EgressRule.to_endpoints(
                     cilium.endpoint_labels(namespace, "agentplane-llm-ingress"), llm_ingress.CONTAINER_PORT
                 ),
-                cilium.egress_to(cilium.endpoint_labels(namespace, "agentplane-actions"), actions.CONTAINER_PORT),
-                cilium.egress_to(
+                EgressRule.to_endpoints(
+                    cilium.endpoint_labels(namespace, "agentplane-actions"), actions.CONTAINER_PORT
+                ),
+                EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": "forgejo", "k8s:app.kubernetes.io/name": "forgejo"},
                     FORGEJO_PORT,
                 ),
-                cilium.egress_to_entities("remote-node", "host", ports=[HOME_ASSISTANT_PORT]),
-                cilium.egress_to_entities("world", "remote-node", "host", ports=[443, 80]),
+                EgressRule.to_entities("remote-node", "host", ports=[HOME_ASSISTANT_PORT]),
+                EgressRule.to_entities("world", "remote-node", "host", ports=[443, 80]),
             ],
         )

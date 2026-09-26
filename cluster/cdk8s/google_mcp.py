@@ -68,6 +68,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 _NAME = "google-mcp"
@@ -188,19 +189,19 @@ class GoogleMcpApp(Construct):
         )
 
     def _add_network_policy(self) -> None:
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "network-policy",
             metadata=metadata(_NAME, _NAME),
             selector=_LABELS,
             ingress=[
-                cilium.ingress_from(
+                IngressRule.from_endpoints(
                     cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[_HTTP_PORT]
                 )
             ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
-                cilium.egress_to_fqdns("gmail.googleapis.com", "www.googleapis.com"),
+                EgressRule.to_fqdns("gmail.googleapis.com", "www.googleapis.com"),
             ],
         )
 

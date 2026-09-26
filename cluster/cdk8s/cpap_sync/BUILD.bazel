@@ -16,6 +16,7 @@ py_library(
         "//cluster/cdk8s/crd_bindings/kubevirt:virtualmachine",
         "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
