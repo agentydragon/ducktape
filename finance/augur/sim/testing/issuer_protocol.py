@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from decimal import Decimal
 
-from finance.augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.prepared import PreparedSeries
 
@@ -39,7 +39,7 @@ def _codes(channel: Code, snapshots: int) -> tuple[int, ...]:
 
 
 def issuer_protocol(
-    issuer_id: str,
+    issuer_id: IssuerId,
     *,
     horizon_months: int,
     mark_usd: Money,

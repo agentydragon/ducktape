@@ -18,7 +18,7 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput, event_log
 from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxProfile
 from finance.augur.sim.events import EVENT_FRAME_SPECS
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
 from finance.augur.sim.observations import Observation
@@ -66,15 +66,18 @@ def situation(horizon: int = 2, paths: int = 1) -> Situation:
         accounts=opening({CASH: 10_000}),
         holding_pools=(
             PreparedHoldingPool(
-                agent_id=HOUSEHOLD, account_id="checking", asset_id="test_stock", quantity_scale=1_000_000
+                agent_id=HOUSEHOLD,
+                account_id=AccountId("checking"),
+                asset_id=AssetId("test_stock"),
+                quantity_scale=1_000_000,
             ),
         ),
         initial_lots=(
             PreparedLot(
-                lot_id="timing-stock",
+                lot_id=LotId("timing-stock"),
                 agent_id=HOUSEHOLD,
-                account_id="checking",
-                asset_id="test_stock",
+                account_id=AccountId("checking"),
+                asset_id=AssetId("test_stock"),
                 purchase_month=-24,
                 quantity_scale=1_000_000,
                 units=100_000_000,
@@ -94,9 +97,12 @@ def cash_only() -> Situation:
             replace(account, opening_balance=2500 if account.account == CASH else 0) for account in run.accounts
         ),
         holding_pools=(
-            replace(run.holding_pools[0], account_id="empty-brokerage"),
+            replace(run.holding_pools[0], account_id=AccountId("empty-brokerage")),
             PreparedHoldingPool(
-                agent_id=WORLD, account_id="other-brokerage", asset_id="test_stock", quantity_scale=1_000_000
+                agent_id=WORLD,
+                account_id=AccountId("other-brokerage"),
+                asset_id=AssetId("test_stock"),
+                quantity_scale=1_000_000,
             ),
         ),
         series=(replace(run.series[0], values=(1000, 2000, 3000)),),
@@ -110,7 +116,7 @@ def world_for(run: Situation, rollout: int = 0) -> World:
 
 
 def checking(world: World) -> int | None:
-    return world.account_balance(HOUSEHOLD, "checking")
+    return world.account_balance(HOUSEHOLD, AccountId("checking"))
 
 
 def view(world: World) -> Observation:
@@ -145,20 +151,20 @@ def sell(units: int) -> Sell:
     return Sell(
         cause_id="chosen-sale",
         agent_id=HOUSEHOLD,
-        proceeds_account_id="checking",
-        asset_id="test_stock",
-        lots=(LotSale(account_id="checking", lot_id="timing-stock", units=units),),
+        proceeds_account_id=AccountId("checking"),
+        asset_id=AssetId("test_stock"),
+        lots=(LotSale(account_id=AccountId("checking"), lot_id=LotId("timing-stock"), units=units),),
     )
 
 
-def buy(id_: str, cash: str, units: int) -> Buy:
+def buy(id_: str, cash: AccountId, units: int) -> Buy:
     return Buy(
         cause_id=id_,
         agent_id=HOUSEHOLD,
         cash_account_id=cash,
-        holding_account_id="checking",
-        asset_id="test_stock",
-        lot_id=id_,
+        holding_account_id=AccountId("checking"),
+        asset_id=AssetId("test_stock"),
+        lot_id=LotId(id_),
         quantity_scale=1_000_000,
         units=units,
     )
@@ -201,7 +207,7 @@ def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_on
     assert observation.holding_pools[0].account_id == "empty-brokerage"
     assert observation.holding_pools[0].price == 1000
     assert not observation.public_positions
-    action = buy("first-purchase", "checking", 2_000_000).model_copy(
+    action = buy("first-purchase", AccountId("checking"), 2_000_000).model_copy(
         update={"holding_account_id": "empty-brokerage", "lot_id": "new-position"}
     )
     assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
@@ -233,7 +239,7 @@ def test_an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation(
 ) -> None:
     world = world_for(cash_only)
     capture = FinancialCapture(world, capture="forensic")
-    action = buy("invalid-purchase", "checking", 1).model_copy(
+    action = buy("invalid-purchase", AccountId("checking"), 1).model_copy(
         update={
             "holding_account_id": "empty-brokerage" if wrong_scale else "other-brokerage",
             "quantity_scale": 10 if wrong_scale else 1_000_000,
@@ -257,7 +263,7 @@ def test_declarations_reject_missing_prices_and_do_not_fall_back_to_initial_lots
     if case == "no_pool":
         run = replace(run, holding_pools=())
     elif case == "unpriced":
-        run = replace(run, initial_lots=(), holding_pools=(replace(pool, asset_id="unpriced"),))
+        run = replace(run, initial_lots=(), holding_pools=(replace(pool, asset_id=AssetId("unpriced")),))
     else:
         run = replace(run, initial_lots=(), holding_pools=(pool, pool))
     with pytest.raises(ValueError, match=r"holding pool|missing public security series"):
@@ -319,9 +325,9 @@ def test_ordered_actions_can_buy_before_transferring_and_buy_again() -> None:
     capture = FinancialCapture(world, capture="forensic")
     actions: list[Action] = [
         sell(20_000_000),
-        buy("first-buy", "checking", 10_000_000),
+        buy("first-buy", AccountId("checking"), 10_000_000),
         transfer(15_000),
-        buy("second-buy", "savings", 15_000_000),
+        buy("second-buy", AccountId("savings"), 15_000_000),
         consume(5000),
     ]
     for action in actions:
@@ -340,7 +346,9 @@ def test_rejected_financial_request_preserves_prior_sale_and_independent_world()
     failed, live = world_for(run), world_for(run, rollout=1)
     failed_capture, live_capture = FinancialCapture(failed, capture="dense"), FinancialCapture(live, capture="dense")
     assert isinstance(failed.execute(HOUSEHOLD, sell(10_000_000)).outcome, Executed)
-    assert isinstance(failed.execute(HOUSEHOLD, buy("impossible", "checking", 1_000_000_000)).outcome, Rejected)
+    assert isinstance(
+        failed.execute(HOUSEHOLD, buy("impossible", AccountId("checking"), 1_000_000_000)).outcome, Rejected
+    )
     next_month(failed, failed_capture)
     assert failed.finished
     for _ in range(3):
@@ -468,8 +476,8 @@ def year_situation() -> Situation:
     )
     return replace(
         run,
-        initial_lots=(lot, replace(lot, lot_id="second-lot", asset_id="second")),
-        holding_pools=(*run.holding_pools, replace(run.holding_pools[0], asset_id="second")),
+        initial_lots=(lot, replace(lot, lot_id=LotId("second-lot"), asset_id=AssetId("second"))),
+        holding_pools=(*run.holding_pools, replace(run.holding_pools[0], asset_id=AssetId("second"))),
         tax_profiles=(replace(profile, jurisdictions=(rules,)),),
         obligations=(bill(50_000), replace(bill(5000), month=12)),
         scheduled_transfers=(
@@ -504,7 +512,7 @@ def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(yea
                     action = Sell(
                         cause_id=f"sell-{lot.asset_id}",
                         agent_id=HOUSEHOLD,
-                        proceeds_account_id="checking",
+                        proceeds_account_id=AccountId("checking"),
                         asset_id=lot.asset_id,
                         lots=(LotSale(account_id=lot.account_id, lot_id=lot.lot_id, units=units),),
                     )
@@ -581,7 +589,7 @@ def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
         Sell(
             cause_id=f"sale-{lot.asset_id}",
             agent_id=HOUSEHOLD,
-            proceeds_account_id="checking",
+            proceeds_account_id=AccountId("checking"),
             asset_id=lot.asset_id,
             lots=(LotSale(account_id=lot.account_id, lot_id=lot.lot_id, units=1_000_000 if stopped else 20_000_000),),
         )
@@ -663,9 +671,9 @@ def test_transfer_and_fifo_sale_remain_balanced(mode: Literal["dense", "forensic
             Sell(
                 cause_id="sell-stock",
                 agent_id=HOUSEHOLD,
-                proceeds_account_id="checking",
-                asset_id="test_stock",
-                lots=(LotSale(account_id="checking", lot_id="timing-stock", units=1_000_000),),
+                proceeds_account_id=AccountId("checking"),
+                asset_id=AssetId("test_stock"),
+                lots=(LotSale(account_id=AccountId("checking"), lot_id=LotId("timing-stock"), units=1_000_000),),
             ),
         )
     }
@@ -780,8 +788,8 @@ def loan(opening_principal: int | None = 6000) -> Mortgage:
     """One year at 12% on 6000: the level installment is 533."""
     return Mortgage(
         MortgageTerms(
-            liability_id="test-loan",
-            property_id="test-home",
+            liability_id=LiabilityId("test-loan"),
+            property_id=PropertyId("test-home"),
             borrower=CASH,
             lender=EXOGENOUS,
             origination_month=0,
@@ -799,8 +807,11 @@ def test_tracked_mortgage_is_serviced_from_the_ledger_through_payoff() -> None:
     world.track(household)
     world.track(mortgage)
     world.start()
-    receivable = AccountRef(agent_id=WORLD, account_id="asset:mortgage-receivable:test-loan")
-    assert (world.mortgage_principal("test-loan"), world.accounting.ledger.balance(receivable)) == (6000, 6000)
+    receivable = AccountRef(agent_id=WORLD, account_id=AccountId("asset:mortgage-receivable:test-loan"))
+    assert (world.mortgage_principal(LiabilityId("test-loan")), world.accounting.ledger.balance(receivable)) == (
+        6000,
+        6000,
+    )
     principals, interest_ytd = [6000], []
     paid: list[tuple[int, int, int]] = []
     while not world.finished:
@@ -899,7 +910,7 @@ def test_a_composed_world_has_only_the_domains_it_declares() -> None:
         world.declare_pool(run.holding_pools[0])
     with pytest.raises(ValueError, match="missing public security series"):
         World(MarketPath(run.series, 0, rollout_count=1), horizon_months=2).declare_pool(
-            replace(run.holding_pools[0], asset_id="test-unpriced")
+            replace(run.holding_pools[0], asset_id=AssetId("test-unpriced"))
         )
 
 
@@ -919,19 +930,30 @@ def test_an_unpaid_installment_stops_the_path_and_leaves_the_contract_open() -> 
     world.step()
     assert world.finished
     assert world.stop == UnpaidClaims(month=1, claims=[ClaimId(month=1, index=0)])
-    assert (mortgage.active, world.mortgage_principal("test-loan"), checking(world)) == (True, 6000, 10_000)
+    assert (mortgage.active, world.mortgage_principal(LiabilityId("test-loan")), checking(world)) == (
+        True,
+        6000,
+        10_000,
+    )
 
 
 def test_tracked_bills_name_a_declared_payer_and_no_property() -> None:
     world = composed(situation(), 0)
     with pytest.raises(ValueError, match="property"):
-        world.track(Biller(replace(rent().spec, property_id="test-home")))
+        world.track(Biller(replace(rent().spec, property_id=PropertyId("test-home"))))
     with pytest.raises(ValueError, match="unknown actor"):
         world.track(
-            Biller(replace(rent().spec, from_account=AccountRef(agent_id="test-nobody", account_id="checking")))
+            Biller(
+                replace(
+                    rent().spec,
+                    from_account=AccountRef(agent_id=AgentId("test-nobody"), account_id=AccountId("checking")),
+                )
+            )
         )
     with pytest.raises(ValueError, match="not declared"):
-        world.track(Biller(replace(rent().spec, from_account=AccountRef(agent_id=HOUSEHOLD, account_id="test-none"))))
+        world.track(
+            Biller(replace(rent().spec, from_account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("test-none"))))
+        )
     world.track(rent())
     world.start()
     with pytest.raises(ValueError, match="before starting"):
@@ -944,18 +966,25 @@ def test_tracked_mortgages_open_the_ledger_once_before_the_world_starts() -> Non
         world.track(loan(None))
     with pytest.raises(ValueError, match="unknown actor"):
         world.track(
-            Mortgage(replace(loan().terms, borrower=AccountRef(agent_id="test-nobody", account_id="checking")), 6000)
+            Mortgage(
+                replace(
+                    loan().terms, borrower=AccountRef(agent_id=AgentId("test-nobody"), account_id=AccountId("checking"))
+                ),
+                6000,
+            )
         )
     with pytest.raises(ValueError, match="not declared"):
         world.track(
-            Mortgage(replace(loan().terms, borrower=AccountRef(agent_id=HOUSEHOLD, account_id="test-none")), 6000)
+            Mortgage(
+                replace(loan().terms, borrower=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("test-none"))), 6000
+            )
         )
     world.track(loan())
     with pytest.raises(ValueError, match="duplicate"):
         world.track(loan())
     world.start()
     with pytest.raises(ValueError, match="before starting"):
-        world.track(Mortgage(replace(loan().terms, liability_id="test-second"), 6000))
+        world.track(Mortgage(replace(loan().terms, liability_id=LiabilityId("test-second")), 6000))
     with pytest.raises(ValueError, match="servicing statement"):
         loan().handle(MonthOpened(month=0))
 

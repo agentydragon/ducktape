@@ -17,6 +17,7 @@ from finance.augur.policy.cash_band import Hold, Invest, Raise, cash_band, valid
 from finance.augur.sim.actions import Action, Buy, Contribute, Liquidate, Sell, Withdraw
 from finance.augur.sim.fixed_point import quantity_for_value
 from finance.augur.sim.holdings import private_issuer
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
 from finance.augur.sim.observations import Observation, PublicPosition, TlhPortfolioObservation
 from finance.augur.sim.prepared import (
     PreparedAmount,
@@ -127,10 +128,10 @@ class PendingBuy:
     policy_index: int
     sleeve_index: int
     cause_id_prefix: str
-    agent_id: str
-    cash_account_id: str
-    holding_account_id: str
-    asset_id: str
+    agent_id: AgentId
+    cash_account_id: AccountId
+    holding_account_id: AccountId
+    asset_id: AssetId
     wanted_units: int
     price: int
     quantity_scale: int
@@ -141,9 +142,9 @@ class PendingContribution:
     """Money for a managed sleeve: the portfolio takes exactly this amount, no unit grid."""
 
     cause_id_prefix: str
-    agent_id: str
-    cash_account_id: str
-    portfolio_id: str
+    agent_id: AgentId
+    cash_account_id: AccountId
+    portfolio_id: PortfolioId
     wanted_amount: int
 
 
@@ -157,7 +158,7 @@ def _quantity(amount: int, price: int, scale: int, *, round_up: bool) -> int:
     return quantity_for_value(max(0, amount), price, scale, round_up=round_up)
 
 
-def _sources(policy: _AllocationPolicy) -> tuple[str, ...]:
+def _sources(policy: _AllocationPolicy) -> tuple[AccountId, ...]:
     return policy.source_account_ids or (policy.account_id,)
 
 
@@ -186,7 +187,7 @@ def plan(
     policy_index: int,
     floor: int,
     ceiling: int,
-    prices: dict[str, int],
+    prices: dict[AssetId, int],
 ) -> AllocationPlan:
     """Propose ordered sales and post-claim purchase intents, sleeve by sleeve.
 
@@ -364,7 +365,7 @@ def materialize_buy(observation: Observation, pending: PendingBuy, *, lot_sequen
         cash_account_id=pending.cash_account_id,
         holding_account_id=pending.holding_account_id,
         asset_id=pending.asset_id,
-        lot_id=f"{pending.cause_id_prefix}_buy_p{pending.policy_index}_s{pending.sleeve_index}_{lot_sequence}",
+        lot_id=LotId(f"{pending.cause_id_prefix}_buy_p{pending.policy_index}_s{pending.sleeve_index}_{lot_sequence}"),
         units=units,
         quantity_scale=pending.quantity_scale,
     )

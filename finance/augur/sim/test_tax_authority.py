@@ -6,6 +6,7 @@ from dataclasses import replace
 import pytest
 import pytest_bazel
 
+from finance.augur.sim.ids import JurisdictionId, LiabilityId
 from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.prepared import _MortgageInterestDeduction, _SaltCap, _SaltDeduction
 from finance.augur.sim.scenario import ORDINARY_INCOME
@@ -18,7 +19,10 @@ def test_year_close_nets_once_then_reassesses_federal_salt_and_resets() -> None:
         taxpayer(HOUSEHOLD),
         jurisdictions=tuple(
             replace(flat_rules(name, rate), max_capital_loss_ordinary_offset=300)
-            for name, rate in [("test_federal", 100_000_000), ("test_state", 200_000_000)]
+            for name, rate in [
+                (JurisdictionId("test_federal"), 100_000_000),
+                (JurisdictionId("test_state"), 200_000_000),
+            ]
         ),
     )
     books = accounting(taxpayers=(profile,))
@@ -26,7 +30,7 @@ def test_year_close_nets_once_then_reassesses_federal_salt_and_resets() -> None:
     authority.declare_deduction(
         _SaltDeduction(
             profile_id=HOUSEHOLD,
-            federal_jurisdiction_id="test_federal",
+            federal_jurisdiction_id=JurisdictionId("test_federal"),
             cap_schedule=(_SaltCap(effective_year_index=0, cap=1000),),
         )
     )
@@ -80,7 +84,7 @@ def test_an_authority_refuses_a_deduction_claimed_by_another_taxpayer() -> None:
     with pytest.raises(ValueError, match="not 'test_household'"):
         authority.declare_deduction(
             _MortgageInterestDeduction(
-                liability_id="test-loan",
+                liability_id=LiabilityId("test-loan"),
                 owner_agent_id=OTHER,
                 debt_class="acquisition",
                 per_jurisdiction_principal_cap={},

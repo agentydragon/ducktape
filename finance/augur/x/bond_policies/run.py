@@ -29,7 +29,7 @@ from finance.augur.sim.fixed_point import (
     quantity_to_quanta,
     rate_to_ppb,
 )
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -53,9 +53,9 @@ from finance.augur.x.bond_policies.construction import (
 
 QUANTUM = Decimal("0.01")
 HOUSEHOLD = AgentId("example_household")
-WORLD = "example_world"
-CHECKING = "checking"
-BROKERAGE = "brokerage"
+WORLD = AgentId("example_world")
+CHECKING = AccountId("checking")
+BROKERAGE = AccountId("brokerage")
 STRATEGY = SecuritySymbol("EXAMPLE_BOND_STRATEGY")
 INITIAL_WEALTH = Decimal(100_000)
 INITIAL_UNIT_PRICE = Decimal(100)
@@ -117,14 +117,14 @@ def compose(case: Situation, rollout_id: int) -> World:
         )
     scale = quantity_scale_for_asset(SecurityKey(symbol=STRATEGY))
     world.declare_pool(
-        PreparedHoldingPool(agent_id=HOUSEHOLD, account_id=BROKERAGE, asset_id=str(STRATEGY), quantity_scale=scale)
+        PreparedHoldingPool(agent_id=HOUSEHOLD, account_id=BROKERAGE, asset_id=AssetId(STRATEGY), quantity_scale=scale)
     )
     world.hold(
         PreparedLot(
-            lot_id="example_initial_strategy",
+            lot_id=LotId("example_initial_strategy"),
             agent_id=HOUSEHOLD,
             account_id=BROKERAGE,
-            asset_id=str(STRATEGY),
+            asset_id=AssetId(STRATEGY),
             purchase_month=-1,
             quantity_scale=scale,
             units=int(quantity_to_quanta(INITIAL_WEALTH / INITIAL_UNIT_PRICE, scale=scale)),
@@ -135,7 +135,7 @@ def compose(case: Situation, rollout_id: int) -> World:
         PreparedDistribution(
             agent_id=HOUSEHOLD,
             holding_account_id=BROKERAGE,
-            asset_id=str(STRATEGY),
+            asset_id=AssetId(STRATEGY),
             to_account_id=CHECKING,
             tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), issuer_jurisdiction_id=None),),
         )
@@ -169,7 +169,7 @@ def execute(
         batch = session.start()
         while not isinstance(batch, Finished):
             batch = session.advance(
-                fund_claims(batch, targets={(BROKERAGE, str(STRATEGY)): 1}, cash_account_id=CHECKING)
+                fund_claims(batch, targets={(BROKERAGE, AssetId(STRATEGY)): 1}, cash_account_id=CHECKING)
             )
         return batch.rollouts
     finally:

@@ -30,6 +30,7 @@ py_library(
     srcs = ["catalog.py"],
     deps = [
         ":platform",
+        "//finance/augur/model:series",
         "//finance/evidence:markets",
         "@pypi//pydantic",
         "@pypi//pyyaml",

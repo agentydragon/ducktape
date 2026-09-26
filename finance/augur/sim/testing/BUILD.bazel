@@ -14,6 +14,7 @@ py_library(
         "//finance/augur/sim:books",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:jurisdictions",
         "//finance/augur/sim:market_path",
         "//finance/augur/sim:prepared",

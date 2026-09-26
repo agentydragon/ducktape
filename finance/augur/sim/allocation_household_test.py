@@ -20,7 +20,7 @@ from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, currency_amount_to_quanta, quantity_scale_for_asset
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import MAX_COUNT
@@ -48,11 +48,11 @@ QUANTUM = Decimal("0.01")
 STOCK = SecurityKey(symbol=SecuritySymbol("stock"))
 SECOND = SecurityKey(symbol=SecuritySymbol("second"))
 SCALE = quantity_scale_for_asset(STOCK)
-ALICE = "alice"
-WORLD = "world"
-CHECKING = "checking"
-BROKERAGE = "brokerage"
-SYNTHETIC = "synthetic"
+ALICE = AgentId("alice")
+WORLD = AgentId("world")
+CHECKING = AccountId("checking")
+BROKERAGE = AccountId("brokerage")
+SYNTHETIC = JurisdictionId("synthetic")
 TAX = Jurisdiction(
     jurisdiction_id=SYNTHETIC,
     level=JurisdictionLevel.FEDERAL,
@@ -67,11 +67,11 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def ref(agent_id: str, account_id: str = CHECKING) -> AccountRef:
+def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=account_id)
 
 
-def account(agent_id: str, account_id: str = CHECKING, balance: Decimal | int = 0) -> PreparedAccount:
+def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> PreparedAccount:
     return PreparedAccount(account=ref(agent_id, account_id), opening_balance=money(balance))
 
 
@@ -89,15 +89,17 @@ def distribution_rate(asset: SecurityKey, amount: Decimal | int, *, snapshots: i
 
 
 def pool(asset: SecurityKey) -> PreparedHoldingPool:
-    return PreparedHoldingPool(agent_id=ALICE, account_id=BROKERAGE, asset_id=str(asset.symbol), quantity_scale=SCALE)
+    return PreparedHoldingPool(
+        agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(asset.symbol), quantity_scale=SCALE
+    )
 
 
 def lot(asset: SecurityKey, *, units: float, basis: Decimal | int, purchase_month: int = -24) -> PreparedLot:
     return PreparedLot(
-        lot_id=f"opening-{asset.symbol}",
+        lot_id=LotId(f"opening-{asset.symbol}"),
         agent_id=ALICE,
         account_id=BROKERAGE,
-        asset_id=str(asset.symbol),
+        asset_id=AssetId(asset.symbol),
         purchase_month=purchase_month,
         quantity_scale=SCALE,
         units=int(units * SCALE),
@@ -121,7 +123,7 @@ def claim(month: int, amount: Decimal | int, identifier: str = "spending") -> Pr
 
 def allocation(
     *assets: SecurityKey,
-    account_id: str = CHECKING,
+    account_id: AccountId = CHECKING,
     prefix: str = "fund",
     purchases: bool = False,
     zero_exit: bool = False,
@@ -134,7 +136,7 @@ def allocation(
         source_account_ids=(BROKERAGE,),
         sleeves=tuple(
             _SecuritySleeveTarget(
-                asset_id=str(asset.symbol), weight=0 if zero_exit and index == 0 else 1, quantity_scale=SCALE
+                asset_id=AssetId(asset.symbol), weight=0 if zero_exit and index == 0 else 1, quantity_scale=SCALE
             )
             for index, asset in enumerate(assets)
         ),
@@ -220,7 +222,7 @@ def book(output: FinancialOutput, month: int) -> Book:
     return one(row for row in output.months if row.month == month)
 
 
-def cash(output: FinancialOutput, month: int, agent_id: str = ALICE, account_id: str = CHECKING) -> int:
+def cash(output: FinancialOutput, month: int, agent_id: AgentId = ALICE, account_id: AccountId = CHECKING) -> int:
     return one(row.balance for row in book(output, month).balances if row.account == ref(agent_id, account_id))
 
 
@@ -359,7 +361,7 @@ def test_empty_buyable_pool_pays_coupon_only_after_first_purchase() -> None:
                 PreparedDistribution(
                     agent_id=ALICE,
                     holding_account_id=BROKERAGE,
-                    asset_id=str(STOCK.symbol),
+                    asset_id=AssetId(STOCK.symbol),
                     to_account_id=CHECKING,
                     tax_character=(PreparedDistributionSlice(fraction_ppb=1_000_000_000, issuer_jurisdiction_id=None),),
                 ),
@@ -389,14 +391,14 @@ def test_fifo_across_two_policy_purchase_dates_preserves_basis_and_tax_character
             accounts=(
                 account(ALICE),
                 account(WORLD, balance=300),
-                account(ALICE, "early-cash", balance=200),
-                account(ALICE, "proceeds"),
+                account(ALICE, AccountId("early-cash"), balance=200),
+                account(ALICE, AccountId("proceeds")),
             ),
             lots=(),
             claims=(),
             policies=(
                 allocation(STOCK, purchases=True),
-                allocation(STOCK, account_id="early-cash", prefix="early", purchases=True),
+                allocation(STOCK, account_id=AccountId("early-cash"), prefix="early", purchases=True),
             ),
             transfers=(
                 PreparedTransfer(
@@ -414,11 +416,11 @@ def test_fifo_across_two_policy_purchase_dates_preserves_basis_and_tax_character
                     Sell(
                         cause_id="fifo-sale",
                         agent_id=ALICE,
-                        proceeds_account_id="proceeds",
-                        asset_id=str(STOCK.symbol),
+                        proceeds_account_id=AccountId("proceeds"),
+                        asset_id=AssetId(STOCK.symbol),
                         lots=(
-                            LotSale(account_id=BROKERAGE, lot_id="early_buy_p1_s0_0", units=2 * SCALE),
-                            LotSale(account_id=BROKERAGE, lot_id="fund_buy_p0_s0_0", units=1 * SCALE),
+                            LotSale(account_id=BROKERAGE, lot_id=LotId("early_buy_p1_s0_0"), units=2 * SCALE),
+                            LotSale(account_id=BROKERAGE, lot_id=LotId("fund_buy_p0_s0_0"), units=1 * SCALE),
                         ),
                     ),
                 )

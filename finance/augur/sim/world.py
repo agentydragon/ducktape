@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Literal
 
-from finance.augur.model.series import PrivateEquityEventKindCode
+from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
 from finance.augur.sim import claims, observations, payments, private_equity, results
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import (
@@ -41,7 +41,7 @@ from finance.augur.sim.distributions import Distributions
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.held_bonds import BondStatement, HeldBonds
 from finance.augur.sim.holdings import Holdings, private_issuer
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, PortfolioId, PropertyId
 from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, TlhStatement
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, is_quantity_scale, position_value
@@ -120,8 +120,8 @@ class World:
         self.rollout_id = market.rollout_id
         self.horizon_months = horizon_months
         self.agents: list[EconomicAgent] = []
-        self.specs: dict[str, PreparedTlhPortfolio] = {}
-        self.portfolios: dict[str, TlhPortfolio] = {}
+        self.specs: dict[PortfolioId, PreparedTlhPortfolio] = {}
+        self.portfolios: dict[PortfolioId, TlhPortfolio] = {}
         self.income_sources = tuple(income_sources)
         self.jurisdictions = tuple(jurisdictions)
         self.accounting = Accounting(income_sources)
@@ -147,8 +147,8 @@ class World:
         # This month's settlement outcomes, cleared when the next month opens.
         self.obligations: list[payments.ObligationOutcome] = []
         self.payments: list[results.Payment] = []
-        self.mortgages: dict[str, Mortgage] = {}
-        self.mortgage_payments: dict[str, MortgagePayment] = {}
+        self.mortgages: dict[LiabilityId, Mortgage] = {}
+        self.mortgage_payments: dict[LiabilityId, MortgagePayment] = {}
         self.previous_receipts: list[results.Receipt] = []
         self.stop: results.Stop | None = None
         self.failed = False
@@ -221,7 +221,7 @@ class World:
             self.bonds = HeldBonds((), self.market)
         self.bonds.hold(holding)
 
-    def _check_issuer(self, issuer: str) -> None:
+    def _check_issuer(self, issuer: IssuerId) -> None:
         """Every protocol channel on the path and in its range, a tender exactly where an opportunity is."""
         for channel, (minimum, maximum) in private_equity.CHANNEL_RANGES.items():
             if f"private_equity_{channel}:{issuer}" not in self.market.series:
@@ -422,7 +422,7 @@ class World:
         for series_id in {f"home_value:{purchase.location_id}" for purchase in housing.purchases}:
             if series_id in self.market.series:
                 self.market.require_prices(series_id)
-        taxed: dict[tuple[str, int], int] = {}
+        taxed: dict[tuple[PropertyId, int], int] = {}
         for index, policy in enumerate(tax_policies):
             owned = purchases.get(policy.property_id)
             if owned is None:
@@ -540,7 +540,7 @@ class World:
         self,
         spec: PreparedTlhPortfolio,
         candidate: TlhPortfolio,
-        cash_account_id: str | None,
+        cash_account_id: AccountId | None,
         cash_amount: int,
         realizations: ModeledRealizations = _NO_REALIZATIONS,
     ) -> ComponentEffects:
@@ -601,19 +601,26 @@ class World:
         self.validate_scope(terms.borrower.agent_id)
         if terms.borrower not in self.accounting.declared:
             raise ValueError("mortgage borrower account is not declared")
-        liability = AccountRef(agent_id=terms.borrower.agent_id, account_id=f"liability:mortgage:{terms.liability_id}")
-        receivable = AccountRef(
-            agent_id=terms.lender.agent_id, account_id=f"asset:mortgage-receivable:{terms.liability_id}"
+        liability = AccountRef(
+            agent_id=terms.borrower.agent_id, account_id=AccountId(f"liability:mortgage:{terms.liability_id}")
         )
-        borrower_equity = AccountRef(agent_id=terms.borrower.agent_id, account_id="equity:opening")
-        lender_equity = AccountRef(agent_id=terms.lender.agent_id, account_id="equity:opening")
+        receivable = AccountRef(
+            agent_id=terms.lender.agent_id, account_id=AccountId(f"asset:mortgage-receivable:{terms.liability_id}")
+        )
+        borrower_equity = AccountRef(agent_id=terms.borrower.agent_id, account_id=AccountId("equity:opening"))
+        lender_equity = AccountRef(agent_id=terms.lender.agent_id, account_id=AccountId("equity:opening"))
         for account in (
             liability,
             receivable,
             borrower_equity,
             lender_equity,
-            AccountRef(agent_id=terms.borrower.agent_id, account_id=f"expense:mortgage-interest:{terms.liability_id}"),
-            AccountRef(agent_id=terms.lender.agent_id, account_id=f"income:mortgage-interest:{terms.liability_id}"),
+            AccountRef(
+                agent_id=terms.borrower.agent_id,
+                account_id=AccountId(f"expense:mortgage-interest:{terms.liability_id}"),
+            ),
+            AccountRef(
+                agent_id=terms.lender.agent_id, account_id=AccountId(f"income:mortgage-interest:{terms.liability_id}")
+            ),
         ):
             self.accounting.ledger.ensure_account(account)
         owed = checked_count(-mortgage.opening_principal, "money negation")
@@ -762,7 +769,7 @@ class World:
         self.check_claims(actions)
         self.previous_receipts = []
 
-    def execute(self, actor: str, action: Action) -> results.Receipt:
+    def execute(self, actor: AgentId, action: Action) -> results.Receipt:
         """Execute one action on behalf of `actor`; a rejection stops this path."""
         if self.failed:
             raise ValueError("cannot act on a stopped rollout")
@@ -786,7 +793,7 @@ class World:
         return receipt
 
     def _component_action(
-        self, actor: str, action: Contribute | Withdraw | Liquidate
+        self, actor: AgentId, action: Contribute | Withdraw | Liquidate
     ) -> results.Executed | results.Rejected:
         def reject(detail: str) -> results.Rejected:
             return results.Rejected(reason=results.InvalidRequest(detail=detail))
@@ -869,7 +876,7 @@ class World:
         self.opened = False
         self.finished = self.failed or self.month == self.horizon_months
 
-    def validate_scope(self, actor: str) -> None:
+    def validate_scope(self, actor: AgentId) -> None:
         if not any(account.agent_id == actor for account in self.accounting.declared):
             raise ValueError(f"unknown actor {actor!r}")
         for pool in self.holdings.pools:
@@ -880,11 +887,11 @@ class World:
             ):
                 raise ValueError(f"missing public security series for {pool.asset_id!r}")
 
-    def account_balance(self, actor: str, account: str) -> int | None:
+    def account_balance(self, actor: AgentId, account: AccountId) -> int | None:
         key = AccountRef(agent_id=actor, account_id=account)
         return self.accounting.ledger.balance(key) if key in self.accounting.declared else None
 
-    def mortgage_principal(self, liability_id: str) -> int:
+    def mortgage_principal(self, liability_id: LiabilityId) -> int:
         """Outstanding principal from the ledger, for a tracked contract or a configured purchase's financing."""
         loan = self.mortgages.get(liability_id)
         if loan is not None:
@@ -903,25 +910,25 @@ class World:
             borrower = purchase.buyer_agent_id
         return checked_count(
             -self.accounting.ledger.balance(
-                AccountRef(agent_id=borrower, account_id=f"liability:mortgage:{liability_id}")
+                AccountRef(agent_id=borrower, account_id=AccountId(f"liability:mortgage:{liability_id}"))
             ),
             "money negation",
         )
 
-    def property_rented_fraction(self, property_id: str) -> int:
+    def property_rented_fraction(self, property_id: PropertyId) -> int:
         # A tracked contract's property is not a component yet, so none of it is rented out.
         property_ = None if self.properties is None else self.properties.properties.get(property_id)
         return 0 if property_ is None else property_.state.rented_fraction_ppb
 
     def prepare_month(
-        self, month: int, originations: Mapping[str, Mortgage], mortgages: Mapping[str, Mortgage]
-    ) -> tuple[list[str], list[str]]:
+        self, month: int, originations: Mapping[LiabilityId, Mortgage], mortgages: Mapping[LiabilityId, Mortgage]
+    ) -> tuple[list[LiabilityId], list[LiabilityId]]:
         if month != self.month or month >= self.horizon_months:
             raise ValueError("invalid financial month")
         self.claims = claims.Claims(month, [])
-        paid_off: list[str] = []
-        originated: list[str] = []
-        active: set[str] = set()
+        paid_off: list[LiabilityId] = []
+        originated: list[LiabilityId] = []
+        active: set[PropertyId] = set()
         if self.properties is not None:
             self.properties.assign_residences(month)
             paid_off = self.properties.lifecycle(
@@ -1051,7 +1058,7 @@ class World:
                 )
         self.claims.entries.append(claim)
 
-    def public_price(self, actor: str, asset: str, month: int) -> int:
+    def public_price(self, actor: AgentId, asset: AssetId, month: int) -> int:
         return self.holdings.public_price(actor, asset, self.market, month)
 
     def open_mail(self, actor: AgentId) -> list[Mail]:
@@ -1075,7 +1082,7 @@ class World:
             *self.previous_receipts,
         ]
 
-    def apply(self, actor: str, action: Action, action_index: int) -> results.Executed | results.Rejected:
+    def apply(self, actor: AgentId, action: Action, action_index: int) -> results.Executed | results.Rejected:
         self.validate_scope(actor)
         if not action.cause_id:
             return results.Rejected(reason=results.InvalidRequest(detail="empty cause ID"))
@@ -1146,7 +1153,7 @@ class World:
             return results.Rejected(reason=results.InvalidRequest(detail=str(error)))
         return results.Executed()
 
-    def unpaid_claims(self, actor: str) -> list[results.UnpaidClaim]:
+    def unpaid_claims(self, actor: AgentId) -> list[results.UnpaidClaim]:
         return [
             results.UnpaidClaim(
                 id=id_,
@@ -1247,7 +1254,9 @@ class World:
             failed=self.failed_month is not None,
         )
 
-    def holding_value(self, actor: str, month: int, account: str | None = None, asset: str | None = None) -> int:
+    def holding_value(
+        self, actor: AgentId, month: int, account: AccountId | None = None, asset: AssetId | None = None
+    ) -> int:
         total = 0
         for lot in self.holdings.lots:
             spec = lot.spec

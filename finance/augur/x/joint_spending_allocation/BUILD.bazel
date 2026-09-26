@@ -33,6 +33,7 @@ py_library(
         ":situation",
         "//finance/augur/sim:books",
         "//finance/augur/sim:holdings",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:quantiles",
         "//finance/augur/sim:results",
         "//finance/augur/sim:world",

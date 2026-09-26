@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from finance.augur.sim.actions import Transfer
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import (
+    EXTERNAL_BOUNDARY,
     AccountRef,
     JournalEntry,
     Posting,
@@ -16,6 +17,7 @@ from finance.augur.sim.books import (
 )
 from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.compiler.tax import PreparedTaxProfile
+from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.money import checked_count
 from finance.augur.sim.observations import TaxRecords
@@ -38,12 +40,12 @@ class TransferOutcome:
 class MortgagePaymentOutcome:
     month: int
     cause_id: str
-    liability_id: str
-    agent_id: str
-    counterparty_agent_id: str
-    property_id: str
-    from_account_id: str
-    to_account_id: str
+    liability_id: LiabilityId
+    agent_id: AgentId
+    counterparty_agent_id: AgentId
+    property_id: PropertyId
+    from_account_id: AccountId
+    to_account_id: AccountId
     interest: int
     principal: int
     total_payment: int
@@ -52,7 +54,7 @@ class MortgagePaymentOutcome:
 class AccountStatement(Statement):
     """The owner's declared accounts and their balances, in declaration order."""
 
-    accounts: tuple[tuple[str, int], ...]
+    accounts: tuple[tuple[AccountId, int], ...]
 
 
 class TaxLiabilityStatement(Statement):
@@ -86,7 +88,7 @@ class Accounting:
         self.tax_payments: list[TaxPaymentOutcome] = []
         self.tax_settlements: list[TaxSettlementOutcome] = []
         self.mortgage_payments: list[MortgagePaymentOutcome] = []
-        self.ledger.ensure_account(AccountRef(agent_id="__external__", account_id="boundary"))
+        self.ledger.ensure_account(EXTERNAL_BOUNDARY)
 
     def declare(self, account: PreparedAccount) -> None:
         """Open a household-facing account with its month-zero balance against the owner's opening equity."""
@@ -94,7 +96,7 @@ class Accounting:
             raise ValueError(f"account {account.account!r} is already declared")
         self.declared = (*self.declared, account.account)
         self.ledger.ensure_account(account.account)
-        equity = AccountRef(agent_id=account.account.agent_id, account_id="equity:opening")
+        equity = AccountRef(agent_id=account.account.agent_id, account_id=AccountId("equity:opening"))
         self.ledger.ensure_account(equity)
         if account.opening_balance:
             self.apply(
@@ -111,17 +113,17 @@ class Accounting:
     def enroll(self, profile: PreparedTaxProfile) -> None:
         """Take on a taxpayer: its year state, prepayment asset and the accounts its assessments post to."""
         self.tax.enroll(profile.agent_id)
-        self.ledger.ensure_account(AccountRef(agent_id=profile.agent_id, account_id="asset:tax-prepayments"))
+        self.ledger.ensure_account(AccountRef(agent_id=profile.agent_id, account_id=AccountId("asset:tax-prepayments")))
         self.ledger.ensure_account(
-            AccountRef(agent_id=profile.tax_authority_agent_id, account_id="income:tax-payments")
+            AccountRef(agent_id=profile.tax_authority_agent_id, account_id=AccountId("income:tax-payments"))
         )
         for rules in profile.jurisdictions:
             for kind in ("expense", "liability"):
                 self.ledger.ensure_account(
-                    AccountRef(agent_id=profile.agent_id, account_id=f"{kind}:tax:{rules.jurisdiction_id}")
+                    AccountRef(agent_id=profile.agent_id, account_id=AccountId(f"{kind}:tax:{rules.jurisdiction_id}"))
                 )
 
-    def statement(self, actor: str, month: int) -> AccountStatement:
+    def statement(self, actor: AgentId, month: int) -> AccountStatement:
         return AccountStatement(
             month=month,
             accounts=tuple(
@@ -134,7 +136,7 @@ class Accounting:
     def liability_statement(self, month: int) -> TaxLiabilityStatement:
         return TaxLiabilityStatement(month=month, liabilities=tuple(self.tax_liabilities))
 
-    def tax_statement(self, actor: str, month: int) -> TaxStatement:
+    def tax_statement(self, actor: AgentId, month: int) -> TaxStatement:
         """The open year's facts and the assessed liabilities not yet settled; no quote of the coming close."""
         year = self.tax.years.get(actor)
         if year is None:
@@ -191,7 +193,7 @@ class Accounting:
         month: int,
         request: Transfer,
         *,
-        actor: str | None,
+        actor: AgentId | None,
         income: TransferIncomeCategory | None = None,
         deduction: TransferDeductionCategory | None = None,
     ) -> None:

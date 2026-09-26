@@ -31,14 +31,15 @@ from finance.augur.product.wire import (
     TlhFinancialEffectEvent,
 )
 from finance.augur.sim.events import TlhOperation
+from finance.augur.sim.ids import AccountId
 from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.tlh import TlhAssumptions
 
 _PORTFOLIO_ID = "test-managed"
-_ACCOUNT_ID = "test_managed_brokerage"
+_ACCOUNT_ID = AccountId("test_managed_brokerage")
 
 
-def _product(augur_config: Config, catalog: CatalogResponse, *, index: str, account_id: str) -> ProductService:
+def _product(augur_config: Config, catalog: CatalogResponse, *, index: str, account_id: AccountId) -> ProductService:
     """The fixture portfolio plus a $100k TLH portfolio pegged to `index` in `account_id`, harvesting nothing."""
     owner = resolve_primary_agent_id(augur_config)
     return ProductService(
@@ -174,7 +175,7 @@ def test_a_portfolio_on_the_slot_of_ordinary_lots_is_refused(augur_config: Confi
     """The fixture's VOO lots sit in `taxable_brokerage`, the very slot this portfolio would own."""
     with pytest.raises(ValueError, match=r"TLH pool .*'taxable_brokerage', 'VOO'.* no ordinary holdings"):
         _rollout(
-            _product(augur_config, catalog, index="VOO", account_id="taxable_brokerage"),
+            _product(augur_config, catalog, index="VOO", account_id=AccountId("taxable_brokerage")),
             ManagedSleeveWeight(portfolio_id=_PORTFOLIO_ID, weight=1),
         )
 

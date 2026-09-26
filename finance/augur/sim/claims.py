@@ -6,6 +6,7 @@ from finance.augur.sim import observations
 from finance.augur.sim.actions import ClaimId
 from finance.augur.sim.books import AccountRef, Record
 from finance.augur.sim.compiler.tax import PreparedTaxProfile
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.mortgage import InstallmentDue, MortgagePayment
 
 
@@ -27,7 +28,7 @@ class TaxTrueUp:
 
 @dataclass(frozen=True)
 class PropertyTax:
-    owner: str
+    owner: AgentId
     rented_fraction: int
 
 
@@ -74,14 +75,14 @@ class Claims:
     month: int
     entries: list[Claim]
 
-    def due(self, actor: str) -> list[tuple[ClaimId, Claim]]:
+    def due(self, actor: AgentId) -> list[tuple[ClaimId, Claim]]:
         return [
             (ClaimId(month=self.month, index=index), claim)
             for index, claim in enumerate(self.entries)
             if not claim.paid and claim.from_account.agent_id == actor
         ]
 
-    def dues(self, actor: str) -> list[Due]:
+    def dues(self, actor: AgentId) -> list[Due]:
         """This month's unpaid demands on `actor`, typed by what raised them."""
         dues: list[Due] = []
         for id_, claim in self.due(actor):

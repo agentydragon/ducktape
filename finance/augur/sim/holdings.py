@@ -4,10 +4,12 @@ from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 
+from finance.augur.model.series import IssuerId
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Buy, LotSale, Sell
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, SecurityLotState
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import apportion, checked_count, checked_wide, is_quantity_scale, position_value
 from finance.augur.sim.observations import HoldingPool, PublicPosition
@@ -38,30 +40,31 @@ class Lot:
 class Disposition:
     month: int
     cause_id: str
-    agent_id: str
-    source_account_id: str
+    agent_id: AgentId
+    source_account_id: AccountId
+    # The asset's `AssetKey` wire id (`parse_asset_key`), not the sim's `AssetId`.
     asset_id: str
-    lot_id: str
+    lot_id: LotId
     purchase_month: int
     quantity_scale: int
     units: int
     basis: int
     proceeds: int
-    proceeds_account_id: str
+    proceeds_account_id: AccountId
     realized_gain: int
 
 
-def basis_account(agent: str, account: str, asset: str) -> AccountRef:
-    return AccountRef(agent_id=agent, account_id=f"asset-basis:{account}:{asset}")
+def basis_account(agent: AgentId, account: AccountId, asset: AssetId) -> AccountRef:
+    return AccountRef(agent_id=agent, account_id=AccountId(f"asset-basis:{account}:{asset}"))
 
 
-def gain_account(agent: str) -> AccountRef:
-    return AccountRef(agent_id=agent, account_id="income:realized-gain")
+def gain_account(agent: AgentId) -> AccountRef:
+    return AccountRef(agent_id=agent, account_id=AccountId("income:realized-gain"))
 
 
-def private_issuer(asset: str) -> str | None:
+def private_issuer(asset: AssetId) -> IssuerId | None:
     if asset.startswith("private_equity:"):
-        return asset.removeprefix("private_equity:") or None
+        return IssuerId(asset.removeprefix("private_equity:")) or None
     return None
 
 
@@ -77,7 +80,7 @@ class Holdings:
         self.pools: tuple[PreparedHoldingPool, ...] = ()
         self.lots: list[Lot] = []
         # Holdings a managed portfolio owns; ordinary purchases into them are refused.
-        self.managed: set[tuple[str, str, str]] = set()
+        self.managed: set[tuple[AgentId, AccountId, AssetId]] = set()
         # This month's dispositions, cleared by `begin_month`; lots are the state.
         self.dispositions: list[Disposition] = []
 
@@ -99,24 +102,24 @@ class Holdings:
                             account=basis_account(spec.agent_id, spec.account_id, spec.asset_id), amount=spec.basis
                         ),
                         Posting(
-                            account=AccountRef(agent_id=spec.agent_id, account_id="equity:opening"),
+                            account=AccountRef(agent_id=spec.agent_id, account_id=AccountId("equity:opening")),
                             amount=checked_count(-spec.basis, "money negation"),
                         ),
                     ],
                 )
             )
 
-    def reserve(self, owner_agent_id: str, account_id: str, asset_id: str) -> None:
+    def reserve(self, owner_agent_id: AgentId, account_id: AccountId, asset_id: AssetId) -> None:
         self.managed.add((owner_agent_id, account_id, asset_id))
 
-    def public_price(self, actor: str, asset: str, market: MarketPath, month: int) -> int:
+    def public_price(self, actor: AgentId, asset: AssetId, market: MarketPath, month: int) -> int:
         if private_issuer(asset) is not None or not any(
             pool.agent_id == actor and pool.asset_id == asset for pool in self.pools
         ):
             raise ValueError("asset has no declared public holding pool")
         return market.value(f"security:{asset}", month)
 
-    def statement(self, actor: str, market: MarketPath, month: int) -> PositionStatement:
+    def statement(self, actor: AgentId, market: MarketPath, month: int) -> PositionStatement:
         positions = []
         for lot in self.lots:
             spec = lot.spec

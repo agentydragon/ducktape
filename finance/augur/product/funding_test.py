@@ -19,6 +19,7 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.compiler.execution import compile_holding_pools, compile_jurisdictions, compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.ids import AccountId, AgentId, LotId
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
@@ -27,12 +28,12 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
 
-ACTOR = "test-owner"
+ACTOR = AgentId("test-owner")
 FIRST = SecurityKey(symbol="test-first")
 SECOND = SecurityKey(symbol="test-second")
 
 
-def lot(id_: str, account: str, asset: SecurityKey, quantity: Decimal, month: int = -24) -> InitialLot:
+def lot(id_: LotId, account: AccountId, asset: SecurityKey, quantity: Decimal, month: int = -24) -> InitialLot:
     return InitialLot(
         lot_id=id_,
         agent_id=ACTOR,
@@ -154,10 +155,10 @@ def test_symbol_weight_is_not_repeated_per_account_and_fifo_is_account_scoped() 
         config,
         spend=Decimal(100),
         lots=(
-            lot("first-new", "preferred", FIRST, Decimal("0.7"), -6),
-            lot("first-old", "preferred", FIRST, Decimal("0.3"), -12),
-            lot("globally-oldest", "later", FIRST, Decimal(1), -36),
-            lot("second", "preferred", SECOND, Decimal(1)),
+            lot(LotId("first-new"), AccountId("preferred"), FIRST, Decimal("0.7"), -6),
+            lot(LotId("first-old"), AccountId("preferred"), FIRST, Decimal("0.3"), -12),
+            lot(LotId("globally-oldest"), AccountId("later"), FIRST, Decimal(1), -36),
+            lot(LotId("second"), AccountId("preferred"), SECOND, Decimal(1)),
         ),
     )
     result = run(product, config, {asset: np.full((1, 2), 100.0) for asset in (FIRST, SECOND)})
@@ -180,7 +181,9 @@ def test_refill_to_ceiling_inclusive_band_and_surplus_never_invested(cash: int, 
         cash_band_index_to_inflation=False,
         sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),),
     )
-    product = product_situation(config, cash=Decimal(cash), lots=(lot("fund", "brokerage", FIRST, Decimal(10)),))
+    product = product_situation(
+        config, cash=Decimal(cash), lots=(lot(LotId("fund"), AccountId("brokerage"), FIRST, Decimal(10)),)
+    )
     result = run(product, config, {FIRST: np.full((1, 2), 100.0)})
     assert result.trace is not None
     assert result.trace.events.lot_dispositions.get_column("proceeds_quanta").sum() == raised * 100
@@ -201,7 +204,7 @@ def test_empty_excluded_or_unheld_targets_allow_cash_payments_but_never_sell(wei
         spend=Decimal(30),
         rent=Decimal(40),
         horizon=2,
-        lots=(lot("keep", "brokerage", FIRST, Decimal(10)),),
+        lots=(lot(LotId("keep"), AccountId("brokerage"), FIRST, Decimal(10)),),
     )
     result = run(
         product, config, {FIRST: np.full((1, 3), 100.0), RentKey(location_id="test-location"): np.ones((1, 3))}
@@ -226,7 +229,10 @@ def test_zero_weight_excludes_from_sales_and_target_denominator_even_on_exhausti
     product = product_situation(
         config,
         spend=Decimal(150),
-        lots=(lot("keep", "brokerage", FIRST, Decimal(10)), lot("sell", "brokerage", SECOND, Decimal(1))),
+        lots=(
+            lot(LotId("keep"), AccountId("brokerage"), FIRST, Decimal(10)),
+            lot(LotId("sell"), AccountId("brokerage"), SECOND, Decimal(1)),
+        ),
     )
     result = run(product, config, {asset: np.full((1, 2), 100.0) for asset in (FIRST, SECOND)})
     assert result.trace is not None
@@ -243,7 +249,7 @@ def test_monthly_cpi_band_rounds_original_bound_once() -> None:
         sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),),
     )
     product = product_situation(
-        config, spend=Decimal("0.01"), horizon=3, lots=(lot("fund", "brokerage", FIRST, Decimal(10)),)
+        config, spend=Decimal("0.01"), horizon=3, lots=(lot(LotId("fund"), AccountId("brokerage"), FIRST, Decimal(10)),)
     )
     result = run(product, config, {FIRST: np.full((1, 4), 100.0), InflationKey(): np.array([[3.0, 4.0, 5.0, 99.0]])})
     assert result.summary.cash[0].values == [0, 1, 1, 2]
@@ -301,7 +307,7 @@ def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim()
         config,
         spend=Decimal(50),
         horizon=13,
-        lots=(lot("fund", "brokerage", FIRST, Decimal(20)),),
+        lots=(lot(LotId("fund"), AccountId("brokerage"), FIRST, Decimal(20)),),
         distributions=(
             SecurityDistribution(
                 asset=FIRST,

@@ -20,6 +20,7 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot
 from finance.augur.sim.results import Finished
@@ -29,7 +30,7 @@ from finance.augur.sim.world import World
 
 ASSET = SecurityKey(symbol=SecuritySymbol("test-security"))
 QUANTUM = Decimal("0.01")
-OWNER = "test-owner"
+OWNER = AgentId("test-owner")
 
 
 @pytest.fixture
@@ -63,7 +64,7 @@ def _prepared(lot: InitialLot) -> PreparedLot:
         lot_id=lot.lot_id,
         agent_id=lot.agent_id,
         account_id=lot.account_id,
-        asset_id=str(asset.symbol),
+        asset_id=AssetId(asset.symbol),
         purchase_month=int(lot.purchase_month_index),
         quantity_scale=scale,
         units=int(quantity_to_quanta(lot.quantity, scale=scale)),
@@ -85,12 +86,14 @@ def _compose(lots: list[PreparedLot], *, horizon_months: int) -> World:
         horizon_months=horizon_months,
         income_sources=(ORDINARY_INCOME,),
     )
-    world.declare_account(PreparedAccount(account=AccountRef(agent_id=OWNER, account_id="checking"), opening_balance=0))
+    world.declare_account(
+        PreparedAccount(account=AccountRef(agent_id=OWNER, account_id=AccountId("checking")), opening_balance=0)
+    )
     world.declare_pool(
         PreparedHoldingPool(
             agent_id=OWNER,
-            account_id="checking",
-            asset_id=str(ASSET.symbol),
+            account_id=AccountId("checking"),
+            asset_id=AssetId(ASSET.symbol),
             quantity_scale=quantity_scale_for_asset(ASSET),
         )
     )
@@ -139,12 +142,12 @@ def test_imported_basis_is_exact_through_sales(
                             Sell(
                                 cause_id=f"test-sale-{observation.month}",
                                 agent_id=OWNER,
-                                proceeds_account_id="checking",
-                                asset_id="test-security",
+                                proceeds_account_id=AccountId("checking"),
+                                asset_id=AssetId("test-security"),
                                 lots=(
                                     LotSale(
-                                        account_id="checking",
-                                        lot_id="test-lot",
+                                        account_id=AccountId("checking"),
+                                        lot_id=LotId("test-lot"),
                                         units=sales[observation.month] * lot.quantity_scale,
                                     ),
                                 ),

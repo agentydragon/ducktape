@@ -147,6 +147,7 @@ py_library(
     deps = [
         "//finance/augur:dates",
         "//finance/augur/model:schemas",
+        "//finance/augur/model:series",
         "//finance/augur/model:trained_private_equity",
         "@pypi//numpy",
         "@pypi//pydantic",
@@ -284,6 +285,7 @@ py_library(
     deps = [
         ":bayes_mint_streams",
         ":private_equity",
+        "//finance/augur/model:series",
     ],
 )
 

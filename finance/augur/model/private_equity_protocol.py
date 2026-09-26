@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
-from finance.augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 
 BoolMatrix = npt.NDArray[np.bool_]
 FloatMatrix = npt.NDArray[np.float64]
@@ -36,7 +36,12 @@ def observed_private_equity_mark_matrix(latent_mark: FloatMatrix, update_events:
 
 
 def neutral_private_equity_issuer_bundle(
-    issuer_id: str, *, observed_mark: FloatMatrix, tender_events: BoolMatrix, rollout_count: int, horizon_months: int
+    issuer_id: IssuerId,
+    *,
+    observed_mark: FloatMatrix,
+    tender_events: BoolMatrix,
+    rollout_count: int,
+    horizon_months: int,
 ) -> PrivateEquityBundle:
     """Build a single-issuer `PrivateEquityBundle` with v1 neutral protocol defaults.
 

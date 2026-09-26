@@ -52,6 +52,7 @@ py_library(
         "//finance/augur/policy:cash_band",
         "//finance/augur/policy:sleeves",
         "//finance/augur/sim:actions",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:observations",
     ],
 )
