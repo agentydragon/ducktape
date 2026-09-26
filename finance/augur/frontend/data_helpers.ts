@@ -468,9 +468,11 @@ export function eventTitle(event) {
 // holdings sharing one series collapse into a single row, because the sim cannot tell them apart
 // either — so their values sum, which is what the weight seed has to divide by.
 // Private equity is absent because its key carries no symbol: it leaves only via a tender event.
+// A TLH portfolio is a sleeve too, keyed by the index it tracks; the backend draws on it as a
+// managed source, and it collapses with any ordinary holding of the same index.
 export function sellableSecurities(portfolio) {
   const bySymbol = new Map();
-  for (const position of portfolio?.holdings ?? []) {
+  for (const position of [...(portfolio?.holdings ?? []), ...(portfolio?.tlhPortfolios ?? [])]) {
     const symbol = isPrivateSecurityPosition(position) ? null : position.asset?.symbol;
     if (!symbol) continue;
     const label = position.label || position.symbol || symbol;

@@ -101,7 +101,7 @@ def _compose(lots: list[PreparedLot], *, horizon_months: int) -> World:
 
 def test_product_display_keeps_one_dollar_total_over_three_units(portfolio: PortfolioConfig) -> None:
     response = product_portfolio_response(
-        snapshot=FinanceSnapshot(as_of_date="2026-01-01", cash=0), portfolio=portfolio
+        snapshot=FinanceSnapshot(as_of_date="2026-01-01", cash=0), portfolio=portfolio, tlh_portfolios=()
     )
     [position] = response.holdings
     [lot] = position.lots

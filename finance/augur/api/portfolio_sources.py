@@ -16,6 +16,7 @@ from finance.augur.api.portfolio import (
     BondHoldingConfig,
     HoldingPositionConfig,
     HoldingTaxLotConfig,
+    LabeledTlhPortfolio,
     PortfolioAccountConfig,
     PortfolioConfig,
     SecurityHoldingConfig,
@@ -48,7 +49,7 @@ class _PortfolioContribution:
     # Bonds ride the merge alongside holdings so `_merge_contributions` re-validates them as
     # part of one `PortfolioConfig`. Plaid contributes none: it imports positions, not terms.
     bonds: tuple[BondHoldingConfig, ...]
-    tlh_portfolios: tuple[TlhPortfolioSpec, ...]
+    tlh_portfolios: tuple[LabeledTlhPortfolio, ...]
     latest_captured_at: datetime | None
 
 
@@ -56,7 +57,7 @@ class _PortfolioContribution:
 class ResolvedPortfolioSources:
     snapshot: FinanceSnapshot
     portfolio: PortfolioConfig
-    tlh_portfolios: tuple[TlhPortfolioSpec, ...]
+    tlh_portfolios: tuple[LabeledTlhPortfolio, ...]
 
 
 def resolve_portfolio_sources(config: Config) -> ResolvedPortfolioSources:
@@ -79,7 +80,7 @@ def resolve_portfolio_sources(config: Config) -> ResolvedPortfolioSources:
         as_of_date=_merged_as_of_date(present),
         cash=sum((contribution.cash for contribution in present), start=Decimal(0)),
     )
-    tlh_portfolios = tuple(policy for contribution in present for policy in contribution.tlh_portfolios)
+    tlh_portfolios = tuple(portfolio for contribution in present for portfolio in contribution.tlh_portfolios)
     return ResolvedPortfolioSources(snapshot=snapshot, portfolio=portfolio, tlh_portfolios=tlh_portfolios)
 
 
@@ -110,7 +111,7 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
 
     accounts: list[PortfolioAccountConfig] = []
     holdings: list[HoldingPositionConfig] = []
-    tlh_portfolios: list[TlhPortfolioSpec] = []
+    tlh_portfolios: list[LabeledTlhPortfolio] = []
     for group in plaid.sp500_proxy_groups:
         group_holdings = tuple(
             holding for account_id in group.plaid_account_ids for holding in holdings_by_account.get(account_id, ())
@@ -126,16 +127,20 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
             )
         )
         cohorts = _proxy_cohorts(group, group_holdings)
-        holdings.append(_sp500_proxy_holding(group, cohorts))
-        if group.tlh_assumptions is not None:
+        if group.tlh_assumptions is None:
+            holdings.append(_sp500_proxy_holding(group, cohorts))
+        else:
             tlh_portfolios.append(
-                TlhPortfolioSpec(
-                    portfolio_id=group.position_id,
-                    owner_agent_id=group.owner_agent_id,
-                    account_id=group.portfolio_account_id,
-                    asset=SecurityKey(symbol=SP500_SYMBOL),
-                    initial_cohorts=list(cohorts),
-                    assumptions=group.tlh_assumptions,
+                LabeledTlhPortfolio(
+                    spec=TlhPortfolioSpec(
+                        portfolio_id=group.position_id,
+                        owner_agent_id=group.owner_agent_id,
+                        account_id=group.portfolio_account_id,
+                        asset=SecurityKey(symbol=SP500_SYMBOL),
+                        initial_cohorts=list(cohorts),
+                        assumptions=group.tlh_assumptions,
+                    ),
+                    label=group.label or group.symbol,
                 )
             )
 

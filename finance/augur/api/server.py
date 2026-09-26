@@ -163,7 +163,11 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     @app.get("/api/product/portfolio", response_model=ProductPortfolioResponse)
     def product_portfolio_snapshot() -> JSONResponse:
         return payload(
-            product_portfolio_response(snapshot=resolved_portfolio.snapshot, portfolio=resolved_portfolio.portfolio)
+            product_portfolio_response(
+                snapshot=resolved_portfolio.snapshot,
+                portfolio=resolved_portfolio.portfolio,
+                tlh_portfolios=resolved_portfolio.tlh_portfolios,
+            )
         )
 
     @app.post("/api/product/projections/metric_fan", response_model=MetricFanResponse)

@@ -30,7 +30,13 @@ from pydantic import (
 from finance.augur.api.schemas import NonNegativeCurrencyAmount, PositiveCurrencyAmount
 from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
-from finance.augur.sim.scenario import BondHolding, DistributionTaxSlice, InitialLot, SecurityDistribution
+from finance.augur.sim.scenario import (
+    BondHolding,
+    DistributionTaxSlice,
+    InitialLot,
+    SecurityDistribution,
+    TlhPortfolioSpec,
+)
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
 
@@ -374,6 +380,18 @@ class PortfolioConfig(PortfolioConfigModel):
             )
             for bond in self.bonds
         )
+
+
+@dataclass(frozen=True)
+class LabeledTlhPortfolio:
+    """A managed TLH portfolio and the name the product shows it under.
+
+    Not a `PortfolioConfig` holding: the portfolio is money-denominated and owns its cohorts,
+    so it has no unit price or lots, and nothing may also hold its (owner, account, asset) pool.
+    """
+
+    spec: TlhPortfolioSpec
+    label: str
 
 
 @dataclass(frozen=True)
