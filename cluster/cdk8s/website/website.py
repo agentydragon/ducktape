@@ -7,16 +7,10 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
@@ -217,15 +211,15 @@ def chart(app: App) -> Chart:
             type="ClusterIP",
         ),
     )
-    HttpRoute(
+    https_route(
         chart,
         "route",
         metadata=metadata(_NAME, _NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["www.allegedly.works", "allegedly.works"],
-            rules=[HttpRouteSpecRules(backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=80)])],
-        ),
+        hostnames=["www.allegedly.works", "allegedly.works"],
+        backend=_NAME,
+        port=80,
+        hsts=False,
+        listener=None,
     )
     return chart
 

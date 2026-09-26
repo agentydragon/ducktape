@@ -340,7 +340,7 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=metadata(_NAME, _NAMESPACE),
-        hostname="langfuse.allegedly.works",
+        hostnames=["langfuse.allegedly.works"],
         backend="langfuse-web",
         port=3000,
         hsts=False,

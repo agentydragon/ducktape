@@ -121,7 +121,7 @@ def _server(chart: Chart) -> None:
         chart,
         "route",
         metadata=metadata(NAME, NAMESPACE),
-        hostname="atuin.allegedly.works",
+        hostnames=["atuin.allegedly.works"],
         backend=_SERVER,
         port=_PORT,
         hsts=False,

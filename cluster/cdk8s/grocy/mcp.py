@@ -183,7 +183,7 @@ def household_chart(app: App, *, household: str, display_name: str) -> Chart:
         chart,
         "httproute",
         metadata=metadata(f"grocy-mcp-{household}-server", namespace),
-        hostname=f"grocy-mcp-{household}.allegedly.works",
+        hostnames=[f"grocy-mcp-{household}.allegedly.works"],
         backend=_NAME,
         port=_HTTP_PORT,
         timeout="60s",

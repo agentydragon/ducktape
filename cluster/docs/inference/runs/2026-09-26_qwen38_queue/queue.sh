@@ -60,9 +60,19 @@ cleanup() {
 trap cleanup EXIT
 trap 'note "queue interrupted"; exit 130' INT TERM
 
+# shellcheck source=guard.sh
+source "$here/guard.sh"
+
+harbor_finished() {
+  local result="$current_run/harbor/jobs/attempt/result.json"
+  [[ -f $result ]] && jq -e '
+    .finished_at != null and .stats.n_running_trials == 0 and .stats.n_pending_trials == 0
+  ' "$result" >/dev/null
+}
+
 mem_available_kib() { awk '/MemAvailable:/ {print $2}' /proc/meminfo; }
 ollama_paused() {
-  kubectl --request-timeout=10s -n ollama get deployment ollama -o json \
+  bounded_ollama_get \
     | jq -e '.spec.replicas == 0 and ((.status.replicas // 0) == 0)' >/dev/null
 }
 wait_admission() {
@@ -89,24 +99,6 @@ check_runtime_headroom() {
   ((${#free_gpu[@]} == 2)) || return 1
   ((free_gpu[0] >= 6144 && free_gpu[1] >= 1024)) || return 1
   ollama_paused
-}
-run_guarded() {
-  setsid "$@" &
-  phase_pid=$!
-  local status=0
-  while kill -0 "$phase_pid" 2>/dev/null; do
-    if ! check_runtime_headroom; then
-      note "resource/service guard stopped this attempt; not a model-quality failure"
-      printf '%s\n' 'resource_or_service_guard' >"$current_run/termination.txt"
-      stop_server
-      stop_phase
-      return 1
-    fi
-    sleep 15
-  done
-  wait "$phase_pid" || status=$?
-  phase_pid=
-  return "$status"
 }
 start_server() {
   local context=$1 kv=$2

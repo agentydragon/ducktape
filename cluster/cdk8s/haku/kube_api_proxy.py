@@ -11,7 +11,7 @@ to an https server -- against plain HTTP kubectl sends every request unauthentic
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     Capability,
     ContainerPort,
@@ -36,11 +36,7 @@ from cdk8s_plus_34 import (
     ServicePort,
     Volume,
 )
-from cert_manager_crds.io.cert_manager import (
-    CertificateSpecIssuerRef,
-    CertificateSpecPrivateKey,
-    CertificateSpecPrivateKeyAlgorithm,
-)
+from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
 from constructs import Construct
 
 from cluster.cdk8s import cilium
@@ -48,9 +44,9 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "haku-kube-api-proxy"
@@ -80,7 +76,7 @@ class KubeApiProxy(Construct):
             secret_name=_TLS_SECRET,
             duration="2160h",
             renew_before="720h",
-            private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256),
+            private_key=CertificatePrivateKey.ecdsa_p256(),
             common_name=_SERVICE_FQDN,
             dns_names=[_SERVICE_FQDN, f"{NAME}.{namespace}.svc"],
             # Every sandbox trust bundle already carries cluster-root-ca, so kubeconfigs
@@ -125,7 +121,7 @@ class KubeApiProxy(Construct):
                     "description": "Dedicated TLS-terminated Kubernetes API route for Haku-authorized Agent traffic."
                 },
             ),
-            hostname=HOSTNAME,
+            hostnames=[HOSTNAME],
             backend=NAME,
             port=_HTTP_PORT,
             timeout="3600s",
@@ -206,14 +202,12 @@ class KubeApiProxy(Construct):
                 memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
             ),
             security_context=ContainerSecurityContextProps(
-                allow_privilege_escalation=False,
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                read_only_root_filesystem=True,
+                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]), read_only_root_filesystem=True
             ),
         )
         tls = Secret.from_secret_name(self, "tls-secret", _TLS_SECRET)
         container.mount(_TLS_DIR, Volume.from_secret(self, "tls-volume", tls), read_only=True)
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        apply_pod_spec_patches(deployment)
 
     def _add_network_policy(self) -> None:
         # Selecting the proxy makes both directions default-deny: ingress from the Gateway on

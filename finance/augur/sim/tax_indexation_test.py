@@ -123,13 +123,23 @@ def test_cpi_indexing_without_a_modeled_cpi_is_refused(profile: PreparedTaxProfi
         authority.rules(0)
 
 
+def test_a_start_before_the_law_year_deflates_the_indexed_amounts(profile: PreparedTaxProfile) -> None:
+    """A 2019 start at CPI 4/5 of 2024's: standard deductions 14,600 × 4/5 = 11,680 and
+    5,363 × 4/5 = 4,290.40; the fixed $200,000 NIIT threshold stays put."""
+    authority = TaxAuthority(profile, indexation=CpiIndexedLaw(start_year=2019, law_year_to_start=Fraction(4, 5)))
+    authority.handle(MarketStatement(month=0, cpi=(10**9, 10**9)))
+    federal, california = authority.rules(0)
+    assert (federal.standard_deduction, california.standard_deduction) == (
+        dollars(11_680),
+        dollars(Fraction(429_040, 100)),
+    )
+    assert federal.net_investment_income_tax is not None
+    assert federal.net_investment_income_tax.threshold == dollars(200_000)
+
+
 @pytest.mark.parametrize(
     ("start_year", "law_year_to_start", "match"),
-    [
-        (2023, Fraction(1), "precedes the tables' law year 2024"),
-        (2024, Fraction(11, 10), "is 1, not 11/10"),
-        (2026, Fraction(0), "must be positive"),
-    ],
+    [(2024, Fraction(11, 10), "is 1, not 11/10"), (2026, Fraction(0), "must be positive")],
 )
 def test_an_anchor_inconsistent_with_the_law_year_is_refused(
     profile: PreparedTaxProfile, start_year: int, law_year_to_start: Fraction, match: str
