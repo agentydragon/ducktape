@@ -115,26 +115,33 @@ truly isn't reachable from the constructor at all.
 ## Build a Kubernetes quantity from `Cpu`/`Size`, never a hand-typed string
 
 A CRD-generated resources field (`<Kind>...ResourcesRequests`/`...ResourcesLimits`, or any
-other field typed as a Kubernetes `Quantity`) only takes its value through
-`.from_string(...)`/`.from_number(...)` — there is no way to hand it `cdk8s_plus_34`'s own
-`ContainerResources`/`CpuResources`/`MemoryResources` directly, since those are
+other field typed as a Kubernetes `Quantity` — storage sizes included) only takes its value
+through `.from_string(...)`/`.from_number(...)` — there is no way to hand it `cdk8s_plus_34`'s
+own `ContainerResources`/`CpuResources`/`MemoryResources` directly, since those are
 `cdk8s_plus_34.Container`'s own types, not the CRD's. That is not a reason to fall back to a
-literal string (`"50m"`, `"512Mi"`) at the call site: build the same value
-`cdk8s_plus_34.Container` builds internally (`container.ts`'s `_toKube()`), then hand the CRD's
-constructor the resulting string instead of one hand-typed by eye.
+literal string (`"50m"`, `"512Mi"`) at the call site: build a `Cpu`/`Size` value and format it,
+then hand the CRD's constructor the resulting string instead of one hand-typed by eye.
 
 - **CPU**: `cdk8s_plus_34.Cpu.millis(50).amount` — `amount` is a public field, already the exact
   wire string (`Cpu.units(1).amount` gives `"1"`).
-- **Memory**: `cdk8s.Size.mebibytes(512)` normalizes to whole mebibytes the same way
-  `cdk8s_plus_34.Container` does — `f"{size.to_mebibytes()}Mi"`.
-- **Ephemeral storage**: the same, in whole gibibytes — `f"{size.to_gibibytes()}Gi"` (this repo's
-  own `EphemeralStorageResources` gotcha above is this exact rounding rule, one layer up).
+- **Memory, ephemeral storage, or any other `Size`-typed quantity**: `cdk8s.Size.mebibytes(512).as_string()`
+  (or `.gibibytes(...)`/`.kibibytes(...)`/etc.) — `as_string()` formats the amount in whatever
+  unit it was constructed with (`"512Mi"`, `"1Gi"`), which is already a valid Kubernetes
+  `Quantity`. **Not** `f"{size.to_mebibytes()}Mi"`: `to_mebibytes()`/`to_gibibytes()`/etc. convert
+  to a _different_ unit and default to `SizeRoundingBehavior.FAIL`, raising at synth time for any
+  value that isn't a whole number in the target unit (`Size.kibibytes(1500).to_mebibytes()`
+  throws; `Size.mebibytes(500).as_string()` never does). There is no reason to force a unit
+  conversion nobody asked for — `as_string()` is the direct, always-safe formatter.
 
-Constructing `cdk8s_plus_34.Container`'s own `resources=` keeps passing `Cpu`/`Size` objects
-straight through (`CpuResources(request=Cpu.millis(50))`, already the established pattern
-throughout this repo, e.g. `agentplane/actions.py`) — `Container` does the extraction above
-internally. A raw CRD field has no such internal step, so the wrapper does it once, explicitly,
-rather than a caller silently retyping `"50m"` by hand at every call site.
+`cdk8s_plus_34.Container`'s own `_toKube()` does force memory/ephemeral-storage into whole
+mebibytes/gibibytes before formatting (`container.ts`), which is why `EphemeralStorageResources`
+only accepts whole gibibytes (this repo's own gotcha above). That is a quirk of `Container`'s
+internal representation, not a pattern to imitate in a new wrapper: `Container`'s own
+`resources=` keeps passing `Cpu`/`Size` objects straight through (`CpuResources(request=Cpu.millis(50))`,
+already the established pattern throughout this repo, e.g. `agentplane/actions.py`) and does the
+mebibyte/gibibyte forcing itself, internally. A raw CRD field has no such internal step and no
+requirement to match `Container`'s unit choice — `as_string()` in whatever unit the caller
+constructed is correct and simpler.
 
 ## Don't invent a mechanism cdk8s/Kubernetes doesn't already have
 
