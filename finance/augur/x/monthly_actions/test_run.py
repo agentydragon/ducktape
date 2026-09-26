@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.artifacts import read_prepared_input
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.results import (
     Executed,
@@ -18,7 +17,7 @@ from finance.augur.sim.results import (
     Rejected,
     RejectedAction,
 )
-from finance.augur.x.monthly_actions.run import run_example
+from finance.augur.x.monthly_actions.run import compose, run_example, situation
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
@@ -151,9 +150,9 @@ def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(tmp_path: Path)
         ],
         check=True,
     )
-    prepared = read_prepared_input(output_dir / "execution-input.json").scenario
-    assert not prepared.initial_lots
-    assert [(pool.agent_id, pool.account_id, pool.asset_id) for pool in prepared.holding_pools] == [
+    composed = compose(situation(cash_only_start=True), 0)
+    assert not composed.holdings.lots
+    assert [(pool.agent_id, pool.account_id, pool.asset_id) for pool in composed.holdings.pools] == [
         ("example-household", "brokerage", "example-stock")
     ]
     rollouts = Finished.model_validate_json((output_dir / "outcomes.json").read_text()).rollouts
@@ -210,7 +209,6 @@ def test_profile_entrypoint_compares_matching_capture_workloads(tmp_path: Path) 
         reports.append(json.loads((output / "report.json").read_text()))
         assert (output / "execution.prof").stat().st_size > 0
     compact, detailed = reports
-    assert compact["input_sha256"] == detailed["input_sha256"]
     assert compact["compact_sha256"] == detailed["compact_sha256"]
     assert compact["observed_path_months"] == detailed["observed_path_months"] == 28
     assert compact["output_bytes"] < detailed["output_bytes"]

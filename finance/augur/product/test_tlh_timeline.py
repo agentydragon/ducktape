@@ -69,7 +69,7 @@ def case() -> Case:
 def test_tlh_cash_and_separate_realizations_reach_product_timeline(
     case: Case, capture: Literal["dense", "forensic"]
 ) -> None:
-    session = ActionSession(case.compiled_run, "owner", [0], capture=capture)
+    session = ActionSession.from_run(case.compiled_run, "owner", [0], capture=capture)
     try:
         assert not isinstance(session.start(), Finished)
         result = session.advance(
@@ -145,7 +145,7 @@ def test_zero_cash_liquidation_is_still_a_redemption(case: Case) -> None:
         rollout_count=1,
         series={asset: levels([[Decimal(0), Decimal(0)]]) for asset in case.series},
     )
-    session = ActionSession(worthless.compiled_run, "owner", [0], capture="dense")
+    session = ActionSession.from_run(worthless.compiled_run, "owner", [0], capture="dense")
     try:
         assert not isinstance(session.start(), Finished)
         result = session.advance(

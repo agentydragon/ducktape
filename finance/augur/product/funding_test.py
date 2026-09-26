@@ -98,7 +98,7 @@ def run(
         initial_lots=tuple(scenario.initial_lots),
         currency_quantum=scenario.currency.quantum,
     )
-    session = ActionSession(prepared, ACTOR, [0])
+    session = ActionSession.from_run(prepared, ACTOR, [0])
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

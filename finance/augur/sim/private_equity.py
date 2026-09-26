@@ -11,7 +11,21 @@ from finance.augur.sim.holdings import Holdings, private_issuer
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div, mul_div_wide, position_value
 from finance.augur.sim.observations import TlhPortfolioObservation
-from finance.augur.sim.prepared import PreparedScenario
+from finance.augur.sim.prepared import _TenderPolicy
+
+# The issuer protocol's per-issuer series on a path, `private_equity_<channel>:<issuer>`.
+CHANNELS = (
+    "mark",
+    "regime",
+    "event_kind",
+    "sale_opportunity",
+    "sale_capacity",
+    "eligible",
+    "forced_sale",
+    "liquidity_blocked",
+    "forced_recovery",
+    "company_valuation",
+)
 
 
 @dataclass(frozen=True)
@@ -67,7 +81,6 @@ def sellable_units(units: int, capacity: int, eligible: int) -> int:
 
 
 def liquid_net_worth(
-    scenario: PreparedScenario,
     accounting: Accounting,
     holdings: Holdings,
     market: MarketPath,
@@ -76,9 +89,9 @@ def liquid_net_worth(
     month: int,
 ) -> int:
     total = 0
-    for account in scenario.accounts:
-        if account.account.agent_id == actor:
-            total = checked_count(total + accounting.ledger.balance(account.account), "money addition")
+    for account in accounting.declared:
+        if account.agent_id == actor:
+            total = checked_count(total + accounting.ledger.balance(account), "money addition")
     for lot in holdings.lots:
         if lot.spec.agent_id != actor or private_issuer(lot.spec.asset_id) is not None or lot.units_remaining <= 0:
             continue
@@ -97,7 +110,8 @@ def liquid_net_worth(
 
 
 class PrivateEquity:
-    def __init__(self) -> None:
+    def __init__(self, tender_policies: list[_TenderPolicy]) -> None:
+        self.tender_policies = tender_policies
         # This month's protocol outcomes, cleared by `begin_month`.
         self.events: list[ProtocolEvent] = []
         self.opportunities: list[Opportunity] = []
@@ -108,7 +122,6 @@ class PrivateEquity:
 
     def advance(
         self,
-        scenario: PreparedScenario,
         accounting: Accounting,
         holdings: Holdings,
         market: MarketPath,
@@ -150,9 +163,7 @@ class PrivateEquity:
                     )
                 )
             held = units_held(holdings, candidates)
-            policy = next(
-                (policy for policy in scenario._private_equity_tender_policies if policy.owner_agent_id == actor), None
-            )
+            policy = next((policy for policy in self.tender_policies if policy.owner_agent_id == actor), None)
             if policy is None:
                 if tender:
                     self.opportunities.append(
@@ -204,7 +215,7 @@ class PrivateEquity:
                     )
                     holdings.sell(accounting, month, request, price=mark)
             floor = market.amount(policy.liquid_net_worth_floor, month)
-            liquid = liquid_net_worth(scenario, accounting, holdings, market, marks, actor, month)
+            liquid = liquid_net_worth(accounting, holdings, market, marks, actor, month)
             shortfall = max(0, checked_count(floor - liquid, "money subtraction"))
             held = units_held(holdings, candidates)
             sellable = sellable_units(held, capacity, eligible)

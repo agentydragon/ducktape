@@ -138,12 +138,6 @@ def test_zero_mark_liquidation_releases_all_remaining_basis(portfolio: TlhPortfo
     assert portfolio.observe() == TlhObservation(value=0, reported_tax_basis=0)
 
 
-def test_zero_unit_schedule_does_not_redeem_cash(assumptions: TlhAssumptions) -> None:
-    portfolio = TlhPortfolio(assumptions, TlhOpening(month=-1, price=100, quantity_scale=1, positions=(), cash=99))
-    assert portfolio._withdraw_units(0).cash_received == 0
-    assert portfolio.observe() == TlhObservation(value=99, reported_tax_basis=99)
-
-
 def test_rejected_withdrawal_and_bad_month_leave_state_unchanged(portfolio: TlhPortfolio) -> None:
     before = portfolio.observe()
     with pytest.raises(ValueError, match="exceeds"):
@@ -178,13 +172,12 @@ def test_losses_cannot_reduce_basis_below_zero(assumptions: TlhAssumptions) -> N
     assert portfolio.advance(TlhMarketUpdate(month=1, price=100)) == ModeledRealizations()
 
 
-def test_private_schedule_and_distribution_use_component_exposure(portfolio: TlhPortfolio) -> None:
+def test_distribution_uses_component_exposure(portfolio: TlhPortfolio) -> None:
     portfolio.advance(TlhMarketUpdate(month=0, price=100))
-    sold = portfolio._withdraw_units(50)
+    sold = portfolio.withdraw(5_000)
     assert sold.cash_received == 5_000
     assert sold.realizations.long_term_gain == 50
     assert portfolio._distribution(MONEY_FACTOR_SCALE // 10) == 5
-    assert portfolio._withdraw_units(50).cash_received == 5_000
 
 
 def test_curve_has_maturity_decay_and_drawdown_response(assumptions: TlhAssumptions) -> None:

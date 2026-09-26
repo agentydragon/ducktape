@@ -243,19 +243,6 @@ class TlhPortfolio:
         self._cash = 0
         return WithdrawalResult(cash, redeemed.realizations)
 
-    def _withdraw_units(self, units: int) -> WithdrawalResult:
-        """Configured fixed-unit schedules redeem exposure without exposing cohort state."""
-
-        _nonnegative(units=units)
-        if units == 0:
-            return WithdrawalResult(0, ModeledRealizations())
-        total_units = sum(cohort.units for cohort in self._cohorts)
-        if units > total_units:
-            raise ValueError("scheduled redemption exceeds portfolio exposure")
-        if units == total_units:
-            return self.liquidate()
-        return self._redeem(units)
-
     def _redeem(self, units: int) -> WithdrawalResult:
         remaining = units
         updated = []

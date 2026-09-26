@@ -4,6 +4,7 @@ The fixed sale dates belong to these experiments, not the execution input. Tax
 assessment, exact lot accounting and payment still use the common action session.
 """
 
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -11,14 +12,29 @@ import numpy as np
 import pytest
 import pytest_bazel
 
+from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.sim.actions import Action, DecisionActions, LotSale, PayClaim, Sell, Transfer
 from finance.augur.sim.books import AccountRef, TaxAccrual
+from finance.augur.sim.compiler.execution import compile_series
+from finance.augur.sim.compiler.tax import compile_profile
+from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.jurisdictions import load_jurisdiction
+from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.observations import Decision
+from finance.augur.sim.prepared import (
+    PreparedAccount,
+    PreparedHoldingPool,
+    PreparedJurisdiction,
+    PreparedLot,
+    PreparedSeries,
+    PreparedTransfer,
+)
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
-from finance.augur.sim.scenario import InitialLot, OrdinaryIncome, ScheduledTransfer
+from finance.augur.sim.scenario import ORDINARY_INCOME, TaxProfile
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.testing.case import Case, levels, scenario
-from finance.augur.sim.testing.fixtures import VTI, checking, taxed
+from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.world import World
 
 # Federal single-filer schedule in sim/data/jurisdictions/federal_us.yaml.
 # Expectations are independent amounts, not another invocation of tax arithmetic.
@@ -27,6 +43,93 @@ CAPITAL_LOSS_OFFSET_CAP = 300_000
 GAIN = 5_000_000
 WAGES = Decimal(30_000)
 QUIET, TAXED = 0, 1
+
+VTI = SecurityKey(symbol=SecuritySymbol("vti"))
+QUANTUM = Decimal("0.01")
+FEDERAL = "federal_us"
+
+
+@dataclass(frozen=True)
+class Situation:
+    """The compiled paths, the one VTI lot Alice opens holding, and the month-zero wages she is paid."""
+
+    series: tuple[PreparedSeries, ...]
+    rollout_count: int
+    horizon_months: int
+    lot: PreparedLot
+    wages: Decimal
+
+
+def _situation(prices: np.ndarray, *, quantity: float, cost_basis: Decimal, wages: Decimal) -> Situation:
+    """One stipulated `(rollout, month)` price block; the horizon is the snapshots it carries."""
+    rollout_count, snapshots = prices.shape
+    horizon = snapshots - 1
+    paths = ExternalSeriesContext.from_level_blocks(
+        [(VTI, prices)], rollout_count=rollout_count, horizon_months=horizon
+    )
+    scale = quantity_scale_for_asset(VTI)
+    return Situation(
+        series=compile_series(paths, rollout_count=rollout_count, horizon_months=horizon, currency_quantum=QUANTUM),
+        rollout_count=rollout_count,
+        horizon_months=horizon,
+        lot=PreparedLot(
+            lot_id="alice-vti",
+            agent_id="alice",
+            account_id="checking",
+            asset_id=str(VTI.symbol),
+            purchase_month=-24,
+            quantity_scale=scale,
+            units=int(quantity_to_quanta(quantity, scale=scale)),
+            basis=int(currency_amount_to_quanta(cost_basis, quantum=QUANTUM)),
+        ),
+        wages=wages,
+    )
+
+
+def _compose(case: Situation, rollout_id: int) -> World:
+    """Alice files federally from a cashless `checking` account; `employer` opens holding exactly the wages it pays."""
+    federal = load_jurisdiction(FEDERAL)
+    world = World(
+        MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
+        horizon_months=case.horizon_months,
+        income_sources=(ORDINARY_INCOME,),
+        jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=federal.level),),
+    )
+    openings = [("alice", Decimal(0)), ("irs", Decimal(0))]
+    if case.wages:
+        openings.append(("employer", case.wages))
+    for agent_id, opening in openings:
+        world.declare_account(
+            PreparedAccount(
+                account=AccountRef(agent_id=agent_id, account_id="checking"),
+                opening_balance=int(currency_amount_to_quanta(opening, quantum=QUANTUM)),
+            )
+        )
+    profile = TaxProfile(
+        agent_id="alice", jurisdiction_ids=[FEDERAL], tax_authority_agent_id="irs", prior_year_tax=Decimal(0)
+    )
+    world.track(TaxAuthority(compile_profile(profile, {FEDERAL: federal}, quantum=QUANTUM)))
+    world.declare_pool(
+        PreparedHoldingPool(
+            agent_id="alice", account_id="checking", asset_id=str(VTI.symbol), quantity_scale=case.lot.quantity_scale
+        )
+    )
+    world.hold(case.lot)
+    if case.wages:
+        # Wages are the one cashflow an action cannot express: a bare actor transfer may not
+        # declare tax character, so the payroll run is the scheduled table the world carries.
+        world.scheduled_transfers = (
+            PreparedTransfer(
+                month=0,
+                cause_id="wages",
+                from_account=AccountRef(agent_id="employer", account_id="checking"),
+                to_account=AccountRef(agent_id="alice", account_id="checking"),
+                amount=int(currency_amount_to_quanta(case.wages, quantum=QUANTUM)),
+                income_category=ORDINARY_INCOME,
+                deduction_category=None,
+            ),
+        )
+    return world
 
 
 def _sell_and_pay(decisions: list[Decision], sale_month: int) -> list[DecisionActions]:
@@ -63,8 +166,8 @@ def _sell_and_pay(decisions: list[Decision], sale_month: int) -> list[DecisionAc
     return responses
 
 
-def _run(case: Case, *, sale_month: int, rollout_ids: list[int]) -> Finished:
-    session = ActionSession(case.compiled_run, "alice", rollout_ids)
+def _run(case: Situation, *, sale_month: int, rollout_ids: list[int]) -> Finished:
+    session = ActionSession({id_: _compose(case, id_) for id_ in rollout_ids}, "alice")
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -75,7 +178,8 @@ def _run(case: Case, *, sale_month: int, rollout_ids: list[int]) -> Finished:
 
 
 def test_sale_receipt_cannot_be_rewritten_through_policy_memory() -> None:
-    session = ActionSession(_gain_case(wages=Decimal(0)).compiled_run, "alice", [0])
+    case = _gain_situation(wages=Decimal(0))
+    session = ActionSession({0: _compose(case, 0)}, "alice")
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)
@@ -107,46 +211,13 @@ def test_sale_receipt_cannot_be_rewritten_through_policy_memory() -> None:
         session.close()
 
 
-def _gain_case(*, wages: Decimal) -> Case:
-    return Case(
-        scenario=scenario(
-            checking(("alice", Decimal(0)), ("irs", Decimal(0)), ("employer", wages)),
-            scheduled_transfers=[
-                ScheduledTransfer(
-                    month=0,
-                    cause_id="wages",
-                    from_agent_id="employer",
-                    from_account_id="checking",
-                    to_agent_id="alice",
-                    to_account_id="checking",
-                    amount=wages,
-                    income_category=OrdinaryIncome(),
-                )
-            ]
-            if wages
-            else [],
-            horizon_months=12,
-            initial_lots=[
-                InitialLot(
-                    lot_id="alice-vti",
-                    agent_id="alice",
-                    account_id="checking",
-                    asset=VTI,
-                    purchase_month_index=-24,
-                    quantity=1.0,
-                    cost_basis=10000,
-                )
-            ],
-            tax_profiles=[taxed("alice", "federal_us")],
-        ),
-        rollout_count=1,
-        series={VTI: levels([[Decimal(60_000)] * 13])},
-    )
+def _gain_situation(*, wages: Decimal) -> Situation:
+    return _situation(np.full((1, 13), 60_000.0), quantity=1.0, cost_basis=Decimal(10_000), wages=wages)
 
 
 @pytest.fixture
 def bare_gain() -> TaxAccrual:
-    [rollout] = _run(_gain_case(wages=Decimal(0)), sale_month=0, rollout_ids=[0]).rollouts
+    [rollout] = _run(_gain_situation(wages=Decimal(0)), sale_month=0, rollout_ids=[0]).rollouts
     assert rollout.stop is None
     [assessment] = rollout.summary.tax_accruals
     return assessment
@@ -154,7 +225,7 @@ def bare_gain() -> TaxAccrual:
 
 @pytest.fixture
 def wages_and_gain() -> TaxAccrual:
-    [rollout] = _run(_gain_case(wages=WAGES), sale_month=0, rollout_ids=[0]).rollouts
+    [rollout] = _run(_gain_situation(wages=WAGES), sale_month=0, rollout_ids=[0]).rollouts
     assert rollout.stop is None
     [assessment] = rollout.summary.tax_accruals
     return assessment
@@ -178,26 +249,7 @@ def test_unused_standard_deduction_shelters_long_term_gain(bare_gain: TaxAccrual
     ids=["under-the-cap", "over-the-cap"],
 )
 def test_capital_loss_offsets_ordinary_income_only_up_to_1211_cap(loss: Decimal, offset: int) -> None:
-    case = Case(
-        scenario=scenario(
-            checking(("alice", Decimal(0)), ("irs", Decimal(0))),
-            horizon_months=12,
-            initial_lots=[
-                InitialLot(
-                    lot_id="alice-vti",
-                    agent_id="alice",
-                    account_id="checking",
-                    asset=VTI,
-                    purchase_month_index=-24,
-                    quantity=1.0,
-                    cost_basis=Decimal(1_000) + loss,
-                )
-            ],
-            tax_profiles=[taxed("alice", "federal_us")],
-        ),
-        rollout_count=1,
-        series={VTI: levels([[Decimal(1_000)] * 13])},
-    )
+    case = _situation(np.full((1, 13), 1_000.0), quantity=1.0, cost_basis=Decimal(1_000) + loss, wages=Decimal(0))
     [rollout] = _run(case, sale_month=0, rollout_ids=[0]).rollouts
     assert rollout.stop is None
     [assessment] = rollout.summary.tax_accruals
@@ -219,33 +271,14 @@ def test_gain_is_rated_from_where_ordinary_income_leaves_off(wages_and_gain: Tax
 
 
 @pytest.fixture
-def independent_paths() -> Case:
+def independent_paths() -> Situation:
     prices = np.full((2, 26), 100.0)
     prices[TAXED, :] = 20_000.0
-    return Case(
-        scenario=scenario(
-            checking(("alice", Decimal(0)), ("irs", Decimal(0))),
-            horizon_months=25,
-            initial_lots=[
-                InitialLot(
-                    lot_id="alice-vti",
-                    agent_id="alice",
-                    account_id="checking",
-                    asset=VTI,
-                    purchase_month_index=-24,
-                    quantity=10.0,
-                    cost_basis=1000,
-                )
-            ],
-            tax_profiles=[taxed("alice", "federal_us")],
-        ),
-        rollout_count=2,
-        series={VTI: prices},
-    )
+    return _situation(prices, quantity=10.0, cost_basis=Decimal(1_000), wages=Decimal(0))
 
 
 @pytest.fixture
-def population(independent_paths: Case) -> dict[int, Rollout]:
+def population(independent_paths: Situation) -> dict[int, Rollout]:
     result = _run(independent_paths, sale_month=15, rollout_ids=[QUIET, TAXED])
     assert all(rollout.stop is None for rollout in result.rollouts)
     return {rollout.rollout_id: rollout for rollout in result.rollouts}
@@ -292,7 +325,7 @@ def test_liability_changes_and_settlement_belong_to_their_path(population: dict[
 
 
 def test_selected_reordered_replay_matches_original_paths(
-    independent_paths: Case, population: dict[int, Rollout]
+    independent_paths: Situation, population: dict[int, Rollout]
 ) -> None:
     reordered = _run(independent_paths, sale_month=15, rollout_ids=[TAXED, QUIET])
     assert [rollout.rollout_id for rollout in reordered.rollouts] == [TAXED, QUIET]
@@ -300,8 +333,8 @@ def test_selected_reordered_replay_matches_original_paths(
     assert _run(independent_paths, sale_month=15, rollout_ids=[TAXED]).rollouts == [population[TAXED]]
 
 
-def test_rejected_sale_preserves_successful_prefix_and_stops_only_its_path(independent_paths: Case) -> None:
-    session = ActionSession(independent_paths.compiled_run, "alice", [TAXED, QUIET])
+def test_rejected_sale_preserves_successful_prefix_and_stops_only_its_path(independent_paths: Situation) -> None:
+    session = ActionSession({id_: _compose(independent_paths, id_) for id_ in (TAXED, QUIET)}, "alice")
     observed: dict[int, list[int]] = {TAXED: [], QUIET: []}
     try:
         batch = session.start()

@@ -7,7 +7,9 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.actions import LotSale, Sell
+from finance.augur.sim.agent import assemble
 from finance.augur.sim.claims import Claim, Claims
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import CompiledRun, PreparedHoldingPool, PreparedLot, PreparedSeries
 from finance.augur.sim.results import Executed
@@ -83,9 +85,13 @@ def scoped() -> CompiledRun:
 
 
 def world_for(run: CompiledRun) -> World:
-    world = World(run, 0)
+    world = World.from_run(run, 0)
     world.start()
     return world
+
+
+def view(world: World, actor: AgentId = HOUSEHOLD) -> Observation:
+    return assemble(actor, world.month, world.open_mail(actor))
 
 
 def close(world: World) -> None:
@@ -107,7 +113,7 @@ def test_scoped_observations_match_output_at_same_marks_and_round_each_lot(scope
     world = world_for(scoped)
     wealth = [household_wealth(world)]
     for month, value in enumerate((4, 8, 11)):
-        observed = world.observe(HOUSEHOLD)
+        observed = view(world)
         assert (observed.agent_id, observed.month, observed.cash, observed.public_holdings) == (
             HOUSEHOLD,
             month,
@@ -139,7 +145,7 @@ def observations(run: CompiledRun) -> list[Observation]:
     world = world_for(run)
     seen = []
     for _ in range(3):
-        seen.append(world.observe(HOUSEHOLD))
+        seen.append(view(world))
         close(world)
     return seen
 
@@ -165,7 +171,7 @@ def test_actor_books_follow_partial_sales_and_hide_exhausted_lots(scoped: Compil
     world = world_for(run)
     dispositions = []
     for month in range(3):
-        observed = world.observe(HOUSEHOLD)
+        observed = view(world)
         if month < 2:
             first = observed.public_positions[0]
             assert (first.lot_id, first.units, first.book_basis) == ("half-a", (5, 3)[month], (7, 4)[month])
@@ -202,10 +208,10 @@ def test_actor_books_reject_unpriced_public_positions_before_inspection(scoped: 
     invalid = replace(scoped, series=tuple(s for s in scoped.series if s.series_id != "security:second"))
     with patch("finance.augur.sim.session.World") as world:
         with pytest.raises(ValueError, match="security:second"):
-            ActionSession(invalid, HOUSEHOLD, [0])
+            ActionSession.from_run(invalid, HOUSEHOLD, [0])
         world.assert_not_called()
     with pytest.raises(ValueError, match="unknown actor"):
-        world_for(scoped).observe("absent-actor")
+        world_for(scoped).open_mail(AgentId("absent-actor"))
 
 
 def test_claim_views_keep_assembled_amount_identity_and_payer_scope(scoped: CompiledRun) -> None:
@@ -218,7 +224,7 @@ def test_claim_views_keep_assembled_amount_identity_and_payer_scope(scoped: Comp
             Claim("test-other-m3", "rent", RECIPIENT, EXOGENOUS, 9000, None),
         ],
     )
-    first, second = world.observe(HOUSEHOLD).claims
+    first, second = view(world).claims
     assert (
         first.month,
         first.index,
@@ -229,11 +235,11 @@ def test_claim_views_keep_assembled_amount_identity_and_payer_scope(scoped: Comp
         first.amount_due,
     ) == (3, 0, "test-rent-m3", "rent", CASH, EXOGENOUS, 700)
     assert (second.index, second.from_account, second.amount_due) == (1, RESERVE, 300)
-    assert not world.observe(WORLD).claims
+    assert not view(world, WORLD).claims
     world.claims.entries[0].amount_due = 725
-    assert world.observe(HOUSEHOLD).claims[0].amount_due == 725
+    assert view(world).claims[0].amount_due == 725
     world.claims.entries[0].paid = True
-    assert [c.index for c in world.observe(HOUSEHOLD).claims] == [1]
+    assert [c.index for c in view(world).claims] == [1]
 
 
 if __name__ == "__main__":

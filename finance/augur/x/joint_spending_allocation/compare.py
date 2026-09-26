@@ -8,16 +8,14 @@ from pathlib import Path
 
 import numpy as np
 
-from finance.augur.sim.artifacts import write_prepared_input
 from finance.augur.sim.books import JournalEntry, Record
 from finance.augur.sim.holdings import Disposition
-from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.results import ConsumptionTarget, Payment, Stop, UnpaidClaim
 from finance.augur.sim.world import World
 from finance.augur.x.bounded_spending.python_policy import Parameters
 from finance.augur.x.joint_spending_allocation.policy import JointHousehold
-from finance.augur.x.joint_spending_allocation.scenario import prepare, sample
+from finance.augur.x.joint_spending_allocation.situation import Situation, compose, sample, situation
 
 RETIREE = "retiree"
 
@@ -75,10 +73,10 @@ def assets(world: World) -> int:
 
 
 def run_path(
-    prepared: CompiledRun, rollout_id: int, *, parameters: Parameters, annual_step: int, replay: bool
+    case: Situation, rollout_id: int, *, parameters: Parameters, annual_step: int, replay: bool
 ) -> tuple[PathMeasurements, Replay | None]:
     """One world with a fresh household; the experiment owns the loop and records between steps."""
-    world = World(prepared, rollout_id)
+    world = compose(case, rollout_id)
     household = JointHousehold(parameters, annual_step=annual_step)
     world.track(household)
     world.start()
@@ -139,11 +137,9 @@ def run_path(
     ) if replay else None
 
 
-def run_cell(
-    prepared: CompiledRun, rollout_ids: list[int], *, parameters: Parameters, annual_step: int
-) -> Measurements:
+def run_cell(case: Situation, rollout_ids: list[int], *, parameters: Parameters, annual_step: int) -> Measurements:
     paths = [
-        run_path(prepared, id_, parameters=parameters, annual_step=annual_step, replay=False)[0] for id_ in rollout_ids
+        run_path(case, id_, parameters=parameters, annual_step=annual_step, replay=False)[0] for id_ in rollout_ids
     ]
     terminal = [path.terminal_assets for path in paths if path.terminal_assets is not None]
     return Measurements(
@@ -155,10 +151,10 @@ def run_cell(
     )
 
 
-def replay_cell(prepared: CompiledRun, rollout_ids: list[int], *, parameters: Parameters, annual_step: int) -> Traces:
+def replay_cell(case: Situation, rollout_ids: list[int], *, parameters: Parameters, annual_step: int) -> Traces:
     replays = []
     for id_ in rollout_ids:
-        _, replay = run_path(prepared, id_, parameters=parameters, annual_step=annual_step, replay=True)
+        _, replay = run_path(case, id_, parameters=parameters, annual_step=annual_step, replay=True)
         if replay is None:
             raise RuntimeError("replay requested without a trace")
         replays.append(replay)
@@ -167,19 +163,17 @@ def replay_cell(prepared: CompiledRun, rollout_ids: list[int], *, parameters: Pa
 
 def compare(output_dir: Path) -> None:
     horizon = 60
-    prepared = prepare(sample(horizon_months=horizon), rollout_count=3, horizon_months=horizon, taxable=True)
+    case = situation(sample(horizon_months=horizon), rollout_count=3, horizon_months=horizon, taxable=True)
     output_dir.mkdir(parents=True, exist_ok=False)
-    input_path = output_dir / "execution-input.json"
-    write_prepared_input(prepared, input_path)
     cells = []
     for rate, (flex_name, cut, raise_), (allocation_name, step) in product(
         (400, 800), (("fixed_real", 0, 0), ("bounded", 2000, 500)), (("constant", 0), ("glide", 5))
     ):
         name = f"r{rate}-{flex_name}-{allocation_name}"
         parameters = Parameters(rate, cut, raise_)
-        measured = run_cell(prepared, [0, 1, 2], parameters=parameters, annual_step=step)
+        measured = run_cell(case, [0, 1, 2], parameters=parameters, annual_step=step)
         (output_dir / f"{name}.json").write_text(measured.model_dump_json())
-        traces = replay_cell(prepared, [2, 0], parameters=parameters, annual_step=step)
+        traces = replay_cell(case, [2, 0], parameters=parameters, annual_step=step)
         (output_dir / f"{name}-traces.json").write_text(traces.model_dump_json())
         cells.append({"name": name, "spending": asdict(parameters), "annual_allocation_step_percent": step})
         print(f"{name}: completed={measured.completed_paths}/3; paired stipulated cases, not probability")
@@ -188,7 +182,7 @@ def compare(output_dir: Path) -> None:
             {
                 "sampler": "three stipulated joint price/CPI paths; no fitted evidence window or random draws",
                 "path_ids": [0, 1, 2],
-                "path_source": "scenario.py:sample; exact materialized series in execution-input.json",
+                "path_source": "situation.py:sample, declared onto each path's World by situation.py:compose",
                 "products": "test-growth and test-steady are quoted public securities with no distributions, fees or default model; neither is a bond fund",
                 "taxes": "synthetic flat 20% ordinary/ST and 10% LT schedule, zero deduction/loss ordinary offset; no claim to statutory US/state/foreign coverage",
                 "tax_limitations": "no personalized filing inputs, NIIT/AMT/state/foreign coverage claim, liquidation tax or horizon-end settlement; final assessed/unpaid taxes remain separate",
