@@ -5,13 +5,55 @@ import { describe, expect, it, vi } from "vitest";
 
 import { stateLabel } from "./actions";
 import { ActionHistory } from "./actions_history";
-import { render, request, unmountLast } from "./actions_testing";
-import { actionService, type ActionRequestView, type ActionService, type ActionState } from "./client";
+import { render, request, unmountLast, type View } from "./actions_testing";
+import {
+  actionService,
+  type ActionGroupService,
+  type ActionGroupView,
+  type ActionRequestView,
+  type ActionService,
+  type ActionState,
+} from "./client";
+
+/** The view reading its Action groups from `list` rather than the real `/action-groups`. */
+function historyOver(list: ActionGroupService["list"]): View {
+  const groupService: ActionGroupService = { list };
+  return (props) => <ActionHistory {...props} groupService={groupService} />;
+}
+
+const withoutGroups = historyOver(async () => []);
+
+function group(key: string, executorKind: string): ActionGroupView {
+  return {
+    key,
+    title: key,
+    description: `test group ${key}`,
+    executor_kind: executorKind,
+    executor_description: "test executor",
+    available: true,
+    actions: [],
+  };
+}
+
+function succeeded(groupKey: string, result: unknown): ActionRequestView {
+  const row = request("succeeded", 1);
+  return { ...row, action: { group: groupKey, name: "test_tool" }, execution: { ...row.execution!, result } };
+}
+
+// base64 of "test-image-bytes": nothing here decodes it.
+const IMAGE_DATA = "dGVzdC1pbWFnZS1ieXRlcw==";
+const IMAGE_RESULT = {
+  content: [
+    { type: "text", text: "test caption" },
+    { type: "image", data: IMAGE_DATA, mimeType: "image/png" },
+  ],
+  isError: false,
+};
 
 describe("ActionHistory", () => {
   it("shows structured list errors without an empty-state claim", async () => {
     const failure = { detail: { code: "operator_federation_exchange_failed" } };
-    const container = await render({ list: vi.fn().mockRejectedValue(failure), decide: vi.fn() }, ActionHistory);
+    const container = await render({ list: vi.fn().mockRejectedValue(failure), decide: vi.fn() }, withoutGroups);
     expect(container.textContent).toContain(JSON.stringify(failure));
     expect(container.textContent).not.toContain("[object Object]");
     expect(container.textContent).not.toContain("No decided requests");
@@ -32,7 +74,7 @@ describe("ActionHistory", () => {
       caller: { namespace: "agentplane-test", name: "test-caller" },
       external_grant: grant,
     };
-    const container = await render({ list: async () => [row], decide: vi.fn() }, ActionHistory);
+    const container = await render({ list: async () => [row], decide: vi.fn() }, withoutGroups);
 
     expect(container.textContent).toContain("Authenticated external caller at submission");
     for (const value of ["agentplane-test/test-caller", grant.issuer, grant.client_id, grant.connection_id]) {
@@ -60,7 +102,7 @@ describe("ActionHistory", () => {
     ];
     const service: ActionService = { list: vi.fn(async () => states.map(request)), decide: vi.fn() };
 
-    const container = await render(service, ActionHistory);
+    const container = await render(service, withoutGroups);
 
     for (const state of states) expect(container.textContent).toContain(stateLabel(state));
     expect(container.textContent).toContain("requested by agentplane-test/test-agent");
@@ -80,7 +122,7 @@ describe("ActionHistory", () => {
   });
 
   it("folds Arguments behind the shared disclosure convention until expanded", async () => {
-    const container = await render({ list: async () => [request("succeeded", 1)], decide: vi.fn() }, ActionHistory);
+    const container = await render({ list: async () => [request("succeeded", 1)], decide: vi.fn() }, withoutGroups);
     const control = [...container.querySelectorAll("button")].find((candidate) =>
       candidate.textContent?.includes("Arguments")
     );
@@ -111,7 +153,7 @@ describe("ActionHistory", () => {
         },
       },
     };
-    const container = await render({ list: async () => [row], decide: vi.fn() }, ActionHistory);
+    const container = await render({ list: async () => [row], decide: vi.fn() }, withoutGroups);
     expect(container.textContent).toContain("Auto-approved via policy");
     expect(container.textContent).toContain("fixture-auto-allow");
   });
@@ -131,7 +173,7 @@ describe("ActionHistory", () => {
     vi.stubGlobal("EventSource", Stream);
     const list = vi.spyOn(actionService, "list").mockResolvedValue([]);
     try {
-      const container = await render(actionService, ActionHistory);
+      const container = await render(actionService, withoutGroups);
       expect(container.textContent).toContain("Loading actions");
       await act(async () => {
         stream?.dispatchEvent(new MessageEvent("snapshot", { data: "[]" }));
@@ -149,5 +191,34 @@ describe("ActionHistory", () => {
       list.mockRestore();
       vi.unstubAllGlobals();
     }
+  });
+
+  it("draws an MCP group's result the way the tool answered it", async () => {
+    const container = await render(
+      { list: async () => [succeeded("test_mcp", IMAGE_RESULT)], decide: vi.fn() },
+      historyOver(async () => [group("test_mcp", "mcp")])
+    );
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(`data:image/png;base64,${IMAGE_DATA}`);
+    expect(container.textContent).toContain("test caption");
+    expect(container.textContent).not.toContain('"content"');
+  });
+
+  it("keeps a sandbox group's result as its stored JSON, even one shaped like a CallToolResult", async () => {
+    const container = await render(
+      { list: async () => [succeeded("test_sandbox", IMAGE_RESULT)], decide: vi.fn() },
+      historyOver(async () => [group("test_sandbox", "sandbox")])
+    );
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain('"mimeType": "image/png"');
+  });
+
+  it("shows results as their stored JSON, saying why, when the Action groups cannot be read", async () => {
+    const container = await render(
+      { list: async () => [succeeded("test_mcp", IMAGE_RESULT)], decide: vi.fn() },
+      historyOver(vi.fn().mockRejectedValue(new Error("test group listing outage")))
+    );
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain('"mimeType": "image/png"');
+    expect(container.textContent).toContain("test group listing outage");
   });
 });

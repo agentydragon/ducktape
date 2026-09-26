@@ -1,17 +1,41 @@
-import type { JSX } from "react";
-import { Accordion, Badge, Code, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { type JSX, useEffect, useState } from "react";
+import { Accordion, Alert, Badge, Code, Group, Paper, Stack, Text, Title } from "@mantine/core";
 
 import { ActionCaller, ActionContext, RequestAuditDetails, stateLabel, useActionRequests } from "./actions";
-import { actionService, type ActionRequestView, type ActionService } from "./client";
+import { CallToolResultView, parseCallToolResult } from "./call_tool_result";
+import {
+  actionGroupService,
+  actionService,
+  displayableError,
+  type ActionGroupService,
+  type ActionRequestView,
+  type ActionService,
+} from "./client";
 import { JsonView } from "./json_view";
 import { StaleNotice } from "./stream_status";
 
 import "./actions_history.css";
 
+/** The stored result, drawn as the tool answered when the Action's group runs on an MCP backend (the
+ * Action Service stores its whole `CallToolResult`), and as its JSON otherwise: a sandbox group's
+ * own models, or a group this page cannot place. The group's executor decides, as it does for the
+ * Action Service's own answer to MCP callers (`agentplane/action_service/tool_results.py`). */
+function ExecutionResult({ result, mcp }: { result: unknown; mcp: boolean }): JSX.Element {
+  const call = mcp ? parseCallToolResult(result) : null;
+  return (
+    <div>
+      <Text size="sm" fw={600} mb={4}>
+        Result
+      </Text>
+      {call === null ? <JsonView value={result} /> : <CallToolResultView result={call} />}
+    </div>
+  );
+}
+
 /** A decided/terminal ActionRequest, kept as a durable receipt: the decision it's a record of leads
  * the card, with the exact arguments folded behind a disclosure rather than shown unconditionally
  * (the pending card's job is a live decision, this one's is a compact audit trail). */
-function HistoryCard({ request }: { request: ActionRequestView }): JSX.Element {
+function HistoryCard({ request, mcp }: { request: ActionRequestView; mcp: boolean }): JSX.Element {
   const decision = request.decision;
   const policySet = decision?.policy_evidence?.matched.policy_set;
   return (
@@ -53,12 +77,7 @@ function HistoryCard({ request }: { request: ActionRequestView }): JSX.Element {
           </Accordion.Item>
         </Accordion>
         {request.execution?.result !== null && request.execution?.result !== undefined && (
-          <div>
-            <Text size="sm" fw={600} mb={4}>
-              Result
-            </Text>
-            <JsonView value={request.execution.result} />
-          </div>
+          <ExecutionResult result={request.execution.result} mcp={mcp} />
         )}
         {request.execution?.error && (
           <div>
@@ -73,9 +92,33 @@ function HistoryCard({ request }: { request: ActionRequestView }): JSX.Element {
   );
 }
 
+/** Each configured Action group's executor kind, by group key: `null` until the groups arrive, and
+ * for good when they cannot be read, which `error` then says. */
+function useExecutorKinds(groupService: ActionGroupService): {
+  kinds: ReadonlyMap<string, string> | null;
+  error: string | null;
+} {
+  const [kinds, setKinds] = useState<ReadonlyMap<string, string> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void groupService.list().then(
+      (groups) => setKinds(new Map(groups.map((group) => [group.key, group.executor_kind]))),
+      (failure: unknown) => setError(displayableError(failure))
+    );
+  }, [groupService]);
+  return { kinds, error };
+}
+
 /** Decided and terminal ActionRequests: durable receipts, not something an operator still acts on. */
-export function ActionHistory({ service = actionService }: { service?: ActionService }): JSX.Element {
+export function ActionHistory({
+  service = actionService,
+  groupService = actionGroupService,
+}: {
+  service?: ActionService;
+  groupService?: ActionGroupService;
+}): JSX.Element {
   const { requests, error, loading, stream } = useActionRequests(service);
+  const executors = useExecutorKinds(groupService);
   const decided = requests.filter((request) => request.state !== "decision_pending");
 
   return (
@@ -88,10 +131,15 @@ export function ActionHistory({ service = actionService }: { service?: ActionSer
       </div>
       <StaleNotice streams={[stream]} />
       {error && <Text c="red">{error}</Text>}
+      {executors.error && (
+        <Alert color="orange">
+          Results show as their stored JSON: the Action groups could not be loaded. {executors.error}
+        </Alert>
+      )}
       {loading && <Text role="status">Loading actions…</Text>}
       {!loading && !error && decided.length === 0 && <Text c="dimmed">No decided requests yet.</Text>}
       {decided.map((request) => (
-        <HistoryCard key={request.id} request={request} />
+        <HistoryCard key={request.id} request={request} mcp={executors.kinds?.get(request.action.group) === "mcp"} />
       ))}
     </Stack>
   );

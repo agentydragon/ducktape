@@ -147,12 +147,42 @@ ts_library(
     deps = [
         ":actions",
         ":actions_history_css",
+        ":call_tool_result",
         ":client",
         ":json_view",
         ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "call_tool_result",
+    srcs = ["call_tool_result.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":json_view",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "call_tool_result_test",
+    testonly = True,
+    srcs = ["call_tool_result.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":call_tool_result",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
     ],
 )
 
@@ -1055,6 +1085,7 @@ vitest_bin.vitest_test(
         ":action_policy_test",
         ":actions_history_test",
         ":actions_test",
+        ":call_tool_result_test",
         ":client_test",
         ":command_state_test",
         ":connections_test",
