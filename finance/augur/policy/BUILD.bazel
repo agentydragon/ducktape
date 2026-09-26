@@ -105,7 +105,6 @@ py_library(
         ":funding",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:agent",
-        "//finance/augur/sim:books",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:money",
         "//finance/augur/sim:observations",

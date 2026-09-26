@@ -62,3 +62,13 @@ py_library(
         "//finance/augur/sim:prepared",
     ],
 )
+
+py_library(
+    name = "scripted",
+    srcs = ["scripted.py"],
+    deps = [
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:agent",
+        "//finance/augur/sim:observations",
+    ],
+)

@@ -18,10 +18,6 @@ experiment consumers are added meanwhile.
   `sim/compiler/execution.py::compile_holding_pools`' sleeve-derived pools and
   first-source-account choice: declarations, not a strategy configuration, determine
   available accounts and instruments.
-- Scheduled sales: `_ScheduledSale` (`sim/prepared.py`) is an input only the sim and
-  product suites build; the configured household turns it into FIFO `Sell`s. Those
-  suites move their sales to explicit actions, and the record goes with the household.
-  Explicit asset-sale and public-sale/tax controls remain the independent coverage.
 - The PE issuer phase selects recovery, forced and tender lots with `Holdings.fifo`
   inside the world; PE's migration after GPE replaces that with explicit responses.
 - The product shell's zero weight means "never sell this holding", whereas a zero

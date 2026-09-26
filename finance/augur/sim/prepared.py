@@ -174,17 +174,6 @@ class PreparedLocation:
 
 
 @dataclass(frozen=True, kw_only=True)
-class _ScheduledSale:
-    month: int
-    cause_id: str
-    agent_id: AgentId
-    account_id: AccountId
-    asset_id: AssetId
-    units: int
-    proceeds_account_id: AccountId
-
-
-@dataclass(frozen=True, kw_only=True)
 class _SecuritySleeveTarget:
     """Lots of one security across the policy's source accounts, traded in whole units at its quote."""
 

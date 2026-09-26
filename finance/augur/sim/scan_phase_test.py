@@ -1,6 +1,6 @@
 """Each month books what the world was declared to hold, with every phase firing together.
 
-Transfers, bills, a scheduled sale, a property purchase and its carrying costs, mortgage
+Transfers, bills, a security sale, a property purchase and its carrying costs, mortgage
 servicing and the year-end tax pass, on worlds composed from declared facts and driven by a
 household that pays every due claim in full, in order.
 """
@@ -12,6 +12,8 @@ import pytest_bazel
 
 from finance.augur.model.series import SP500_SYMBOL, LocationId, SecurityKey
 from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.sim.actions import LotSale, Sell
+from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.compiler.execution import compile_series
@@ -39,11 +41,11 @@ from finance.augur.sim.prepared import (
     _MortgageFinancing,
     _PropertyPurchase,
     _PropertyTax,
-    _ScheduledSale,
 )
 from finance.augur.sim.property import Housing
 from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, TaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -111,7 +113,7 @@ def taxed_by(world: World, *jurisdiction_ids: JurisdictionId, prior_year_tax: De
     )
 
 
-def run(world: World, *, tracked: ConfiguredHousehold | None = None) -> list[Book]:
+def run(world: World, *, tracked: EconomicAgent | None = None) -> list[Book]:
     """Every month to the horizon or the stop; the books the caller keeps for itself between steps."""
     world.track(ConfiguredHousehold(AgentId(ALICE), ()) if tracked is None else tracked)
     books = [world.book()]
@@ -221,9 +223,9 @@ def test_unfundable_bill_stops_the_path_keeping_both_parties_balances() -> None:
     assert len(books) == 3  # the stopped month is the last one booked
 
 
-def test_scheduled_sale_books_proceeds_and_a_long_term_gain() -> None:
-    # 100 SP500 units bought 24 months pre-horizon at $80, sold at month 3 for $120 — FIFO lot
-    # matching, the proceeds credit and the holding-period classification, in one run. A flat price
+def test_security_sale_books_proceeds_and_a_long_term_gain() -> None:
+    # 100 SP500 units bought 24 months pre-horizon at $80, sold at month 3 for $120 — the lot
+    # disposal, the proceeds credit and the holding-period classification, in one run. A flat price
     # series keeps the assertion exact. The horizon ends before any December, so the profile is what
     # makes the gain reportable rather than what assesses it.
     horizon = 6
@@ -260,20 +262,19 @@ def test_scheduled_sale_books_proceeds_and_a_long_term_gain() -> None:
     )
     books = run(
         world,
-        tracked=ConfiguredHousehold(
-            AgentId(ALICE),
-            (),
-            scheduled_sales=(
-                _ScheduledSale(
-                    month=3,
-                    cause_id="alice_sells_sp500",
-                    agent_id=ALICE,
-                    account_id=AccountId("brokerage"),
-                    asset_id=AssetId(SP500.symbol),
-                    units=units,
-                    proceeds_account_id=CHECKING,
-                ),
-            ),
+        tracked=Scripted(
+            ConfiguredHousehold(AgentId(ALICE), ()),
+            {
+                3: (
+                    Sell(
+                        cause_id="alice_sells_sp500",
+                        agent_id=ALICE,
+                        proceeds_account_id=CHECKING,
+                        asset_id=AssetId(SP500.symbol),
+                        lots=(LotSale(account_id=AccountId("brokerage"), lot_id=LotId("alice_sp500"), units=units),),
+                    ),
+                )
+            },
         ),
     )
 
