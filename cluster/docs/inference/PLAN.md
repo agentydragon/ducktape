@@ -140,8 +140,8 @@ does not recover the nominal size as physical space.
 ## September 26 checkpoint and decision
 
 **Treat Qwen3.8-Flash-Next as the leading candidate for regular use; do not rerun
-the full Terminal-Bench suite as the next experiment.** First establish that the local runtime and a small agent
-workload behave correctly, then measure context and concurrency. Published quality
+the full Terminal-Bench suite as the next experiment.** Use the successful OpenCode/SSD setup to measure context and concurrency first;
+consult published evals for capability positioning. Published quality
 is a useful prior; deployment-specific failures and slow trajectories are the
 questions this machine can answer. Preserve the capability-ceiling lane rather than
 spending the whole program optimizing one candidate.
@@ -154,7 +154,10 @@ not an independently scored coding task. The operator-supplied
 effective client defaults and compaction behavior still need checking. Preserve OpenCode as the reference client and prioritize making that
 working everyday/overnight workflow reliable. Use small checks to investigate
 regressions and choose improvements. The interrupted Harbor benchmark is not a
-reason to reject a model that already did useful work.
+reason to reject a model that already did useful work. The operator also finds it
+substantially nicer than their GPT-OSS experience roughly a year earlier on the
+same hardware. Preserve that observed practical advance; do not require another
+benchmark campaign before accepting Qwen as the working baseline.
 
 Completed here:
 
@@ -215,40 +218,22 @@ reasoning/output/time-budget record. Its early completion order is not a random
 sample. Do not infer that larger context alone explains the difference, or declare
 either equivalence or collapse from 1/11.
 
-## Next directions, in order
+## Two complementary tracks
 
-### 1. Establish a reliable SSD reference and measure conversation cost
+Improve the working Qwen configuration and explore other promising models in
+parallel as research priorities (GPU runs remain resource-coordinated). Do one
+bounded Qwen capacity/quantization batch, then give the strongest credible alternative
+a feasibility pass; do not exhaust Qwen's tuning space before exploring. This is
+an experiment-allocation policy, not a claim that either model will win.
 
-First session, roughly 2–4 hours of operator-free compute as a planning budget:
+## Improve the working Qwen configuration
 
-- Capture the working OpenCode model/provider settings, effective context/output
-  limits, reasoning handling and compaction behavior. Keep a repeatable version of
-  that successful workflow as the primary integration reference; do not make
-  Agentplane integration a prerequisite.
-- Reuse the pinned Flash Q4 checkpoint and known working llama.cpp image on SSD,
-  preserving about 8 GiB free on desktop GPU0 and a bounded host-memory budget.
-  Refresh free RAM before choosing the cap; the old launch gate deliberately will
-  not pass while Ollama consumes the resources. Record actual per-GPU placement.
-- Run a handful of fixed tool roundtrips and one short coding task. Capture parser
-  errors, finish reason, output cap, reasoning setting, and actual test result.
-- Measure a fresh 8K/32K input, append-only turns, a real tool-result turn, and
-  interleaved independent conversations. Record server cached/prefilled token
-  counts and timings. Confirm that reasoning/tool serialization preserves the
-  prefix and that hybrid attention state reuse works. The Harbor counters already
-  report high cache reuse, so repeated full prefill is a hypothesis to check, not
-  the established cause of its long runtime. Do not assume every turn
-  has to reprocess the full history or that reported cache hits imply cheap work.
-- Compare pinned old and current upstream llama.cpp on SSD with the same checkpoint
-  and settings. Then compare current Ollama on SSD if its exact model conversion,
-  template and placement can be matched. No need for another full HDD campaign.
-  Use existing server metrics and `pidstat`/`iostat`/cgroup memory counters to
-  distinguish CPU work, page faults, SSD traffic and reclaim from GPU computation.
+### 1. Measure usable context and simultaneous sessions
 
-Exit with a usable reference and an explanation of where agent time goes. If the
-runtime fails a small roundtrip, repair or change the runtime before long evals.
-Do not spend days making Harbor work before this evidence exists.
-
-### 2. Map context and parallelism separately
+Reuse the demonstrated SSD/llama.cpp/OpenCode configuration for these measurements.
+Capture effective settings and do only enough startup/tool checking to establish
+that the reference is running. Ollama deployment and a new coding harness are not
+prerequisites.
 
 The [official model card](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) specifies
 262,144 native total tokens, with extension to 1M using supported scaling. Test
@@ -277,9 +262,46 @@ Only after native 256K is useful, try a bounded 512K/1M extension if the runtime
 supports this architecture's scaling correctly. Longer context can increase prefill
 and displace resident weights, so it is a capacity/quality experiment, not a free fix.
 
-### 3. Small matched coding screen, with a decision to expand
+### 2. Compare published capability with neighboring GPT/Claude effort levels
 
-Use 6–10 predetermined tasks representative of desired use: bug fix, multi-file
+Keep a compact dated comparison of the aggregate index and its individual coding,
+agentic, long-context and grounding measures where available. Use the same benchmark
+version and explicit effort level; preserve served-model/provider and precision
+caveats. The [September 26 neighbor snapshot](runs/2026-09-26_harbor_review/aa_neighbours.json)
+extends the table above to Sonnet/Opus and adjacent GPT effort levels. Qwen is close
+to Sol medium on the aggregate index and close to Sol high on this Terminal-Bench
+score; neither means interchangeability across tasks. Published results are the
+cheap first answer to model positioning. Running the whole suite locally is not
+necessary to answer that question.
+
+### 3. Trade precision and reasoning against context and concurrency
+
+Vary one axis at a time. 'Lower quant' can mean either fewer bits (smaller/faster)
+or less quantization (more precision); these address different hypotheses.
+[Current GGUF sizes](https://unsloth.ai/docs/models/qwen3.8-next): Q4_K_XL 111.3 GB,
+IQ4_XS 93.7 GB, Q3_K_XL 90.0 GB, Q5_K_XL 158.3 GB. These are file sizes,
+not required VRAM, and the large embedding tables complicate simple bits/parameter
+intuition.
+
+- Keep Q4 as control. IQ4_XS is the first smaller candidate if reducing CPU/offload
+  traffic could free context or improve parallel throughput; assess quality on the
+  same tasks. Do not jump directly to a very low-bit checkpoint.
+- Try Q5 if local quality remains suspicious after harness/runtime correctness.
+  Its larger working set may cost speed or page-cache capacity; more bits do not
+  guarantee a better completed task within the available budget.
+- Set reasoning explicitly. The official default is xhigh; our initial probes used
+  medium. Compare medium and xhigh under an adequate, explicit output allowance.
+  Short-output protocol probes cannot establish the model's reasoning ceiling.
+- Try Q8 versus smaller KV formats only with supported kernels and recall checks.
+  Test MTP/speculation last, measuring accepted draft tokens and end-to-end gains;
+  faster token loops that increase SSD reads need not improve agent completion.
+
+### 4. Targeted local quality checks only when a decision needs them
+
+Published evals and the successful OpenCode task are the starting quality evidence.
+A new local task screen is conditional: use it when a quant/runtime change needs
+checking, a regression appears, or external results do not answer the question.
+When warranted, use 6–10 predetermined tasks representative of desired use: bug fix, multi-file
 change, testing, debugging, and review. Keep task definitions/scoring in
 `x/local_llm/eval`, records here; Agentplane is at most an optional execution backend.
 The two tiny tasks in #7910 are smoke gates, not sufficient evidence of capability.
@@ -315,32 +337,31 @@ issue-to-patch job and a second-opinion review. Expand the benchmark only when t
 result would decide deployment or separate close candidates. A full 66-task run is
 not currently the highest-value use of this workstation.
 
-### 4. Precision, reasoning and runtime tuning after the baseline
+### 5. Deployment follow-up after the interesting measurements
 
-Vary one axis at a time. 'Lower quant' can mean either fewer bits (smaller/faster)
-or less quantization (more precision); these address different hypotheses.
-[Current GGUF sizes](https://unsloth.ai/docs/models/qwen3.8-next): Q4_K_XL 111.3 GB,
-IQ4_XS 93.7 GB, Q3_K_XL 90.0 GB, Q5_K_XL 158.3 GB. These are file sizes,
-not required VRAM, and the large embedding tables complicate simple bits/parameter
-intuition.
+Making Ollama serve this efficiently, choosing a persistent deployment and wiring
+routes are useful operational work, with lower priority than context/concurrency
+and capability comparison. Keep the already working SSD llama.cpp path while
+answering those questions. Change runtime only when correctness or measured capacity
+requires it; do not make a broad runtime bake-off the opening experiment.
 
-- Keep Q4 as control. IQ4_XS is the first smaller candidate if reducing CPU/offload
-  traffic could free context or improve parallel throughput; assess quality on the
-  same tasks. Do not jump directly to a very low-bit checkpoint.
-- Try Q5 if local quality remains suspicious after harness/runtime correctness.
-  Its larger working set may cost speed or page-cache capacity; more bits do not
-  guarantee a better completed task within the available budget.
-- Set reasoning explicitly. The official default is xhigh; our initial probes used
-  medium. Compare medium and xhigh under an adequate, explicit output allowance.
-  Short-output protocol probes cannot establish the model's reasoning ceiling.
-- Try Q8 versus smaller KV formats only with supported kernels and recall checks.
-  Test MTP/speculation last, measuring accepted draft tokens and end-to-end gains;
-  faster token loops that increase SSD reads need not improve agent completion.
+When deploying, compare current Ollama and llama.cpp on SSD using matched model,
+context, template and placement. Measure cold loading and conversation reuse,
+retaining desktop headroom. Use server timings and existing `pidstat`/`iostat`/cgroup
+metrics if explaining a bottleneck becomes necessary. Promote one useful configuration
+through GitOps and its intended client after selection; Agentplane stays optional.
 
-### 5. Preserve a separate capability-ceiling experiment
+## Explore alternative models and runtimes
 
-After the small Qwen screen, refresh support for GLM-5.3-Flash and DeepSeek-V4-Flash
-0731, then choose one stronger plausible alternative. Keep the DeepSeek-V4.1 SSD
+Prioritize **GLM-5.3-Flash** for the next conventional offload feasibility check:
+its [published AA index](https://artificialanalysis.ai/models/glm-5-3-flash) is about
+42 versus Qwen's 40, and its model card advertises 1M context. Neither establishes
+local IQ3 quality or fit, so first verify current architecture/runtime support,
+placement, actual context, and a useful task. The larger 18B active working set may
+cost substantial latency. Refresh **DeepSeek-V4-Flash-0731** as an alternative using
+the July runtime knowledge, without assuming its older local results predict the
+new checkpoint. Other candidates earn attention through better external capability,
+more usable context/concurrency, or a materially different memory/compute approach. Keep the DeepSeek-V4.1 SSD
 streaming feasibility lane from the source-linked shortlist: inspect
 the runtime first, archive unused checkpoints with verification before downloading
 its ~502 GB weights, and use a cache sized for actual available host RAM.

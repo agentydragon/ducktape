@@ -122,3 +122,24 @@ few CPU-only environments; verify tool roundtrips and context handling; then com
 matched tasks at explicit context, reasoning, output and wall-time budgets. Keep
 infrastructure failure, context exhaustion and task failure separate. Detailed
 context/concurrency/precision experiments are in [PLAN.md](../../PLAN.md).
+
+## Neighboring model/effort comparison
+
+Selected additional rows from the same September 26 AA public-page fetch, using
+index v4.3.2 and Terminal-Bench 4.0. Raw selected fields are in
+[aa_neighbours.json](aa_neighbours.json). Claude entries use adaptive reasoning;
+Opus 5.5 low uses AA's default-fallback variant.
+
+| Model / effort                        | Intelligence Index | Terminal-Bench 4.0 |
+| ------------------------------------- | -----------------: | -----------------: |
+| GPT-6 Luna max                        |              37.26 |             12.63% |
+| Claude Sonnet 5 max                   |              38.16 |             14.14% |
+| GPT-6 Sol medium                      |              39.78 |             18.69% |
+| Qwen3.8-Flash-Next                    |              39.82 |             25.25% |
+| Claude Opus 5.5 low, default fallback |              42.31 |             31.31% |
+| GPT-6 Sol high                        |              42.82 |             26.26% |
+
+This is model positioning from external evaluations; our local Q4 precision/runtime
+is not independently scored by those rows. The relevant neighbor depends on the
+metric. Context capacity and concurrency must be measured on wyrm2, while deployment
+integration can follow once those more interesting questions are answered.
