@@ -207,7 +207,7 @@ async def test_configure_http_is_idempotent(monkeypatch, home_assistant_client, 
 
     await configure_http(home_assistant_client, settings.http_config, settings.owner_username, "secret-password")
 
-    assert calls == [{"id": 1, "type": "http/config"}]
+    assert calls == [{"type": "http/config"}]
 
 
 async def test_configure_http_restarts_and_promotes(monkeypatch, home_assistant_client, settings):
@@ -240,9 +240,9 @@ async def test_configure_http_restarts_and_promotes(monkeypatch, home_assistant_
     await configure_http(home_assistant_client, settings.http_config, settings.owner_username, "secret-password")
 
     assert calls == [
-        ("bootstrap-token", {"id": 1, "type": "http/config"}),
-        ("bootstrap-token", {"id": 1, "type": "http/config/configure", "config": settings.http_config.model_dump()}),
-        ("refreshed-token", {"id": 1, "type": "http/config/promote"}),
+        ("bootstrap-token", {"type": "http/config"}),
+        ("bootstrap-token", {"type": "http/config/configure", "config": settings.http_config.model_dump()}),
+        ("refreshed-token", {"type": "http/config/promote"}),
     ]
 
 
@@ -255,7 +255,7 @@ def fake_core_api(monkeypatch, home_assistant_client, current: dict[str, object]
         if message["type"] == "get_config":
             return dict(current)
         if message["type"] == "config/core/update":
-            current.update({key: value for key, value in message.items() if key not in {"id", "type"}})
+            current.update({key: value for key, value in message.items() if key != "type"})
             return None
         raise AssertionError(f"unexpected message: {message}")
 
@@ -272,7 +272,7 @@ async def test_configure_core_sets_the_time_zone_and_leaves_an_undeclared_locati
 
     await configure_core(home_assistant_client, CoreConfig(time_zone="Etc/GMT+5"))
 
-    assert calls == [{"id": 1, "type": "get_config"}, {"id": 1, "type": "config/core/update", "time_zone": "Etc/GMT+5"}]
+    assert calls == [{"type": "get_config"}, {"type": "config/core/update", "time_zone": "Etc/GMT+5"}]
 
 
 async def test_configure_core_sets_a_declared_location(monkeypatch, home_assistant_client):
@@ -281,13 +281,7 @@ async def test_configure_core_sets_a_declared_location(monkeypatch, home_assista
 
     await configure_core(home_assistant_client, CoreConfig(time_zone="Etc/GMT+5", location=location))
 
-    assert calls[-1] == {
-        "id": 1,
-        "type": "config/core/update",
-        "time_zone": "Etc/GMT+5",
-        "latitude": 12.5,
-        "longitude": -45.25,
-    }
+    assert calls[-1] == {"type": "config/core/update", "time_zone": "Etc/GMT+5", "latitude": 12.5, "longitude": -45.25}
 
 
 async def test_configure_core_is_idempotent(monkeypatch, home_assistant_client):
@@ -297,7 +291,7 @@ async def test_configure_core_is_idempotent(monkeypatch, home_assistant_client):
 
     await configure_core(home_assistant_client, CoreConfig(time_zone="Etc/GMT+5", location=location))
 
-    assert calls == [{"id": 1, "type": "get_config"}]
+    assert calls == [{"type": "get_config"}]
 
 
 if __name__ == "__main__":

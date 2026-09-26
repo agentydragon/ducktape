@@ -180,7 +180,8 @@ class HomeAssistantClient:
         return parse.urlunsplit((websocket_scheme, parsed.netloc, "/api/websocket", "", ""))
 
     async def websocket_command(self, message: dict[str, object]) -> object:
-        """Authenticate to Home Assistant and execute one WebSocket command."""
+        """Authenticate to Home Assistant and execute one WebSocket command. The command gets a
+        connection of its own, so its message id is always 1 and `message` carries none."""
         if self._access_token is None:
             raise RuntimeError("Home Assistant client has no access token; log in first")
         async with self.http_client.websocket(self.websocket_url()) as websocket:
@@ -191,7 +192,7 @@ class HomeAssistantClient:
             auth_result = await websocket.receive_json(timeout=30)
             if not isinstance(auth_result, dict) or auth_result.get("type") != "auth_ok":
                 raise RuntimeError(f"Home Assistant WebSocket authentication failed: {auth_result!r}")
-            await websocket.send_json(message)
+            await websocket.send_json({"id": 1, **message})
             result = await websocket.receive_json(timeout=30)
         if not isinstance(result, dict) or result.get("type") != "result" or result.get("success") is not True:
             raise RuntimeError(f"Home Assistant WebSocket command failed: {result!r}")
