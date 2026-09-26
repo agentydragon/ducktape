@@ -633,7 +633,6 @@ py_test(
         ":actions",
         ":books",
         ":holdings",
-        ":market_path",
         ":money",
         ":prepared",
         "//:conftest",
@@ -1604,8 +1603,8 @@ py_test(
 )
 
 py_test(
-    name = "validation_edges_test",
-    srcs = ["validation_edges_test.py"],
+    name = "unusable_facts_test",
+    srcs = ["unusable_facts_test.py"],
     deps = [
         ":books",
         ":external_series",

@@ -39,7 +39,7 @@ def tool_result(view: ActionRequestView, executor: ExecutorBinding) -> ToolResul
                     TextContent(
                         type="text",
                         text=f"Action request {view.id} {waiting}. This is not its result: call "
-                        f"get_action_result(request_id={str(view.id)!r}, wait_seconds=30) to keep waiting.",
+                        f"get_action_result(request_id={str(view.id)!r}, wait={{'wait_seconds': 30}}) to keep waiting.",
                     )
                 ],
                 structured_content={"request_id": str(view.id), "state": view.state},

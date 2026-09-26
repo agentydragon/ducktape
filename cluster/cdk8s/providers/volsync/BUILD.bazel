@@ -1,5 +1,5 @@
-# gazelle:resolve py volsync_replicationdestination_crds //cluster/cdk8s/crd_bindings/volsync:replicationdestination
-# gazelle:resolve py volsync_replicationsource_crds //cluster/cdk8s/crd_bindings/volsync:replicationsource
+# gazelle:resolve py volsync_replicationdestination_crds //cluster/cdk8s/providers/volsync:replicationdestination
+# gazelle:resolve py volsync_replicationsource_crds //cluster/cdk8s/providers/volsync:replicationsource
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 

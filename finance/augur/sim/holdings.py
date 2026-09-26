@@ -11,7 +11,7 @@ from finance.augur.sim.books import AccountRef, JournalEntry, Posting, SecurityL
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import apportion, checked_count, checked_wide, is_quantity_scale, position_value
 from finance.augur.sim.observations import HoldingPool, PublicPosition
-from finance.augur.sim.prepared import PreparedHoldingPool, PreparedLot, _ScheduledSale
+from finance.augur.sim.prepared import PreparedHoldingPool, PreparedLot
 
 
 @dataclass
@@ -177,25 +177,6 @@ class Holdings:
         if remaining:
             raise ValueError(f"sale of {units} units exceeds available lots; only {units - remaining} are available")
         return tuple(selected)
-
-    def scheduled_sale(self, accounting: Accounting, market: MarketPath, sale: _ScheduledSale) -> None:
-        candidates = [
-            index
-            for index, lot in enumerate(self.lots)
-            if (lot.spec.agent_id, lot.spec.account_id, lot.spec.asset_id)
-            == (sale.agent_id, sale.account_id, sale.asset_id)
-            and lot.units_remaining > 0
-        ]
-        if not candidates:
-            raise ValueError("missing sale pool")
-        request = Sell(
-            cause_id=sale.cause_id,
-            agent_id=sale.agent_id,
-            proceeds_account_id=sale.proceeds_account_id,
-            asset_id=sale.asset_id,
-            lots=self.fifo(candidates, sale.units),
-        )
-        self.sell(accounting, sale.month, request, price=market.value(f"security:{sale.asset_id}", sale.month))
 
     def _selected(self, accounting: Accounting, request: Sell, proceeds: int) -> list[tuple[int, int]]:
         destination = AccountRef(agent_id=request.agent_id, account_id=request.proceeds_account_id)

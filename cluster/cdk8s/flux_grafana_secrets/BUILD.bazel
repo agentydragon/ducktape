@@ -11,10 +11,10 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
-        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/grafana_operator:grafana_operator_grafana",
         "//cluster/cdk8s/providers/grafana_operator:grafanaserviceaccount",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )

@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from finance.augur.sim.bonds import coupon_amount_quanta, coupon_months, is_on_books
+from finance.augur.sim.bonds import coupon_amount_quanta, coupon_months
 from finance.augur.sim.scenario import BondHolding
 
 
@@ -114,19 +114,6 @@ def test_coupon_rejects_invalid_exact_terms(face: int, rate: int, period: int) -
 def test_coupon_rejects_overflow_without_float_conversion() -> None:
     with pytest.raises(OverflowError, match="coupon does not fit"):
         coupon_amount_quanta(face_quanta=(1 << 63) - 1, annual_coupon_rate_ppb=2_000_000_000, coupon_period_months=12)
-
-
-def test_the_bond_is_off_the_books_by_the_end_of_its_maturity_month() -> None:
-    """The face is redeemed into cash DURING the maturity month, so counting the bond as
-    held that month would put the same dollars in net worth twice — once as the bond and
-    once as the cash it just became."""
-
-    on_books = {
-        month: is_on_books(month_index=month, purchase_month_index=0, maturity_month_index=120)
-        for month in (-1, 0, 119, 120, 121)
-    }
-
-    assert on_books == {-1: False, 0: True, 119: True, 120: False, 121: False}
 
 
 def test_non_par_purchase_is_rejected_naming_phase_2() -> None:

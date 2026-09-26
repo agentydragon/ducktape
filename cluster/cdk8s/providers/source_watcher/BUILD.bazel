@@ -1,7 +1,7 @@
 # Typed cdk8s Python constructs generated from the source-watcher CRD bundled with
 # the deployed Flux install. See cluster/docs/cdk8s.md.
 
-# gazelle:resolve py source_watcher_crds //cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator
+# gazelle:resolve py source_watcher_crds //cluster/cdk8s/providers/source_watcher:artifactgenerator
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 

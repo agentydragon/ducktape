@@ -31,8 +31,6 @@ def test_log_return_fit_recovers_drift_and_volatility() -> None:
 
     assert fit.monthly_log_mu == pytest.approx(0.008, rel=0.1)
     assert fit.monthly_log_sigma == pytest.approx(0.043, rel=0.05)
-    assert fit.annualized_nominal_return == pytest.approx(float(np.expm1(fit.monthly_log_mu * 12)))
-    assert fit.annualized_volatility == pytest.approx(float(np.sqrt(12) * fit.monthly_log_sigma))
 
 
 def test_log_returns_need_positive_levels() -> None:

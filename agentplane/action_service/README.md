@@ -228,9 +228,9 @@ live workload validation and egress substitution; OAuth does not grant an operat
 | `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                                         |
 | `get_action_policy`          | The effective policy of a `target`: `"self"` (default) or a named Sandbox or ServiceAccount; its bindings, the sets that resolved, the three lists (`policy_view.py`). |
 | `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both.                      |
-| `request_action`             | The existing request envelope under `request`, validated as on HTTP; a key this caller already used is refused.                                                        |
+| `request_action`             | The request envelope under `request`, validated as on HTTP; a used key is refused. Answers like `get_action_result`, or `respond_with: receipt`.                       |
 | `get_action_request`         | One own-caller receipt by exactly one of `request_id` or `idempotency_key`; the key lookup recovers a submission whose response was lost.                              |
-| `get_action_result`          | The outcome as the tool that ran answered, named like `get_action_request`, with `wait_seconds` (0–30, default 0); see below.                                          |
+| `get_action_result`          | The outcome as the tool that ran answered, named and waited on like `get_action_request`; see below.                                                                   |
 | `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                                             |
 | `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                                                  |
 
@@ -240,7 +240,8 @@ to a curated compact list rather than `None`, so the default is visible directly
 schema instead of living only in prose: the catalog reads (`get_action`/`list_actions`) default to
 neither `input_schema` nor `description`; `get_action_policy` defaults to `subject`/`synced`/
 `bindings`, widened by naming `auto_approve_if`/`auto_deny_if`/`auto_deny_unless`; and
-`request_action`/`get_action_request`/`cancel_action_request` default to `id`/`state`/`version`/
+`get_action_request`/`cancel_action_request`, and `request_action` under `respond_with: receipt`,
+default to `id`/`state`/`version`/
 `created_at`/`updated_at` on the receipt -- `state` alone already distinguishes
 pending/allowed/denied/dispatching/running/succeeded/failed/cancelled without naming `execution` --
 widened by naming `input` (the submitted `idempotency_key`/`action`/`arguments`/`title`/
@@ -248,7 +249,8 @@ widened by naming `input` (the submitted `idempotency_key`/`action`/`arguments`/
 `decision`, or `execution`. Naming only the wide fields you want **replaces** the default rather
 than adding to it, so keeping the compact fields alongside a widened one means naming both.
 `cancel_action_request`'s nested `request` is gated the same way, under its own `include_fields`.
-An unrecognized name in any `include_fields` fails the call rather than being ignored.
+An unrecognized name in any `include_fields` fails the call rather than being ignored, and so does
+a `request_action` `include_fields` without `respond_with: receipt`.
 
 `cancel_action_request(request_id)` explicitly withdraws an own-caller request before dispatch
 claim, without a version parameter. It returns the canonical outcome (`cancelled`,
@@ -256,14 +258,16 @@ claim, without a version parameter. It returns the canonical outcome (`cancelled
 executor. The cancelled receipt stays readable by request ID or submission key. It is independent
 of cancelling or disconnecting a wait.
 
-`get_action_result` is the one read of an outcome, and returns it as the tool that ran answered
-(`tool_results.py`); a receipt's `execution` has its state, error and timing but no result. It
-returns an MCP group's stored `CallToolResult` exactly, every content block included, and a sandbox result the way FastMCP presents a returned model, the object as structured
-content and as one JSON text block, so a nonzero exit is not an error result. A request still
-waiting on its decision or execution says so as an ordinary result; a denied, cancelled, failed or
-unknown one is an error result carrying the decision's note or reason, or the executor's error.
+`get_action_result` returns an outcome as the tool that ran answered (`tool_results.py`): an MCP
+group's stored `CallToolResult` exactly, every content block included, and a sandbox result the way
+FastMCP presents a returned model, the object as structured content and as one JSON text block, so
+a nonzero exit is not an error result. A request still waiting on its decision or execution says so
+as an ordinary result; a denied, cancelled, failed or unknown one is an error result carrying the
+decision's note or reason, or the executor's error. `request_action` answers the same way once its
+wait ends unless asked for its receipt, so an Action a policy approves comes back as its tool's own
+answer from the one call. A receipt's `execution` has its state, error and timing but no result.
 
-Both submission and receipt reads take one shared `wait` object (`wait_seconds`, 0–30 default 0;
+Submission, receipt and result reads take one shared `wait` object (`wait_seconds`, 0–30 default 0;
 `wait_until`, `decision` or `terminal` default terminal) rather than two flat parameters each.
 Waits use commit notifications rather than periodic queries. A deadline returns a receipt, not a
 cancellation. On an ambiguous response, reuse the original request/key; transport or notification
