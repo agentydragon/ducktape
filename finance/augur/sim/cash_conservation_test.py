@@ -162,7 +162,7 @@ def hold_vti(world: World, lot: PreparedLot) -> None:
 def run(
     world: World, *, policies: tuple[_AllocationPolicy, ...] = (), scheduled_sales: tuple[_ScheduledSale, ...] = ()
 ) -> Rollout:
-    """Alice sells on her schedule and her funding policy, then pays each account's claims all or none."""
+    """Alice sells on her schedule and her funding policy, then pays every due claim in full, in order."""
 
     household = ConfiguredHousehold(AgentId(ALICE), policies, scheduled_sales=scheduled_sales)
     session = ActionSession({0: world}, ALICE)

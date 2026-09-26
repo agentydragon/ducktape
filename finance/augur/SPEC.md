@@ -123,9 +123,9 @@ amounts. Imports, execution and recorded lot state retain the total without
 deriving and re-quantizing a per-unit basis; sales apportion it and full
 liquidation consumes the remainder.
 
-All-or-none funding of a month's claims is a household's choice, not a settlement
-rule: the world settles each payment on its own, and the app household declines
-every claim on an account whose month it cannot fund in full.
+The world settles each payment on its own. The app household submits a full
+payment for every due claim in observed order, so a claim its cash cannot cover
+is rejected after the earlier ones settle.
 
 A reduced-form TLH portfolio owns its internal holdings and adjusted basis in
 Python. The household observes its value and reported tax basis, and chooses

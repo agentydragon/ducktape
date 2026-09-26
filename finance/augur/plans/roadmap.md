@@ -42,8 +42,8 @@ reader migrations remain allowed. It does not block preserving supported behavio
 | COMPOSE | The remaining `World` slices in [the gate note's graph](library_design_gates.md#remaining-work-in-dependency-order): one public TLH cohort type; the offers slice and drain; the tax-year close in `TaxAuthority`; seasoned contracts and a tracked property; the rollout axis. | The gate note's graph; its offers slice waits on GPE and its seasoned-contract and property slices on GHOUSE. No replacement giant config schema. |
 | P12     | Retire configured strategy orchestration: the app's configured household, its allocation proposer and funding-policy lowering.                                                                                                                                                  | Continue independently landable slices on settled contracts; full P12 still needs HOUSING and PE for their readers.                               |
 
-The tax-year close, the rollout axis and P12's public-portfolio slices can start
-now, in parallel. Keep older financial capability branches scoped as below. No
+The tax-year close and P12's public-portfolio slices can start now, in parallel;
+the rollout axis is postponed. Keep older financial capability branches scoped as below. No
 dependency is introduced merely because files overlap or a rebase will be needed.
 
 ## Destination and stopping conditions
@@ -165,22 +165,20 @@ not a central structured ladder policy or engine-owned fallback.
 The settled policy contract (one batch-shaped policy, ordered monthly actions,
 fatal rejection) is in <../SPEC.md>. The [actor-facing interface plan](policy_interfaces.md)
 keeps the observation and action extensions not yet built; exact batch layout and
-adapter cost remain decisions for GL. [The grouped-funding controls](policy_timing.md)
-pin the configured household's all-or-none funding against ordered actions for P12.
-GP gates expanded product/housing and cross-actor timing.
+adapter cost remain decisions for GL. GP gates expanded product/housing and
+cross-actor timing.
 
 ## Antipatterns to remove
 
 Paths are relative to `finance/augur/`. Each row names the change that removes it.
 
-| Existing problem and evidence                                                                                                                                    | Replacement / deletion criterion                                                                                                                                 | Landing unit   |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| Known contract views are not yet selected domain capture.                                                                                                        | CAP adds concrete missing financial observations.                                                                                                                | CAP            |
-| The app still lowers funding policies (`product/scenarios.py::_target_allocation_policies_from_funding_policy`) for `policy/configured_household.py` to consult. | Migrate consumers to common actions; remove configured policy schemas, lowering and orchestration with their last caller, reusing the shared Python helpers.     | P12; GP        |
-| The app household pays each account's month of claims all or none, including scheduled spending claims.                                                          | Contracts generate claims; actors choose funding and ordered payments through the common session. Resolve each consumer's grouping convention explicitly.        | P12, HOUSE; GP |
-| A total-return equity proxy can look like a taxable security, and `SecurityDistribution` treats payouts as interest.                                             | Explicit product bindings and supported distribution character; separate price return from payouts for taxed holdings.                                           | BIND, TAX      |
-| `BondHolding` means par-bought, unmarked and unsellable; a portfolio choice is encoded as an instrument invariant.                                               | The same dated position can pay coupons, sell partially, or redeem; hold/sell/roll are choices. Keep the old constant-maturity approximation explicitly labeled. | BOND           |
-| Tax surface is narrower than the intended fidelity: single filing status; missing NIIT/qualified-dividend support; no effective-year schedule in `Jurisdiction`. | Declared supported-case matrix, dated rules and opening tax state; unsupported relevant cases reject. Existing loss netting/carryforward is not reimplemented.   | GT, TAX        |
+| Existing problem and evidence                                                                                                                                    | Replacement / deletion criterion                                                                                                                                 | Landing unit |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| Known contract views are not yet selected domain capture.                                                                                                        | CAP adds concrete missing financial observations.                                                                                                                | CAP          |
+| The app still lowers funding policies (`product/scenarios.py::_target_allocation_policies_from_funding_policy`) for `policy/configured_household.py` to consult. | Migrate consumers to common actions; remove configured policy schemas, lowering and orchestration with their last caller, reusing the shared Python helpers.     | P12; GP      |
+| A total-return equity proxy can look like a taxable security, and `SecurityDistribution` treats payouts as interest.                                             | Explicit product bindings and supported distribution character; separate price return from payouts for taxed holdings.                                           | BIND, TAX    |
+| `BondHolding` means par-bought, unmarked and unsellable; a portfolio choice is encoded as an instrument invariant.                                               | The same dated position can pay coupons, sell partially, or redeem; hold/sell/roll are choices. Keep the old constant-maturity approximation explicitly labeled. | BOND         |
+| Tax surface is narrower than the intended fidelity: single filing status; missing NIIT/qualified-dividend support; no effective-year schedule in `Jurisdiction`. | Declared supported-case matrix, dated rules and opening tax state; unsupported relevant cases reject. Existing loss netting/carryforward is not reimplemented.   | GT, TAX      |
 
 The user-facing experiment **RUN** must use canonical execution.
 
@@ -290,8 +288,7 @@ optional Python proposal helpers; GP and BOND/HOUSE define the scoped
 action/execution contracts. Domain changes serve an actual consumer.
 
 For each configured consumer, preserve its financial cadence and identify changes
-caused by post-claims timing or explicit ordered funding. Grouped-funding behavior
-is not a compatibility contract. Its Python policy owns proposal ordering,
+caused by post-claims timing or explicit ordered funding. Its Python policy owns proposal ordering,
 spending/tax reserves and the chosen cash-band/drift convention.
 
 Use the simplest clear typed representation that serves actual experiments.
@@ -311,9 +308,9 @@ large, preserving the named completion condition and atomic caller updates.
 The **Needs** column names immediate prerequisites; inherited prerequisites still
 apply only to the consuming slice. No convergence node waits for RUNTIME/GE.
 
-| Unit                                          | Independently reviewable change                                                                                                                                                                                                                                                                                            | Needs                            | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                                |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P12 — retire configured controls and adapters | Move the app's configured household to an ordinary policy submitting common actions. Land supported slices independently; extend the common action path only for capabilities existing callers require. Remove the configured allocator orchestration, funding-policy lowering and policy schemas with their last readers. | HOUSING, PE (their readers only) | Every production caller's decisions come from an ordinary policy over the common actions; ported Python tests exercise canonical steps. Preserve existing financial capabilities and explicitly resolve phase/grouped-funding differences; no silent behavior change or compatibility runner. No new adaptive housing, tax or market capability is implied. |
+| Unit                                          | Independently reviewable change                                                                                                                                                                                                                                                                                            | Needs                            | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P12 — retire configured controls and adapters | Move the app's configured household to an ordinary policy submitting common actions. Land supported slices independently; extend the common action path only for capabilities existing callers require. Remove the configured allocator orchestration, funding-policy lowering and policy schemas with their last readers. | HOUSING, PE (their readers only) | Every production caller's decisions come from an ordinary policy over the common actions; ported Python tests exercise canonical steps. Preserve existing financial capabilities and explicitly resolve phase differences; no silent behavior change or compatibility runner. No new adaptive housing, tax or market capability is implied. |
 
 ### Domain composition and existing-app retirement
 
@@ -341,13 +338,13 @@ The [entity-ID note](typed_series_config.md) scopes IDTYPES without turning arti
 
 ### Deletion checkpoints, not another interface family
 
-P12 removes the remaining implicit allocator/grouped-payment orchestration. The
+P12 removes the remaining implicit allocator orchestration. The
 app can retain projections over common outputs, not a private simulation
 interface. Delete each superseded path in its last caller's migration PR, not a later cleanup campaign. The active
 scalar-adapted/batch-authored bounded-rule comparison remains an experiment control
 using one action session, not another execution API.
 
-Old opening-month/all-or-none controls and the post-claims action contract are not
+Old opening-month controls and the post-claims action contract are not
 interchangeable wrappers. Pin expected decisions and paid outcomes for each moved
 consumer, explain intentional differences, and reject accidental drift. Existing
 housing/PE consumers remain on the explicitly tracked P12 branch until their
@@ -360,10 +357,17 @@ the same `World` and actions as the Python experiments, not a configured strateg
 
 ### Other landing units and acceptance
 
+CAP's concrete actor-tax-observation slice exposes recorded income, jurisdiction
+gain/carryforward facts and assessed outstanding liabilities through the Python
+observation, reusing canonical Python accounting and tax records. Those facts exist
+internally but are not in the current policy observation. Test same-month component losses,
+prior sales, year-end/reset and actor scope without future assessments. This
+gates tax-aware policy rules, not MA3's fixed-flow accounting control or all studies.
+
 | Unit    | Independently reviewable change(s)                                                                                                                                                                                                                                                                                                                                                                         | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                                                                                             |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | RUNTIME | Parked: investigate an actual slow workload when large-N use requires it, separating language, execution and output layout.                                                                                                                                                                                                                                                                                | Comparable financial work/outputs and real profiling, not historical aggregate speedup attribution. No prerequisite edge to current domain/API work.                                                                                                                                                                                                                                                                     |
-| CAP     | Add consumer-required actor/account/component financial observations using canonical records.                                                                                                                                                                                                                                                                                                              | Preserve source scope, exact units and observed/stopped validity. Existing views do not need a metrics framework; app-specific recording stays in `product/`.                                                                                                                                                                                                                                                            |
+| CAP     | Add consumer-required actor/account/component financial observations using canonical records, including the recorded-tax slice above.                                                                                                                                                                                                                                                                      | Preserve source scope, exact units and observed/stopped validity. Existing views do not need a metrics framework; app-specific recording stays in `product/`.                                                                                                                                                                                                                                                            |
 | BIND    | First make proxy/distributing-product semantics explicit and validate held **and purchasable** support at composition. Then supply equity price-return **and dividend-amount paths**, with explicit historical/fitted payout assumptions, coordinated with TAX's supported character slice. Reuse typed conditioning records; IDTYPES is deferred and does not gate this slice. Reuse existing typed keys. | A total-return proxy cannot silently become a taxable distributing holding. Missing payouts, incompatible tax character and double-counted total returns reject before execution; legitimate zero payouts remain valid. Price plus payouts reconcile before tax, with timing and provenance. Product terms, construction assumptions and investor strategy have distinct owners; no global registry or universal fitter. |
 | TAX     | After GT, land separate supported-case changes: distribution characterization/qualified dividends; NIIT if applicable; calendar/law-year selection and opening year-to-date facts/payment timing; any additional filing/residency gaps actually in scope.                                                                                                                                                  | Independently sourced annual-liability examples plus integrated sale-to-fund-spend, reinvestment basis, year-crossing, exemption and tax-payment tests. Compare with a second calculation, not a copy of the engine formula. Reject or exclude unimplemented cases explicitly. No second simulator or universal tax-law DSL.                                                                                             |
 | BOND    | Land marking/partial sale for the supported existing nominal-bond slice, then off-par acquisition/accrual treatment separately. First consumer supplies explicit dated sale orders and curve/cashflow inputs; adaptive actor/helper decisions use the same settlement operation. Reuse `model/nominal_bond.py` and supplied-curve controls.                                                                | One position can sell or mature, with conserved face, correct remaining coupons/basis, and no duplicate principal. Cash, accrued interest and taxable gains reconcile. Remove `BondHolding`'s structural illiquidity doctrine; hold-to-maturity is a policy. Preserve redemption controls and explicit unsupported cases; unitization is not direct bond settlement.                                                     |
@@ -451,8 +455,9 @@ all the others to be solved first.
 
 ## Current dispatch and priorities
 
-1. **COMPOSE**: the tax-year close and the rollout axis are ready now; the TLH
-   cohort type is postponed and waits on the open question in its gate-note entry.
+1. **COMPOSE**: the tax-year close is ready now; the rollout axis is postponed until a
+   real large-N workload needs it; the TLH cohort type is postponed and waits on the
+   open question in its gate-note entry.
    **P12**'s public-portfolio reader slices proceed on settled contracts.
 2. **MA3** remains a runnable paired TLH comparison on the existing Python
    component/session. Continue **STUDY** consumers alongside cleanup. Scope GT/GS
