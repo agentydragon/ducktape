@@ -29,7 +29,7 @@ async def replace_long_lived_token(home_assistant: HomeAssistantClient, client_n
     websocket API reports that as a bare `unknown_error`. Minting without revoking therefore
     deadlocks once the Secret's token stops validating while Home Assistant still holds one.
     """
-    tokens = await home_assistant.websocket_command({"id": 1, "type": "auth/refresh_tokens"})
+    tokens = await home_assistant.websocket_command({"type": "auth/refresh_tokens"})
     if not isinstance(tokens, list):
         raise TypeError(f"Home Assistant returned an invalid token list: {tokens!r}")
     # The logged-in session's own refresh token came from an authorization-code grant, so its type
@@ -37,11 +37,11 @@ async def replace_long_lived_token(home_assistant: HomeAssistantClient, client_n
     for token in tokens:
         if token.get("type") == LONG_LIVED_TOKEN_TYPE and token.get("client_name") == client_name:
             await home_assistant.websocket_command(
-                {"id": 1, "type": "auth/delete_refresh_token", "refresh_token_id": token["id"]}
+                {"type": "auth/delete_refresh_token", "refresh_token_id": token["id"]}
             )
             print(f"Revoked stale {client_name} long-lived token {token['id']}")
     minted = await home_assistant.websocket_command(
-        {"id": 1, "type": "auth/long_lived_access_token", "client_name": client_name, "lifespan": LIFESPAN_DAYS}
+        {"type": "auth/long_lived_access_token", "client_name": client_name, "lifespan": LIFESPAN_DAYS}
     )
     if not isinstance(minted, str):
         raise TypeError(f"Home Assistant returned a non-string token: {type(minted).__name__}")
@@ -56,23 +56,16 @@ async def reset_read_only_user(owner: HomeAssistantClient, username: str, passwo
     then forgotten. Setting it on every mint is what lets a run recover a user whose password no
     one holds.
     """
-    listed = await owner.websocket_command({"id": 1, "type": "config/auth/list"})
+    listed = await owner.websocket_command({"type": "config/auth/list"})
     if not isinstance(listed, list):
         raise TypeError(f"Home Assistant returned an invalid user list: {listed!r}")
     users = [user for user in listed if user.get("username") == username]
     if not users:
         created = await owner.websocket_command(
-            {
-                "id": 1,
-                "type": "config/auth/create",
-                "name": username,
-                "group_ids": [READ_ONLY_GROUP],
-                "local_only": True,
-            }
+            {"type": "config/auth/create", "name": username, "group_ids": [READ_ONLY_GROUP], "local_only": True}
         )
         await owner.websocket_command(
             {
-                "id": 1,
                 "type": "config/auth_provider/homeassistant/create",
                 "user_id": HomeAssistantClient.required_string(created, "user", "id"),
                 "username": username,
@@ -83,15 +76,10 @@ async def reset_read_only_user(owner: HomeAssistantClient, username: str, passwo
         return
     user_id = HomeAssistantClient.required_string(one(users), "id")
     await owner.websocket_command(
-        {"id": 1, "type": "config/auth/update", "user_id": user_id, "group_ids": [READ_ONLY_GROUP], "local_only": True}
+        {"type": "config/auth/update", "user_id": user_id, "group_ids": [READ_ONLY_GROUP], "local_only": True}
     )
     await owner.websocket_command(
-        {
-            "id": 1,
-            "type": "config/auth_provider/homeassistant/admin_change_password",
-            "user_id": user_id,
-            "password": password,
-        }
+        {"type": "config/auth_provider/homeassistant/admin_change_password", "user_id": user_id, "password": password}
     )
 
 

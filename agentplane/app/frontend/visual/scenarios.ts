@@ -27,8 +27,7 @@ export interface Scenario extends ScenarioOptions {
   openRawStatus?: boolean;
   /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
   openActionPolicySets?: boolean;
-  /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own
-   * (UISHELL_MOBILE). */
+  /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own. */
   openMobileSidebar?: boolean;
   threadlessSandbox?: boolean;
   /** `disconnected` drops the sidebar's own stream after its first snapshot; `database-disconnected`
@@ -149,7 +148,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ['[aria-label="Chronological observations"]'],
     captureViewport: true,
   },
-  // The sidebar's landing state (UISHELL_SIDEBAR): every group state icon (running, pending,
+  // The sidebar's landing state: every group state icon (running, pending,
   // suspended, deleted) and the struck-through read-only group, with no thread open yet.
   threads: {
     element: "#app",
@@ -158,7 +157,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ["a.agentplane-sidebar-group-name"],
   },
   threads_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "threads-phone" },
-  // The phone-width sidebar drawer opened over the landing view (UISHELL_MOBILE): the hamburger,
+  // The phone-width sidebar drawer opened over the landing view: the hamburger,
   // the backdrop, and the same group/thread list the desktop sidebar shows.
   threads_phone_drawer: {
     element: "#app",
@@ -228,7 +227,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
   // The launch form with a preset picked through the URL and the sets dropdown opened by the
   // harness, so the shot carries the namespace's options beside the pre-filled pick. `/sandboxes`,
-  // not `/`: UISHELL_SIDEBAR moved the Sandbox list off the landing route.
+  // not `/`: the landing route is the threads view.
   new_sandbox: {
     element: "#app",
     route: "/sandboxes?preset=public-coder",

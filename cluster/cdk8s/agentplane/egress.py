@@ -62,7 +62,13 @@ from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.main import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, container_security, database, llm_ingress, node_scheduling
-from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_PUBLIC_POLICY, KUBERNETES_POLICY, PACKAGES_POLICY
+from cluster.cdk8s.agentplane.app_settings import (
+    BASIC_POLICY,
+    GITHUB_AGENTYDRAGON_AGENT_POLICY,
+    GITHUB_CLONE_POLICY,
+    KUBERNETES_POLICY,
+    PACKAGES_POLICY,
+)
 from cluster.cdk8s.agentplane.egress_credentials import GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
@@ -295,14 +301,36 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
     )
     EgressPolicy(
         scope,
-        "egresspolicy-github-public",
-        metadata=ApiObjectMetadata(name=GITHUB_PUBLIC_POLICY, namespace=namespace),
+        "egresspolicy-github-agentydragon-agent",
+        metadata=ApiObjectMetadata(name=GITHUB_AGENTYDRAGON_AGENT_POLICY, namespace=namespace),
         spec=EgressPolicySpec(
             rules=[
                 EgressPolicySpecRules(
                     hosts=["api.github.com", "github.com", "codeload.github.com", "*.githubusercontent.com"],
                     methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="github-pat"),
+                )
+            ]
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-github-clone",
+        metadata=ApiObjectMetadata(name=GITHUB_CLONE_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                # `git clone`/`fetch` over the smart-HTTP protocol: ref discovery (GET) then the
+                # pack negotiation and transfer (POST), for a repository addressed with or without
+                # the `.git` suffix. Only github.com serves this protocol -- the CDN hosts in
+                # `github-downloads` never see it. No credentialRef: this is the anonymous surface
+                # any unauthenticated client has for a public repository, so a sandbox holding it
+                # gains no identity, only the ability to attempt the same request GitHub already
+                # answers for a public repo (or 401s/404s for a private one it has no other access
+                # to).
+                EgressPolicySpecRules(
+                    hosts=["github.com"],
+                    methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST],
+                    paths=["/*/*.git/info/refs", "/*/*.git/git-upload-pack", "/*/*/info/refs", "/*/*/git-upload-pack"],
                 )
             ]
         ),
