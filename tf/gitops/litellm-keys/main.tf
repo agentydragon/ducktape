@@ -350,6 +350,44 @@ resource "litellm_key" "gemini_clients" {
   }
 }
 
+# ============================================================================
+# antigravity-clients — scoped key for laptop antigravity-claude (Google
+# Antigravity OAuth session via CLIProxyAPI, on the Anthropic Messages surface)
+# ============================================================================
+# Same Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted
+# with the shared narrow client-key age key. The laptop antigravity-claude wrapper
+# reads it from its sops-nix secret file. The antigravity/ant-messages/* upstream
+# reaches CLIProxyAPI with the in-cluster cli-proxy client key (ESO-mirrored into
+# litellm), so this key never carries it.
+
+data "sops_file" "antigravity_clients_key" {
+  source_file = "${path.module}/litellm-antigravity-clients-key.yaml"
+}
+
+resource "litellm_team" "antigravity_clients" {
+  team_alias = "antigravity-clients"
+  router_settings = {
+    # Keep a fallback to the cheap, high-quota flash-lite tier instead of
+    # hard-failing Claude Code.
+    fallbacks = [
+      {
+        model           = "*"
+        fallback_models = ["antigravity/ant-messages/gemini-3.5-flash-lite"]
+      }
+    ]
+  }
+}
+
+resource "litellm_key" "antigravity_clients" {
+  key_alias = "antigravity-clients"
+  key       = data.sops_file.antigravity_clients_key.data["litellm_antigravity_key"]
+  models    = var.model_allowlists.antigravity_client_models
+  team_id   = litellm_team.antigravity_clients.id
+  metadata = {
+    consumer = "laptop-antigravity-claude"
+  }
+}
+
 # Disposable agent workspaces (cluster/k8s/agents/agent-sandbox/): operator-
 # codex workspace lane: the codex CLI's baked LiteLLM provider
 # (cluster/k8s/agents/agent-sandbox/workspace-image/codex-config.toml) uses

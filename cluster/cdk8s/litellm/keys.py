@@ -24,6 +24,7 @@ from cluster.cdk8s.litellm.config import main_proxy_config
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
+    ANTIGRAVITY_MODELS,
     CLIPROXY_MODELS,
     GEMINI_EMBEDDING_COMPAT_ALIAS,
     GEMINI_EMBEDDING_MODELS,
@@ -61,6 +62,11 @@ CLAUDE_CLIENT_MODELS = [
 TANA_CLIENT_MODELS = [exposed_name(Provider.TANA, ApiShape.ANT_MESSAGES, exposed) for exposed, _ in TANA_MODELS]
 # The Gemini chat lineup -- the laptop gemini-claude wrapper and public-coder-agent.
 GEMINI_CLIENT_MODELS = [exposed_name(Provider.GOOGLE, ApiShape.GOOG_GENERATE, model.id) for model in GEMINI_MODELS]
+# The Antigravity OAuth-session lineup on the Anthropic Messages surface -- the laptop
+# antigravity-claude wrapper.
+ANTIGRAVITY_CLIENT_MODELS = [
+    exposed_name(Provider.ANTIGRAVITY, ApiShape.ANT_MESSAGES, model) for model in ANTIGRAVITY_MODELS
+]
 _GEMINI_EMBEDDING_ROUTES = [
     exposed_name(Provider.GOOGLE, ApiShape.GOOG_EMBED, model) for model in GEMINI_EMBEDDING_MODELS
 ]
@@ -117,6 +123,7 @@ def model_allowlists() -> dict[str, list[str]]:
         "claude_client_models": CLAUDE_CLIENT_MODELS,
         "embedding_client_models": EMBEDDING_CLIENT_MODELS,
         "gemini_client_models": GEMINI_CLIENT_MODELS,
+        "antigravity_client_models": ANTIGRAVITY_CLIENT_MODELS,
         "ollama_chat_client_models": OLLAMA_CHAT_CLIENT_MODELS,
         "cheap_experiments_models": CHEAP_EXPERIMENTS_MODELS,
     }
