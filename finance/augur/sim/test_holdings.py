@@ -1,7 +1,7 @@
 """Exact selections, residual basis and all-or-none cash/lot/tax trade accounting."""
 
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 import pytest
 import pytest_bazel
@@ -12,23 +12,14 @@ from finance.augur.sim.books import AccountRef, JournalEntry, Posting
 from finance.augur.sim.holdings import Holdings
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import MAX_COUNT
-from finance.augur.sim.prepared import (
-    CompiledRun,
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedLot,
-    PreparedScenario,
-    PreparedSeries,
-    _ScheduledSale,
-)
-from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, prepared_books, prepared_scenario
+from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedSeries, _ScheduledSale
+from finance.augur.sim.testing.accounting import ACCOUNTS, CASH, EXOGENOUS, HOUSEHOLD, accounting, taxpayer
 
 BROKERAGE = AccountRef(agent_id=HOUSEHOLD, account_id="brokerage")
 
 
 @dataclass
 class Books:
-    scenario: PreparedScenario
     accounting: Accounting
     holdings: Holdings
     market: MarketPath
@@ -45,15 +36,15 @@ class Books:
 
 @pytest.fixture
 def books() -> Books:
-    base = prepared_scenario()
-    scenario = replace(
-        base,
-        accounts=(*base.accounts, PreparedAccount(account=BROKERAGE, opening_balance=0)),
-        tax_profiles=(base.tax_profiles[0],),
-        holding_pools=(
-            PreparedHoldingPool(agent_id=HOUSEHOLD, account_id="brokerage", asset_id="test_fund", quantity_scale=10),
-        ),
-        initial_lots=tuple(
+    accounting_ = accounting((*ACCOUNTS, PreparedAccount(account=BROKERAGE, opening_balance=0)), (taxpayer(HOUSEHOLD),))
+    holdings = Holdings()
+    holdings.declare_pool(
+        accounting_,
+        PreparedHoldingPool(agent_id=HOUSEHOLD, account_id="brokerage", asset_id="test_fund", quantity_scale=10),
+    )
+    for month, id_, basis in [(-12, "old", 17), (0, "new", 32)]:
+        holdings.hold(
+            accounting_,
             PreparedLot(
                 lot_id=id_,
                 agent_id=HOUSEHOLD,
@@ -63,27 +54,12 @@ def books() -> Books:
                 quantity_scale=10,
                 units=10,
                 basis=basis,
-            )
-            for month, id_, basis in [(-12, "old", 17), (0, "new", 32)]
-        ),
+            ),
+        )
+    market = MarketPath(
+        (PreparedSeries(series_id="security:test_fund", snapshots=26, values=(10,) * 26),), 0, rollout_count=1
     )
-    accounting = prepared_books(scenario)
-    holdings = Holdings()
-    for pool in scenario.holding_pools:
-        holdings.declare_pool(accounting, pool)
-    for lot in scenario.initial_lots:
-        holdings.hold(accounting, lot)
-    market = MarketPath.from_run(
-        CompiledRun(
-            currency_code="USD",
-            currency_quantum="0.01",
-            rollout_count=1,
-            scenario=scenario,
-            series=(PreparedSeries(series_id="security:test_fund", snapshots=26, values=(10,) * 26),),
-        ),
-        0,
-    )
-    return Books(scenario, accounting, holdings, market)
+    return Books(accounting_, holdings, market)
 
 
 def sale(lot: str, units: int) -> Sell:

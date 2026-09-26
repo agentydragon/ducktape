@@ -62,12 +62,14 @@ py_library(
     name = "accounting",
     srcs = ["accounting.py"],
     deps = [
-        ":case",
         "//finance/augur/sim:accounting",
         "//finance/augur/sim:books",
         "//finance/augur/sim:ids",
+        "//finance/augur/sim:market_path",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:scenario",
+        "//finance/augur/sim:tax_authority",
+        "//finance/augur/sim:world",
         "//finance/augur/sim/compiler:tax",
     ],
 )
