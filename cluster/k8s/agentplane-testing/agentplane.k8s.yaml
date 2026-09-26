@@ -58,6 +58,8 @@ data:
     models:
       HARNESS_CLAUDE:
         - anthropic-api/ant-messages/claude-haiku-4-5-20251001
+        - antigravity/ant-messages/gemini-3.1-flash-lite
+        - antigravity/ant-messages/gemini-3.5-flash-lite
         - ollama/oai-chat/gpt-oss-20b-128k
         - ollama/olm-chat/gpt-oss-20b-128k
         - ollama/oai-chat/gpt-oss-20b-256k

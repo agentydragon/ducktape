@@ -51,6 +51,8 @@ spec:
         cheap_experiments_models:
           - google/goog-generate/gemini-3.7-flash
           - google/goog-generate/gemini-3.5-flash-lite
+          - antigravity/ant-messages/gemini-3.1-flash-lite
+          - antigravity/ant-messages/gemini-3.5-flash-lite
           - google/goog-embed/gemini-embedding-2
           - google/goog-embed/gemini-embedding-001
           - mistral/oai-chat/codestral-2508
