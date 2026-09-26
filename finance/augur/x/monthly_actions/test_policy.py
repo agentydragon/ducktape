@@ -6,6 +6,7 @@ import pytest_bazel
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import quantity_scale_for_asset
+from finance.augur.sim.ids import AccountId, AssetId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedObligation, PreparedSeries
 from finance.augur.sim.results import Finished, RejectedAction
@@ -30,13 +31,15 @@ def opening(bill_dollars: int) -> World:
     )
     for agent_id, balance in ((HOUSEHOLD, 20_000), (CREDITOR, 0)):
         world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id="checking"), opening_balance=balance)
+            PreparedAccount(
+                account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=balance
+            )
         )
     world.declare_pool(
         PreparedHoldingPool(
             agent_id=HOUSEHOLD,
-            account_id="brokerage",
-            asset_id=str(STOCK.symbol),
+            account_id=AccountId("brokerage"),
+            asset_id=AssetId(STOCK.symbol),
             quantity_scale=quantity_scale_for_asset(STOCK),
         )
     )
@@ -46,8 +49,8 @@ def opening(bill_dollars: int) -> World:
                 month=0,
                 obligation_id="opening-bill",
                 obligation_type=ObligationType.CASH_SPEND,
-                from_account=AccountRef(agent_id=HOUSEHOLD, account_id="checking"),
-                to_account=AccountRef(agent_id=CREDITOR, account_id="checking"),
+                from_account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("checking")),
+                to_account=AccountRef(agent_id=CREDITOR, account_id=AccountId("checking")),
                 amount_due=bill_dollars * 100,
                 property_id=None,
                 deduction_category=None,
@@ -85,7 +88,7 @@ def test_opening_investment_reserves_claims_and_does_not_rescue_shortfalls(
         next(
             row.balance
             for row in closing.balances
-            if row.account == AccountRef(agent_id=HOUSEHOLD, account_id="checking")
+            if row.account == AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("checking"))
         )
         == ending_cash
     )

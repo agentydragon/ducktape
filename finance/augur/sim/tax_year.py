@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 
 from finance.augur.sim.books import TaxAccrual
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.scenario import TransferIncomeCategory
 from finance.augur.sim.tax import IncomeLedger
@@ -32,10 +33,10 @@ class TaxBook:
     """
 
     def __init__(self, sources: Sequence[TransferIncomeCategory]) -> None:
-        self.years: dict[str, TaxYear] = {}
+        self.years: dict[AgentId, TaxYear] = {}
         self.income = IncomeLedger(sources)
 
-    def enroll(self, agent_id: str) -> None:
+    def enroll(self, agent_id: AgentId) -> None:
         if agent_id in self.years:
             raise ValueError(f"taxpayer {agent_id!r} is already enrolled")
         self.years[agent_id] = TaxYear()
@@ -48,7 +49,7 @@ class TaxBook:
         clone.income = self.income.copy()
         return clone
 
-    def gain(self, agent: str, amount: int, *, long_term: bool) -> None:
+    def gain(self, agent: AgentId, amount: int, *, long_term: bool) -> None:
         if agent not in self.years:
             return
         year = self.years[agent]
@@ -57,7 +58,7 @@ class TaxBook:
         else:
             year.short_term_gain = checked_count(year.short_term_gain + amount, "money addition")
 
-    def property_tax(self, agent: str, amount: int, rented_fraction: int) -> None:
+    def property_tax(self, agent: AgentId, amount: int, rented_fraction: int) -> None:
         rental = mul_div(amount, rented_fraction, MONEY_FACTOR_SCALE, "rental property tax deduction")
         owner = mul_div(amount, MONEY_FACTOR_SCALE - rented_fraction, MONEY_FACTOR_SCALE, "owner property tax")
         self.income.deduct_from_ordinary(agent, rental)

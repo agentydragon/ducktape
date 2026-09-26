@@ -25,6 +25,7 @@ from finance.augur.model.exogenous import (
     level_series_request_channels,
     validate_sample_satisfies_request,
 )
+from finance.augur.model.series import LocationId
 from finance.augur.product.metrics import (
     OutcomeBasis,
     ProductMetricFanSummary,
@@ -59,6 +60,7 @@ from finance.augur.product.wire import (
     TerminalDistributionResponse,
 )
 from finance.augur.sim.external_series import materialize_sampled_exogenous
+from finance.augur.sim.ids import AgentId, PropertyId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.quantiles import currency_quantiles
@@ -72,12 +74,12 @@ class ProductService:
         *,
         portfolio: PortfolioConfig,
         initial_cash: Decimal | int | str,
-        primary_agent_id: str,
+        primary_agent_id: AgentId,
         security_distributions: tuple[SecurityDistributionConfig, ...] = (),
         tlh_portfolios: tuple[TlhPortfolioSpec, ...] = (),
-        known_location_ids: Collection[str],
-        locations: dict[str, Location],
-        properties_by_id: dict[str, Property],
+        known_location_ids: Collection[LocationId],
+        locations: dict[LocationId, Location],
+        properties_by_id: dict[PropertyId, Property],
         models: dict[str, Sampler],
         max_rollout_samples: int,
         max_horizon_months: int,

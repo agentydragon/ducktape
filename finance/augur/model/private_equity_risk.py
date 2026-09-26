@@ -488,7 +488,7 @@ _LEGAL_SEVERE_SMALL_DOLLAR_USD_MAX = 100_000.0  # uniform [0, 100_000]
 
 
 def _sample_issuer(
-    issuer_id: str, issuer: PrivateEquityRiskIssuerConfig, request: ExogenousSamplingRequest
+    issuer_id: IssuerId, issuer: PrivateEquityRiskIssuerConfig, request: ExogenousSamplingRequest
 ) -> _IssuerPaths:
     """Vectorized sampler: all R rollouts evolve in parallel, one timestep at a time.
 
@@ -1185,7 +1185,7 @@ def _dilution_factor(
     annual_dilution_rate: float,
     annual_dilution_rate_log_sigma: float,
     rollout_seeds: tuple[int, ...],
-    issuer_id: str,
+    issuer_id: IssuerId,
     rollout_count: int,
     horizon_months: int,
 ) -> FloatMatrix:

@@ -8,6 +8,7 @@ from finance.augur.sim.compiler.bonds import bond_income_categories
 from finance.augur.sim.compiler.distributions import distribution_income_categories
 from finance.augur.sim.compiler.income_sources import income_source_sort_key
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket, load_jurisdiction
 from finance.augur.sim.scenario import (
     BondHolding,
@@ -50,7 +51,7 @@ class PreparedTaxBracket:
 class PreparedTaxRules:
     """One jurisdiction's rules resolved for a taxpayer's filing status; money is integer quanta."""
 
-    jurisdiction_id: str
+    jurisdiction_id: JurisdictionId
     exempt_interest_from_levels: tuple[JurisdictionLevel, ...]
     exempts_own_issue: bool
     ordinary_brackets: tuple[PreparedTaxBracket, ...]
@@ -65,10 +66,10 @@ class PreparedTaxRules:
 class PreparedTaxProfile:
     """A taxpayer's payment routing, quantized allowances and ordered jurisdiction rules."""
 
-    agent_id: str
-    tax_authority_agent_id: str
-    payment_account_id: str
-    tax_authority_account_id: str
+    agent_id: AgentId
+    tax_authority_agent_id: AgentId
+    payment_account_id: AccountId
+    tax_authority_account_id: AccountId
     prior_year_tax: int
     section_121_exclusion: int
     jurisdictions: tuple[PreparedTaxRules, ...]
@@ -99,7 +100,7 @@ def compile_income_sources(
 
 
 def _agreed_capital_loss_offset_cap(
-    profile: TaxProfile, jurisdictions: Mapping[str, Jurisdiction], *, quantum: Decimal
+    profile: TaxProfile, jurisdictions: Mapping[JurisdictionId, Jurisdiction], *, quantum: Decimal
 ) -> int:
     """Netting runs once per taxpayer; reject jurisdictions requiring different offset caps."""
 
@@ -128,7 +129,7 @@ def _brackets(brackets: Sequence[TaxBracket], *, quantum: Decimal) -> tuple[Prep
 
 
 def compile_profile(
-    profile: TaxProfile, jurisdictions: Mapping[str, Jurisdiction], *, quantum: Decimal
+    profile: TaxProfile, jurisdictions: Mapping[JurisdictionId, Jurisdiction], *, quantum: Decimal
 ) -> PreparedTaxProfile:
     """One taxpayer's routing and quantized rules, as a composed world enrolls them."""
     offset_cap = _agreed_capital_loss_offset_cap(profile, jurisdictions, quantum=quantum)

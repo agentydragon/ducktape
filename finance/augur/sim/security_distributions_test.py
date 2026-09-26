@@ -21,6 +21,7 @@ from finance.augur.sim.fixed_point import (
     quantity_to_quanta,
     rate_to_ppb,
 )
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -60,11 +61,11 @@ from finance.augur.sim.testing.security_distributions import (
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-ALICE = "alice"
-IRS = "irs"
-CHECKING = "checking"
-BROKERAGE = "brokerage"
-FILED_IN = ("federal_us", "california")
+ALICE = AgentId("alice")
+IRS = AgentId("irs")
+CHECKING = AccountId("checking")
+BROKERAGE = AccountId("brokerage")
+FILED_IN = (JurisdictionId("federal_us"), JurisdictionId("california"))
 
 
 def payout_levels(per_unit: Decimal) -> np.ndarray:
@@ -104,7 +105,7 @@ def _slices(tax_character: tuple[DistributionTaxSlice, ...]) -> tuple[PreparedDi
     )
 
 
-def _account(agent_id: str, balance: Decimal) -> PreparedAccount:
+def _account(agent_id: AgentId, balance: Decimal) -> PreparedAccount:
     return PreparedAccount(
         account=AccountRef(agent_id=agent_id, account_id=CHECKING),
         opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
@@ -132,7 +133,7 @@ def compose(
     tax_character: tuple[DistributionTaxSlice, ...] = TREASURY,
     is_taxed: bool = True,
     distributes: bool = True,
-    holding_account_id: str = BROKERAGE,
+    holding_account_id: AccountId = BROKERAGE,
     payout: np.ndarray | None = PAYOUT,
     opening_cash: Decimal = Decimal(50_000),
     bill: PreparedObligation | None = None,
@@ -179,14 +180,14 @@ def compose(
         )
     scale = quantity_scale_for_asset(FUND)
     world.declare_pool(
-        PreparedHoldingPool(agent_id=ALICE, account_id=BROKERAGE, asset_id=str(SYMBOL), quantity_scale=scale)
+        PreparedHoldingPool(agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(SYMBOL), quantity_scale=scale)
     )
     world.hold(
         PreparedLot(
-            lot_id="bnd-lot",
+            lot_id=LotId("bnd-lot"),
             agent_id=ALICE,
             account_id=BROKERAGE,
-            asset_id=str(SYMBOL),
+            asset_id=AssetId(SYMBOL),
             purchase_month=-24,
             quantity_scale=scale,
             units=int(quantity_to_quanta(UNITS, scale=scale)),
@@ -198,7 +199,7 @@ def compose(
             PreparedDistribution(
                 agent_id=ALICE,
                 holding_account_id=holding_account_id,
-                asset_id=str(SYMBOL),
+                asset_id=AssetId(SYMBOL),
                 to_account_id=CHECKING,
                 tax_character=slices,
             )

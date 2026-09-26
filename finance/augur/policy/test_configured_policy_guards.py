@@ -12,7 +12,7 @@ import pytest_bazel
 
 from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -25,14 +25,15 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.world import World
 
-ALICE = "test-alice"
-STOCK = "test-stock"
+ALICE = AgentId("test-alice")
+STOCK = AssetId("test-stock")
+OPENING_LOT = LotId("opening-stock")
 SCALE = 1_000_000
 HORIZON = 13
 POLICY = _AllocationPolicy(
     agent_id=ALICE,
-    account_id="checking",
-    source_account_ids=("brokerage",),
+    account_id=AccountId("checking"),
+    source_account_ids=(AccountId("brokerage"),),
     sleeves=(_SecuritySleeveTarget(asset_id=STOCK, weight=1, quantity_scale=SCALE),),
     cash_floor=0,
     cash_ceiling=0,
@@ -43,23 +44,23 @@ POLICY = _AllocationPolicy(
 INDEX = PreparedIndexedAmount(base_amount=0, series_id="inflation", base_month_index=0, adjustment_period_months=12)
 
 
-def holding(*, lot_id: str = "opening-stock", inflation: tuple[int, ...] | None = None) -> World:
+def holding(*, lot_id: LotId = OPENING_LOT, inflation: tuple[int, ...] | None = None) -> World:
     """Alice's cash and 100 shares held in brokerage, on a flat price path and optionally a CPI path."""
     series = [PreparedSeries(series_id=f"security:{STOCK}", snapshots=HORIZON + 1, values=(1_000,) * (HORIZON + 1))]
     if inflation is not None:
         series.append(PreparedSeries(series_id="inflation", snapshots=HORIZON + 1, values=inflation))
     world = World(MarketPath(series, 0, rollout_count=1), horizon_months=HORIZON)
     world.declare_account(
-        PreparedAccount(account=AccountRef(agent_id=ALICE, account_id="checking"), opening_balance=10_000)
+        PreparedAccount(account=AccountRef(agent_id=ALICE, account_id=AccountId("checking")), opening_balance=10_000)
     )
     world.declare_pool(
-        PreparedHoldingPool(agent_id=ALICE, account_id="brokerage", asset_id=STOCK, quantity_scale=SCALE)
+        PreparedHoldingPool(agent_id=ALICE, account_id=AccountId("brokerage"), asset_id=STOCK, quantity_scale=SCALE)
     )
     world.hold(
         PreparedLot(
             lot_id=lot_id,
             agent_id=ALICE,
-            account_id="brokerage",
+            account_id=AccountId("brokerage"),
             asset_id=STOCK,
             purchase_month=-24,
             quantity_scale=SCALE,
@@ -75,18 +76,21 @@ def check(world: World, *policies: _AllocationPolicy) -> None:
 
 
 def test_generated_purchase_namespace_is_reserved() -> None:
-    reserved = holding(lot_id="fund_buy_p0_s0_1000000")
+    reserved = holding(lot_id=LotId("fund_buy_p0_s0_1000000"))
     with pytest.raises(ValueError, match="reserved allocation-purchase identity"):
         check(reserved, POLICY)
     check(reserved, replace(POLICY, allow_purchases=False))
-    check(holding(lot_id="fund_buy_p0_s0_1000000x"), POLICY)
+    check(holding(lot_id=LotId("fund_buy_p0_s0_1000000x")), POLICY)
 
 
 @pytest.mark.parametrize(
     ("policies", "error"),
     [
-        ((replace(POLICY, source_account_ids=("brokerage", "brokerage")),), "source accounts must be unique"),
-        ((replace(POLICY, source_account_ids=("undeclared",)),), "purchase pool is not declared"),
+        (
+            (replace(POLICY, source_account_ids=(AccountId("brokerage"), AccountId("brokerage"))),),
+            "source accounts must be unique",
+        ),
+        ((replace(POLICY, source_account_ids=(AccountId("undeclared"),)),), "purchase pool is not declared"),
         (
             (replace(POLICY, sleeves=(_SecuritySleeveTarget(asset_id=STOCK, weight=1, quantity_scale=10),)),),
             "quantity grid disagrees",
@@ -95,7 +99,7 @@ def test_generated_purchase_namespace_is_reserved() -> None:
             (replace(POLICY, sleeves=(_SecuritySleeveTarget(asset_id=STOCK, weight=1, quantity_scale=3),)),),
             "power-of-ten quantity grid",
         ),
-        ((replace(POLICY, account_id="undeclared"),), "declared funding account"),
+        ((replace(POLICY, account_id=AccountId("undeclared")),), "declared funding account"),
         ((replace(POLICY, cause_id_prefix=" "),), "nonempty cause"),
         ((POLICY, POLICY), "duplicate allocation funding account"),
         ((replace(POLICY, sleeves=POLICY.sleeves * 2),), "duplicate allocation sleeve"),
@@ -147,7 +151,7 @@ def test_exact_integer_indices_and_a_sales_only_scope_are_valid() -> None:
     # An exact i64 index above 2**53 is valid; absent purchase destinations remain valid for sales-only rules.
     check(
         holding(inflation=(2**53 + 1,) * (HORIZON + 1)),
-        replace(POLICY, allow_purchases=False, source_account_ids=("unused-holdings",), cash_ceiling=INDEX),
+        replace(POLICY, allow_purchases=False, source_account_ids=(AccountId("unused-holdings"),), cash_ceiling=INDEX),
     )
 
 

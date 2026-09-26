@@ -6,10 +6,12 @@ from dataclasses import dataclass, replace
 import pytest
 import pytest_bazel
 
+from finance.augur.model.series import LocationId
 from finance.augur.sim.actions import ClaimId, PayClaim
 from finance.augur.sim.agent import assemble
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.capture import FinancialCapture
+from finance.augur.sim.ids import AccountId, LiabilityId, PropertyId
 from finance.augur.sim.mortgage import Mortgage, MortgagePayment, MortgageTerms
 from finance.augur.sim.prepared import (
     PreparedLocation,
@@ -26,7 +28,7 @@ from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RES
 from finance.augur.sim.world import World
 
 LOCATION = PreparedLocation(
-    location_id="test-market",
+    location_id=LocationId("test-market"),
     display_name="Test market",
     jurisdiction_ids=(),
     annual_property_tax_rate_ppb=0,
@@ -50,27 +52,27 @@ def case() -> Situation:
         purchase=_PropertyPurchase(
             month=2,
             cause_id="test-purchase",
-            property_id="test-home",
-            location_id="test-market",
+            property_id=PropertyId("test-home"),
+            location_id=LocationId("test-market"),
             buyer_agent_id=HOUSEHOLD,
-            buyer_account_id="checking",
+            buyer_account_id=AccountId("checking"),
             seller_agent_id=WORLD,
-            seller_account_id="cash",
+            seller_account_id=AccountId("cash"),
             purchase_price=100_000,
             down_payment=40_000,
             buyer_closing_cost=0,
             rented_fraction_ppb=0,
             land_value_fraction_ppb=200_000_000,
             mortgage=_MortgageFinancing(
-                liability_id="test-mortgage",
+                liability_id=LiabilityId("test-mortgage"),
                 lender_agent_id=WORLD,
-                lender_account_id="cash",
+                lender_account_id=AccountId("cash"),
                 principal=60_000,
                 annual_interest_rate_ppb=0,
                 term_months=60,
             ),
         ),
-        sale=_PropertySale(month=5, property_id="test-home", closing_cost_ppb=0),
+        sale=_PropertySale(month=5, property_id=PropertyId("test-home"), closing_cost_ppb=0),
         home_values=PreparedSeries(
             series_id="home_value:test-market", snapshots=7, values=(50, 100, 200, 240, 300, 360, 800)
         ),
@@ -81,8 +83,8 @@ def case() -> Situation:
 def mortgage() -> Mortgage:
     return Mortgage(
         MortgageTerms(
-            liability_id="test-mortgage",
-            property_id="test-home",
+            liability_id=LiabilityId("test-mortgage"),
+            property_id=PropertyId("test-home"),
             borrower=CASH,
             lender=EXOGENOUS,
             origination_month=2,
@@ -122,11 +124,11 @@ def composed(case: Situation, rollout: int = 0) -> World:
         Housing(purchases=(case.purchase,), sales=(case.sale,)),
         (
             _PropertyTax(
-                property_id="test-home",
+                property_id=PropertyId("test-home"),
                 owner_agent_id=HOUSEHOLD,
-                from_account_id="checking",
+                from_account_id=AccountId("checking"),
                 tax_authority_agent_id=WORLD,
-                tax_authority_account_id="cash",
+                tax_authority_account_id=AccountId("cash"),
                 annual_tax_rate_ppb=12_000_000,
                 start_month=3,
                 end_month=None,
@@ -172,9 +174,9 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
     case: Situation, mortgage: Mortgage
 ) -> None:
     world = composed(case)
-    assert world.mortgage_principal("test-mortgage") == 0
+    assert world.mortgage_principal(LiabilityId("test-mortgage")) == 0
     for month, ending_principal in enumerate((0, 0, 60_000, 59_000, 58_000, 0)):
-        active = {"test-mortgage": mortgage} if month >= 2 else {}
+        active = {LiabilityId("test-mortgage"): mortgage} if month >= 2 else {}
         originated, paid_off = world.prepare_month(month, active if month == 2 else {}, active)
         assert originated == (["test-mortgage"] if month == 2 else [])
         assert paid_off == (["test-mortgage"] if month == 5 else [])
@@ -186,7 +188,7 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
                 ["rent", "mortgage_payment", "property_tax"] if month == 3 else ["mortgage_payment", "property_tax"]
             )
             claim = next(claim for claim in observation.claims if claim.obligation_type == "mortgage_payment")
-            checking = world.account_balance(HOUSEHOLD, "checking")
+            checking = world.account_balance(HOUSEHOLD, AccountId("checking"))
             assert not [row for row in world.accounting.mortgage_payments if row.month == month]
             action = PayClaim(
                 request_id=1,
@@ -199,7 +201,7 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
             assert [row.liability_id for row in world.accounting.mortgage_payments if row.month == month] == [
                 "test-mortgage"
             ]
-            assert world.account_balance(HOUSEHOLD, "checking") == checking
+            assert world.account_balance(HOUSEHOLD, AccountId("checking")) == checking
             others = [other for other in observation.claims if other is not claim]
             for index, other in enumerate(others, start=1):
                 action = PayClaim(
@@ -211,10 +213,10 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
                 )
                 assert isinstance(world.apply(HOUSEHOLD, action, index), Executed)
             assert quote is not None
-            mortgage.record_payment(quote, world.mortgage_principal("test-mortgage"))
+            mortgage.record_payment(quote, world.mortgage_principal(LiabilityId("test-mortgage")))
         if paid_off:
             mortgage.payoff()
-        assert world.mortgage_principal("test-mortgage") == ending_principal
+        assert world.mortgage_principal(LiabilityId("test-mortgage")) == ending_principal
         world.close_books(failed=False, mortgages=list(active.values()))
     # No month was opened through `open_month`, so every month's outcomes are still in the buffers.
     capture = FinancialCapture(world, capture="forensic")
@@ -225,7 +227,7 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
     assert financial.properties is not None
     sale = financial.properties.sales[0]
     assert (sale.mortgage_payoff, sale.net_cash_to_owner) == (58_000, 122_000)
-    assert world.account_balance(HOUSEHOLD, "savings") == 1000
+    assert world.account_balance(HOUSEHOLD, AccountId("savings")) == 1000
     assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in financial.journal)
 
 
@@ -255,7 +257,7 @@ def test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor(case: Situ
             world.close_books(failed=False, mortgages=[])
         sale = properties.sales[0]
         assert (sale.gross_proceeds, sale.net_cash_to_owner, sale.realized_gain) == (180_000, 180_000, 80_000)
-        assert world.account_balance(HOUSEHOLD, "checking") == 280_000
+        assert world.account_balance(HOUSEHOLD, AccountId("checking")) == 280_000
 
 
 @pytest.mark.parametrize("bad_payoff", ["missing", "inactive", "wrong_contract"])
@@ -269,8 +271,8 @@ def test_invalid_mortgage_effects_do_not_change_cash_or_principal(
     with pytest.raises(ValueError, match="mortgage origination"):
         world.prepare_month(0, {}, {})
     assert fingerprint(world) == before
-    assert world.mortgage_principal("test-mortgage") == 0
-    world.prepare_month(0, {"test-mortgage": mortgage}, {})
+    assert world.mortgage_principal(LiabilityId("test-mortgage")) == 0
+    world.prepare_month(0, {LiabilityId("test-mortgage"): mortgage}, {})
     world.assemble_claims([])
     world.close_books(failed=False, mortgages=[mortgage])
     invalid = deepcopy(mortgage)
@@ -280,9 +282,9 @@ def test_invalid_mortgage_effects_do_not_change_cash_or_principal(
         invalid = Mortgage(replace(mortgage.terms, origination_principal=60_001))
     before = fingerprint(world)
     with pytest.raises(ValueError, match="mortgage payoff"):
-        world.prepare_month(1, {}, {} if bad_payoff == "missing" else {"test-mortgage": invalid})
+        world.prepare_month(1, {}, {} if bad_payoff == "missing" else {LiabilityId("test-mortgage"): invalid})
     assert fingerprint(world) == before
-    assert world.mortgage_principal("test-mortgage") == 60_000
+    assert world.mortgage_principal(LiabilityId("test-mortgage")) == 60_000
     with pytest.raises(ValueError, match="invalid mortgage installment"):
         world.assemble_claims([installment(mortgage, 1, 60_000, 60_001)])
     assert fingerprint(world) == before
@@ -303,12 +305,12 @@ def test_a_building_basis_rounds_in_the_engine_not_in_the_authoring() -> None:
                 _PropertyPurchase(
                     month=0,
                     cause_id="test-purchase",
-                    property_id="test-home",
-                    location_id="test-market",
+                    property_id=PropertyId("test-home"),
+                    location_id=LocationId("test-market"),
                     buyer_agent_id=HOUSEHOLD,
-                    buyer_account_id="checking",
+                    buyer_account_id=AccountId("checking"),
                     seller_agent_id=WORLD,
-                    seller_account_id="cash",
+                    seller_account_id=AccountId("cash"),
                     purchase_price=10_001,
                     down_payment=10_001,
                     buyer_closing_cost=0,
@@ -323,7 +325,7 @@ def test_a_building_basis_rounds_in_the_engine_not_in_the_authoring() -> None:
     world.prepare_month(0, {}, {})
     properties = world.properties
     assert properties is not None
-    assert properties.properties["test-home"].state.building_basis == 8001
+    assert properties.properties[PropertyId("test-home")].state.building_basis == 8001
 
 
 if __name__ == "__main__":

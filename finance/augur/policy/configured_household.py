@@ -14,7 +14,7 @@ from finance.augur.policy.funding import full_payments
 from finance.augur.sim.actions import Action, Buy, Contribute, Liquidate, LotSale, Sell, Withdraw
 from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.money import checked_count, mul_div, position_value
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
@@ -108,7 +108,7 @@ class ConfiguredHousehold(EconomicAgent):
         return actions
 
     def _purchases(
-        self, observation: Observation, pending: list[PendingBuy | PendingContribution], cash: dict[str, int]
+        self, observation: Observation, pending: list[PendingBuy | PendingContribution], cash: dict[AccountId, int]
     ) -> list[Action]:
         """Exact orders, each sized from the cash left once this batch's sales and payments settle."""
         orders: list[Action] = []
@@ -181,7 +181,7 @@ class ConfiguredHousehold(EconomicAgent):
         )
 
     @staticmethod
-    def _proceeds(action: Action, observation: Observation) -> tuple[str, int]:
+    def _proceeds(action: Action, observation: Observation) -> tuple[AccountId, int]:
         """The cash a proposed sale lands in its account, on the prices the observation quotes."""
         if isinstance(action, Sell):
             quoted = {position.lot_id: position for position in observation.public_positions}

@@ -8,9 +8,10 @@ from typing import Literal
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Contribute, Liquidate, Withdraw
 from finance.augur.sim.actor import Statement
-from finance.augur.sim.books import AccountRef, DistributionOutcome, JournalEntry, Posting
+from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, DistributionOutcome, JournalEntry, Posting
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import gain_account
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, PortfolioId
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import TlhPortfolioObservation
 from finance.augur.sim.prepared import PreparedDistribution, PreparedJurisdiction, PreparedTlhPortfolio
@@ -21,14 +22,14 @@ type Operation = Literal["modeled_realization", "contribution", "redemption", "d
 
 @dataclass(frozen=True)
 class InterestCredit:
-    issuer_jurisdiction_id: str | None
+    issuer_jurisdiction_id: JurisdictionId | None
     amount: int
 
 
 @dataclass(frozen=True)
 class ComponentEffects:
     observation: TlhPortfolioObservation
-    cash_account_id: str | None
+    cash_account_id: AccountId | None
     cash_amount: int
     short_term_gain: int
     long_term_gain: int
@@ -39,10 +40,10 @@ class ComponentEffects:
 class FinancialEffect:
     month: int
     cause_id: str
-    portfolio_id: str
-    agent_id: str
-    account_id: str
-    cash_account_id: str | None
+    portfolio_id: PortfolioId
+    agent_id: AgentId
+    account_id: AccountId
+    cash_account_id: AccountId | None
     operation: Operation
     cash_amount: int
     short_term_gain: int
@@ -53,7 +54,7 @@ class FinancialEffect:
 
 def basis_account(observation: TlhPortfolioObservation) -> AccountRef:
     return AccountRef(
-        agent_id=observation.owner_agent_id, account_id=f"asset:managed-portfolio:{observation.portfolio_id}"
+        agent_id=observation.owner_agent_id, account_id=AccountId(f"asset:managed-portfolio:{observation.portfolio_id}")
     )
 
 
@@ -81,8 +82,8 @@ class ManagedPortfolios:
     ) -> None:
         self.income_sources = income_sources
         self.jurisdictions = jurisdictions
-        self.specs: dict[str, PreparedTlhPortfolio] = {}
-        self.marks: dict[str, TlhPortfolioObservation] = {}
+        self.specs: dict[PortfolioId, PreparedTlhPortfolio] = {}
+        self.marks: dict[PortfolioId, TlhPortfolioObservation] = {}
         # This month's outcomes, cleared by `begin_month`; marks are the state.
         self.effects: list[FinancialEffect] = []
         self.distributions: list[DistributionOutcome] = []
@@ -95,7 +96,7 @@ class ManagedPortfolios:
         self.specs[spec.portfolio_id] = spec
         accounting.ledger.ensure_account(basis_account(observation))
         accounting.ledger.ensure_account(gain_account(observation.owner_agent_id))
-        equity = AccountRef(agent_id=observation.owner_agent_id, account_id="equity:opening")
+        equity = AccountRef(agent_id=observation.owner_agent_id, account_id=AccountId("equity:opening"))
         accounting.ledger.ensure_account(equity)
         accounting.apply(
             JournalEntry(
@@ -109,7 +110,7 @@ class ManagedPortfolios:
         )
         self.marks[observation.portfolio_id] = observation
 
-    def statement(self, actor: str, month: int) -> TlhStatement:
+    def statement(self, actor: AgentId, month: int) -> TlhStatement:
         return TlhStatement(
             month=month, portfolios=tuple(row for row in self.marks.values() if row.owner_agent_id == actor)
         )
@@ -160,7 +161,7 @@ class ManagedPortfolios:
         self,
         accounting: Accounting,
         month: int,
-        actor: str,
+        actor: AgentId,
         cause: str,
         effects: ComponentEffects,
         *,
@@ -219,12 +220,7 @@ class ManagedPortfolios:
             ]
         )
         if interest_total:
-            postings.append(
-                Posting(
-                    account=AccountRef(agent_id="__external__", account_id="boundary"),
-                    amount=checked_count(-interest_total, "money negation"),
-                )
-            )
+            postings.append(Posting(account=EXTERNAL_BOUNDARY, amount=checked_count(-interest_total, "money negation")))
         tax = deepcopy(accounting.tax)
         tax.gain(actor, effects.short_term_gain, long_term=False)
         tax.gain(actor, effects.long_term_gain, long_term=True)

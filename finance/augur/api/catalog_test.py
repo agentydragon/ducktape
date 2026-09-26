@@ -13,6 +13,7 @@ from finance.augur.api.catalog import build_catalog, build_settings
 from finance.augur.api.config import LocationConfig, PropertyAssetConfig
 from finance.augur.api.conftest import MakeCatalogConfig
 from finance.augur.api.local_regulation import TaxRegime
+from finance.augur.sim.ids import PropertyId
 
 
 def test_catalog_locations_default_to_loaded_property_source(
@@ -51,9 +52,10 @@ def test_catalog_applies_public_property_asset_urls(
     )
 
     assert (
-        catalog.properties_by_id["location_a_property"].image_url == "https://cdn.example.com/augur/location-a-hero.jpg"
+        catalog.properties_by_id[PropertyId("location_a_property")].image_url
+        == "https://cdn.example.com/augur/location-a-hero.jpg"
     )
-    assert catalog.properties_by_id["location_b_property"].image_url is None
+    assert catalog.properties_by_id[PropertyId("location_b_property")].image_url is None
 
 
 def test_catalog_allows_explicit_public_property_asset_url(
@@ -70,7 +72,7 @@ def test_catalog_allows_explicit_public_property_asset_url(
         )
     )
 
-    assert catalog.properties_by_id["location_b_property"].image_url == (
+    assert catalog.properties_by_id[PropertyId("location_b_property")].image_url == (
         "https://cdn.example.com/augur/location-b-hero.jpg"
     )
 

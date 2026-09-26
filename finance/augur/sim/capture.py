@@ -19,6 +19,7 @@ from finance.augur.sim.books import (
 from finance.augur.sim.events import EVENT_FRAMES, EventLog
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import Disposition
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.managed import FinancialEffect
 from finance.augur.sim.payments import ObligationOutcome
 from finance.augur.sim.property import CapitalImprovement, Origination, Purchase, RentedFraction, Residence, Sale
@@ -29,7 +30,7 @@ from finance.augur.sim.world import World
 class Failure:
     month: int
     cause_id: str
-    agent_id: str
+    agent_id: AgentId
     deficit: int
     obligation_id: str
     obligation_type: str

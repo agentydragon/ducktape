@@ -10,6 +10,7 @@ from fractions import Fraction
 
 from finance.augur.sim.actions import Action, Buy, LotSale, Sell
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_for_value
+from finance.augur.sim.ids import AccountId, AssetId, LotId
 from finance.augur.sim.observations import HoldingPool, Observation, PublicPosition
 
 
@@ -100,7 +101,7 @@ def _rebalance_amounts(
 
 
 def _pools(
-    observation: Observation, targets: dict[tuple[str, str], int], cash_account_id: str
+    observation: Observation, targets: dict[tuple[AccountId, AssetId], int], cash_account_id: AccountId
 ) -> list[tuple[HoldingPool, list[PublicPosition], int]]:
     if cash_account_id not in dict(observation.accounts):
         raise ValueError("funding account must belong to the observed actor")
@@ -164,7 +165,7 @@ def _sales(
     selected: list[tuple[HoldingPool, list[PublicPosition], int]],
     amounts: list[int],
     full_exits: list[bool],
-    cash_account_id: str,
+    cash_account_id: AccountId,
     cause_id: str,
 ) -> tuple[list[Action], int]:
     actions: list[Action] = []
@@ -189,7 +190,7 @@ def _buys(
     observation: Observation,
     selected: list[tuple[HoldingPool, list[PublicPosition], int]],
     amounts: list[int],
-    cash_account_id: str,
+    cash_account_id: AccountId,
     cash_budget: int,
     cause_id: str,
 ) -> list[Action]:
@@ -208,7 +209,7 @@ def _buys(
                 cash_account_id=cash_account_id,
                 holding_account_id=pool.account_id,
                 asset_id=pool.asset_id,
-                lot_id=f"{cause_id}-buy-{index}",
+                lot_id=LotId(f"{cause_id}-buy-{index}"),
                 units=units,
                 quantity_scale=pool.quantity_scale,
             )
@@ -217,7 +218,12 @@ def _buys(
 
 
 def withdraw(
-    observation: Observation, *, targets: dict[tuple[str, str], int], cash_account_id: str, amount: int, cause_id: str
+    observation: Observation,
+    *,
+    targets: dict[tuple[AccountId, AssetId], int],
+    cash_account_id: AccountId,
+    amount: int,
+    cause_id: str,
 ) -> list[Action]:
     """Raise gross cash overweight-first, then FIFO within each selected pool.
 
@@ -232,9 +238,9 @@ def withdraw(
 def withdraw_by_symbol(
     observation: Observation,
     *,
-    targets: dict[str, int],
-    source_account_ids: tuple[str, ...],
-    cash_account_id: str,
+    targets: dict[AssetId, int],
+    source_account_ids: tuple[AccountId, ...],
+    cash_account_id: AccountId,
     amount: int,
     cause_id: str,
 ) -> list[Action]:
@@ -271,7 +277,7 @@ def withdraw_by_symbol(
 def _withdraw(
     observation: Observation,
     selected: list[tuple[HoldingPool, list[PublicPosition], int]],
-    cash_account_id: str,
+    cash_account_id: AccountId,
     amount: int,
     cause_id: str,
 ) -> list[Action]:
@@ -294,8 +300,8 @@ def _withdraw(
 def deposit(
     observation: Observation,
     *,
-    targets: dict[tuple[str, str], int],
-    cash_account_id: str,
+    targets: dict[tuple[AccountId, AssetId], int],
+    cash_account_id: AccountId,
     cash_budget: int,
     cause_id: str,
 ) -> list[Action]:
@@ -316,8 +322,8 @@ def deposit(
 def rebalance(
     observation: Observation,
     *,
-    targets: dict[tuple[str, str], int],
-    cash_account_id: str,
+    targets: dict[tuple[AccountId, AssetId], int],
+    cash_account_id: AccountId,
     cash_budget: int,
     tolerance_ppb: int,
     cause_id: str,

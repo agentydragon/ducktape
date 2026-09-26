@@ -18,6 +18,7 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -70,9 +71,11 @@ def _books(
         income_sources=(ORDINARY_INCOME,),
         jurisdictions=jurisdictions,
     )
-    for name, balance in (("retiree", retiree_cash), ("world", 0)):
+    for name, balance in ((AgentId("retiree"), retiree_cash), (AgentId("world"), 0)):
         world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=name, account_id="checking"), opening_balance=balance)
+            PreparedAccount(
+                account=AccountRef(agent_id=name, account_id=AccountId("checking")), opening_balance=balance
+            )
         )
     return world
 
@@ -81,7 +84,7 @@ def _books(
 def control(request: pytest.FixtureRequest) -> tuple[Parameters, Callable[[int], World], Finished, list[Rollout]]:
     parameters: Parameters = request.param
     compose = equity_only(rollout_count=3, horizon_months=36)
-    targets = {("brokerage", "STOCKS"): 1}
+    targets = {(AccountId("brokerage"), AssetId("STOCKS")): 1}
     baseline = run(compose, SpendingPolicy(BatchPolicy(parameters, 3), targets), [0, 1, 2])
     traces = run(compose, SpendingPolicy(BatchPolicy(parameters, 3), targets), [0, 1, 2], capture="forensic")
     return (parameters, compose, baseline, traces.rollouts)
@@ -98,13 +101,24 @@ def test_scalar_adapter_and_batch_authoring_preserve_path_identity(
     ids = [0, 1, 2]
     policy = BatchPolicy(parameters, 3) if batch_authored else ScalarAdapter(parameters, ids)
     assert (
-        run(compose, SpendingPolicy(policy, {("brokerage", "STOCKS"): 1}), ids, chunk_size=chunk_size, reverse=True)
+        run(
+            compose,
+            SpendingPolicy(policy, {(AccountId("brokerage"), AssetId("STOCKS")): 1}),
+            ids,
+            chunk_size=chunk_size,
+            reverse=True,
+        )
         == baseline
     )
     if chunk_size is None:
         for id_ in reversed(ids):
             replay_policy = BatchPolicy(parameters, 3) if batch_authored else ScalarAdapter(parameters, [id_])
-            trace = run(compose, SpendingPolicy(replay_policy, {("brokerage", "STOCKS"): 1}), [id_], capture="forensic")
+            trace = run(
+                compose,
+                SpendingPolicy(replay_policy, {(AccountId("brokerage"), AssetId("STOCKS")): 1}),
+                [id_],
+                capture="forensic",
+            )
             assert trace.rollouts == [traces[id_]]
         second_year = [5_250_000, 4_500_000, 4_992_000] if parameters.max_cut_bps else [5_000_000] * 3
         assert [row[12] for row in consumption(baseline)[1]] == second_year
@@ -116,7 +130,7 @@ def test_depleted_paths_stop_and_live_zero_requests_continue(batch_authored: boo
     for cut, expected_length, failure in [(0, 13, 12), (10_000, 36, -1)]:
         parameters = Parameters(10_000, cut, 0)
         policy = BatchPolicy(parameters, 3) if batch_authored else ScalarAdapter(parameters, [0, 1, 2])
-        result = run(compose, SpendingPolicy(policy, {("brokerage", "STOCKS"): 1}), [0, 1, 2])
+        result = run(compose, SpendingPolicy(policy, {(AccountId("brokerage"), AssetId("STOCKS")): 1}), [0, 1, 2])
         assert [row.summary.ending_mark_month if row.stop is not None else -1 for row in result.rollouts] == [
             failure
         ] * 3
@@ -172,8 +186,8 @@ def test_post_cashflow_review_and_ordered_claim_prefix_are_explicit() -> None:
             PreparedTransfer(
                 month=0,
                 cause_id="current-income",
-                from_account=AccountRef(agent_id="world", account_id="checking"),
-                to_account=AccountRef(agent_id="retiree", account_id="checking"),
+                from_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
+                to_account=AccountRef(agent_id=AgentId("retiree"), account_id=AccountId("checking")),
                 amount=10_000,
                 income_category=None,
                 deduction_category=None,
@@ -185,8 +199,8 @@ def test_post_cashflow_review_and_ordered_claim_prefix_are_explicit() -> None:
                     month=0,
                     obligation_id="due-bill",
                     obligation_type=ObligationType.OUTSIDE_RENT,
-                    from_account=AccountRef(agent_id="retiree", account_id="checking"),
-                    to_account=AccountRef(agent_id="world", account_id="checking"),
+                    from_account=AccountRef(agent_id=AgentId("retiree"), account_id=AccountId("checking")),
+                    to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
                     amount_due=3_000,
                     property_id=None,
                     deduction_category=None,
@@ -215,7 +229,7 @@ def test_current_cpi_is_routed_without_future_values() -> None:
     )
     session = ActionSession(
         {id_: _books(series, id_, rollout_count=2, horizon_months=2, retiree_cash=100) for id_ in [1, 0]},
-        "retiree",
+        AgentId("retiree"),
         capture="summary",
     )
     batch = session.start()
@@ -276,15 +290,18 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
         world.track(TaxAuthority(profile))
         world.declare_pool(
             PreparedHoldingPool(
-                agent_id="retiree", account_id="brokerage", asset_id=str(stock.symbol), quantity_scale=scale
+                agent_id=AgentId("retiree"),
+                account_id=AccountId("brokerage"),
+                asset_id=AssetId(stock.symbol),
+                quantity_scale=scale,
             )
         )
         world.hold(
             PreparedLot(
-                lot_id="tax-lot",
-                agent_id="retiree",
-                account_id="brokerage",
-                asset_id=str(stock.symbol),
+                lot_id=LotId("tax-lot"),
+                agent_id=AgentId("retiree"),
+                account_id=AccountId("brokerage"),
+                asset_id=AssetId(stock.symbol),
                 purchase_month=-24,
                 quantity_scale=scale,
                 units=int(quantity_to_quanta(10, scale=scale)),
@@ -296,7 +313,7 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
     outputs = [
         run(
             compose,
-            SpendingPolicy(BatchPolicy(Parameters(400, 0, 0), 1), {("brokerage", str(stock.symbol)): 1}),
+            SpendingPolicy(BatchPolicy(Parameters(400, 0, 0), 1), {(AccountId("brokerage"), AssetId(stock.symbol)): 1}),
             [0],
             capture="forensic" if forensic else "summary",
         ).rollouts[0]

@@ -24,15 +24,27 @@ from pydantic import (
 )
 
 from finance.augur.model.asset_key import AssetKey
-from finance.augur.model.series import IndexSeriesKey, SecurityKey
+from finance.augur.model.series import IndexSeriesKey, LocationId, SecurityKey
 from finance.augur.policy.cash_band import validate_band_bounds
 from finance.augur.sim.enums import IncomeCategory
 from finance.augur.sim.fixed_point import validate_currency_amount, validate_currency_quantum
+from finance.augur.sim.ids import (
+    AccountId,
+    AgentId,
+    BondId,
+    JurisdictionId,
+    LiabilityId,
+    LotId,
+    PortfolioId,
+    PropertyId,
+)
 from finance.augur.sim.tlh import TlhAssumptions
 
 type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
 type NonNegativeCurrencyAmount = Annotated[CurrencyAmount, Field(ge=0)]
 type PositiveCurrencyAmount = Annotated[CurrencyAmount, Field(gt=0)]
+
+CHECKING = AccountId("checking")
 
 
 class FilingStatus(StrEnum):
@@ -75,8 +87,8 @@ class Currency(BaseModel):
 class InitialAccountBalance(BaseModel):
     """Starting cash for one (agent, account) pair at month 0."""
 
-    agent_id: str
-    account_id: str
+    agent_id: AgentId
+    account_id: AccountId
     balance: CurrencyAmount
 
 
@@ -140,7 +152,7 @@ class InterestIncome(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     category: Literal[IncomeCategory.INTEREST] = IncomeCategory.INTEREST
-    issuer_jurisdiction_id: str | None = Field(
+    issuer_jurisdiction_id: JurisdictionId | None = Field(
         default=None,
         description=(
             "The taxing authority that issued the debt — `federal_us` for a Treasury, "
@@ -168,12 +180,12 @@ class ScheduledPropertyCashflow(BaseModel):
     """
 
     month: int
-    property_id: str
+    property_id: PropertyId
     cause_id: str
-    from_agent_id: str
-    from_account_id: str
-    to_agent_id: str
-    to_account_id: str
+    from_agent_id: AgentId
+    from_account_id: AccountId
+    to_agent_id: AgentId
+    to_account_id: AccountId
     amount: AmountSpec
     income_category: TransferIncomeCategory | None = None
     deduction_category: TransferDeductionCategory | None = None
@@ -184,12 +196,12 @@ class RecurringPropertyCashflow(BaseModel):
 
     start_month: int
     end_month: int | None = None
-    property_id: str
+    property_id: PropertyId
     cause_id: str
-    from_agent_id: str
-    from_account_id: str
-    to_agent_id: str
-    to_account_id: str
+    from_agent_id: AgentId
+    from_account_id: AccountId
+    to_agent_id: AgentId
+    to_account_id: AccountId
     amount: AmountSpec
     income_category: TransferIncomeCategory | None = None
     deduction_category: TransferDeductionCategory | None = None
@@ -225,17 +237,17 @@ class RecurringObligation(BaseModel):
     end_month: int | None = None
     obligation_id: str
     obligation_type: str
-    agent_id: str
-    from_account_id: str
-    to_agent_id: str
-    to_account_id: str
+    agent_id: AgentId
+    from_account_id: AccountId
+    to_agent_id: AgentId
+    to_account_id: AccountId
     amount_due: AmountSpec
     deduction_category: TransferDeductionCategory | None = None
     deductible_fraction: float = Field(default=1.0, ge=0.0, le=1.0)
     # When set, ties the obligation to a property; the engine uses
     # `current.property_rented_fraction[r, prop]` at settlement time to override the
     # compile-time `deductible_fraction` so mid-horizon lifecycle events take effect.
-    property_id: str | None = None
+    property_id: PropertyId | None = None
 
 
 class BondHolding(BaseModel):
@@ -258,17 +270,17 @@ class BondHolding(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    bond_id: str
-    agent_id: str
+    bond_id: BondId
+    agent_id: AgentId
     # No default: which account the coupons land in is a real decision, and a bond pointing
     # at an account that does not exist resolves to no slot at all — the coupon would be
     # scattered into the dump row and vanish silently rather than raise.
-    account_id: str
+    account_id: AccountId
     # The taxing authority that issued the debt — `federal_us` for a Treasury, `california`
     # for a CA muni, `None` for a corporate issuer. Whether any given holder owes tax on the
     # coupon is a relation between this issuer and that holder's jurisdictions, never a
     # property of the bond: "in-state" is holder-relative.
-    issuer_jurisdiction_id: str | None = None
+    issuer_jurisdiction_id: JurisdictionId | None = None
     face_value: PositiveCurrencyAmount
     purchase_price: PositiveCurrencyAmount
     annual_coupon_rate: NonNegativeFloat
@@ -335,7 +347,7 @@ class DistributionTaxSlice(BaseModel):
     fraction: PositiveFloat
     # Same holder-relative meaning as `BondHolding.issuer_jurisdiction_id`: whether this slice
     # is taxable is a relation between the issuer and the holder's jurisdictions.
-    issuer_jurisdiction_id: str | None = None
+    issuer_jurisdiction_id: JurisdictionId | None = None
 
 
 class SecurityDistribution(BaseModel):
@@ -363,12 +375,12 @@ class SecurityDistribution(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     asset: AssetKey
-    agent_id: str
+    agent_id: AgentId
     # The account whose units this pays on — lots elsewhere are a different pool.
-    holding_account_id: str
+    holding_account_id: AccountId
     # No default, for the same reason `BondHolding.account_id` has none: cash paid to an account
     # that does not exist is scattered into the dump row and vanishes silently.
-    to_account_id: str
+    to_account_id: AccountId
     tax_character: tuple[DistributionTaxSlice, ...]
 
     @model_validator(mode="after")
@@ -400,9 +412,9 @@ class InitialLot(BaseModel):
     from it via `asset_price_key`.
     """
 
-    lot_id: str
-    agent_id: str
-    account_id: str = "checking"
+    lot_id: LotId
+    agent_id: AgentId
+    account_id: AccountId = CHECKING
     asset: AssetKey
     purchase_month_index: int
     quantity: float
@@ -432,7 +444,7 @@ class ManagedSleeveTarget(BaseModel):
     index it tracks are a separate sleeve.
     """
 
-    portfolio_id: str
+    portfolio_id: PortfolioId
     weight: NonNegativeInt = Field(
         description="Relative target weight; zero keeps the sleeve sellable but receives no deposits."
     )
@@ -505,11 +517,11 @@ class TargetAllocationPolicy(BaseModel):
     will be held to maturity — expressible at all.
     """
 
-    agent_id: str
+    agent_id: AgentId
     # Cash account the band governs: it receives sale proceeds and pays the matching obligations.
-    account_id: str
+    account_id: AccountId
     # Holding accounts the policy may sell from. Empty means the funding account only.
-    source_account_ids: tuple[str, ...] = ()
+    source_account_ids: tuple[AccountId, ...] = ()
     sleeves: list[SleeveTarget]
     # `AmountSpec = Decimal | AmountSchedule` — an exact decimal for a constant band, or a
     # `SeriesIndexedAmount` (e.g. `series=InflationKey()`) to hold the band in real terms.
@@ -587,19 +599,19 @@ class TaxProfile(BaseModel):
     """A taxed agent's tax-time configuration. At spike 1 only single filers are modeled;
     later layers add MFJ / HoH and any filing-status-driven branching."""
 
-    agent_id: str
+    agent_id: AgentId
     filing_status: FilingStatus = FilingStatus.SINGLE
-    jurisdiction_ids: list[str] = Field(
+    jurisdiction_ids: list[JurisdictionId] = Field(
         description='Ordered list of taxing authorities — typically `["federal_us", "california"]` for a CA resident.'
     )
-    tax_authority_agent_id: str = Field(
+    tax_authority_agent_id: AgentId = Field(
         description="Destination of tax-payment transfers — a bookkeeping sink, not a taxed agent itself."
     )
-    payment_account_id: str = Field(
-        default="checking", description="The agent's account the engine debits for estimated-tax and true-up payments."
+    payment_account_id: AccountId = Field(
+        default=CHECKING, description="The agent's account the engine debits for estimated-tax and true-up payments."
     )
-    tax_authority_account_id: str = Field(
-        default="checking", description="The matching credit account on the tax authority's side."
+    tax_authority_account_id: AccountId = Field(
+        default=CHECKING, description="The matching credit account on the tax authority's side."
     )
     prior_year_tax: NonNegativeCurrencyAmount = Field(
         default=Decimal(0),
@@ -614,9 +626,9 @@ class TaxProfile(BaseModel):
 class MortgageFinancing(BaseModel):
     """Mortgage terms attached to a property purchase."""
 
-    liability_id: str
-    lender_agent_id: str
-    lender_account_id: str = "checking"
+    liability_id: LiabilityId
+    lender_agent_id: AgentId
+    lender_account_id: AccountId = CHECKING
     principal: CurrencyAmount
     annual_interest_rate: float
     term_months: PositiveInt
@@ -632,7 +644,7 @@ class SetRentedFractionEvent(BaseModel):
 
     kind: Literal["set_rented_fraction"] = "set_rented_fraction"
     month: int
-    property_id: str
+    property_id: PropertyId
     rented_fraction: float = Field(ge=0.0, le=1.0)
 
 
@@ -644,8 +656,8 @@ class PrimaryResidenceAssignment(BaseModel):
     residences for the same taxpayer.
     """
 
-    agent_id: str
-    property_id: str
+    agent_id: AgentId
+    property_id: PropertyId
 
 
 class SetPrimaryResidenceEvent(BaseModel):
@@ -653,8 +665,8 @@ class SetPrimaryResidenceEvent(BaseModel):
 
     kind: Literal["set_primary_residence"] = "set_primary_residence"
     month: int
-    agent_id: str
-    property_id: str | None
+    agent_id: AgentId
+    property_id: PropertyId | None
 
 
 class PropertySaleEvent(BaseModel):
@@ -680,7 +692,7 @@ class PropertySaleEvent(BaseModel):
 
     kind: Literal["property_sale"] = "property_sale"
     month: int
-    property_id: str
+    property_id: PropertyId
     closing_cost_pct: float = Field(ge=0.0, le=100.0)
 
 
@@ -696,7 +708,7 @@ class CapitalImprovementEvent(BaseModel):
 
     kind: Literal["capital_improvement"] = "capital_improvement"
     month: int
-    property_id: str
+    property_id: PropertyId
     amount: PositiveCurrencyAmount
     description: str = ""
 
@@ -723,12 +735,12 @@ class ScheduledPropertyPurchase(BaseModel):
 
     month: int
     cause_id: str
-    property_id: str
-    location_id: str
-    buyer_agent_id: str
-    buyer_account_id: str
-    seller_agent_id: str
-    seller_account_id: str = "checking"
+    property_id: PropertyId
+    location_id: LocationId
+    buyer_agent_id: AgentId
+    buyer_account_id: AccountId
+    seller_agent_id: AgentId
+    seller_account_id: AccountId = CHECKING
     purchase_price: CurrencyAmount
     down_payment: CurrencyAmount
     buyer_closing_cost: NonNegativeCurrencyAmount = Decimal(0)
@@ -764,11 +776,11 @@ class PropertyTaxPolicy(BaseModel):
     is `None`, the rate comes from `Location.annual_property_tax_rate`.
     """
 
-    property_id: str
-    owner_agent_id: str
-    from_account_id: str = "checking"
-    tax_authority_agent_id: str
-    tax_authority_account_id: str = "checking"
+    property_id: PropertyId
+    owner_agent_id: AgentId
+    from_account_id: AccountId = CHECKING
+    tax_authority_agent_id: AgentId
+    tax_authority_account_id: AccountId = CHECKING
     annual_tax_rate: float | None = None
     start_month: int = 0
     end_month: int | None = None
@@ -808,8 +820,8 @@ class PrivateEquityTenderPolicy(BaseModel):
       QSBS-eligible PE.
     """
 
-    owner_agent_id: str
-    proceeds_account_id: str = "checking"
+    owner_agent_id: AgentId
+    proceeds_account_id: AccountId = CHECKING
     liquid_net_worth_floor: AmountSchedule
 
 
@@ -833,9 +845,9 @@ class TlhPortfolioSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    portfolio_id: str = Field(min_length=1)
-    owner_agent_id: str
-    account_id: str
+    portfolio_id: PortfolioId = Field(min_length=1)
+    owner_agent_id: AgentId
+    account_id: AccountId
     asset: AssetKey
     initial_cohorts: list[TlhCohort]
     assumptions: TlhAssumptions
@@ -858,8 +870,8 @@ class MortgageInterestDeductionPolicy(BaseModel):
     `max(itemized, standard)` before bracket-walking.
     """
 
-    liability_id: str
-    owner_agent_id: str
+    liability_id: LiabilityId
+    owner_agent_id: AgentId
     debt_class: Literal["acquisition", "home_equity"] = Field(
         default="acquisition",
         description=(
@@ -872,8 +884,11 @@ class MortgageInterestDeductionPolicy(BaseModel):
             "tag improvement-tied HELOCs as `acquisition` if you want them deducted."
         ),
     )
-    per_jurisdiction_principal_cap: dict[str, CurrencyAmount] = Field(
-        default_factory=lambda: {"federal_us": Decimal(750_000), "california": Decimal(1_000_000)},
+    per_jurisdiction_principal_cap: dict[JurisdictionId, CurrencyAmount] = Field(
+        default_factory=lambda: {
+            JurisdictionId("federal_us"): Decimal(750_000),
+            JurisdictionId("california"): Decimal(1_000_000),
+        },
         description=(
             "Per-jurisdiction principal cap in USD. Federal post-TCJA caps acquisition "
             "debt at $750k; California's pre-TCJA $1M cap was preserved, so the two "

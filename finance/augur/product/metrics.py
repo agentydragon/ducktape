@@ -16,6 +16,7 @@ from finance.augur.product.metric_composition import (
     terminal_series,
 )
 from finance.augur.sim.holdings import private_issuer
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.money import checked_count, position_value
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.world import World
@@ -179,7 +180,7 @@ def projection_summaries(
     )
 
 
-def product_row(world: World, actor: str) -> tuple[int, int, int, int, int, int, int]:
+def product_row(world: World, actor: AgentId) -> tuple[int, int, int, int, int, int, int]:
     """The app's per-month metric slab for one actor, read from world state after a close."""
     mark = world.mark_month
     cash = sum(

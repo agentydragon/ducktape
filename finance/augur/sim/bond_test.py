@@ -12,6 +12,7 @@ import pytest_bazel
 
 from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.books import IncomeState
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import (
@@ -31,7 +32,7 @@ from finance.augur.sim.testing.bonds import (
 
 def execute(case: Situation) -> Rollout:
     """Pay only observed due claims in order; no native configured policy or rescue."""
-    session = ActionSession({0: compose(case)}, "alice", capture="forensic")
+    session = ActionSession({0: compose(case)}, AgentId("alice"), capture="forensic")
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -160,7 +161,7 @@ def test_a_bond_paying_into_a_nonexistent_account_is_rejected() -> None:
     """
 
     with pytest.raises(ValueError, match="bond 'rung' references an unknown account"):
-        compose(bond_case(account_id="brokerage"))
+        compose(bond_case(account_id=AccountId("brokerage")))
 
 
 def test_an_indexed_coupon_rides_the_indexed_principal() -> None:

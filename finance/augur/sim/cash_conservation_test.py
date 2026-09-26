@@ -50,7 +50,7 @@ from finance.augur.sim.fixed_point import (
     quantity_to_quanta,
     rate_to_ppb,
 )
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -80,14 +80,14 @@ from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
 QUANTA_PER_UNIT = 100
-ALICE = "alice"
-CHECKING = "checking"
-FEDERAL = "federal_us"
+ALICE = AgentId("alice")
+CHECKING = AccountId("checking")
+FEDERAL = JurisdictionId("federal_us")
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 VTI_SCALE = quantity_scale_for_asset(VTI)
-ISSUER = "acme"
+ISSUER = IssuerId("acme")
 ACME = PrivateEquityAssetKey(issuer_id=IssuerId(ISSUER))
-ACME_ASSET_ID = "private_equity:acme"
+ACME_ASSET_ID = AssetId("private_equity:acme")
 ACME_SCALE = quantity_scale_for_asset(ACME)
 
 SALE_MONTH = 4
@@ -102,7 +102,7 @@ TENDER_UNITS, TENDER_MARK = 100.0, Decimal(50)
 TENDER_PROCEEDS_QUANTA = int(TENDER_UNITS * int(TENDER_MARK)) * QUANTA_PER_UNIT
 
 PROPERTY_HORIZON, PROPERTY_SALE_MONTH, CAPEX_MONTH = 36, 24, 12
-PROPERTY_LOCATION_ID = "loc"
+PROPERTY_LOCATION_ID = LocationId("loc")
 PROPERTY_LOCATION = PreparedLocation(
     location_id=PROPERTY_LOCATION_ID,
     display_name="Loc",
@@ -116,11 +116,11 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def account(agent_id: str, balance: Decimal | int = 0) -> PreparedAccount:
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
     return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
 
 
-def ref(agent_id: str) -> AccountRef:
+def ref(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
@@ -139,12 +139,12 @@ def path(key: LevelSeriesKey, levels: Sequence[Decimal], *, horizon_months: int)
     )
 
 
-def vti_lot(lot_id: str, *, quantity: float, cost_basis: Decimal | int, purchase_month: int) -> PreparedLot:
+def vti_lot(lot_id: LotId, *, quantity: float, cost_basis: Decimal | int, purchase_month: int) -> PreparedLot:
     return PreparedLot(
         lot_id=lot_id,
         agent_id=ALICE,
         account_id=CHECKING,
-        asset_id=str(VTI.symbol),
+        asset_id=AssetId(VTI.symbol),
         purchase_month=purchase_month,
         quantity_scale=VTI_SCALE,
         units=int(quantity_to_quanta(quantity, scale=VTI_SCALE)),
@@ -154,7 +154,7 @@ def vti_lot(lot_id: str, *, quantity: float, cost_basis: Decimal | int, purchase
 
 def hold_vti(world: World, lot: PreparedLot) -> None:
     world.declare_pool(
-        PreparedHoldingPool(agent_id=ALICE, account_id=CHECKING, asset_id=str(VTI.symbol), quantity_scale=VTI_SCALE)
+        PreparedHoldingPool(agent_id=ALICE, account_id=CHECKING, asset_id=AssetId(VTI.symbol), quantity_scale=VTI_SCALE)
     )
     world.hold(lot)
 
@@ -226,7 +226,7 @@ def scheduled_sale_world() -> World:
         income_sources=(ORDINARY_INCOME,),
     )
     world.declare_account(account(ALICE, Decimal(1_000_000)))
-    hold_vti(world, vti_lot("bought", quantity=SALE_UNITS, cost_basis=int(SALE_UNITS) * 100, purchase_month=0))
+    hold_vti(world, vti_lot(LotId("bought"), quantity=SALE_UNITS, cost_basis=int(SALE_UNITS) * 100, purchase_month=0))
     return world
 
 
@@ -239,8 +239,8 @@ def target_allocation_world() -> World:
         income_sources=(ORDINARY_INCOME,),
     )
     world.declare_account(account(ALICE, Decimal(1_000)))
-    world.declare_account(account("landlord"))
-    hold_vti(world, vti_lot("alice-vti", quantity=200.0, cost_basis=10_000, purchase_month=-1))
+    world.declare_account(account(AgentId("landlord")))
+    hold_vti(world, vti_lot(LotId("alice-vti"), quantity=200.0, cost_basis=10_000, purchase_month=-1))
     world.track(
         Biller(
             PreparedRecurringObligation(
@@ -249,7 +249,7 @@ def target_allocation_world() -> World:
                 obligation_id="alice-rent",
                 obligation_type="rent",
                 from_account=ref(ALICE),
-                to_account=ref("landlord"),
+                to_account=ref(AgentId("landlord")),
                 amount_due=money(RENT),
                 property_id=None,
                 deduction_category=None,
@@ -264,7 +264,7 @@ VTI_BAND = _AllocationPolicy(
     agent_id=ALICE,
     account_id=CHECKING,
     source_account_ids=(),
-    sleeves=(_SecuritySleeveTarget(asset_id=str(VTI.symbol), weight=1, quantity_scale=VTI_SCALE),),
+    sleeves=(_SecuritySleeveTarget(asset_id=AssetId(VTI.symbol), weight=1, quantity_scale=VTI_SCALE),),
     cash_floor=0,
     cash_ceiling=0,
     cause_id_prefix="allocation_sale",
@@ -300,7 +300,7 @@ def private_equity_tender_world() -> World:
     )
     world.hold(
         PreparedLot(
-            lot_id="acme-lot",
+            lot_id=LotId("acme-lot"),
             agent_id=ALICE,
             account_id=CHECKING,
             asset_id=ACME_ASSET_ID,
@@ -338,7 +338,12 @@ def property_sale_world() -> World:
         income_sources=(ORDINARY_INCOME,),
         jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=jurisdictions[FEDERAL].level),),
     )
-    for agent_id, balance in ((ALICE, Decimal(1_000_000)), ("seller", 0), ("bank", 0), ("irs", 0)):
+    for agent_id, balance in (
+        (ALICE, Decimal(1_000_000)),
+        (AgentId("seller"), 0),
+        (AgentId("bank"), 0),
+        (AgentId("irs"), 0),
+    ):
         world.declare_account(account(agent_id, balance))
     world.track(
         TaxAuthority(
@@ -355,11 +360,11 @@ def property_sale_world() -> World:
                 _PropertyPurchase(
                     month=0,
                     cause_id="buy-house",
-                    property_id="house",
+                    property_id=PropertyId("house"),
                     location_id=PROPERTY_LOCATION_ID,
                     buyer_agent_id=ALICE,
                     buyer_account_id=CHECKING,
-                    seller_agent_id="seller",
+                    seller_agent_id=AgentId("seller"),
                     seller_account_id=CHECKING,
                     purchase_price=money(500_000),
                     down_payment=money(100_000),
@@ -367,8 +372,8 @@ def property_sale_world() -> World:
                     rented_fraction_ppb=0,
                     land_value_fraction_ppb=rate_to_ppb(0.2),
                     mortgage=_MortgageFinancing(
-                        liability_id="house-mortgage",
-                        lender_agent_id="bank",
+                        liability_id=LiabilityId("house-mortgage"),
+                        lender_agent_id=AgentId("bank"),
                         lender_account_id=CHECKING,
                         principal=money(400_000),
                         annual_interest_rate_ppb=rate_to_ppb(0.06),
@@ -376,9 +381,15 @@ def property_sale_world() -> World:
                     ),
                 ),
             ),
-            sales=(_PropertySale(month=PROPERTY_SALE_MONTH, property_id="house", closing_cost_ppb=rate_to_ppb(0.06)),),
+            sales=(
+                _PropertySale(
+                    month=PROPERTY_SALE_MONTH, property_id=PropertyId("house"), closing_cost_ppb=rate_to_ppb(0.06)
+                ),
+            ),
             capital_improvements=(
-                _CapitalImprovement(month=CAPEX_MONTH, property_id="house", amount=money(30_000), description="roof"),
+                _CapitalImprovement(
+                    month=CAPEX_MONTH, property_id=PropertyId("house"), amount=money(30_000), description="roof"
+                ),
             ),
         ),
         (),
@@ -402,7 +413,7 @@ def test_a_scheduled_sale_brings_in_exactly_its_proceeds() -> None:
                 cause_id="sell-vti",
                 agent_id=ALICE,
                 account_id=CHECKING,
-                asset_id=str(VTI.symbol),
+                asset_id=AssetId(VTI.symbol),
                 units=int(quantity_to_quanta(SALE_UNITS, scale=VTI_SCALE)),
                 proceeds_account_id=CHECKING,
             ),

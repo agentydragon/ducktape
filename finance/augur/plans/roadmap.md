@@ -330,9 +330,9 @@ to finish P12.
 [The P12 reader list](cleanup_migration.md) names the configured strategy's live
 readers and their deletion criteria.
 
-| Unit    | Change                                                     | Needs |
-| ------- | ---------------------------------------------------------- | ----- |
-| IDTYPES | Distinct entity IDs beyond `AgentId`, not prefix renaming. | None  |
+| Unit    | Change                                                        | Needs |
+| ------- | ------------------------------------------------------------- | ----- |
+| IDTYPES | Type the captured lot asset; typed config-model construction. | None  |
 
 The [entity-ID note](typed_series_config.md) scopes IDTYPES without turning artifact/wire churn into an active cleanup prerequisite.
 
