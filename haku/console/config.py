@@ -349,8 +349,6 @@ class ConsoleProcessConfig(BaseModel):
     # Canonical Operator identity trust contract. Required in every harness; see
     # ``OperatorIdentityConfig`` for why this is distinct from either OIDC client.
     operator_identity: OperatorIdentityConfig
-    # Optional standing Kubernetes authorization policy. Absent means the
-    # internal Kubernetes authorization endpoint remains fail-closed.
 
     @model_validator(mode="after")
     def _operator_auth_requires_canonical_public_origin(self) -> Self:
