@@ -88,9 +88,16 @@ def list_worktrees(repo: Path) -> list[Worktree]:
 
 
 def main_ref(repo: Path) -> str:
-    """The upstream default branch ref (e.g. `origin/devel`)."""
-    ref = git_out(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
-    if not ref:
+    """The upstream default branch ref (e.g. `origin/devel`).
+
+    `git symbolic-ref` exits non-zero (not just empty output) when `origin/HEAD` is unset — a
+    real condition for a scratch clone nobody ever ran `git remote set-head` on — so this must
+    use `check=False` itself rather than let `git_out`'s default propagate a bare
+    `CalledProcessError` past callers that only know to catch `GitError`.
+    """
+    outcome = git(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD", check=False)
+    ref = outcome.stdout.strip()
+    if outcome.returncode != 0 or not ref:
         raise GitError("cannot determine the default branch (origin/HEAD is unset)")
     return ref
 

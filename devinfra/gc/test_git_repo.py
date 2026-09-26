@@ -61,5 +61,14 @@ def test_shares_a_remote_false_with_no_remotes(repo: GitRepo, fresh_repo: Callab
     assert not git_repo.shares_a_remote(repo.path, other.path)
 
 
+def test_main_ref_raises_git_error_when_origin_head_is_unset(repo: GitRepo) -> None:
+    """`git symbolic-ref` exits non-zero (not just empty output) when `origin/HEAD` was never
+    set — a real condition for a scratch clone nobody ran `git remote set-head` on. This must
+    surface as `GitError`, the one exception type callers actually catch — not a bare
+    `CalledProcessError` that slips past them."""
+    with pytest.raises(git_repo.GitError):
+        git_repo.main_ref(repo.path)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
