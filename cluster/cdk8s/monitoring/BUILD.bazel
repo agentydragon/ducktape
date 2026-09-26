@@ -277,6 +277,7 @@ py_test(
     name = "test_gateway_probe",
     srcs = ["test_gateway_probe.py"],
     data = [
+        "testdata/gateway_probe_rules.yaml",
         "@multitool//tools/promtool",
         "@nodejs_linux_amd64//:bin/node",
     ],
