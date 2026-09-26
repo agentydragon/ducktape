@@ -4,6 +4,7 @@
   ansible.builtin.apt:
     state: absent
     pkg:
+      # keep-sorted start
       - firefox-locale-cs
       - firefox-locale-de
       - gnome-getting-started-docs-cs
@@ -23,6 +24,7 @@
       - libreoffice-l10n-cs
       - libreoffice-l10n-de
       - libreoffice-l10n-en-gb
+      # keep-sorted end
 
 - name: Install GUI packages
   become: true

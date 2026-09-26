@@ -95,6 +95,31 @@ class SandboxInventory:
         self._core_v1 = core_v1
         self._exec_runner = exec_runner
 
+    def _require_offered(self, template: str) -> None:
+        if template not in self._binding.templates:
+            offered = ", ".join(sorted(self._binding.templates))
+            raise SandboxActionError(f"unknown template {template!r}; this deployment offers {offered}")
+
+    async def _read_template(self, name: str) -> dict[str, Any]:
+        return cast(
+            dict[str, Any],
+            await self._custom_objects.get_namespaced_custom_object(
+                *EXTENSIONS_API, self._binding.namespace, TEMPLATES_PLURAL, name
+            ),
+        )
+
+    async def get_template(self, name: str) -> dict[str, Any]:
+        """An offered SandboxTemplate as the API server holds it, less the field-ownership record
+        (`metadata.managedFields`) that `kubectl get` leaves out too.
+
+        The rest goes out verbatim, read now rather than at startup. Every caller may read all of
+        it, which is why a template references Secrets and never carries one.
+        """
+        self._require_offered(name)
+        template = await self._read_template(name)
+        template["metadata"].pop("managedFields", None)
+        return template
+
     async def template_descriptions(self) -> dict[str, str]:
         """What each offered template says a box made from it holds, from its own annotation.
 
@@ -104,12 +129,7 @@ class SandboxInventory:
         """
         descriptions = {}
         for name in sorted(self._binding.templates):
-            template = cast(
-                dict[str, Any],
-                await self._custom_objects.get_namespaced_custom_object(
-                    *EXTENSIONS_API, self._binding.namespace, TEMPLATES_PLURAL, name
-                ),
-            )
+            template = await self._read_template(name)
             description = template["metadata"].get("annotations", {}).get(DESCRIPTION_ANNOTATION)
             if not description:
                 raise ValueError(f"offered SandboxTemplate {name!r} has no {DESCRIPTION_ANNOTATION!r} annotation")
@@ -181,9 +201,7 @@ class SandboxInventory:
         was created from. Deciding that the shape is wrong is the caller's, and `dispose` is how it
         acts on that.
         """
-        if template not in self._binding.templates:
-            offered = ", ".join(sorted(self._binding.templates))
-            raise SandboxActionError(f"unknown template {template!r}; this deployment offers {offered}")
+        self._require_offered(template)
         if (existing := await self._sandbox(caller, name)) is None:
             await self._stamp(caller, name, template)
         elif (existing_template := existing["metadata"]["labels"][TEMPLATE_LABEL]) != template:
@@ -194,12 +212,7 @@ class SandboxInventory:
         return await self._info(caller, sandbox)
 
     async def _stamp(self, caller: ServiceAccountRef, name: str, template_name: str) -> None:
-        template = cast(
-            dict[str, Any],
-            await self._custom_objects.get_namespaced_custom_object(
-                *EXTENSIONS_API, self._binding.namespace, TEMPLATES_PLURAL, template_name
-            ),
-        )
+        template = await self._read_template(template_name)
         pod_template = cast(dict[str, Any], template["spec"]["podTemplate"])
         spec = {**cast(dict[str, Any], pod_template.get("spec", {})), "serviceAccountName": caller.name}
         body = {

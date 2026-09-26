@@ -12,16 +12,12 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import ISecret, Secret, k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecret,
-    ExternalSecretSpecDataFrom,
-    ExternalSecretSpecDataFromExtract,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMergePolicy,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, cluster_secret_store
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -31,6 +27,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 
 NAME = "forgejo-images"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo-images"
@@ -98,14 +95,14 @@ def forgejo_images(
 
 
 def forgejo_images_creds_external_secret(scope: Construct, id: str, *, namespace: str) -> ExternalSecret:
-    return add_external_secret(
+    return ExternalSecret(
         scope,
         id,
         name=SECRET_NAME,
         namespace=namespace,
         refresh="1h",
-        store=cluster_secret_store("kubernetes-forgejo-images-secret-store"),
-        data_from=[ExternalSecretSpecDataFrom(extract=ExternalSecretSpecDataFromExtract(key=SECRET_NAME))],
+        store=SecretStoreRef.cluster("kubernetes-forgejo-images-secret-store"),
+        data_from=[DataFrom.from_extract(SECRET_NAME)],
         template=ExternalSecretSpecTargetTemplate(
             type="kubernetes.io/dockerconfigjson", merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE
         ),

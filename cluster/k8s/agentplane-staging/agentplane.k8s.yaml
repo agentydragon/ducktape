@@ -159,6 +159,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-actions-generator
   refreshInterval: 8760h
@@ -195,6 +196,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-egress-generator
   refreshInterval: 8760h
@@ -231,6 +233,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
           name: postgres-electric-generator
   refreshInterval: 8760h
@@ -1341,24 +1344,24 @@ metadata:
 spec:
   rules:
     - hosts:
-        - pypi.org
-        - files.pythonhosted.org
-        - registry.npmjs.org
-        - nodejs.org
-        - index.crates.io
-        - static.crates.io
-        - static.rust-lang.org
-        - releases.bazel.build
         - bcr.bazel.build
         - cache.nixos.org
-        - nixos.org
         - channels.nixos.org
-        - ftp.gnu.org
-        - snapshot.debian.org
         - code.forgejo.org
         - data.forgejo.org
+        - files.pythonhosted.org
+        - ftp.gnu.org
         - ghcr.io
+        - index.crates.io
+        - nixos.org
+        - nodejs.org
         - pkg-containers.githubusercontent.com
+        - pypi.org
+        - registry.npmjs.org
+        - releases.bazel.build
+        - snapshot.debian.org
+        - static.crates.io
+        - static.rust-lang.org
       methods:
         - GET
         - HEAD
@@ -3694,36 +3697,36 @@ spec:
     - type: exact_actions
       actions:
         github:
-          - get_me
-          - get_team_members
-          - get_teams
-          - ui_get
           - find_duplicate
-          - get_label
-          - issue_dependency_read
-          - issue_read
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - search_issues
-          - list_pull_requests
-          - pull_request_read
-          - search_pull_requests
           - get_commit
           - get_file_blame
           - get_file_contents
+          - get_label
           - get_latest_release
+          - get_me
           - get_release_by_tag
           - get_tag
+          - get_team_members
+          - get_teams
+          - issue_dependency_read
+          - issue_read
           - list_branches
           - list_commits
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - list_pull_requests
           - list_releases
           - list_repository_collaborators
           - list_tags
+          - pull_request_read
           - search_code
           - search_commits
+          - search_issues
+          - search_pull_requests
           - search_repositories
           - search_users
+          - ui_get
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
@@ -3774,9 +3777,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
       owner: agentydragon-agent
       repository: ducktape
 ---
@@ -3815,9 +3818,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
       owner: agentydragon
       repository: ducktape
 ---
@@ -3856,9 +3859,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
       owner: agentydragon
       repository: gaffer-private
 ---
@@ -3897,9 +3900,9 @@ spec:
           - list_repository_collaborators
           - list_tags
           - pull_request_read
+          - search_code
           - search_issues
           - search_pull_requests
-          - search_code
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -4034,6 +4037,9 @@ spec:
     - google-readonly
     - grocy-sf-readonly
     - home-assistant-readonly
+    - activitywatch-read
+    - aiquota-read
+    - haku-mailbox
     - coinbase
     - agentplane-testing
     - github-downloads
@@ -4042,7 +4048,7 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
 metadata:
   annotations:
-    description: Auto-approves sandbox lifecycle and exec for a caller, which act only as that caller.
+    description: "Auto-approves every sandbox Action: a caller's own boxes, which act only as that caller, and reads of the templates they are made from."
   name: sandbox-self
   namespace: agentplane-staging
 spec:
@@ -4053,6 +4059,7 @@ spec:
           - create
           - dispose
           - exec
+          - get_template
           - info
           - list
 ---
@@ -4398,12 +4405,12 @@ metadata:
 spec:
   rules:
     - hosts:
-        - gmail.googleapis.com
-        - tasks.googleapis.com
-        - people.googleapis.com
         - docs.googleapis.com
+        - gmail.googleapis.com
+        - people.googleapis.com
         - sheets.googleapis.com
         - slides.googleapis.com
+        - tasks.googleapis.com
         - youtube.googleapis.com
       methods:
         - GET
@@ -4526,13 +4533,13 @@ spec:
       methods:
         - GET
       paths:
+        - /api/files/**
         - /api/objects/**
         - /api/stock
         - /api/stock/**
-        - /api/user
-        - /api/system/info
         - /api/system/db-changed-time
-        - /api/files/**
+        - /api/system/info
+        - /api/user
       credentialRef:
         name: grocy-sf-readonly
 ---
@@ -4641,3 +4648,258 @@ spec:
       clusterInternal: true
       credentialRef:
         name: home-assistant-readonly
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-activitywatch-reader
+  namespace: activitywatch
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - activitywatch-read-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-activitywatch-reader
+  namespace: activitywatch
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-activitywatch-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-activitywatch-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: activitywatch
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: activitywatch-read-token
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: activitywatch-read-token
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-activitywatch-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: activitywatch-read-token
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: activitywatch-read
+  namespace: agentplane-staging
+spec:
+  description: The static bearer of the central ActivityWatch server's read route (cluster/docs/activitywatch/README.md), copied into this namespace by ESO. The route's own proxy admits it on GETs and on POST /api/0/query/ only, so it cannot write; what it reads is every device's window titles, URLs and AFK history.
+  source:
+    secretRef:
+      name: activitywatch-read-token
+      key: token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: activitywatch-read
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - activitywatch-read.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /api/0/**
+      credentialRef:
+        name: activitywatch-read
+    - hosts:
+        - activitywatch-read.allegedly.works
+      methods:
+        - POST
+      paths:
+        - /api/0/query/
+      credentialRef:
+        name: activitywatch-read
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: aiquota-read
+  namespace: agentplane-staging
+spec:
+  description: aiquota's shared API bearer (aiquota.py), mirrored into this namespace by reflector. The API behind it serves only reads -- the Claude and Codex subscription quotas and each provider's raw usage response -- and `aiquota-read`'s rule presents it only on GETs under /v1/.
+  source:
+    secretRef:
+      name: aiquota-api-bearer-agentplane-staging
+      key: bearer-token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: aiquota-read
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - aiquota.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /v1/**
+      credentialRef:
+        name: aiquota-read
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-haku-mail-reader
+  namespace: flux-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-mail-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-haku-mail-reader
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-haku-mail-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-haku-mail-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: flux-system
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-mail-token
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: haku-mail-token
+        property: jwt
+      secretKey: jwt
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-haku-mail-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: haku-mail-token
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: haku-mailbox
+  namespace: agentplane-staging
+spec:
+  description: The Authentik JWT of Haku's mailbox account (haku@allegedly.works on the Stalwart server, cluster/k8s/haku/mailbox), rotated by authentik-jwt-rotation and copied into this namespace by ESO. It reads and changes the contents of that one mailbox over JMAP; it cannot send mail or administer the server (haku/docs/security.md).
+  source:
+    secretRef:
+      name: haku-mail-token
+      key: jwt
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: haku-mailbox
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - haku-mailbox.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /.well-known/jmap
+        - /jmap/**
+      credentialRef:
+        name: haku-mailbox
+    - hosts:
+        - haku-mailbox.allegedly.works
+      methods:
+        - POST
+      paths:
+        - /jmap/**
+      credentialRef:
+        name: haku-mailbox

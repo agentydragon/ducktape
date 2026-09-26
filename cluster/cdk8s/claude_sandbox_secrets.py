@@ -17,7 +17,6 @@ from external_secrets_crds.io.external_secrets import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -27,6 +26,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "claude-sandbox-secrets"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/claude-sandbox-secrets"
@@ -39,7 +39,7 @@ _BUILDBUDDY_API_KEY = "buildbuddy-api-key"
 def _external_creds_secret(
     chart: Chart, name: str, *, key: str, deletion_policy: ExternalSecretSpecTargetDeletionPolicy | None
 ) -> None:
-    add_external_secret(
+    ExternalSecret(
         chart,
         name,
         name=name,

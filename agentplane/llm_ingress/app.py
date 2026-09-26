@@ -15,6 +15,7 @@ from agentplane.workload_auth.principal import WorkloadPrincipal
 
 _HOP_BY_HOP = frozenset(
     {
+        # keep-sorted start
         "connection",
         "keep-alive",
         "proxy-authenticate",
@@ -23,6 +24,7 @@ _HOP_BY_HOP = frozenset(
         "trailer",
         "transfer-encoding",
         "upgrade",
+        # keep-sorted end
     }
 )
 _CREDENTIAL_HEADERS = frozenset({"authorization", "x-api-key", "x-litellm-api-key"})

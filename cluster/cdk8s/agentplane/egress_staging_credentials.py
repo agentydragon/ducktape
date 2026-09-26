@@ -24,9 +24,12 @@ from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
 from cluster.cdk8s.agentplane.app_settings import (
+    ACTIVITYWATCH_READ_POLICY,
+    AIQUOTA_READ_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
+    HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
 )
 from cluster.cdk8s.agentplane.egress import FORGEJO_HOST, HOME_ASSISTANT_HOST
@@ -36,6 +39,7 @@ from cluster.cdk8s.agentplane.egress_credentials import (
     GITHUB_PAT_SECRET,
     credential_external_secret,
 )
+from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
 from cluster.cdk8s.metadata import metadata
@@ -43,6 +47,10 @@ from cluster.cdk8s.metadata import metadata
 # Written by tf/gitops/agent-machine-access/grocy-sf.tf into agents-infra, named after the Authentik
 # service account whose app password it holds.
 _GROCY_SF_ACCOUNT = "agentplane-grocy-sf-readonly"
+# Minted for Authentik's `haku` service account and published into flux-system by the
+# authentik-jwt-rotation CronJob (`haku-mail` entry); haku/mailbox.py mirrors the same Secret into
+# haku-sandbox.
+_HAKU_MAIL_TOKEN = "haku-mail-token"
 
 
 def add_staging_egress_credentials(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
@@ -60,6 +68,9 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _google_readonly(construct, namespace=namespace)
     _grocy_sf_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _home_assistant_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
+    _activitywatch_read(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
+    _aiquota_read(construct, namespace=namespace)
+    _haku_mailbox(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
 
 
 def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
@@ -162,13 +173,15 @@ def _google_readonly(scope: Construct, *, namespace: str) -> None:
                 # One API per host, so read-only methods are the only restriction needed.
                 EgressPolicySpecRules(
                     hosts=[
-                        "gmail.googleapis.com",
-                        "tasks.googleapis.com",
-                        "people.googleapis.com",
+                        # keep-sorted start
                         "docs.googleapis.com",
+                        "gmail.googleapis.com",
+                        "people.googleapis.com",
                         "sheets.googleapis.com",
                         "slides.googleapis.com",
+                        "tasks.googleapis.com",
                         "youtube.googleapis.com",
+                        # keep-sorted end
                     ],
                     methods=[EgressPolicySpecRulesMethods.GET],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
@@ -251,14 +264,16 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
                     hosts=["grocy-sf.allegedly.works"],
                     methods=[EgressPolicySpecRulesMethods.GET],
                     paths=[
+                        # keep-sorted start
+                        "/api/files/**",
                         "/api/objects/**",
                         # `/api/stock/**` does not match `/api/stock` itself.
                         "/api/stock",
                         "/api/stock/**",
-                        "/api/user",
-                        "/api/system/info",
                         "/api/system/db-changed-time",
-                        "/api/files/**",
+                        "/api/system/info",
+                        "/api/user",
+                        # keep-sorted end
                     ],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="grocy-sf-readonly"),
                 )
@@ -323,6 +338,178 @@ def _home_assistant_readonly(
                     paths=["/api/states", "/api/states/*", "/api/history/period/*"],
                     credential_ref=EgressPolicySpecRulesCredentialRef(name="home-assistant-readonly"),
                 )
+            ]
+        ),
+    )
+
+
+def _activitywatch_read(
+    scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str
+) -> None:
+    # Exact source access: the activitywatch namespace also holds the write token.
+    credential_external_secret(
+        scope,
+        namespace=credentials_namespace,
+        target="activitywatch-read-token",
+        source="activitywatch-read-token",
+        key="token",
+        store=single_secret_store(
+            scope,
+            "agentplane-staging-activitywatch",
+            reader=reader,
+            source_namespace="activitywatch",
+            source_secret="activitywatch-read-token",
+            consumer_namespace=credentials_namespace,
+        ),
+    )
+    EgressCredential(
+        scope,
+        "egresscredential-activitywatch-read",
+        metadata=ApiObjectMetadata(name="activitywatch-read", namespace=namespace),
+        spec=EgressCredentialSpec(
+            description=(
+                "The static bearer of the central ActivityWatch server's read route "
+                "(cluster/docs/activitywatch/README.md), copied into this namespace by ESO. The "
+                "route's own proxy admits it on GETs and on POST /api/0/query/ only, so it cannot "
+                "write; what it reads is every device's window titles, URLs and AFK history."
+            ),
+            source=EgressCredentialSpecSource(
+                secret_ref=EgressCredentialSpecSourceSecretRef(name="activitywatch-read-token", key="token")
+            ),
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                )
+            ],
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-activitywatch-read",
+        metadata=ApiObjectMetadata(name=ACTIVITYWATCH_READ_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                # The API half of what the read route admits; its web UI stays unreachable. The query
+                # endpoint needs its trailing slash: without it the route 301s, and a client following
+                # that turns the POST into a GET.
+                EgressPolicySpecRules(
+                    hosts=["activitywatch-read.allegedly.works"],
+                    methods=[EgressPolicySpecRulesMethods.GET],
+                    paths=["/api/0/**"],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="activitywatch-read"),
+                ),
+                EgressPolicySpecRules(
+                    hosts=["activitywatch-read.allegedly.works"],
+                    methods=[EgressPolicySpecRulesMethods.POST],
+                    paths=["/api/0/query/"],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="activitywatch-read"),
+                ),
+            ]
+        ),
+    )
+
+
+def _aiquota_read(scope: Construct, *, namespace: str) -> None:
+    # The Secret arrives by aiquota's own bearer mirror (aiquota.py), not a store here.
+    EgressCredential(
+        scope,
+        "egresscredential-aiquota-read",
+        metadata=ApiObjectMetadata(name="aiquota-read", namespace=namespace),
+        spec=EgressCredentialSpec(
+            description=(
+                "aiquota's shared API bearer (aiquota.py), mirrored into this namespace by "
+                "reflector. The API behind it serves only reads -- the Claude and Codex "
+                "subscription quotas and each provider's raw usage response -- and "
+                "`aiquota-read`'s rule presents it only on GETs under /v1/."
+            ),
+            source=EgressCredentialSpecSource(
+                secret_ref=EgressCredentialSpecSourceSecretRef(
+                    name=AGENTPLANE_STAGING_BEARER.secret_name, key=AGENTPLANE_STAGING_BEARER.secret_key_selector.key
+                )
+            ),
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                )
+            ],
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-aiquota-read",
+        metadata=ApiObjectMetadata(name=AIQUOTA_READ_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                EgressPolicySpecRules(
+                    hosts=["aiquota.allegedly.works"],
+                    methods=[EgressPolicySpecRulesMethods.GET],
+                    paths=["/v1/**"],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="aiquota-read"),
+                )
+            ]
+        ),
+    )
+
+
+def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
+    credential_external_secret(
+        scope,
+        namespace=credentials_namespace,
+        target=_HAKU_MAIL_TOKEN,
+        source=_HAKU_MAIL_TOKEN,
+        key="jwt",
+        store=single_secret_store(
+            scope,
+            "agentplane-staging-haku-mail",
+            reader=reader,
+            source_namespace="flux-system",
+            source_secret=_HAKU_MAIL_TOKEN,
+            consumer_namespace=credentials_namespace,
+        ),
+    )
+    EgressCredential(
+        scope,
+        "egresscredential-haku-mailbox",
+        metadata=ApiObjectMetadata(name="haku-mailbox", namespace=namespace),
+        spec=EgressCredentialSpec(
+            description=(
+                "The Authentik JWT of Haku's mailbox account (haku@allegedly.works on the Stalwart "
+                "server, cluster/k8s/haku/mailbox), rotated by authentik-jwt-rotation and copied "
+                "into this namespace by ESO. It reads and changes the contents of that one mailbox "
+                "over JMAP; it cannot send mail or administer the server (haku/docs/security.md)."
+            ),
+            source=EgressCredentialSpecSource(
+                secret_ref=EgressCredentialSpecSourceSecretRef(name=_HAKU_MAIL_TOKEN, key="jwt")
+            ),
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                )
+            ],
+        ),
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-haku-mailbox",
+        metadata=ApiObjectMetadata(name=HAKU_MAILBOX_POLICY, namespace=namespace),
+        spec=EgressPolicySpec(
+            rules=[
+                # JMAP only: the session document and the API, blob and event-source endpoints under
+                # /jmap/. The same host serves Stalwart's management API, which stays unreachable.
+                # JMAP's reads and writes share one POST endpoint, so no rule here can narrow it
+                # to reads; the account itself is what bounds it.
+                EgressPolicySpecRules(
+                    hosts=["haku-mailbox.allegedly.works"],
+                    methods=[EgressPolicySpecRulesMethods.GET],
+                    paths=["/.well-known/jmap", "/jmap/**"],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="haku-mailbox"),
+                ),
+                EgressPolicySpecRules(
+                    hosts=["haku-mailbox.allegedly.works"],
+                    methods=[EgressPolicySpecRulesMethods.POST],
+                    paths=["/jmap/**"],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name="haku-mailbox"),
+                ),
             ]
         ),
     )

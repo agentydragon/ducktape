@@ -5,11 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
     ClusterSpecAffinity,
     ClusterSpecAffinityTolerations,
-    ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecMonitoring,
@@ -19,12 +16,11 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecProbesLiveness,
     ClusterSpecProbesLivenessIsolationCheck,
     ClusterSpecResources,
-    ClusterSpecStorage,
 )
 from constructs import Construct
 
 from cluster.cdk8s.local_path_provisioner import SSD_STORAGE_CLASSES
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cnpg.cluster import Cluster
 
 POSTGRES_IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
 
@@ -75,23 +71,22 @@ def cluster(
     return Cluster(
         scope,
         id,
-        metadata=metadata(name, namespace, annotations=annotations),
-        spec=ClusterSpec(
-            instances=instances,
-            image_name=image_name,
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            affinity=_affinity(node_selector=node_selector, storage_class=storage_class),
-            storage=ClusterSpecStorage(storage_class=storage_class, size=size),
-            postgresql=postgresql,
-            plugins=plugins,
-            resources=resources,
-            # TODO: Migrate to manually managed PodMonitors (enablePodMonitor is deprecated).
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-            bootstrap=None if initdb is None else ClusterSpecBootstrap(initdb=initdb),
-            managed=managed,
+        name=name,
+        namespace=namespace,
+        storage_class=storage_class,
+        size=size,
+        instances=instances,
+        image_name=image_name,
+        initdb=initdb,
+        affinity=_affinity(node_selector=node_selector, storage_class=storage_class),
+        managed=managed,
+        postgresql=postgresql,
+        plugins=plugins,
+        resources=resources,
+        probes=ClusterSpecProbes(
+            liveness=ClusterSpecProbesLiveness(isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False))
         ),
+        # TODO: Migrate to manually managed PodMonitors (enablePodMonitor is deprecated).
+        monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
+        annotations=annotations,
     )

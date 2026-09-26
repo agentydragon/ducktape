@@ -218,13 +218,11 @@ async def test_two_replicas_renewing_one_login_spend_its_refresh_token_once(
 ) -> None:
     """The provider refuses a refresh token it has already rotated, so a second replica spending the
     same one would lose the session. The test holds the row until both replicas' exchanges queue on
-    it, so neither can read the row before the other has started."""
+    it, each having found the token due for renewal, so whichever renews second must see it renewed."""
     row = await stored_login(operator_sessions, login_provider.session)
     engine = connect(db_url)
     try:
-        replica = SessionRow(
-            OperatorSessionStore(engine), row.id, idle=timedelta(hours=1), step=timedelta(minutes=5), request_login=None
-        )
+        replica = SessionRow(OperatorSessionStore(engine), row.id, idle=timedelta(hours=1), step=timedelta(minutes=5))
         async with operator_sessions.sessions.begin() as holder:
             await holder.scalar(select(BrowserSession).where(BrowserSession.id == row.id).with_for_update())
             exchanges = [asyncio.create_task(login_provider.federation.exchange(each)) for each in (row, replica)]

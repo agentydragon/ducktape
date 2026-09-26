@@ -43,11 +43,14 @@ from agentplane.action_service.sandbox_executor import SANDBOX_GROUP, SandboxAct
 from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.agentplane import app as app_component, egress, testing
 from cluster.cdk8s.agentplane.app_settings import (
+    ACTIVITYWATCH_READ_POLICY,
+    AIQUOTA_READ_POLICY,
     BASIC_POLICY,
     COINBASE_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
+    HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
     KUBERNETES_POLICY,
     PACKAGES_POLICY,
@@ -58,8 +61,8 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GAFFER_PRIVATE_READS_SET,
     PUBLIC_GITHUB_READS_SET,
 )
-from cluster.cdk8s.external_secrets.external_secret import add_external_secret, remote_data
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 _NAMESPACE = "agentplane-staging"
 _GITHUB_READS_SET = "github-reads"
@@ -93,41 +96,44 @@ def _binding(scope: Construct, id: str, *, metadata: ApiObjectMetadata, spec: Ac
 # manual until reviewed here. `ui_get` reads an MCP App UI resource, not GitHub
 # repository state.
 _GITHUB_READS_ACTIONS = [
-    "get_me",
-    "get_team_members",
-    "get_teams",
-    "ui_get",
+    # keep-sorted start
     "find_duplicate",
-    "get_label",
-    "issue_dependency_read",
-    "issue_read",
-    "list_issue_fields",
-    "list_issue_types",
-    "list_issues",
-    "search_issues",
-    "list_pull_requests",
-    "pull_request_read",
-    "search_pull_requests",
     "get_commit",
     "get_file_blame",
     "get_file_contents",
+    "get_label",
     "get_latest_release",
+    "get_me",
     "get_release_by_tag",
     "get_tag",
+    "get_team_members",
+    "get_teams",
+    "issue_dependency_read",
+    "issue_read",
     "list_branches",
     "list_commits",
+    "list_issue_fields",
+    "list_issue_types",
+    "list_issues",
+    "list_pull_requests",
     "list_releases",
     "list_repository_collaborators",
     "list_tags",
+    "pull_request_read",
     "search_code",
     "search_commits",
+    "search_issues",
+    "search_pull_requests",
     "search_repositories",
     "search_users",
+    "ui_get",
+    # keep-sorted end
 ]
 
 # The tool list every repository-scoped read set shares -- only the trusted owner/repo
 # (or, for public-github-reads, a live visibility check) differs.
 _REPOSITORY_SCOPED_ACTIONS = [
+    # keep-sorted start
     "actions_get",
     "actions_list",
     "find_duplicate",
@@ -151,9 +157,10 @@ _REPOSITORY_SCOPED_ACTIONS = [
     "list_repository_collaborators",
     "list_tags",
     "pull_request_read",
+    "search_code",
     "search_issues",
     "search_pull_requests",
-    "search_code",
+    # keep-sorted end
 ]
 
 
@@ -167,6 +174,7 @@ _REPOSITORY_SCOPED_ACTIONS = [
 # support/issue-tracker report, not a Home Assistant state read. New upstream tools stay
 # manual until reviewed here, same convention as the GitHub reads set above.
 _HOME_ASSISTANT_READS_ACTIONS = [
+    # keep-sorted start
     "ha_config_get_automation",
     "ha_config_get_calendar_events",
     "ha_config_get_category",
@@ -197,12 +205,14 @@ _HOME_ASSISTANT_READS_ACTIONS = [
     "ha_list_floors_areas",
     "ha_list_services",
     "ha_search",
+    # keep-sorted end
 ]
 
 # Gmail's generated read-only surface (haku/console/tools/gmail.py's _GMAIL_READ_TOOLS); writes
 # (drafts_create/update/delete, threads_modify_labels, labels_create/patch/delete,
 # filters_create/delete) stay on the human path.
 _GMAIL_READS_ACTIONS = [
+    # keep-sorted start
     "drafts_get",
     "drafts_list",
     "filters_get",
@@ -212,6 +222,7 @@ _GMAIL_READS_ACTIONS = [
     "messages_get",
     "threads_get",
     "threads_list",
+    # keep-sorted end
 ]
 
 # Google Calendar's read-only surface (haku/console/tools/google_calendar.py); create_event
@@ -222,6 +233,7 @@ _GOOGLE_CALENDAR_READS_ACTIONS = ["get_event", "list_event_instances", "list_eve
 # date's calendar node when it is missing. Reviewed exclusion: `open_node` navigates the
 # operator's Tana desktop app. New upstream tools stay manual until reviewed here.
 _TANA_READS_ACTIONS = [
+    # keep-sorted start
     "get_children",
     "get_or_create_calendar_node",
     "get_tag_schema",
@@ -229,12 +241,14 @@ _TANA_READS_ACTIONS = [
     "list_workspaces",
     "read_node",
     "search_nodes",
+    # keep-sorted end
 ]
 
 # Grocy SF's read-only surface, as haku-console's `grocy_reads` policy auto-approved it.
 # Reviewed exclusion: `open_product_stock` marks a product opened. New upstream tools stay manual
 # until reviewed here.
 _GROCY_SF_READS_ACTIONS = [
+    # keep-sorted start
     "entities_get",
     "entities_list",
     "file_get",
@@ -254,6 +268,7 @@ _GROCY_SF_READS_ACTIONS = [
     "shopping_lists_list",
     "stock_entries_list",
     "stock_get",
+    # keep-sorted end
 ]
 
 
@@ -392,7 +407,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # holds the key and signs for itself: it may read this one Secret through the API server, and
     # the `coinbase` policy passes its GETs to api.coinbase.com unchanged. What makes handing the
     # sandbox the key acceptable is that the key can only view.
-    add_external_secret(
+    ExternalSecret(
         scope,
         "coinbase-external-secret",
         name=_COINBASE_SECRET,
@@ -496,7 +511,12 @@ def add_staging_action_policies(scope: Construct) -> None:
     # (egress_staging_credentials.py). `grocy-sf-readonly` presents the app password of an Authentik
     # service account with no Grocy permissions, as HTTP Basic, on GETs to Grocy's own REST API (see
     # that module's `grocy-sf-readonly` EgressPolicy for why that's Grocy's API rather than the
-    # grocy-mcp-sf MCP server). `coinbase` presents nothing: the sandbox signs with the key above.
+    # grocy-mcp-sf MCP server). `activitywatch-read` presents the ActivityWatch read route's bearer,
+    # which that route itself holds to reads, and `aiquota-read` aiquota's bearer on its read-only
+    # API. `haku-mailbox` presents the JWT of Haku's own mailbox: JMAP reads and changes that one
+    # mailbox and cannot send. It and `forgejo-haku` are Haku's credentials, bound here because
+    # claude-ai is the connection Haku runs through (haku/TODO.md). `coinbase` presents nothing: the
+    # sandbox signs with the key above.
     # `agentplane-testing` presents nothing either: the acceptance suite brings its own app token.
     # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
     #
@@ -525,6 +545,9 @@ def add_staging_action_policies(scope: Construct) -> None:
                 GOOGLE_READONLY_POLICY,
                 GROCY_SF_READONLY_POLICY,
                 HOME_ASSISTANT_READONLY_POLICY,
+                ACTIVITYWATCH_READ_POLICY,
+                AIQUOTA_READ_POLICY,
+                HAKU_MAILBOX_POLICY,
                 COINBASE_POLICY,
                 _AGENTPLANE_TESTING_POLICY,
                 _GITHUB_DOWNLOADS_POLICY,
@@ -544,7 +567,10 @@ def add_staging_action_policies(scope: Construct) -> None:
             name=_SANDBOX_SET,
             namespace=_NAMESPACE,
             annotations={
-                "description": "Auto-approves sandbox lifecycle and exec for a caller, which act only as that caller."
+                "description": (
+                    "Auto-approves every sandbox Action: a caller's own boxes, which act only as that caller, "
+                    "and reads of the templates they are made from."
+                )
             },
         ),
         spec=ActionPolicySetSpec(

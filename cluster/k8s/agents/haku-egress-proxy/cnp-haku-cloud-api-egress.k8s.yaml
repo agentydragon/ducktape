@@ -71,19 +71,19 @@ spec:
             - port: "443"
               protocol: TCP
     - toFQDNs:
-        - matchName: releases.bazel.build
         - matchName: bcr.bazel.build
-        - matchName: github.com
         - matchName: codeload.github.com
-        - matchName: objects.githubusercontent.com
-        - matchName: release-assets.githubusercontent.com
-        - matchName: raw.githubusercontent.com
         - matchName: ftp.gnu.org
-        - matchName: nodejs.org
-        - matchName: snapshot.debian.org
-        - matchName: static.rust-lang.org
+        - matchName: github.com
         - matchName: index.crates.io
+        - matchName: nodejs.org
+        - matchName: objects.githubusercontent.com
+        - matchName: raw.githubusercontent.com
+        - matchName: release-assets.githubusercontent.com
+        - matchName: releases.bazel.build
+        - matchName: snapshot.debian.org
         - matchName: static.crates.io
+        - matchName: static.rust-lang.org
       toPorts:
         - ports:
             - port: "443"

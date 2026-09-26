@@ -754,6 +754,8 @@ py_library(
     name = "consent",
     srcs = ["consent.py"],
     deps = [
+        ":action_federation",
+        ":operator_sessions",
         "//agentplane:subjects",
         "//agentplane/action_service:client",
         "//agentplane/action_service:connections",
@@ -765,10 +767,14 @@ py_library(
 
 py_test(
     name = "test_consent",
+    size = "medium",
     srcs = ["test_consent.py"],
+    requires_docker = True,
     deps = [
+        ":action_federation",
         ":conftest",
         ":consent",
+        ":operator_sessions",
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/action_service:client",
@@ -777,7 +783,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
@@ -1211,5 +1216,39 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_operator_sessions",
+    size = "medium",
+    srcs = ["test_operator_sessions.py"],
+    requires_docker = True,
+    deps = [
+        ":action_federation",
+        ":action_policy",
+        ":api",
+        ":conftest",
+        ":database_updates",
+        ":decisions",
+        ":egress",
+        ":inventory",
+        ":live",
+        ":oidc",
+        ":operator_sessions",
+        ":presets",
+        "//:conftest",
+        "//agentplane/action_service:client",
+        "//agentplane/app/agent_runtime/events:event_log",
+        "//agentplane/app/agent_runtime/runner:bridge",
+        "//agentplane/app/agent_runtime/thread:store",
+        "//agentplane/app/agent_runtime/view:content",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//starlette",
     ],
 )

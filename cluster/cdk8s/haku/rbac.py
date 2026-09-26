@@ -73,16 +73,18 @@ def chart(app: App) -> Chart:
             k8s.PolicyRule(
                 api_groups=[""],
                 resources=[
-                    "pods",
-                    "pods/log",
-                    "pods/exec",
-                    "pods/attach",
-                    "pods/portforward",
-                    "services",
+                    # keep-sorted start
                     "configmaps",
-                    "secrets",
-                    "persistentvolumeclaims",
                     "events",
+                    "persistentvolumeclaims",
+                    "pods",
+                    "pods/attach",
+                    "pods/exec",
+                    "pods/log",
+                    "pods/portforward",
+                    "secrets",
+                    "services",
+                    # keep-sorted end
                 ],
                 verbs=["*"],
             ),

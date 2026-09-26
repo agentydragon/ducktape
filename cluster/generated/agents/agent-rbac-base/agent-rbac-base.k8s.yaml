@@ -58,15 +58,15 @@ rules:
   - apiGroups:
       - ""
     resources:
-      - pods
-      - pods/log
-      - pods/exec
-      - pods/attach
-      - services
       - configmaps
-      - secrets
-      - persistentvolumeclaims
       - events
+      - persistentvolumeclaims
+      - pods
+      - pods/attach
+      - pods/exec
+      - pods/log
+      - secrets
+      - services
     verbs:
       - "*"
   - apiGroups:

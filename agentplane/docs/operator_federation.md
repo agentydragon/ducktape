@@ -25,22 +25,30 @@ pending row, and consumes all OAuth state. A login then lasts until `AGENTPLANE_
 (default a week) from login; token lifetimes do not bound it. The row's `expires_at` is the earlier
 of the two deadlines, and the cookie lasts until the absolute one. A request moves the idle deadline
 only when it would move by more than five minutes, so the idle timeout holds to within that and a
-burst of requests costs one row write.
+burst of requests costs one row write. A request never waits on the row's lock to move it: while
+another transaction holds the row, a later request moves it instead.
 
 The login asks for `offline_access`, so Authentik issues a refresh token beside its ten-minute access
 token. When an exchange needs the access token and it expires within 30 seconds, the app renews it
-with the refresh token and stores the new tokens, under the session row's lock: Authentik rotates the
-refresh token on every use and refuses the one it replaced, so a second replica renewing with it would
-lose the session. The renewal counts as activity, so a stream renewing its upstream token keeps the
-session alive up to the absolute deadline. A refused renewal deletes the session and answers 401
-`operator_reauthentication_required`; the SPA then logs in again, silently while the Authentik
-session lasts. An access token without a known future expiry is discarded; federation then returns
-403 `operator_reauthentication_required`. Browser login alone does not require an access token.
+with the refresh token and stores the new tokens, holding the session row's lock across the renewal:
+Authentik rotates the refresh token on every use and refuses the one it replaced, so a second replica
+renewing with it would lose the session. Under the lock it re-reads the row first, and uses a token
+another request or replica renewed meanwhile as it is. Each exchange counts as activity, so a stream
+renewing its upstream token keeps the session alive up to the absolute deadline. A refused renewal
+deletes the session and answers 401 `operator_reauthentication_required`; the SPA then logs in again,
+silently while the Authentik session lasts. An access token without a known future expiry is
+discarded; federation then returns 403 `operator_reauthentication_required`. Browser login alone does
+not require an access token.
 
-Each request re-reads its row. PostgreSQL row locking serializes same-session requests across
-replicas through response headers (not the lifetime of an SSE stream); a streamed body that needs the
-login token later takes the row lock in a transaction of its own. Callback rotation/logout
-cannot be undone by an older request saving stale state. Logout deletes the entire row; cookie
+Requests presenting one session run concurrently, on one replica or several: none holds its row while
+its handler runs. Each reads the row before its handler; before its response headers go out, it writes
+what the handler changed in a short transaction that locks the row and applies the change, key by key,
+to the payload as it is then, so a concurrent request's change stands. The renewal above is the only
+lock held across a call upstream; consent interactions lock the row around their Action Service calls,
+never across one. Only a request writing the row waits for either. A write that finds the row gone is
+dropped and the cookie cleared, so no request revives a session ended meanwhile. Of the callbacks
+completing one pending login, only the first replaces its row; any other, and one overtaken by a
+logout, answers 401 and creates nothing. Logout deletes the entire row; cookie
 replay then fails on every replica. Deleting a row also invalidates that session administratively.
 Expired rows are rejected immediately and deleted on access; successful logins additionally clean
 up expired rows. There is no background retention scheduler. Backups may retain expired credentials:

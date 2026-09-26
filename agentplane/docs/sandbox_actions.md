@@ -67,6 +67,9 @@ box, and the app's runner template, and a caller always names one. Each template
 its `sandbox-actions.agentplane.allegedly.works/description` annotation is what `create` tells an
 agent, read once when the service starts, and a command runs in the container `kubectl exec` would
 pick, the Pod template's `kubectl.kubernetes.io/default-container` or else its first.
+`get_template` returns one offered template whole, read when asked and less only
+`metadata.managedFields`. **Every caller can read everything in an offered template**, so a template
+references Secrets and never inlines one.
 
 **Its own inventory code**, reusing the CRD shapes rather than `SandboxInventory`, which hardcodes
 the per-sandbox account, the app's label and the app's ownership model. The CRD vocabulary both
@@ -108,8 +111,8 @@ own API proxy answers `501` to the upgrade verbs, so that is where to expect tro
 
 ## Tool surface
 
-`create`, `exec` and `list`, with `info` and `dispose`. `create` returns once the object exists and
-the caller polls `info` for the controller's conditions.
+`create`, `exec` and `list`, with `info`, `get_template` and `dispose`. `create` returns once the
+object exists and the caller polls `info` for the controller's conditions.
 
 **Conditions are passed through as the controller wrote them**, not summarised into a state. A
 reading taken here would be a second opinion that can disagree with the authority and carries less

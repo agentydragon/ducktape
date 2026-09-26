@@ -166,8 +166,7 @@ def operator_sessions(engine: AsyncEngine) -> OperatorSessionStore:
 
 
 async def stored_login(store: OperatorSessionStore, login: OperatorSession) -> SessionRow:
-    """`login` in a session row, as a callback leaves one, reached the way a streamed body reaches it
-    once its request's headers are out: by id, under a lock of its own."""
+    """`login` in a session row, as a callback leaves one, reached as a request reaches it."""
     now = datetime.now(UTC)
     row = BrowserSession(
         id=secrets.token_hex(32),
@@ -178,7 +177,7 @@ async def stored_login(store: OperatorSessionStore, login: OperatorSession) -> S
     row.login = login
     async with store.sessions.begin() as db:
         db.add(row)
-    return SessionRow(store, row.id, idle=timedelta(hours=1), step=timedelta(minutes=5), request_login=None)
+    return SessionRow(store, row.id, idle=timedelta(hours=1), step=timedelta(minutes=5))
 
 
 SPEC = protocol_pb2.SessionSpec(

@@ -40,6 +40,7 @@ _PORT = 8080
 # policy cannot drift. csi-proxmox and cpap-sync are separately reviewed Haku-only
 # exceptions retained from the original proxy policy.
 NAMESPACE_ALLOWLIST = (
+    # keep-sorted start
     "activitywatch",
     "agentplane-index",
     "agentplane-staging",
@@ -48,8 +49,8 @@ NAMESPACE_ALLOWLIST = (
     "analytics",
     "authentik",
     "cert-manager",
-    "clickhouse",
     "cli-proxy-api",
+    "clickhouse",
     "cnpg-system",
     "cpap-sync",
     "csi-proxmox",
@@ -69,10 +70,11 @@ NAMESPACE_ALLOWLIST = (
     "oci-cache",
     "openebs",
     "plaid-mcp",
-    "proxmox-proxy",
     "props",
+    "proxmox-proxy",
     "study-casino",
     "tana-mcp",
+    # keep-sorted end
 )
 
 
