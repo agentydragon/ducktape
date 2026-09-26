@@ -1,11 +1,21 @@
 #!/usr/bin/env bash
-# Serial, bounded work after downloads; guarded for the shared wyrm2 desktop.
+# One bounded inference job, or independent downloads, on the shared wyrm2 desktop.
 set -euo pipefail
 umask 077
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 output=${1:?absolute output directory}
+mode=${2:?downloads or q4 or iq4}
+[[ $mode == downloads || $mode == q4 || $mode == iq4 ]]
 [[ $output == /* ]]
 mkdir -p "$output"
+if [[ $mode == downloads ]]; then
+  exec 9>"${XDG_RUNTIME_DIR:-/run/user/1001}/wyrm2-qwen38-downloads.lock"
+  flock -n 9
+  exec > >(tee -a "$output/downloads.log") 2>&1
+  bash "$here/../2026-09-26_qwen38_capacity/download.sh"
+  date -Is >"$output/downloads-verified.txt"
+  exit 0
+fi
 exec 9>"${XDG_RUNTIME_DIR:-/run/user/1001}/wyrm2-qwen38-serial-queue.lock"
 flock -n 9
 exec > >(tee -a "$output/queue.log") 2>&1
@@ -132,15 +142,20 @@ start_server() {
   free -b >"$current_run/host-ready.txt"
 }
 
-note 'starting verified downloads before any inference'
-bash "$here/../2026-09-26_qwen38_capacity/download.sh"
-printf '%s\n' "$(date -Is)" >"$output/downloads-verified.txt"
 # One real task first. Observe natural compaction before expanding experiments.
-model=qwen3.8-flash-next-iq4xs
-model_file=Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
-ram_gib=24
-current_run="$output/iq4xs-128k-q8_0-terminus"
+if [[ $mode == q4 ]]; then
+  model=qwen3.8-flash-next-q4
+  model_file=Qwen3.8-Flash-Next-GGUF/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf
+  ram_gib=34
+else
+  model=qwen3.8-flash-next-iq4xs
+  model_file=Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+  ram_gib=24
+fi
+[[ -f $root/$model_file ]]
+current_run="$output/$mode-128k-q8_0-terminus"
 mkdir -p "$current_run"
+systemctl --user show wyrm2-qwen38-downloads -p ActiveState -p MainPID >"$current_run/download-overlap.txt" || true
 note 'starting one real Terminal-Bench task at 128K with Terminus-2 summarization'
 start_server 131072 q8_0
 run_guarded bash "$here/harbor_attempt.sh" "$current_run/harbor" "$model" 131072

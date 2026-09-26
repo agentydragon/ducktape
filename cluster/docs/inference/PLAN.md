@@ -282,11 +282,12 @@ provider scores establish the quality retained by the local quantization.
 The [September 26 capacity calculation](runs/2026-09-26_qwen38_capacity/README.md)
 uses actual GGUF metadata and pinned runtime source, including indexer and recurrent
 state. The [immediate serial queue](runs/2026-09-26_qwen38_queue/README.md) now runs
-one frozen real task at 128K/Q8 with IQ4_XS and Terminus-2 summarization, following
-the user's direction to observe compaction naturally. IQ4_XS has the lower host-memory
-admission threshold. The KV sweep, native 256K and Q4/Q5 comparisons follow evidence
+one frozen real task at 128K/Q8 with existing Q4 and Terminus-2 summarization, following
+the user's direction to observe compaction naturally and use the GPU while downloads
+continue. A separate download-only service cannot launch competing inference. The KV sweep, native 256K and Q4/Q5 comparisons follow evidence
 from that first trajectory. Q5 and IQ4_XS downloads are progressing. The transient
-user service resumes them before inference, with explicit desktop RAM/VRAM reserves.
+user services run downloads alongside one inference job, with explicit desktop
+RAM/VRAM reserves and overlapping SSD traffic recorded as a latency confounder.
 Parallel-window numbers in that note are arithmetic only, not permission to run
 concurrent evaluations.
 

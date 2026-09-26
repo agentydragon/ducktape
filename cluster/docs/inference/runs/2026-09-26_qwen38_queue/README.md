@@ -9,21 +9,21 @@ live replicas were verified zero. No reboot or NixOS activation is involved.
 
 ## Order and protocol
 
-1. Resume and SHA256-verify Q5_K_XL and IQ4_XS from the
-   [capacity recipe](../2026-09-26_qwen38_capacity/README.md). Download/checks are
-   serial, downloads capped at 40 MiB/s, with a 128 GiB SSD free-space floor.
-2. Load IQ4_XS at 131,072 context, Q8_0 K/V, both GPUs, one slot.
+1. Continue Q5_K_XL and IQ4_XS downloads in a separate low-priority service,
+   following the [capacity recipe](../2026-09-26_qwen38_capacity/README.md). Downloads
+   and checks remain serial, at 40 MiB/s with a 128 GiB free-space floor.
+2. Meanwhile load the existing Q4_K_XL at 131,072 context, Q8_0 K/V, both GPUs, one slot.
 3. Run the first task in the outcome-independent
    [CPU12 selection](../2026-09-26_harbor_review/cpu12_tasks.json),
    `interleaved-vigenere`, with Terminus-2 summarization enabled.
-4. Stop the server and retain all artifacts. Review that attempt before expansion.
+4. Stop the server and retain artifacts. The download service never starts inference;
+   downloaded IQ4_XS will not launch a competing task.
 
-IQ4_XS starts because it has the lower host-memory requirement. This changes weights
-as well as the agent relative to the user's previous Q4/Mini-SWE run; differences
-cannot be attributed solely to compaction. Q4 is the later weight control. Native
-256K, smaller KV and Q5 comparisons are deferred until this first trajectory informs
-which experiment is useful. No parallel inference or synthetic compaction task is
-scheduled. Port 19080 is separate from the user's 18080.
+The user authorized useful work on the already available model while downloading.
+Q4 is the model from their successful OpenCode trial, avoiding a simultaneous change
+of agent and weight quant. Record overlapping SSD traffic as a latency confounder;
+this is not a clean speed comparison. Native 256K, smaller KV and matched quant runs
+follow evidence from this first trajectory. Port 19080 is separate from user 18080.
 
 Harbor is 0.23.0, with installed Terminus-2 reporting 2.0.0. Pin/hash the installed
 adapter and backend source; preserve the generated job and Harbor resolved lock.
@@ -51,9 +51,9 @@ compaction evidence. Do not require two events before accepting a real task resu
 
 ## Resource and stopping rules
 
-IQ4_XS server cap: 24 GiB RAM with no extra swap; admission requires 48 GiB available
+Q4 server cap: 34 GiB RAM with no extra swap; admission requires 58 GiB available
 host RAM (server cap, two original 4 GiB task/verifier containers, 16 GiB desktop
-reserve). GPU fit targets reserve 8 GiB on the desktop GPU and 2 GiB on the second.
+reserve). Optional later IQ4 mode uses 24 GiB and requires 48 GiB available. GPU fit targets reserve 8 GiB on the desktop GPU and 2 GiB on the second.
 Every 15 seconds during the attempt, check at least 16 GiB available host RAM, 6 GiB
 free desktop VRAM, 1 GiB free second-GPU VRAM, and Ollama paused. A failed check stops
 owned work and records a resource/service interruption, not a model-quality failure.
@@ -69,14 +69,16 @@ remain: 28,800-second agent deadline, 900-second build/verifier deadlines, 4 CPU
 From the Nix devshell, after stopping any previous writer of these partial downloads:
 
 ```bash
-bash cluster/docs/inference/runs/2026-09-26_qwen38_queue/launch.sh /tmp/wyrm2-qwen38-terminus-20260926
+bash cluster/docs/inference/runs/2026-09-26_qwen38_queue/launch.sh /tmp/wyrm2-qwen38-downloads-20260926 downloads
+bash cluster/docs/inference/runs/2026-09-26_qwen38_queue/launch.sh /tmp/wyrm2-qwen38-q4-20260926 q4
 systemctl --user status wyrm2-qwen38-serial-queue
 journalctl --user -u wyrm2-qwen38-serial-queue -f
 systemctl --user stop wyrm2-qwen38-serial-queue
 ```
 
 The launcher copies scripts/manifests and records revision and hashes, so later edits
-do not mutate running code. A lock excludes a second queue. Artifacts are private to
+do not mutate running code. Separate locks exclude duplicate inference and download
+writers. Inference mode never downloads; download mode never starts a server. Artifacts are private to
 the user in the supplied directory. Stop preserves verified and partial downloads.
 Cleanup is limited to the server's unique queue label and compose projects named by
 this invocation's unique trial configs. `harbor_attempt.sh --help` is safe;
