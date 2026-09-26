@@ -21,7 +21,7 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetConfigMap,
 )
 
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate
+from cluster.cdk8s.providers.cert_manager.certificate import LONG_LIVED_CA, Certificate
 from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 
 NAME = "cluster-ca"
@@ -39,8 +39,7 @@ def chart(app: App) -> Chart:
         is_ca=True,
         common_name="cluster-root-ca",
         secret_name=_ROOT_CA_SECRET,
-        duration="87600h",  # 10 years
-        renew_before="8760h",  # 1 year
+        **LONG_LIVED_CA,
         private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.RSA, size=4096),
         issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
     )

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
@@ -20,16 +20,6 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
-    ClusterExternalSecret,
-    ClusterExternalSecretSpec,
-    ClusterExternalSecretSpecExternalSecretSpec,
-    ClusterExternalSecretSpecExternalSecretSpecDataFrom,
-    ClusterExternalSecretSpecExternalSecretSpecDataFromExtract,
-    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef,
-    ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind,
-    ClusterExternalSecretSpecExternalSecretSpecTarget,
-)
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTargetCreationPolicy,
@@ -42,7 +32,12 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    ClusterDataFrom,
+    ClusterExternalSecret,
+    DataFrom,
+    ExternalSecret,
+)
 
 NAME = "airlock"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/airlock"
@@ -159,23 +154,11 @@ def _mirror(chart: Chart, name: str, namespaces: list[str]) -> None:
     ClusterExternalSecret(
         chart,
         name,
-        metadata=ApiObjectMetadata(name=name),
-        spec=ClusterExternalSecretSpec(
-            namespaces=namespaces,
-            external_secret_spec=ClusterExternalSecretSpecExternalSecretSpec(
-                refresh_interval="1m",
-                secret_store_ref=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef(
-                    name="kubernetes-airlock-secret-store",
-                    kind=ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
-                ),
-                target=ClusterExternalSecretSpecExternalSecretSpecTarget(name=name),
-                data_from=[
-                    ClusterExternalSecretSpecExternalSecretSpecDataFrom(
-                        extract=ClusterExternalSecretSpecExternalSecretSpecDataFromExtract(key=name)
-                    )
-                ],
-            ),
-        ),
+        name=name,
+        namespaces=namespaces,
+        store_name="kubernetes-airlock-secret-store",
+        refresh="1m",
+        data_from=[ClusterDataFrom.from_extract(name)],
     )
 
 
@@ -257,7 +240,7 @@ def chart(app: App) -> Chart:
         chart,
         "httproute",
         metadata=metadata(NAME, NAME),
-        hostname="airlock.allegedly.works",
+        hostnames=["airlock.allegedly.works"],
         backend=NAME,
         port=_PORT,
         timeout="120s",

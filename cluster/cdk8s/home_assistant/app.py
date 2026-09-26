@@ -694,7 +694,7 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=metadata(_NAME, _NAMESPACE),
-        hostname=_HOSTNAME,
+        hostnames=[_HOSTNAME],
         backend=_NAME,
         port=8123,
         hsts=False,

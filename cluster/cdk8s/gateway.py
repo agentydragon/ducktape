@@ -60,38 +60,47 @@ def https_route(
     id: str,
     *,
     metadata: ApiObjectMetadata,
-    hostname: str,
+    hostnames: Sequence[str],
     backend: str,
     port: int,
     paths: Sequence[str] = (),
+    path_prefix: str | None = None,
     timeout: str | None = None,
     hsts: bool = True,
     listener: str | None = HTTPS_LISTENER,
+    extra_filters: Sequence[RouteFilter] = (),
 ) -> HttpRoute:
-    """`hostname` on the shared Gateway to one Service port. `paths` restricts the route to those
-    exact paths; `hsts` sets Strict-Transport-Security at the TLS-aware edge, which the backend's
-    own hop cannot see was HTTPS; `timeout` bounds the request and the backend request alike."""
+    """`hostnames` on the shared Gateway to one Service port. `paths` restricts the route to those
+    exact paths; `path_prefix` adds a path-prefix match alongside them. `hsts` sets
+    Strict-Transport-Security at the TLS-aware edge, which the backend's own hop cannot see was
+    HTTPS; `extra_filters` appends further filters after the HSTS one (when `hsts` is set).
+    `timeout` bounds the request and the backend request alike."""
+    matches = [RouteMatch.path_exact(path).to_spec() for path in paths]
+    if path_prefix is not None:
+        matches.append(RouteMatch.path_prefix(path_prefix).to_spec())
+    filters = list(extra_filters)
+    if hsts:
+        filters.insert(
+            0,
+            RouteFilter.response_header_modifier(
+                set=[
+                    HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
+                        name="Strict-Transport-Security", value="max-age=31536000"
+                    )
+                ]
+            ),
+        )
     return HttpRoute(
         scope,
         id,
         metadata=metadata,
         spec=HttpRouteSpec(
             parent_refs=[cluster_gateway_parent_ref(section_name=listener)],
-            hostnames=[hostname],
+            hostnames=list(hostnames),
             rules=[
                 HttpRouteSpecRules(
-                    matches=[RouteMatch.path_exact(path).to_spec() for path in paths] or None,
-                    filters=[
-                        RouteFilter.response_header_modifier(
-                            set=[
-                                HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
-                                    name="Strict-Transport-Security", value="max-age=31536000"
-                                )
-                            ]
-                        ).to_spec()
-                    ]
-                    if hsts
-                    else None,
+                    matches=matches or None,
+                    filters=[f.to_spec() for f in filters] or None,
                     backend_refs=[HttpRouteSpecRulesBackendRefs(name=backend, port=port)],
                     timeouts=HttpRouteSpecRulesTimeouts(request=timeout, backend_request=timeout) if timeout else None,
                 )

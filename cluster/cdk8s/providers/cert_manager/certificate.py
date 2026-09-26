@@ -4,17 +4,26 @@ props)`. `CertificateSpec` has no real variant shapes at this level -- `privateK
 `secretTemplate` and `issuerRef` are each a single fixed shape, not alternatives -- so every
 keyword below is a `CertificateSpec` field under its own name and type; `None` leaves it
 unset, so cert-manager's own default applies.
+
+`CertificatePrivateKey` groups `CertificateSpecPrivateKey`'s real algorithm/size variance
+(RSA/ECDSA/Ed25519, each with its own valid sizes) under named factories, mirroring
+`ClusterIssuer`'s `@classmethod` pattern. `LONG_LIVED_CA` is this cluster's one CA
+duration/renewal policy (10-year cert, 1-year renewal window), spread as
+`Certificate(..., **LONG_LIVED_CA)` by every long-lived signing Certificate.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TypedDict
 
 from cert_manager_crds.io.cert_manager import (
     Certificate as _Certificate,
     CertificateSpec,
     CertificateSpecIssuerRef,
     CertificateSpecPrivateKey,
+    CertificateSpecPrivateKeyAlgorithm,
+    CertificateSpecPrivateKeyRotationPolicy,
     CertificateSpecSecretTemplate,
     CertificateSpecUsages,
 )
@@ -64,3 +73,23 @@ class Certificate(_Certificate):
                 usages=list(usages) if usages else None,
             ),
         )
+
+
+class CertificatePrivateKey:
+    """Named factories for `CertificateSpecPrivateKey`'s real algorithm/size combinations."""
+
+    @classmethod
+    def ecdsa_p256(
+        cls, rotation_policy: CertificateSpecPrivateKeyRotationPolicy | None = None
+    ) -> CertificateSpecPrivateKey:
+        return CertificateSpecPrivateKey(
+            algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256, rotation_policy=rotation_policy
+        )
+
+
+class _LongLivedCa(TypedDict):
+    duration: str
+    renew_before: str
+
+
+LONG_LIVED_CA: _LongLivedCa = {"duration": "87600h", "renew_before": "8760h"}  # 10 years / 1 year

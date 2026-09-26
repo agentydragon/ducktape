@@ -212,7 +212,6 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/cnpg:cluster",
-        "//cluster/cdk8s/providers/gateway_api:httproute",
         "//cluster/cdk8s/providers/grafana_operator:grafana",
         "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
         "//cluster/cdk8s/providers/grafana_operator:grafana_datasource",

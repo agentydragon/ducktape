@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import tomli_w
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
     ConfigMap,
@@ -70,7 +70,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -187,7 +187,7 @@ class Aiquota(Construct):
             self,
             "httproute",
             metadata=metadata(_API_NAME, NAMESPACE),
-            hostname=_HOSTNAME,
+            hostnames=[_HOSTNAME],
             backend=_API_NAME,
             port=_PORT,
             hsts=False,
@@ -259,7 +259,7 @@ class Aiquota(Construct):
             ],
         )
         deployment.select(LabelSelector.of(labels=_LABELS))
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        apply_pod_spec_patches(deployment)
 
         bearer = Secret.from_secret_name(self, "bearer-ref", BEARER_SECRET_NAME)
         cli_proxy_api = Secret.from_secret_name(self, "cli-proxy-api-management-ref", "cli-proxy-api-management")

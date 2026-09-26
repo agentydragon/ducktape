@@ -12,21 +12,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import App, Chart
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesFilters,
-    HttpRouteSpecRulesFiltersResponseHeaderModifier,
-    HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
-    HttpRouteSpecRulesFiltersType,
-)
+from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
 
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 
 NAME = "proxy-routes"
 NAMESPACE = "authentik"
@@ -111,7 +103,7 @@ def _proxy_route(chart: Chart, name: str, hostname: str, *, timeout: str | None 
         chart,
         name,
         metadata=metadata(name, NAMESPACE),
-        hostname=hostname,
+        hostnames=[hostname],
         backend=_OUTPOST,
         port=_OUTPOST_PORT,
         timeout=timeout,
@@ -125,31 +117,24 @@ def _haku_ui_route(chart: Chart) -> None:
     agentydragon-only. Operator-owned by construction: Kyverno forbids Haku creating routes in
     haku-sandbox, so this is haku-ui's only public path. Security model: haku/docs/security.md
     (enforcement inventory, "Authentik proxy route to haku-ui")."""
-    HttpRoute(
+    https_route(
         chart,
         "haku-ui",
         metadata=metadata("haku-ui", NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["haku-ui.allegedly.works"],
-            rules=[
-                HttpRouteSpecRules(
-                    filters=[
-                        HttpRouteSpecRulesFilters(
-                            type=HttpRouteSpecRulesFiltersType.RESPONSE_HEADER_MODIFIER,
-                            response_header_modifier=HttpRouteSpecRulesFiltersResponseHeaderModifier(
-                                set=[
-                                    HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
-                                        name="Content-Security-Policy", value=_HAKU_UI_CSP
-                                    )
-                                ]
-                            ),
-                        )
-                    ],
-                    backend_refs=[HttpRouteSpecRulesBackendRefs(name=_OUTPOST, port=_OUTPOST_PORT)],
-                )
-            ],
-        ),
+        hostnames=["haku-ui.allegedly.works"],
+        backend=_OUTPOST,
+        port=_OUTPOST_PORT,
+        hsts=False,
+        listener=None,
+        extra_filters=[
+            RouteFilter.response_header_modifier(
+                set=[
+                    HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
+                        name="Content-Security-Policy", value=_HAKU_UI_CSP
+                    )
+                ]
+            )
+        ],
     )
 
 
