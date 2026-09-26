@@ -93,7 +93,7 @@ def _lot(
     )
 
 
-def _managed(value: int) -> TlhPortfolioObservation:
+def _managed(value: int, *, accepts_contributions: bool = True) -> TlhPortfolioObservation:
     return TlhPortfolioObservation(
         portfolio_id="managed",
         owner_agent_id="owner",
@@ -101,6 +101,7 @@ def _managed(value: int) -> TlhPortfolioObservation:
         asset_id="asset-0",
         value=value,
         reported_tax_basis=80,
+        accepts_contributions=accepts_contributions,
     )
 
 
@@ -192,7 +193,7 @@ def test_zero_target_exit_includes_zero_mark_units_and_a_worthless_managed_sleev
     assert isinstance(sale, Sell)
     assert sale.lots[0].units == 1
     assert proposal.buys == []
-    managed = _observation(portfolios=(_managed(0),))
+    managed = _observation(portfolios=(_managed(0, accepts_contributions=False),))
     proposal = plan(
         managed,
         _policy(weights=(0, 1), drift=0),
@@ -206,11 +207,26 @@ def test_zero_target_exit_includes_zero_mark_units_and_a_worthless_managed_sleev
 
 @pytest.mark.parametrize("cash", [0, 100])
 def test_a_worthless_managed_index_takes_no_contribution_and_has_nothing_to_withdraw(cash: int) -> None:
-    observation = _observation(cash=cash, portfolios=(_managed(0),))
+    observation = _observation(cash=cash, portfolios=(_managed(0, accepts_contributions=False),))
     assert plan(observation, _policy(), policy_index=0, floor=0, ceiling=0, prices={"asset-0": 0}).buys == []
     raised = plan(observation, _policy(), policy_index=0, floor=200, ceiling=200, prices={"asset-0": 0})
     assert raised.sales == []
     assert raised.buys == []
+
+
+def test_an_empty_portfolio_that_accepts_money_takes_the_surplus() -> None:
+    """Value and basis alone cannot tell this portfolio from the worthless one above."""
+    proposal = plan(
+        _observation(cash=100, portfolios=(_managed(0),)),
+        _policy(),
+        policy_index=0,
+        floor=0,
+        ceiling=0,
+        prices={"asset-0": 7},
+    )
+    [pending] = proposal.buys
+    assert isinstance(pending, PendingContribution)
+    assert pending.wanted_amount == 100
 
 
 def test_a_managed_withdrawal_is_the_money_the_band_raises() -> None:

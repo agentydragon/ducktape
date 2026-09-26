@@ -187,8 +187,8 @@ def plan(
         )
         if policy.allow_purchases and destination is not None:
             amount = sleeves._count(deposits[index] + drift_buys[index])
-            # A worthless index takes no contribution.
-            if amount and price:
+            # At a zero index mark the portfolio refuses money, and the world would stop the path on it.
+            if amount and destination.accepts_contributions:
                 buys.append(
                     PendingContribution(
                         cause_id_prefix=policy.cause_id_prefix,
