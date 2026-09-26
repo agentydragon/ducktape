@@ -203,7 +203,7 @@ def test_purchase_posts_cash_and_basis_then_joins_future_exact_sales(books: Book
     lot = books.holdings.lots[2]
     assert lot.units_remaining == lot.basis_remaining == 15
     assert lot.spec.purchase_month == 0
-    assert lot.snapshot().asset_id == "security:test_fund"
+    assert lot.snapshot().asset_id == "test_fund"
     assert books.accounting.ledger.balance(CASH) == 85
     books.holdings.sell(books.accounting, 0, sale(LotId("bought"), 15), price=20)
     assert books.holdings.dispositions[0].realized_gain == 15

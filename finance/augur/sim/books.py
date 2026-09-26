@@ -50,8 +50,7 @@ class SecurityLotState(Record):
     lot_id: LotId
     agent_id: AgentId
     account_id: AccountId
-    # The asset's `AssetKey` wire id (`parse_asset_key`), not the sim's `AssetId`.
-    asset_id: str
+    asset_id: AssetId
     purchase_month: int
     quantity_scale: int
     units_remaining: int

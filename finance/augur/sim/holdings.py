@@ -4,7 +4,8 @@ from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 
-from finance.augur.model.series import IssuerId
+from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
+from finance.augur.model.series import IssuerId, SecurityKey, SecuritySymbol
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Buy, LotSale, Sell
 from finance.augur.sim.actor import Statement
@@ -28,7 +29,7 @@ class Lot:
             lot_id=spec.lot_id,
             agent_id=spec.agent_id,
             account_id=spec.account_id,
-            asset_id=spec.asset_id if private_issuer(spec.asset_id) is not None else f"security:{spec.asset_id}",
+            asset_id=spec.asset_id,
             purchase_month=spec.purchase_month,
             quantity_scale=spec.quantity_scale,
             units_remaining=self.units_remaining,
@@ -42,8 +43,7 @@ class Disposition:
     cause_id: str
     agent_id: AgentId
     source_account_id: AccountId
-    # The asset's `AssetKey` wire id (`parse_asset_key`), not the sim's `AssetId`.
-    asset_id: str
+    asset_id: AssetId
     lot_id: LotId
     purchase_month: int
     quantity_scale: int
@@ -66,6 +66,13 @@ def private_issuer(asset: AssetId) -> IssuerId | None:
     if asset.startswith("private_equity:"):
         return IssuerId(asset.removeprefix("private_equity:")) or None
     return None
+
+
+def asset_key(asset: AssetId) -> AssetKey:
+    """The typed identity behind a sim `AssetId`; inverse of the compiler's `_asset_id`."""
+
+    issuer = private_issuer(asset)
+    return SecurityKey(symbol=SecuritySymbol(asset)) if issuer is None else PrivateEquityAssetKey(issuer_id=issuer)
 
 
 class PositionStatement(Statement):
@@ -267,14 +274,13 @@ class Holdings:
                     amount=checked_count(-basis, "money negation"),
                 )
             )
-            asset = spec.asset_id if private_issuer(spec.asset_id) is not None else f"security:{spec.asset_id}"
             dispositions.append(
                 Disposition(
                     month,
                     request.cause_id,
                     request.agent_id,
                     spec.account_id,
-                    asset,
+                    spec.asset_id,
                     spec.lot_id,
                     spec.purchase_month,
                     spec.quantity_scale,

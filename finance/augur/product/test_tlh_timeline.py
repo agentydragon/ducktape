@@ -133,7 +133,7 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(capture: Lite
         ),
         rollout_id=0,
         primary_agent_id=AgentId("owner"),
-        asset_label_by_id={},
+        asset_labels={},
     )
     assert not any(isinstance(event, HoldingSaleEvent) for event in projected.events)
     effects = [event for event in projected.events if isinstance(event, TlhFinancialEffectEvent)]

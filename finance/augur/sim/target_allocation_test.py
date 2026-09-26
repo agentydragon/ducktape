@@ -297,7 +297,7 @@ def test_a_sale_shows_up_as_a_lot_disposition() -> None:
     rows = sales(run(Situation(opening_cash=5_000, floor=10_000, ceiling=40_000)))
 
     assert [row.lot_id for row in rows] == ["stock"]
-    assert rows[0].asset_id == "security:vti"
+    assert rows[0].asset_id == "vti"
     assert rows[0].units / rows[0].quantity_scale == 350.0
     assert rows[0].proceeds == 3_500_000
     assert rows[0].basis == 3_500_000

@@ -225,9 +225,7 @@ def test_zero_target_full_exit_reentry_and_reserved_cash(lots: tuple[PreparedLot
     assert sum(lot.units for sale in first_sales for lot in sale.lots) == (1 if dust else 7)
     assert result.trace.events.at_month(0).lot_dispositions.get_column("proceeds_quanta").sum() == (0 if dust else 2)
     ending = result.summary.ending_book.lots
-    assert all(
-        lot.units_remaining == lot.basis_remaining == 0 for lot in ending if lot.asset_id == "security:test-second"
-    )
+    assert all(lot.units_remaining == lot.basis_remaining == 0 for lot in ending if lot.asset_id == SECOND)
     [reentry] = [lot for lot in ending if lot.purchase_month == 1]
     assert (reentry.units_remaining, reentry.basis_remaining) == ((10, 3) if dust else (16, 5))
     assert next(lot for lot in ending if lot.lot_id == "test-outside").units_remaining == 1

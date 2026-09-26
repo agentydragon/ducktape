@@ -598,6 +598,7 @@ py_library(
         ":money",
         ":observations",
         ":prepared",
+        "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
     ],
 )

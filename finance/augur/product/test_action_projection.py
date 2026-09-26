@@ -40,7 +40,7 @@ from finance.augur.sim.world import World
 from finance.augur.x.monthly_actions.policy import decide
 
 # Aliased: the bond situations' `compose` holds the plain name.
-from finance.augur.x.monthly_actions.run import HOUSEHOLD, compose as example_world, situation
+from finance.augur.x.monthly_actions.run import HOUSEHOLD, STOCK, compose as example_world, situation
 
 type Compose = Callable[[int], World]
 EXAMPLE_HORIZON = 13
@@ -84,7 +84,7 @@ def _detail(rollouts: list[Rollout], column: int, *, horizon_months: int = EXAMP
         _metrics(rollouts, horizon_months=horizon_months),
         rollout_id=rollouts[column].rollout_id,
         primary_agent_id=HOUSEHOLD,
-        asset_label_by_id={"security:example-stock": "Stipulated stock"},
+        asset_labels={STOCK: "Stipulated stock"},
     )
 
 
@@ -281,7 +281,7 @@ def test_original_ids_own_columns_through_noncontiguous_selection(example: Compo
             subset,
             rollout_id=rollout_id,
             primary_agent_id=AgentId("example-household"),
-            asset_label_by_id={"security:example-stock": "Stipulated stock"},
+            asset_labels={STOCK: "Stipulated stock"},
         )
         expected = _detail(source, rollout_id)
         assert actual.rollout_id == expected.rollout_id == rollout_id
@@ -294,11 +294,7 @@ def test_original_ids_own_columns_through_noncontiguous_selection(example: Compo
     assert wrong_trace is not None
     with pytest.raises(ValueError, match="both metric and event"):
         project_product_rollout(
-            wrong_trace.events,
-            subset,
-            rollout_id=4,
-            primary_agent_id=AgentId("example-household"),
-            asset_label_by_id={},
+            wrong_trace.events, subset, rollout_id=4, primary_agent_id=AgentId("example-household"), asset_labels={}
         )
     with pytest.raises(ValueError, match="unknown metric rollout IDs"):
         population.select((0,))
@@ -322,14 +318,14 @@ def test_eventless_trace_keeps_its_owner_and_rejects_another_paths_metrics() -> 
     assert events.rollout_ids == (7,)
     assert events.transfers.is_empty()
     detail = project_product_rollout(
-        events, population, rollout_id=7, primary_agent_id=AgentId("example-household"), asset_label_by_id={}
+        events, population, rollout_id=7, primary_agent_id=AgentId("example-household"), asset_labels={}
     )
     assert detail.events == ()
     assert detail.rollout_id == 7
     assert detail.monthly_metric_arrays["cash_quanta"].tolist() == [1_000] * 3
     with pytest.raises(ValueError, match="both metric and event"):
         project_product_rollout(
-            events, population, rollout_id=2, primary_agent_id=AgentId("example-household"), asset_label_by_id={}
+            events, population, rollout_id=2, primary_agent_id=AgentId("example-household"), asset_labels={}
         )
 
 
