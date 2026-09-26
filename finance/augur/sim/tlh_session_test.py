@@ -13,6 +13,7 @@ from finance.augur.sim.actions import Action, Contribute, DecisionActions, Liqui
 from finance.augur.sim.books import AccountRef, Book, TlhPortfolioState
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.observations import Observation
@@ -31,17 +32,19 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tlh import TlhAssumptions, TlhMarketUpdate, TlhOpeningCohort, TlhPortfolio
 from finance.augur.sim.world import Capture, World
 
+MANAGED = PortfolioId("managed")
+
 ASSET = SecurityKey(symbol=SecuritySymbol("managed-index"))
 # Whole-dollar money, so a portfolio mark is the number the assertions name.
 QUANTUM = Decimal(1)
-OWNER = "owner"
-OTHER = "other"
-IRS = "irs"
-CHECKING = "checking"
-FEDERAL = "federal_us"
+OWNER = AgentId("owner")
+OTHER = AgentId("other")
+IRS = AgentId("irs")
+CHECKING = AccountId("checking")
+FEDERAL = JurisdictionId("federal_us")
 
 
-def ref(agent_id: str) -> AccountRef:
+def ref(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
@@ -120,10 +123,10 @@ def compose(case: Situation, rollout_id: int) -> World:
         )
     world.declare_portfolio(
         PreparedTlhPortfolio(
-            portfolio_id="managed",
+            portfolio_id=MANAGED,
             owner_agent_id=OWNER,
             account_id=CHECKING,
-            asset_id=str(ASSET.symbol),
+            asset_id=AssetId(ASSET.symbol),
             initial_cohorts=(COHORT,),
             assumptions=assumptions(harvest=case.harvest),
         )
@@ -138,7 +141,7 @@ def portfolios(book: Book) -> list[TlhPortfolioState]:
     return book.tlh_portfolios
 
 
-def session(case: Situation, actor: str = OWNER, *, capture: Capture = "forensic") -> ActionSession:
+def session(case: Situation, actor: AgentId = OWNER, *, capture: Capture = "forensic") -> ActionSession:
     return ActionSession(
         {rollout_id: compose(case, rollout_id) for rollout_id in range(case.rollouts)}, actor, capture=capture
     )
@@ -156,7 +159,7 @@ def test_managed_opening_is_not_an_ordinary_lot_and_sale_follows_same_month_loss
         result = live.advance(
             [
                 DecisionActions(
-                    0, 0, [Liquidate(cause_id="sell", agent_id=OWNER, portfolio_id="managed", cash_account_id=CHECKING)]
+                    0, 0, [Liquidate(cause_id="sell", agent_id=OWNER, portfolio_id=MANAGED, cash_account_id=CHECKING)]
                 )
             ]
         )
@@ -169,10 +172,10 @@ def test_managed_opening_is_not_an_ordinary_lot_and_sale_follows_same_month_loss
     assert portfolios(rollout.trace.books[0])[0].reported_tax_basis == 100
     assert rollout.summary.ending_book.tlh_portfolios == [
         TlhPortfolioState(
-            portfolio_id="managed",
+            portfolio_id=MANAGED,
             owner_agent_id=OWNER,
             account_id=CHECKING,
-            asset_id=str(ASSET.symbol),
+            asset_id=AssetId(ASSET.symbol),
             value=0,
             reported_tax_basis=0,
         )
@@ -221,16 +224,16 @@ def test_rejected_contribution_preserves_harvest_and_earlier_withdrawal_without_
                     0,
                     [
                         Withdraw(
-                            cause_id="cash", agent_id=OWNER, portfolio_id="managed", cash_account_id=CHECKING, amount=10
+                            cause_id="cash", agent_id=OWNER, portfolio_id=MANAGED, cash_account_id=CHECKING, amount=10
                         ),
                         Contribute(
                             cause_id="too-much",
                             agent_id=OWNER,
-                            portfolio_id="managed",
+                            portfolio_id=MANAGED,
                             cash_account_id=CHECKING,
                             amount=11,
                         ),
-                        Liquidate(cause_id="never", agent_id=OWNER, portfolio_id="managed", cash_account_id=CHECKING),
+                        Liquidate(cause_id="never", agent_id=OWNER, portfolio_id=MANAGED, cash_account_id=CHECKING),
                     ],
                 ),
                 DecisionActions(1, 0, []),
@@ -268,7 +271,7 @@ def test_invalid_withdrawal_changes_no_component_state(amount: int) -> None:
                         Withdraw(
                             cause_id="invalid",
                             agent_id=OWNER,
-                            portfolio_id="managed",
+                            portfolio_id=MANAGED,
                             cash_account_id=CHECKING,
                             amount=amount,
                         )
@@ -295,9 +298,7 @@ def test_another_actors_component_is_neither_observed_nor_redeemable() -> None:
         result = live.advance(
             [
                 DecisionActions(
-                    0,
-                    0,
-                    [Liquidate(cause_id="steal", agent_id=OWNER, portfolio_id="managed", cash_account_id=CHECKING)],
+                    0, 0, [Liquidate(cause_id="steal", agent_id=OWNER, portfolio_id=MANAGED, cash_account_id=CHECKING)]
                 )
             ]
         )
@@ -332,7 +333,7 @@ def test_closing_marks_and_product_projection_do_not_advance_the_model_early(cap
         actions: list[Action] = (
             [
                 Withdraw(
-                    cause_id="unfundable", agent_id=OWNER, portfolio_id="managed", cash_account_id=CHECKING, amount=101
+                    cause_id="unfundable", agent_id=OWNER, portfolio_id=MANAGED, cash_account_id=CHECKING, amount=101
                 )
             ]
             if reject
@@ -362,7 +363,7 @@ def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> No
             PreparedDistribution(
                 agent_id=OWNER,
                 holding_account_id=CHECKING,
-                asset_id=str(ASSET.symbol),
+                asset_id=AssetId(ASSET.symbol),
                 to_account_id=CHECKING,
                 tax_character=(
                     PreparedDistributionSlice(fraction_ppb=500_000_000, issuer_jurisdiction_id=FEDERAL),
@@ -409,7 +410,7 @@ def test_contribution_is_first_harvested_in_the_next_month() -> None:
                     0,
                     [
                         Contribute(
-                            cause_id="new", agent_id=OWNER, portfolio_id="managed", cash_account_id=CHECKING, amount=100
+                            cause_id="new", agent_id=OWNER, portfolio_id=MANAGED, cash_account_id=CHECKING, amount=100
                         )
                     ],
                 )
@@ -441,7 +442,7 @@ def test_a_contribution_into_a_worthless_index_is_rejected_not_parked() -> None:
                         Contribute(
                             cause_id="into-nothing",
                             agent_id=OWNER,
-                            portfolio_id="managed",
+                            portfolio_id=MANAGED,
                             cash_account_id=CHECKING,
                             amount=10,
                         )
@@ -463,7 +464,7 @@ def test_a_contribution_into_a_worthless_index_is_rejected_not_parked() -> None:
 
 def test_removed_or_misplaced_fields_cannot_silently_disable_the_model() -> None:
     portfolio = TlhPortfolioSpec(
-        portfolio_id="managed",
+        portfolio_id=MANAGED,
         owner_agent_id=OWNER,
         account_id=CHECKING,
         asset=ASSET,

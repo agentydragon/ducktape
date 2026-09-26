@@ -1106,6 +1106,7 @@ py_library(
         "//cluster/cdk8s/providers/flux:helmrepository",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/redis_operator:redisreplication",
+        "//cluster/cdk8s/providers/redis_operator:replication",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

@@ -63,9 +63,15 @@ TANA_CLIENT_MODELS = [exposed_name(Provider.TANA, ApiShape.ANT_MESSAGES, exposed
 # The Gemini chat lineup -- the laptop gemini-claude wrapper and public-coder-agent.
 GEMINI_CLIENT_MODELS = [exposed_name(Provider.GOOGLE, ApiShape.GOOG_GENERATE, model.id) for model in GEMINI_MODELS]
 # The Antigravity OAuth-session lineup on the Anthropic Messages surface -- the laptop
-# antigravity-claude wrapper.
+# antigravity-claude wrapper, agentplane-staging's Claude harness, and public-coder-agent.
 ANTIGRAVITY_CLIENT_MODELS = [
-    exposed_name(Provider.ANTIGRAVITY, ApiShape.ANT_MESSAGES, model) for model in ANTIGRAVITY_MODELS
+    exposed_name(Provider.ANTIGRAVITY, ApiShape.ANT_MESSAGES, model.id) for model in ANTIGRAVITY_MODELS
+]
+# Antigravity's flash-lite tier -- cheap/fast, shared by the cheap-experiments key and
+# agentplane-testing's Claude harness (agentplane/testing_config.py).
+ANTIGRAVITY_CHEAP_CLIENT_MODELS = [
+    exposed_name(Provider.ANTIGRAVITY, ApiShape.ANT_MESSAGES, model)
+    for model in ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite")
 ]
 _GEMINI_EMBEDDING_ROUTES = [
     exposed_name(Provider.GOOGLE, ApiShape.GOOG_EMBED, model) for model in GEMINI_EMBEDDING_MODELS
@@ -99,11 +105,12 @@ CHEAP_EXPERIMENTS_CODEX_MODEL = codex_responses_name(_CHEAP_EXPERIMENTS_CODEX)
 # The cheap-experiments key, shared with agents only through an expiring Haku Console
 # Kubernetes grant and standing on the agentplane testing LLM ingress. Intentionally an
 # exact, cheap-model-only set rather than a provider-wide prefix or wildcard: the Gemini
-# chat and embedding lineups, the API-key-verified Mistral chat roster, every
-# model/context/protocol variant of the self-hosted Ollama chat models, and the two
-# native subscription models above.
+# chat and embedding lineups, Antigravity's flash-lite tier, the API-key-verified
+# Mistral chat roster, every model/context/protocol variant of the self-hosted Ollama
+# chat models, and the two native subscription models above.
 CHEAP_EXPERIMENTS_MODELS = [
     *GEMINI_CLIENT_MODELS,
+    *ANTIGRAVITY_CHEAP_CLIENT_MODELS,
     *_GEMINI_EMBEDDING_ROUTES,
     *(exposed_name(Provider.MISTRAL, ApiShape.OAI_CHAT, model) for model in MISTRAL_MODELS),
     *OLLAMA_CHAT_CLIENT_MODELS,

@@ -2,14 +2,31 @@
 
 from pydantic import BaseModel, ConfigDict
 
+from finance.augur.model.series import LocationId
+from finance.augur.sim.ids import (
+    AccountId,
+    AgentId,
+    AssetId,
+    BondId,
+    JurisdictionId,
+    LiabilityId,
+    LotId,
+    PortfolioId,
+    PropertyId,
+)
+
 
 class Record(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True, populate_by_name=True)
 
 
 class AccountRef(Record):
-    agent_id: str
-    account_id: str
+    agent_id: AgentId
+    account_id: AccountId
+
+
+# The contra account for money entering or leaving the modeled books.
+EXTERNAL_BOUNDARY = AccountRef(agent_id=AgentId("__external__"), account_id=AccountId("boundary"))
 
 
 class AccountBalance(Record):
@@ -18,22 +35,22 @@ class AccountBalance(Record):
 
 
 class IncomeState(Record):
-    agent_id: str
+    agent_id: AgentId
     income_source: str
     income: int
 
 
 class CapitalGainState(Record):
-    agent_id: str
+    agent_id: AgentId
     short_term_gain: int
     long_term_gain: int
 
 
 class SecurityLotState(Record):
-    lot_id: str
-    agent_id: str
-    account_id: str
-    asset_id: str
+    lot_id: LotId
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
     purchase_month: int
     quantity_scale: int
     units_remaining: int
@@ -41,25 +58,25 @@ class SecurityLotState(Record):
 
 
 class BondState(Record):
-    bond_id: str
-    agent_id: str
-    account_id: str
+    bond_id: BondId
+    agent_id: AgentId
+    account_id: AccountId
     principal: int
     active: bool
 
 
 class TaxLiabilityState(Record):
-    agent_id: str
-    jurisdiction_id: str
+    agent_id: AgentId
+    jurisdiction_id: JurisdictionId
     tax_year_end_month: int
     amount_owed: int
     active: bool
 
 
 class PropertyState(Record):
-    property_id: str
-    location_id: str
-    owner_agent_id: str
+    property_id: PropertyId
+    location_id: LocationId
+    owner_agent_id: AgentId
     purchase_month: int
     adjusted_basis: int
     rented_fraction_ppb: int
@@ -76,12 +93,12 @@ class PropertyState(Record):
 class MortgageState(Record):
     """Read-only capture combining the Python contract's servicing facts and ledger principal."""
 
-    liability_id: str
-    property_id: str
-    agent_id: str
-    payment_account_id: str
-    counterparty_agent_id: str
-    counterparty_account_id: str
+    liability_id: LiabilityId
+    property_id: PropertyId
+    agent_id: AgentId
+    payment_account_id: AccountId
+    counterparty_agent_id: AgentId
+    counterparty_account_id: AccountId
     origination_month: int
     annual_interest_rate_ppb: int
     term_months: int
@@ -95,10 +112,10 @@ class MortgageState(Record):
 class TlhPortfolioState(Record):
     """Reported portfolio facts, never a mirror of its private cohorts."""
 
-    portfolio_id: str
-    owner_agent_id: str
-    account_id: str
-    asset_id: str
+    portfolio_id: PortfolioId
+    owner_agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
     value: int
     reported_tax_basis: int
 
@@ -137,8 +154,8 @@ class JournalEntry(Record):
 class TaxAccrual(Record):
     month: int
     cause_id: str
-    agent_id: str
-    jurisdiction_id: str
+    agent_id: AgentId
+    jurisdiction_id: JurisdictionId
     tax_year_end_month: int
     ordinary_income: int
     short_term_gain: int
@@ -162,7 +179,7 @@ class TaxAccrual(Record):
 class TaxPaymentOutcome(Record):
     month: int
     cause_id: str
-    agent_id: str
+    agent_id: AgentId
     obligation_type: str
     amount_due: int
     amount_paid: int
@@ -172,19 +189,19 @@ class TaxPaymentOutcome(Record):
 class TaxSettlementOutcome(Record):
     month: int
     cause_id: str
-    agent_id: str
+    agent_id: AgentId
     tax_year_end_month: int
     amount: int
 
 
 class DistributionOutcome(Record):
     month: int
-    agent_id: str
-    holding_account_id: str
-    asset_id: str
+    agent_id: AgentId
+    holding_account_id: AccountId
+    asset_id: AssetId
     slice_index: int
     fraction_ppb: int
-    issuer_jurisdiction_id: str | None
+    issuer_jurisdiction_id: JurisdictionId | None
     units: int | None
     amount: int
 
@@ -192,10 +209,10 @@ class DistributionOutcome(Record):
 class BondCashflowOutcome(Record):
     month: int
     cause_id: str
-    bond_id: str
-    agent_id: str
-    account_id: str
-    issuer_jurisdiction_id: str | None
+    bond_id: BondId
+    agent_id: AgentId
+    account_id: AccountId
+    issuer_jurisdiction_id: JurisdictionId | None
     coupon: int
     accretion: int
     redemption: int

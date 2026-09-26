@@ -20,7 +20,7 @@ from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus
 from props.orchestration.agent_credentials import AgentCredentials
-from props.testing.constants import DEFAULT_TEST_MODEL
+from props.testing.constants import DEFAULT_TEST_MODEL, TRAIN_EXAMPLE
 from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
@@ -28,7 +28,7 @@ from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_de
 @pytest_asyncio.fixture
 async def critic_agent_creds(synced_db: Database) -> AsyncGenerator[tuple[AgentCredentials, CriticTypeConfig]]:
     """Create critic agent credentials with a real Postgres role."""
-    type_config = CriticTypeConfig(example={"snapshot_slug": "test-fixtures/train1", "kind": "whole_snapshot"})
+    type_config = CriticTypeConfig(example=TRAIN_EXAMPLE)
     creds = await make_agent_credentials(synced_db, type_config, FAKE_CRITIC_DIGEST)
     yield creds, type_config
 

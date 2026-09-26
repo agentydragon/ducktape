@@ -19,6 +19,7 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.observations import Observation
@@ -39,7 +40,9 @@ VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 QQQ = SecurityKey(symbol=SecuritySymbol("qqq"))
 BTC = SecurityKey(symbol=SecuritySymbol("btc"))
 QUANTUM = Decimal("0.01")
-ALICE = "alice"
+ALICE = AgentId("alice")
+CHECKING = AccountId("checking")
+VTI_ASSET = AssetId(VTI.symbol)
 
 
 @dataclass(frozen=True)
@@ -54,20 +57,20 @@ class Situation:
 
 
 def _lot(
-    lot_id: str,
+    lot_id: LotId,
     quantity: float,
     basis: Decimal,
     purchase_month: int,
     *,
     asset: SecurityKey = VTI,
-    account: str = "checking",
+    account: AccountId = CHECKING,
 ) -> PreparedLot:
     scale = quantity_scale_for_asset(asset)
     return PreparedLot(
         lot_id=lot_id,
         agent_id=ALICE,
         account_id=account,
-        asset_id=str(asset.symbol),
+        asset_id=AssetId(asset.symbol),
         purchase_month=purchase_month,
         quantity_scale=scale,
         units=int(quantity_to_quanta(quantity, scale=scale)),
@@ -75,10 +78,13 @@ def _lot(
     )
 
 
-def _taxed(*jurisdiction_ids: str) -> TaxProfile:
+def _taxed(*jurisdiction_ids: JurisdictionId) -> TaxProfile:
     """One single filer paying from `checking` to the `irs` agent; the ids are all it says about tax law."""
     return TaxProfile(
-        agent_id=ALICE, jurisdiction_ids=list(jurisdiction_ids), tax_authority_agent_id="irs", prior_year_tax=Decimal(0)
+        agent_id=ALICE,
+        jurisdiction_ids=list(jurisdiction_ids),
+        tax_authority_agent_id=AgentId("irs"),
+        prior_year_tax=Decimal(0),
     )
 
 
@@ -126,7 +132,7 @@ def _compose(case: Situation, rollout_id: int) -> World:
     )
     for agent_id in (ALICE, *(("irs",) if case.tax_profiles else ())):
         world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id="checking"), opening_balance=0)
+            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")), opening_balance=0)
         )
     for profile in case.tax_profiles:
         world.track(TaxAuthority(compile_profile(profile, jurisdictions, quantum=QUANTUM)))
@@ -143,7 +149,12 @@ def _compose(case: Situation, rollout_id: int) -> World:
 
 
 def _sale(
-    observation: Observation, quantity: Fraction, *, cause: str = "sale", asset: str = "vti", account: str = "checking"
+    observation: Observation,
+    quantity: Fraction,
+    *,
+    cause: str = "sale",
+    asset: AssetId = VTI_ASSET,
+    account: AccountId = CHECKING,
 ) -> Sell:
     lots, _ = sleeves._sale_lots(
         sorted(
@@ -153,7 +164,9 @@ def _sale(
         0,
         unit_target=quantity,
     )
-    return Sell(cause_id=cause, agent_id=ALICE, proceeds_account_id="checking", asset_id=asset, lots=tuple(lots))
+    return Sell(
+        cause_id=cause, agent_id=ALICE, proceeds_account_id=AccountId("checking"), asset_id=asset, lots=tuple(lots)
+    )
 
 
 def _run(case: Situation, propose: Callable[[Observation], list[Action]]) -> list[Rollout]:
@@ -177,7 +190,7 @@ def _remaining(lot: SecurityLotState) -> Fraction:
 
 
 def test_partial_sale_retains_exact_basis_and_cash_trajectory() -> None:
-    case = _situation([_lot("seed", 100, Decimal(8000), -24)], {VTI: [Decimal(120)] * 7})
+    case = _situation([_lot(LotId("seed"), 100, Decimal(8000), -24)], {VTI: [Decimal(120)] * 7})
     [rollout] = _run(case, lambda obs: [_sale(obs, Fraction(30))] if obs.month == 3 else [])
     assert rollout.stop is None
     assert rollout.summary.cash[0].values == [0, 0, 0, 0, 360_000, 360_000, 360_000]
@@ -198,7 +211,7 @@ def test_partial_sale_retains_exact_basis_and_cash_trajectory() -> None:
 
 
 def test_full_sale_preserves_exhausted_lot_with_zero_basis() -> None:
-    case = _situation([_lot("seed", 100, Decimal(9000), -12)], {VTI: [Decimal(150)] * 4})
+    case = _situation([_lot(LotId("seed"), 100, Decimal(9000), -12)], {VTI: [Decimal(150)] * 4})
     [rollout] = _run(case, lambda obs: [_sale(obs, Fraction(100))] if obs.month == 2 else [])
     assert rollout.stop is None
     [lot] = rollout.summary.ending_book.lots
@@ -211,7 +224,7 @@ def test_full_sale_preserves_exhausted_lot_with_zero_basis() -> None:
 
 
 def test_deterministic_sale_scales_across_one_hundred_rollouts() -> None:
-    case = _situation([_lot("seed", 50, Decimal(5000), 0)], {VTI: [Decimal(110)] * 3}, rollouts=100)
+    case = _situation([_lot(LotId("seed"), 50, Decimal(5000), 0)], {VTI: [Decimal(110)] * 3}, rollouts=100)
     rollouts = _run(case, lambda obs: [_sale(obs, Fraction(20))] if obs.month == 1 else [])
     assert [rollout.rollout_id for rollout in rollouts] == list(range(100))
     for rollout in rollouts:
@@ -226,7 +239,8 @@ def test_deterministic_sale_scales_across_one_hundred_rollouts() -> None:
 
 def test_fifo_crosses_two_lots_and_preserves_each_basis() -> None:
     case = _situation(
-        [_lot("old", 100, Decimal(8000), -6), _lot("young", 50, Decimal(5000), 2)], {VTI: [Decimal(200)] * 11}
+        [_lot(LotId("old"), 100, Decimal(8000), -6), _lot(LotId("young"), 50, Decimal(5000), 2)],
+        {VTI: [Decimal(200)] * 11},
     )
     [rollout] = _run(case, lambda obs: [_sale(obs, Fraction(120))] if obs.month == 8 else [])
     assert rollout.stop is None
@@ -243,7 +257,8 @@ def test_fifo_crosses_two_lots_and_preserves_each_basis() -> None:
 
 def test_same_month_sales_consume_lots_sequentially() -> None:
     case = _situation(
-        [_lot("old", 100, Decimal(8000), -24), _lot("new", 100, Decimal(10000), -6)], {VTI: [Decimal(150)] * 3}
+        [_lot(LotId("old"), 100, Decimal(8000), -24), _lot(LotId("new"), 100, Decimal(10000), -6)],
+        {VTI: [Decimal(150)] * 3},
     )
 
     def propose(obs: Observation) -> list[Action]:
@@ -283,11 +298,11 @@ def test_same_month_sales_consume_lots_sequentially() -> None:
 
 def test_fifo_holding_period_classifies_each_disposition() -> None:
     case = _situation(
-        [_lot("long", 2, Decimal(40000), -12, asset=BTC), _lot("short", 1, Decimal(40000), 2, asset=BTC)],
+        [_lot(LotId("long"), 2, Decimal(40000), -12, asset=BTC), _lot(LotId("short"), 1, Decimal(40000), 2, asset=BTC)],
         {BTC: [Decimal(60000)] * 8},
-        tax_profiles=[_taxed("federal_us")],
+        tax_profiles=[_taxed(JurisdictionId("federal_us"))],
     )
-    [rollout] = _run(case, lambda obs: [_sale(obs, Fraction(5, 2), asset="btc")] if obs.month == 6 else [])
+    [rollout] = _run(case, lambda obs: [_sale(obs, Fraction(5, 2), asset=AssetId("btc"))] if obs.month == 6 else [])
     assert rollout.stop is None
     assert rollout.trace is not None
     long, short = rollout.trace.events.lot_dispositions.sort("purchase_month_index").to_dicts()
@@ -305,7 +320,7 @@ def test_fifo_holding_period_classifies_each_disposition() -> None:
 
 def test_sales_of_different_assets_do_not_consume_each_others_lots() -> None:
     case = _situation(
-        [_lot("vti", 10, Decimal(1000), 0), _lot("qqq", 10, Decimal(2000), 0, asset=QQQ)],
+        [_lot(LotId("vti"), 10, Decimal(1000), 0), _lot(LotId("qqq"), 10, Decimal(2000), 0, asset=QQQ)],
         {VTI: [Decimal(150)] * 7, QQQ: [Decimal(250)] * 7},
     )
 
@@ -314,7 +329,7 @@ def test_sales_of_different_assets_do_not_consume_each_others_lots() -> None:
             case 2:
                 return [_sale(obs, Fraction(4))]
             case 5:
-                return [_sale(obs, Fraction(3), asset="qqq")]
+                return [_sale(obs, Fraction(3), asset=AssetId("qqq"))]
             case _:
                 return []
 
@@ -331,10 +346,15 @@ def test_sales_of_different_assets_do_not_consume_each_others_lots() -> None:
 
 def test_sale_consumes_only_source_account_fifo_pool() -> None:
     case = _situation(
-        [_lot("taxable", 10, Decimal(800), -12, account="taxable"), _lot("ira", 10, Decimal(700), -12, account="ira")],
+        [
+            _lot(LotId("taxable"), 10, Decimal(800), -12, account=AccountId("taxable")),
+            _lot(LotId("ira"), 10, Decimal(700), -12, account=AccountId("ira")),
+        ],
         {VTI: [Decimal(100)] * 3},
     )
-    [rollout] = _run(case, lambda obs: [_sale(obs, Fraction(8), account="taxable")] if obs.month == 1 else [])
+    [rollout] = _run(
+        case, lambda obs: [_sale(obs, Fraction(8), account=AccountId("taxable"))] if obs.month == 1 else []
+    )
     assert rollout.stop is None
     assert {lot.account_id: (_remaining(lot), lot.basis_remaining) for lot in rollout.summary.ending_book.lots} == {
         "taxable": (Fraction(2), 16_000),
@@ -348,7 +368,9 @@ def test_sale_consumes_only_source_account_fifo_pool() -> None:
 
 
 def test_oversell_rejects_atomically_and_leaves_no_disposition() -> None:
-    case = _situation([_lot("seed", 5, Decimal(400), -12, account="taxable")], {VTI: [Decimal(100)] * 3})
+    case = _situation(
+        [_lot(LotId("seed"), 5, Decimal(400), -12, account=AccountId("taxable"))], {VTI: [Decimal(100)] * 3}
+    )
 
     def propose(obs: Observation) -> list[Action]:
         if obs.month != 1:
@@ -358,11 +380,11 @@ def test_oversell_rejects_atomically_and_leaves_no_disposition() -> None:
             Sell(
                 cause_id="oversell",
                 agent_id=ALICE,
-                proceeds_account_id="checking",
-                asset_id="vti",
-                lots=(LotSale(account_id="taxable", lot_id="seed", units=6 * lot.quantity_scale),),
+                proceeds_account_id=AccountId("checking"),
+                asset_id=AssetId("vti"),
+                lots=(LotSale(account_id=AccountId("taxable"), lot_id=LotId("seed"), units=6 * lot.quantity_scale),),
             ),
-            _sale(obs, Fraction(1), account="taxable", cause="unattempted"),
+            _sale(obs, Fraction(1), account=AccountId("taxable"), cause="unattempted"),
         ]
 
     [rollout] = _run(case, propose)
@@ -381,7 +403,8 @@ def test_oversell_rejects_atomically_and_leaves_no_disposition() -> None:
 
 def test_sale_reads_current_month_of_deterministic_curve() -> None:
     case = _situation(
-        [_lot("seed", 10, Decimal(900), -3)], {VTI: [Decimal(price) for price in (100, 110, 120, 130, 150, 160, 170)]}
+        [_lot(LotId("seed"), 10, Decimal(900), -3)],
+        {VTI: [Decimal(price) for price in (100, 110, 120, 130, 150, 160, 170)]},
     )
     [rollout] = _run(case, lambda obs: [_sale(obs, Fraction(4))] if obs.month == 4 else [])
     assert rollout.stop is None
@@ -410,7 +433,7 @@ def test_gbm_sales_diverge_and_same_seed_reproduces_all_cash() -> None:
             series=compile_series(paths, rollout_count=rollout_count, horizon_months=6, currency_quantum=QUANTUM),
             rollout_count=rollout_count,
             horizon_months=6,
-            lots=(_lot("seed", 5, Decimal(500), 0),),
+            lots=(_lot(LotId("seed"), 5, Decimal(500), 0),),
             tax_profiles=(),
         )
 
@@ -425,7 +448,7 @@ def test_gbm_sales_diverge_and_same_seed_reproduces_all_cash() -> None:
 
 
 def test_awkward_thirds_consume_exactly_the_whole_lot_basis() -> None:
-    case = _situation([_lot("seed", 2.5, Decimal("83.33"), -24)], {VTI: [Decimal(50)] * 7})
+    case = _situation([_lot(LotId("seed"), 2.5, Decimal("83.33"), -24)], {VTI: [Decimal(50)] * 7})
 
     def propose(obs: Observation) -> list[Action]:
         if obs.month not in (1, 2, 3):

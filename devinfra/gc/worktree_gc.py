@@ -64,6 +64,28 @@ def _dirty(status: Mapping[str, int]) -> bool:
     return bool(status)
 
 
+def _status(pg: pygit2.Repository) -> dict[str, int]:
+    """Git status, cheaply when the tree is already provably dirty.
+
+    Untracked-file detection has no early-exit: proving "nothing untracked exists" means
+    walking every directory the tree doesn't already fully ignore, a cost set by repo size
+    rather than by how much actually changed. A tracked-only check (staged-vs-HEAD,
+    workdir-vs-index) has no such walk — pygit2 can trust the index's cached (mtime, size)
+    per file — and on a worktree with real tracked changes or deletions, that alone already
+    proves the tree isn't clean, so the untracked walk is skipped entirely. Only a worktree
+    that's clean on tracked files pays for the full scan, to also catch untracked work.
+
+    The caller's `_last_activity` sees only the tracked-only dict when that already proved
+    dirty, so an untracked file's mtime can't push the reported last-activity time later in
+    that case — acceptable since the classification itself (kept, uncommitted changes)
+    doesn't depend on that timestamp.
+    """
+    tracked = pg.status(untracked_files="no")
+    if tracked:
+        return tracked
+    return pg.status()
+
+
 def _last_activity(pg: pygit2.Repository, path: Path, status: Iterable[str]) -> datetime | None:
     """Most recent sign of work: the HEAD commit or the newest mtime among uncommitted
     (changed or untracked) files, so a dirty tree reflects when it was last *touched*."""
@@ -124,7 +146,7 @@ def classify_worktree(
         # remove` cleans up the administrative files fine even though the directory is gone.
         return PrunableWorktree(worktree, "worktree directory is missing", None)
     logger.info("Scanning worktree %s: reading Git status", path)
-    status = pg.status()
+    status = _status(pg)
     logger.info("Scanning worktree %s: Git status complete (%d entries)", path, len(status))
     activity = _last_activity(pg, path, status)
 

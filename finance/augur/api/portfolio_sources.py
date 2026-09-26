@@ -28,6 +28,7 @@ from finance.augur.api.portfolio_source_config import (
     PlaidSp500ProxyGroupConfig,
 )
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey
+from finance.augur.sim.ids import AccountId, LotId, PortfolioId
 from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
 from finance.plaid.db.read_model import (
     CurrentCashBalance,
@@ -133,7 +134,7 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
             tlh_portfolios.append(
                 LabeledTlhPortfolio(
                     spec=TlhPortfolioSpec(
-                        portfolio_id=group.position_id,
+                        portfolio_id=PortfolioId(group.position_id),
                         owner_agent_id=group.owner_agent_id,
                         account_id=group.portfolio_account_id,
                         asset=SecurityKey(symbol=SP500_SYMBOL),
@@ -240,8 +241,8 @@ def _sp500_proxy_holding(group: PlaidSp500ProxyGroupConfig, cohorts: tuple[TlhCo
     # The sleeve IS the S&P series by definition (that is what a "SP500 proxy group" means), so
     # its symbol is the index symbol, not whichever ticker the brokerage happens to hold. The
     # configured ticker survives as the display label.
-    lot_ids = [f"{group.position_id}_plaid_{bucket.key}" for bucket in group.holding_period_buckets] or [
-        f"{group.position_id}_plaid_aggregate"
+    lot_ids = [LotId(f"{group.position_id}_plaid_{bucket.key}") for bucket in group.holding_period_buckets] or [
+        LotId(f"{group.position_id}_plaid_aggregate")
     ]
     return SecurityHoldingConfig(
         position_id=group.position_id,
@@ -288,7 +289,7 @@ def _merge_contributions(contributions: tuple[_PortfolioContribution, ...]) -> P
     accounts: list[PortfolioAccountConfig] = []
     holdings: list[HoldingPositionConfig] = []
     bonds: list[BondHoldingConfig] = []
-    account_ids: set[str] = set()
+    account_ids: set[AccountId] = set()
     for contribution in contributions:
         for account in contribution.accounts:
             if account.account_id in account_ids:

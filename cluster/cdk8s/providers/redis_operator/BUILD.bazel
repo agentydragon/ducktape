@@ -1,6 +1,8 @@
+# gazelle:ignore
 # gazelle:resolve py redis_operator_redisreplication_crds //cluster/cdk8s/providers/redis_operator:redisreplication
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # Group redis.redis.opstreelabs.in reverse-DNSes to a path starting with the keyword `in`.
 cdk8s_import(
@@ -11,4 +13,32 @@ cdk8s_import(
     module_path = "in/opstreelabs/redis/redis",
     python_module_path = "in_/opstreelabs/redis/redis",
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "replication",
+    srcs = ["replication.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":redisreplication",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_replication",
+    srcs = ["test_replication.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":redisreplication",
+        ":replication",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

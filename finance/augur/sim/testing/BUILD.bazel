@@ -14,6 +14,7 @@ py_library(
         "//finance/augur/sim:books",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:jurisdictions",
         "//finance/augur/sim:market_path",
         "//finance/augur/sim:prepared",
@@ -32,6 +33,7 @@ py_library(
     srcs = ["security_distributions.py"],
     deps = [
         "//finance/augur/model:series",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:scenario",
     ],
 )
@@ -59,5 +61,15 @@ py_library(
         "//finance/augur/model:series",
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:prepared",
+    ],
+)
+
+py_library(
+    name = "scripted",
+    srcs = ["scripted.py"],
+    deps = [
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:agent",
+        "//finance/augur/sim:observations",
     ],
 )

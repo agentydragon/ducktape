@@ -1,0 +1,103 @@
+/* Shared syntax highlighting: wrapping so a block reads where it sits instead of scrolling sideways,
+   and the token colours of the highlight.js grammars `syntax_highlight.tsx` registers, `json` and
+   `bash`. Mantine's palette variables, so the hues match the rest of the app; the dark set follows
+   the scheme attribute Mantine puts on the document. Reused by every highlighted site, including
+   `frame.tsx`'s raw frame view alongside its own `.agentplane-frame` class. */
+
+.agentplane-hljs {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agentplane-hljs .hljs-attr {
+  color: var(--mantine-color-blue-8);
+}
+
+.agentplane-hljs .hljs-string {
+  color: var(--mantine-color-green-9);
+}
+
+.agentplane-hljs .hljs-number {
+  color: var(--mantine-color-orange-9);
+}
+
+.agentplane-hljs .hljs-literal {
+  color: var(--mantine-color-grape-8);
+}
+
+/* The classes the bash grammar emits beyond those: keywords (`if`, `for`), builtins and core
+   utilities (`echo`, `ls`), `$VAR`/`${VAR}`, `$(...)` substitutions, `#` comments, a shebang, and a
+   function definition's name. */
+
+.agentplane-hljs .hljs-keyword {
+  color: var(--mantine-color-red-8);
+}
+
+.agentplane-hljs .hljs-built_in {
+  color: var(--mantine-color-cyan-9);
+}
+
+.agentplane-hljs .hljs-variable {
+  color: var(--mantine-color-indigo-7);
+}
+
+.agentplane-hljs .hljs-subst {
+  color: var(--mantine-color-violet-8);
+}
+
+.agentplane-hljs .hljs-comment {
+  color: var(--mantine-color-gray-6);
+  font-style: italic;
+}
+
+.agentplane-hljs .hljs-meta {
+  color: var(--mantine-color-gray-7);
+}
+
+.agentplane-hljs .hljs-title {
+  color: var(--mantine-color-pink-8);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-attr {
+  color: var(--mantine-color-blue-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-string {
+  color: var(--mantine-color-green-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-number {
+  color: var(--mantine-color-orange-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-literal {
+  color: var(--mantine-color-grape-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-keyword {
+  color: var(--mantine-color-red-4);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-built_in {
+  color: var(--mantine-color-cyan-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-variable {
+  color: var(--mantine-color-indigo-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-subst {
+  color: var(--mantine-color-violet-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-comment {
+  color: var(--mantine-color-dark-2);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-meta {
+  color: var(--mantine-color-gray-5);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-title {
+  color: var(--mantine-color-pink-3);
+}

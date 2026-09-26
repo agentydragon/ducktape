@@ -2,6 +2,7 @@
 # gazelle:resolve py volsync_replicationsource_crds //cluster/cdk8s/providers/volsync:replicationsource
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 cdk8s_import(
     name = "replicationdestination",
@@ -17,4 +18,55 @@ cdk8s_import(
     module_name = "volsync_replicationsource_crds",
     module_path = "backube/volsync",
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "replication_destination",
+    srcs = ["replication_destination.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/volsync:replicationdestination",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "replication_source",
+    srcs = ["replication_source.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/volsync:replicationsource",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_replication_destination",
+    srcs = ["test_replication_destination.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":replication_destination",
+        "//:conftest",
+        "//cluster/cdk8s/providers/volsync:replicationdestination",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_replication_source",
+    srcs = ["test_replication_source.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":replication_source",
+        "//:conftest",
+        "//cluster/cdk8s/providers/volsync:replicationsource",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

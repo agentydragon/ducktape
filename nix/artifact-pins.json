@@ -25,8 +25,8 @@
       "sha256": "LId2uKwkfb0JTMirifKyHNb4A4v5Uqr9KAS3ffeqPCI="
     },
     "ducktape": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-fe22d76d30a9/ducktape-0.1.0-py3-none-any.whl",
-      "sha256": "/iLXbTCpV25Cq3FofmFVlul6s0ujANUNgfEKMapY/u0="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-d10aa6f9cae5/ducktape-0.1.0-py3-none-any.whl",
+      "sha256": "0Qqm+crlQQm7iQ3trxW5Gq9B/ei2MICay7baxmNLOE0="
     },
     "gterm-theme": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-aef3119efae0/gterm_theme-0.1.0-py3-none-any.whl",
@@ -233,8 +233,8 @@
       "sha256": "xy/l9ScCKrqKAtLFDrjM4mID06m2lmvd+lvmtLJ2NW8="
     },
     "skill-cdk8s_builders": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-b358067b63d5/cdk8s_builders.skill",
-      "sha256": "s1gGe2PVBB0+L4p46eafuWn7KxVuGmn0W6qjP6lgQJ4="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-d8ccfba742bd/cdk8s_builders.skill",
+      "sha256": "2Mz7p0K93GuUX6zDv4Qfh+uT2/PDGZ7/2RrK9DKPvxc="
     }
   }
 }

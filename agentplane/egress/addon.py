@@ -14,6 +14,7 @@ import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import partial
 from uuid import uuid4
 
 from mitmproxy import connection, http
@@ -264,22 +265,22 @@ class EgressAddon:
                 egress.port,
             )
             decision = Denied(DenyReason.UNAVAILABLE)
-        common = {
-            "at": self._clock(),
-            "subject": subject,
-            "method": egress.method[:32],
-            "host": egress.host.lower()[:253],
-            "port": egress.port,
-            "producer_id": self._producer_id,
-            "connection_id": flow.client_conn.id,
-            "phase": Phase.CONNECT if egress.method == CONNECT else Phase.HTTP_REQUEST,
-            "source_pod_uid": authenticated_workload.pod_uid if authenticated_workload is not None else None,
-        }
+        record = partial(
+            DecisionRecord,
+            at=self._clock(),
+            subject=subject,
+            method=egress.method[:32],
+            host=egress.host.lower()[:253],
+            port=egress.port,
+            producer_id=self._producer_id,
+            connection_id=flow.client_conn.id,
+            phase=Phase.CONNECT if egress.method == CONNECT else Phase.HTTP_REQUEST,
+            source_pod_uid=authenticated_workload.pod_uid if authenticated_workload is not None else None,
+        )
         match decision:
             case Allowed():
                 self._decision_log.record(
-                    DecisionRecord(
-                        **common,
+                    record(
                         outcome=Outcome.ALLOW,
                         binding=decision.binding,
                         policy=decision.policy,
@@ -295,5 +296,5 @@ class EgressAddon:
                     self._idle.clear()
                 flow.response = None  # cleared last: everything that can fail has already run
             case Denied():
-                self._decision_log.record(DecisionRecord(**common, outcome=Outcome.DENY, reason=decision.reason))
+                self._decision_log.record(record(outcome=Outcome.DENY, reason=decision.reason))
                 flow.response = _refusal(decision.reason)

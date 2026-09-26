@@ -16,6 +16,7 @@ import pytest_bazel
 
 from props.agents.runtime import render_template_string
 from props.core.agent_types import CriticDevImproveTypeConfig, CriticDevOptimizeTypeConfig, TargetMetric
+from props.core.ids import SnapshotSlug
 from props.core.models.examples import WholeSnapshotExample
 from props.db.database import Database
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -85,7 +86,7 @@ def test_critic_dev_improve_prompt(db: Database):
         helpers={
             "type_config": CriticDevImproveTypeConfig(
                 baseline_image_digests=["sha256:abc123"],
-                allowed_examples=[WholeSnapshotExample(snapshot_slug="test/s")],
+                allowed_examples=[WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/s"))],
                 improvement_model="claude-opus-5",
                 critic_model="claude-sonnet-5",
             )

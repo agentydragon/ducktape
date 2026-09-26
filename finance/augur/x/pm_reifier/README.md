@@ -1,9 +1,8 @@
 # PM-reifier spike: can an LLM be a base measure `Q` for augur?
 
 Historical June 2026 experiment (design PRs #1903 / #1904), not production code or
-Augur's required model architecture. [Surviving research questions](../../plans/market_model_research.md)
-are optional; the roadmap owns any future dispatch. Reifier retirement is deferred,
-but keeping these scripts executable is not a requirement.
+Augur's required model architecture. Keeping these scripts executable is not a
+requirement.
 
 The LLM drivers remain exploratory scripts; the evidence reader and structured
 baseline have targets in [BUILD.bazel](BUILD.bazel). Recorded run numbers and
@@ -12,7 +11,7 @@ reconciliation and do not establish current model rankings or leakage guarantees
 
 ## The question
 
-The plan reifies prediction-market _marginals_ into a sampleable _joint_ over trajectories by min-KL
+The proposed reifier turns prediction-market _marginals_ into a sampleable _joint_ over trajectories by min-KL
 projection from a **base measure `Q`**. `Q` can be our structured state-space model or an LLM. This
 spike asks: **can an LLM be `Q`** — emit a diverse cloud of trajectories _in augur's native shape_
 that, after **one max-ent reweight to the market prices**, match the crowd _without the effective

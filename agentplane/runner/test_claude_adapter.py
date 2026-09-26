@@ -10,6 +10,7 @@ import pytest_bazel
 from pydantic import BaseModel
 
 from agentplane.native.claude import wire
+from agentplane.native.claude.blocks import ToolResultBlock
 from agentplane.native.transport import FrameMatcher, NativeReceipt
 from agentplane.runner.claude import ClaudeAdapter
 from agentplane.runner.config import ClaudeLaunch
@@ -164,7 +165,7 @@ async def test_inputs_started_after_a_tool_result_are_confirmed_as_one_cohort() 
         type="user",
         message=wire.UserMessage(
             role="user",
-            content=[{"type": "tool_result", "tool_use_id": "tool-1", "content": "tool output", "is_error": False}],
+            content=[ToolResultBlock(type="tool_result", tool_use_id="tool-1", content="tool output", is_error=False)],
         ),
         uuid="native-tool-result",
     ).model_dump(mode="json", by_alias=True)

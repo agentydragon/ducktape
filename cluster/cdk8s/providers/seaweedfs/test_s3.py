@@ -11,6 +11,40 @@ def _of_kind(manifests: list[dict], kind: str) -> list[dict]:
     return [manifest for manifest in manifests if manifest["kind"] == kind]
 
 
+def test_bucket_renders_expected_spec() -> None:
+    chart = Cdk8sTesting.chart()
+    Bucket(
+        chart,
+        "bucket",
+        name="my-bucket",
+        namespace=_CLUSTER_NAMESPACE,
+        cluster_name=_CLUSTER_NAME,
+        cluster_namespace=_CLUSTER_NAMESPACE,
+        adopt_existing=False,
+    )
+    (bucket,) = _of_kind(Cdk8sTesting.synth(chart), "Bucket")
+    assert bucket["spec"] == {
+        "name": "my-bucket",
+        "clusterRef": {"name": _CLUSTER_NAME, "namespace": _CLUSTER_NAMESPACE},
+        "reclaimPolicy": "Retain",
+    }
+
+
+def test_bucket_adopt_existing_true_sets_flag() -> None:
+    chart = Cdk8sTesting.chart()
+    Bucket(
+        chart,
+        "bucket",
+        name="my-bucket",
+        namespace=_CLUSTER_NAMESPACE,
+        cluster_name=_CLUSTER_NAME,
+        cluster_namespace=_CLUSTER_NAMESPACE,
+        adopt_existing=True,
+    )
+    (bucket,) = _of_kind(Cdk8sTesting.synth(chart), "Bucket")
+    assert bucket["spec"]["adoptExisting"] is True
+
+
 def test_bucket_in_cluster_namespace_creates_no_grant() -> None:
     chart = Cdk8sTesting.chart()
     Bucket(
@@ -77,6 +111,20 @@ def test_identity_seaweed_ref_omits_namespace_within_the_cluster_namespace() -> 
     )
     (identity,) = _of_kind(Cdk8sTesting.synth(chart), "S3Identity")
     assert identity["spec"]["seaweedRef"] == {"name": _CLUSTER_NAME}
+
+
+def test_identity_in_tenant_namespace_names_the_cluster_namespace() -> None:
+    chart = Cdk8sTesting.chart()
+    Identity(
+        chart,
+        "identity",
+        name="my-identity",
+        namespace="tenant",
+        cluster_name=_CLUSTER_NAME,
+        cluster_namespace=_CLUSTER_NAMESPACE,
+    )
+    (identity,) = _of_kind(Cdk8sTesting.synth(chart), "S3Identity")
+    assert identity["spec"]["seaweedRef"] == {"name": _CLUSTER_NAME, "namespace": _CLUSTER_NAMESPACE}
 
 
 def test_identity_ref_credentials_seaweed_ref_names_the_cluster_namespace_from_a_tenant() -> None:

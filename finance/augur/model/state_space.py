@@ -68,8 +68,8 @@ class StateSpaceModelArtifact(FrozenModel):
     latest_observations: dict[str, ExogenousObservedPoint] = Field(min_length=1)
     monthly_log_return_mu: dict[str, float] = Field(min_length=1)
     monthly_log_return_cov: tuple[tuple[float, ...], ...]
-    private_equity_event_priors: dict[str, StateSpacePrivateEquityEventPrior] = Field(default_factory=dict)
-    private_equity_scale_priors: dict[str, TrainedPrivateEquityScalePrior] = Field(default_factory=dict)
+    private_equity_event_priors: dict[IssuerId, StateSpacePrivateEquityEventPrior] = Field(default_factory=dict)
+    private_equity_scale_priors: dict[IssuerId, TrainedPrivateEquityScalePrior] = Field(default_factory=dict)
     source_manifest: dict[str, Any] = Field(default_factory=dict)
     prior_manifest: dict[str, Any] = Field(default_factory=dict)
 
@@ -85,7 +85,7 @@ class StateSpaceModelArtifact(FrozenModel):
         _require_square_matrix(self.monthly_log_return_cov, n, "monthly_log_return_cov")
         if any(point.value <= 0 for point in self.latest_observations.values()):
             raise ValueError("latest_observations values must be positive for log-level factors")
-        private_equity_issuers = {str(issuer) for issuer in self.private_equity_factor_issuers}
+        private_equity_issuers = set(self.private_equity_factor_issuers)
         missing_scale_priors = private_equity_issuers - set(self.private_equity_scale_priors)
         if missing_scale_priors:
             raise ValueError(
@@ -128,7 +128,7 @@ class StateSpaceAdditionalFactor:
     monthly_log_return_sigma: float
     covariance_with_factors: Mapping[str, float] = field(default_factory=dict)
     source_ids: tuple[str, ...] = ()
-    private_equity_issuer_id: str | None = None
+    private_equity_issuer_id: IssuerId | None = None
     private_equity_event_prior: StateSpacePrivateEquityEventPrior | None = None
     private_equity_scale_prior: TrainedPrivateEquityScalePrior | None = None
 
@@ -196,8 +196,8 @@ class StateSpaceModel:
         factor_names = list(base_factor_names)
         observations = {factor: latest_observations[factor] for factor in base_factor_names}
         mean_by_factor = {factor: float(mean[idx]) for idx, factor in enumerate(base_factor_names)}
-        event_priors: dict[str, StateSpacePrivateEquityEventPrior] = {}
-        scale_priors: dict[str, TrainedPrivateEquityScalePrior] = {}
+        event_priors: dict[IssuerId, StateSpacePrivateEquityEventPrior] = {}
+        scale_priors: dict[IssuerId, TrainedPrivateEquityScalePrior] = {}
         covariance = cov
 
         for extra in additional_factors:
@@ -279,13 +279,13 @@ class StateSpaceModel:
         # FactorKey; post-collapse a level factor *is* its level key, so it routes straight
         # into the right role with no source-name indirection.
         level_by_key: dict[LevelSeriesKey, np.ndarray] = {}
-        observed_mark_by_issuer: dict[str, np.ndarray] = {}
+        observed_mark_by_issuer: dict[IssuerId, np.ndarray] = {}
         for factor_name, classification in zip(
             self.artifact.factor_names, self.artifact.factor_classifications, strict=True
         ):
             levels = path_by_factor[factor_name]
             if isinstance(classification, PrivateEquityMarkKey):
-                issuer = str(classification.issuer_id)
+                issuer = classification.issuer_id
                 if issuer in event_by_issuer:
                     observed_mark_by_issuer[issuer] = observed_private_equity_mark_matrix(
                         levels, event_by_issuer[issuer]
@@ -413,7 +413,7 @@ class StateSpaceModel:
         # artifact's factors — no source-name indirection.
         return {factor: factor for factor in self.artifact.factor_names}
 
-    def _private_equity_event_series(self, issuer_id: str, request: ExogenousSamplingRequest) -> np.ndarray:
+    def _private_equity_event_series(self, issuer_id: IssuerId, request: ExogenousSamplingRequest) -> np.ndarray:
         prior = self.artifact.private_equity_event_priors[issuer_id]
         events = np.zeros((request.rollout_count, request.horizon_months + 1), dtype=np.bool_)
         if request.rollout_count == 0:
@@ -447,7 +447,7 @@ class StateSpaceModel:
         factor_index = {factor: idx for idx, factor in enumerate(self.artifact.factor_names)}
         indexes: list[tuple[int, TrainedPrivateEquityScalePrior]] = []
         for issuer_id, scale_prior in self.artifact.private_equity_scale_priors.items():
-            factor_name = PrivateEquityAssetKey(issuer_id=IssuerId(issuer_id)).wire_id
+            factor_name = PrivateEquityAssetKey(issuer_id=issuer_id).wire_id
             if factor_name in factor_index:
                 indexes.append((factor_index[factor_name], scale_prior))
         return tuple(indexes)

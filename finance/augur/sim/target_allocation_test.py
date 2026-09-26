@@ -1,6 +1,6 @@
-"""The configured allocation household against canonical settlement and recorded books.
+"""The cash-band household against canonical settlement and recorded books.
 
-The shared proposal arithmetic has unit controls in `policy/configured_allocation_test.py`.
+The shared proposal arithmetic has unit controls in `policy/test_cash_band_household.py`.
 These flat-price worlds exercise the household's whole monthly batch: pre-claim sales, the
 full claim payments in order, and the purchases sized from what both leave.
 """
@@ -13,7 +13,7 @@ import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.cash_band_household import CashBandHousehold, Reinvest, SecuritySleeve
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
@@ -21,7 +21,7 @@ from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.holdings import Disposition
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -29,8 +29,6 @@ from finance.augur.sim.prepared import (
     PreparedLot,
     PreparedRecurringObligation,
     PreparedRecurringTransfer,
-    _AllocationPolicy,
-    _SecuritySleeveTarget,
 )
 from finance.augur.sim.world import World
 
@@ -39,21 +37,23 @@ BND = SecurityKey(symbol=SecuritySymbol("bnd"))
 QUANTUM = Decimal("0.01")
 HORIZON = 4
 PRICE = Decimal(100)
-ALICE = "alice"
-LANDLORD = "landlord"
-CHECKING = "checking"
+ALICE = AgentId("alice")
+LANDLORD = AgentId("landlord")
+CHECKING = AccountId("checking")
 # Weights default equal against a 9:1 holding, so stock is the overweight sleeve and every
 # raise has to come out of it first.
 STOCK_UNITS, BOND_UNITS = 900.0, 100.0
 QUANTA_PER_UNIT = 100
 FULL_DRIFT = 250_000_000  # A 25% drift band, in parts per billion.
+REINVEST = Reinvest(rebalance_tolerance_ppb=None)
+REBALANCE = Reinvest(rebalance_tolerance_ppb=FULL_DRIFT)
 
 
 def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def ref(agent_id: str) -> AccountRef:
+def ref(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
@@ -75,18 +75,17 @@ class Situation:
     income: Decimal | int = 0
     rent_months: tuple[int, int | None] = (1, None)
     income_months: tuple[int, int | None] = (1, None)
-    allow_purchases: bool = False
-    tolerance_ppb: int | None = None
+    reinvest: Reinvest | None = None
     weights: tuple[int, int] = (1, 1)
 
 
-def lot(lot_id: str, asset: SecurityKey, quantity: float) -> PreparedLot:
+def lot(lot_id: LotId, asset: SecurityKey, quantity: float) -> PreparedLot:
     scale = quantity_scale_for_asset(asset)
     return PreparedLot(
         lot_id=lot_id,
         agent_id=ALICE,
         account_id=CHECKING,
-        asset_id=str(asset.symbol),
+        asset_id=AssetId(asset.symbol),
         purchase_month=0,
         quantity_scale=scale,
         units=int(quantity_to_quanta(quantity, scale=scale)),
@@ -111,7 +110,7 @@ def compose(case: Situation) -> World:
     world.declare_account(
         PreparedAccount(account=ref(LANDLORD), opening_balance=money(Decimal(case.income) * (HORIZON + 1)))
     )
-    lots = (lot("stock", VTI, case.stock_units), lot("bond", BND, case.bond_units))
+    lots = (lot(LotId("stock"), VTI, case.stock_units), lot(LotId("bond"), BND, case.bond_units))
     for holding in lots:
         world.declare_pool(
             PreparedHoldingPool(
@@ -152,26 +151,18 @@ def compose(case: Situation) -> World:
             )
         )
     world.track(
-        ConfiguredHousehold(
-            AgentId(ALICE),
-            (
-                _AllocationPolicy(
-                    agent_id=ALICE,
-                    account_id=CHECKING,
-                    source_account_ids=(),
-                    sleeves=tuple(
-                        _SecuritySleeveTarget(
-                            asset_id=str(asset.symbol), weight=weight, quantity_scale=quantity_scale_for_asset(asset)
-                        )
-                        for asset, weight in zip((VTI, BND), case.weights, strict=True)
-                    ),
-                    cash_floor=money(case.floor),
-                    cash_ceiling=money(case.ceiling),
-                    cause_id_prefix="allocation_sale",
-                    allow_purchases=case.allow_purchases,
-                    rebalance_tolerance_ppb=case.tolerance_ppb,
-                ),
+        CashBandHousehold(
+            ALICE,
+            cash_account_id=CHECKING,
+            floor=money(case.floor),
+            ceiling=money(case.ceiling),
+            sleeves=tuple(
+                SecuritySleeve(asset_id=AssetId(asset.symbol), weight=weight)
+                for asset, weight in zip((VTI, BND), case.weights, strict=True)
             ),
+            source_account_ids=(CHECKING,),
+            reinvest=case.reinvest,
+            cause_id_prefix="allocation_sale",
         )
     )
     return world
@@ -205,10 +196,8 @@ def sales(output: FinancialOutput) -> list[Disposition]:
 
 
 def test_a_zero_target_sleeve_is_exited_whole_and_its_proceeds_reinvested() -> None:
-    output = run(
-        Situation(opening_cash=0, floor=0, ceiling=0, weights=(0, 1), allow_purchases=True, tolerance_ppb=FULL_DRIFT)
-    )
-    assert units(output, month=1) == {"stock": 0.0, "bond": BOND_UNITS, "allocation_sale_buy_p0_s1_0": STOCK_UNITS}
+    output = run(Situation(opening_cash=0, floor=0, ceiling=0, weights=(0, 1), reinvest=REBALANCE))
+    assert units(output, month=1) == {"stock": 0.0, "bond": BOND_UNITS, "allocation_sale_buy_s1_0": STOCK_UNITS}
     assert alice_cash(output)[-1] == 0
     [sale] = sales(output)
     assert sale.units / sale.quantity_scale == STOCK_UNITS
@@ -308,7 +297,7 @@ def test_a_sale_shows_up_as_a_lot_disposition() -> None:
     rows = sales(run(Situation(opening_cash=5_000, floor=10_000, ceiling=40_000)))
 
     assert [row.lot_id for row in rows] == ["stock"]
-    assert rows[0].asset_id == "security:vti"
+    assert rows[0].asset_id == "vti"
     assert rows[0].units / rows[0].quantity_scale == 350.0
     assert rows[0].proceeds == 3_500_000
     assert rows[0].basis == 3_500_000
@@ -321,7 +310,7 @@ def test_enabling_purchases_does_not_create_lots_without_a_buy() -> None:
 
     case = Situation(opening_cash=5_000, floor=10_000, ceiling=40_000)
     without = run(case)
-    enabled = run(replace(case, allow_purchases=True))
+    enabled = run(replace(case, reinvest=REINVEST))
 
     assert units(enabled, month=1) == units(without, month=1)
     assert alice_cash(enabled) == alice_cash(without)
@@ -338,10 +327,10 @@ def test_surplus_above_the_ceiling_is_invested_into_the_underweight_sleeve() -> 
     came entirely out of stock, and the deposit goes overwhelmingly the other way.
     """
 
-    held = units(run(Situation(opening_cash=100_000, floor=10_000, ceiling=20_000, allow_purchases=True)), month=1)
+    held = units(run(Situation(opening_cash=100_000, floor=10_000, ceiling=20_000, reinvest=REINVEST)), month=1)
 
-    assert held["allocation_sale_buy_p0_s0_0"] == 50.0
-    assert held["allocation_sale_buy_p0_s1_0"] == 850.0
+    assert held["allocation_sale_buy_s0_0"] == 50.0
+    assert held["allocation_sale_buy_s1_0"] == 850.0
     # The holdings it started with are untouched: this month bought, it did not rebalance.
     assert held["stock"] == STOCK_UNITS
     assert held["bond"] == BOND_UNITS
@@ -351,7 +340,7 @@ def test_a_purchase_leaves_exactly_the_floor() -> None:
     """A quantum of overshoot would show as the floor minus the overshoot, which is the
     band spending money it promised to keep."""
 
-    output = run(Situation(opening_cash=100_000, floor=10_000, ceiling=20_000, allow_purchases=True))
+    output = run(Situation(opening_cash=100_000, floor=10_000, ceiling=20_000, reinvest=REINVEST))
 
     assert alice_cash(output)[1] == 1_000_000
 
@@ -360,8 +349,8 @@ def test_a_purchase_records_the_price_its_rollout_paid() -> None:
     """Basis comes from whatever the rollout paid the month it crossed the band. Reading a static
     column would report 0, making the whole proceeds a gain on the eventual sale."""
 
-    output = run(Situation(opening_cash=100_000, floor=10_000, ceiling=20_000, allow_purchases=True))
-    bought = one(row for row in book(output, 1).lots if row.lot_id == "allocation_sale_buy_p0_s1_0")
+    output = run(Situation(opening_cash=100_000, floor=10_000, ceiling=20_000, reinvest=REINVEST))
+    bought = one(row for row in book(output, 1).lots if row.lot_id == "allocation_sale_buy_s1_0")
 
     assert bought.basis_remaining == 85_000 * QUANTA_PER_UNIT
 
@@ -375,10 +364,10 @@ def test_successive_purchases_create_separate_lots() -> None:
     """
 
     output = run(
-        Situation(opening_cash=0, floor=0, ceiling=1_000, income=30_000, income_months=(2, None), allow_purchases=True)
+        Situation(opening_cash=0, floor=0, ceiling=1_000, income=30_000, income_months=(2, None), reinvest=REINVEST)
     )
     rows = sorted(
-        (row for row in book(output, HORIZON).lots if row.lot_id.startswith("allocation_sale_buy_p0_s1_")),
+        (row for row in book(output, HORIZON).lots if row.lot_id.startswith("allocation_sale_buy_s1_")),
         key=lambda row: row.lot_id,
     )
 
@@ -401,7 +390,7 @@ def test_a_runtime_purchase_keeps_its_month_when_later_sold() -> None:
             income_months=(2, 2),
             rent=10_000,
             rent_months=(3, 3),
-            allow_purchases=True,
+            reinvest=REINVEST,
         )
     )
     rows = [row for row in sales(output) if row.lot_id.startswith("allocation_sale_buy_")]
@@ -411,7 +400,7 @@ def test_a_runtime_purchase_keeps_its_month_when_later_sold() -> None:
 
 
 def test_sales_only_keeps_surplus_cash_without_buying() -> None:
-    output = run(Situation(opening_cash=0, floor=0, ceiling=1_000, income=30_000, allow_purchases=False))
+    output = run(Situation(opening_cash=0, floor=0, ceiling=1_000, income=30_000, reinvest=None))
 
     assert units(output, month=HORIZON) == {"stock": STOCK_UNITS, "bond": BOND_UNITS}
     assert alice_cash(output)[-1] == 9_000_000
@@ -429,16 +418,14 @@ def test_a_drifted_portfolio_is_rebalanced_in_a_quiet_month() -> None:
     this also pins that they meet in the same month.
     """
 
-    output = run(
-        Situation(opening_cash=50_000, floor=10_000, ceiling=90_000, allow_purchases=True, tolerance_ppb=FULL_DRIFT)
-    )
+    output = run(Situation(opening_cash=50_000, floor=10_000, ceiling=90_000, reinvest=REBALANCE))
     held = units(output, month=1)
 
     assert held["stock"] == 500.0
-    assert held["allocation_sale_buy_p0_s1_0"] == 400.0
+    assert held["allocation_sale_buy_s1_0"] == 400.0
     # Untouched: the bond sleeve was the underweight one, so the trim never reaches it.
     assert held["bond"] == BOND_UNITS
-    assert "allocation_sale_buy_p0_s0_0" not in held
+    assert "allocation_sale_buy_s0_0" not in held
     # Cash-neutral to the cent. A rebalance is a portfolio operation, not a funding one.
     assert alice_cash(output)[1] == 5_000_000
 
@@ -447,9 +434,7 @@ def test_a_rebalanced_portfolio_then_sits_still() -> None:
     """One trigger, not one per month. Once both sleeves are on target the drift is zero,
     so a flat price path produces exactly one rebalance over the horizon."""
 
-    output = run(
-        Situation(opening_cash=50_000, floor=10_000, ceiling=90_000, allow_purchases=True, tolerance_ppb=FULL_DRIFT)
-    )
+    output = run(Situation(opening_cash=50_000, floor=10_000, ceiling=90_000, reinvest=REBALANCE))
 
     assert [(row.lot_id, row.units / row.quantity_scale) for row in sales(output)] == [("stock", 400.0)]
     assert units(output, month=HORIZON) == units(output, month=1)
@@ -459,8 +444,8 @@ def test_a_tolerance_wider_than_the_drift_changes_nothing() -> None:
     """Configuring a rebalance is not asking for one. The fixture is 80% off target, so a
     100% tolerance leaves it exactly where an unconfigured policy would."""
 
-    case = Situation(opening_cash=50_000, floor=10_000, ceiling=90_000, allow_purchases=True)
-    with_tolerance = run(replace(case, tolerance_ppb=1_000_000_000))
+    case = Situation(opening_cash=50_000, floor=10_000, ceiling=90_000, reinvest=REINVEST)
+    with_tolerance = run(replace(case, reinvest=Reinvest(rebalance_tolerance_ppb=1_000_000_000)))
     without = run(case)
 
     assert units(with_tolerance, month=HORIZON) == units(without, month=HORIZON)

@@ -8,6 +8,7 @@ from finance.augur.sim.actions import Consume, PayClaim
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, TaxPaymentOutcome, TaxSettlementOutcome
 from finance.augur.sim.claims import Claim, Claims, OrdinaryDeduction, PropertyTax, TaxPayment, TaxTrueUp
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.mortgage import MortgagePayment
 
@@ -41,7 +42,7 @@ def receipt(request: PayClaim | Consume, reason: results.PaymentFailure | None) 
 
 
 def prepare(
-    accounting: Accounting, month: int, claims: Claims, actor: str, request: PayClaim | Consume
+    accounting: Accounting, month: int, claims: Claims, actor: AgentId, request: PayClaim | Consume
 ) -> Claim | results.PaymentRequestError:
     if request.from_account.agent_id != actor:
         return results.PaymentRequestError(kind="WrongActor")
@@ -75,7 +76,7 @@ def prepare(
 
 
 def execute(
-    accounting: Accounting, month: int, claims: Claims, actor: str, request: PayClaim | Consume
+    accounting: Accounting, month: int, claims: Claims, actor: AgentId, request: PayClaim | Consume
 ) -> results.PaymentReceipt:
     claim = prepare(accounting, month, claims, actor, request)
     if isinstance(claim, results.PaymentRequestError):
@@ -112,10 +113,13 @@ def post_payment(accounting: Accounting, month: int, claim: Claim, source: Accou
             postings.extend(
                 [
                     Posting(
-                        account=AccountRef(agent_id=profile.agent_id, account_id="asset:tax-prepayments"), amount=amount
+                        account=AccountRef(agent_id=profile.agent_id, account_id=AccountId("asset:tax-prepayments")),
+                        amount=amount,
                     ),
                     Posting(
-                        account=AccountRef(agent_id=profile.tax_authority_agent_id, account_id="income:tax-payments"),
+                        account=AccountRef(
+                            agent_id=profile.tax_authority_agent_id, account_id=AccountId("income:tax-payments")
+                        ),
                         amount=checked_count(-amount, "money negation"),
                     ),
                 ]
@@ -138,7 +142,8 @@ def post_payment(accounting: Accounting, month: int, claim: Claim, source: Accou
                     settlement_postings.append(
                         Posting(
                             account=AccountRef(
-                                agent_id=liability.agent_id, account_id=f"liability:tax:{liability.jurisdiction_id}"
+                                agent_id=liability.agent_id,
+                                account_id=AccountId(f"liability:tax:{liability.jurisdiction_id}"),
                             ),
                             amount=liability.amount_owed,
                         )
@@ -148,7 +153,7 @@ def post_payment(accounting: Accounting, month: int, claim: Claim, source: Accou
             if total:
                 settlement_postings.append(
                     Posting(
-                        account=AccountRef(agent_id=profile.agent_id, account_id="asset:tax-prepayments"),
+                        account=AccountRef(agent_id=profile.agent_id, account_id=AccountId("asset:tax-prepayments")),
                         amount=checked_count(-total, "money negation"),
                     )
                 )
@@ -163,7 +168,7 @@ def post_payment(accounting: Accounting, month: int, claim: Claim, source: Accou
     elif isinstance(effect, MortgagePayment):
         terms = effect.terms
         mortgage_liability = AccountRef(
-            agent_id=terms.borrower.agent_id, account_id=f"liability:mortgage:{terms.liability_id}"
+            agent_id=terms.borrower.agent_id, account_id=AccountId(f"liability:mortgage:{terms.liability_id}")
         )
         if effect.principal > checked_count(-accounting.ledger.balance(mortgage_liability), "money negation"):
             raise ValueError("installment exceeds ledger principal")
@@ -172,19 +177,22 @@ def post_payment(accounting: Accounting, month: int, claim: Claim, source: Accou
                 Posting(account=mortgage_liability, amount=effect.principal),
                 Posting(
                     account=AccountRef(
-                        agent_id=terms.borrower.agent_id, account_id=f"expense:mortgage-interest:{terms.liability_id}"
+                        agent_id=terms.borrower.agent_id,
+                        account_id=AccountId(f"expense:mortgage-interest:{terms.liability_id}"),
                     ),
                     amount=effect.interest,
                 ),
                 Posting(
                     account=AccountRef(
-                        agent_id=terms.lender.agent_id, account_id=f"asset:mortgage-receivable:{terms.liability_id}"
+                        agent_id=terms.lender.agent_id,
+                        account_id=AccountId(f"asset:mortgage-receivable:{terms.liability_id}"),
                     ),
                     amount=checked_count(-effect.principal, "money negation"),
                 ),
                 Posting(
                     account=AccountRef(
-                        agent_id=terms.lender.agent_id, account_id=f"income:mortgage-interest:{terms.liability_id}"
+                        agent_id=terms.lender.agent_id,
+                        account_id=AccountId(f"income:mortgage-interest:{terms.liability_id}"),
                     ),
                     amount=checked_count(-effect.interest, "money negation"),
                 ),

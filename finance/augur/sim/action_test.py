@@ -11,6 +11,7 @@ from finance.augur.sim.actions import Action, ClaimId, Consume, DecisionActions,
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedObligation, PreparedTransfer
 from finance.augur.sim.results import Executed, Finished, RejectedAction, Rollout, UnpaidClaims
@@ -20,8 +21,8 @@ from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
 ROLLOUT_COUNT = 2
-ALICE = AccountRef(agent_id="alice", account_id="checking")
-WORLD = AccountRef(agent_id="world", account_id="checking")
+ALICE = AccountRef(agent_id=AgentId("alice"), account_id=AccountId("checking"))
+WORLD = AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking"))
 
 
 def quanta(amount: Decimal) -> int:
@@ -69,7 +70,7 @@ def compose(rollout_id: int, *, obligation_id: str = "one-cent-bill") -> World:
 
 
 def session(ids: Sequence[int], **parts: Any) -> ActionSession:
-    return ActionSession({id_: compose(id_) for id_ in ids}, "alice", **parts)
+    return ActionSession({id_: compose(id_) for id_ in ids}, AgentId("alice"), **parts)
 
 
 def consume(amount: int, cause: str = "chosen-spend") -> Action:
@@ -77,8 +78,8 @@ def consume(amount: int, cause: str = "chosen-spend") -> Action:
         request_id=0,
         cause_id=cause,
         component_id="budget",
-        from_account=AccountRef(agent_id="alice", account_id="checking"),
-        to_account=AccountRef(agent_id="world", account_id="checking"),
+        from_account=AccountRef(agent_id=AgentId("alice"), account_id=AccountId("checking")),
+        to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
         amount=amount,
     )
 
@@ -148,8 +149,8 @@ def test_action_order_prefix_retention_and_independent_continuation() -> None:
             actions += [
                 Transfer(
                     cause_id="prefix",
-                    from_account=AccountRef(agent_id="alice", account_id="checking"),
-                    to_account=AccountRef(agent_id="world", account_id="checking"),
+                    from_account=AccountRef(agent_id=AgentId("alice"), account_id=AccountId("checking")),
+                    to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
                     amount=1,
                 ),
                 consume(100),
@@ -222,7 +223,7 @@ def test_claim_handle_cannot_alias_another_sessions_claim() -> None:
     assert not isinstance(first_batch, Finished)
     old_claim = first_batch[0].observation.claims[0]
     first.close()
-    second = ActionSession({0: compose(0, obligation_id="different-bill")}, "alice")
+    second = ActionSession({0: compose(0, obligation_id="different-bill")}, AgentId("alice"))
     second_batch = second.start()
     assert not isinstance(second_batch, Finished)
     assert second_batch[0].observation.claims[0].cause_id != old_claim.cause_id

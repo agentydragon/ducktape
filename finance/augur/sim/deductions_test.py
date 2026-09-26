@@ -21,12 +21,13 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.model.series import LocationId
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -49,13 +50,20 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-ALICE, PAYROLL, IRS, SELLER, BANK, COLLECTOR = "alice", "payroll", "irs", "seller", "bank", "sf_tax_collector"
-CHECKING = "checking"
-FEDERAL, CALIFORNIA = "federal_us", "california"
+ALICE, PAYROLL, IRS, SELLER, BANK, COLLECTOR = (
+    AgentId("alice"),
+    AgentId("payroll"),
+    AgentId("irs"),
+    AgentId("seller"),
+    AgentId("bank"),
+    AgentId("sf_tax_collector"),
+)
+CHECKING = AccountId("checking")
+FEDERAL, CALIFORNIA = JurisdictionId("federal_us"), JurisdictionId("california")
 
-LOCATION_ID = "san_francisco"
-MORTGAGE_ID = "sf_home_mortgage"
-HELOC_ID = "alice_heloc"
+LOCATION_ID = LocationId("san_francisco")
+MORTGAGE_ID = LiabilityId("sf_home_mortgage")
+HELOC_ID = LiabilityId("alice_heloc")
 
 # The two standard deductions a single filer is measured against, in the deployment's own
 # jurisdiction records. Stated here because several cases turn on which one won.
@@ -93,12 +101,12 @@ DEFAULT_SALT_SCHEDULE = (
 )
 
 
-def account(agent_id: str, balance: Decimal | int = 0) -> PreparedAccount:
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
     return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=money(balance))
 
 
 def deducts(
-    liability_id: str, *, debt_class: Literal["acquisition", "home_equity"] = "acquisition"
+    liability_id: LiabilityId, *, debt_class: Literal["acquisition", "home_equity"] = "acquisition"
 ) -> _MortgageInterestDeduction:
     return _MortgageInterestDeduction(
         liability_id=liability_id,
@@ -113,7 +121,14 @@ def salt(*, cap_schedule: tuple[_SaltCap, ...] = DEFAULT_SALT_SCHEDULE) -> _Salt
 
 
 def financed_purchase(
-    cause_id: str, property_id: str, *, price: int, down: int, liability_id: str, annual_rate: float, term_months: int
+    cause_id: str,
+    property_id: PropertyId,
+    *,
+    price: int,
+    down: int,
+    liability_id: LiabilityId,
+    annual_rate: float,
+    term_months: int,
 ) -> _PropertyPurchase:
     return _PropertyPurchase(
         month=0,
@@ -232,7 +247,7 @@ def compose(case: Situation) -> World:
             purchases=(
                 financed_purchase(
                     "alice_buys_sf_home",
-                    "sf_home",
+                    PropertyId("sf_home"),
                     price=case.purchase_price,
                     down=case.down_payment,
                     liability_id=MORTGAGE_ID,
@@ -244,7 +259,7 @@ def compose(case: Situation) -> World:
         ),
         (
             _PropertyTax(
-                property_id="sf_home",
+                property_id=PropertyId("sf_home"),
                 owner_agent_id=ALICE,
                 from_account_id=CHECKING,
                 tax_authority_agent_id=COLLECTOR,
@@ -273,7 +288,7 @@ def compose(case: Situation) -> World:
 
 def run(case: Situation) -> Rollout:
     """Alice pays every due claim in full, in order: her installments, her property tax, her assessments."""
-    household = ConfiguredHousehold(AgentId(ALICE), ())
+    household = ClaimPayer(AgentId(ALICE))
     session = ActionSession({0: compose(case)}, ALICE)
     try:
         batch = session.start()
@@ -291,7 +306,7 @@ def run(case: Situation) -> Rollout:
     return one(batch.rollouts)
 
 
-def breakdown(rollout: Rollout, *, jurisdiction_id: str, year_index: int = 0) -> dict[str, Any]:
+def breakdown(rollout: Rollout, *, jurisdiction_id: JurisdictionId, year_index: int = 0) -> dict[str, Any]:
     """The year-end return one jurisdiction assessed, in the year that ends at month `12y + 11`."""
     assert rollout.trace is not None
     month = 12 * year_index + 11
@@ -300,7 +315,7 @@ def breakdown(rollout: Rollout, *, jurisdiction_id: str, year_index: int = 0) ->
     ).row(0, named=True)
 
 
-def interest_through(rollout: Rollout, *, liability_id: str, month: int) -> float:
+def interest_through(rollout: Rollout, *, liability_id: LiabilityId, month: int) -> float:
     """Interest actually paid on a liability up to and including `month`."""
     assert rollout.trace is not None
     rows = rollout.trace.events.mortgage_payments.filter(
@@ -387,7 +402,7 @@ def test_acquisition_and_home_equity_debt_are_classified_per_liability() -> None
             extra_purchases=(
                 financed_purchase(
                     "alice_opens_heloc",
-                    "alice_heloc_collateral",
+                    PropertyId("alice_heloc_collateral"),
                     price=60_000,
                     down=0,
                     liability_id=HELOC_ID,

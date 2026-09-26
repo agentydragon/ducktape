@@ -17,7 +17,15 @@ Moving a wrapper into the right directory, or colocating it with its `cdk8s_impo
 
 A resource that becomes its own Kubernetes object is a **class named after the kind**, constructed as `Kind(scope, id, ...)` — never a verb-prefixed function (`add_kind(...)`, `create_kind(...)`). Constructing a cdk8s construct already adds it to the tree; there is no separate "add" step to name. This is cdk8s-plus's own pattern without exception: `Deployment(scope, id, props)`, `Service(scope, id, props)`, `ConfigMap(scope, id, props)` — a class you instantiate, not a function you call.
 
-Where the wrapper is a thin friendliness layer over exactly one resource, subclass the generated CRD binding directly and call `super().__init__(scope, id, metadata=..., spec=...)` from a friendlier `__init__` — this is how cdk8s-plus's own `ConfigMap`/`Secret`/`Namespace` relate to their generated `ApiObject` base, not composition through an internally-held instance.
+cdk8s-plus's own `ConfigMap`/`Secret`/`Namespace`/`Service` do **not** subclass their generated `ApiObject` (`KubeConfigMap`, `KubeSecret`, ...) — checked directly against `cdk8s-plus`'s TS source (`base.ts`, `secret.ts`, `namespace.ts`, `service.ts`): each is a plain `Construct` (`class Secret extends base.Resource` → `base.Resource extends Construct`) that builds the generated object as an internally-held child, conventionally id'd `"Resource"` (`this.apiObject = new k8s.KubeSecret(this, 'Resource', {...})`), and never discards the reference — `base.Resource`'s own `.name`/`.metadata`/`.apiVersion` getters proxy through it. Where the wrapper genuinely manages more than one resource, or needs the "declared here" vs. "referenced elsewhere" split below, follow that same shape: a `Construct` holding the generated object as `self._resource` (or similar), not a bare side effect of the constructor call.
+
+A single-shot wrapper over exactly **one** CRD object with no such split may still subclass the generated binding directly and call `super().__init__(scope, id, metadata=..., spec=...)` from a friendlier `__init__` (`cnpg.Cluster`, `redis_operator.RedisReplication` in this repo) — that's a valid, established simplification for the trivial case, not itself wrong. It just isn't literally cdk8s-plus's own pattern, and it stops working the moment the wrapper needs a second child object or a referenced-elsewhere sibling: you can't subclass two things, and you can't cleanly represent "sometimes this doesn't build one at all."
+
+Whichever shape you pick: never discard the return value of an object you construct inside a wrapper. `Identity(self, "Resource", ...)` with the result unused — while a sibling `Bucket` in the same file correctly kept `self._resource = _Bucket(...)` — is a real bug found in review, not a style nit: nothing later can reference, patch, or inspect that object except by walking the construct tree.
+
+### A "declared here" type and a "referenced elsewhere" type are siblings, never superclass and subclass
+
+A kind that sometimes gets declared in this chart and sometimes only referenced (already declared by another Kustomization, or predating this operator) is cdk8s-plus's `Secret`/`ImportedSecret` shape: **two independent classes**, connected only by a static factory on the declaring class (`Secret.from_secret_name(scope, id, name) -> ISecret`, returning an `ImportedSecret` that implements the same interface but is never a superclass or subclass of `Secret`). Modeling this as `Declared(Referenced)` inheritance — the referenced-elsewhere type as the base class, the declaring type as its subclass — claims an IS-A relationship that doesn't hold (a referenced identity has no CR to declare; a declared one isn't "a reference plus extra") and makes the base class's fields load-bearing for a subclass that isn't a reference at all. Found exactly this shape in review (`Identity(IdentityRef)`): the fix was two independent classes sharing their duplicated logic through a private helper function (this skill's own "one helper per repeated shape", not inheritance-for-code-reuse), with `Identity.from_identity_name(...)` added for symmetry with `Secret.from_secret_name`/`ServiceAccount.from_service_account_name`. This repo skips cdk8s-plus's `I<Kind>` TS interfaces (STYLE.md already calls `typing.Protocol` a smell by default) — the referenced-elsewhere class itself is the shared type other signatures accept (`Bucket.grant(user: IdentityRef | Identity | str)`), which is the correct Python simplification, not a gap.
 
 None of this needs mutable state or a builder pattern. A plain `__init__` (and, for variant constructors, `@classmethod` factories — see below) works identically on top of a frozen, `cdk8s_import`-generated dataclass as it does on top of cdk8s-plus's own hand-written types. "The generated bindings are frozen" is not a reason to fall back to free functions.
 
@@ -51,6 +59,8 @@ Check whether this repo already has a class doing this for another CRD and match
 ### Only when the API is genuinely incremental
 
 `container.mount()` earns its keep because a pod is built across many separate calls over its lifetime — containers and volumes get added one at a time, sometimes long after construction, and the actual aggregation happens later, at synthesis. Most wrappers aren't built that way: every value the object needs arrives in one constructor call, with no caller ever adding to it afterward. A single-shot wrapper wants a single-shot `__init__` that builds the whole spec immediately — internal mutable state and a deferred synthesis step are overhead with nothing left to defer. Reach for the incremental shape only when real callers actually build the object piece by piece; don't add it speculatively just because a resource elsewhere in the codebase happens to need it.
+
+Confirming the incremental shape only answers _whether_ to reach for `add_json_patch` on a later call — it says nothing about _what_ to patch with. The patch's value is still bound by the same typed-constructs rule as everything else on this page: build it from the CRD's generated struct for that field, never a raw dict, and check for that struct before assuming one doesn't exist (a well-typed, fixed-shape schema field almost always has one, even for an item appended one at a time rather than supplied all at once in the constructor).
 
 ## Derive a shared identity once, don't ask two objects to agree on a string
 
@@ -109,6 +119,37 @@ the schema is the tell that the CRD itself treats the two cases as synonyms — 
 fix is to accept the generated enum's own casing, not bypass the generated field over a
 cosmetic mismatch. Reach for `add_json_patch` only once you've confirmed the field
 truly isn't reachable from the constructor at all.
+
+## Build a Kubernetes quantity from `Cpu`/`Size`, never a hand-typed string
+
+A CRD-generated resources field (`<Kind>...ResourcesRequests`/`...ResourcesLimits`, or any
+other field typed as a Kubernetes `Quantity` — storage sizes included) only takes its value
+through `.from_string(...)`/`.from_number(...)` — there is no way to hand it `cdk8s_plus_34`'s
+own `ContainerResources`/`CpuResources`/`MemoryResources` directly, since those are
+`cdk8s_plus_34.Container`'s own types, not the CRD's. That is not a reason to fall back to a
+literal string (`"50m"`, `"512Mi"`) at the call site: build a `Cpu`/`Size` value and format it,
+then hand the CRD's constructor the resulting string instead of one hand-typed by eye.
+
+- **CPU**: `cdk8s_plus_34.Cpu.millis(50).amount` — `amount` is a public field, already the exact
+  wire string (`Cpu.units(1).amount` gives `"1"`).
+- **Memory, ephemeral storage, or any other `Size`-typed quantity**: `cdk8s.Size.mebibytes(512).as_string()`
+  (or `.gibibytes(...)`/`.kibibytes(...)`/etc.) — `as_string()` formats the amount in whatever
+  unit it was constructed with (`"512Mi"`, `"1Gi"`), which is already a valid Kubernetes
+  `Quantity`. **Not** `f"{size.to_mebibytes()}Mi"`: `to_mebibytes()`/`to_gibibytes()`/etc. convert
+  to a _different_ unit and default to `SizeRoundingBehavior.FAIL`, raising at synth time for any
+  value that isn't a whole number in the target unit (`Size.kibibytes(1500).to_mebibytes()`
+  throws; `Size.mebibytes(500).as_string()` never does). There is no reason to force a unit
+  conversion nobody asked for — `as_string()` is the direct, always-safe formatter.
+
+`cdk8s_plus_34.Container`'s own `_toKube()` does force memory/ephemeral-storage into whole
+mebibytes/gibibytes before formatting (`container.ts`), which is why `EphemeralStorageResources`
+only accepts whole gibibytes (this repo's own gotcha above). That is a quirk of `Container`'s
+internal representation, not a pattern to imitate in a new wrapper: `Container`'s own
+`resources=` keeps passing `Cpu`/`Size` objects straight through (`CpuResources(request=Cpu.millis(50))`,
+already the established pattern throughout this repo, e.g. `agentplane/actions.py`) and does the
+mebibyte/gibibyte forcing itself, internally. A raw CRD field has no such internal step and no
+requirement to match `Container`'s unit choice — `as_string()` in whatever unit the caller
+constructed is correct and simpler.
 
 ## Don't invent a mechanism cdk8s/Kubernetes doesn't already have
 

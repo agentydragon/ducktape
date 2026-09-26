@@ -7,34 +7,37 @@ experiment consumers are added meanwhile.
 
 ## Readers
 
-- `policy/configured_household.py::ConfiguredHousehold` and
-  `policy/configured_allocation.py`'s proposer (`plan`) and `check_policies`: retire
-  with the app's household. Keep the shared sleeve calculations
-  (`policy/{cash_band,sleeves}.py`); their tests cover exact allocation, reserved
-  cash, zero targets/full exits, FIFO scoping and quantity scales. A newly required
-  product-specific calculation needs a real Python consumer and independent financial
-  checks; do not promote mixed-scale raw-quantity PE selection to a generic helper.
-- `product/scenarios.py::_target_allocation_policies_from_funding_policy` and
-  `sim/compiler/execution.py::compile_holding_pools`' sleeve-derived pools and
-  first-source-account choice: declarations, not a strategy configuration, determine
-  available accounts and instruments.
-- Scheduled sales: `_ScheduledSale` (`sim/prepared.py`) is an input only the sim and
-  product suites build; the configured household turns it into FIFO `Sell`s. Those
-  suites move their sales to explicit actions, and the record goes with the household.
-  Explicit asset-sale and public-sale/tax controls remain the independent coverage.
-- The PE issuer phase selects recovery, forced and tender lots with `Holdings.fifo`
-  inside the world; PE's migration after GPE replaces that with explicit responses.
-- The product shell's zero weight means "never sell this holding", whereas a zero
-  target in a selected core portfolio means "exit this sleeve". Keep exclusion and
-  target weight distinct when migrating the shell; never turn an excluded holding into
-  a sale.
+- `World.declare_housing` (`sim/property.py::Housing`): scripted purchases, sales,
+  residence and rented-share changes and improvements the world executes on schedule,
+  which the app declares from its request. HOUSING's migration after GHOUSE replaces
+  them with household actions.
+- `World.declare_tender_policy` (`sim/prepared.py::_TenderPolicy`): a liquid-net-worth
+  floor the world sells to on the owner's behalf; without one, compulsory recovery is
+  skipped. The PE issuer phase selects recovery, forced and tender lots with
+  `Holdings.fifo` inside the world; PE's migration after GPE replaces both with
+  explicit responses. Do not promote its mixed-scale raw-quantity selection to a
+  generic sleeve helper.
 
-## Gaps on the app's configured path
+## Gaps on the app's funding path
 
-- The product lowering sets `allow_purchases=False`, so the app never buys or
+- The app's household never reinvests (`reinvest=None`), so the app never buys or
   contributes, and the zero-mark contribution refusal
   (`TlhPortfolioObservation.accepts_contributions`) is reachable only from household
-  tests (`policy/test_configured_household.py`).
+  tests (`policy/test_cash_band_household{,_world}.py`). Turning it on (a
+  `FundingPolicy.reinvest_surplus` flag, off by default, passed through
+  `_funding_household` as `Reinvest(rebalance_tolerance_ppb=None)`, plus a funding-form
+  checkbox, `SCENARIO_SET_VERSION` bump and dropping "nothing buys" from `FundingPolicy`'s
+  docstring) still lacks:
+  - A security purchase in the timeline. `Holdings.buy` records no acquisition and no
+    event frame carries one, so a `Buy` moves the cash and holding-value series but
+    renders nothing. Needs an acquisition record captured into a new `EventLog` frame,
+    a `HoldingPurchaseEvent` in `product/wire.py` and `ROLLOUT_EVENT_KIND_ORDER`, and its
+    frontend rendering. Contributions already render as `tlh_financial_effect` rows.
+  - A purchase pool per security sleeve. Purchases land in `source_account_ids[0]`, and
+    `CashBandHousehold.check` refuses a sleeve without a declared pool there; the app
+    declares pools only from lots (`compile_holding_pools`), so a sleeve held only in a
+    later account fails. Declare an empty pool for each targeted security in that
+    account, or choose a per-sleeve purchase account.
 
 ## Older PR disposition
 

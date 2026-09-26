@@ -16,10 +16,12 @@ captured principal, including redemption and stopped-event marks, not a sale quo
 an inferred history from its ending book. Missing/duplicate bond histories reject.
 Property and private-equity histories remain unsupported and raise explicitly.
 `ProductService` lowers each request once in <scenarios.py> (`build_situation`: the
-household's accounts, holdings, home, counterparties and funding policy as prepared
-declarations), samples the series that situation reads, and composes one world per path
-(`compose`) with the configured household (<../policy/configured_household.py>) tracked on
-it; <simulation.py> steps each world. The funding policy's sleeves come in two kinds: a
+household's accounts, holdings, home and counterparties as prepared declarations, and the
+household the funding policy describes), samples the series that situation reads, and
+composes one world per path (`compose`) with that household tracked on it — a
+<../policy/cash_band_household.py> household over the funding policy's sleeves, or, with
+none left, a <../policy/funding.py> `ClaimPayer` that never sells; <simulation.py> steps
+each world. The app never buys. The funding policy's sleeves come in two kinds: a
 security sleeve names a held symbol and sells its lots in whole units at the quote, and a
 managed sleeve names a TLH portfolio by `portfolio_id` and withdraws exact money from it.
 The two never merge, even when the portfolio tracks a held symbol's index. These projection functions do not route between

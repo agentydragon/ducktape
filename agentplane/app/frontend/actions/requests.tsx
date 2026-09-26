@@ -1,18 +1,11 @@
-import { Badge, Button, Code, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { Badge, Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState } from "react";
 
-import {
-  actionService,
-  serviceAccountKey,
-  displayableError,
-  type ActionRequestView,
-  type ActionService,
-  type ActionState,
-  type Verdict,
-} from "./client";
-import { JsonView } from "./json_view";
-import { followStream, type StreamConnection } from "./live_stream";
-import { StaleNotice, useStreamStatus, type StreamStatus } from "./stream_status";
+import { displayableError } from "../client";
+import { followStream, type StreamConnection } from "../live_stream";
+import { StaleNotice, useStreamStatus, type StreamStatus } from "../stream_status";
+import { ActionCall } from "./call";
+import { actionService, type ActionRequestView, type ActionService, type ActionState, type Verdict } from "./client";
 
 const STATE_COLORS: Partial<Record<ActionState, string>> = {
   decision_pending: "yellow",
@@ -28,84 +21,6 @@ const STATE_COLORS: Partial<Record<ActionState, string>> = {
 
 export function stateLabel(state: ActionState): string {
   return state.replaceAll("_", " ");
-}
-
-/** The grant fields, folded inside `RequestAuditDetails`' disclosure rather than shown
- * unconditionally: verbose per-request provenance an operator deciding needs occasionally, not on
- * every glance at the card. */
-function ExternalGrantFields({ grant }: { grant: NonNullable<ActionRequestView["external_grant"]> }): JSX.Element {
-  return (
-    <Stack gap={2} mt={4} style={{ overflowWrap: "anywhere" }}>
-      <Text size="xs">
-        Acts as <Code>{serviceAccountKey(grant.caller)}</Code> · Client <Code>{grant.client_id}</Code>
-      </Text>
-      <Text size="xs">
-        Issuer <Code>{grant.issuer}</Code>
-      </Text>
-      <Text size="xs">
-        Connection <Code>{grant.connection_id}</Code>
-      </Text>
-      <Text size="xs">
-        Grant <Code>{grant.grant_id}</Code> · Revision <Code>{grant.revision}</Code>
-      </Text>
-      <Text size="xs" c="dimmed">
-        Historical submission evidence, not the connection’s current authorization status.
-      </Text>
-    </Stack>
-  );
-}
-
-/** The request's own verbose identifiers, folded behind one disclosure rather than shown
- * unconditionally: the UUID nobody reads at a glance, and -- when the caller authenticated
- * externally -- the grant provenance behind it. Shared by the pending and history cards. */
-export function RequestAuditDetails({ request }: { request: ActionRequestView }): JSX.Element {
-  const grant = request.external_grant;
-  return (
-    <details>
-      <Text component="summary" size="xs" c="dimmed" style={{ cursor: "pointer" }}>
-        {grant ? "Request & grant audit details" : "Request audit details"}
-      </Text>
-      <Stack gap={2} mt={4}>
-        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-          Request <Code>{request.id}</Code>
-        </Text>
-        {grant && <ExternalGrantFields grant={grant} />}
-      </Stack>
-    </details>
-  );
-}
-
-/** The caller's own plain-language framing of what it is asking for — the required one-line
- * `title` and the optional `description` — shared by the pending and history cards so the operator
- * reads the same words when deciding and when auditing. */
-export function ActionContext({ request }: { request: ActionRequestView }): JSX.Element {
-  return (
-    <>
-      {/* TODO: rendered verbatim as plain text; markdown rendering is a possible later addition. */}
-      <Text size="sm">{request.title}</Text>
-      {request.description && (
-        <Text size="xs" c="dimmed">
-          {request.description}
-        </Text>
-      )}
-    </>
-  );
-}
-
-/** The caller-principal line shown unconditionally on both cards; the verbose grant provenance
- * behind an authenticated external caller lives in `RequestAuditDetails` instead. */
-export function ActionCaller({ request }: { request: ActionRequestView }): JSX.Element {
-  if (!request.external_grant)
-    return (
-      <Text size="xs" c="dimmed">
-        {request.caller && `${request.caller.namespace}/${request.caller.name}`}
-      </Text>
-    );
-  return (
-    <Text size="xs" fw={600}>
-      Authenticated external caller at submission
-    </Text>
-  );
 }
 
 /** Shared fetch/decide plumbing for the pending and history views: one live snapshot (the real
@@ -196,26 +111,17 @@ function PendingActionCard({
   deciding: boolean;
   onDecide: (request: ActionRequestView, verdict: Verdict) => void;
 }): JSX.Element {
+  const [raw, setRaw] = useState(false);
   return (
     <Paper withBorder p="md">
       <Stack gap="sm">
-        <Stack gap={2}>
-          <Group justify="space-between" align="flex-start">
-            <Text fw={600} ff="monospace">
-              {request.action.group} / {request.action.name}
-            </Text>
-            <Badge color={STATE_COLORS[request.state] ?? "gray"}>{stateLabel(request.state)}</Badge>
-          </Group>
-          <ActionContext request={request} />
-          <ActionCaller request={request} />
-          <RequestAuditDetails request={request} />
-        </Stack>
-        <div>
-          <Text size="sm" fw={600} mb={4}>
-            Exact arguments (unredacted)
-          </Text>
-          <JsonView value={request.arguments} />
-        </div>
+        <ActionCall
+          request={request}
+          status={<Badge color={STATE_COLORS[request.state] ?? "gray"}>{stateLabel(request.state)}</Badge>}
+          raw={raw}
+          onRawChange={setRaw}
+          prettyResult={false}
+        />
         <Group justify="flex-end">
           <Button color="red" variant="light" loading={deciding} onClick={() => onDecide(request, "deny")}>
             Deny
@@ -230,7 +136,7 @@ function PendingActionCard({
 }
 
 /** The primary, actionable view: ActionRequests still awaiting an operator decision. Decided and
- * terminal requests live on the separate `ActionHistory` view (`actions_history.tsx`) instead of
+ * terminal requests live on the separate `ActionHistory` view (`history.tsx`) instead of
  * alongside these. */
 export function ActionRequests({ service = actionService }: { service?: ActionService }): JSX.Element {
   const { requests, error, loading, stream, deciding, decide } = useActionRequests(service);

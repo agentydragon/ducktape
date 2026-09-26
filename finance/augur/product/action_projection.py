@@ -14,10 +14,11 @@ from numpy.typing import NDArray
 from finance.augur.product.metric_composition import BASE_METRIC_NAMES
 from finance.augur.product.metrics import ProductMetricArrays
 from finance.augur.sim.holdings import private_issuer
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.results import CashSeries, ConsumptionTarget, InsufficientCash, PaymentRejected, Rollout, Summary
 
 
-def _total_series(rows: Sequence[CashSeries], actor_id: str, snapshots: int) -> NDArray[np.int64]:
+def _total_series(rows: Sequence[CashSeries], actor_id: AgentId, snapshots: int) -> NDArray[np.int64]:
     for row in rows:
         if row.account.agent_id != actor_id or len(row.values) != snapshots:
             raise ValueError("captured series must belong to the selected actor and cover its observed prefix")
@@ -48,7 +49,7 @@ def _shortfall(summary: Summary) -> int:
 def metric_arrays(
     rollouts: Sequence[Rollout],
     *,
-    primary_agent_id: str,
+    primary_agent_id: AgentId,
     horizon_months: int,
     currency_code: str,
     currency_quantum: str,

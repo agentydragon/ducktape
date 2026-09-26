@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import App, Chart, Size
+from cdk8s_plus_34 import Cpu, k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
@@ -354,12 +354,12 @@ def chart(app: App) -> Chart:
         name=_VALKEY,
         namespace=_NAMESPACE,
         description="OVH Valkey for Langfuse queue/cache state",
-        memory_request="128Mi",
-        cpu_limit="500m",
-        memory_limit="512Mi",
+        memory_request=Size.mebibytes(128),
+        cpu_limit=Cpu.millis(500),
+        memory_limit=Size.mebibytes(512),
         max_memory_percent_of_limit=80,
         storage_class="local-path-ovh",
-        storage_size="2Gi",
+        storage_size=Size.gibibytes(2),
     )
     _helm_release(chart)
     return chart

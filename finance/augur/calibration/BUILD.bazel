@@ -30,6 +30,7 @@ py_library(
     srcs = ["catalog.py"],
     deps = [
         ":platform",
+        "//finance/augur/model:series",
         "//finance/evidence:markets",
         "@pypi//pydantic",
         "@pypi//pyyaml",
@@ -169,6 +170,7 @@ py_test(
         ":conftest",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/model:series",
         "//finance/evidence:markets",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
@@ -235,6 +237,7 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:private_equity_risk",
+        "//finance/augur/model:series",
         "//finance/evidence:markets",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -9,6 +9,7 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from finance.augur.calibration.catalog import (
+    CatalogMetadata,
     CorrelateMarket,
     ExactMarket,
     IpoByDateMapping,
@@ -19,20 +20,23 @@ from finance.augur.calibration.catalog import (
     PolymarketRef,
     UnmappableMarket,
 )
+from finance.augur.model.series import IssuerId
 from finance.evidence.markets import Platform
 from util.bazel.runfiles import get_required_path
+
+OPENAI = IssuerId("openai")
 
 
 @pytest.fixture
 def catalog() -> MarketCatalog:
     """A small in-memory catalog with one of each variant, built as typed objects."""
     return MarketCatalog(
-        metadata={"source": "manifold", "as_of": "2026-05-29", "augur_model_as_of": "2026-05-27"},
+        metadata=CatalogMetadata(source="manifold", as_of=date(2026, 5, 29), augur_model_as_of=date(2026, 5, 27)),
         markets=[
             ExactMarket(
                 platform_ref=ManifoldRef(manifold_id="AAA"),
                 resolution_deadline=date(2027, 1, 1),
-                mapping=IpoByDateMapping(issuer="openai", by_date=date(2027, 1, 1)),
+                mapping=IpoByDateMapping(issuer=OPENAI, by_date=date(2027, 1, 1)),
             ),
             CorrelateMarket(
                 platform_ref=ManifoldRef(manifold_id="BBB"),
@@ -50,7 +54,7 @@ def test_partitions_dispatch_on_variant(catalog: MarketCatalog) -> None:
     assert [m.market_id for m in catalog.surfaced_markets()] == ["BBB", "CCC"]
     (exact,) = catalog.exact_markets()
     assert isinstance(exact, ExactMarket)
-    assert exact.mapping == IpoByDateMapping(issuer="openai", by_date=date(2027, 1, 1))
+    assert exact.mapping == IpoByDateMapping(issuer=OPENAI, by_date=date(2027, 1, 1))
 
 
 def test_referenced_markets_unions_and_dedupes() -> None:
@@ -146,14 +150,14 @@ def test_platform_ref_discriminated_union() -> None:
     """Each platform variant carries its own required ID field."""
     poly_market = ExactMarket(
         platform_ref=PolymarketRef(polymarket_id="0xabc"),
-        mapping=IpoByDateMapping(issuer="openai", by_date=date(2027, 1, 1)),
+        mapping=IpoByDateMapping(issuer=OPENAI, by_date=date(2027, 1, 1)),
     )
     assert poly_market.platform == Platform.POLYMARKET
     assert poly_market.market_id == "0xabc"
 
     kalshi_market = ExactMarket(
         platform_ref=KalshiRef(kalshi_id="OPENAI-IPO-2027"),
-        mapping=IpoByDateMapping(issuer="openai", by_date=date(2027, 1, 1)),
+        mapping=IpoByDateMapping(issuer=OPENAI, by_date=date(2027, 1, 1)),
     )
     assert kalshi_market.market_id == "OPENAI-IPO-2027"
 

@@ -176,12 +176,12 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
     tender_sale_capacity_alpha: float = Field(default=10.0, gt=0.0)
     tender_sale_capacity_beta: float = Field(default=1.0, gt=0.0)
     # Probability that a scheduled tender precursor event is canceled before
-    # reaching execution. The realization-risk plan distinguishes the tender
-    # opportunity arising (LogNormal-scheduled precursor) from the tender
-    # actually executing; cancellation is the gap. Plan [HEURISTIC] baseline
-    # 0.08 for normal/neutral macro; macro-state-dependent cancellation is not
-    # yet modeled. Independent of the suspension/terminal-state blockers,
-    # which deterministically prevent execution.
+    # reaching execution. This distinguishes the tender opportunity arising
+    # (LogNormal-scheduled precursor) from the tender actually executing;
+    # cancellation is the gap. Heuristic baseline: 0.08 for normal/neutral
+    # macro; macro-state-dependent cancellation is not yet modeled. Independent
+    # of the suspension/terminal-state blockers, which deterministically prevent
+    # execution.
     tender_cancellation_probability: float = Field(default=0.0, ge=0.0, le=1.0)
     admin_mark_update_interval_months_median: float = Field(default=0.0, ge=0.0)
     admin_mark_update_interval_log_sigma: float = Field(default=0.5, ge=0.0)
@@ -206,9 +206,7 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
     liquidity_suspension_months_min: int = Field(default=1, ge=1)
     liquidity_suspension_months_max: int = Field(default=6, ge=1)
     # Total annual rate of legal/administrative shock events. The shock's effect on
-    # the issuer follows the realization-risk plan's three-way severity split (see
-    # gaffer-private/gaffer_augur/openai_stock/realization_risk_model_plan.md
-    # §Liquidity And Legal Execution Shocks): 80% temporary recoverable block, 15%
+    # the issuer follows a three-way severity split: 80% temporary recoverable block, 15%
     # permanent sale-capacity cap, 5% severe `LEGAL_IMPAIRMENT` event. The 5% severe
     # case is further split 50/30/20 between indefinite block, near-zero permanent
     # capacity, and small-dollar forced recovery. Only the 5% severe branch emits a
@@ -469,7 +467,6 @@ class _IssuerPaths:
     company_valuation_usd: FloatMatrix
 
 
-# Plan-derived constants (realization_risk_model_plan.md §Liquidity And Legal Execution Shocks).
 # These split a single legal-event arrival into the three structural severities.
 _LEGAL_TEMPORARY_SHARE = 0.80  # recoverable temporary block, no event_kind marker
 _LEGAL_PERMANENT_CAP_SHARE = 0.15  # permanent sale-capacity cap, no event_kind marker
@@ -488,7 +485,7 @@ _LEGAL_SEVERE_SMALL_DOLLAR_USD_MAX = 100_000.0  # uniform [0, 100_000]
 
 
 def _sample_issuer(
-    issuer_id: str, issuer: PrivateEquityRiskIssuerConfig, request: ExogenousSamplingRequest
+    issuer_id: IssuerId, issuer: PrivateEquityRiskIssuerConfig, request: ExogenousSamplingRequest
 ) -> _IssuerPaths:
     """Vectorized sampler: all R rollouts evolve in parallel, one timestep at a time.
 
@@ -737,7 +734,7 @@ def _sample_issuer(
                 severe_branch = branch & (sev >= _LEGAL_TEMPORARY_SHARE + _LEGAL_PERMANENT_CAP_SHARE)
 
                 # 80% temporary: stochastic-duration liquidity block via Geometric(p=0.12).
-                # No event_kind marker (per plan).
+                # No event_kind marker.
                 if temp_branch.any():
                     n = int(temp_branch.sum())
                     durations = event_rng.geometric(p=_LEGAL_TEMPORARY_MONTHLY_RECOVERY_PROBABILITY, size=n).astype(
@@ -747,7 +744,7 @@ def _sample_issuer(
                     suspended_through[temp_branch] = np.maximum(suspended_through[temp_branch], new_through)
 
                 # 15% permanent cap: reduce permanent_capacity_cap by Uniform[0, 0.20] cap.
-                # No event_kind marker (per plan).
+                # No event_kind marker.
                 if perm_branch.any():
                     n = int(perm_branch.sum())
                     new_cap = event_rng.uniform(0.0, _LEGAL_PERMANENT_CAPACITY_MAX_FACTOR, size=n)
@@ -791,7 +788,7 @@ def _sample_issuer(
 
                 eligible &= ~branch
 
-            # Branch 5: ordinary suspension (no event_kind per plan).
+            # Branch 5: ordinary suspension (no event_kind marker).
             branch = eligible & (u_suspension[:, u_idx] < monthly_suspension)
             if branch.any():
                 n = int(branch.sum())
@@ -1185,7 +1182,7 @@ def _dilution_factor(
     annual_dilution_rate: float,
     annual_dilution_rate_log_sigma: float,
     rollout_seeds: tuple[int, ...],
-    issuer_id: str,
+    issuer_id: IssuerId,
     rollout_count: int,
     horizon_months: int,
 ) -> FloatMatrix:

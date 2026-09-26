@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxProfile, PreparedTaxRules
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedSeries
 from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome
@@ -15,14 +15,14 @@ from finance.augur.sim.world import World
 HOUSEHOLD = AgentId("test_household")
 OTHER = AgentId("test_other")
 WORLD = AgentId("test_world")
-CASH = AccountRef(agent_id=HOUSEHOLD, account_id="checking")
-RESERVE = AccountRef(agent_id=HOUSEHOLD, account_id="savings")
-RECIPIENT = AccountRef(agent_id=OTHER, account_id="checking")
-EXOGENOUS = AccountRef(agent_id=WORLD, account_id="cash")
+CASH = AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("checking"))
+RESERVE = AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("savings"))
+RECIPIENT = AccountRef(agent_id=OTHER, account_id=AccountId("checking"))
+EXOGENOUS = AccountRef(agent_id=WORLD, account_id=AccountId("cash"))
 INCOME_SOURCES = (ORDINARY_INCOME, InterestIncome())
 
 
-def flat_rules(jurisdiction: str, rate: int) -> PreparedTaxRules:
+def flat_rules(jurisdiction: JurisdictionId, rate: int) -> PreparedTaxRules:
     return PreparedTaxRules(jurisdiction, (), False, (PreparedTaxBracket(None, rate),), (), 0, 300_000, 0)
 
 
@@ -31,11 +31,11 @@ def taxpayer(agent_id: AgentId) -> PreparedTaxProfile:
     return PreparedTaxProfile(
         agent_id=agent_id,
         tax_authority_agent_id=WORLD,
-        payment_account_id="checking",
-        tax_authority_account_id="cash",
+        payment_account_id=AccountId("checking"),
+        tax_authority_account_id=AccountId("cash"),
         prior_year_tax=0,
         section_121_exclusion=0,
-        jurisdictions=(flat_rules("test_federal", 100_000_000),),
+        jurisdictions=(flat_rules(JurisdictionId("test_federal"), 100_000_000),),
     )
 
 
@@ -55,7 +55,7 @@ def accounting(
     accounts: Sequence[PreparedAccount] = ACCOUNTS, taxpayers: Sequence[PreparedTaxProfile] = TAXPAYERS
 ) -> Accounting:
     """The accounts and taxpayers on a fresh ledger."""
-    books = Accounting(INCOME_SOURCES, ())
+    books = Accounting(INCOME_SOURCES)
     for account in accounts:
         books.declare(account)
     for profile in taxpayers:

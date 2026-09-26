@@ -15,14 +15,19 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.compiler.tax import compile_income_sources, compile_profile
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket, load_jurisdiction
 from finance.augur.sim.scenario import OrdinaryIncome, TaxProfile
+
+FEDERAL_US = JurisdictionId("federal_us")
 
 CENT = Decimal("0.01")
 
 
-def _alice(*jurisdiction_ids: str) -> TaxProfile:
-    return TaxProfile(agent_id="alice", jurisdiction_ids=list(jurisdiction_ids), tax_authority_agent_id="irs")
+def _alice(*jurisdiction_ids: JurisdictionId) -> TaxProfile:
+    return TaxProfile(
+        agent_id=AgentId("alice"), jurisdiction_ids=list(jurisdiction_ids), tax_authority_agent_id=AgentId("irs")
+    )
 
 
 def _capping(jurisdiction: Jurisdiction, *, offset: Decimal) -> Jurisdiction:
@@ -32,8 +37,8 @@ def _capping(jurisdiction: Jurisdiction, *, offset: Decimal) -> Jurisdiction:
 def test_the_shipped_jurisdictions_agree_on_the_cap() -> None:
     """The premise of the rejection below: today's data compiles, so failing means disagreement."""
 
-    jurisdictions = {name: load_jurisdiction(name) for name in ("federal_us", "california")}
-    compile_profile(_alice("federal_us", "california"), jurisdictions, quantum=CENT)
+    jurisdictions = {name: load_jurisdiction(name) for name in (FEDERAL_US, JurisdictionId("california"))}
+    compile_profile(_alice(FEDERAL_US, JurisdictionId("california")), jurisdictions, quantum=CENT)
 
 
 def test_a_profile_whose_jurisdictions_cap_the_offset_differently_is_refused() -> None:
@@ -43,11 +48,13 @@ def test_a_profile_whose_jurisdictions_cap_the_offset_differently_is_refused() -
     other that its own law does not support, and nothing downstream could tell.
     """
 
-    federal = load_jurisdiction("federal_us")
-    california = _capping(load_jurisdiction("california"), offset=Decimal(0))
+    federal = load_jurisdiction(FEDERAL_US)
+    california = _capping(load_jurisdiction(JurisdictionId("california")), offset=Decimal(0))
     with pytest.raises(ValueError, match="cap the capital-loss ordinary offset differently"):
         compile_profile(
-            _alice("federal_us", "california"), {"federal_us": federal, "california": california}, quantum=CENT
+            _alice(FEDERAL_US, JurisdictionId("california")),
+            {FEDERAL_US: federal, JurisdictionId("california"): california},
+            quantum=CENT,
         )
 
 
@@ -55,21 +62,23 @@ def test_a_single_jurisdiction_may_cap_the_offset_at_anything() -> None:
     """Nothing to disagree with, so a state that allows no offset at all still compiles."""
 
     compile_profile(
-        _alice("california"), {"california": _capping(load_jurisdiction("california"), offset=Decimal(0))}, quantum=CENT
+        _alice(JurisdictionId("california")),
+        {JurisdictionId("california"): _capping(load_jurisdiction(JurisdictionId("california")), offset=Decimal(0))},
+        quantum=CENT,
     )
 
 
 def test_profile_order_routes_and_jurisdiction_specific_rules_survive_preparation() -> None:
-    jurisdictions = {name: load_jurisdiction(name) for name in ("federal_us", "california")}
+    jurisdictions = {name: load_jurisdiction(name) for name in (FEDERAL_US, JurisdictionId("california"))}
     alice, bob = (
         compile_profile(profile, jurisdictions, quantum=CENT)
         for profile in (
-            _alice("california", "federal_us"),
+            _alice(JurisdictionId("california"), FEDERAL_US),
             TaxProfile(
-                agent_id="bob",
-                jurisdiction_ids=["federal_us"],
-                tax_authority_agent_id="irs",
-                payment_account_id="tax-cash",
+                agent_id=AgentId("bob"),
+                jurisdiction_ids=[FEDERAL_US],
+                tax_authority_agent_id=AgentId("irs"),
+                payment_account_id=AccountId("tax-cash"),
                 prior_year_tax=Decimal("123.45"),
             ),
         )
@@ -96,7 +105,7 @@ def test_profile_order_routes_and_jurisdiction_specific_rules_survive_preparatio
 
 
 def test_prepared_thresholds_use_exact_quantum_and_rates_keep_half_away_rounding() -> None:
-    jurisdiction = load_jurisdiction("federal_us").model_copy(
+    jurisdiction = load_jurisdiction(FEDERAL_US).model_copy(
         update={
             "ordinary_income_brackets": {
                 "single": [
@@ -107,7 +116,7 @@ def test_prepared_thresholds_use_exact_quantum_and_rates_keep_half_away_rounding
             "standard_deduction": {"single": Decimal("5.05")},
         }
     )
-    profile = compile_profile(_alice("federal_us"), {"federal_us": jurisdiction}, quantum=Decimal("0.05"))
+    profile = compile_profile(_alice(FEDERAL_US), {FEDERAL_US: jurisdiction}, quantum=Decimal("0.05"))
     [rule] = profile.jurisdictions
     first, last = rule.ordinary_brackets
     assert (first.upper, first.rate_ppb) == (201, 100_000_001)
@@ -122,7 +131,7 @@ def test_prepared_thresholds_use_exact_quantum_and_rates_keep_half_away_rounding
 
 def test_largest_finite_threshold_is_not_an_open_bracket_sentinel() -> None:
     maximum = (1 << 63) - 1
-    jurisdiction = load_jurisdiction("federal_us").model_copy(
+    jurisdiction = load_jurisdiction(FEDERAL_US).model_copy(
         update={
             "ordinary_income_brackets": {
                 "single": [
@@ -132,7 +141,7 @@ def test_largest_finite_threshold_is_not_an_open_bracket_sentinel() -> None:
             }
         }
     )
-    profile = compile_profile(_alice("federal_us"), {"federal_us": jurisdiction}, quantum=CENT)
+    profile = compile_profile(_alice(FEDERAL_US), {FEDERAL_US: jurisdiction}, quantum=CENT)
     assert [bracket.upper for bracket in profile.jurisdictions[0].ordinary_brackets] == [maximum, None]
 
 

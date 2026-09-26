@@ -4,9 +4,10 @@ from collections.abc import Collection, Sequence
 from copy import deepcopy
 
 from finance.augur.sim.accounting import Accounting
-from finance.augur.sim.books import AccountRef, DistributionOutcome, JournalEntry, Posting
+from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, DistributionOutcome, JournalEntry, Posting
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import Holdings
+from finance.augur.sim.ids import AccountId, AgentId, AssetId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, distribution_value, mul_div
 from finance.augur.sim.prepared import PreparedDistribution
@@ -14,10 +15,12 @@ from finance.augur.sim.scenario import InterestIncome
 
 
 class Distributions:
-    def __init__(self, specs: Sequence[PreparedDistribution], managed_slots: Collection[tuple[str, str, str]]) -> None:
+    def __init__(
+        self, specs: Sequence[PreparedDistribution], managed_slots: Collection[tuple[AgentId, AccountId, AssetId]]
+    ) -> None:
         """`managed_slots` are the `(agent_id, holding_account_id, asset_id)` holdings a TLH component settles instead."""
         self.specs: tuple[PreparedDistribution, ...] = tuple(specs)
-        self.managed_slots: set[tuple[str, str, str]] = set(managed_slots)
+        self.managed_slots: set[tuple[AgentId, AccountId, AssetId]] = set(managed_slots)
         # This month's outcomes, cleared by `begin_month`.
         self.outcomes: list[DistributionOutcome] = []
 
@@ -48,10 +51,7 @@ class Distributions:
                         month=month,
                         cause_id=cause,
                         postings=[
-                            Posting(
-                                account=AccountRef(agent_id="__external__", account_id="boundary"),
-                                amount=checked_count(-amount, "money negation"),
-                            ),
+                            Posting(account=EXTERNAL_BOUNDARY, amount=checked_count(-amount, "money negation")),
                             Posting(
                                 account=AccountRef(agent_id=spec.agent_id, account_id=spec.to_account_id), amount=amount
                             ),

@@ -14,13 +14,13 @@ from typing import Literal
 
 import numpy as np
 
-from finance.augur.model.series import InflationKey, SecurityKey
+from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -38,9 +38,9 @@ from finance.augur.x.allocation_glide.policy import decide
 
 QUANTUM = Decimal("0.01")
 RETIREE = AgentId("test-retiree")
-COUNTERPARTY = "test-world"
-GROWTH = SecurityKey(symbol="test-growth")
-STEADY = SecurityKey(symbol="test-steady")
+COUNTERPARTY = AgentId("test-world")
+GROWTH = SecurityKey(symbol=SecuritySymbol("test-growth"))
+STEADY = SecurityKey(symbol=SecuritySymbol("test-steady"))
 HORIZON_MONTHS = 60
 
 
@@ -78,7 +78,7 @@ def compose(case: Situation, rollout_id: int) -> World:
     for name, balance in ((RETIREE, Decimal(10_000)), (COUNTERPARTY, Decimal(0))):
         world.declare_account(
             PreparedAccount(
-                account=AccountRef(agent_id=name, account_id="checking"),
+                account=AccountRef(agent_id=name, account_id=AccountId("checking")),
                 opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
             )
         )
@@ -86,15 +86,15 @@ def compose(case: Situation, rollout_id: int) -> World:
         scale = quantity_scale_for_asset(asset)
         world.declare_pool(
             PreparedHoldingPool(
-                agent_id=RETIREE, account_id="checking", asset_id=str(asset.symbol), quantity_scale=scale
+                agent_id=RETIREE, account_id=AccountId("checking"), asset_id=AssetId(asset.symbol), quantity_scale=scale
             )
         )
         world.hold(
             PreparedLot(
-                lot_id=f"test-opening-{asset.symbol}",
+                lot_id=LotId(f"test-opening-{asset.symbol}"),
                 agent_id=RETIREE,
-                account_id="checking",
-                asset_id=str(asset.symbol),
+                account_id=AccountId("checking"),
+                asset_id=AssetId(asset.symbol),
                 purchase_month=-24,
                 quantity_scale=scale,
                 units=int(quantity_to_quanta(500, scale=scale)),
@@ -108,8 +108,8 @@ def compose(case: Situation, rollout_id: int) -> World:
                     month=month,
                     obligation_id="test-consumption",
                     obligation_type="cash_spend",
-                    from_account=AccountRef(agent_id=RETIREE, account_id="checking"),
-                    to_account=AccountRef(agent_id=COUNTERPARTY, account_id="checking"),
+                    from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
+                    to_account=AccountRef(agent_id=COUNTERPARTY, account_id=AccountId("checking")),
                     amount_due=PreparedIndexedAmount(
                         base_amount=int(currency_amount_to_quanta(Decimal(6_000), quantum=QUANTUM)),
                         series_id=InflationKey().wire_id,

@@ -14,14 +14,14 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LocationId
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import ClaimId, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, JournalEntry
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -38,11 +38,11 @@ from finance.augur.sim.results import Rejected
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-ALICE = "alice"
-BOB = "bob"
-CHECKING = "checking"
+ALICE = AgentId("alice")
+BOB = AgentId("bob")
+CHECKING = AccountId("checking")
 SF = PreparedLocation(
-    location_id="sf",
+    location_id=LocationId("sf"),
     display_name="San Francisco",
     jurisdiction_ids=(),
     annual_property_tax_rate_ppb=rate_to_ppb(0.0118),
@@ -55,11 +55,11 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def ref(agent_id: str) -> AccountRef:
+def ref(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
-def account(agent_id: str, balance: Decimal | int = 0) -> PreparedAccount:
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> PreparedAccount:
     return PreparedAccount(account=ref(agent_id), opening_balance=money(balance))
 
 
@@ -78,8 +78,8 @@ def home_value(*paths: list[Decimal | int], horizon_months: int) -> tuple[Prepar
 
 def financing(*, borrower: str, principal: Decimal | int, annual_rate: float, term_months: int) -> _MortgageFinancing:
     return _MortgageFinancing(
-        liability_id=f"{borrower}-loan",
-        lender_agent_id="bank",
+        liability_id=LiabilityId(f"{borrower}-loan"),
+        lender_agent_id=AgentId("bank"),
         lender_account_id=CHECKING,
         principal=money(principal),
         annual_interest_rate_ppb=rate_to_ppb(annual_rate),
@@ -89,7 +89,7 @@ def financing(*, borrower: str, principal: Decimal | int, annual_rate: float, te
 
 def home(
     *,
-    buyer: str,
+    buyer: AgentId,
     month: int,
     purchase_price: Decimal | int,
     down_payment: Decimal | int,
@@ -99,11 +99,11 @@ def home(
     return _PropertyPurchase(
         month=month,
         cause_id=f"{buyer}-buys-home",
-        property_id=f"{buyer}-home",
+        property_id=PropertyId(f"{buyer}-home"),
         location_id=SF.location_id,
         buyer_agent_id=buyer,
         buyer_account_id=CHECKING,
-        seller_agent_id="seller",
+        seller_agent_id=AgentId("seller"),
         seller_account_id=CHECKING,
         purchase_price=money(purchase_price),
         down_payment=money(down_payment),
@@ -172,7 +172,7 @@ class Recorded:
         self.home_values.append(home_value_of(world))
 
 
-def drive(world: World, *payers: str) -> Recorded:
+def drive(world: World, *payers: AgentId) -> Recorded:
     """Each named payer settles its own claims in registration order; a rejection stops the path.
 
     Payer order is the test's: a rejected payment stops the whole rollout, so whoever pays after
@@ -207,7 +207,7 @@ def drive(world: World, *payers: str) -> Recorded:
 
 def run(world: World) -> Recorded:
     """One tracked household paying every due claim in full, in order, month by month."""
-    world.track(ConfiguredHousehold(AgentId(ALICE), ()))
+    world.track(ClaimPayer(AgentId(ALICE)))
     recorded = Recorded.opening(world)
     world.start()
     while not world.finished:
@@ -227,9 +227,9 @@ def balanced(journal: list[JournalEntry]) -> bool:
 def test_financed_purchase_and_first_installment_match_contract() -> None:
     world = compose(
         account(ALICE, 120_000),
-        account("seller"),
-        account("bank"),
-        account("county"),
+        account(AgentId("seller")),
+        account(AgentId("bank")),
+        account(AgentId("county")),
         horizon_months=2,
         housing=Housing(
             purchases=(
@@ -245,10 +245,10 @@ def test_financed_purchase_and_first_installment_match_contract() -> None:
         ),
         tax_policies=(
             _PropertyTax(
-                property_id=f"{ALICE}-home",
+                property_id=PropertyId(f"{ALICE}-home"),
                 owner_agent_id=ALICE,
                 from_account_id=CHECKING,
-                tax_authority_agent_id="county",
+                tax_authority_agent_id=AgentId("county"),
                 tax_authority_account_id=CHECKING,
                 annual_tax_rate_ppb=rate_to_ppb(0.012),
                 start_month=0,
@@ -294,7 +294,7 @@ def test_sale_pays_off_ledger_principal_before_the_sale_months_installment(
         sales=(
             _PropertySale(
                 month=5,
-                property_id=f"{ALICE}-home",
+                property_id=PropertyId(f"{ALICE}-home"),
                 closing_cost_ppb=rate_to_ppb(float(Decimal(closing_cost_pct) / 100)),
             ),
         ),
@@ -304,8 +304,8 @@ def test_sale_pays_off_ledger_principal_before_the_sale_months_installment(
     for rollout_id in range(2):
         world = compose(
             account(ALICE, 2000),
-            account("seller"),
-            account("bank"),
+            account(AgentId("seller")),
+            account(AgentId("bank")),
             horizon_months=horizon,
             housing=housing,
             series=series,
@@ -341,7 +341,7 @@ def test_sale_pays_off_ledger_principal_before_the_sale_months_installment(
 
 @pytest.mark.parametrize("fail_year_end", [False, True])
 def test_paid_groups_update_entities_but_a_failed_year_end_does_not_reset_interest(fail_year_end: bool) -> None:
-    accounts = [account(ALICE, 300_000), account(BOB, 300_000), account("seller"), account("bank")]
+    accounts = [account(ALICE, 300_000), account(BOB, 300_000), account(AgentId("seller")), account(AgentId("bank"))]
     world = compose(
         *accounts,
         horizon_months=12,
@@ -367,7 +367,7 @@ def test_paid_groups_update_entities_but_a_failed_year_end_does_not_reset_intere
                     obligation_id="unfundable",
                     obligation_type="cash_spend",
                     from_account=ref(ALICE),
-                    to_account=ref("seller"),
+                    to_account=ref(AgentId("seller")),
                     amount_due=money(1_000_000),
                     property_id=None,
                     deduction_category=None,
@@ -381,11 +381,15 @@ def test_paid_groups_update_entities_but_a_failed_year_end_does_not_reset_intere
     before = {loan.liability_id: loan for loan in previous.mortgages}
     after = {loan.liability_id: loan for loan in ending.mortgages}
     assert (world.failed_month is not None) == fail_year_end
-    assert after["bob-loan"].principal < before["bob-loan"].principal
+    assert after[LiabilityId("bob-loan")].principal < before[LiabilityId("bob-loan")].principal
     if fail_year_end:
-        assert after["alice-loan"].principal == before["alice-loan"].principal
-        assert after["alice-loan"].interest_paid_ytd == before["alice-loan"].interest_paid_ytd > 0
-        assert after["bob-loan"].interest_paid_ytd > before["bob-loan"].interest_paid_ytd
+        assert after[LiabilityId("alice-loan")].principal == before[LiabilityId("alice-loan")].principal
+        assert (
+            after[LiabilityId("alice-loan")].interest_paid_ytd
+            == before[LiabilityId("alice-loan")].interest_paid_ytd
+            > 0
+        )
+        assert after[LiabilityId("bob-loan")].interest_paid_ytd > before[LiabilityId("bob-loan")].interest_paid_ytd
     else:
         assert all(loan.interest_paid_ytd == 0 for loan in after.values())
     for id_, loan in after.items():

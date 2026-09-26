@@ -14,18 +14,19 @@ from datetime import date
 import pytest
 import pytest_bazel
 
-from finance.augur.calibration.catalog import ExactMarket, IpoByDateMapping, ManifoldRef, MarketCatalog
+from finance.augur.calibration.catalog import CatalogMetadata, ExactMarket, IpoByDateMapping, ManifoldRef, MarketCatalog
 from finance.augur.calibration.ipo_prior import derive_public_market_anchors
 from finance.augur.calibration.platform import PriceClient
 from finance.augur.calibration.testing import mock_price_clients
 from finance.augur.model.private_equity_risk import PrivateEquityRiskIssuerConfig
+from finance.augur.model.series import IssuerId
 from finance.evidence.markets import Platform
 
 
 def _ipo_market(manifold_id: str, by_date: str) -> ExactMarket:
     return ExactMarket(
         platform_ref=ManifoldRef(manifold_id=manifold_id),
-        mapping=IpoByDateMapping(issuer="openai", by_date=date.fromisoformat(by_date)),
+        mapping=IpoByDateMapping(issuer=IssuerId("openai"), by_date=date.fromisoformat(by_date)),
     )
 
 
@@ -34,7 +35,7 @@ def catalog() -> MarketCatalog:
     # Anchor 2026-05-27. Deadlines map to months 7 / 19 / 31 / 43, plus a -1 month before
     # sim start. The 2030 market (0.80) sits below the 2029 market (0.93): market noise.
     return MarketCatalog(
-        metadata={"as_of": "2026-05-29", "augur_model_as_of": "2026-05-27"},
+        metadata=CatalogMetadata(as_of=date(2026, 5, 29), augur_model_as_of=date(2026, 5, 27)),
         markets=[
             _ipo_market("B28", "2028-01-01"),  # month 19
             _ipo_market("B27", "2027-01-01"),  # month 7 (out of order on purpose)
@@ -79,7 +80,8 @@ async def test_derived_anchors_validate_against_m1_issuer_config(catalog: Market
 async def test_probabilities_clamped_below_one() -> None:
     # A near-certain (>= 1.0) market must clamp into [0, 1) so the `lt=1.0` field accepts it.
     catalog = MarketCatalog(
-        metadata={"as_of": "2026-05-29", "augur_model_as_of": "2026-05-27"}, markets=[_ipo_market("CERT", "2029-01-01")]
+        metadata=CatalogMetadata(as_of=date(2026, 5, 29), augur_model_as_of=date(2026, 5, 27)),
+        markets=[_ipo_market("CERT", "2029-01-01")],
     )
     anchors = await derive_public_market_anchors(catalog, price_client=_manifold_prices({"CERT": 1.0}))
     assert anchors[0].cumulative_probability < 1.0

@@ -8,6 +8,7 @@ import pytest_bazel
 
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.portfolio import (
+    HoldingKind,
     HoldingTaxLotConfig,
     PortfolioAccountConfig,
     PortfolioConfig,
@@ -20,6 +21,7 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot
 from finance.augur.sim.results import Finished
@@ -27,25 +29,27 @@ from finance.augur.sim.scenario import ORDINARY_INCOME, InitialLot
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 
+CHECKING = AccountId("checking")
+
 ASSET = SecurityKey(symbol=SecuritySymbol("test-security"))
 QUANTUM = Decimal("0.01")
-OWNER = "test-owner"
+OWNER = AgentId("test-owner")
 
 
 @pytest.fixture
 def portfolio() -> PortfolioConfig:
     return PortfolioConfig(
-        accounts=(PortfolioAccountConfig(account_id="checking", owner_agent_id=OWNER),),
+        accounts=(PortfolioAccountConfig(account_id=CHECKING, owner_agent_id=OWNER),),
         holdings=(
             SecurityHoldingConfig(
                 position_id="test-position",
-                account_id="checking",
+                account_id=CHECKING,
                 symbol=ASSET.symbol,
-                security_kind="stock",
+                security_kind=HoldingKind.STOCK,
                 unit_value=Decimal(1),
                 lots=(
                     HoldingTaxLotConfig(
-                        lot_id="test-lot", holding_period_months_at_start=24, quantity=3, cost_basis=Decimal(1)
+                        lot_id=LotId("test-lot"), holding_period_months_at_start=24, quantity=3, cost_basis=Decimal(1)
                     ),
                 ),
             ),
@@ -63,7 +67,7 @@ def _prepared(lot: InitialLot) -> PreparedLot:
         lot_id=lot.lot_id,
         agent_id=lot.agent_id,
         account_id=lot.account_id,
-        asset_id=str(asset.symbol),
+        asset_id=AssetId(asset.symbol),
         purchase_month=int(lot.purchase_month_index),
         quantity_scale=scale,
         units=int(quantity_to_quanta(lot.quantity, scale=scale)),
@@ -85,12 +89,12 @@ def _compose(lots: list[PreparedLot], *, horizon_months: int) -> World:
         horizon_months=horizon_months,
         income_sources=(ORDINARY_INCOME,),
     )
-    world.declare_account(PreparedAccount(account=AccountRef(agent_id=OWNER, account_id="checking"), opening_balance=0))
+    world.declare_account(PreparedAccount(account=AccountRef(agent_id=OWNER, account_id=CHECKING), opening_balance=0))
     world.declare_pool(
         PreparedHoldingPool(
             agent_id=OWNER,
-            account_id="checking",
-            asset_id=str(ASSET.symbol),
+            account_id=CHECKING,
+            asset_id=AssetId(ASSET.symbol),
             quantity_scale=quantity_scale_for_asset(ASSET),
         )
     )
@@ -101,7 +105,7 @@ def _compose(lots: list[PreparedLot], *, horizon_months: int) -> World:
 
 def test_product_display_keeps_one_dollar_total_over_three_units(portfolio: PortfolioConfig) -> None:
     response = product_portfolio_response(
-        snapshot=FinanceSnapshot(as_of_date="2026-01-01", cash=0), portfolio=portfolio, tlh_portfolios=()
+        snapshot=FinanceSnapshot(as_of_date="2026-01-01", cash=Decimal(0)), portfolio=portfolio, tlh_portfolios=()
     )
     [position] = response.holdings
     [lot] = position.lots
@@ -139,12 +143,12 @@ def test_imported_basis_is_exact_through_sales(
                             Sell(
                                 cause_id=f"test-sale-{observation.month}",
                                 agent_id=OWNER,
-                                proceeds_account_id="checking",
-                                asset_id="test-security",
+                                proceeds_account_id=CHECKING,
+                                asset_id=AssetId("test-security"),
                                 lots=(
                                     LotSale(
-                                        account_id="checking",
-                                        lot_id="test-lot",
+                                        account_id=CHECKING,
+                                        lot_id=LotId("test-lot"),
                                         units=sales[observation.month] * lot.quantity_scale,
                                     ),
                                 ),

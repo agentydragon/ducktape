@@ -3,10 +3,10 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ActionRequests, stateLabel } from "./actions";
-import { button, render, request, unmountLast } from "./actions_testing";
+import { STALE_AFTER_MS } from "../stream_status";
 import { actionService, type ActionRequestView, type ActionService } from "./client";
-import { STALE_AFTER_MS } from "./stream_status";
+import { ActionRequests, stateLabel } from "./requests";
+import { button, render, request, SSH_EXEC_ARGUMENTS, sshExec, unmountLast } from "./testing";
 
 describe("ActionRequests", () => {
   it("shows structured list errors without an empty-state claim", async () => {
@@ -36,8 +36,9 @@ describe("ActionRequests", () => {
     };
     const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
 
+    expect(container.textContent).toContain("requested by agentplane-test/test-caller");
     expect(container.textContent).toContain("Authenticated external caller at submission");
-    for (const value of ["agentplane-test/test-caller", grant.issuer, grant.client_id, grant.connection_id]) {
+    for (const value of [grant.issuer, grant.client_id, grant.connection_id]) {
       expect(container.textContent).toContain(value);
     }
     expect(container.textContent).not.toContain("forged-");
@@ -62,7 +63,7 @@ describe("ActionRequests", () => {
         origin: { identity_id: "forged-origin-identity" },
       };
       const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
-      expect(container.textContent).toContain(`${row.caller!.namespace}/${row.caller!.name}`);
+      expect(container.textContent).toContain(`requested by ${row.caller!.namespace}/${row.caller!.name}`);
       expect(container.textContent).not.toContain("Authenticated external caller");
       expect(container.textContent).not.toContain("forged-origin-identity");
       // The request-id disclosure exists regardless of external_grant, but carries only the id --
@@ -83,6 +84,35 @@ describe("ActionRequests", () => {
     expect(container.textContent).toContain("Exact arguments (unredacted)");
     expect(container.textContent).toContain("test-exact-token");
     expect(container.textContent).toContain("test-exact-password");
+  });
+
+  it("draws a registered Action's arguments with its widget, and the card's Raw switch turns them to JSON", async () => {
+    const container = await render(
+      { list: async () => [sshExec("decision_pending")], decide: vi.fn() },
+      ActionRequests
+    );
+    expect(container.textContent).toContain("test-user@test-host.example");
+    expect(container.textContent).not.toContain('"command"');
+    const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    if (!raw) throw new Error("missing the Raw switch");
+    await act(async () => raw.click());
+    expect(container.textContent).toContain('"command": "echo test-output"');
+    expect(container.textContent).not.toContain("test-user@test-host.example");
+  });
+
+  it("offers no Raw switch where the arguments show only as their JSON", async () => {
+    // Arguments no widget is registered for, and ones the registered widget does not take.
+    const unfit = {
+      ...sshExec("decision_pending"),
+      id: request("decision_pending", 2).id,
+      arguments: { ...SSH_EXEC_ARGUMENTS, test_extra: "test-value" },
+    };
+    const container = await render(
+      { list: async () => [request("decision_pending", 1), unfit], decide: vi.fn() },
+      ActionRequests
+    );
+    expect(container.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(container.textContent).toContain('"test_extra": "test-value"');
   });
 
   it("renders the caller's own title and description verbatim, as plain text", async () => {

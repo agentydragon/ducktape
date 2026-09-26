@@ -13,6 +13,7 @@ from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import partial
+from typing import Literal
 
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
@@ -114,6 +115,7 @@ def ready_condition(obj: ActionPolicySet | ActionPolicyBinding | InvalidResource
     """The Ready condition this replica wants on the object, keeping the transition time when only
     the generation moved."""
     observed = obj.status.ready()
+    status: Literal["True", "False", "Unknown"]
     if isinstance(obj, InvalidResource):
         status, reason, message = "False", "Invalid", obj.message
     else:

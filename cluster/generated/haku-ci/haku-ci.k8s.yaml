@@ -238,9 +238,10 @@ spec:
               runAsUser: 1000
             startupProbe:
               failureThreshold: 90
-              periodSeconds: 2
-              tcpSocket:
+              httpGet:
+                path: /_ping
                 port: 2375
+              periodSeconds: 2
             volumeMounts:
               - mountPath: /var/lib/docker
                 name: docker-data

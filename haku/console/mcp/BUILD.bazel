@@ -273,6 +273,7 @@ py_test(
         "//haku/console:tool_call_actor",
         "//haku/console/identity:operator_identity",
         "//haku/console/oauth:provider_connection",
+        "//haku/console/oauth:provider_connection_registry",
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
         "//haku/console/tools:google_calendar_client",

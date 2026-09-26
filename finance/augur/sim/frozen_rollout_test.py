@@ -10,13 +10,13 @@ import pytest_bazel
 
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -36,21 +36,21 @@ from finance.augur.sim.testing.issuer_protocol import issuer_protocol
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-CHECKING = "checking"
-PRIVATE = "private"
-FEDERAL = "federal_us"
-ALICE = "alice"
-VENDOR = "vendor"
-IRS = "irs"
+CHECKING = AccountId("checking")
+PRIVATE = AccountId("private")
+FEDERAL = JurisdictionId("federal_us")
+ALICE = AgentId("alice")
+VENDOR = AgentId("vendor")
+IRS = AgentId("irs")
 
 TAX_YEAR_MONTHS = 12
 # The year closes at month 11 and is assessed at month 12: freezing in the closing month is
 # the boundary, where the rollout reaches the end of the year but never the assessment.
 FAIL_MONTH = TAX_YEAR_MONTHS - 1
 
-PE_OWNER = "pe_owner"
-ISSUER = "acme"
-PE_ASSET_ID = "private_equity:acme"
+PE_OWNER = AgentId("pe_owner")
+ISSUER = IssuerId("acme")
+PE_ASSET_ID = AssetId("private_equity:acme")
 PE_SCALE = quantity_scale_for_asset(PrivateEquityAssetKey(issuer_id=IssuerId(ISSUER)))
 PE_FREEZE_MONTH = 1
 PE_MARK_MONTHS = 3
@@ -60,11 +60,11 @@ def money(amount: Decimal | int) -> int:
     return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
-def account(agent_id: str, account_id: str = CHECKING, balance: Decimal | int = 0) -> PreparedAccount:
+def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> PreparedAccount:
     return PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=money(balance))
 
 
-def unfundable(*, month: int, payer: str, amount: Decimal | int) -> PreparedObligation:
+def unfundable(*, month: int, payer: AgentId, amount: Decimal | int) -> PreparedObligation:
     """One required payment larger than everything the payer has."""
 
     return PreparedObligation(
@@ -137,7 +137,7 @@ def private_equity_world(*, freeze: bool) -> World:
     )
     world.hold(
         PreparedLot(
-            lot_id="pe-acme",
+            lot_id=LotId("pe-acme"),
             agent_id=PE_OWNER,
             account_id=PRIVATE,
             asset_id=PE_ASSET_ID,
@@ -155,10 +155,10 @@ def private_equity_world(*, freeze: bool) -> World:
     return world
 
 
-def run(world: World, actor: str) -> Rollout:
+def run(world: World, actor: AgentId) -> Rollout:
     """The household pays an account's claims only when its cash covers all of them."""
 
-    household = ConfiguredHousehold(AgentId(actor), ())
+    household = ClaimPayer(AgentId(actor))
     session = ActionSession({0: world}, actor)
     try:
         batch = session.start()

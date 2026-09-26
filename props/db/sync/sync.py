@@ -8,6 +8,7 @@ import logging
 import tarfile
 from collections.abc import Callable, Set as AbstractSet
 from dataclasses import dataclass
+from itertools import groupby
 from pathlib import Path
 
 import yaml
@@ -152,13 +153,14 @@ def sync_snapshot_files_to_db(session: Session, slug: SnapshotSlug, archive_byte
 
 def _reconstruct_occ_common(
     db_occ: TruePositiveOccurrenceORM | FalsePositiveOccurrenceORM,
-) -> tuple[dict[Path, list[LineRange]], set[Path] | None]:
+) -> tuple[dict[Path, list[LineRange] | None], set[Path] | None]:
     """Reconstruct files dict and match_file_restriction from an ORM occurrence."""
-    files: dict[Path, list[LineRange]] = {}
-    for r in sorted(db_occ.ranges, key=lambda r: (str(r.file_path), r.range_id)):
-        files.setdefault(Path(str(r.file_path)), []).append(
-            LineRange(start_line=r.start_line, end_line=r.end_line, note=r.note)
+    files: dict[Path, list[LineRange] | None] = {
+        Path(file_path): [LineRange(start_line=r.start_line, end_line=r.end_line, note=r.note) for r in ranges]
+        for file_path, ranges in groupby(
+            sorted(db_occ.ranges, key=lambda r: (str(r.file_path), r.range_id)), key=lambda r: str(r.file_path)
         )
+    }
 
     restriction: set[Path] | None = None
     if db_occ.match_file_restriction is not None:

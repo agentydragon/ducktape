@@ -41,15 +41,12 @@ def rule_to_gmail_query(rule: FilterRule) -> str:
         elif isinstance(rule.does_not_have, str):
             negated_query_str = rule.does_not_have
 
-    # Build common criteria (from, to, subject, query, negatedQuery) using dict to handle keyword conflict
     criteria = FilterCriteria(
-        **{
-            "from": rule.from_ if isinstance(rule.from_, str) else None,
-            "to": rule.to if isinstance(rule.to, str) else None,
-            "subject": rule.subject if isinstance(rule.subject, str) else None,
-            "query": query_str,
-            "negatedQuery": negated_query_str,
-        }
+        from_=rule.from_ if isinstance(rule.from_, str) else None,
+        to=rule.to if isinstance(rule.to, str) else None,
+        subject=rule.subject if isinstance(rule.subject, str) else None,
+        query=query_str,
+        negated_query=negated_query_str,
     )
 
     # Start with common criteria

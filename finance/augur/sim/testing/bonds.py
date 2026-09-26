@@ -16,6 +16,7 @@ from finance.augur.sim.compiler.income_sources import income_source_sort_key
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
+from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -31,6 +32,7 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
+CHECKING = AccountId("checking")
 HORIZON = 14
 # Long enough to outlive the horizon, for the cases that are about coupons rather than
 # redemption.
@@ -47,20 +49,20 @@ CPI_DOUBLING = [100.0] * 6 + [200.0] * (HORIZON + 1 - 6)
 CPI_FLAT = [100.0] * (HORIZON + 1)
 CPI_DEFLATING = [100.0] * 6 + [80.0] * (HORIZON + 1 - 6)
 
-TREASURY, MUNI, CORPORATE = "federal_us", "california", None
+TREASURY, MUNI, CORPORATE = JurisdictionId("federal_us"), JurisdictionId("california"), None
 
 
 def dated(
-    bond_id: str,
+    bond_id: BondId,
     *,
-    agent_id: str,
-    account_id: str = "checking",
+    agent_id: AgentId,
+    account_id: AccountId = CHECKING,
     face: Decimal,
     annual_rate: float,
     period: int,
     purchase: int = 0,
     maturity: int,
-    issuer: str | None = None,
+    issuer: JurisdictionId | None = None,
     indexed: bool = False,
 ) -> PreparedBond:
     """A bond bought at par; a nominal coupon is the annual rate's share of the face, rounded once."""
@@ -100,11 +102,11 @@ def cpi_series(paths: Sequence[Sequence[float]]) -> tuple[PreparedSeries, ...]:
     )
 
 
-def checking(*balances: tuple[str, Decimal]) -> tuple[PreparedAccount, ...]:
+def checking(*balances: tuple[AgentId, Decimal]) -> tuple[PreparedAccount, ...]:
     """Opening balances for agents holding one `checking` account each."""
     return tuple(
         PreparedAccount(
-            account=AccountRef(agent_id=agent_id, account_id="checking"),
+            account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")),
             opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
         )
         for agent_id, balance in balances
@@ -121,12 +123,12 @@ class Situation:
     series: tuple[PreparedSeries, ...] = ()
     rollout_count: int = 1
     # Filed in the shipped federal and California law, paying `irs`.
-    taxpayers: tuple[str, ...] = ()
+    taxpayers: tuple[AgentId, ...] = ()
 
 
 def compose(case: Situation, rollout_id: int = 0) -> World:
     """Each issuer a bond names is a jurisdiction the world knows, whether or not anyone files in it."""
-    filed_in = ("federal_us", "california") if case.taxpayers else ()
+    filed_in = (JurisdictionId("federal_us"), JurisdictionId("california")) if case.taxpayers else ()
     issuers = {bond.issuer_jurisdiction_id for bond in case.bonds}
     rules = {id_: load_jurisdiction(id_) for id_ in {*filed_in, *issuers} if id_ is not None}
     world = World(
@@ -143,7 +145,7 @@ def compose(case: Situation, rollout_id: int = 0) -> World:
     for account in case.accounts:
         world.declare_account(account)
     for agent_id in case.taxpayers:
-        profile = TaxProfile(agent_id=agent_id, jurisdiction_ids=list(filed_in), tax_authority_agent_id="irs")
+        profile = TaxProfile(agent_id=agent_id, jurisdiction_ids=list(filed_in), tax_authority_agent_id=AgentId("irs"))
         world.track(TaxAuthority(compile_profile(profile, rules, quantum=QUANTUM)))
     for bond in case.bonds:
         world.hold(bond)
@@ -152,12 +154,12 @@ def compose(case: Situation, rollout_id: int = 0) -> World:
 
 def bond_case(
     *,
-    issuer: str | None = TREASURY,
+    issuer: JurisdictionId | None = TREASURY,
     indexed: bool = False,
     cpi: list[float] | None = None,
     is_taxed: bool = True,
     maturity: int = NEVER_MATURES,
-    account_id: str = "checking",
+    account_id: AccountId = CHECKING,
 ) -> Situation:
     """Alice holding one $1M 4% semiannual bond and $100k cash, and nothing else that moves money.
 
@@ -166,11 +168,11 @@ def bond_case(
     same month as a coupon and the two net against each other.
     """
     return Situation(
-        accounts=checking(("alice", Decimal(100_000)), ("irs", Decimal(0))),
+        accounts=checking((AgentId("alice"), Decimal(100_000)), (AgentId("irs"), Decimal(0))),
         bonds=(
             dated(
-                "rung",
-                agent_id="alice",
+                BondId("rung"),
+                agent_id=AgentId("alice"),
                 account_id=account_id,
                 face=FACE,
                 annual_rate=NOMINAL_RATE,
@@ -182,5 +184,5 @@ def bond_case(
         ),
         horizon_months=HORIZON,
         series=cpi_series([cpi or CPI_FLAT]),
-        taxpayers=("alice",) if is_taxed else (),
+        taxpayers=(AgentId("alice"),) if is_taxed else (),
     )

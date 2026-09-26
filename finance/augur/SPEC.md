@@ -59,8 +59,8 @@ counterparties, public securities, reduced-form TLH portfolios, cash, due claims
 and held dated bonds, and services a mortgage that exists at month zero as a
 tracked contract. It does not support household housing purchases or PE actions.
 Configured scenario adapters use Python-controlled financial steps while retaining
-their scripted housing/PE events and funding conventions; they do not provide an
-alternative executable policy interface.
+their scripted housing/PE events; they do not provide an alternative executable
+policy interface.
 
 For each active path, the common session:
 
@@ -172,6 +172,20 @@ payments. This is not a tax-return preparation service or proof of complete
 statutory coverage. Managed-account heuristics, unsupported distribution character,
 law-year/residency gaps and housing-basis limitations must not be presented as
 validated fidelity. Adding a jurisdiction can require mechanics, not merely data.
+
+The supported tax scope is US federal plus California for a single filer resident
+in the US, holding equity funds, US Treasury and municipal bond funds, municipal
+and direct bonds and managed tax-loss-harvesting portfolios in taxable accounts. Qualified-dividend character, the net
+investment income tax and the mortgage-interest deduction (itemized against the
+standard deduction, with the SALT cap) belong to it; charitable deductions do not.
+Future years hold current law flat, with brackets and thresholds fixed in nominal
+dollars, and estimated tax and the true-up are paid on schedule without penalties:
+explicit assumptions, not forecasts. The code does not yet cover this scope: fund
+distributions are taxed as interest, with no qualified-dividend character; neither
+NIIT nor California's surcharge above $1M is assessed; the bundled tables are 2024
+law; a taxpayer starts with no year-to-date income, gains or payments; the SALT
+cap has no income phase-out; and estimated payments are equal quarters of one
+aggregate prior-year amount rather than per-jurisdiction schedules.
 
 ## Outputs and observation boundaries
 

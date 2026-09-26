@@ -8,14 +8,6 @@ assumptions remain downstream.
 
 ## Domain/API cleanup
 
-- **BIND:** use typed prepared facts and conditioning/artifact observations for
-  explicit financial-product bindings. Distinguish configured
-  opening levels, relative path anchors and fixed contractual amounts. Keep their
-  anchoring conventions explicit at composition, not inferred from source names.
-- **P12 / CAP:** retire the configured strategy while preserving actual
-  state/receipt facts. Account/component selection and any
-  additional trade/contract capture need a named consumer. Do not create another
-  accounting store, generic posting-template framework or mandatory metric slab.
 - **Consider the name “exogenous.”** Removing it may better describe the boundary
   between a coarse statistical world model and explicit economic simulation.
   This is a naming consideration, not a mandatory repository-wide rename or a
@@ -106,7 +98,7 @@ bound on the outcomes of a dated-bond ladder.
   `TieredAmount` scenario variant or a native/JAX policy-state subsystem.
 - Keep PE tender choices distinct from compulsory recovery mechanics. A combined
   allocation policy can consider sellable holdings and tender constraints after
-  the GPE/PE boundary is supported; do not force PE into the old allocator schema.
+  the GPE/PE boundary is supported.
 - Express scenario-specific spending rules in policies; use contract schedules
   for obligations. Rent caps/lease changes require supported contract terms rather
   than a universal `ScenarioKey` knob or silently altered CPI indexing.

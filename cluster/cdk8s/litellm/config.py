@@ -266,7 +266,7 @@ def _tana_entries() -> list[dict]:
 
 def _antigravity_entries() -> list[dict]:
     return _provider_entries(
-        ANTIGRAVITY_MODELS,
+        [model.id for model in ANTIGRAVITY_MODELS],
         provider=Provider.ANTIGRAVITY,
         upstream_prefix="anthropic",
         protocol="messages",

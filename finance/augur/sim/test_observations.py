@@ -8,7 +8,7 @@ import pytest_bazel
 from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.agent import assemble
 from finance.augur.sim.claims import Claim, Claims
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import PreparedHoldingPool, PreparedLot, PreparedSeries
 from finance.augur.sim.results import Executed
@@ -26,7 +26,7 @@ from finance.augur.sim.testing.accounting import (
 from finance.augur.sim.world import World
 
 POOLS = tuple(
-    PreparedHoldingPool(agent_id=actor, account_id=account, asset_id=asset, quantity_scale=10)
+    PreparedHoldingPool(agent_id=actor, account_id=AccountId(account), asset_id=AssetId(asset), quantity_scale=10)
     for actor, account, asset in (
         (HOUSEHOLD, "checking", "stock"),
         (HOUSEHOLD, "checking", "second"),
@@ -49,10 +49,10 @@ def scoped() -> Scoped:
     return Scoped(
         lots=tuple(
             PreparedLot(
-                lot_id=id_,
+                lot_id=LotId(id_),
                 agent_id=actor,
-                account_id=account,
-                asset_id=asset,
+                account_id=AccountId(account),
+                asset_id=AssetId(asset),
                 purchase_month=month,
                 quantity_scale=10,
                 units=units,
@@ -174,11 +174,11 @@ def test_actor_books_follow_partial_sales_and_hide_exhausted_lots(scoped: Scoped
             first = observed.public_positions[0]
             assert (first.lot_id, first.units, first.book_basis) == ("half-a", (5, 3)[month], (7, 4)[month])
             lots = (
-                (LotSale(account_id="checking", lot_id="half-a", units=2),)
+                (LotSale(account_id=AccountId("checking"), lot_id=LotId("half-a"), units=2),)
                 if month == 0
                 else (
-                    LotSale(account_id="checking", lot_id="half-a", units=3),
-                    LotSale(account_id="checking", lot_id="half-b", units=5),
+                    LotSale(account_id=AccountId("checking"), lot_id=LotId("half-a"), units=3),
+                    LotSale(account_id=AccountId("checking"), lot_id=LotId("half-b"), units=5),
                 )
             )
             assert isinstance(
@@ -187,8 +187,8 @@ def test_actor_books_follow_partial_sales_and_hide_exhausted_lots(scoped: Scoped
                     Sell(
                         cause_id=f"sale-{month}",
                         agent_id=HOUSEHOLD,
-                        proceeds_account_id="checking",
-                        asset_id="stock",
+                        proceeds_account_id=AccountId("checking"),
+                        asset_id=AssetId("stock"),
                         lots=lots,
                     ),
                     0,

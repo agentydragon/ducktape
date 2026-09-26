@@ -4,15 +4,15 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
     newTag: devel-20260925233322-f423c72 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress
-    newTag: devel-20260924214853-0523b02 # {"$imagepolicy": "flux-system:agentplane-egress:tag"}
+    newTag: devel-20260926101330-8f02fee # {"$imagepolicy": "flux-system:agentplane-egress:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-migrate
     newTag: devel-20260924010606-5ce04fd # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20260926011451-413f87a # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20260926102610-34054b6 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
-    newTag: devel-20260925233406-f423c72 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
+    newTag: devel-20260926101415-8f02fee # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner
-    newTag: devel-20260926065355-4af9c17 # {"$imagepolicy": "flux-system:agentplane-runner:tag"}
+    newTag: devel-20260926104122-eeb7b54 # {"$imagepolicy": "flux-system:agentplane-runner:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
     newTag: devel-20260925232739-f423c72 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
@@ -20,6 +20,6 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
     newTag: devel-20260924234050-4819c98 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
-    newTag: devel-20260926065328-c68a640 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
+    newTag: devel-20260926101333-8f02fee # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate
     newTag: devel-20260926011427-413f87a # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}

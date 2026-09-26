@@ -8,14 +8,14 @@ from decimal import Decimal
 
 import numpy as np
 
-from finance.augur.model.series import InflationKey, SecurityKey
+from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -32,11 +32,13 @@ from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
 RETIREE = AgentId("retiree")
-COUNTERPARTY = "world"
-TAX_AUTHORITY = "test-tax"
-SECURITIES = ("test-growth", "test-steady")
+COUNTERPARTY = AgentId("world")
+TAX_AUTHORITY = AgentId("test-tax")
+GROWTH = SecuritySymbol("test-growth")
+STEADY = SecuritySymbol("test-steady")
+SECURITIES = (GROWTH, STEADY)
 _FLAT_TAX = Jurisdiction(
-    jurisdiction_id="test-flat-tax",
+    jurisdiction_id=JurisdictionId("test-flat-tax"),
     level=JurisdictionLevel.FEDERAL,
     ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.20)]},
     ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.10)]},
@@ -53,11 +55,7 @@ def sample(*, horizon_months: int) -> ExternalSeriesContext:
     steady = np.full_like(growth, 100.0)
     cpi = np.broadcast_to(1.05 ** (np.arange(horizon_months + 1) // 12), growth.shape)
     return ExternalSeriesContext.from_level_blocks(
-        [
-            (SecurityKey(symbol="test-growth"), growth),
-            (SecurityKey(symbol="test-steady"), steady),
-            (InflationKey(), cpi),
-        ],
+        [(SecurityKey(symbol=GROWTH), growth), (SecurityKey(symbol=STEADY), steady), (InflationKey(), cpi)],
         rollout_count=3,
         horizon_months=horizon_months,
     )
@@ -101,7 +99,7 @@ def compose(situation: Situation, rollout_id: int) -> World:
     for name in (RETIREE, COUNTERPARTY, TAX_AUTHORITY):
         world.declare_account(
             PreparedAccount(
-                account=AccountRef(agent_id=name, account_id="checking"),
+                account=AccountRef(agent_id=name, account_id=AccountId("checking")),
                 opening_balance=int(
                     currency_amount_to_quanta(Decimal(10_000 if name == RETIREE else 0), quantum=QUANTUM)
                 ),
@@ -118,14 +116,16 @@ def compose(situation: Situation, rollout_id: int) -> World:
     for symbol in SECURITIES:
         scale = quantity_scale_for_asset(SecurityKey(symbol=symbol))
         world.declare_pool(
-            PreparedHoldingPool(agent_id=RETIREE, account_id="checking", asset_id=symbol, quantity_scale=scale)
+            PreparedHoldingPool(
+                agent_id=RETIREE, account_id=AccountId("checking"), asset_id=AssetId(symbol), quantity_scale=scale
+            )
         )
         world.hold(
             PreparedLot(
-                lot_id=f"test-opening-{symbol}",
+                lot_id=LotId(f"test-opening-{symbol}"),
                 agent_id=RETIREE,
-                account_id="checking",
-                asset_id=symbol,
+                account_id=AccountId("checking"),
+                asset_id=AssetId(symbol),
                 purchase_month=-24,
                 quantity_scale=scale,
                 units=int(quantity_to_quanta(500, scale=scale)),
@@ -139,8 +139,8 @@ def compose(situation: Situation, rollout_id: int) -> World:
                     month=month,
                     obligation_id="test-committed-bill",
                     obligation_type=ObligationType.OUTSIDE_RENT,
-                    from_account=AccountRef(agent_id=RETIREE, account_id="checking"),
-                    to_account=AccountRef(agent_id=COUNTERPARTY, account_id="checking"),
+                    from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
+                    to_account=AccountRef(agent_id=COUNTERPARTY, account_id=AccountId("checking")),
                     amount_due=situation.annual_bill,
                     property_id=None,
                     deduction_category=None,

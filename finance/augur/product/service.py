@@ -25,6 +25,7 @@ from finance.augur.model.exogenous import (
     level_series_request_channels,
     validate_sample_satisfies_request,
 )
+from finance.augur.model.series import LocationId
 from finance.augur.product.metrics import (
     OutcomeBasis,
     ProductMetricFanSummary,
@@ -37,7 +38,7 @@ from finance.augur.product.metrics import (
 from finance.augur.product.projection import project_product_rollout
 from finance.augur.product.scenarios import (
     Situation,
-    asset_label_by_series_id,
+    asset_labels,
     build_situation,
     compose,
     initial_bonds_from_portfolio,
@@ -49,6 +50,7 @@ from finance.augur.product.simulation import execute, project_events, project_pr
 from finance.augur.product.wire import (
     EndingMetrics,
     MetricFanResponse,
+    MetricName,
     ProductProjectionRequest,
     ProductProjectionResponse,
     ProjectionSamplingRequest,
@@ -59,6 +61,7 @@ from finance.augur.product.wire import (
     TerminalDistributionResponse,
 )
 from finance.augur.sim.external_series import materialize_sampled_exogenous
+from finance.augur.sim.ids import AgentId, PropertyId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.quantiles import currency_quantiles
@@ -72,12 +75,12 @@ class ProductService:
         *,
         portfolio: PortfolioConfig,
         initial_cash: Decimal | int | str,
-        primary_agent_id: str,
+        primary_agent_id: AgentId,
         security_distributions: tuple[SecurityDistributionConfig, ...] = (),
         tlh_portfolios: tuple[TlhPortfolioSpec, ...] = (),
-        known_location_ids: Collection[str],
-        locations: dict[str, Location],
-        properties_by_id: dict[str, Property],
+        known_location_ids: Collection[LocationId],
+        locations: dict[LocationId, Location],
+        properties_by_id: dict[PropertyId, Property],
         models: dict[str, Sampler],
         max_rollout_samples: int,
         max_horizon_months: int,
@@ -104,7 +107,7 @@ class ProductService:
             portfolio, security_distributions, tlh_portfolios=tlh_portfolios, primary_agent_id=primary_agent_id
         )
         self._tlh_portfolios = tlh_portfolios
-        self._asset_label_by_id = asset_label_by_series_id(portfolio)
+        self._asset_labels = asset_labels(portfolio)
         # Keep one product projection in flight per API process. A dense rollout batch is
         # memory-heavy enough that overlapping fan + terminal requests can exceed the pod limit.
         self._projection_lock = threading.Lock()
@@ -178,13 +181,13 @@ class ProductService:
             project_product_metrics(completed, horizon_months=situation.horizon_months, currency=situation.currency),
             rollout_id=0,
             primary_agent_id=self._primary_agent_id,
-            asset_label_by_id=self._asset_label_by_id,
+            asset_labels=self._asset_labels,
         )
         monthly_arrays = projection.monthly_metric_arrays
         terminal = _ending_metrics_from_arrays(monthly_arrays, failed_month_index=projection.failed_month_index)
         # `monthly_metrics` ships as `Frame = dict[str, list[...]]`; build directly from numpy
         # instead of round-tripping through polars.
-        monthly_metrics_frame = {
+        monthly_metrics_frame: Frame = {
             name: arr.tolist() if name == "month_index" else [_quanta(value) for value in arr]
             for name, arr in monthly_arrays.items()
         }
@@ -331,7 +334,7 @@ def _monthly_fan_frame(summary: ProductMetricFanSummary) -> Frame:
     }
 
 
-def _metric_fan_response(summary: ProductMetricFanSummary, *, model_id: str, metric: str) -> MetricFanResponse:
+def _metric_fan_response(summary: ProductMetricFanSummary, *, model_id: str, metric: MetricName) -> MetricFanResponse:
     return MetricFanResponse(
         basis=summary.basis,
         model_id=model_id,
@@ -351,7 +354,7 @@ def _terminal_distribution_response(
     summary: ProductTerminalSummary,
     *,
     model_id: str,
-    metric: str,
+    metric: MetricName,
     percentiles: tuple[float, ...],
     seeds: tuple[int, ...],
 ) -> TerminalDistributionResponse:

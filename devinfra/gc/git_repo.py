@@ -26,6 +26,16 @@ class GitError(RuntimeError):
     """A git invocation failed in a way that blocks classification."""
 
 
+def open_repo(path: Path) -> pygit2.Repository:
+    """Open `path` as a repository, normalizing pygit2's own `GitError` (a plain `Exception`,
+    so it slips past every `except GitError` here that means this module's `GitError`) into
+    the one exception type callers actually catch."""
+    try:
+        return pygit2.Repository(os.fspath(path))
+    except pygit2.GitError as error:
+        raise GitError(f"cannot open {path} as a git repository: {error}") from error
+
+
 def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", "-C", os.fspath(repo), *args], capture_output=True, text=True, check=check)
 
@@ -51,14 +61,16 @@ def _normalize_remote_url(url: str) -> str:
     return url.lower()
 
 
-def remote_urls(repo: Path) -> set[str]:
-    """Every remote configured on `repo`, normalized for cross-repo comparison — not just
-    `origin`, since a clone may track the same project under a different remote name."""
-    pg = pygit2.Repository(os.fspath(repo))
+def remote_urls(pg: pygit2.Repository) -> set[str]:
+    """Every remote configured on `pg`, normalized for cross-repo comparison — not just
+    `origin`, since a clone may track the same project under a different remote name. Takes an
+    already-open repository rather than a path: the caller opens once and reuses the handle,
+    rather than this function opening its own independent copy of a path someone else may have
+    already opened (or is about to)."""
     return {_normalize_remote_url(remote.url) for remote in pg.remotes if remote.url}
 
 
-def shares_a_remote(a: Path, b: Path) -> bool:
+def shares_a_remote(a: pygit2.Repository, b: pygit2.Repository) -> bool:
     """True when `a` and `b` have any remote URL in common — the same project, on any host,
     under any remote name, regardless of how many remotes either side configures. Says nothing
     about which (if either) is a GitHub repo; that is a separate, narrower question."""
@@ -87,17 +99,22 @@ def list_worktrees(repo: Path) -> list[Worktree]:
     return worktrees
 
 
-def main_ref(repo: Path) -> str:
-    """The upstream default branch ref (e.g. `origin/devel`)."""
-    ref = git_out(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
-    if not ref:
+def main_ref(pg: pygit2.Repository) -> str:
+    """The upstream default branch ref (e.g. `origin/devel`).
+
+    A scratch clone nobody ever ran `git remote set-head` on leaves `refs/remotes/origin/HEAD`
+    unset — a real condition, not just a theoretical one — so a missing or non-symbolic
+    reference is `GitError`, not an assertion failure.
+    """
+    ref = pg.references.get("refs/remotes/origin/HEAD")
+    if ref is None or ref.type != pygit2.enums.ReferenceType.SYMBOLIC or not isinstance(ref.target, str):
         raise GitError("cannot determine the default branch (origin/HEAD is unset)")
-    return ref
+    return ref.target.removeprefix("refs/remotes/")
 
 
-def default_branch_name(repo: Path) -> str:
+def default_branch_name(pg: pygit2.Repository) -> str:
     """The default branch's short name (e.g. `devel`), from `origin/HEAD`."""
-    ref = main_ref(repo)  # e.g. "origin/devel"
+    ref = main_ref(pg)  # e.g. "origin/devel"
     _, _, branch = ref.partition("/")
     return branch or ref
 

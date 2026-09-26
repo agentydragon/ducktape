@@ -94,6 +94,16 @@ the same way. The world supplies immutable payment and year-end facts to Python
 accounting; capture DTOs do not maintain another mutable mortgage. Configured purchase/sale
 timing is documented in <../docs/rental_and_lifecycle.md>.
 
+`tax_authority.py` owns one taxpayer's tax: its declared itemized deductions, the
+estimates and January true-up it demands, and the year close. Tracking the authority
+is what enrolls the taxpayer. Settlement records the taxpayer's income, gains and
+deduction facts in the tax book (<tax_year.py>) as it posts the money they describe.
+Every successful month the world hands each authority the ledger, the tracked
+mortgages and the jurisdiction vocabulary; at the year's last month the authority
+assesses the book's facts, posts the assessment as expense against liability in one
+journal group, records the liability its true-up later collects, and resets the year
+to its capital-loss carryforward.
+
 `sim/world.py::World` owns one path's books, TLH portfolios, mortgages,
 receipts and stop state, and opens, acts and closes its months; `sim/session.py`
 drives one world per selected path under the batch routing envelope. `actions.py` owns exact requests:
@@ -108,8 +118,7 @@ portfolio id, never by the index it tracks, so it has no quote to size against, 
 lots of that index are a sleeve of their own. `TlhStatement` says whether each portfolio
 accepts a contribution at its current mark, which value and basis alone cannot. `observations.py` owns frozen current facts and private claim authority. There is
 no second public native action/observation representation or native session driver.
-Configured allocators are not silently enabled through this API. The issuer
-protocol on a private holding (`sim/private_equity.py`) is a world phase: `close_month`
+The issuer protocol on a private holding (`sim/private_equity.py`) is a world phase: `close_month`
 runs it after the month's settlement on a path that has not stopped, whichever
 driver closes the month, and `declare_tender_policy` says how an owner answers a
 sale opportunity. A rejected action stops only its rollout with the successful prefix
@@ -136,8 +145,8 @@ comparing stopped books with completed horizons.
 
 `ProductService` lowers each request once into a `Situation` of prepared declarations
 (<../product/scenarios.py>), samples the series it reads, and composes one world per
-path with the app household (<../policy/configured_household.py>) tracked on it;
-<../product/simulation.py> steps each to the horizon. The household consults `policy/configured_allocation.py` for its funding
+path with the app household (<../policy/cash_band_household.py>) tracked on it;
+<../product/simulation.py> steps each to the horizon. The household proposes its funding
 sales, pays every due claim in full in observed order — a claim the cash those sales
 leave cannot cover is rejected and stops the path — and sizes each exact purchase from
 what those sales and payments leave. Selected detail
@@ -160,6 +169,12 @@ every experiment.
 - **A ledger that is itself an actor with a mailbox.** Atomic rejection and
   caller-ordered execution are transaction semantics against one ledger and would
   change meaning as asynchronous messages.
+- **The tax book as each `TaxAuthority`'s own state.** Settlement paths (lot and
+  property sales, distributions, bond coupons, managed-portfolio realizations, claim
+  payments, transfers) record tax facts on a copy of the book they swap in only with
+  their journal entries, so a rejection leaves both untouched. An authority-owned book
+  splits that one transaction across two owners; the authority owns the close and its
+  posting, and reads the facts from the ledger's book.
 - **Arbitrary bookkeeping calls as the public API, or a universal component/plugin
   framework.** Experiments declare and track concrete domain objects.
 

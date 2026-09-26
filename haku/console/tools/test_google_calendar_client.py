@@ -13,6 +13,7 @@ from haku.console.tools.google_calendar_client import (
     EventDateTime,
     ListCalendarEventInstancesArgs,
     ListCalendarEventsArgs,
+    ReminderMethod,
 )
 
 
@@ -103,8 +104,8 @@ def test_create_event_timed_with_reminders_and_attendees(
         start=EventDateTime(date_time="2026-09-15T09:00:00-07:00", time_zone="America/Los_Angeles"),
         end=EventDateTime(date_time="2026-09-15T09:30:00-07:00", time_zone="America/Los_Angeles"),
         reminders=[
-            CalendarReminder(method="popup", minutes_before_start=60),
-            CalendarReminder(method="email", minutes_before_start=1440),
+            CalendarReminder(method=ReminderMethod.POPUP, minutes_before_start=60),
+            CalendarReminder(method=ReminderMethod.EMAIL, minutes_before_start=1440),
         ],
         attendees=["michael@example.com"],
     )

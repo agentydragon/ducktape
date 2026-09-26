@@ -40,11 +40,6 @@ def settings(
         # App-owned launch-form presets. The browser expands one into editable concrete
         # template, policy, bootstrap, and SessionSpec fields; neither a Sandbox CR nor a
         # runner receives a preset name.
-        # TODO: add a thread_preset defaulting to the wyrm2-local
-        # ollama/{oai-chat,olm-chat}/qwen3.8-flash-next-q4-128k route (model_rosters.py)
-        # once it's verified serving. Harness undecided -- HARNESS_CLAUDE (Anthropic
-        # Messages) vs HARNESS_CODEX (Responses) -- pick whichever tool-call/reasoning
-        # translation the model actually behaves better under; test both before choosing.
         "thread_presets": {
             _THREAD_PRESET_PUBLIC_CODER_CODEX: {
                 "title": "Public coder / Codex",

@@ -11,7 +11,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LocationId, SecurityKey, SecuritySymbol
-from finance.augur.policy.configured_household import ConfiguredHousehold
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.product.metric_composition import METRIC_NAMES
 from finance.augur.product.metrics import ProductMetricArrays, metric_fan, projection_summaries, terminal_summary
 from finance.augur.product.simulation import (
@@ -21,6 +21,7 @@ from finance.augur.product.simulation import (
     simulate_events,
     simulate_product_metrics,
 )
+from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.compiler.execution import (
     compile_accounts,
     compile_holding_pools,
@@ -34,10 +35,9 @@ from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AgentId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PropertyId
 from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import _ScheduledSale
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
@@ -49,9 +49,14 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import Capture, World
 
-AGENT = "alice"
+CHECKING = AccountId("checking")
+
+AGENT = AgentId("alice")
+IRS = AgentId("irs")
+SELLER = AgentId("seller")
 CURRENCY = Currency()
 HORIZON_MONTHS = 30
 SALE_MONTH = 14
@@ -60,8 +65,8 @@ LOT_BASIS = Decimal(10_000)
 SALE_PRICE = Decimal(60_000)
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 
-LOCATION = "acceptance-town"
-HOME_VALUE = HomeValueKey(location_id=LocationId(LOCATION))
+LOCATION = LocationId("acceptance-town")
+HOME_VALUE = HomeValueKey(location_id=LOCATION)
 PROPERTY_SALE_MONTH = 12
 # Sampled levels that are not a whole number of cents. A level already on a cent reads the same
 # out of either representation, which is exactly what the property assertion has to rule out.
@@ -89,24 +94,28 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
     """
 
     lot = InitialLot(
-        lot_id="alice-vti",
+        lot_id=LotId("alice-vti"),
         agent_id=AGENT,
-        account_id="checking",
+        account_id=CHECKING,
         asset=VTI,
         purchase_month_index=-24,  # comfortably long-term
         quantity=UNITS,
         cost_basis=Decimal(str(UNITS)) * LOT_BASIS,
     )
-    sale = _ScheduledSale(
-        month=SALE_MONTH,
+    sale = Sell(
         cause_id="sell-vti",
         agent_id=AGENT,
-        account_id="checking",
-        asset_id=str(VTI.symbol),
-        units=int(quantity_to_quanta(UNITS, scale=quantity_scale_for_asset(VTI))),
-        proceeds_account_id="checking",
+        proceeds_account_id=CHECKING,
+        asset_id=AssetId(VTI.symbol),
+        lots=(
+            LotSale(
+                account_id=CHECKING,
+                lot_id=lot.lot_id,
+                units=int(quantity_to_quanta(UNITS, scale=quantity_scale_for_asset(VTI))),
+            ),
+        ),
     )
-    profile = TaxProfile(agent_id=AGENT, jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs")
+    profile = TaxProfile(agent_id=AGENT, jurisdiction_ids=[JurisdictionId("federal_us")], tax_authority_agent_id=IRS)
     jurisdictions = load_jurisdictions_for([profile])
     series = compile_series(
         ExternalSeriesContext.from_level_blocks(
@@ -128,20 +137,18 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
         )
         for account in compile_accounts(
             [
-                InitialAccountBalance(agent_id=agent_id, account_id="checking", balance=Decimal(0))
-                for agent_id in (AGENT, "irs")
+                InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=Decimal(0))
+                for agent_id in (AGENT, IRS)
             ],
             quantum=CURRENCY.quantum,
         ):
             world.declare_account(account)
         world.track(TaxAuthority(compile_profile(profile, jurisdictions, quantum=CURRENCY.quantum)))
-        for pool in compile_holding_pools(lots=[lot], policies=(), tlh_portfolios=()):
+        for pool in compile_holding_pools(lots=[lot]):
             world.declare_pool(pool)
         for held in compile_lots([lot], quantum=CURRENCY.quantum):
             world.hold(held)
-        household = ConfiguredHousehold(AgentId(AGENT), (), scheduled_sales=(sale,))
-        household.check(world)
-        world.track(household)
+        world.track(Scripted(ClaimPayer(AgentId(AGENT)), {SALE_MONTH: (sale,)}))
         return world
 
     return lambda: [compose(rollout_id) for rollout_id in range(rollout_count)]
@@ -159,11 +166,11 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
     purchase = ScheduledPropertyPurchase(
         month=0,
         cause_id="buy-house",
-        property_id="house",
+        property_id=PropertyId("house"),
         location_id=LOCATION,
         buyer_agent_id=AGENT,
-        buyer_account_id="checking",
-        seller_agent_id="seller",
+        buyer_account_id=CHECKING,
+        seller_agent_id=SELLER,
         # Bought for exactly what the series says it is worth, so the sale's proceeds are
         # the home value itself rather than a figure a reader has to recompute.
         purchase_price=PURCHASE_PRICE,
@@ -189,8 +196,8 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
         )
         for account in compile_accounts(
             [
-                InitialAccountBalance(agent_id=agent_id, account_id="checking", balance=Decimal(1_000_000))
-                for agent_id in (AGENT, "seller")
+                InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=Decimal(1_000_000))
+                for agent_id in (AGENT, SELLER)
             ],
             quantum=CURRENCY.quantum,
         ):
@@ -201,14 +208,16 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> Worlds:
                 initial_residences=(),
                 residence_events=(),
                 lifecycle_events=[
-                    PropertySaleEvent(month=PROPERTY_SALE_MONTH, property_id="house", closing_cost_pct=closing_cost_pct)
+                    PropertySaleEvent(
+                        month=PROPERTY_SALE_MONTH, property_id=PropertyId("house"), closing_cost_pct=closing_cost_pct
+                    )
                 ],
                 quantum=CURRENCY.quantum,
             ),
             (),
             compile_locations([purchase], {LOCATION: location}, quantum=CURRENCY.quantum),
         )
-        world.track(ConfiguredHousehold(AgentId(AGENT), ()))
+        world.track(ClaimPayer(AgentId(AGENT)))
         return world
 
     return lambda: [compose()]
@@ -240,7 +249,7 @@ class TestConfigured:
             assert isinstance(frame, pl.DataFrame), f"{spec.name} is not a frame"
             assert frame.schema == spec.schema, f"{spec.name} does not match its declared schema"
 
-    def test_the_scheduled_sale_is_reported_as_a_disposition(self, run: Worlds) -> None:
+    def test_the_sale_is_reported_as_a_disposition(self, run: Worlds) -> None:
         """Proceeds and basis follow from the scenario, so every engine owes the same ones."""
 
         rows = simulate_events(run(), AGENT).lot_dispositions.filter(pl.col("month_index") == SALE_MONTH).to_dicts()

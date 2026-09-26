@@ -5,7 +5,8 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, type ActionPolicySetView, type SandboxPresetView, type SandboxView } from "./client";
+import { api, type SandboxPresetView, type SandboxView } from "./client";
+import type { ActionPolicySetView } from "./actions/client";
 import { SandboxList } from "./sandboxes";
 
 vi.mock("./live", () => ({

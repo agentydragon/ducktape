@@ -22,6 +22,7 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.income_sources import income_source_sort_key
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedJurisdiction, PreparedTransfer
@@ -32,17 +33,17 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-CHECKING = "checking"
-PAYER = "payer"
-IRS = "irs"
+CHECKING = AccountId("checking")
+PAYER = AgentId("payer")
+IRS = AgentId("irs")
 # Every recipient is a California resident filing federally too.
-FILED_IN = ("federal_us", "california")
+FILED_IN = (JurisdictionId("federal_us"), JurisdictionId("california"))
 
 # 31 USC 3124 bars a state from taxing interest on federal obligations, so this source is
 # federally taxable and exempt in California — the split the ledger has to keep. An in-state
 # muni is exempt at both levels: IRC 103 federally, own-issue in California.
-TREASURY = InterestIncome(issuer_jurisdiction_id="federal_us")
-MUNI = InterestIncome(issuer_jurisdiction_id="california")
+TREASURY = InterestIncome(issuer_jurisdiction_id=JurisdictionId("federal_us"))
+MUNI = InterestIncome(issuer_jurisdiction_id=JurisdictionId("california"))
 TREASURY_SOURCE = "interest:federal_us"
 ORDINARY_SOURCE = "ordinary"
 
@@ -67,13 +68,13 @@ YEAR_END, NEXT_YEAR = 11, 12
 class Payment:
     """One categorized payment from outside the model to a taxpayer."""
 
-    to_agent_id: str
+    to_agent_id: AgentId
     source: TransferIncomeCategory
     amount: Decimal
     month: int = WAGE_MONTH
 
 
-def _account(agent_id: str, balance: Decimal) -> PreparedAccount:
+def _account(agent_id: AgentId, balance: Decimal) -> PreparedAccount:
     return PreparedAccount(
         account=AccountRef(agent_id=agent_id, account_id=CHECKING),
         opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
@@ -127,12 +128,15 @@ def compose(payments: tuple[Payment, ...]) -> World:
 
 
 ALICE_AND_BOB = (
-    Payment("alice", ORDINARY_INCOME, ALICE_WAGES),
-    Payment("alice", TREASURY, ALICE_INTEREST, month=INTEREST_MONTH),
-    Payment("bob", ORDINARY_INCOME, BOB_WAGES),
-    Payment("bob", TREASURY, BOB_INTEREST, month=INTEREST_MONTH),
+    Payment(AgentId("alice"), ORDINARY_INCOME, ALICE_WAGES),
+    Payment(AgentId("alice"), TREASURY, ALICE_INTEREST, month=INTEREST_MONTH),
+    Payment(AgentId("bob"), ORDINARY_INCOME, BOB_WAGES),
+    Payment(AgentId("bob"), TREASURY, BOB_INTEREST, month=INTEREST_MONTH),
 )
-WAGES_ONLY = (Payment("alice", ORDINARY_INCOME, ALICE_WAGES), Payment("bob", ORDINARY_INCOME, BOB_WAGES))
+WAGES_ONLY = (
+    Payment(AgentId("alice"), ORDINARY_INCOME, ALICE_WAGES),
+    Payment(AgentId("bob"), ORDINARY_INCOME, BOB_WAGES),
+)
 
 
 def run(*payments: Payment) -> Rollout:
@@ -228,7 +232,7 @@ def test_wages_are_taxed_by_both_jurisdictions() -> None:
     """The positive anchor for every exemption below: without it they could all pass on a
     scenario that collects nothing."""
 
-    tax = _tax_by_jurisdiction(run(Payment("alice", ORDINARY_INCOME, ALICE_WAGES)))
+    tax = _tax_by_jurisdiction(run(Payment(AgentId("alice"), ORDINARY_INCOME, ALICE_WAGES)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] > 0
@@ -238,7 +242,7 @@ def test_treasury_interest_is_federally_taxed_and_state_exempt() -> None:
     """31 USC 3124. This is the row no bracket configuration could express while every
     jurisdiction read one shared income scalar."""
 
-    tax = _tax_by_jurisdiction(run(Payment("alice", TREASURY, ALICE_WAGES)))
+    tax = _tax_by_jurisdiction(run(Payment(AgentId("alice"), TREASURY, ALICE_WAGES)))
 
     assert tax["federal_us"] > 0
     assert tax["california"] == 0
@@ -249,7 +253,7 @@ def test_in_state_muni_interest_is_exempt_everywhere() -> None:
     stored anywhere — it is `issuer == california`, decided by the jurisdiction reading
     the row rather than by the instrument."""
 
-    tax = _tax_by_jurisdiction(run(Payment("alice", MUNI, ALICE_WAGES)))
+    tax = _tax_by_jurisdiction(run(Payment(AgentId("alice"), MUNI, ALICE_WAGES)))
 
     assert tax["federal_us"] == 0
     assert tax["california"] == 0
@@ -259,8 +263,8 @@ def test_federal_tax_on_treasury_interest_matches_tax_on_identical_wages() -> No
     """Same dollars, same federal bracket walk — the split changes WHO taxes it, not how
     much. Guards the masked sum against quietly dropping or double-counting a source."""
 
-    wages = _tax_by_jurisdiction(run(Payment("alice", ORDINARY_INCOME, ALICE_WAGES)))
-    treasury = _tax_by_jurisdiction(run(Payment("alice", TREASURY, ALICE_WAGES)))
+    wages = _tax_by_jurisdiction(run(Payment(AgentId("alice"), ORDINARY_INCOME, ALICE_WAGES)))
+    treasury = _tax_by_jurisdiction(run(Payment(AgentId("alice"), TREASURY, ALICE_WAGES)))
 
     assert treasury["federal_us"] == wages["federal_us"]
 

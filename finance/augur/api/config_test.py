@@ -3,11 +3,12 @@ must satisfy without exercising any actual file loading."""
 
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 import pytest_bazel
-from pydantic import ValidationError
+from pydantic import HttpUrl, ValidationError
 
 from finance.augur.api.config import (
     AgentDefinition,
@@ -25,6 +26,7 @@ from finance.augur.api.conftest import MinimalConfig
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.local_regulation import LocalRegulation
 from finance.augur.api.portfolio import (
+    HoldingKind,
     HoldingTaxLotConfig,
     PortfolioAccountConfig,
     PortfolioConfig,
@@ -41,9 +43,12 @@ from finance.augur.api.wire import ActorRole
 from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from finance.augur.model.provider_config import CompositeProviderConfig
-from finance.augur.model.series import IssuerId, SecuritySymbol
+from finance.augur.model.series import IssuerId, LocationId, SecuritySymbol
 from finance.augur.model.state_space import StateSpaceProviderConfig
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId, PropertyId
+
+LOCATION_A_PROPERTY = PropertyId("location_a_property")
 
 
 def test_minimal_config_validates_with_explicit_sampling_limit(minimal_config: MinimalConfig) -> None:
@@ -62,13 +67,14 @@ def test_sampling_config_is_required(minimal_config: MinimalConfig) -> None:
 
 def test_property_source_declares_stable_public_asset_urls() -> None:
     source = PropertySourceConfig(
-        properties_path="/tmp/properties.json",
+        properties_path=Path("/tmp/properties.json"),
         property_assets=(
             PropertyAssetConfig(
-                property_id="location_a_property", image_url="https://cdn.example.com/augur/location-a-hero.jpg"
+                property_id=LOCATION_A_PROPERTY, image_url=HttpUrl("https://cdn.example.com/augur/location-a-hero.jpg")
             ),
             PropertyAssetConfig(
-                property_id="location_b_property", image_url="https://cdn.example.com/augur/location-b-hero.jpg"
+                property_id=PropertyId("location_b_property"),
+                image_url=HttpUrl("https://cdn.example.com/augur/location-b-hero.jpg"),
             ),
         ),
     )
@@ -85,10 +91,14 @@ def test_property_asset_requires_image_url() -> None:
 def test_property_asset_property_ids_must_be_unique() -> None:
     with pytest.raises(ValidationError, match="duplicate property asset property_ids"):
         PropertySourceConfig(
-            properties_path="/tmp/properties.json",
+            properties_path=Path("/tmp/properties.json"),
             property_assets=(
-                PropertyAssetConfig(property_id="location_a_property", image_url="https://cdn.example.com/a.jpg"),
-                PropertyAssetConfig(property_id="location_a_property", image_url="https://cdn.example.com/b.jpg"),
+                PropertyAssetConfig(
+                    property_id=LOCATION_A_PROPERTY, image_url=HttpUrl("https://cdn.example.com/a.jpg")
+                ),
+                PropertyAssetConfig(
+                    property_id=LOCATION_A_PROPERTY, image_url=HttpUrl("https://cdn.example.com/b.jpg")
+                ),
             ),
         )
 
@@ -99,20 +109,24 @@ def test_config_carries_tax_lot_accurate_portfolio_schema(minimal_config: Minima
             fixed=FixedPortfolioSourceConfig(
                 snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
                 portfolio=PortfolioConfig(
-                    accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="owner"),),
+                    accounts=(
+                        PortfolioAccountConfig(
+                            account_id=AccountId("taxable_brokerage"), owner_agent_id=AgentId("owner")
+                        ),
+                    ),
                     holdings=(
                         SecurityHoldingConfig(
                             position_id="voo_position",
-                            account_id="taxable_brokerage",
+                            account_id=AccountId("taxable_brokerage"),
                             symbol=SecuritySymbol("VOO"),
-                            security_kind="etf",
-                            unit_value=500,
+                            security_kind=HoldingKind.ETF,
+                            unit_value=Decimal(500),
                             lots=(
                                 HoldingTaxLotConfig(
-                                    lot_id="voo_2024_05_12",
+                                    lot_id=LotId("voo_2024_05_12"),
                                     holding_period_months_at_start=24,
                                     quantity=100,
-                                    cost_basis=30_000,
+                                    cost_basis=Decimal(30_000),
                                 ),
                             ),
                         ),
@@ -138,8 +152,8 @@ def test_config_carries_optional_plaid_portfolio_source(minimal_config: MinimalC
                 sp500_proxy_groups=(
                     PlaidSp500ProxyGroupConfig(
                         position_id="wealthfront_sp500",
-                        portfolio_account_id="wealthfront_taxable",
-                        owner_agent_id="owner",
+                        portfolio_account_id=AccountId("wealthfront_taxable"),
+                        owner_agent_id=AgentId("owner"),
                         plaid_account_ids=("wealthfront-plaid-account",),
                     ),
                 ),
@@ -171,7 +185,7 @@ def test_config_can_define_deployment_owned_locations(
     config = minimal_config(
         locations=(
             LocationConfig(
-                location_id="location_a",
+                location_id=LocationId("location_a"),
                 label="Location A",
                 city="Location A",
                 state="Fixture",
@@ -189,7 +203,7 @@ def test_at_least_one_agent_required() -> None:
     with pytest.raises(ValidationError, match="Tuple should have at least 1 item"):
         Config(
             agents=(),
-            property_source=PropertySourceConfig(properties_path="/tmp/x.json"),
+            property_source=PropertySourceConfig(properties_path=Path("/tmp/x.json")),
             portfolio_sources=PortfolioSourcesConfig(
                 fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-12"))
             ),
@@ -202,7 +216,7 @@ def test_at_least_one_agent_required() -> None:
 
 def test_actor_id_must_be_snake_case() -> None:
     with pytest.raises(ValidationError, match="String should match pattern"):
-        AgentDefinition(actor_id="Alpha", label="Alpha", role=ActorRole.PRIMARY_OWNER)
+        AgentDefinition(actor_id=AgentId("Alpha"), label="Alpha", role=ActorRole.PRIMARY_OWNER)
 
 
 def test_snapshot_optional_fields_default_to_zero() -> None:
@@ -372,8 +386,8 @@ def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path: Path, 
                     asset_dir=Path("assets"),
                     property_assets=(
                         PropertyAssetConfig(
-                            property_id="location_a_property",
-                            image_url="https://cdn.example.com/augur/location-a-hero.jpg",
+                            property_id=LOCATION_A_PROPERTY,
+                            image_url=HttpUrl("https://cdn.example.com/augur/location-a-hero.jpg"),
                         ),
                     ),
                 )
@@ -401,7 +415,9 @@ def test_a_security_distribution_must_allocate_its_whole_payout(minimal_config: 
             security_distributions=(
                 SecurityDistributionConfig(
                     symbol=SecuritySymbol("bnd"),
-                    tax_character=(DistributionTaxShareConfig(fraction=0.4, issuer_jurisdiction_id="federal_us"),),
+                    tax_character=(
+                        DistributionTaxShareConfig(fraction=0.4, issuer_jurisdiction_id=JurisdictionId("federal_us")),
+                    ),
                 ),
             )
         )

@@ -13,7 +13,7 @@ import pytest
 from openai_utils.model import ResponsesResult
 from openai_utils.testing.openai_mock import FakeOpenAIModel
 from props.agents.critic_dev.main import TerminationSuccess
-from props.core.ids import SnapshotSlug
+from props.core.ids import DefinitionId, SnapshotSlug
 
 
 @pytest.fixture
@@ -40,4 +40,4 @@ def make_openai_client() -> Callable[[list[ResponsesResult]], FakeOpenAIModel]:
 
 @pytest.fixture
 def success_termination() -> TerminationSuccess:
-    return TerminationSuccess(definition_id="test-improved-critic", total_credit=2.0, baseline_avg=1.0)
+    return TerminationSuccess(definition_id=DefinitionId("test-improved-critic"), total_credit=2.0, baseline_avg=1.0)

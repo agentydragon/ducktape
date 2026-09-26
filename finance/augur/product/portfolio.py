@@ -19,10 +19,11 @@ from finance.augur.api.schemas import ApiModel
 from finance.augur.model.asset_key import AssetKey
 from finance.augur.product.wire import CurrencyQuanta
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
+from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId, LotId, PortfolioId
 
 
 class ProductPublicSecurityLot(ApiModel):
-    lot_id: str
+    lot_id: LotId
     holding_period_months_at_start: NonNegativeInt
     quantity: NonNegativeFloat
     cost_basis_quanta: CurrencyQuanta
@@ -30,7 +31,7 @@ class ProductPublicSecurityLot(ApiModel):
 
 class ProductPublicSecurityPosition(ApiModel):
     position_id: str
-    account_id: str
+    account_id: AccountId
     account_label: str | None = None
     label: str | None = None
     symbol: str
@@ -52,11 +53,11 @@ class ProductBondPosition(ApiModel):
     exact currency quanta, alongside coupon and maturity facts.
     """
 
-    bond_id: str
-    account_id: str
+    bond_id: BondId
+    account_id: AccountId
     account_label: str | None = None
     label: str | None = None
-    issuer_jurisdiction_id: str | None = None
+    issuer_jurisdiction_id: JurisdictionId | None = None
     face_value_quanta: CurrencyQuanta
     annual_coupon_rate: NonNegativeFloat
     coupon_period_months: NonNegativeInt
@@ -76,9 +77,9 @@ class ProductTlhPortfolio(ApiModel):
     `asset` is the index whose price moves the portfolio's value; a sleeve weight names it by its symbol.
     """
 
-    portfolio_id: str
-    owner_agent_id: str
-    account_id: str
+    portfolio_id: PortfolioId
+    owner_agent_id: AgentId
+    account_id: AccountId
     account_label: str | None = None
     label: str
     asset: AssetKey

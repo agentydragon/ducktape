@@ -6,6 +6,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules
+from finance.augur.sim.ids import AgentId, JurisdictionId
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.money import MAX_COUNT
 from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome
@@ -24,7 +25,7 @@ from finance.augur.sim.tax import (
 @pytest.fixture
 def federal() -> PreparedTaxRules:
     return PreparedTaxRules(
-        jurisdiction_id="test_federal",
+        jurisdiction_id=JurisdictionId("test_federal"),
         exempt_interest_from_levels=(JurisdictionLevel.STATE,),
         exempts_own_issue=False,
         ordinary_brackets=(
@@ -92,29 +93,29 @@ def test_carryforward_offsets_short_before_long() -> None:
 
 
 def test_income_retains_exempt_sources_and_resets_only_one_taxpayer(federal: PreparedTaxRules) -> None:
-    state_coupon = InterestIncome(issuer_jurisdiction_id="test_state")
+    state_coupon = InterestIncome(issuer_jurisdiction_id=JurisdictionId("test_state"))
     income = IncomeLedger([ORDINARY_INCOME, state_coupon])
-    income.enroll("test_household")
-    income.enroll("test_other")
-    income.accrue("test_household", ORDINARY_INCOME, 100)
-    income.accrue("test_household", state_coupon, 20)
-    income.accrue("test_other", ORDINARY_INCOME, 500)
-    income.deduct_from_ordinary("test_household", 40)
-    assert income.ordinary("test_household") == 60
-    assert income.by_source["test_household", state_coupon] == 20
-    assert not taxes_interest_from(federal, "test_state", JurisdictionLevel.STATE)
+    income.enroll(AgentId("test_household"))
+    income.enroll(AgentId("test_other"))
+    income.accrue(AgentId("test_household"), ORDINARY_INCOME, 100)
+    income.accrue(AgentId("test_household"), state_coupon, 20)
+    income.accrue(AgentId("test_other"), ORDINARY_INCOME, 500)
+    income.deduct_from_ordinary(AgentId("test_household"), 40)
+    assert income.ordinary(AgentId("test_household")) == 60
+    assert income.by_source[AgentId("test_household"), state_coupon] == 20
+    assert not taxes_interest_from(federal, JurisdictionId("test_state"), JurisdictionLevel.STATE)
     assert taxes_interest_from(federal, None, None)
-    assert taxes_interest_from(federal, "test_unknown", None)
-    income.reset("test_household")
-    assert income.ordinary("test_household") == 0
-    assert income.by_source["test_household", state_coupon] == 0
-    assert income.ordinary("test_other") == 500
+    assert taxes_interest_from(federal, JurisdictionId("test_unknown"), None)
+    income.reset(AgentId("test_household"))
+    assert income.ordinary(AgentId("test_household")) == 0
+    assert income.by_source[AgentId("test_household"), state_coupon] == 0
+    assert income.ordinary(AgentId("test_other")) == 500
 
 
 def test_untaxed_recipients_do_not_acquire_income_rows() -> None:
     income = IncomeLedger([ORDINARY_INCOME])
-    income.enroll("test_household")
-    income.accrue("test_counterparty", ORDINARY_INCOME, 10)
+    income.enroll(AgentId("test_household"))
+    income.accrue(AgentId("test_counterparty"), ORDINARY_INCOME, 10)
     assert income.by_source == {("test_household", ORDINARY_INCOME): 0}
 
 
