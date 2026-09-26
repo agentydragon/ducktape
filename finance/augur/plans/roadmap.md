@@ -330,8 +330,8 @@ New adaptive HOUSE/BOND features are not prerequisites for preserving current
 behavior. Supported ACCEPT slices remain independently landable. The
 [paired TLH study plan](managed_portfolio.md) specifies MA3 on the existing
 Python component and action session. It does not wait for housing, PE or
-RUNTIME/GE. Component ownership, settlement and timing are documented in
-[the TLH contract](../docs/tlh.md).
+RUNTIME/GE. Component ownership, settlement and timing are documented on
+[the TLH component](../sim/tlh.py).
 
 Outcome reporting is a consumer acceptance requirement, not a separate prerequisite
 project. Common-session summaries already retain payment/claim identities, unpaid amounts and causes,

@@ -1,10 +1,18 @@
-"""Stateful reduced-form TLH approximation, owned by the Python experiment.
+"""A reduced-form approximation of a direct-indexing account's tax-loss harvesting.
 
-Losses are modeled, not reconstructed constituent trades. Each private cohort's
-adjusted basis falls by its modeled loss; later redemptions use that same basis.
-The component does not assess taxes or move household cash. Its caller settles
-the returned financial effects and includes the observation in household wealth.
-All amounts and prices are integer currency quanta.
+Losses are modeled assumptions, not reconstructed constituent sales: no constituent
+market, wash-sale rule (within or across accounts) or provider's actual harvested
+holding periods is simulated, and no forecast is calibrated. Each cohort's adjusted
+basis falls by its modeled loss, and later redemptions use that same basis.
+
+The component neither assesses tax nor moves household cash; its caller settles the
+returned effects. For a contribution, redemption or modeled harvest those satisfy
+
+    cash received by the household + change in reported tax basis
+        = realized short-term gain + realized long-term gain
+
+and a distribution adds its declared income character on the income side. Money and
+prices are integer currency quanta; exposure is exact (see `_Cohort`).
 """
 
 from dataclasses import dataclass, replace
@@ -27,7 +35,11 @@ def _nonnegative(**amounts: int) -> None:
 
 
 class TlhAssumptions(BaseModel):
-    """Heuristic gross-loss yields; these are not forecasts of after-tax alpha."""
+    """The gross-loss curve and the modeled short-term fraction of harvested losses.
+
+    Heuristic gross-loss yields, not forecasts of after-tax alpha or tax savings;
+    the household's tax accounting decides what a loss is worth.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
@@ -69,7 +81,8 @@ class TlhAssumptions(BaseModel):
 @dataclass(frozen=True)
 class TlhOpeningCohort:
     """One tax lot as a direct-indexing statement reports it: value at the opening mark, adjusted basis and
-    purchase month. Imported facts, not a reconstruction of past modeled harvesting."""
+    purchase month. Imported facts, not a reconstruction of past modeled harvesting. A lot reported at zero
+    value holds no exposure and keeps its basis until liquidation."""
 
     value: int
     reported_tax_basis: int
@@ -78,7 +91,10 @@ class TlhOpeningCohort:
 
 @dataclass(frozen=True)
 class TlhOpening:
-    """State before the next advance; opening cohorts may enter that next month."""
+    """State before the next advance; opening cohorts may enter that next month.
+
+    An empty portfolio is valid: it can take a first contribution without an invented opening position.
+    """
 
     month: int
     price: int
@@ -127,16 +143,21 @@ def _money(amount: Fraction) -> int:
 class TlhPortfolio:
     """One rollout's opaque holdings and harvesting memory, denominated in money.
 
-    Advance once before each monthly decision. A contribution of X becomes exposure
-    worth exactly X at the current mark; a withdrawal of X sells exactly X of
-    exposure, FIFO, each cohort giving up basis in proportion to the value it sells.
-    Nothing is rounded to a share grid and nothing is kept back as cash. A caller
-    needing transactional settlement can operate on a deepcopy, adopting it only
-    when the accounting engine accepts its financial effects.
+    Advance once a month, before the owner observes it and before any contribution
+    or redemption that month, scheduled ones included. Month zero uses the opening
+    mark as its previous mark, so its drawdown is zero, but it still takes a baseline
+    harvest on opening cohorts; their pre-simulation history is not replayed. A
+    contribution made after the advance first harvests the following month.
+
+    A contribution of X becomes exposure worth exactly X at the current mark; a
+    withdrawal of X sells exactly X of exposure, FIFO, each cohort giving up basis in
+    proportion to the value it sells. Nothing is rounded to a share grid and nothing
+    is kept back as cash, so there is no grid for a policy to size against. A caller
+    needing transactional settlement operates on a deepcopy and adopts it only when
+    the accounting engine accepts its financial effects.
 
     Sale character uses Augur's monthly holding-period convention (12 months is
-    long-term). Harvested character is a model assumption; constituent holding
-    periods and wash-sale mechanics are not simulated.
+    long-term); the harvested character is the assumptions' short-term fraction.
     """
 
     def __init__(self, assumptions: TlhAssumptions, opening: TlhOpening) -> None:
@@ -165,6 +186,7 @@ class TlhPortfolio:
         return sum((cohort.exposure for cohort in self._cohorts), Fraction(0))
 
     def observe(self) -> TlhObservation:
+        """Value and reported tax basis only; cohorts and harvesting memory stay private."""
         return self._observe_at_price(self._price)
 
     def _observe_at_price(self, price: int) -> TlhObservation:
@@ -176,6 +198,11 @@ class TlhPortfolio:
         )
 
     def advance(self, market: TlhMarketUpdate) -> ModeledRealizations:
+        """Mark to the month's price and harvest each cohort from its own embedded gain and the index drawdown.
+
+        A loss lowers only its cohort's basis, never below zero, so a new contribution inherits no other
+        cohort's past reductions. Returns the signed gross realized losses.
+        """
         _nonnegative(price=market.price)
         if market.month != self._month + 1:
             raise ValueError("TLH must advance exactly one month at a time")
@@ -207,6 +234,7 @@ class TlhPortfolio:
         self._cohorts.append(_Cohort(Fraction(amount, self._price), amount, self._month))
 
     def withdraw(self, gross_amount: int) -> WithdrawalResult:
+        """Sell exactly `gross_amount` of exposure; what the household keeps after tax is not promised."""
         _nonnegative(gross_amount=gross_amount)
         if gross_amount == 0:
             return WithdrawalResult(0, ModeledRealizations())
@@ -225,11 +253,16 @@ class TlhPortfolio:
         return WithdrawalResult(gross_amount, self._sell(shares))
 
     def liquidate(self) -> WithdrawalResult:
+        """Sell everything, including zero-value cohorts, whose remaining basis realizes as a loss."""
         cash = self.observe().value
         return WithdrawalResult(cash, self._sell([Fraction(1)] * len(self._cohorts)))
 
     def _sell(self, shares: list[Fraction]) -> ModeledRealizations:
-        """Sell each cohort's share of its exposure at the current mark."""
+        """Sell each cohort's share of its exposure at the current mark.
+
+        Basis is rounded per sale, so splitting a sale can move a quantum of gain between its parts;
+        liquidation takes whatever basis is left.
+        """
         sold = Fraction(0)
         paid = 0
         kept = []
