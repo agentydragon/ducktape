@@ -1,6 +1,10 @@
 # Next local quality run: protocol, not results
 
-Status: planned September 26; no new model calls or environments launched.
+Status: initial protocol, superseded for the immediate run by the
+[serial download/capacity/task queue](../2026-09-26_qwen38_queue/README.md).
+That queue starts with IQ4_XS then Q4 because host-memory fit is now the first
+question; Q5 remains a later quality control. Its record documents the accidental
+preflight environment launch. Statements below describe the earlier planning state.
 
 ## Question
 
@@ -82,9 +86,8 @@ pass instead of exhaustively tuning Qwen. Deployment integration remains seconda
 ## Read-only preflight findings and remaining gates
 
 Harbor 0.23.0's installed adapter accepts Mini-SWE config passthrough but exposes no
-specific compaction switch. The previous trace identifies Mini-SWE 2.4.6; exact
-version-specific compaction support and step-limit keys remain unverified. Absence
-of a compaction marker is not proof that the software cannot compact.
+specific compaction switch. Subsequent pinned-source inspection confirmed that
+Mini-SWE 2.4.6's default agent has no compaction and accepts `agent.step_limit`.
 
 Setting Harbor's `reasoning_effort` for an `openai/...` model selects Mini-SWE's
 `litellm_response` path and maps the output cap to `max_output_tokens`; without that
@@ -97,5 +100,5 @@ CLI and preserve the dataset digest; do not assume repeated include flags compos
 Since the protocol runs one task per invocation, it need not depend on multi-filter
 behavior. Confirm cancellation leaves no active model request and preserves trial
 logs before enforcing an external budget. Safe 256K placement and Q5 loading are
-still unmeasured. No inference, Docker task launch or service mutation was performed
-for this preflight.
+still unmeasured. The later accidental Docker task launch is recorded in the queue
+notes; it produced no successful model-response evidence.

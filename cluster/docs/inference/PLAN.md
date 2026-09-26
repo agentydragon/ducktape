@@ -281,8 +281,11 @@ provider scores establish the quality retained by the local quantization.
 
 The [September 26 capacity calculation](runs/2026-09-26_qwen38_capacity/README.md)
 uses actual GGUF metadata and pinned runtime source, including indexer and recurrent
-state. Start with serial Q8/Q5/Q4 KV comparisons at fixed Q4 weights; then compare
-IQ4_XS for capacity and Q5 weights for quality. Q5 and IQ4_XS downloads are queued.
+state. The [immediate serial queue](runs/2026-09-26_qwen38_queue/README.md) starts
+with Q8/Q5/Q4 KV comparisons at fixed IQ4_XS weights, then repeats with Q4 weights.
+IQ4_XS has the lower host-memory admission threshold. Q5 is a later quality control;
+Q5 and IQ4_XS downloads are progressing. The queue resumes them under a transient
+user service before inference, with explicit desktop RAM/VRAM reserves.
 Parallel-window numbers in that note are arithmetic only, not permission to run
 concurrent evaluations.
 
@@ -293,10 +296,10 @@ IQ4_XS 93.7 GB, Q3_K_XL 90.0 GB, Q5_K_XL 158.3 GB. These are file sizes,
 not required VRAM, and the large embedding tables complicate simple bits/parameter
 intuition.
 
-- Keep Q4 as control and try Q5 first to test quality retention, once safe placement
+- Keep Q4 as control and try Q5 later to test quality retention, once safe placement
   is established. Its larger working set may cost speed or page-cache capacity;
   more bits do not guarantee a better completed task within the available budget.
-- IQ4_XS is the subsequent smaller candidate if reducing CPU/offload traffic could
+- IQ4_XS is the first smaller candidate to test whether reducing CPU/offload traffic could
   free context or improve latency. Assess it on the same tasks; do not jump directly
   to a very low-bit checkpoint.
 - Set reasoning explicitly. The official default is xhigh; our initial probes used
@@ -309,8 +312,10 @@ intuition.
 ### 4. Bounded local capability validation
 
 Terminal-Bench 4.0 is a substantial agent evaluation, worth a carefully controlled
-rerun. Reserve 24–48 hours for a serial Q4/Q5 comparison on a predetermined CPU-only
-subset, preserving original task verifiers and deadlines. This is a compute budget,
+rerun. The immediate queue pairs one predetermined CPU-only task across IQ4_XS/Q4
+after capacity admission, preserving original task verifiers and deadlines. A later
+Q4/Q5 comparison can follow if placement is useful. Reserve 24–48 hours for the
+bounded queue and analysis. This is a compute budget,
 not a promise to finish every selected task. Record unfinished work explicitly.
 
 The [next-run protocol](runs/2026-09-26_harbor_review/NEXT_RUN.md) specifies preflight,
