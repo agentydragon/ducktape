@@ -223,7 +223,7 @@ Callers by surface today, so the burn-down can be checked off:
 - **`World.step` with a tracked agent:** `x/joint_spending_allocation` only.
 - **`ActionSession` (batch):** `x/monthly_actions`, `x/bounded_spending`, `x/bond_policies`,
   `x/allocation_glide`, `study/trinity`, `product/funding.py` and its tests, and the
-  acceptance suites in `sim/testing/{action,asset_sales,bond,harvest,held_bond,indexed_payments,lot_basis,obligations,public_sales,security_distributions,transfers}_test.py`.
+  acceptance suites in `sim/{action,asset_sales,bond,harvest,held_bond,indexed_payments,lot_basis,obligations,public_sales,security_distributions,transfers}_test.py`.
   These stay on the batch API; the batch layer already drives N worlds through
   delegate agents, and a vectorised policy layer replaces the delegates later.
 - **App (`product/service.py`) — landed on `product/simulation.py`:** one world per
@@ -231,7 +231,7 @@ Callers by surface today, so the burn-down can be checked off:
   consults `configured_allocation.plan` for its sales, pays claims all or none
   per account and sizes exact purchases from what those leave.
 - **Configured runner — gone:** every configured acceptance suite composes its
-  worlds under `sim/testing/*_test.py`; `sim/configured.py` and the legacy result
+  worlds in `sim/*_test.py`; `sim/configured.py` and the legacy result
   adapters are deleted.
 - **`Scenario`/`compile_run` authoring:** every caller above plus `product/scenarios.py`;
   leaves with SCHEMA after the constructor slice.
@@ -285,7 +285,7 @@ graph TD
   become tracked emitters or declarations on the way.
 - **SIMTESTS.** `sim/testing/example_run.py`, `sim/testing/case.py` and
   `fixtures.py`, and the tests still built on them (`test_results`,
-  `testing/test_invocation`, `product/test_action_projection`, `test_tlh_timeline`,
+  `test_invocation`, `product/test_action_projection`, `test_tlh_timeline`,
   `prepared_allocation_test`, `compiler/execution_test`, the bond suites,
   `policy/test_sleeves`, `x/monthly_actions/test_policy`) compose their worlds; what
   they assert about the compiler's validation moves to the declaration that now
