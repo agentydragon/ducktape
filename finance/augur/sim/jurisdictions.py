@@ -64,6 +64,17 @@ class TaxBracket(BaseModel):
     rate: float
 
 
+class ThresholdTax(BaseModel):
+    """A flat-rate additional tax on the part of some income measure above a threshold.
+
+    Which measure a field applies it to is the field's contract; the threshold is keyed by
+    filing status and is not inflation-indexed.
+    """
+
+    rate: float
+    threshold: dict[str, CurrencyAmount]
+
+
 class Jurisdiction(BaseModel):
     """A taxing authority's complete bracket + deduction config.
 
@@ -98,6 +109,20 @@ class Jurisdiction(BaseModel):
             "Whether this jurisdiction exempts interest on debt IT issued — the honest form of "
             '"in-state muni". California exempts California munis; the federal government does '
             "NOT exempt Treasuries."
+        ),
+    )
+    net_investment_income_tax: ThresholdTax | None = Field(
+        default=None,
+        description=(
+            "IRC 1411: `rate` times the lesser of net investment income and modified adjusted gross "
+            "income above `threshold`. Absent where the jurisdiction levies no such tax."
+        ),
+    )
+    taxable_income_surtax: ThresholdTax | None = Field(
+        default=None,
+        description=(
+            "`rate` times taxable income above `threshold`, on top of the bracket tax (California's "
+            "Behavioral Health Services Tax). Absent where the jurisdiction levies no such tax."
         ),
     )
 

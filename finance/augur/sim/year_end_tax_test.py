@@ -36,7 +36,7 @@ from finance.augur.sim.prepared import (
     PreparedRecurringTransfer,
 )
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, TaxProfile
+from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, InterestIncome, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.testing.scripted import Scripted
@@ -108,6 +108,20 @@ def monthly(
     )
 
 
+def monthly_interest(cause_id: str, issuer: JurisdictionId | None, amount: Decimal) -> PreparedRecurringTransfer:
+    """A year of monthly coupons from `issuer`'s debt (`None`: a corporate issuer) into Alice's checking."""
+    return PreparedRecurringTransfer(
+        start_month=0,
+        end_month=11,
+        cause_id=cause_id,
+        from_account=AccountRef(agent_id=PAYROLL, account_id=CHECKING),
+        to_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
+        amount=money(amount),
+        income_category=InterestIncome(issuer_jurisdiction_id=issuer),
+        deduction_category=None,
+    )
+
+
 def sell_into_cash(asset: SecurityKey) -> CashBandHousehold:
     """A band with no floor and no ceiling: Alice holds no spare cash and funds her claims by selling."""
     return CashBandHousehold(
@@ -154,7 +168,14 @@ def compose(case: Situation) -> World:
     world = World(
         MarketPath(series, 0, rollout_count=1),
         horizon_months=horizon,
-        income_sources=(ORDINARY_INCOME,),
+        income_sources=tuple(
+            dict.fromkeys(
+                [
+                    ORDINARY_INCOME,
+                    *(flow.income_category for flow in case.recurring_transfers if flow.income_category is not None),
+                ]
+            )
+        ),
         jurisdictions=tuple(
             PreparedJurisdiction(jurisdiction_id=id_, level=rules.level) for id_, rules in jurisdictions.items()
         ),
@@ -343,6 +364,77 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     gain = one(row for row in book(rollout, 11).capital_gains if row.agent_id == ALICE)
     assert gain.short_term_gain == 0
     assert usd(gain.long_term_gain) == pytest.approx(20_000.0, abs=0.02)
+
+
+def test_niit_taxes_the_magi_excess_but_not_muni_interest_and_settles_in_the_true_up() -> None:
+    """$180,000 wages, $30,000 corporate interest and $48,000 California muni interest.
+
+    Muni interest is outside federal AGI and outside net investment income (Form 8960). MAGI is
+    $210,000, $10,000 over the single threshold, and NII is the $30,000 of corporate interest,
+    so NIIT is 3.8% of the smaller, $10,000: $380.00. Counting the muni coupons would have made
+    it 3.8% of $58,000.
+    Federal taxable = 210,000 - 14,600 = 195,400:
+      10% × 11600 + 12% × 35550 + 22% × 53375 + 24% × 91425 + 32% × 3450
+      = 1160 + 4266 + 11742.50 + 21942 + 1104 = 40214.50; with NIIT 40594.50.
+    California exempts its own munis and taxes the corporate interest: 210,000 - 5,363 = 204,637:
+      104.12 + 285.44 + 571.00 + 907.32 + 1141.52 + 9.3% × 136287 = 15684.09.
+    No prior-year tax, so January's true-up is the whole 56278.59.
+    """
+    rollout = run(
+        Situation(
+            horizon_months=13,
+            accounts=(account(ALICE), account(PAYROLL), account(IRS)),
+            recurring_transfers=(
+                monthly("alice_paycheck", PAYROLL, ALICE, Decimal(15_000), income=True),
+                monthly_interest("alice_corporate_coupon", None, Decimal(2_500)),
+                monthly_interest("alice_muni_coupon", CALIFORNIA, Decimal(4_000)),
+            ),
+        )
+    )
+    assert rollout.trace is not None
+    breakdowns = by_jurisdiction(rollout.trace.events.tax_breakdowns)
+    assert usd(breakdowns[FEDERAL]["net_investment_income_tax_quanta"]) == 380.00
+    assert usd(breakdowns[FEDERAL]["ordinary_tax_quanta"]) == 40_214.50
+    assert usd(breakdowns[FEDERAL]["total_tax_quanta"]) == 40_594.50
+    assert usd(breakdowns[CALIFORNIA]["net_investment_income_tax_quanta"]) == 0
+    assert usd(breakdowns[CALIFORNIA]["total_tax_quanta"]) == 15_684.09
+    assert [usd(row.amount_owed) for row in owed(rollout, 12)] == [15_684.09, 40_594.50]
+    assert tax_transfers(rollout).select("month_index", "cause_id", "amount_quanta").to_dicts() == [
+        {"month_index": 12, "cause_id": "alice_tax_true_up_y0", "amount_quanta": 5_627_859}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("monthly_wage", "surtax", "california_tax"),
+    [
+        # Taxable income exactly $1,000,000: the surtax starts above it.
+        #   104.12 + 285.44 + 571.00 + 907.32 + 1141.52 + 9.3% × 280787 + 10.3% × 69824
+        #   + 11.3% × 279310 + 12.3% × 301729 = 104989.16
+        (Decimal("83780.25"), 0.00, 104_989.16),
+        # $1,000,120: 12.3% × 120 = 14.76 more bracket tax, and 1% × 120 = 1.20 surtax.
+        (Decimal("83790.25"), 1.20, 105_005.12),
+        # $1,194,637: 1% × 194637 = 1946.37 on top of 128929.51 bracket tax.
+        (Decimal(100_000), 1_946.37, 130_875.88),
+    ],
+)
+def test_california_surtax_on_taxable_income_above_a_million(
+    monthly_wage: Decimal, surtax: float, california_tax: float
+) -> None:
+    """California taxable income is wages less its $5,363 standard deduction. Wages alone are
+    not net investment income, so none of this high income draws NIIT."""
+    rollout = run(
+        Situation(
+            horizon_months=12,
+            accounts=(account(ALICE), account(PAYROLL), account(IRS)),
+            recurring_transfers=(monthly("alice_paycheck", PAYROLL, ALICE, monthly_wage, income=True),),
+        )
+    )
+    assert rollout.trace is not None
+    breakdowns = by_jurisdiction(rollout.trace.events.tax_breakdowns)
+    assert usd(breakdowns[CALIFORNIA]["taxable_income_surtax_quanta"]) == surtax
+    assert usd(breakdowns[CALIFORNIA]["total_tax_quanta"]) == california_tax
+    assert usd(breakdowns[FEDERAL]["net_investment_income_tax_quanta"]) == 0
+    assert usd(breakdowns[FEDERAL]["taxable_income_surtax_quanta"]) == 0
 
 
 def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:

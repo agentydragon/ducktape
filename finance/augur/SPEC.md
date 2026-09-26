@@ -181,10 +181,10 @@ standard deduction, with the SALT cap) belong to it; charitable deductions do no
 Future years hold current law flat, with brackets and thresholds fixed in nominal
 dollars, and estimated tax and the true-up are paid on schedule without penalties:
 explicit assumptions, not forecasts. The code does not yet cover this scope: fund
-distributions are taxed as interest, with no qualified-dividend character; neither
-NIIT nor California's surcharge above $1M is assessed; the bundled tables are 2024
-law; a taxpayer starts with no year-to-date income, gains or payments; the SALT
-cap has no income phase-out; and estimated payments are equal quarters of one
+distributions are taxed as interest, with no qualified-dividend character; NIIT's
+net investment income leaves out net rental income and the investment deductions
+IRS Form 8960 allows; the bundled tables are 2024 law; a taxpayer starts with no
+year-to-date income, gains or payments; the SALT cap has no income phase-out; and estimated payments are equal quarters of one
 aggregate prior-year amount rather than per-jurisdiction schedules.
 
 ## Outputs and observation boundaries
