@@ -156,7 +156,7 @@ def _sale(
     asset: AssetId = VTI_ASSET,
     account: AccountId = CHECKING,
 ) -> Sell:
-    lots, _ = sleeves._sale_lots(
+    lots, _ = sleeves.sale_lots(
         sorted(
             (lot for lot in observation.public_positions if (lot.account_id, lot.asset_id) == (account, asset)),
             key=lambda lot: (lot.purchase_month, lot.lot_id),
