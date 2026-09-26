@@ -14,7 +14,7 @@ from typing import Literal
 
 import numpy as np
 
-from finance.augur.model.series import InflationKey, SecurityKey
+from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.execution import compile_series
@@ -39,8 +39,8 @@ from finance.augur.x.allocation_glide.policy import decide
 QUANTUM = Decimal("0.01")
 RETIREE = AgentId("test-retiree")
 COUNTERPARTY = AgentId("test-world")
-GROWTH = SecurityKey(symbol="test-growth")
-STEADY = SecurityKey(symbol="test-steady")
+GROWTH = SecurityKey(symbol=SecuritySymbol("test-growth"))
+STEADY = SecurityKey(symbol=SecuritySymbol("test-steady"))
 HORIZON_MONTHS = 60
 
 

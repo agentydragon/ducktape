@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
 from finance.augur.model.series import LocationId, RentKey, SecurityKey, SecuritySymbol
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.scenario import (
     DistributionTaxSlice,
     MortgageFinancing,
@@ -17,6 +20,9 @@ from finance.augur.sim.scenario import (
     SecurityDistribution,
     SeriesIndexedAmount,
 )
+
+CHECKING = AccountId("checking")
+ALICE = AgentId("alice")
 
 
 def test_series_indexed_amount_parses_from_authored_data() -> None:
@@ -70,13 +76,13 @@ def test_cashflow_income_category_allows_only_the_typed_categories() -> None:
 @pytest.mark.parametrize(
     ("down_payment", "mortgage_principal"),
     [
-        pytest.param(100000, None, id="cash-buyer-covers-a-fifth-of-the-price"),
-        pytest.param(100000, 300000, id="down-payment-plus-mortgage-leaves-a-gap"),
-        pytest.param(200000, 400000, id="down-payment-plus-mortgage-overshoots"),
+        pytest.param(Decimal(100000), None, id="cash-buyer-covers-a-fifth-of-the-price"),
+        pytest.param(Decimal(100000), Decimal(300000), id="down-payment-plus-mortgage-leaves-a-gap"),
+        pytest.param(Decimal(200000), Decimal(400000), id="down-payment-plus-mortgage-overshoots"),
     ],
 )
 def test_scheduled_property_purchase_rejects_terms_that_do_not_fund_the_price(
-    down_payment: int, mortgage_principal: int | None
+    down_payment: Decimal, mortgage_principal: Decimal | None
 ) -> None:
     # The seller receives the down payment and the buyer books `price - principal` of equity, so
     # terms that do not add up to the price would conjure equity (or destroy it) at settlement.
@@ -84,18 +90,18 @@ def test_scheduled_property_purchase_rejects_terms_that_do_not_fund_the_price(
         ScheduledPropertyPurchase(
             month=0,
             cause_id="buy_home",
-            property_id="home",
-            location_id="san_francisco",
-            buyer_agent_id="alice",
-            buyer_account_id="checking",
-            seller_agent_id="seller",
-            purchase_price=500000,
+            property_id=PropertyId("home"),
+            location_id=LocationId("san_francisco"),
+            buyer_agent_id=ALICE,
+            buyer_account_id=CHECKING,
+            seller_agent_id=AgentId("seller"),
+            purchase_price=Decimal(500000),
             down_payment=down_payment,
             mortgage=None
             if mortgage_principal is None
             else MortgageFinancing(
-                liability_id="mortgage",
-                lender_agent_id="lender",
+                liability_id=LiabilityId("mortgage"),
+                lender_agent_id=AgentId("lender"),
                 principal=mortgage_principal,
                 annual_interest_rate=0.06,
                 term_months=360,
@@ -109,18 +115,18 @@ def test_scheduled_property_purchase_accepts_closing_costs_on_top_of_a_funded_pr
     purchase = ScheduledPropertyPurchase(
         month=0,
         cause_id="buy_home",
-        property_id="home",
-        location_id="san_francisco",
-        buyer_agent_id="alice",
-        buyer_account_id="checking",
-        seller_agent_id="seller",
-        purchase_price=500000,
-        down_payment=100000,
-        buyer_closing_cost=15000,
+        property_id=PropertyId("home"),
+        location_id=LocationId("san_francisco"),
+        buyer_agent_id=ALICE,
+        buyer_account_id=CHECKING,
+        seller_agent_id=AgentId("seller"),
+        purchase_price=Decimal(500000),
+        down_payment=Decimal(100000),
+        buyer_closing_cost=Decimal(15000),
         mortgage=MortgageFinancing(
-            liability_id="mortgage",
-            lender_agent_id="lender",
-            principal=400000,
+            liability_id=LiabilityId("mortgage"),
+            lender_agent_id=AgentId("lender"),
+            principal=Decimal(400000),
             annual_interest_rate=0.06,
             term_months=360,
         ),
@@ -135,10 +141,10 @@ def test_a_distribution_tax_character_must_sum_to_one() -> None:
     with pytest.raises(ValidationError, match="fractions must sum to 1"):
         SecurityDistribution(
             asset=SecurityKey(symbol=SecuritySymbol("bnd")),
-            agent_id="alice",
-            holding_account_id="brokerage",
-            to_account_id="checking",
-            tax_character=(DistributionTaxSlice(fraction=0.4, issuer_jurisdiction_id="federal_us"),),
+            agent_id=ALICE,
+            holding_account_id=AccountId("brokerage"),
+            to_account_id=CHECKING,
+            tax_character=(DistributionTaxSlice(fraction=0.4, issuer_jurisdiction_id=JurisdictionId("federal_us")),),
         )
 
 

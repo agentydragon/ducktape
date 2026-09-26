@@ -13,6 +13,7 @@ from finance.augur.model.series import (
     LocationId,
     RentKey,
     SecurityKey,
+    SecuritySymbol,
 )
 from finance.augur.model.state_space_factor import FactorKey, PrivateEquityMarkKey, parse_factor_key
 
@@ -32,7 +33,7 @@ _EXAMPLE_BY_KIND: dict[LevelSeriesKind, dict[str, str]] = {
 def test_parse_factor_key_decodes_level_series() -> None:
     assert parse_factor_key("inflation") == InflationKey()
     assert parse_factor_key("security:SPY") == SecurityKey(symbol=SP500_SYMBOL)
-    assert parse_factor_key("security:btc") == SecurityKey(symbol="btc")
+    assert parse_factor_key("security:btc") == SecurityKey(symbol=SecuritySymbol("btc"))
     assert parse_factor_key("home_value:san_francisco_ca") == HomeValueKey(location_id=LocationId("san_francisco_ca"))
     assert parse_factor_key("rent:vallejo_ca") == RentKey(location_id=LocationId("vallejo_ca"))
 
@@ -45,7 +46,7 @@ def test_wire_id_round_trips_through_parse() -> None:
     keys: list[FactorKey] = [
         InflationKey(),
         SecurityKey(symbol=SP500_SYMBOL),
-        SecurityKey(symbol="btc"),
+        SecurityKey(symbol=SecuritySymbol("btc")),
         HomeValueKey(location_id=LocationId("san_francisco_ca")),
         RentKey(location_id=LocationId("vallejo_ca")),
         PrivateEquityMarkKey(issuer_id=IssuerId("openai")),

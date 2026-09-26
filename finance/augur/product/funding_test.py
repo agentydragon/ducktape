@@ -11,7 +11,15 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import InflationKey, LevelSeriesKey, RentKey, SecurityDistributionKey, SecurityKey
+from finance.augur.model.series import (
+    InflationKey,
+    LevelSeriesKey,
+    LocationId,
+    RentKey,
+    SecurityDistributionKey,
+    SecurityKey,
+    SecuritySymbol,
+)
 from finance.augur.product.funding import Policy
 from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, TAX_AUTHORITY_AGENT_ID, Situation, build_situation
 from finance.augur.product.wire import FundingPolicy, ScenarioKey, SecuritySleeveWeight, SleeveWeight, SpendIndex
@@ -19,7 +27,7 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.compiler.execution import compile_holding_pools, compile_jurisdictions, compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.ids import AccountId, AgentId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
@@ -28,9 +36,11 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
 
+BROKERAGE = AccountId("brokerage")
+
 ACTOR = AgentId("test-owner")
-FIRST = SecurityKey(symbol="test-first")
-SECOND = SecurityKey(symbol="test-second")
+FIRST = SecurityKey(symbol=SecuritySymbol("test-first"))
+SECOND = SecurityKey(symbol=SecuritySymbol("test-second"))
 
 
 def lot(id_: LotId, account: AccountId, asset: SecurityKey, quantity: Decimal, month: int = -24) -> InitialLot:
@@ -40,7 +50,7 @@ def lot(id_: LotId, account: AccountId, asset: SecurityKey, quantity: Decimal, m
         account_id=account,
         asset=asset,
         purchase_month_index=month,
-        quantity=quantity,
+        quantity=float(quantity),
         cost_basis=quantity * Decimal(50),
     )
 
@@ -72,7 +82,7 @@ def product_situation(
             monthly_spend=spend,
             spend_index=spend_index,
             monthly_rent=rent,
-            rental_location_id="test-location" if rent else None,
+            rental_location_id=LocationId("test-location") if rent else None,
             funding_policy=config,
         ),
         primary_agent_id=ACTOR,
@@ -176,14 +186,12 @@ def test_symbol_weight_is_not_repeated_per_account_and_fifo_is_account_scoped() 
 @pytest.mark.parametrize(("cash", "raised", "ending"), [(250, 40, 280), (270, 0, 260), (290, 0, 280), (400, 0, 390)])
 def test_refill_to_ceiling_inclusive_band_and_surplus_never_invested(cash: int, raised: int, ending: int) -> None:
     config = FundingPolicy(
-        cash_floor=260,
-        cash_ceiling=280,
+        cash_floor=Decimal(260),
+        cash_ceiling=Decimal(280),
         cash_band_index_to_inflation=False,
         sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),),
     )
-    product = product_situation(
-        config, cash=Decimal(cash), lots=(lot(LotId("fund"), AccountId("brokerage"), FIRST, Decimal(10)),)
-    )
+    product = product_situation(config, cash=Decimal(cash), lots=(lot(LotId("fund"), BROKERAGE, FIRST, Decimal(10)),))
     result = run(product, config, {FIRST: np.full((1, 2), 100.0)})
     assert result.trace is not None
     assert result.trace.events.lot_dispositions.get_column("proceeds_quanta").sum() == raised * 100
@@ -193,21 +201,27 @@ def test_refill_to_ceiling_inclusive_band_and_surplus_never_invested(cash: int, 
 
 @pytest.mark.parametrize(
     "weights",
-    [(), (SecuritySleeveWeight(symbol=FIRST.symbol, weight=0),), (SecuritySleeveWeight(symbol="absent", weight=1),)],
+    [
+        (),
+        (SecuritySleeveWeight(symbol=FIRST.symbol, weight=0),),
+        (SecuritySleeveWeight(symbol=SecuritySymbol("absent"), weight=1),),
+    ],
 )
 def test_empty_excluded_or_unheld_targets_allow_cash_payments_but_never_sell(weights: tuple[SleeveWeight, ...]) -> None:
     # Indexed nonzero bounds still need no CPI when sales are disabled, matching app semantics.
-    config = FundingPolicy(cash_floor=100, cash_ceiling=200, sleeve_weights=weights)
+    config = FundingPolicy(cash_floor=Decimal(100), cash_ceiling=Decimal(200), sleeve_weights=weights)
     product = product_situation(
         config,
         cash=Decimal(50),
         spend=Decimal(30),
         rent=Decimal(40),
         horizon=2,
-        lots=(lot(LotId("keep"), AccountId("brokerage"), FIRST, Decimal(10)),),
+        lots=(lot(LotId("keep"), BROKERAGE, FIRST, Decimal(10)),),
     )
     result = run(
-        product, config, {FIRST: np.full((1, 3), 100.0), RentKey(location_id="test-location"): np.ones((1, 3))}
+        product,
+        config,
+        {FIRST: np.full((1, 3), 100.0), RentKey(location_id=LocationId("test-location")): np.ones((1, 3))},
     )
     assert result.trace is not None
     assert result.trace.events.lot_dispositions.is_empty()
@@ -229,10 +243,7 @@ def test_zero_weight_excludes_from_sales_and_target_denominator_even_on_exhausti
     product = product_situation(
         config,
         spend=Decimal(150),
-        lots=(
-            lot(LotId("keep"), AccountId("brokerage"), FIRST, Decimal(10)),
-            lot(LotId("sell"), AccountId("brokerage"), SECOND, Decimal(1)),
-        ),
+        lots=(lot(LotId("keep"), BROKERAGE, FIRST, Decimal(10)), lot(LotId("sell"), BROKERAGE, SECOND, Decimal(1))),
     )
     result = run(product, config, {asset: np.full((1, 2), 100.0) for asset in (FIRST, SECOND)})
     assert result.trace is not None
@@ -249,7 +260,7 @@ def test_monthly_cpi_band_rounds_original_bound_once() -> None:
         sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),),
     )
     product = product_situation(
-        config, spend=Decimal("0.01"), horizon=3, lots=(lot(LotId("fund"), AccountId("brokerage"), FIRST, Decimal(10)),)
+        config, spend=Decimal("0.01"), horizon=3, lots=(lot(LotId("fund"), BROKERAGE, FIRST, Decimal(10)),)
     )
     result = run(product, config, {FIRST: np.full((1, 4), 100.0), InflationKey(): np.array([[3.0, 4.0, 5.0, 99.0]])})
     assert result.summary.cash[0].values == [0, 1, 1, 2]
@@ -278,7 +289,7 @@ def test_product_spend_tracks_monthly_cpi_but_rent_resets_only_annually() -> Non
     rent[:, 0] = 1
     rent[:, 12] = 2
     rent[:, 13:] = 8
-    result = run(product, config, {InflationKey(): cpi, RentKey(location_id="test-location"): rent})
+    result = run(product, config, {InflationKey(): cpi, RentKey(location_id=LocationId("test-location")): rent})
     payments = result.summary.payments
     assert [
         row.receipt.amount_paid
@@ -296,7 +307,7 @@ def test_product_spend_tracks_monthly_cpi_but_rent_resets_only_annually() -> Non
 def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim() -> None:
     config = FundingPolicy(sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),))
     rule = Jurisdiction(
-        jurisdiction_id="test-flat",
+        jurisdiction_id=JurisdictionId("test-flat"),
         level=JurisdictionLevel.FEDERAL,
         ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.20)]},
         ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.10)]},
@@ -307,12 +318,12 @@ def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim()
         config,
         spend=Decimal(50),
         horizon=13,
-        lots=(lot(LotId("fund"), AccountId("brokerage"), FIRST, Decimal(20)),),
+        lots=(lot(LotId("fund"), BROKERAGE, FIRST, Decimal(20)),),
         distributions=(
             SecurityDistribution(
                 asset=FIRST,
                 agent_id=ACTOR,
-                holding_account_id="brokerage",
+                holding_account_id=BROKERAGE,
                 to_account_id=PRIMARY_ACCOUNT_ID,
                 tax_character=(DistributionTaxSlice(fraction=1),),
             ),

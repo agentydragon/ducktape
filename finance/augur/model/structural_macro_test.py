@@ -38,11 +38,12 @@ from finance.augur.model.structural_macro import (
     INFLATION_RATE,
     SHORT_RATE,
     EquityProcess,
+    MacroStateMatrix,
     MacroVarSpec,
     StructuralMacroProviderConfig,
 )
 
-ZERO_SHOCKS = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+ZERO_SHOCKS: MacroStateMatrix = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
 
 
 def _diagonal_var(
@@ -52,7 +53,7 @@ def _diagonal_var(
     short_lag: float = 0.97,
     spread: float = 0.005,
     inflation: float = 0.025,
-    shock_cholesky: tuple[tuple[float, float, float], ...] = ZERO_SHOCKS,
+    shock_cholesky: MacroStateMatrix = ZERO_SHOCKS,
 ) -> MacroVarSpec:
     """A VAR with no cross-terms — three independent mean-reverting rates.
 

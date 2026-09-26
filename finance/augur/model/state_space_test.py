@@ -34,6 +34,8 @@ from finance.augur.model.state_space import (
 )
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityScalePrior
 
+PRIVATE_COMPANY_A = IssuerId("private_company_a")
+
 
 def test_state_space_samples_all_available_series_and_hard_anchors(tmp_path: Path) -> None:
     provider = _provider(tmp_path, sp500_anchor=123.0)
@@ -93,7 +95,7 @@ def test_state_space_rejects_incompatible_conditioning_at_load(tmp_path: Path, c
         point = point.model_copy(update={"units": ObservationUnits.INDEX_POINTS})
         expected = "conditioning units"
     elif change == "unknown_factor":
-        factor = SecurityKey(symbol="test-missing").wire_id
+        factor = SecurityKey(symbol=SecuritySymbol("test-missing")).wire_id
         expected = "unknown factor"
     else:
         point = point.model_copy(update={"value": 0.0})
@@ -111,9 +113,7 @@ def test_state_space_private_equity_marks_forward_fill_between_tenders(tmp_path:
         .realize_model()
         .sample(
             ExogenousSamplingRequest(
-                rollout_seeds=(11,),
-                horizon_months=4,
-                required_private_equity_issuers=frozenset({IssuerId("private_company_a")}),
+                rollout_seeds=(11,), horizon_months=4, required_private_equity_issuers=frozenset({PRIVATE_COMPANY_A})
             )
         )
     )
@@ -182,7 +182,7 @@ def _artifact(
     btc = SecurityKey(symbol=SecuritySymbol("btc")).wire_id
     hv_sf = HomeValueKey(location_id=LocationId("san_francisco_ca")).wire_id
     rent_sf = RentKey(location_id=LocationId("san_francisco_ca")).wire_id
-    pe = PrivateEquityAssetKey(issuer_id=IssuerId("private_company_a")).wire_id
+    pe = PrivateEquityAssetKey(issuer_id=PRIVATE_COMPANY_A).wire_id
     factors = (sp500, inflation, btc, hv_sf, rent_sf, pe)
     latest = {
         factor: ExogenousObservedPoint(
@@ -209,14 +209,14 @@ def _artifact(
         monthly_log_return_mu=mu,
         monthly_log_return_cov=tuple(tuple(float(value) for value in row) for row in cov),
         private_equity_event_priors={
-            "private_company_a": StateSpacePrivateEquityEventPrior(
+            PRIVATE_COMPANY_A: StateSpacePrivateEquityEventPrior(
                 tender_interval_months_median=pe_tender_interval_months_median,
                 tender_interval_log_sigma=pe_tender_interval_log_sigma,
                 last_tender_observed_at=date(2026, 1, 1),
             )
         },
         private_equity_scale_priors={
-            "private_company_a": TrainedPrivateEquityScalePrior(
+            PRIVATE_COMPANY_A: TrainedPrivateEquityScalePrior(
                 current_market_cap_usd=7_000_000_000.0,
                 soft_cap_market_cap_usd=5_000_000_000_000.0,
                 monthly_log_drift_penalty=0.08,

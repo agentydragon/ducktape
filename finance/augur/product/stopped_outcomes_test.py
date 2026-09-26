@@ -6,6 +6,8 @@ The rejected payment leaves its $1,500 cash intact and records $5,000 unpaid,
 not the $3,500 additional funding that would have made it payable.
 """
 
+from decimal import Decimal
+
 import numpy as np
 import numpy.typing as npt
 import pytest
@@ -23,6 +25,7 @@ from finance.augur.product.wire import (
     ProjectionSamplingRequest,
     RolloutRequest,
     ScenarioKey,
+    SpendIndex,
 )
 from finance.augur.sim.ids import AgentId
 
@@ -52,7 +55,9 @@ def _product(*, future_cpi: float = 10) -> ProductService:
 
 def _request(*, metric: MetricName, horizon: int, count: int) -> ProjectionSamplingRequest:
     return ProjectionSamplingRequest(
-        scenario=ScenarioKey(model_id="synthetic", horizon_months=horizon, monthly_spend=500, spend_index="inflation"),
+        scenario=ScenarioKey(
+            model_id="synthetic", horizon_months=horizon, monthly_spend=Decimal(500), spend_index=SpendIndex.INFLATION
+        ),
         first_seed=0,
         rollout_count=count,
         metric=metric,

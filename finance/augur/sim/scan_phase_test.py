@@ -48,6 +48,8 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
+IRS = AgentId("irs")
+
 QUANTUM = Decimal("0.01")
 ALICE = AgentId("alice")
 CHECKING = AccountId("checking")
@@ -103,7 +105,7 @@ def taxed_by(world: World, *jurisdiction_ids: JurisdictionId, prior_year_tax: De
                     agent_id=ALICE,
                     filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=list(jurisdiction_ids),
-                    tax_authority_agent_id="irs",
+                    tax_authority_agent_id=IRS,
                     prior_year_tax=prior_year_tax,
                 ),
                 {id_: load_jurisdiction(id_) for id_ in jurisdiction_ids},
@@ -239,9 +241,7 @@ def test_security_sale_books_proceeds_and_a_long_term_gain() -> None:
         horizon_months=horizon,
         currency_quantum=QUANTUM,
     )
-    world = world_for(
-        account(ALICE), account(AgentId("irs")), horizon_months=horizon, jurisdiction_ids=(FEDERAL,), series=series
-    )
+    world = world_for(account(ALICE), account(IRS), horizon_months=horizon, jurisdiction_ids=(FEDERAL,), series=series)
     taxed_by(world, FEDERAL)
     world.declare_pool(
         PreparedHoldingPool(
@@ -396,7 +396,7 @@ def test_year_end_tax_accrues_and_the_following_year_settles_it() -> None:
     world = world_for(
         account(AgentId("payroll")),
         account(ALICE),
-        account(AgentId("irs")),
+        account(IRS),
         horizon_months=horizon,
         jurisdiction_ids=(FEDERAL, CALIFORNIA),
     )
@@ -417,7 +417,7 @@ def test_year_end_tax_accrues_and_the_following_year_settles_it() -> None:
     books = run(world)
 
     assert any(row.jurisdiction_id == FEDERAL and row.amount_owed > 0 for book in books for row in book.tax_liabilities)
-    assert cash(books, AgentId("irs"), horizon) > 0  # estimated payments and true-ups reached the tax authority
+    assert cash(books, IRS, horizon) > 0  # estimated payments and true-ups reached the tax authority
 
 
 if __name__ == "__main__":

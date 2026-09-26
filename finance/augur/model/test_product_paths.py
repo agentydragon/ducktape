@@ -15,13 +15,15 @@ from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.historical_windows import HistoricalWindowsModel, MacroHistory
 from finance.augur.model.market_paths import MarketPaths
 from finance.augur.model.product_paths import construct_products
-from finance.augur.model.series import InflationKey, SecurityDistributionKey, SecurityKey
+from finance.augur.model.series import InflationKey, SecurityDistributionKey, SecurityKey, SecuritySymbol
 from finance.augur.model.structural_macro import (
     EquityProcess,
     MacroVarSpec,
     StructuralMacroModel,
     StructuralMacroProviderConfig,
 )
+
+TEST_EQUITY = SecuritySymbol("test_equity")
 
 
 @pytest.fixture
@@ -51,7 +53,7 @@ def structural() -> StructuralMacroModel:
         ),
         initial_inflation_level=137.0,
         equity=EquityProcess(
-            instrument=EquitySpec(symbol="test_equity", initial_price_usd=517.3),
+            instrument=EquitySpec(symbol=TEST_EQUITY, initial_price_usd=517.3),
             monthly_log_return_mu=0.003,
             monthly_log_return_sigma=0.01,
             rate_beta=-0.7,
@@ -69,9 +71,9 @@ def _check_two_constructions(paths: MarketPaths) -> None:
         *paths.corporate_yields.values(),
     ]
     before = [array.copy() for array in inputs]
-    equity = EquitySpec(symbol="test_equity", initial_price_usd=517.3)
-    short = BondFundSpec(symbol="test_fund", maturity_years=2.0, initial_price_usd=98.7)
-    long = BondFundSpec(symbol="test_fund", maturity_years=8.0, initial_price_usd=98.7)
+    equity = EquitySpec(symbol=TEST_EQUITY, initial_price_usd=517.3)
+    short = BondFundSpec(symbol=SecuritySymbol("test_fund"), maturity_years=2.0, initial_price_usd=98.7)
+    long = BondFundSpec(symbol=SecuritySymbol("test_fund"), maturity_years=8.0, initial_price_usd=98.7)
     with (
         patch.object(HistoricalWindowsModel, "market_paths", side_effect=AssertionError("must not reload markets")),
         patch.object(StructuralMacroModel, "sample_market", side_effect=AssertionError("must not resample markets")),
@@ -105,7 +107,7 @@ def test_historical_markets_are_reusable_and_keep_observed_credit(historical: Hi
     assert paths.provenance["window_starts"] == tuple(month.isoformat() for month in dates)
     assert paths.short_rate[1, 0] == -0.01
     for curve, expected in ((YieldCurve.CORPORATE_AAA, 0.063), (YieldCurve.CORPORATE_BAA, 0.086)):
-        fund = BondFundSpec(symbol="test_credit", maturity_years=5, yield_curve=curve)
+        fund = BondFundSpec(symbol=SecuritySymbol("test_credit"), maturity_years=5, yield_curve=curve)
         bundle = construct_products(paths, equity=None, instruments=(fund,))
         payout = bundle.level_matrix(SecurityDistributionKey(symbol=fund.symbol), rollout_count=2, horizon_months=12)
         assert payout[0, 0] == pytest.approx(100.0 * expected / 12)
@@ -121,7 +123,11 @@ def test_structural_markets_are_reusable_but_do_not_invent_credit(structural: St
         construct_products(
             paths,
             equity=None,
-            instruments=(BondFundSpec(symbol="test_credit", maturity_years=5, yield_curve=YieldCurve.CORPORATE_AAA),),
+            instruments=(
+                BondFundSpec(
+                    symbol=SecuritySymbol("test_credit"), maturity_years=5, yield_curve=YieldCurve.CORPORATE_AAA
+                ),
+            ),
         )
 
 
@@ -131,7 +137,7 @@ def test_equity_requires_an_actual_equity_market_path(structural: StructuralMacr
         equity_total_return_index=None,
     )
     with pytest.raises(ValueError, match="no equity total-return path"):
-        construct_products(paths, equity=EquitySpec(symbol="test_equity", initial_price_usd=100.0), instruments=())
+        construct_products(paths, equity=EquitySpec(symbol=TEST_EQUITY, initial_price_usd=100.0), instruments=())
 
 
 if __name__ == "__main__":

@@ -57,8 +57,8 @@ TAX = Jurisdiction(
     level=JurisdictionLevel.FEDERAL,
     ordinary_income_brackets={"single": [TaxBracket(upper="Infinity", rate=0.2)]},
     ltcg_brackets={"single": [TaxBracket(upper="Infinity", rate=0.1)]},
-    standard_deduction={"single": 0},
-    max_capital_loss_ordinary_offset={"single": 0},
+    standard_deduction={"single": Decimal(0)},
+    max_capital_loss_ordinary_offset={"single": Decimal(0)},
 )
 
 

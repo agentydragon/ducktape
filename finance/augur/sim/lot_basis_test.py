@@ -8,6 +8,7 @@ import pytest_bazel
 
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.portfolio import (
+    HoldingKind,
     HoldingTaxLotConfig,
     PortfolioAccountConfig,
     PortfolioConfig,
@@ -28,6 +29,8 @@ from finance.augur.sim.scenario import ORDINARY_INCOME, InitialLot
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 
+CHECKING = AccountId("checking")
+
 ASSET = SecurityKey(symbol=SecuritySymbol("test-security"))
 QUANTUM = Decimal("0.01")
 OWNER = AgentId("test-owner")
@@ -36,17 +39,17 @@ OWNER = AgentId("test-owner")
 @pytest.fixture
 def portfolio() -> PortfolioConfig:
     return PortfolioConfig(
-        accounts=(PortfolioAccountConfig(account_id="checking", owner_agent_id=OWNER),),
+        accounts=(PortfolioAccountConfig(account_id=CHECKING, owner_agent_id=OWNER),),
         holdings=(
             SecurityHoldingConfig(
                 position_id="test-position",
-                account_id="checking",
+                account_id=CHECKING,
                 symbol=ASSET.symbol,
-                security_kind="stock",
+                security_kind=HoldingKind.STOCK,
                 unit_value=Decimal(1),
                 lots=(
                     HoldingTaxLotConfig(
-                        lot_id="test-lot", holding_period_months_at_start=24, quantity=3, cost_basis=Decimal(1)
+                        lot_id=LotId("test-lot"), holding_period_months_at_start=24, quantity=3, cost_basis=Decimal(1)
                     ),
                 ),
             ),
@@ -86,13 +89,11 @@ def _compose(lots: list[PreparedLot], *, horizon_months: int) -> World:
         horizon_months=horizon_months,
         income_sources=(ORDINARY_INCOME,),
     )
-    world.declare_account(
-        PreparedAccount(account=AccountRef(agent_id=OWNER, account_id=AccountId("checking")), opening_balance=0)
-    )
+    world.declare_account(PreparedAccount(account=AccountRef(agent_id=OWNER, account_id=CHECKING), opening_balance=0))
     world.declare_pool(
         PreparedHoldingPool(
             agent_id=OWNER,
-            account_id=AccountId("checking"),
+            account_id=CHECKING,
             asset_id=AssetId(ASSET.symbol),
             quantity_scale=quantity_scale_for_asset(ASSET),
         )
@@ -104,7 +105,7 @@ def _compose(lots: list[PreparedLot], *, horizon_months: int) -> World:
 
 def test_product_display_keeps_one_dollar_total_over_three_units(portfolio: PortfolioConfig) -> None:
     response = product_portfolio_response(
-        snapshot=FinanceSnapshot(as_of_date="2026-01-01", cash=0), portfolio=portfolio, tlh_portfolios=()
+        snapshot=FinanceSnapshot(as_of_date="2026-01-01", cash=Decimal(0)), portfolio=portfolio, tlh_portfolios=()
     )
     [position] = response.holdings
     [lot] = position.lots
@@ -142,11 +143,11 @@ def test_imported_basis_is_exact_through_sales(
                             Sell(
                                 cause_id=f"test-sale-{observation.month}",
                                 agent_id=OWNER,
-                                proceeds_account_id=AccountId("checking"),
+                                proceeds_account_id=CHECKING,
                                 asset_id=AssetId("test-security"),
                                 lots=(
                                     LotSale(
-                                        account_id=AccountId("checking"),
+                                        account_id=CHECKING,
                                         lot_id=LotId("test-lot"),
                                         units=sales[observation.month] * lot.quantity_scale,
                                     ),

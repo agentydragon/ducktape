@@ -37,6 +37,9 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.world import World
 
+ALICE = AgentId("alice")
+IRS = AgentId("irs")
+
 # Federal single-filer schedule in sim/data/jurisdictions/federal_us.yaml.
 # Expectations are independent amounts, not another invocation of tax arithmetic.
 STANDARD_DEDUCTION = 1_460_000
@@ -75,7 +78,7 @@ def _situation(prices: np.ndarray, *, quantity: float, cost_basis: Decimal, wage
         horizon_months=horizon,
         lot=PreparedLot(
             lot_id=LotId("alice-vti"),
-            agent_id=AgentId("alice"),
+            agent_id=ALICE,
             account_id=AccountId("checking"),
             asset_id=AssetId(VTI.symbol),
             purchase_month=-24,
@@ -96,7 +99,7 @@ def _compose(case: Situation, rollout_id: int) -> World:
         income_sources=(ORDINARY_INCOME,),
         jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=federal.level),),
     )
-    openings = [(AgentId("alice"), Decimal(0)), (AgentId("irs"), Decimal(0))]
+    openings = [(ALICE, Decimal(0)), (IRS, Decimal(0))]
     if case.wages:
         openings.append((AgentId("employer"), case.wages))
     for agent_id, opening in openings:
@@ -107,12 +110,12 @@ def _compose(case: Situation, rollout_id: int) -> World:
             )
         )
     profile = TaxProfile(
-        agent_id="alice", jurisdiction_ids=[FEDERAL], tax_authority_agent_id="irs", prior_year_tax=Decimal(0)
+        agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS, prior_year_tax=Decimal(0)
     )
     world.track(TaxAuthority(compile_profile(profile, {FEDERAL: federal}, quantum=QUANTUM)))
     world.declare_pool(
         PreparedHoldingPool(
-            agent_id=AgentId("alice"),
+            agent_id=ALICE,
             account_id=AccountId("checking"),
             asset_id=AssetId(VTI.symbol),
             quantity_scale=case.lot.quantity_scale,
@@ -127,7 +130,7 @@ def _compose(case: Situation, rollout_id: int) -> World:
                 month=0,
                 cause_id="wages",
                 from_account=AccountRef(agent_id=AgentId("employer"), account_id=AccountId("checking")),
-                to_account=AccountRef(agent_id=AgentId("alice"), account_id=AccountId("checking")),
+                to_account=AccountRef(agent_id=ALICE, account_id=AccountId("checking")),
                 amount=int(currency_amount_to_quanta(case.wages, quantum=QUANTUM)),
                 income_category=ORDINARY_INCOME,
                 deduction_category=None,
@@ -145,7 +148,7 @@ def _sell_and_pay(decisions: list[Decision], sale_month: int) -> list[DecisionAc
             actions.append(
                 Sell(
                     cause_id="sell-vti",
-                    agent_id=AgentId("alice"),
+                    agent_id=ALICE,
                     proceeds_account_id=AccountId("checking"),
                     asset_id=AssetId("vti"),
                     lots=tuple(
@@ -161,7 +164,7 @@ def _sell_and_pay(decisions: list[Decision], sale_month: int) -> list[DecisionAc
                 request_id=index,
                 cause_id=claim.cause_id,
                 claim=claim,
-                from_account=AccountRef(agent_id=AgentId("alice"), account_id=AccountId("checking")),
+                from_account=AccountRef(agent_id=ALICE, account_id=AccountId("checking")),
                 amount=claim.amount_due,
             )
             for index, claim in enumerate(observation.claims)
@@ -171,7 +174,7 @@ def _sell_and_pay(decisions: list[Decision], sale_month: int) -> list[DecisionAc
 
 
 def _run(case: Situation, *, sale_month: int, rollout_ids: list[int]) -> Finished:
-    session = ActionSession({id_: _compose(case, id_) for id_ in rollout_ids}, AgentId("alice"))
+    session = ActionSession({id_: _compose(case, id_) for id_ in rollout_ids}, ALICE)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -183,7 +186,7 @@ def _run(case: Situation, *, sale_month: int, rollout_ids: list[int]) -> Finishe
 
 def test_sale_receipt_cannot_be_rewritten_through_policy_memory() -> None:
     case = _gain_situation(wages=Decimal(0))
-    session = ActionSession({0: _compose(case, 0)}, AgentId("alice"))
+    session = ActionSession({0: _compose(case, 0)}, ALICE)
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)
@@ -193,7 +196,7 @@ def test_sale_receipt_cannot_be_rewritten_through_policy_memory() -> None:
         ]
         request = Sell(
             cause_id="sell-once",
-            agent_id=AgentId("alice"),
+            agent_id=ALICE,
             proceeds_account_id=AccountId("checking"),
             asset_id=AssetId("vti"),
             lots=tuple(lots),
@@ -342,7 +345,7 @@ def test_selected_reordered_replay_matches_original_paths(
 
 
 def test_rejected_sale_preserves_successful_prefix_and_stops_only_its_path(independent_paths: Situation) -> None:
-    session = ActionSession({id_: _compose(independent_paths, id_) for id_ in (TAXED, QUIET)}, AgentId("alice"))
+    session = ActionSession({id_: _compose(independent_paths, id_) for id_ in (TAXED, QUIET)}, ALICE)
     observed: dict[int, list[int]] = {TAXED: [], QUIET: []}
     try:
         batch = session.start()
@@ -359,15 +362,15 @@ def test_rejected_sale_preserves_successful_prefix_and_stops_only_its_path(indep
                             *response.actions,
                             Sell(
                                 cause_id="sell-exhausted-lot",
-                                agent_id=AgentId("alice"),
+                                agent_id=ALICE,
                                 proceeds_account_id=AccountId("checking"),
                                 asset_id=AssetId("vti"),
                                 lots=(LotSale(account_id=AccountId("checking"), lot_id=LotId("alice-vti"), units=1),),
                             ),
                             Transfer(
                                 cause_id="unattempted",
-                                from_account=AccountRef(agent_id=AgentId("alice"), account_id=AccountId("checking")),
-                                to_account=AccountRef(agent_id=AgentId("irs"), account_id=AccountId("checking")),
+                                from_account=AccountRef(agent_id=ALICE, account_id=AccountId("checking")),
+                                to_account=AccountRef(agent_id=IRS, account_id=AccountId("checking")),
                                 amount=1,
                             ),
                         ],

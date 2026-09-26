@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey, LevelSeriesKey
 from finance.augur.sim.compiler.series import level_series_demand
+from finance.augur.sim.ids import AccountId, AgentId, BondId
 from finance.augur.sim.scenario import BondHolding
 
 
@@ -18,11 +21,11 @@ def demand(*, bonds: tuple[BondHolding, ...]) -> tuple[LevelSeriesKey, ...]:
 def bond(*, indexed: bool) -> BondHolding:
     """One dated bond, with nothing priced beside it."""
     return BondHolding(
-        bond_id="test-bond",
-        agent_id="test-investor",
-        account_id="cash",
-        face_value=100,
-        purchase_price=100,
+        bond_id=BondId("test-bond"),
+        agent_id=AgentId("test-investor"),
+        account_id=AccountId("cash"),
+        face_value=Decimal(100),
+        purchase_price=Decimal(100),
         annual_coupon_rate=0.04,
         coupon_period_months=6,
         purchase_month_index=0,

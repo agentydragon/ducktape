@@ -8,14 +8,14 @@ from decimal import Decimal
 
 import numpy as np
 
-from finance.augur.model.series import InflationKey, SecurityKey
+from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -34,9 +34,11 @@ QUANTUM = Decimal("0.01")
 RETIREE = AgentId("retiree")
 COUNTERPARTY = AgentId("world")
 TAX_AUTHORITY = AgentId("test-tax")
-SECURITIES = ("test-growth", "test-steady")
+GROWTH = SecuritySymbol("test-growth")
+STEADY = SecuritySymbol("test-steady")
+SECURITIES = (GROWTH, STEADY)
 _FLAT_TAX = Jurisdiction(
-    jurisdiction_id="test-flat-tax",
+    jurisdiction_id=JurisdictionId("test-flat-tax"),
     level=JurisdictionLevel.FEDERAL,
     ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.20)]},
     ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=0.10)]},
@@ -53,11 +55,7 @@ def sample(*, horizon_months: int) -> ExternalSeriesContext:
     steady = np.full_like(growth, 100.0)
     cpi = np.broadcast_to(1.05 ** (np.arange(horizon_months + 1) // 12), growth.shape)
     return ExternalSeriesContext.from_level_blocks(
-        [
-            (SecurityKey(symbol="test-growth"), growth),
-            (SecurityKey(symbol="test-steady"), steady),
-            (InflationKey(), cpi),
-        ],
+        [(SecurityKey(symbol=GROWTH), growth), (SecurityKey(symbol=STEADY), steady), (InflationKey(), cpi)],
         rollout_count=3,
         horizon_months=horizon_months,
     )

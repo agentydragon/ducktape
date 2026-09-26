@@ -15,6 +15,7 @@ import pytest_bazel
 
 from finance.augur.fit.bayes_dilution import BayesianDilutionPriors, fit_bayesian_dilution_prior
 from finance.augur.fit.private_equity import PriceObservation, ValuationObservation
+from finance.augur.model.series import IssuerId
 
 _BASE = dt.date(2020, 1, 1)
 
@@ -22,7 +23,7 @@ _BASE = dt.date(2020, 1, 1)
 def _price(observed_at: dt.date, price_usd_per_share: float, sigma: float = 0.08) -> PriceObservation:
     return PriceObservation(
         type="price_observation",
-        issuer_id="synthetic",
+        issuer_id=IssuerId("synthetic"),
         observed_at=observed_at,
         kind="tender_price",
         price_usd_per_share=price_usd_per_share,
@@ -34,7 +35,7 @@ def _price(observed_at: dt.date, price_usd_per_share: float, sigma: float = 0.08
 def _valuation(observed_at: dt.date, valuation_usd: float, sigma: float = 0.08) -> ValuationObservation:
     return ValuationObservation(
         type="valuation_observation",
-        issuer_id="synthetic",
+        issuer_id=IssuerId("synthetic"),
         observed_at=observed_at,
         valuation_usd=valuation_usd,
         uncertainty_log_sigma=sigma,
