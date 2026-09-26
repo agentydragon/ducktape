@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
-from collections.abc import AsyncIterator, Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Iterator, Mapping
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from unittest.mock import AsyncMock
@@ -20,19 +21,35 @@ from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.exceptions import ToolError
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
+from mcp.types import CallToolResult, ContentBlock, ImageContent, TextContent
+from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.types import Message, Scope
 
 from agentplane.action_service.api import create_app
 from agentplane.action_service.auth import DisabledOperatorAuthenticator, workload_principal
-from agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, McpExecutorBinding
+from agentplane.action_service.catalog import (
+    ActionCatalog,
+    ActionDefinition,
+    ActionGroup,
+    ActionIdentity,
+    ExecutorBinding,
+    McpExecutorBinding,
+)
 from agentplane.action_service.client import WORKLOAD_CREDENTIAL_PLACEHOLDER
 from agentplane.action_service.db import ActionStore, make_sessionmaker
 from agentplane.action_service.mcp_frontend import CancellationView, PolicyField, Receipt, RequestField
 from agentplane.action_service.models import (
+    ActionRequestInput,
+    ActionRequestView,
     ActionState,
+    CallerPrincipal,
     CancellationOutcome,
     DecisionInput,
+    ExecutionLease,
+    ExecutionRequest,
+    ExecutionResult,
+    ExecutionState,
     Executor,
     OperatorPrincipal,
     Verdict,
@@ -44,6 +61,8 @@ from agentplane.action_service.policy_view import CallerActionPolicyView
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.test_fixtures.callers import in_sync_index
 from agentplane.action_service.updates import ActionUpdates
+from agentplane.sandbox_actions.binding import SandboxExecutorBinding
+from agentplane.sandbox_actions.models import ExecResult
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     POD_NAME_CLAIM,
@@ -51,6 +70,7 @@ from agentplane.workload_auth.principal import (
     WorkloadPrincipal,
     WorkloadPrincipalResolver,
 )
+from mcp_infra.exec.models import Exited
 
 AUDIENCE = "test-action-audience"
 NAMESPACE = "test-action-sandboxes"
@@ -174,30 +194,8 @@ class Frontend:
         )
 
 
-@pytest.fixture
-async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) -> AsyncIterator[Frontend]:
-    tokens = {f"test-token-{label}": sandbox(label) for label in ("a", "b", "elsewhere")}
-    authentication = AsyncMock(spec=AuthenticationV1Api)
-    core = AsyncMock(spec=CoreV1Api)
-
-    async def review(body: k8s_client.V1TokenReview) -> k8s_client.V1TokenReview:
-        identity = tokens.get(body.spec.token)
-        return k8s_client.V1TokenReview(
-            spec=body.spec,
-            status=k8s_client.V1TokenReviewStatus(
-                authenticated=identity is not None,
-                audiences=[AUDIENCE],
-                user=k8s_client.V1UserInfo(
-                    username=identity.service_account_subject,
-                    extra={POD_NAME_CLAIM: [identity.pod_name], POD_UID_CLAIM: [identity.pod_uid]},
-                )
-                if identity is not None
-                else None,
-            ),
-        )
-
-    authentication.create_token_review = AsyncMock(side_effect=review)
-    catalog = ActionCatalog(
+def _test_group_catalog() -> ActionCatalog:
+    return ActionCatalog(
         groups={
             "test-group": ActionGroup(
                 title="Test group",
@@ -220,9 +218,36 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
             )
         }
     )
+
+
+@asynccontextmanager
+async def _serve(
+    engine: AsyncEngine, db_url: str, catalog: ActionCatalog, executors: Mapping[str, Executor]
+) -> AsyncIterator[Frontend]:
+    tokens = {f"test-token-{label}": sandbox(label) for label in ("a", "b", "elsewhere")}
+    authentication = AsyncMock(spec=AuthenticationV1Api)
+    core = AsyncMock(spec=CoreV1Api)
+
+    async def review(body: k8s_client.V1TokenReview) -> k8s_client.V1TokenReview:
+        identity = tokens.get(body.spec.token)
+        return k8s_client.V1TokenReview(
+            spec=body.spec,
+            status=k8s_client.V1TokenReviewStatus(
+                authenticated=identity is not None,
+                audiences=[AUDIENCE],
+                user=k8s_client.V1UserInfo(
+                    username=identity.service_account_subject,
+                    extra={POD_NAME_CLAIM: [identity.pod_name], POD_UID_CLAIM: [identity.pod_uid]},
+                )
+                if identity is not None
+                else None,
+            ),
+        )
+
+    authentication.create_token_review = AsyncMock(side_effect=review)
     store = ActionStore(make_sessionmaker(engine))
     policies = _policy_index()
-    service = ActionService(store, catalog, {"test-group": echo_executor}, policies=policies)
+    service = ActionService(store, catalog, executors, policies=policies)
     updates = ActionUpdates(db_url)
     app = create_app(
         service,
@@ -259,10 +284,87 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
         await service.close()
 
 
+@pytest.fixture
+async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) -> AsyncIterator[Frontend]:
+    async with _serve(engine, db_url, _test_group_catalog(), {"test-group": echo_executor}) as served:
+        yield served
+
+
+class ScriptedExecutor(Executor):
+    """Answers each group's Actions with the result a test set for that group."""
+
+    def __init__(self) -> None:
+        self.results: dict[str, ExecutionResult] = {}
+
+    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
+        return self.results[request.action.group]
+
+
+# One group per executor kind, since how a result reads to an MCP caller depends on which ran it.
+RESULT_GROUPS: dict[str, ExecutorBinding] = {
+    "test-mcp": McpExecutorBinding(description="test-mcp-executor"),
+    "test-sandbox": SandboxExecutorBinding(
+        description="test-sandbox-executor", namespace=NAMESPACE, templates={"test-template"}
+    ),
+}
+
+
+@pytest.fixture
+def scripted() -> ScriptedExecutor:
+    return ScriptedExecutor()
+
+
+@pytest.fixture
+async def results_frontend(engine: AsyncEngine, db_url: str, scripted: ScriptedExecutor) -> AsyncIterator[Frontend]:
+    catalog = ActionCatalog(
+        groups={
+            key: ActionGroup(
+                title=f"Test {key}",
+                description=f"{key}-description",
+                executor=binding,
+                actions={"act": ActionDefinition(description="test-act", input_schema={"type": "object"})},
+            )
+            for key, binding in RESULT_GROUPS.items()
+        }
+    )
+    async with _serve(engine, db_url, catalog, dict.fromkeys(RESULT_GROUPS, scripted)) as served:
+        yield served
+
+
+async def _submitted(frontend: Frontend, group: str) -> ActionRequestView:
+    """Workload a's request for `group`, which no policy decides, so it waits for the operator."""
+    return await frontend.service.submit(
+        ActionRequestInput(
+            idempotency_key=f"test-{group}",
+            title=f"test title for {group}",
+            action=ActionIdentity(group=group, name="act"),
+            arguments={},
+        ),
+        CallerPrincipal(account=workload("a")),
+    )
+
+
+async def _decide(frontend: Frontend, request: ActionRequestView, verdict: Verdict, note: str | None = None) -> None:
+    await frontend.service.decide(
+        request.id,
+        DecisionInput(
+            verdict=verdict,
+            expected_version=request.version,
+            idempotency_key=f"test-{request.id}-{verdict}",
+            decision_note=note,
+        ),
+        OPERATOR,
+    )
+
+
+def _text(content: list[ContentBlock]) -> str:
+    return one(block.text for block in content if isinstance(block, TextContent))
+
+
 async def test_compact_catalog_opt_in_pagination_and_small_generic_schema(frontend: Frontend) -> None:
     async with frontend.client(egress=True) as client:
         tools = await client.list_tools()
-        assert len(tools) == 7
+        assert len(tools) == 8
         cancellation = next(tool for tool in tools if tool.name == "cancel_action_request")
         assert set(cancellation.input_schema["properties"]) == {"request_id", "include_fields"}
         assert cancellation.input_schema["required"] == ["request_id"]
@@ -382,6 +484,8 @@ async def test_submission_wait_receipts_events_and_owner_scope(frontend: Fronten
         for name, args in (
             ("get_action_request", {"request_id": str(request_id)}),
             ("get_action_request", by_key),
+            ("get_action_result", {"request_id": str(request_id)}),
+            ("get_action_result", by_key),
             ("list_action_request_events", {"request_id": str(request_id)}),
         ):
             denied = await other.call_tool(name, args, raise_on_error=False)
@@ -836,6 +940,80 @@ async def test_cancellation_wakes_mcp_receipt_wait(frontend: Frontend, subscript
             assert Receipt.model_validate((await pending).structured_content) == cancelled.request
             await subscription_signals.released.wait()
         assert not frontend.updates._subscribers
+
+
+async def test_action_result_relays_the_mcp_tools_own_answer(
+    results_frontend: Frontend, scripted: ScriptedExecutor
+) -> None:
+    image = base64.b64encode(b"test-image-bytes").decode()
+    answer = CallToolResult(
+        content=[
+            TextContent(type="text", text="test caption"),
+            ImageContent(type="image", data=image, mime_type="image/png"),
+        ],
+        structured_content={"width": 1},
+        is_error=True,
+    )
+    scripted.results["test-mcp"] = ExecutionResult(
+        state=ExecutionState.SUCCEEDED, result=answer.model_dump(mode="json", by_alias=True, exclude_none=True)
+    )
+    request = await _submitted(results_frontend, "test-mcp")
+    await _decide(results_frontend, request, Verdict.ALLOW)
+    async with results_frontend.client() as client:
+        result = await client.call_tool(
+            "get_action_result", {"request_id": str(request.id), "wait_seconds": 10}, raise_on_error=False
+        )
+    # The tool's own error answer stays an error, beside the image the receipt could only carry as text.
+    assert result.content == answer.content
+    assert result.structured_content == {"width": 1}
+    assert result.is_error
+
+
+async def test_action_result_presents_a_sandbox_result_as_a_returned_model(
+    results_frontend: Frontend, scripted: ScriptedExecutor
+) -> None:
+    ran = ExecResult(exit=Exited(exit_code=1), stdout="", stderr="test-missing-file", duration_seconds=0.5)
+    scripted.results["test-sandbox"] = ExecutionResult(
+        state=ExecutionState.SUCCEEDED, result=ran.model_dump(mode="json")
+    )
+    request = await _submitted(results_frontend, "test-sandbox")
+    await _decide(results_frontend, request, Verdict.ALLOW)
+    async with results_frontend.client() as client:
+        result = await client.call_tool("get_action_result", {"request_id": str(request.id), "wait_seconds": 10})
+    # A nonzero exit is the command's answer, not a failed call.
+    assert not result.is_error
+    assert ExecResult.model_validate(result.structured_content) == ran
+    assert ExecResult.model_validate_json(_text(result.content)) == ran
+
+
+async def test_action_result_says_what_it_waits_on_and_why_nothing_ran(results_frontend: Frontend) -> None:
+    request = await _submitted(results_frontend, "test-mcp")
+    async with results_frontend.client() as client:
+        pending = await client.call_tool("get_action_result", {"idempotency_key": request.idempotency_key})
+        await _decide(results_frontend, request, Verdict.DENY, note="test-denial-note")
+        denied = await client.call_tool(
+            "get_action_result", {"request_id": str(request.id), "wait_seconds": 10}, raise_on_error=False
+        )
+    assert not pending.is_error
+    assert pending.structured_content == {"request_id": str(request.id), "state": ActionState.DECISION_PENDING}
+    assert denied.is_error
+    assert "test-denial-note" in _text(denied.content)
+
+
+async def test_action_result_of_a_failed_execution_carries_its_reason(
+    results_frontend: Frontend, scripted: ScriptedExecutor
+) -> None:
+    scripted.results["test-sandbox"] = ExecutionResult(
+        state=ExecutionState.FAILED, error={"kind": "sandbox_unavailable", "message": "test box is not ready"}
+    )
+    request = await _submitted(results_frontend, "test-sandbox")
+    await _decide(results_frontend, request, Verdict.ALLOW)
+    async with results_frontend.client() as client:
+        result = await client.call_tool(
+            "get_action_result", {"request_id": str(request.id), "wait_seconds": 10}, raise_on_error=False
+        )
+    assert result.is_error
+    assert "sandbox_unavailable" in _text(result.content)
 
 
 if __name__ == "__main__":
