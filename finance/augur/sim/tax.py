@@ -107,6 +107,8 @@ def is_investment_income(source: TransferIncomeCategory) -> bool:
     net rental income is missing from net investment income and a rental arm's NIIT is
     understated.
     """
+    # TODO: give net rental income its own category and count it here (Form 8960 line 4a),
+    # with the housing tax slice.
     if isinstance(source, InterestIncome):
         return True
     if isinstance(source, OrdinaryIncome):
@@ -232,6 +234,8 @@ def assess(facts: TaxFacts, rules: PreparedTaxRules) -> TaxAssessment:
     gross = checked_count(facts.taxable_ordinary_income + facts.section_1250_recapture, "money addition")
     adjusted_gross_income = _taxable(gross, gains.short_term, gains.long_term, gains.ordinary_offset, 0)
     # Form 8960 line 5a is the return's net gain, a net loss entering only as its allowed offset.
+    # TODO: subtract Form 8960 line 9 deductions (investment interest, state income tax allocable
+    # to NII); without them NIIT is overstated for a California resident.
     net_investment_income = _taxable(
         checked_count(facts.investment_income + facts.section_1250_recapture, "money addition"),
         gains.short_term,

@@ -536,6 +536,8 @@ class TaxAccrualEvent(_RolloutEventBase):
     stcg_quanta: CurrencyQuanta
     ordinary_tax_quanta: CurrencyQuanta
     capital_gain_tax_quanta: CurrencyQuanta
+    # TODO: itemize the net investment income tax and California's surtax; total_tax_quanta
+    # already includes them.
     total_tax_quanta: CurrencyQuanta
     # MID under this jurisdiction's principal cap, 0.0 when not active.
     mortgage_interest_deduction_quanta: CurrencyQuanta
