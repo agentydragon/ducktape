@@ -24,7 +24,7 @@ class FixedNominalLaw:
 
 @dataclass(frozen=True, kw_only=True)
 class CpiIndexedLaw:
-    """Indexed amounts follow CPI from the law year; fixed amounts stay nominal.
+    """Indexed amounts follow CPI from the law year, deflating before it; fixed amounts stay nominal.
 
     Month 0 is January of `start_year`. `law_year_to_start` is CPI(start_year) / CPI(law year),
     which the caller reads from its own CPI history; the world's modeled `inflation` series carries
@@ -39,13 +39,11 @@ class CpiIndexedLaw:
             raise ValueError(f"a CPI ratio must be positive, not {self.law_year_to_start}")
 
     def check(self, rules: Sequence[PreparedTaxRules]) -> None:
-        """Reject rules this start cannot index: several law years, a later law year, or an anchor its own year contradicts."""
+        """Reject rules this start cannot index: several law years, or an anchor its own year contradicts."""
         law_years = {row.law_year for row in rules}
         if len(law_years) > 1:
             raise ValueError(f"one CPI anchor cannot index tables of several law years {sorted(law_years)}")
         for law_year in law_years:
-            if self.start_year < law_year:
-                raise ValueError(f"{self.start_year=} precedes the tables' law year {law_year}")
             if self.start_year == law_year and self.law_year_to_start != 1:
                 raise ValueError(
                     f"starting in the law year {law_year}, CPI(start)/CPI(law) is 1, not {self.law_year_to_start}"

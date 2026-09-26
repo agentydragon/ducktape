@@ -116,7 +116,10 @@ sleeves merged:
 | Bonds  |    25% | 10-year Treasury: coupon at the prior year-end yield, and the rest of its total return |
 | Equity |    65% | S&P 500: dividends over the prior year-end index level, and price return               |
 
-Spending indexes to annual CPI change. `--taxes none` is the paper control: each
+Spending indexes to annual CPI change. `--initial-wealth` is nominal in each window's
+January; with `--initial-wealth-dollars-of YEAR` it is YEAR's January dollars, deflated
+by the panel CPI to each start, and real amounts are then YEAR's dollars rather than
+each window's January ones. `--taxes none` is the paper control: each
 sleeve is a tax-free total-return proxy unit, with no investor taxes or added fees.
 `--taxes federal-ca` declares a taxable variant, not a paper replication:
 
@@ -128,18 +131,25 @@ sleeve is a tax-free total-return proxy unit, with no investor taxes or added fe
 - **W is gross.** The withdrawal leaves the portfolio and its year's tax is paid out of
   it: spendable = W − tax. Guardrails test W / V as in the paper. The TAXES reading
   below schedules the payments.
-- **Brackets fixed.** The bundled federal and California single-filer tables (2024
-  law, with NIIT and California's 1% surtax) hold in nominal dollars in every historical
-  year, and every window starts with $1M nominal. Early start years thus pay 2024
-  nominal thresholds at a far lower price level, and inflation pushes a window's
-  constant real income into higher brackets.
+- **2024 law, by a required `--tax-law`.** The bundled federal and California
+  single-filer tables (2024 law, with NIIT and California's 1% surtax) apply in every
+  historical year. `fixed-nominal` holds them in nominal dollars: early start years
+  pay 2024 nominal thresholds at a far lower price level, and inflation pushes a
+  window's constant real income into higher brackets. `cpi-indexed` scales the amounts
+  statute indexes (brackets and standard deductions) by the panel's CPI over January
+  2024's, deflating them before 2024, so the panel must cover 2024; the NIIT and
+  surtax thresholds and the $3,000 capital-loss offset stay nominal, as in statute.
+  Indexing simplifies statute (`sim/tax_indexation.py`): the panel's one CPI stands
+  in for the chained CPI-U and California's CPI, each tax year follows its own
+  January CPI without statute's lag, and amounts round to the currency quantum, not
+  to $50 or $1 steps.
 - **Taxpayer.** A single California resident with no other income, on the standard
   deduction (state tax is not itemized), with no prior-year tax: no estimated
   instalments, so each year's whole tax falls due at the next January review.
 
-`records.json` carries each year's W, federal tax (NIIT included), California tax,
-their total and spendable, nominal and in the window's January dollars; the study
-summary leads with real spendable. Because W is gross and income reinvests where it
+`records.json` carries each path's starting wealth and each year's W, federal tax
+(NIIT included), California tax, their total and spendable, nominal and real; the
+study summary leads with real spendable. Because W is gross and income reinvests where it
 was earned, the taxed portfolio tracks the untaxed control up to rounding and the final
 year's tax its reserve does not cover: taxes show in spending, not in wealth or
 guardrail triggers. What this adaptation cannot claim:
@@ -151,9 +161,10 @@ guardrail triggers. What this adaptation cannot claim:
 - The 10-year Treasury stands in for the aggregate bond index; duration and credit
   differ.
 - Overlapping January-start windows share years; they are not independent trials.
-- Taxed, it omits CPI-indexed brackets, estimated instalments, the qualified-dividend
-  holding period, wash sales, the SALT deduction and fund expense ratios or fees; the
-  bond coupon is the prior year-end yield on the unit's value, not a held bond's par.
+- Taxed, it applies 2024 law to every year, not the law then in force. It omits
+  estimated instalments, the qualified-dividend holding period, wash sales, the SALT
+  deduction and fund expense ratios or fees; the bond coupon is the prior year-end
+  yield on the unit's value, not a held bond's par.
 
 ## Decisions still needed before a faithful label
 

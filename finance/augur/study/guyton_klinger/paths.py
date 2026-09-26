@@ -15,6 +15,7 @@ from decimal import Decimal
 from enum import StrEnum
 
 import numpy as np
+from more_itertools import one
 
 from finance.augur.model.series import (
     InflationKey,
@@ -25,7 +26,7 @@ from finance.augur.model.series import (
 )
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.compiler.tax import compile_profile
+from finance.augur.sim.compiler.tax import PreparedTaxProfile, compile_profile
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
@@ -55,7 +56,7 @@ from finance.augur.sim.scenario import (
     TransferIncomeCategory,
 )
 from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation
 from finance.augur.sim.world import World
 from finance.augur.study.guyton_klinger.panel import PRICED, AnnualPanel, Sleeve
 
@@ -81,11 +82,11 @@ ADAPTATION_TARGET_PERCENT = {Sleeve.CASH: 10, Sleeve.BONDS: 25, Sleeve.EQUITY: 6
 """GK2006 Table 1's 65%-equity column with its six equity sleeves merged into one."""
 
 
-class Taxes(StrEnum):
-    """Which investor taxes a window's retiree pays: none (the paper control), or US federal plus California."""
+class TaxLaw(StrEnum):
+    """How the bundled tables' statutory amounts carry to each historical tax year (`sim/tax_indexation.py`)."""
 
-    NONE = "none"
-    FEDERAL_CA = "federal-ca"
+    FIXED_NOMINAL = "fixed-nominal"
+    CPI_INDEXED = "cpi-indexed"
 
 
 PAYOUT_INCOME: dict[Sleeve, TransferIncomeCategory] = {
@@ -98,12 +99,20 @@ California-exempt. S&P dividends are declared qualified; their holding period is
 
 
 @dataclass(frozen=True)
+class FederalCaTaxes:
+    """A single California resident's compiled federal and state tax, and the law window `i` applies it under."""
+
+    profile: PreparedTaxProfile
+    laws: tuple[TaxIndexation, ...]
+
+
+@dataclass(frozen=True)
 class AnnualWindows:
-    """Rollout ID `i` is the window starting in January of `start_years[i]`."""
+    """Rollout ID `i` is the window starting in January of `start_years[i]`; untaxed where `taxes` is `None`."""
 
     start_years: tuple[int, ...]
     years: int
-    taxes: Taxes
+    taxes: FederalCaTaxes | None
     series: tuple[PreparedSeries, ...]
 
     @property
@@ -137,8 +146,15 @@ def _payouts(growth: np.ndarray, income: Sequence[float], start_index: int) -> n
     return payouts
 
 
-def annual_windows(panel: AnnualPanel, *, start_years: Sequence[int], years: int, taxes: Taxes) -> AnnualWindows:
-    """Materialize the selected windows once; no imputation, every window complete."""
+def annual_windows(
+    panel: AnnualPanel, *, start_years: Sequence[int], years: int, tax_law: TaxLaw | None
+) -> AnnualWindows:
+    """Materialize the selected windows once; no imputation, every window complete.
+
+    `tax_law` `None` is the untaxed paper control. Otherwise the retiree pays federal and California
+    tax under it; CPI-indexed, each window's anchor is the panel's own CPI at its start over the
+    tables' law year, which the panel must therefore cover.
+    """
     if not start_years or len(set(start_years)) != len(start_years):
         raise ValueError(f"{start_years=} must be nonempty and distinct")
     eligible = eligible_start_years(panel, years)
@@ -151,7 +167,7 @@ def annual_windows(panel: AnnualPanel, *, start_years: Sequence[int], years: int
     ]
     for sleeve in Sleeve:
         symbol = SecuritySymbol(sleeve)
-        if taxes is Taxes.NONE:
+        if tax_law is None:
             prices = [_growth(panel.total_return(sleeve), offset, years) for offset in offsets]
         else:
             prices = [
@@ -174,7 +190,7 @@ def annual_windows(panel: AnnualPanel, *, start_years: Sequence[int], years: int
     return AnnualWindows(
         start_years=tuple(start_years),
         years=years,
-        taxes=taxes,
+        taxes=None if tax_law is None else _federal_ca_taxes(panel, start_years, tax_law),
         series=compile_series(
             ExternalSeriesContext.from_level_blocks(blocks, rollout_count=len(offsets), horizon_months=horizon),
             rollout_count=len(offsets),
@@ -184,18 +200,13 @@ def annual_windows(panel: AnnualPanel, *, start_years: Sequence[int], years: int
     )
 
 
-def _declare_taxes(world: World) -> None:
-    """A single California resident's federal and state tax, with sleeve payouts characterized by issuer.
-
-    The bundled tables hold fixed in nominal dollars. No prior-year tax: no estimated
-    instalments, so each year's whole liability falls due at the next January review.
-    """
-    # TODO: index brackets and thresholds to the window's CPI; fixed, early start years pay
-    #   2024 nominal thresholds and inflation pushes constant real income into higher brackets.
+def _federal_ca_taxes(panel: AnnualPanel, start_years: Sequence[int], tax_law: TaxLaw) -> FederalCaTaxes:
+    """With no prior-year tax, so no estimated instalments: each year's whole liability falls due at the next
+    January review."""
     # TODO: estimated instalments sized from each actual prior year, once the tax authority can
     #   size them per year; one fixed prior-year tax would be wrong in nearly every year.
     # TODO: declare the SALT deduction; California tax is never itemized federally.
-    profile = TaxProfile(
+    taxpayer = TaxProfile(
         agent_id=RETIREE,
         filing_status=FilingStatus.SINGLE,
         jurisdiction_ids=[FEDERAL, CALIFORNIA],
@@ -203,14 +214,27 @@ def _declare_taxes(world: World) -> None:
         payment_account_id=TAX_RESERVE,
         tax_authority_account_id=CHECKING,
     )
+    profile = compile_profile(taxpayer, load_jurisdictions_for([taxpayer]), quantum=QUANTUM)
+    if tax_law is TaxLaw.FIXED_NOMINAL:
+        return FederalCaTaxes(profile=profile, laws=(FixedNominalLaw(),) * len(start_years))
+    law_year = one(
+        {rules.law_year for rules in profile.jurisdictions},
+        too_long=ValueError("one CPI anchor cannot index tables of several law years"),
+    )
+    return FederalCaTaxes(
+        profile=profile,
+        laws=tuple(
+            CpiIndexedLaw(start_year=year, law_year_to_start=panel.cpi_ratio(year, law_year)) for year in start_years
+        ),
+    )
+
+
+def _declare_taxes(world: World, taxes: FederalCaTaxes, rollout_id: int) -> None:
+    """The window's tax authority, with sleeve payouts characterized by issuer."""
     world.declare_account(
         PreparedAccount(account=AccountRef(agent_id=TAX_AUTHORITY, account_id=CHECKING), opening_balance=0)
     )
-    world.track(
-        TaxAuthority(
-            compile_profile(profile, load_jurisdictions_for([profile]), quantum=QUANTUM), indexation=FixedNominalLaw()
-        )
-    )
+    world.track(TaxAuthority(taxes.profile, indexation=taxes.laws[rollout_id]))
     for sleeve in Sleeve:
         world.declare_distribution(
             PreparedDistribution(
@@ -235,7 +259,8 @@ def compose_world(windows: AnnualWindows, rollout_id: int, *, wealth: Decimal, w
     total = sum(weights.values())
     if set(weights) != set(Sleeve) or min(weights.values()) < 0 or total <= 0:
         raise ValueError(f"{weights=} must weigh every sleeve, nonnegatively, with a positive total")
-    taxed = windows.taxes is Taxes.FEDERAL_CA
+    taxes = windows.taxes
+    taxed = taxes is not None
     world = World(
         MarketPath(windows.series, rollout_id, rollout_count=len(windows.start_years)),
         horizon_months=windows.horizon_months,
@@ -259,8 +284,8 @@ def compose_world(windows: AnnualWindows, rollout_id: int, *, wealth: Decimal, w
                 agent_id=RETIREE, account_id=BROKERAGE, asset_id=AssetId(sleeve), quantity_scale=QUANTITY_SCALE
             )
         )
-    if taxed:
-        _declare_taxes(world)
+    if taxes is not None:
+        _declare_taxes(world, taxes, rollout_id)
     for sleeve in Sleeve:
         if not weights[sleeve]:
             continue

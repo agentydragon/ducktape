@@ -1,5 +1,6 @@
 """The documented panel format maps columns to sleeves and rejects incomplete or impossible years."""
 
+from fractions import Fraction
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,23 @@ def test_columns_map_to_named_sleeves_and_sum_to_total_returns(tmp_path: Path) -
         pytest.approx((0.05, -0.42)),
         pytest.approx((0.09, -0.25)),
     ]
+
+
+def test_cpi_ratio_compounds_the_years_between_two_januaries() -> None:
+    # CPI rises 10% over 1990 and 20% over 1991: January 1992 stands at 1.32 of January 1990.
+    panel = AnnualPanel(
+        first_year=1990,
+        income=dict.fromkeys(Sleeve, (0.0, 0.0, 0.0)),
+        price=dict.fromkeys((Sleeve.BONDS, Sleeve.EQUITY), (0.0, 0.0, 0.0)),
+        inflation=(0.1, 0.2, 0.0),
+    )
+    assert (panel.cpi_ratio(1992, 1990), panel.cpi_ratio(1990, 1992), panel.cpi_ratio(1991, 1991)) == (
+        Fraction(33, 25),
+        Fraction(25, 33),
+        Fraction(1),
+    )
+    with pytest.raises(ValueError, match="does not cover 1993"):
+        panel.cpi_ratio(1990, 1993)
 
 
 @pytest.mark.parametrize(

@@ -6,25 +6,28 @@ per-year intentions and what each year's withdrawal left to spend once its tax w
 amounts are the receipts' in `outcomes.json`.
 
     bbr run //finance/augur/study/guyton_klinger:run_bin -- --synthetic --years 30 --taxes federal-ca \\
-      --initial-wealth 1000000 --initial-rate 0.05 --output-dir /tmp/gk --trace-rollout 2
+      --tax-law cpi-indexed --initial-wealth 1000000 --initial-rate 0.05 --output-dir /tmp/gk --trace-rollout 2
 """
 
 import argparse
 import json
 import statistics
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
+from enum import StrEnum
 from fractions import Fraction
 from math import floor
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import Capture
-from finance.augur.study.guyton_klinger.panel import Sleeve, load_panel
+from finance.augur.study.guyton_klinger.panel import AnnualPanel, Sleeve, load_panel
 from finance.augur.study.guyton_klinger.paths import (
     ADAPTATION_TARGET_PERCENT,
     CALIFORNIA,
@@ -34,7 +37,7 @@ from finance.augur.study.guyton_klinger.paths import (
     RETIREE,
     TAX_RESERVE,
     AnnualWindows,
-    Taxes,
+    TaxLaw,
     annual_windows,
     compose_world,
     eligible_start_years,
@@ -43,26 +46,51 @@ from finance.augur.study.guyton_klinger.policy import Cell, Guardrail, Inflation
 from finance.augur.study.guyton_klinger.synthetic import synthetic_panel
 
 
+class Taxes(StrEnum):
+    """Which investor taxes a window's retiree pays: none (the paper control), or US federal plus California."""
+
+    NONE = "none"
+    FEDERAL_CA = "federal-ca"
+
+
+@dataclass(frozen=True)
+class RealDollars:
+    """The January whose dollars real amounts are in, and window `i`'s start CPI over it.
+
+    `year` `None` is each window's own January, where every ratio is 1.
+    """
+
+    year: int | None
+    start_cpi: tuple[Fraction, ...]
+
+
+def real_dollars(panel: AnnualPanel, start_years: Sequence[int], year: int | None) -> RealDollars:
+    return RealDollars(
+        year=year,
+        start_cpi=tuple(Fraction(1) if year is None else panel.cpi_ratio(start, year) for start in start_years),
+    )
+
+
 def run(
     windows: AnnualWindows,
     cell: Cell,
     *,
-    wealth: Decimal,
+    wealth: Sequence[Decimal],
     weights: Mapping[Sleeve, int],
     rollout_ids: Sequence[int] | None = None,
     capture: Capture = "summary",
 ) -> tuple[list[Rollout], Policy]:
     """Selected original rollout IDs, in the given order, under a fresh `Policy` for `cell`.
 
-    Selected replay reuses `windows`, never rematerializes them; the returned policy holds
-    each path's `YearRecord`s.
+    `wealth[i]` opens window `i`. Selected replay reuses `windows`, never rematerializes them;
+    the returned policy holds each path's `YearRecord`s.
     """
     ids = range(len(windows.start_years)) if rollout_ids is None else rollout_ids
     if len(set(ids)) != len(ids):
         raise ValueError(f"{rollout_ids=} must be distinct")
     policy = Policy(cell)
     session = ActionSession(
-        {id_: compose_world(windows, id_, wealth=wealth, weights=weights) for id_ in ids}, RETIREE, capture=capture
+        {id_: compose_world(windows, id_, wealth=wealth[id_], weights=weights) for id_ in ids}, RETIREE, capture=capture
     )
     try:
         batch = session.start()
@@ -98,12 +126,14 @@ class YearRecordView(BaseModel):
     reserved: int = Field(description="Moved from W into the tax reserve toward this year's tax")
     settled: int = Field(description="The previous tax year's reserve left after its claims, spent at this review")
     nominal: YearAmounts
-    real: YearAmounts = Field(description="`nominal` deflated by CPI to the window's January, half up")
+    real: YearAmounts = Field(description="`nominal` deflated by CPI to `Records.real_dollars_of`, half up")
 
 
 class PathRecords(BaseModel):
     rollout_id: int
     start_year: int
+    initial_wealth: int = Field(description="Opening wealth in the window's January, nominal")
+    real_initial_wealth: int = Field(description="`initial_wealth` in `Records.real_dollars_of`")
     years: list[YearRecordView]
     terminal_wealth: int | None = Field(
         default=None,
@@ -112,12 +142,13 @@ class PathRecords(BaseModel):
             "advances; `None` for a stopped path"
         ),
     )
-    real_terminal_wealth: int | None = Field(
-        default=None, description="`terminal_wealth` in the window's January dollars"
-    )
+    real_terminal_wealth: int | None = Field(default=None, description="`terminal_wealth` in `Records.real_dollars_of`")
 
 
 class Records(BaseModel):
+    real_dollars_of: int | None = Field(
+        description="The year whose January dollars real amounts are in; `None`: each window's own January"
+    )
     paths: list[PathRecords]
 
 
@@ -156,10 +187,14 @@ def _terminal_wealth(rollout: Rollout, debt: int) -> int:
     return portfolio - max(0, max(0, final_tax - estimated) - reserve) - debt
 
 
-def path_records(windows: AnnualWindows, policy: Policy, rollouts: Sequence[Rollout]) -> Records:
+def path_records(
+    windows: AnnualWindows, policy: Policy, rollouts: Sequence[Rollout], *, wealth: Sequence[Decimal], real: RealDollars
+) -> Records:
     paths = []
     for rollout in rollouts:
         cpi = MarketPath(windows.series, rollout.rollout_id, rollout_count=len(windows.start_years)).path("inflation")
+        start_cpi = real.start_cpi[rollout.rollout_id]
+        initial_wealth = int(currency_amount_to_quanta(wealth[rollout.rollout_id], quantum=QUANTUM))
         taxes: dict[int, dict[str, int]] = {}
         for row in rollout.summary.tax_accruals:
             by_jurisdiction = taxes.setdefault(row.tax_year_end_month // MONTHS_PER_YEAR, {})
@@ -168,7 +203,7 @@ def path_records(windows: AnnualWindows, policy: Policy, rollouts: Sequence[Roll
         years = []
         for record in memory.records:
             # A stopped path's last reviewed year never closed; an untaxed year owes nothing.
-            closed = windows.taxes is Taxes.NONE or rollout.stop is None or record.year < len(memory.records) - 1
+            closed = windows.taxes is None or rollout.stop is None or record.year < len(memory.records) - 1
             year_taxes = taxes.get(record.year, {}) if closed else None
             years.append(
                 YearRecordView(
@@ -181,7 +216,9 @@ def path_records(windows: AnnualWindows, policy: Policy, rollouts: Sequence[Roll
                     reserved=record.reserved,
                     settled=record.settled,
                     nominal=_amounts(record.requested, year_taxes, Fraction(1)),
-                    real=_amounts(record.requested, year_taxes, Fraction(cpi[record.year * MONTHS_PER_YEAR], cpi[0])),
+                    real=_amounts(
+                        record.requested, year_taxes, Fraction(cpi[record.year * MONTHS_PER_YEAR], cpi[0]) * start_cpi
+                    ),
                 )
             )
         terminal = None if rollout.stop is not None else _terminal_wealth(rollout, memory.debt)
@@ -189,22 +226,39 @@ def path_records(windows: AnnualWindows, policy: Policy, rollouts: Sequence[Roll
             PathRecords(
                 rollout_id=rollout.rollout_id,
                 start_year=windows.start_years[rollout.rollout_id],
+                initial_wealth=initial_wealth,
+                real_initial_wealth=_half_up(initial_wealth / start_cpi),
                 years=years,
                 terminal_wealth=terminal,
-                real_terminal_wealth=None if terminal is None else _half_up(Fraction(terminal * cpi[0], cpi[-1])),
+                real_terminal_wealth=None
+                if terminal is None
+                else _half_up(terminal / (Fraction(cpi[-1], cpi[0]) * start_cpi)),
             )
         )
-    return Records(paths=paths)
+    return Records(real_dollars_of=real.year, paths=paths)
 
 
 def headline(records: Records) -> dict[str, object]:
-    """Real spendable income first, in dollars over completed windows; GK success needs $1 at the horizon."""
+    """Real spendable income first, in dollars over completed windows; GK success needs $1 at the horizon.
+
+    Across windows, real amounts compare per dollar of opening wealth in each window's own January
+    dollars, or outright when opening wealth was set in one year's dollars.
+    """
     completed = [
         (terminal, real_terminal, [spendable for year in path.years if (spendable := year.real.spendable) is not None])
         for path in records.paths
         if (terminal := path.terminal_wealth) is not None and (real_terminal := path.real_terminal_wealth) is not None
     ]
-    summary: dict[str, object] = {"windows": len(records.paths), "completed_windows": len(completed)}
+    summary: dict[str, object] = {
+        "windows": len(records.paths),
+        "completed_windows": len(completed),
+        "initial_wealth_range": [
+            _dollars(extreme(path.initial_wealth for path in records.paths)) for extreme in (min, max)
+        ],
+        "real_initial_wealth_range": [
+            _dollars(extreme(path.real_initial_wealth for path in records.paths)) for extreme in (min, max)
+        ],
+    }
     if completed:
         summary |= {
             "successful_windows": sum(terminal * QUANTUM >= 1 for terminal, _, _ in completed),
@@ -223,28 +277,47 @@ def main() -> None:
     parser.add_argument("--years", type=int, required=True)
     parser.add_argument("--start-year", type=int, action="append", help="Default: every complete window")
     parser.add_argument("--taxes", type=Taxes, choices=list(Taxes), required=True)
-    parser.add_argument("--initial-wealth", type=Decimal, required=True)
+    parser.add_argument(
+        "--tax-law",
+        type=TaxLaw,
+        choices=list(TaxLaw),
+        help="Required with --taxes federal-ca: how the bundled tables carry to each historical tax year",
+    )
+    parser.add_argument(
+        "--initial-wealth",
+        type=Decimal,
+        required=True,
+        help="Nominal in each window's January, unless --initial-wealth-dollars-of",
+    )
+    parser.add_argument(
+        "--initial-wealth-dollars-of",
+        type=int,
+        metavar="YEAR",
+        help="Read --initial-wealth in YEAR's January dollars, deflated by the panel CPI to each window's start; "
+        "real amounts are then in YEAR's dollars",
+    )
     parser.add_argument("--initial-rate", type=Fraction, required=True, help="Year-0 withdrawal over wealth, e.g. 0.05")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--trace-rollout", type=int, action="append", default=[])
     args = parser.parse_args()
+    if (args.taxes is Taxes.NONE) != (args.tax_law is None):
+        parser.error("--tax-law goes with --taxes federal-ca, and only with it")
     panel = synthetic_panel(args.years) if args.synthetic else load_panel(args.panel)
     start_years = args.start_year or eligible_start_years(panel, args.years)
-    windows = annual_windows(panel, start_years=start_years, years=args.years, taxes=args.taxes)
+    windows = annual_windows(panel, start_years=start_years, years=args.years, tax_law=args.tax_law)
+    real = real_dollars(panel, windows.start_years, args.initial_wealth_dollars_of)
+    wealth = [
+        Decimal(_half_up(Fraction(args.initial_wealth / QUANTUM) * start_cpi)) * QUANTUM for start_cpi in real.start_cpi
+    ]
     cell = Cell(initial_rate=args.initial_rate, years=args.years)
 
     def replay(rollout_ids: Sequence[int] | None, capture: Capture) -> tuple[list[Rollout], Policy]:
         return run(
-            windows,
-            cell,
-            wealth=args.initial_wealth,
-            weights=ADAPTATION_TARGET_PERCENT,
-            rollout_ids=rollout_ids,
-            capture=capture,
+            windows, cell, wealth=wealth, weights=ADAPTATION_TARGET_PERCENT, rollout_ids=rollout_ids, capture=capture
         )
 
     outcomes, policy = replay(None, "summary")
-    records = path_records(windows, policy, outcomes)
+    records = path_records(windows, policy, outcomes, wealth=wealth, real=real)
     summary = headline(records)
     args.output_dir.mkdir(parents=True, exist_ok=False)
     (args.output_dir / "outcomes.json").write_text(Finished(rollouts=outcomes).model_dump_json())
@@ -256,10 +329,12 @@ def main() -> None:
                 "source": "synthetic placeholder panel" if args.synthetic else str(args.panel),
                 "policy": "Guyton-Klinger 2006 rules, declared three-sleeve adaptation",
                 "taxes": args.taxes,
+                "tax_law": args.tax_law,
                 "start_years": windows.start_years,
                 "years": windows.years,
                 "target_percent": ADAPTATION_TARGET_PERCENT,
                 "initial_wealth": str(args.initial_wealth),
+                "initial_wealth_dollars_of": args.initial_wealth_dollars_of,
                 "initial_rate": str(args.initial_rate),
             }
         )
