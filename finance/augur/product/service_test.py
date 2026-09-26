@@ -41,6 +41,7 @@ from finance.augur.model.testing import (
 from finance.augur.product import service
 from finance.augur.product.conftest import MakeProductService
 from finance.augur.product.scenarios import build_scenario, resolve_primary_agent_id
+from finance.augur.product.simulation import simulate_product_metrics
 from finance.augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
 from finance.augur.product.wire import (
     CashFinancing,
@@ -72,7 +73,6 @@ from finance.augur.product.wire import (
     SetRentedFractionEventWire,
     SleeveWeight,
 )
-from finance.augur.sim.configured import simulate_product_metrics
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.product_metrics import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.sim.quantiles import currency_quantiles

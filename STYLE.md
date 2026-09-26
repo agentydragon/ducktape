@@ -247,10 +247,13 @@ py_binary(
   `agentplane/acceptance/`), or it contains only production libraries/code
   plus actual `test_*.py` / `*_test.py` test targets. A library shared across
   tests belongs in a package `conftest.py` or such a test-only umbrella, not in
-  a production package. Actual test-target mains such as
-  `test_some_component.py` stay adjacent to the tests they serve.
-  A non-test file whose glob-matching name is part of an external contract gets
-  `# gazelle:exclude`.
+  a production package. A non-test file whose glob-matching name is part of an
+  external contract gets `# gazelle:exclude`.
+- **`testing/` holds testing utilities, not tests of production code.** Its
+  libraries are shared fakes, mocks, builders, fixtures and matchers. A test of
+  production code lives beside that code, or for a cross-module suite in the
+  component's package or an `e2e/`/`acceptance/` package — never under
+  `testing/`. `testing/test_x.py` exists only to test the utility `testing/x.py`.
 - **`test_*.py` / `*_test.py` filenames are reserved for `py_test` targets.** Do
   not use test-glob-named files for shared support code.
 - **`conftest.py` never appears in `py_test.srcs`**: the plugin generates a

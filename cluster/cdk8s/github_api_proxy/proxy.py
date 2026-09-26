@@ -18,8 +18,6 @@ from textwrap import dedent
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import (
-    Certificate,
-    CertificateSpec,
     CertificateSpecIssuerRef,
     CertificateSpecPrivateKey,
     CertificateSpecPrivateKeyAlgorithm,
@@ -69,6 +67,7 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 _IDENTITY_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/identity"
@@ -230,47 +229,42 @@ def _certificates(scope: Construct) -> None:
     Certificate(
         scope,
         "server",
-        metadata=metadata("github-api-proxy-server", _NAMESPACE),
-        spec=CertificateSpec(
-            secret_name=_SERVER_TLS_SECRET,
-            dns_names=[_HOSTNAME],
-            private_key=CertificateSpecPrivateKey(
-                algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA,
-                size=256,
-                rotation_policy=CertificateSpecPrivateKeyRotationPolicy.ALWAYS,
-            ),
-            usages=[CertificateSpecUsages.SERVER_AUTH],
-            issuer_ref=CertificateSpecIssuerRef(name="${LETSENCRYPT_ISSUER}", kind="ClusterIssuer"),
+        name="github-api-proxy-server",
+        namespace=_NAMESPACE,
+        secret_name=_SERVER_TLS_SECRET,
+        dns_names=[_HOSTNAME],
+        private_key=CertificateSpecPrivateKey(
+            algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA,
+            size=256,
+            rotation_policy=CertificateSpecPrivateKeyRotationPolicy.ALWAYS,
         ),
+        usages=[CertificateSpecUsages.SERVER_AUTH],
+        issuer_ref=CertificateSpecIssuerRef(name="${LETSENCRYPT_ISSUER}", kind="ClusterIssuer"),
     )
     Certificate(
         scope,
         "interception-ca",
-        metadata=metadata(
-            _INTERCEPTION_CA,
-            _NAMESPACE,
-            annotations={
-                "description": (
-                    "Dedicated workstation proxy interception root. Only its public certificate may be "
-                    "distributed to clients; the signing key stays in this namespace."
-                )
-            },
+        name=_INTERCEPTION_CA,
+        namespace=_NAMESPACE,
+        annotations={
+            "description": (
+                "Dedicated workstation proxy interception root. Only its public certificate may be "
+                "distributed to clients; the signing key stays in this namespace."
+            )
+        },
+        is_ca=True,
+        common_name="ducktape-github-api-proxy-interception-ca",
+        secret_name=_INTERCEPTION_CA,
+        duration="87600h",
+        renew_before="8760h",
+        private_key=CertificateSpecPrivateKey(
+            algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA,
+            size=256,
+            # A signing-key rotation requires an explicit client trust migration.
+            rotation_policy=CertificateSpecPrivateKeyRotationPolicy.NEVER,
         ),
-        spec=CertificateSpec(
-            is_ca=True,
-            common_name="ducktape-github-api-proxy-interception-ca",
-            secret_name=_INTERCEPTION_CA,
-            duration="87600h",
-            renew_before="8760h",
-            private_key=CertificateSpecPrivateKey(
-                algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA,
-                size=256,
-                # A signing-key rotation requires an explicit client trust migration.
-                rotation_policy=CertificateSpecPrivateKeyRotationPolicy.NEVER,
-            ),
-            usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
-            issuer_ref=CertificateSpecIssuerRef(name="cluster-ca-bootstrap", kind="ClusterIssuer"),
-        ),
+        usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
+        issuer_ref=CertificateSpecIssuerRef(name="cluster-ca-bootstrap", kind="ClusterIssuer"),
     )
 
 

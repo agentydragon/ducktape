@@ -12,7 +12,7 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cert_manager_crds.io.cert_manager import Certificate, CertificateSpec, CertificateSpecIssuerRef
+from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
     CiliumNetworkPolicySpecIngressFromEntities,
@@ -38,6 +38,7 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
 NAME = "haku-mailbox"
@@ -435,22 +436,18 @@ def chart(app: App) -> Chart:
     Certificate(
         chart,
         "certificate",
-        metadata=metadata(
-            "mx-allegedly-works",
-            NAMESPACE,
-            annotations={
-                "description": (
-                    "STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs "
-                    "(Gmail) use opportunistic TLS; the reloader annotation on the deployment restarts the "
-                    "receiver when cert-manager rotates this."
-                )
-            },
-        ),
-        spec=CertificateSpec(
-            secret_name=_TLS_SECRET,
-            dns_names=["mx.allegedly.works"],
-            issuer_ref=CertificateSpecIssuerRef(name="${LETSENCRYPT_ISSUER}", kind="ClusterIssuer"),
-        ),
+        name="mx-allegedly-works",
+        namespace=NAMESPACE,
+        annotations={
+            "description": (
+                "STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs "
+                "(Gmail) use opportunistic TLS; the reloader annotation on the deployment restarts the "
+                "receiver when cert-manager rotates this."
+            )
+        },
+        secret_name=_TLS_SECRET,
+        dns_names=["mx.allegedly.works"],
+        issuer_ref=CertificateSpecIssuerRef(name="${LETSENCRYPT_ISSUER}", kind="ClusterIssuer"),
     )
     _add_deployment(chart)
     _add_services(chart)

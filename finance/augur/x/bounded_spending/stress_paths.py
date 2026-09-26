@@ -1,12 +1,15 @@
 """Stipulated up/down/interior price paths for authoring and transport controls, not forecasts."""
 
+from collections.abc import Callable
+from functools import partial
+
 import numpy as np
 
 from finance.augur.model.series import InflationKey, SecurityKey
-from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.prepared import CompiledRun
-from finance.augur.study.trinity.replay import EQUITY, build_scenario
+from finance.augur.sim.world import World
+from finance.augur.study.trinity.replay import EQUITY, situation
+from finance.augur.x.bounded_spending.situation import compose
 
 
 def sample(*, rollout_count: int, horizon_months: int) -> ExternalSeriesContext:
@@ -24,10 +27,11 @@ def sample(*, rollout_count: int, horizon_months: int) -> ExternalSeriesContext:
     )
 
 
-def prepare(*, rollout_count: int, horizon_months: int) -> CompiledRun:
-    """A tax-free equity portfolio; the Python policy supplies sales and consumption."""
-    scenario = build_scenario(equity_share=1.0, withdrawal_rate=0.04).model_copy(
-        update={"scheduled_obligations": [], "horizon_months": horizon_months}
+def equity_only(*, rollout_count: int, horizon_months: int) -> Callable[[int], World]:
+    """A tax-free all-equity portfolio on the stipulated paths, composed per path id."""
+    case = situation(
+        sample(rollout_count=rollout_count, horizon_months=horizon_months),
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
     )
-    paths = sample(rollout_count=rollout_count, horizon_months=horizon_months)
-    return compile_run(scenario, rollout_count=rollout_count, external_series=paths, jurisdictions={}, locations={})
+    return partial(compose, case, equity_share=1.0)

@@ -490,6 +490,8 @@ def add_staging_action_policies(scope: Construct) -> None:
                         # Where `github.com/.../releases/download/...` redirects.
                         "objects.githubusercontent.com",
                         "release-assets.githubusercontent.com",
+                        # Raw file content off a ref, e.g. `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`.
+                        "raw.githubusercontent.com",
                     ],
                     methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.HEAD],
                 )

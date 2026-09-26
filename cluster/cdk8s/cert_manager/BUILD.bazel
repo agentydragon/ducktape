@@ -25,10 +25,10 @@ py_library(
     srcs = ["cluster_ca.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/cert_manager:bundle",
-        "//cluster/cdk8s/crd_bindings/cert_manager:certificate",
-        "//cluster/cdk8s/crd_bindings/cert_manager:clusterissuer",
+        "//cluster/cdk8s/providers/cert_manager:bundle",
+        "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
+        "//cluster/cdk8s/providers/cert_manager:certificate",
+        "//cluster/cdk8s/providers/cert_manager:cluster_issuer",
         "@pypi//cdk8s",
     ],
 )
@@ -38,9 +38,23 @@ py_library(
     srcs = ["config.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s/crd_bindings/cert_manager:clusterissuer",
+        "//cluster/cdk8s/providers/cert_manager:cluster_issuer",
+        "//cluster/cdk8s/providers/cert_manager:clusterissuer",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "interception_ca",
+    srcs = ["interception_ca.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/cert_manager:bundle",
+        "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
+        "//cluster/cdk8s/providers/cert_manager:certificate",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
     ],
 )
 

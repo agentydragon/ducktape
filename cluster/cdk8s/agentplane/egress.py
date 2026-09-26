@@ -43,21 +43,12 @@ from cdk8s_plus_34 import (
     ServicePort,
     Volume,
 )
-from cert_manager_crds.io.cert_manager import (
-    Certificate,
-    CertificateSpec,
-    CertificateSpecIssuerRef,
-    CertificateSpecPrivateKey,
-    CertificateSpecPrivateKeyAlgorithm,
-    CertificateSpecSecretTemplate,
-)
 from constructs import Construct
 from trust_manager_crds.io.cert_manager.trust import (
     Bundle,
     BundleSpec,
     BundleSpecSources,
     BundleSpecSourcesConfigMap,
-    BundleSpecSourcesSecret,
     BundleSpecTarget,
     BundleSpecTargetAdditionalFormats,
     BundleSpecTargetAdditionalFormatsPkcs12,
@@ -77,6 +68,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
@@ -94,7 +86,6 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 PROXY_PORT = 8888
 ADMIN_PORT = 8081
 _AGENT_API_PORT = 8082
-_ROOT_CA_ISSUER = "cluster-ca-bootstrap"
 # The audience the API server validates its own ServiceAccount tokens against. Read off this
 # cluster on 2026-09-19: Talos sets both `--api-audiences` and `--service-account-issuer` to this
 # on every kube-apiserver static pod. It is an issuer identifier and not an address anything dials,
@@ -383,72 +374,22 @@ class Egress(Construct):
         ).add_subjects(service_account)
 
     def _add_certificate_and_bundle(self) -> None:
-        # The interception root the proxy issues leaves from, separate from the
-        # cluster's internal CA (the haku-egress-proxy pattern). Reflected into
-        # cert-manager, trust-manager's source namespace, so the Bundle below can
-        # publish it to the runner Pods.
-        Certificate(
+        # The interception root the proxy issues leaves from, separate from the cluster's
+        # internal CA (the haku-egress-proxy pattern). Published as a ConfigMap of the same
+        # name, which every sandbox Pod mounts over its system bundle and as its Java trust
+        # store (sandbox_pod.py).
+        interception_root_ca(
             self,
-            "certificate",
-            metadata=metadata("agentplane-egress-root-ca", self.env.namespace),
-            spec=CertificateSpec(
-                is_ca=True,
-                common_name="agentplane-egress-root-ca",
-                secret_name=self.env.egress.ca_secret_name,
-                duration="87600h",  # 10 years
-                renew_before="8760h",  # 1 year
-                private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256),
-                secret_template=CertificateSpecSecretTemplate(
-                    annotations={
-                        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                        "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "cert-manager",
-                        "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                        "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "cert-manager",
-                    }
-                ),
-                issuer_ref=CertificateSpecIssuerRef(name=_ROOT_CA_ISSUER, kind="ClusterIssuer"),
-            ),
-        )
-        # Public roots + cluster root + the proxy's interception root, written as a
-        # ConfigMap of the same name, which every sandbox Pod mounts over its system
-        # bundle and as its Java trust store (sandbox_pod.py).
-        Bundle(
-            self,
-            "bundle",
-            metadata=ApiObjectMetadata(name=self.env.egress.ca_secret_name),
-            spec=BundleSpec(
-                sources=[
-                    BundleSpecSources(use_default_c_as=True),
-                    BundleSpecSources(secret=BundleSpecSourcesSecret(name="cluster-root-ca-secret", key="ca.crt")),
-                    BundleSpecSources(
-                        secret=BundleSpecSourcesSecret(name=self.env.egress.ca_secret_name, key="tls.crt")
-                    ),
-                ],
-                target=BundleSpecTarget(
-                    config_map=BundleSpecTargetConfigMap(
-                        key=CA_BUNDLE_KEY,
-                        metadata=BundleSpecTargetConfigMapMetadata(
-                            annotations={
-                                "description": (
-                                    f"Trust bundle for {self.env.namespace} runner HTTPS traffic "
-                                    "intercepted by the egress proxy"
-                                )
-                            }
-                        ),
-                    ),
-                    # With no password, trust-manager writes the store with neither encryption nor
-                    # a MAC, which a JVM loads when it is given no password either.
-                    additional_formats=BundleSpecTargetAdditionalFormats(
-                        pkcs12=BundleSpecTargetAdditionalFormatsPkcs12(key=JAVA_TRUST_STORE_KEY)
-                    ),
-                    namespace_selector=BundleSpecTargetNamespaceSelector(
-                        match_expressions=[
-                            BundleSpecTargetNamespaceSelectorMatchExpressions(
-                                key="kubernetes.io/metadata.name", operator="In", values=[self.env.namespace]
-                            )
-                        ]
-                    ),
-                ),
+            name="agentplane-egress-root-ca",
+            namespace=self.env.namespace,
+            secret_name=self.env.egress.ca_secret_name,
+            bundle_name=self.env.egress.ca_secret_name,
+            description=f"Trust bundle for {self.env.namespace} runner HTTPS traffic intercepted by the egress proxy",
+            target_namespaces=(self.env.namespace,),
+            # With no password, trust-manager writes the PKCS12 store with neither encryption
+            # nor a MAC, which a JVM loads when it is given no password either.
+            additional_formats=BundleSpecTargetAdditionalFormats(
+                pkcs12=BundleSpecTargetAdditionalFormatsPkcs12(key=JAVA_TRUST_STORE_KEY)
             ),
         )
 

@@ -6,10 +6,12 @@ from dataclasses import dataclass
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Buy, LotSale, Sell
+from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, SecurityLotState
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import apportion, checked_count, checked_wide, is_quantity_scale, position_value
-from finance.augur.sim.prepared import PreparedLot, PreparedScenario, _ScheduledSale
+from finance.augur.sim.observations import HoldingPool, PublicPosition
+from finance.augur.sim.prepared import PreparedHoldingPool, PreparedLot, _ScheduledSale
 
 
 @dataclass
@@ -63,32 +65,91 @@ def private_issuer(asset: str) -> str | None:
     return None
 
 
+class PositionStatement(Statement):
+    """The owner's declared public pools at current prices and its open lots in them."""
+
+    pools: tuple[HoldingPool, ...]
+    positions: tuple[PublicPosition, ...]
+
+
 class Holdings:
-    def __init__(self, scenario: PreparedScenario, accounting: Accounting) -> None:
-        self.lots = [Lot(spec, spec.units, spec.basis) for spec in scenario.initial_lots]
+    def __init__(self) -> None:
+        self.pools: tuple[PreparedHoldingPool, ...] = ()
+        self.lots: list[Lot] = []
+        # Holdings a managed portfolio owns; ordinary purchases into them are refused.
+        self.managed: set[tuple[str, str, str]] = set()
         # This month's dispositions, cleared by `begin_month`; lots are the state.
         self.dispositions: list[Disposition] = []
-        for pool in scenario.holding_pools:
-            accounting.ledger.ensure_account(basis_account(pool.agent_id, pool.account_id, pool.asset_id))
-            accounting.ledger.ensure_account(gain_account(pool.agent_id))
+
+    def declare_pool(self, accounting: Accounting, pool: PreparedHoldingPool) -> None:
+        self.pools = (*self.pools, pool)
+        accounting.ledger.ensure_account(basis_account(pool.agent_id, pool.account_id, pool.asset_id))
+        accounting.ledger.ensure_account(gain_account(pool.agent_id))
+
+    def hold(self, accounting: Accounting, spec: PreparedLot) -> None:
+        """Open a lot held at month zero, its basis against the owner's opening equity."""
+        self.lots.append(Lot(spec, spec.units, spec.basis))
+        if spec.basis:
+            accounting.apply(
+                JournalEntry(
+                    month=0,
+                    cause_id=f"opening-lot:{spec.lot_id}",
+                    postings=[
+                        Posting(
+                            account=basis_account(spec.agent_id, spec.account_id, spec.asset_id), amount=spec.basis
+                        ),
+                        Posting(
+                            account=AccountRef(agent_id=spec.agent_id, account_id="equity:opening"),
+                            amount=checked_count(-spec.basis, "money negation"),
+                        ),
+                    ],
+                )
+            )
+
+    def reserve(self, owner_agent_id: str, account_id: str, asset_id: str) -> None:
+        self.managed.add((owner_agent_id, account_id, asset_id))
+
+    def public_price(self, actor: str, asset: str, market: MarketPath, month: int) -> int:
+        if private_issuer(asset) is not None or not any(
+            pool.agent_id == actor and pool.asset_id == asset for pool in self.pools
+        ):
+            raise ValueError("asset has no declared public holding pool")
+        return market.value(f"security:{asset}", month)
+
+    def statement(self, actor: str, market: MarketPath, month: int) -> PositionStatement:
+        positions = []
         for lot in self.lots:
             spec = lot.spec
-            if spec.basis:
-                accounting.apply(
-                    JournalEntry(
-                        month=0,
-                        cause_id=f"opening-lot:{spec.lot_id}",
-                        postings=[
-                            Posting(
-                                account=basis_account(spec.agent_id, spec.account_id, spec.asset_id), amount=spec.basis
-                            ),
-                            Posting(
-                                account=AccountRef(agent_id=spec.agent_id, account_id="equity:opening"),
-                                amount=checked_count(-spec.basis, "money negation"),
-                            ),
-                        ],
-                    )
+            if spec.agent_id != actor or lot.units_remaining == 0 or private_issuer(spec.asset_id) is not None:
+                continue
+            price = self.public_price(actor, spec.asset_id, market, month)
+            positions.append(
+                PublicPosition(
+                    account_id=spec.account_id,
+                    asset_id=spec.asset_id,
+                    lot_id=spec.lot_id,
+                    purchase_month=spec.purchase_month,
+                    units=lot.units_remaining,
+                    quantity_scale=spec.quantity_scale,
+                    book_basis=lot.basis_remaining,
+                    price=price,
+                    value=position_value(price, lot.units_remaining, spec.quantity_scale),
                 )
+            )
+        return PositionStatement(
+            month=month,
+            pools=tuple(
+                HoldingPool(
+                    account_id=pool.account_id,
+                    asset_id=pool.asset_id,
+                    quantity_scale=pool.quantity_scale,
+                    price=self.public_price(actor, pool.asset_id, market, month),
+                )
+                for pool in self.pools
+                if pool.agent_id == actor and private_issuer(pool.asset_id) is None
+            ),
+            positions=tuple(positions),
+        )
 
     def begin_month(self) -> None:
         self.dispositions.clear()
@@ -262,7 +323,7 @@ class Holdings:
         accounting.tax = tax
         self.dispositions.extend(dispositions)
 
-    def buy(self, scenario: PreparedScenario, accounting: Accounting, month: int, request: Buy, *, price: int) -> None:
+    def buy(self, accounting: Accounting, month: int, request: Buy, *, price: int) -> None:
         cash = AccountRef(agent_id=request.agent_id, account_id=request.cash_account_id)
         if cash not in accounting.declared:
             raise ValueError("unknown declared cash account")
@@ -278,14 +339,10 @@ class Holdings:
         if not any(
             (pool.agent_id, pool.account_id, pool.asset_id, pool.quantity_scale)
             == (request.agent_id, request.holding_account_id, request.asset_id, request.quantity_scale)
-            for pool in scenario.holding_pools
+            for pool in self.pools
         ):
             raise ValueError("holding pool, asset and quantity scale must be declared by the input")
-        if any(
-            (item.owner_agent_id, item.account_id, item.asset_id)
-            == (request.agent_id, request.holding_account_id, request.asset_id)
-            for item in scenario.tlh_portfolios
-        ):
+        if (request.agent_id, request.holding_account_id, request.asset_id) in self.managed:
             raise ValueError("managed portfolio contributions are not ordinary lot purchases")
         spent = position_value(price, request.units, request.quantity_scale)
         if spent > accounting.ledger.balance(cash):
