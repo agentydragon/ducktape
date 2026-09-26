@@ -8,14 +8,12 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import Text, cast as sql_cast, literal, or_, select, text, union_all
+from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.database_schema import OAuthTokenState, Operator, OperatorAuthentikToken, ProviderConnection
-from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
+from haku.console.database_schema import OAuthTokenState, Operator, ProviderConnection
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.oauth.provider_connection import PostgresProviderConnectionStore
 from haku.console.oauth.token_support import REFRESH_SKEW
@@ -26,15 +24,9 @@ DEFAULT_REFRESH_INTERVAL = datetime.timedelta(seconds=30)
 _REFRESH_ADVISORY_LOCK = 0x48414B554F415554
 
 
-class AssociationKind(StrEnum):
-    PROVIDER = "provider"
-    OPERATOR_LOGIN = "operator_login"
-
-
 @dataclass(frozen=True, slots=True)
 class _RefreshTarget:
-    kind: AssociationKind
-    name: str | None
+    name: str
     operator_id: UUID
 
 
@@ -47,14 +39,10 @@ class AssociationMaintenance:
         sessions: async_sessionmaker[AsyncSession],
         *,
         provider_store: PostgresProviderConnectionStore,
-        authentik_store: PostgresAuthentikOperatorTokenStore,
-        refresh_authentik_tokens: bool,
     ) -> None:
         self._engine = engine
         self._sessions = sessions
         self._provider_store = provider_store
-        self._authentik_store = authentik_store
-        self._refresh_authentik_tokens = refresh_authentik_tokens
 
     async def _candidates(self) -> list[_RefreshTarget]:
         refresh_before = datetime.datetime.now(datetime.UTC) + REFRESH_SKEW
@@ -74,48 +62,22 @@ class AssociationMaintenance:
                 ),
             ),
         )
-        candidates = [
-            select(
-                literal(AssociationKind.PROVIDER).label("kind"),
-                ProviderConnection.connection_name.label("name"),
-                OAuthTokenState.operator_id,
-            )
+        query = (
+            select(ProviderConnection.connection_name, OAuthTokenState.operator_id)
             .join(OAuthTokenState, ProviderConnection.token_state_id == OAuthTokenState.token_state_id)
             .join(Operator, OAuthTokenState.operator_id == Operator.operator_id)
             .where(*refreshable)
-        ]
-        if self._refresh_authentik_tokens:
-            candidates.append(
-                select(
-                    literal(AssociationKind.OPERATOR_LOGIN).label("kind"),
-                    sql_cast(literal(None), Text).label("name"),
-                    OAuthTokenState.operator_id,
-                )
-                .join(OperatorAuthentikToken, OperatorAuthentikToken.token_state_id == OAuthTokenState.token_state_id)
-                .join(Operator, OAuthTokenState.operator_id == Operator.operator_id)
-                .where(*refreshable)
-            )
+        )
         async with self._sessions.begin() as session:
-            rows = (await session.execute(union_all(*candidates))).tuples()
-            return [
-                _RefreshTarget(kind=AssociationKind(kind), name=name, operator_id=operator_id)
-                for kind, name, operator_id in rows
-            ]
+            rows = (await session.execute(query)).tuples()
+            return [_RefreshTarget(name=name, operator_id=operator_id) for name, operator_id in rows]
 
     async def _refresh(self, target: _RefreshTarget) -> None:
         try:
-            match target.kind:
-                case AssociationKind.PROVIDER:
-                    assert target.name is not None
-                    await self._provider_store.access_token_for(connection=target.name, operator_id=target.operator_id)
-                case AssociationKind.OPERATOR_LOGIN:
-                    await self._authentik_store.access_token_for(operator_id=target.operator_id)
+            await self._provider_store.access_token_for(connection=target.name, operator_id=target.operator_id)
         except Exception:
             logger.exception(
-                "Background OAuth refresh failed for %s association %r (%s)",
-                target.kind,
-                target.name,
-                target.operator_id,
+                "Background OAuth refresh failed for provider association %r (%s)", target.name, target.operator_id
             )
 
     async def refresh_once(self) -> None:

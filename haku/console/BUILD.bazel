@@ -307,7 +307,6 @@ py_library(
         "//haku/console/grants/kubernetes:repository",
         "//haku/console/grants/kubernetes:service",
         "//haku/console/identity:agent_bearer_authority",
-        "//haku/console/identity:authentik_operator_token",
         "//haku/console/identity:authorization",
         "//haku/console/identity:enrollment_routes",
         "//haku/console/identity:fastmcp_adapter",
