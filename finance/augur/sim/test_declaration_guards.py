@@ -556,8 +556,7 @@ MANAGED = PreparedTlhPortfolio(
     owner_agent_id=HOLDER,
     account_id=BROKERAGE,
     asset_id=STOCK,
-    quantity_scale=SCALE,
-    initial_cohorts=(lot("test-cohort"),),
+    initial_cohorts=(TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-2),),
     assumptions=FLAT,
 )
 
