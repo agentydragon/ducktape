@@ -8,9 +8,9 @@
 # gazelle:resolve py cilium_crds //cluster/cdk8s/providers/cilium:ciliumnetworkpolicy
 # gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/providers/cnpg:cluster
 # gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
-# gazelle:resolve py grafana_grafana_crds //cluster/cdk8s/crd_bindings/grafana_operator:grafana
-# gazelle:resolve py grafana_grafanadashboard_crds //cluster/cdk8s/crd_bindings/grafana_operator:grafanadashboard
-# gazelle:resolve py grafana_grafanadatasource_crds //cluster/cdk8s/crd_bindings/grafana_operator:grafanadatasource
+# gazelle:resolve py grafana_grafana_crds //cluster/cdk8s/providers/grafana_operator:grafana
+# gazelle:resolve py grafana_grafanadashboard_crds //cluster/cdk8s/providers/grafana_operator:grafanadashboard
+# gazelle:resolve py grafana_grafanadatasource_crds //cluster/cdk8s/providers/grafana_operator:grafanadatasource
 # gazelle:resolve py seaweed_bucket_crds //cluster/cdk8s/providers/seaweedfs:bucket
 # gazelle:resolve py seaweed_resourcereferencegrant_crds //cluster/cdk8s/providers/seaweedfs:resourcereferencegrant
 # gazelle:resolve py seaweed_s3credentials_crds //cluster/cdk8s/providers/seaweedfs:s3credentials
@@ -209,11 +209,14 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/grafana_operator:grafana",
-        "//cluster/cdk8s/crd_bindings/grafana_operator:grafanadashboard",
-        "//cluster/cdk8s/crd_bindings/grafana_operator:grafanadatasource",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/gateway_api:httproute",
+        "//cluster/cdk8s/providers/grafana_operator:grafana",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_datasource",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_operator_grafana",
+        "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
+        "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
         "@pypi//cdk8s",
     ],
 )

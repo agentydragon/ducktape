@@ -22,8 +22,10 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/crd_bindings/grafana_operator:grafanadashboard",
-        "//cluster/cdk8s/crd_bindings/grafana_operator:grafanadatasource",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_datasource",
+        "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
+        "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
         "@pypi//cdk8s",
     ],
 )

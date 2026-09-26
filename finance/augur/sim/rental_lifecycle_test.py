@@ -381,16 +381,22 @@ def compose(situation: Situation, rollout_id: int) -> World:
         world.declare_account(opening)
     for profile in situation.tax_profiles:
         world.track(TaxAuthority(compile_profile(profile, jurisdictions, quantum=QUANTUM)))
-    world.accounting.tax.salt_policies = situation.salt_policies
-    world.accounting.tax.mortgage_interest_policies = situation.mortgage_interest_policies
+    for salt in situation.salt_policies:
+        world.declare_deduction(salt)
+    for interest in situation.mortgage_interest_policies:
+        world.declare_deduction(interest)
     if situation.housing != Housing() or situation.property_tax_policies:
         world.declare_housing(situation.housing, situation.property_tax_policies, situation.locations)
-    # Counterparty cashflow tables rather than actions: the world moves these in `prepare_month`,
+    # Counterparty cashflows rather than actions: the world moves these when their month opens,
     # before the month's claims are assembled.
-    world.scheduled_transfers = situation.scheduled_transfers
-    world.recurring_transfers = situation.recurring_transfers
-    world.scheduled_property_cashflows = situation.scheduled_property_cashflows
-    world.recurring_property_cashflows = situation.recurring_property_cashflows
+    for transfer in situation.scheduled_transfers:
+        world.declare_flow(transfer)
+    for recurring in situation.recurring_transfers:
+        world.declare_flow(recurring)
+    for cashflow in situation.scheduled_property_cashflows:
+        world.declare_flow(cashflow)
+    for recurring_cashflow in situation.recurring_property_cashflows:
+        world.declare_flow(recurring_cashflow)
     for obligation in situation.obligations:
         world.track(Biller(obligation))
     return world

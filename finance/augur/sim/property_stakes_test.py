@@ -214,7 +214,8 @@ def compose(case: Situation, rollout_id: int) -> World:
             )
         )
     world.declare_housing(case.housing, case.tax_policies, case.locations)
-    world.recurring_transfers = case.recurring_transfers
+    for flow in case.recurring_transfers:
+        world.declare_flow(flow)
     return world
 
 

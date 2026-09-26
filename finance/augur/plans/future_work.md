@@ -12,8 +12,8 @@ assumptions remain downstream.
   explicit financial-product bindings. Distinguish configured
   opening levels, relative path anchors and fixed contractual amounts. Keep their
   anchoring conventions explicit at composition, not inferred from source names.
-- **P12 / ACCEPT / CAP:** retire configured drivers and test adapters while
-  preserving actual state/receipt facts. Account/component selection and any
+- **P12 / CAP:** retire the configured strategy while preserving actual
+  state/receipt facts. Account/component selection and any
   additional trade/contract capture need a named consumer. Do not create another
   accounting store, generic posting-template framework or mandatory metric slab.
 - **Consider the name “exogenous.”** Removing it may better describe the boundary

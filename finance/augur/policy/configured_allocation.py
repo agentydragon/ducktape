@@ -6,6 +6,7 @@ quotes, resolved indexed bounds, and per-path lot identities; nothing here
 settles a trade, estimates tax, or reaches into a managed component's holdings.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from fractions import Fraction
 
@@ -16,16 +17,11 @@ from finance.augur.policy.cash_band import Hold, Invest, Raise, cash_band, valid
 from finance.augur.sim.actions import Action, Buy, Contribute, Liquidate, Sell, Withdraw
 from finance.augur.sim.fixed_point import quantity_for_value
 from finance.augur.sim.observations import Observation, PublicPosition
-from finance.augur.sim.prepared import (
-    CompiledRun,
-    PreparedAmount,
-    PreparedFixedAmount,
-    PreparedSeries,
-    _AllocationPolicy,
-)
+from finance.augur.sim.prepared import PreparedAmount, PreparedFixedAmount, _AllocationPolicy
+from finance.augur.sim.world import World
 
 
-def _base_bound(run: CompiledRun, amount: PreparedAmount, series: dict[str, PreparedSeries]) -> int:
+def _base_bound(amount: PreparedAmount, world: World) -> int:
     if isinstance(amount, int):
         return sleeves._count(amount)
     if isinstance(amount, PreparedFixedAmount):
@@ -33,37 +29,28 @@ def _base_bound(run: CompiledRun, amount: PreparedAmount, series: dict[str, Prep
     base = sleeves._count(amount.base_amount)
     if not 0 < amount.adjustment_period_months < 1 << 32 or not 0 <= amount.base_month_index < 1 << 32:
         raise ValueError("allocation indexed bound has an invalid base month or reset period")
-    if run.scenario.horizon_months and amount.base_month_index != 0:
+    if amount.base_month_index != 0:
         raise ValueError("allocation indexed bound starts before its base month")
     if amount.series_id != "inflation" and not (amount.series_id.startswith("rent:") and len(amount.series_id) > 5):
         raise ValueError("allocation indexed bounds require inflation or a rent series")
-    path = series.get(amount.series_id)
-    if path is None:
+    if amount.series_id not in world.market.series:
         raise ValueError(f"allocation indexed bound is missing series {amount.series_id!r}")
-    required = {amount.base_month_index, *range(0, run.scenario.horizon_months, amount.adjustment_period_months)}
-    for rollout in range(run.rollout_count):
-        for month in required:
-            index = rollout * path.snapshots + month
-            if month >= path.snapshots or index >= len(path.values):
-                raise ValueError("allocation indexed bound is missing a required series level")
-            if not sleeves._count(path.values[index]):
-                raise ValueError("allocation indexed bound requires positive index levels")
+    for month in {amount.base_month_index, *range(0, world.horizon_months, amount.adjustment_period_months)}:
+        if not sleeves._count(world.market.value(amount.series_id, month)):
+            raise ValueError("allocation indexed bound requires positive index levels")
     return base
 
 
-def validate_prepared(run: CompiledRun) -> None:
-    """Reject malformed imported configured policies before any world or month exists.
+def check_policies(world: World, policies: Iterable[_AllocationPolicy]) -> None:
+    """Refuse configured policies that are malformed or name what `world` does not declare.
 
     Native accounting validates its own facts. These guards belong here because
     configured policy records are not sent to the financial kernel.
     """
-    scenario = run.scenario
-    accounts = {(item.account.agent_id, item.account.account_id) for item in scenario.accounts}
-    pools = {(item.agent_id, item.account_id, item.asset_id): item.quantity_scale for item in scenario.holding_pools}
-    managed = {(item.owner_agent_id, item.account_id, item.asset_id) for item in scenario.tlh_portfolios}
-    series = {item.series_id: item for item in run.series}
+    accounts = {(account.agent_id, account.account_id) for account in world.accounting.declared}
+    pools = {(pool.agent_id, pool.account_id, pool.asset_id): pool.quantity_scale for pool in world.holdings.pools}
     funding = set()
-    for policy_index, policy in enumerate(scenario._target_allocation_policies):
+    for policy_index, policy in enumerate(policies):
         key = (policy.agent_id, policy.account_id)
         if not policy.cause_id_prefix.strip() or key not in accounts:
             raise ValueError("allocation requires a nonempty cause and declared funding account")
@@ -83,7 +70,7 @@ def validate_prepared(run: CompiledRun) -> None:
             if not policy.allow_purchases:
                 raise ValueError("allocation drift requires purchases")
         validate_band_bounds(
-            floor=_base_bound(run, policy.cash_floor, series), ceiling=_base_bound(run, policy.cash_ceiling, series)
+            floor=_base_bound(policy.cash_floor, world), ceiling=_base_bound(policy.cash_ceiling, world)
         )
         for sleeve_index, sleeve in enumerate(policy.sleeves):
             scale = sleeves._count(sleeve.quantity_scale)
@@ -99,19 +86,19 @@ def validate_prepared(run: CompiledRun) -> None:
             if not policy.allow_purchases:
                 continue
             destination = (policy.agent_id, sources[0], sleeve.asset_id)
-            if destination not in pools and destination not in managed:
+            if destination not in pools and destination not in world.holdings.managed:
                 raise ValueError("allocation purchase pool is not declared")
             prefix = f"{policy.cause_id_prefix}_buy_p{policy_index}_s{sleeve_index}_"
-            for lot in scenario.initial_lots:
-                suffix = lot.lot_id.removeprefix(prefix)
+            for lot in world.holdings.lots:
+                suffix = lot.spec.lot_id.removeprefix(prefix)
                 if (
-                    lot.lot_id.startswith(prefix)
+                    lot.spec.lot_id.startswith(prefix)
                     and suffix.isascii()
                     and suffix.isdigit()
                     and str(int(suffix)) == suffix
                     and int(suffix) < 1 << 32
                 ):
-                    raise ValueError(f"opening lot {lot.lot_id!r} uses a reserved allocation-purchase identity")
+                    raise ValueError(f"opening lot {lot.spec.lot_id!r} uses a reserved allocation-purchase identity")
 
 
 @dataclass(frozen=True, kw_only=True)

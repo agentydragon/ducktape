@@ -156,7 +156,8 @@ def compose(case: Situation, rollout_id: int, *, series: tuple[PreparedSeries, .
         world.declare_pool(holding_pool)
     for holding in case.lots:
         world.hold(holding)
-    world.recurring_transfers = case.recurring_transfers
+    for flow in case.recurring_transfers:
+        world.declare_flow(flow)
     for claim in case.claims:
         world.track(Biller(claim))
     return world

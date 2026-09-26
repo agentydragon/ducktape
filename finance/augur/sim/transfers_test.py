@@ -74,8 +74,10 @@ def compose(case: Situation, rollout_id: int, *, rollout_count: int) -> World:
     )
     for agent_id, balance in case.balances:
         world.declare_account(PreparedAccount(account=checking(agent_id), opening_balance=quanta(balance)))
-    world.scheduled_transfers = case.scheduled
-    world.recurring_transfers = case.recurring
+    for scheduled in case.scheduled:
+        world.declare_flow(scheduled)
+    for recurring in case.recurring:
+        world.declare_flow(recurring)
     return world
 
 

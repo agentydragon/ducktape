@@ -111,18 +111,18 @@ def compose(payments: tuple[Payment, ...]) -> World:
                 )
             )
         )
-    world.scheduled_transfers = tuple(
-        PreparedTransfer(
-            month=payment.month,
-            cause_id=f"payment-{index}",
-            from_account=AccountRef(agent_id=PAYER, account_id=CHECKING),
-            to_account=AccountRef(agent_id=payment.to_agent_id, account_id=CHECKING),
-            amount=int(currency_amount_to_quanta(payment.amount, quantum=QUANTUM)),
-            income_category=payment.source,
-            deduction_category=None,
+    for index, payment in enumerate(payments):
+        world.declare_flow(
+            PreparedTransfer(
+                month=payment.month,
+                cause_id=f"payment-{index}",
+                from_account=AccountRef(agent_id=PAYER, account_id=CHECKING),
+                to_account=AccountRef(agent_id=payment.to_agent_id, account_id=CHECKING),
+                amount=int(currency_amount_to_quanta(payment.amount, quantum=QUANTUM)),
+                income_category=payment.source,
+                deduction_category=None,
+            )
         )
-        for index, payment in enumerate(payments)
-    )
     return world
 
 

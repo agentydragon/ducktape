@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import functools
 import threading
-from collections.abc import Collection
+from collections.abc import Collection, Iterator
 from decimal import Decimal
 from typing import Any, overload
 
@@ -20,7 +20,6 @@ from finance.augur.api.schemas import ApiModel, Frame
 from finance.augur.api.wire import Property
 from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
-    SampledExogenousBundle,
     Sampler,
     anchor_sampled_series_levels,
     level_series_request_channels,
@@ -37,11 +36,13 @@ from finance.augur.product.metrics import (
 )
 from finance.augur.product.projection import project_product_rollout
 from finance.augur.product.scenarios import (
+    Situation,
     asset_label_by_series_id,
-    build_scenario,
+    build_situation,
+    compose,
     initial_bonds_from_portfolio,
     initial_lots_from_portfolio,
-    required_private_equity_issuers,
+    paths,
     security_distributions_from_portfolio,
 )
 from finance.augur.product.simulation import execute, project_events, project_product_metrics, simulate_product_metrics
@@ -57,14 +58,12 @@ from finance.augur.product.wire import (
     ScenarioKey,
     TerminalDistributionResponse,
 )
-from finance.augur.sim.compiler.execution import compile_run
-from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.locations import Location
-from finance.augur.sim.prepared import CompiledRun
+from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.quantiles import currency_quantiles
-from finance.augur.sim.runtime import load_jurisdictions_for
-from finance.augur.sim.scenario import Scenario, TlhPortfolioSpec
+from finance.augur.sim.scenario import TlhPortfolioSpec
+from finance.augur.sim.world import World
 
 
 class ProductService:
@@ -172,11 +171,11 @@ class ProductService:
 
     def _simulate_rollout(self, request: RolloutRequest) -> RolloutResponse:
         seed = int(request.seed)
-        run, model_id = self._compile_product_run(request.scenario, (seed,))
-        completed = execute(run, "dense", self._primary_agent_id)
+        situation, worlds, model_id = self._worlds(request.scenario, (seed,))
+        completed = execute(worlds, "dense", self._primary_agent_id)
         projection = project_product_rollout(
             project_events(completed),
-            project_product_metrics(run, completed),
+            project_product_metrics(completed, horizon_months=situation.horizon_months, currency=situation.currency),
             rollout_id=0,
             primary_agent_id=self._primary_agent_id,
             asset_label_by_id=self._asset_label_by_id,
@@ -219,21 +218,42 @@ class ProductService:
         if horizon_months > self._max_horizon_months:
             raise ValueError(f"requested horizon {horizon_months} exceeds server max {self._max_horizon_months}")
 
-    def _compile_product_run(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[CompiledRun, str]:
+    def _worlds(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[Situation, Iterator[World], str]:
+        """The request's situation, sampled once for every seed; each path's world is composed as it is run."""
         self._validate_scenario_key(scenario_key)
-        scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
-        external_series = materialize_sampled_exogenous(sampled)
-        jurisdictions = load_jurisdictions_for(scenario.tax_profiles)
-        return (
-            compile_run(
-                scenario,
-                rollout_count=len(seeds),
-                external_series=external_series,
-                jurisdictions=jurisdictions,
-                locations=self._locations,
-            ),
-            model_id,
+        situation = build_situation(
+            scenario_key,
+            primary_agent_id=self._primary_agent_id,
+            initial_cash=self._initial_cash,
+            initial_lots=self._initial_lots,
+            properties_by_id=self._properties_by_id,
+            locations=self._locations,
+            initial_bonds=self._initial_bonds,
+            security_distributions=self._security_distributions,
+            tlh_portfolios=self._tlh_portfolios,
         )
+        sampling_request = ExogenousSamplingRequest(
+            horizon_months=situation.horizon_months,
+            rollout_seeds=seeds,
+            # The situation's own demand, not re-derived from the wire type — one answer to
+            # "what does this need", not two that must agree.
+            **level_series_request_channels(situation.level_series),
+            required_private_equity_issuers=situation.private_equity_issuers,
+        )
+        sampled = self._models[scenario_key.model_id].sample(sampling_request)
+        validate_sample_satisfies_request(sampling_request, sampled)
+        anchors = self._portfolio.level_anchors
+        sampled = anchor_sampled_series_levels(
+            sampled,
+            level_series_anchors=anchors.level_series_anchors,
+            private_equity_anchors=anchors.private_equity_anchors,
+        )
+        series = paths(situation, materialize_sampled_exogenous(sampled), rollout_count=len(seeds))
+        worlds = (
+            compose(situation, MarketPath(series, rollout_id, rollout_count=len(seeds)))
+            for rollout_id in range(len(seeds))
+        )
+        return situation, worlds, sampled.model_id or scenario_key.model_id
 
     @overload
     def _simulate_product_summary(
@@ -248,9 +268,14 @@ class ProductService:
     def _simulate_product_summary(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
     ) -> tuple[ProductMetricFanSummary | ProductTerminalSummary, str]:
-        run, model_id = self._compile_product_run(scenario_key, seeds)
+        situation, worlds, model_id = self._worlds(scenario_key, seeds)
         metric_name = _quanta_metric(metric)
-        arrays = simulate_product_metrics(run, primary_agent_id=self._primary_agent_id)
+        arrays = simulate_product_metrics(
+            worlds,
+            horizon_months=situation.horizon_months,
+            currency=situation.currency,
+            primary_agent_id=self._primary_agent_id,
+        )
         summary: ProductMetricFanSummary | ProductTerminalSummary = (
             terminal_summary(arrays, metric=metric_name)
             if percentiles is None
@@ -261,45 +286,18 @@ class ProductService:
     def _simulate_product_summaries(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...]
     ) -> tuple[ProductProjectionSummaries, str]:
-        run, model_id = self._compile_product_run(scenario_key, seeds)
+        situation, worlds, model_id = self._worlds(scenario_key, seeds)
         summaries = projection_summaries(
-            simulate_product_metrics(run, primary_agent_id=self._primary_agent_id),
+            simulate_product_metrics(
+                worlds,
+                horizon_months=situation.horizon_months,
+                currency=situation.currency,
+                primary_agent_id=self._primary_agent_id,
+            ),
             metric=_quanta_metric(metric),
             percentiles=percentiles,
         )
         return summaries, model_id
-
-    def _scenario_and_sample(
-        self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
-    ) -> tuple[Scenario, SampledExogenousBundle, str]:
-        scenario = build_scenario(
-            scenario_key,
-            primary_agent_id=self._primary_agent_id,
-            initial_cash=self._initial_cash,
-            initial_lots=self._initial_lots,
-            properties_by_id=self._properties_by_id,
-            initial_bonds=self._initial_bonds,
-            security_distributions=self._security_distributions,
-            tlh_portfolios=self._tlh_portfolios,
-        )
-        sampling_request = ExogenousSamplingRequest(
-            horizon_months=int(scenario_key.horizon_months),
-            rollout_seeds=seeds,
-            # Derived from the scenario the simulator will actually compile, not re-derived
-            # from the wire type — one answer to "what does this need", not two that must agree.
-            **level_series_request_channels(scenario_level_series_keys(scenario)),
-            required_private_equity_issuers=required_private_equity_issuers(self._initial_lots),
-        )
-        sampled = self._models[scenario_key.model_id].sample(sampling_request)
-        validate_sample_satisfies_request(sampling_request, sampled)
-        anchors = self._portfolio.level_anchors
-        sampled = anchor_sampled_series_levels(
-            sampled,
-            level_series_anchors=anchors.level_series_anchors,
-            private_equity_anchors=anchors.private_equity_anchors,
-        )
-        model_id = sampled.model_id or scenario_key.model_id
-        return scenario, sampled, model_id
 
 
 def _detached_copy[ResponseT: ApiModel](response: ResponseT) -> ResponseT:

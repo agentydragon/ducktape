@@ -7,8 +7,8 @@ experiment policies and their outer time loops are Python code.
 ## Experiment path
 
 An experiment composes a `World` (<world.py>) per path on a `MarketPath`: it
-declares the accounts, pools, lots, bonds and TLH portfolios held at month zero,
-tracks an `EconomicAgent` subclass (<agent.py>) and any `Mortgage`
+declares the accounts, pools, lots, bonds, TLH portfolios, housing and standing
+cashflows that exist at month zero, tracks an `EconomicAgent` subclass (<agent.py>) and any `Mortgage`
 (<mortgage.py>), `Biller` (<bills.py>) or `TaxAuthority` (<tax_authority.py>)
 that exists then, and loops over `world.step()`. An authored `Scenario` reaches
 the same world through `compile_run` in <compiler/execution.py> and
@@ -31,8 +31,9 @@ Shared proposal helpers live in <../policy/>; they do not settle trades or taxes
 `CompiledRun` in <prepared.py> owns typed resolved facts: exact integer money,
 quantities, tax rules and supplied paths. The compiler constructs these directly;
 file serialization is private to the I/O boundaries. Sessions accept the prepared value,
-not a mutable wire dictionary. The app composes its worlds from the same prepared
-facts and tracks its household (<../policy/configured_household.py>) on each.
+not a mutable wire dictionary. The compiler's per-table pieces produce the same records
+without a `Scenario`; the app lowers its request through them and tracks its household
+(<../policy/configured_household.py>) on each world it composes.
 
 ## Outcomes and failure
 

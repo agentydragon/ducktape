@@ -189,7 +189,8 @@ def compose(case: Situation) -> World:
         world.declare_pool(pool)
     for held in case.lots:
         world.hold(held)
-    world.recurring_transfers = case.recurring_transfers
+    for flow in case.recurring_transfers:
+        world.declare_flow(flow)
     return world
 
 

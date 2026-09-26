@@ -139,7 +139,7 @@ def compose(case: Situation) -> World:
         )
     if case.income:
         start, end = case.income_months
-        world.recurring_transfers = (
+        world.declare_flow(
             PreparedRecurringTransfer(
                 start_month=start,
                 end_month=end,
@@ -149,7 +149,7 @@ def compose(case: Situation) -> World:
                 amount=money(case.income),
                 income_category=None,
                 deduction_category=None,
-            ),
+            )
         )
     world.track(
         ConfiguredHousehold(
