@@ -14,8 +14,6 @@ from typing import cast
 from urllib.parse import urlsplit
 
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
-    SandboxTemplate,
-    SandboxTemplateSpec,
     SandboxTemplateSpecNetworkPolicyManagement,
     SandboxTemplateSpecPodTemplate,
     SandboxTemplateSpecPodTemplateMetadata,
@@ -84,6 +82,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
 
@@ -461,46 +460,42 @@ class App(Construct):
         SandboxTemplate(
             self,
             "sandboxtemplate",
-            metadata=metadata(
-                "agentplane-runner",
-                namespace,
-                # What the sandbox Actions tell an agent choosing among the templates they offer.
-                annotations={
-                    DESCRIPTION_ANNOTATION: (
-                        "The shared runner image, built to host an agent harness: the sandbox tools (git, "
-                        "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
-                    )
-                },
-            ),
-            spec=SandboxTemplateSpec(
-                # The CiliumNetworkPolicy next to this construct is the runner's fence.
-                network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
-                volume_claim_templates_policy=SandboxTemplateSpecVolumeClaimTemplatesPolicy.OVERRIDES,
-                pod_template=SandboxTemplateSpecPodTemplate(
-                    metadata=SandboxTemplateSpecPodTemplateMetadata(labels=_RUNNER_LABELS),
-                    spec=sandbox_pod.pod_spec(
-                        self.env, workload=self._runner_container(), service_account_name="agentplane-runner"
-                    ),
+            name="agentplane-runner",
+            namespace=namespace,
+            # What the sandbox Actions tell an agent choosing among the templates they offer.
+            annotations={
+                DESCRIPTION_ANNOTATION: (
+                    "The shared runner image, built to host an agent harness: the sandbox tools (git, "
+                    "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
+                )
+            },
+            # The CiliumNetworkPolicy next to this construct is the runner's fence.
+            network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
+            volume_claim_templates_policy=SandboxTemplateSpecVolumeClaimTemplatesPolicy.OVERRIDES,
+            pod_template=SandboxTemplateSpecPodTemplate(
+                metadata=SandboxTemplateSpecPodTemplateMetadata(labels=_RUNNER_LABELS),
+                spec=sandbox_pod.pod_spec(
+                    self.env, workload=self._runner_container(), service_account_name="agentplane-runner"
                 ),
-                volume_claim_templates=[
-                    SandboxTemplateSpecVolumeClaimTemplates(
-                        metadata=SandboxTemplateSpecVolumeClaimTemplatesMetadata(name=_STATE_VOLUME_NAME),
-                        spec=SandboxTemplateSpecVolumeClaimTemplatesSpec(
-                            # The bulk tier, and the only one a sandbox can have: OVH's
-                            # `tier=ssd` nodes are control-plane, and a sandbox is not
-                            # getting that toleration. Node-local, so a sandbox does
-                            # not outlive its node -- which is what a sandbox is for.
-                            storage_class_name="local-path-ovh-hdd",
-                            access_modes=["ReadWriteOnce"],
-                            resources=SandboxTemplateSpecVolumeClaimTemplatesSpecResources(
-                                requests={
-                                    "storage": SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests.from_string(
-                                        "10Gi"
-                                    )
-                                }
-                            ),
-                        ),
-                    )
-                ],
             ),
+            volume_claim_templates=[
+                SandboxTemplateSpecVolumeClaimTemplates(
+                    metadata=SandboxTemplateSpecVolumeClaimTemplatesMetadata(name=_STATE_VOLUME_NAME),
+                    spec=SandboxTemplateSpecVolumeClaimTemplatesSpec(
+                        # The bulk tier, and the only one a sandbox can have: OVH's
+                        # `tier=ssd` nodes are control-plane, and a sandbox is not
+                        # getting that toleration. Node-local, so a sandbox does
+                        # not outlive its node -- which is what a sandbox is for.
+                        storage_class_name="local-path-ovh-hdd",
+                        access_modes=["ReadWriteOnce"],
+                        resources=SandboxTemplateSpecVolumeClaimTemplatesSpecResources(
+                            requests={
+                                "storage": SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests.from_string(
+                                    "10Gi"
+                                )
+                            }
+                        ),
+                    ),
+                )
+            ],
         )
