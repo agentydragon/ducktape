@@ -221,13 +221,15 @@ def _sandbox_template(chart: Chart) -> SandboxTemplate:
                             ),
                         ),
                         env=[
-                            # The haku Forgejo credential is redeemed by the colocated egress
-                            # fence: this inert password is replaced only in Authorization
-                            # headers for the approved Forgejo origins. The per-claim
-                            # haku-sandbox-setup.sh writes the pair into ~/.netrc for both
-                            # in-cluster git fetches (the ducktape_haku module git_override on
-                            # every bazel invocation + the haku-state clone), while the real
-                            # credential stays in Console.
+                            # TODO(haku-egress): this placeholder has no redeemer. It was meant to
+                            # be replaced with the real haku Forgejo password in Authorization
+                            # headers by a colocated Console egress proxy that was never built
+                            # (haku/console/grants/http's decommission removed the last trace of
+                            # that design -- see its PR). The per-claim haku-sandbox-setup.sh
+                            # writes the pair into ~/.netrc for both in-cluster git fetches (the
+                            # ducktape_haku module git_override on every bazel invocation + the
+                            # haku-state clone), so those fetches currently present this literal
+                            # placeholder string as the password, unsubstituted.
                             SandboxTemplateSpecPodTemplateSpecContainersEnv(name="HAKU_GIT_USERNAME", value="haku"),
                             SandboxTemplateSpecPodTemplateSpecContainersEnv(
                                 name="HAKU_GIT_PASSWORD", value="haku-forgejo-token-placeholder"

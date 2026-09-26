@@ -32,6 +32,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
     COINBASE_POLICY,
     FORGEJO_HAKU_POLICY,
+    GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
@@ -500,10 +501,15 @@ def add_staging_action_policies(scope: Construct) -> None:
     # `agentplane-testing` presents nothing either: the acceptance suite brings its own app token.
     # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
     # `github-clone` presents nothing either: the anonymous smart-HTTP git protocol
-    # (GET+POST to github.com only, scoped to the `info/refs`/`git-upload-pack` paths), which
-    # is what closes the gap `github-downloads`'s GET/HEAD-only surface left: a sandbox of this
-    # caller's can now `git clone`/`fetch` a public repository without the write-capable
-    # `github-agentydragon-agent` PAT, which stays unbound here on purpose (egress.py).
+    # (GET+POST to github.com only, scoped to the `info/refs`/`git-upload-pack` paths). Now a
+    # strict subset of `github-agentydragon-agent` below; kept bound so clone still works if
+    # that credential is ever unbound again.
+    # `github-agentydragon-agent` substitutes the same write-capable `agentydragon-agent` PAT
+    # `public-coder` already carries (egress.py): GET and POST to api.github.com, github.com,
+    # codeload.github.com and *.githubusercontent.com, no path limit. A sandbox of this
+    # caller's can therefore act as that bot across the whole GitHub REST API and git protocol
+    # -- not just clone/push -- by the operator's explicit choice, the same shape of tradeoff
+    # `forgejo-haku` above already accepts for Forgejo.
     EgressBinding(
         scope,
         "egressbinding-claude-ai",
@@ -528,6 +534,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             _AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,
             GITHUB_CLONE_POLICY,
+            GITHUB_AGENTYDRAGON_AGENT_POLICY,
         ],
     )
 

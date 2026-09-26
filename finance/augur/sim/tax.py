@@ -4,18 +4,21 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import assert_never
 
 from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AgentId, JurisdictionId
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
-from finance.augur.sim.scenario import ORDINARY_INCOME, TransferIncomeCategory
+from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, OrdinaryIncome, TransferIncomeCategory
 
 
 @dataclass
 class TaxFacts:
     taxable_ordinary_income: int = 0
+    # The part of `taxable_ordinary_income` from sources `is_investment_income` selects.
+    investment_income: int = 0
     short_term_gain: int = 0
     long_term_gain: int = 0
     section_1250_recapture: int = 0
@@ -46,6 +49,8 @@ class TaxAssessment:
     ordinary_tax: int
     capital_gain_tax: int
     section_1250_tax: int
+    net_investment_income_tax: int
+    taxable_income_surtax: int
     total_tax: int
     capital_loss_carryforward: int
 
@@ -95,6 +100,22 @@ def taxes_interest_from(
     return issuer_level not in rules.exempt_interest_from_levels
 
 
+def is_investment_income(source: TransferIncomeCategory) -> bool:
+    """Whether a source's taxable amount is gross investment income (IRS Form 8960 lines 1-2).
+
+    `OrdinaryIncome` is not: it merges wages with rent, which the form counts on line 4a, so
+    net rental income is missing from net investment income and a rental arm's NIIT is
+    understated.
+    """
+    # TODO: give net rental income its own category and count it here (Form 8960 line 4a),
+    # with the housing tax slice.
+    if isinstance(source, InterestIncome):
+        return True
+    if isinstance(source, OrdinaryIncome):
+        return False
+    assert_never(source)
+
+
 def validate_brackets(brackets: Sequence[PreparedTaxBracket]) -> None:
     if not brackets:
         raise ValueError("tax brackets are empty")
@@ -123,6 +144,12 @@ def validate_rules(rules: PreparedTaxRules) -> None:
     validate_brackets(rules.ordinary_brackets)
     if rules.long_term_capital_gain_brackets:
         validate_brackets(rules.long_term_capital_gain_brackets)
+    for tax in (rules.net_investment_income_tax, rules.taxable_income_surtax):
+        if tax is not None:
+            if not 0 <= tax.rate_ppb <= MONEY_FACTOR_SCALE:
+                raise ValueError("tax rate is outside [0, 1000000000]")
+            if tax.threshold < 0:
+                raise ValueError("an additional tax's threshold must be nonnegative")
 
 
 def apply_brackets(amount: int, brackets: Sequence[PreparedTaxBracket]) -> int:
@@ -202,6 +229,35 @@ def assess(facts: TaxFacts, rules: PreparedTaxRules) -> TaxAssessment:
         )
         recapture_tax = min(implied_tax, cap)
     capital_tax = checked_count(capital_tax + recapture_tax, "money addition")
+    # Adjusted gross income (MAGI without foreign exclusions) and taxable income count recapture
+    # at its ordinary amount, whether or not its own rate taxes it apart.
+    gross = checked_count(facts.taxable_ordinary_income + facts.section_1250_recapture, "money addition")
+    adjusted_gross_income = _taxable(gross, gains.short_term, gains.long_term, gains.ordinary_offset, 0)
+    # Form 8960 line 5a is the return's net gain, a net loss entering only as its allowed offset.
+    # TODO: subtract Form 8960 line 9 deductions (investment interest, state income tax allocable
+    # to NII); without them NIIT is overstated for a California resident.
+    net_investment_income = _taxable(
+        checked_count(facts.investment_income + facts.section_1250_recapture, "money addition"),
+        gains.short_term,
+        gains.long_term,
+        gains.ordinary_offset,
+        0,
+    )
+    investment_tax = 0
+    if (niit := rules.net_investment_income_tax) is not None:
+        excess = max(0, adjusted_gross_income - niit.threshold)
+        investment_tax = mul_div(
+            min(net_investment_income, excess), niit.rate_ppb, MONEY_FACTOR_SCALE, "net investment income tax"
+        )
+    surtax = 0
+    if (surcharge := rules.taxable_income_surtax) is not None:
+        taxable_income = _taxable(gross, gains.short_term, gains.long_term, gains.ordinary_offset, deduction)
+        surtax = mul_div(
+            max(0, taxable_income - surcharge.threshold),
+            surcharge.rate_ppb,
+            MONEY_FACTOR_SCALE,
+            "taxable income surtax",
+        )
     return TaxAssessment(
         short_term_gain=gains.short_term,
         long_term_gain=gains.long_term,
@@ -211,6 +267,10 @@ def assess(facts: TaxFacts, rules: PreparedTaxRules) -> TaxAssessment:
         ordinary_tax=ordinary_tax,
         capital_gain_tax=capital_tax,
         section_1250_tax=recapture_tax,
-        total_tax=checked_count(ordinary_tax + capital_tax, "money addition"),
+        net_investment_income_tax=investment_tax,
+        taxable_income_surtax=surtax,
+        total_tax=checked_count(
+            checked_count(ordinary_tax + capital_tax, "money addition") + investment_tax + surtax, "money addition"
+        ),
         capital_loss_carryforward=gains.carryforward,
     )

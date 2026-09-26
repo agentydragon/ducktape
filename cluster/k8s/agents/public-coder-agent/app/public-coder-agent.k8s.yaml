@@ -310,16 +310,6 @@ spec:
             matchLabels:
               app.kubernetes.io/name: public-coder-agent-sshpiper
     - ports:
-        - port: 8888
-          protocol: TCP
-      to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: haku-console
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: haku-console
-    - ports:
         - port: 4000
           protocol: TCP
       to:

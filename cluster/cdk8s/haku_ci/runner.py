@@ -56,6 +56,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku_ci import runner_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.keda.scaled_job import ScaledJob
 from cluster.cdk8s.providers.keda.trigger_authentication import TriggerAuthentication
 
 NAME = "haku-ci"
@@ -499,99 +500,96 @@ def _add_runner(chart: Chart) -> None:
     # own life when its single CI job is done. There is no scale-down path to get wrong, so the
     # failure mode is structurally absent rather than mitigated. This is also the shape the scaler
     # is documented for: https://keda.sh/docs/2.20/scalers/forgejo/
-    keda.ScaledJob(
+    ScaledJob(
         chart,
         "scaled-job",
-        metadata=metadata(_RUNNER, NAMESPACE, labels=_LABELS),
-        spec=keda.ScaledJobSpec(
-            # One pod per queued job, up to four concurrently. No minimum: between bursts there are
-            # no runner pods at all, which was already true under the ScaledObject
-            # (minReplicaCount: 0) -- the runner holds no state worth keeping warm.
-            max_replica_count=4,
-            polling_interval=15,
-            successful_jobs_history_limit=3,
-            # Keep more failures than successes: a failed pod's logs are the only forensics for an
-            # infrastructure fault (registration refused, dind never came up), since a failed
-            # *build* exits 0 here -- see `backoff_limit` below.
-            failed_jobs_history_limit=5,
-            # gradual = editing this ScaledJob does NOT delete Jobs already running. The default
-            # ("immediate") would kill in-flight builds on every Flux reconcile that touches this
-            # object, reintroducing the exact bug this migration removes, just with a different
-            # trigger.
-            rollout=keda.ScaledJobSpecRollout(strategy=keda.ScaledJobSpecRolloutStrategy.GRADUAL),
-            job_target_ref=keda.ScaledJobSpecJobTargetRef(
-                parallelism=1,
-                completions=1,
-                # No Kubernetes-level retry. A failed *build* is not a failed Job -- the runner
-                # reports the failure to Forgejo and exits 0 -- so a non-zero exit here means an
-                # infrastructure fault, and retrying it in-place would just fail the same way. The
-                # correct retry already exists: the CI job stays queued, so the next KEDA poll
-                # creates a fresh pod.
-                backoff_limit=0,
-                # Upper bound on the pod's whole life: waiting for a task + running it.
-                # `one-job --wait` blocks until Forgejo hands it a task, so a pod created for a job
-                # that is cancelled before pickup would otherwise wait forever holding one of the
-                # four slots. The runner's job timeout plus slack for the wait and registration.
-                active_deadline_seconds=_JOB_TIMEOUT_SECONDS + 600,
-                template=keda.ScaledJobSpecJobTargetRefTemplate(
-                    metadata=keda.ScaledJobSpecJobTargetRefTemplateMetadata(labels=_LABELS),
-                    spec=keda.ScaledJobSpecJobTargetRefTemplateSpec(
-                        restart_policy="Never",
-                        automount_service_account_token=False,
-                        # Only matters for eviction/drain now -- nothing deletes this pod mid-build
-                        # any more. Slightly above the runner's shutdown timeout so a drained node
-                        # lets a build of up to that length finish instead of dropping it; at or
-                        # below it, the kubelet SIGKILLs before that timeout can elapse.
-                        termination_grace_period_seconds=_SHUTDOWN_TIMEOUT_SECONDS + 30,
-                        # No node affinity: this privileged, agent-controlled build compute may land
-                        # on any worker -- the HIL workers, the home OptiPlex, wyrm2, and the roaming
-                        # laptops when they are reachable. Control-plane nodes keep their NoSchedule
-                        # taint and stay out. A Talos worker needs `user.max_user_namespaces` raised
-                        # for rootless dind (ovh-nodes.tf, home-nodes.tf); the NixOS hosts keep the
-                        # kernel default.
-                        tolerations=[
-                            # Roaming laptops (iguana, rugged) are tainted so ordinary workloads avoid
-                            # them; a CI job is disposable enough to run there. If the laptop leaves
-                            # mid-build the unreachable taint evicts the pod and the queued job is
-                            # retried on the next KEDA poll, at the cost of the minutes already spent.
-                            keda.ScaledJobSpecJobTargetRefTemplateSpecTolerations(
-                                key="node-role.kubernetes.io/roaming",
-                                operator="Equal",
-                                value="true",
-                                effect="NoSchedule",
-                            )
-                        ],
-                        # Requests describe only the runner's idle footprint, so the default
-                        # scheduler's resource scoring alone can co-locate an entire four-job burst.
-                        # Prefer an even host spread, but keep CI available when only one capable
-                        # worker is schedulable.
-                        topology_spread_constraints=[
-                            keda.ScaledJobSpecJobTargetRefTemplateSpecTopologySpreadConstraints(
-                                max_skew=1,
-                                topology_key="kubernetes.io/hostname",
-                                when_unsatisfiable="ScheduleAnyway",
-                                label_selector=keda.ScaledJobSpecJobTargetRefTemplateSpecTopologySpreadConstraintsLabelSelector(
-                                    match_labels=_LABELS
-                                ),
-                            )
-                        ],
-                        init_containers=[_register(), _dind()],
-                        containers=[_runner()],
-                        volumes=_volumes(config),
-                    ),
+        name=_RUNNER,
+        namespace=NAMESPACE,
+        labels=_LABELS,
+        # One pod per queued job, up to four concurrently. No minimum: between bursts there are
+        # no runner pods at all, which was already true under the ScaledObject
+        # (minReplicaCount: 0) -- the runner holds no state worth keeping warm.
+        max_replica_count=4,
+        polling_interval=15,
+        successful_jobs_history_limit=3,
+        # Keep more failures than successes: a failed pod's logs are the only forensics for an
+        # infrastructure fault (registration refused, dind never came up), since a failed
+        # *build* exits 0 here -- see `backoff_limit` below.
+        failed_jobs_history_limit=5,
+        # gradual = editing this ScaledJob does NOT delete Jobs already running. The default
+        # ("immediate") would kill in-flight builds on every Flux reconcile that touches this
+        # object, reintroducing the exact bug this migration removes, just with a different
+        # trigger.
+        rollout=keda.ScaledJobSpecRollout(strategy=keda.ScaledJobSpecRolloutStrategy.GRADUAL),
+        job_target_ref=keda.ScaledJobSpecJobTargetRef(
+            parallelism=1,
+            completions=1,
+            # No Kubernetes-level retry. A failed *build* is not a failed Job -- the runner
+            # reports the failure to Forgejo and exits 0 -- so a non-zero exit here means an
+            # infrastructure fault, and retrying it in-place would just fail the same way. The
+            # correct retry already exists: the CI job stays queued, so the next KEDA poll
+            # creates a fresh pod.
+            backoff_limit=0,
+            # Upper bound on the pod's whole life: waiting for a task + running it.
+            # `one-job --wait` blocks until Forgejo hands it a task, so a pod created for a job
+            # that is cancelled before pickup would otherwise wait forever holding one of the
+            # four slots. The runner's job timeout plus slack for the wait and registration.
+            active_deadline_seconds=_JOB_TIMEOUT_SECONDS + 600,
+            template=keda.ScaledJobSpecJobTargetRefTemplate(
+                metadata=keda.ScaledJobSpecJobTargetRefTemplateMetadata(labels=_LABELS),
+                spec=keda.ScaledJobSpecJobTargetRefTemplateSpec(
+                    restart_policy="Never",
+                    automount_service_account_token=False,
+                    # Only matters for eviction/drain now -- nothing deletes this pod mid-build
+                    # any more. Slightly above the runner's shutdown timeout so a drained node
+                    # lets a build of up to that length finish instead of dropping it; at or
+                    # below it, the kubelet SIGKILLs before that timeout can elapse.
+                    termination_grace_period_seconds=_SHUTDOWN_TIMEOUT_SECONDS + 30,
+                    # No node affinity: this privileged, agent-controlled build compute may land
+                    # on any worker -- the HIL workers, the home OptiPlex, wyrm2, and the roaming
+                    # laptops when they are reachable. Control-plane nodes keep their NoSchedule
+                    # taint and stay out. A Talos worker needs `user.max_user_namespaces` raised
+                    # for rootless dind (ovh-nodes.tf, home-nodes.tf); the NixOS hosts keep the
+                    # kernel default.
+                    tolerations=[
+                        # Roaming laptops (iguana, rugged) are tainted so ordinary workloads avoid
+                        # them; a CI job is disposable enough to run there. If the laptop leaves
+                        # mid-build the unreachable taint evicts the pod and the queued job is
+                        # retried on the next KEDA poll, at the cost of the minutes already spent.
+                        keda.ScaledJobSpecJobTargetRefTemplateSpecTolerations(
+                            key="node-role.kubernetes.io/roaming", operator="Equal", value="true", effect="NoSchedule"
+                        )
+                    ],
+                    # Requests describe only the runner's idle footprint, so the default
+                    # scheduler's resource scoring alone can co-locate an entire four-job burst.
+                    # Prefer an even host spread, but keep CI available when only one capable
+                    # worker is schedulable.
+                    topology_spread_constraints=[
+                        keda.ScaledJobSpecJobTargetRefTemplateSpecTopologySpreadConstraints(
+                            max_skew=1,
+                            topology_key="kubernetes.io/hostname",
+                            when_unsatisfiable="ScheduleAnyway",
+                            label_selector=keda.ScaledJobSpecJobTargetRefTemplateSpecTopologySpreadConstraintsLabelSelector(
+                                match_labels=_LABELS
+                            ),
+                        )
+                    ],
+                    init_containers=[_register(), _dind()],
+                    containers=[_runner()],
+                    volumes=_volumes(config),
                 ),
             ),
-            triggers=[
-                keda.ScaledJobSpecTriggers(
-                    type="forgejo-runner",
-                    # No `name:` -- the docs list it as required, but the scaler filters on labels
-                    # and the current deployment has worked without it. A fixed name could not
-                    # match anyway: every pod registers under its own pod name.
-                    metadata={"address": _FORGEJO_URL, "owner": "haku", "repo": "haku-state", "labels": "haku-ci"},
-                    authentication_ref=keda.ScaledJobSpecTriggersAuthenticationRef(name=trigger_auth.name),
-                )
-            ],
         ),
+        triggers=[
+            keda.ScaledJobSpecTriggers(
+                type="forgejo-runner",
+                # No `name:` -- the docs list it as required, but the scaler filters on labels
+                # and the current deployment has worked without it. A fixed name could not
+                # match anyway: every pod registers under its own pod name.
+                metadata={"address": _FORGEJO_URL, "owner": "haku", "repo": "haku-state", "labels": "haku-ci"},
+                authentication_ref=keda.ScaledJobSpecTriggersAuthenticationRef(name=trigger_auth.name),
+            )
+        ],
     )
 
 

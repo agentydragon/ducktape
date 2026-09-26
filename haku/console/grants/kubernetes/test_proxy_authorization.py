@@ -160,7 +160,6 @@ def _service(
         ),
         sar_client=sar,
         kubernetes_grants=grants,
-        http_grants=AsyncMock(),
     )
     return KubernetesAuthorizationService(agent_bearer_authority=cast(Any, bearer_authority), catalog=catalog)
 
@@ -319,7 +318,6 @@ async def test_service_fails_closed_when_sar_times_out() -> None:
             ),
             sar_client=HangingSar(),
             kubernetes_grants=AsyncMock(),
-            http_grants=AsyncMock(),
         ),
     )
     with pytest.raises(KubernetesAuthorizationUnavailableError, match="timed out"):

@@ -554,6 +554,8 @@ def event_log(output: FinancialOutput) -> EventLog:
                     "capital_gain_taxable_quanta": row.long_term_capital_gain_taxable,
                     "ordinary_tax_quanta": row.ordinary_tax,
                     "capital_gain_tax_quanta": row.capital_gain_tax,
+                    "net_investment_income_tax_quanta": row.net_investment_income_tax,
+                    "taxable_income_surtax_quanta": row.taxable_income_surtax,
                     "total_tax_quanta": row.total_tax,
                 }
                 for row in output.tax_accruals

@@ -14,55 +14,37 @@ const AGENT_PRINCIPAL = {
 };
 
 const KUBERNETES_ITEM: CreateGrantItem = {
-  domain: "kubernetes" as const,
-  spec: {
-    scope: { kind: "namespaces" as const, namespaces: ["haku-sandbox", "haku-staging"] },
-    rules: [
-      { api_groups: [""], resources: ["pods"], verbs: ["get", "list"], resource_names: [] },
-      { api_groups: ["apps"], resources: ["deployments"], verbs: ["patch"] },
-    ],
-  },
-};
-
-const HTTP_ITEM: CreateGrantItem = {
-  domain: "http" as const,
-  spec: {
-    origin: { scheme: "https" as const, host: "api.github.com", port: 443 },
-    coverage: { methods: ["GET", "POST"], path_regex: "/repos/agentydragon/.*" },
-    credential_handle: "github-api",
-  },
+  scope: { kind: "namespaces" as const, namespaces: ["haku-sandbox", "haku-staging"] },
+  rules: [
+    { api_groups: [""], resources: ["pods"], verbs: ["get", "list"], resource_names: [] },
+    { api_groups: ["apps"], resources: ["deployments"], verbs: ["patch"] },
+  ],
 };
 
 // Keep these timestamps inside the shared visual clock's relative-date window. The screenshot
 // driver freezes now at 2025-02-01T12:00:00Z before this harness runs.
 const KUBERNETES_VIEW: GrantView = {
-  domain: "kubernetes" as const,
-  grant: {
-    grant_id: "20000000-0000-4000-8000-000000000002",
-    owner_agent_id: "10000000-0000-4000-8000-000000000001",
-    principal: { kind: "agent" as const, agent_id: "10000000-0000-4000-8000-000000000001" },
-    source_tool_call_id: "tc_create_grant",
-    scope: KUBERNETES_ITEM.spec.scope,
-    rules: KUBERNETES_ITEM.spec.rules,
-    status: "active" as const,
-    created_at: "2025-01-27T10:00:00Z",
-    expires_at: "2025-01-27T11:00:00Z",
-  },
+  grant_id: "20000000-0000-4000-8000-000000000002",
+  owner_agent_id: "10000000-0000-4000-8000-000000000001",
+  principal: { kind: "agent" as const, agent_id: "10000000-0000-4000-8000-000000000001" },
+  source_tool_call_id: "tc_create_grant",
+  scope: KUBERNETES_ITEM.scope,
+  rules: KUBERNETES_ITEM.rules,
+  status: "active" as const,
+  created_at: "2025-01-27T10:00:00Z",
+  expires_at: "2025-01-27T11:00:00Z",
 };
 
 const ACCESS_PROFILE_KUBERNETES_VIEW: GrantView = {
   ...KUBERNETES_VIEW,
-  grant: {
-    ...KUBERNETES_VIEW.grant,
-    grant_id: "20000000-0000-4000-8000-000000000005",
-    // The grant owner is deliberately different from the tool-call caller: ownership is not the
-    // access profile's Agent identity.
-    owner_agent_id: "90000000-0000-4000-8000-000000000009",
-    principal: { kind: "access_profile" as const, access_profile_id: "public-coder" },
-    status: "ended" as const,
-    ended_at: "2025-01-27T10:15:00Z",
-    end_reason: "probe complete",
-  },
+  grant_id: "20000000-0000-4000-8000-000000000005",
+  // The grant owner is deliberately different from the tool-call caller: ownership is not the
+  // access profile's Agent identity.
+  owner_agent_id: "90000000-0000-4000-8000-000000000009",
+  principal: { kind: "access_profile" as const, access_profile_id: "public-coder" },
+  status: "ended" as const,
+  ended_at: "2025-01-27T10:15:00Z",
+  end_reason: "probe complete",
 };
 
 const PREVIEW_FIXTURES = [
@@ -75,46 +57,20 @@ const PREVIEW_FIXTURES = [
     result: [KUBERNETES_VIEW],
   },
   {
-    title: "Create a temporary HTTP egress grant",
-    serverId: "grants",
-    toolName: "create_grant",
-    args: { grants: [HTTP_ITEM], duration_seconds: 1800, principal: AGENT_PRINCIPAL },
-    agentDisplayNames: AGENT_DISPLAY_NAMES,
-    result: [
-      {
-        domain: "http" as const,
-        grant: {
-          grant_id: "20000000-0000-4000-8000-000000000004",
-          owner_agent_id: "10000000-0000-4000-8000-000000000001",
-          principal: { kind: "agent" as const, agent_id: "10000000-0000-4000-8000-000000000001" },
-          source_tool_call_id: "tc_create_grant",
-          spec: HTTP_ITEM.spec,
-          status: "active" as const,
-          created_at: "2025-01-27T10:00:00Z",
-          expires_at: "2025-01-27T10:30:00Z",
-        },
-      },
-    ],
-  },
-  {
     title: "End several Kubernetes grants (Agent)",
     serverId: "grants",
     toolName: "revoke_grants",
     args: {
-      domain: "kubernetes" as const,
-      grant_ids: [KUBERNETES_VIEW.grant.grant_id, "20000000-0000-4000-8000-000000000003"],
+      grant_ids: [KUBERNETES_VIEW.grant_id, "20000000-0000-4000-8000-000000000003"],
       reason: "probe complete",
     },
     agentDisplayNames: AGENT_DISPLAY_NAMES,
     result: [
       {
-        domain: "kubernetes" as const,
-        grant: {
-          ...KUBERNETES_VIEW.grant,
-          status: "ended" as const,
-          ended_at: "2025-01-27T10:15:00Z",
-          end_reason: "probe complete",
-        },
+        ...KUBERNETES_VIEW,
+        status: "ended" as const,
+        ended_at: "2025-01-27T10:15:00Z",
+        end_reason: "probe complete",
       },
       ACCESS_PROFILE_KUBERNETES_VIEW,
     ],
@@ -124,27 +80,24 @@ const PREVIEW_FIXTURES = [
     serverId: "grants",
     toolName: "revoke_grants",
     args: {
-      domain: "http" as const,
-      owner_agent_id: KUBERNETES_VIEW.grant.owner_agent_id,
+      owner_agent_id: KUBERNETES_VIEW.owner_agent_id,
       grant_ids: ["20000000-0000-4000-8000-000000000004"],
       reason: "operator revoked",
     },
-    agentDisplayNames: { [KUBERNETES_VIEW.grant.owner_agent_id]: "Haku agent" },
+    agentDisplayNames: { [KUBERNETES_VIEW.owner_agent_id]: "Haku agent" },
     result: [
       {
-        domain: "http" as const,
-        grant: {
-          grant_id: "20000000-0000-4000-8000-000000000004",
-          owner_agent_id: KUBERNETES_VIEW.grant.owner_agent_id,
-          principal: { kind: "agent" as const, agent_id: KUBERNETES_VIEW.grant.owner_agent_id },
-          source_tool_call_id: "tc_create_grant",
-          spec: HTTP_ITEM.spec,
-          status: "ended" as const,
-          created_at: "2025-01-27T10:00:00Z",
-          expires_at: "2025-01-27T11:00:00Z",
-          ended_at: "2025-01-27T10:20:00Z",
-          end_reason: "operator revoked",
-        },
+        grant_id: "20000000-0000-4000-8000-000000000004",
+        owner_agent_id: KUBERNETES_VIEW.owner_agent_id,
+        principal: { kind: "agent" as const, agent_id: KUBERNETES_VIEW.owner_agent_id },
+        source_tool_call_id: "tc_create_grant",
+        scope: KUBERNETES_ITEM.scope,
+        rules: KUBERNETES_ITEM.rules,
+        status: "ended" as const,
+        created_at: "2025-01-27T10:00:00Z",
+        expires_at: "2025-01-27T11:00:00Z",
+        ended_at: "2025-01-27T10:20:00Z",
+        end_reason: "operator revoked",
       },
     ],
   },

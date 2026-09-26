@@ -776,14 +776,6 @@ def _network_policies(scope: Construct) -> None:
                     ],
                     ports=[_tcp(public_coder_sshpiper.PORT)],
                 ),
-                # The colocated Console egress fence's workload listener (#4942/#4943).
-                # Reachable, not the default route: HTTP_PROXY in the Deployment still names the
-                # iron proxy above. GitHub egress validation passed in PR #5223, merged August 30,
-                # 2026. The sidecar shares the Console pod's network namespace, so the Console pod
-                # label selects it.
-                k8s.NetworkPolicyEgressRule(
-                    to=[_peer("haku-console", {"app.kubernetes.io/name": "haku-console"})], ports=[_tcp(8888)]
-                ),
                 k8s.NetworkPolicyEgressRule(
                     to=[_peer("litellm", {"app.kubernetes.io/name": "litellm"})], ports=[_tcp(4000)]
                 ),
