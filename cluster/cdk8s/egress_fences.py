@@ -78,19 +78,24 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
     ("cache.nixos.org", "nixos.org", "channels.nixos.org"),
     # The haku-ci Bazel cold-fetch closure (no RBE): Bazel registry + release artifacts,
     # GitHub source/release archives, GNU source archives (rules_oci pulls gawk for
-    # py_image_layer manifests), the Node.js toolchain, snapshot.debian.org (rules_distroless
-    # apt manifests in haku-state -- the jupyter sidecar's git layer -- resolve + fetch debs
-    # from the dated snapshot at Bazel fetch time, on haku-ci and in Haku's sandboxes alike),
-    # and the Rust toolchain + crates: augur's simulator is a Rust extension, so anything
-    # depending on `@ducktape//finance/augur/rust` makes rules_rust cold-fetch rustc and its
-    # crates.
+    # py_image_layer manifests -- ftp.gnu.org's own mirror network includes
+    # mirrors.kernel.org, which the fetch may land on), the Node.js toolchain,
+    # snapshot.debian.org (rules_distroless apt manifests in haku-state -- the jupyter
+    # sidecar's git layer -- resolve + fetch debs from the dated snapshot at Bazel fetch
+    # time, on haku-ci and in Haku's sandboxes alike), the Rust toolchain + crates:
+    # augur's simulator is a Rust extension, so anything depending on
+    # `@ducktape//finance/augur/rust` makes rules_rust cold-fetch rustc and its crates,
+    # and the Go toolchain (root MODULE.bazel's `go_sdk.download`, fetched via rules_go's
+    # own `go.dev/dl` manifest + tarball hosts).
     (
         # keep-sorted start
         "bcr.bazel.build",
         "codeload.github.com",
         "ftp.gnu.org",
         "github.com",
+        "go.dev",
         "index.crates.io",
+        "mirrors.kernel.org",
         "nodejs.org",
         "objects.githubusercontent.com",
         "raw.githubusercontent.com",
