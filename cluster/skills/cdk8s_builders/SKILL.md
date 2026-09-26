@@ -48,9 +48,30 @@ Check whether this repo already has a class doing this for another CRD and match
 
 `cdk8s_plus_34`'s `container.mount(path, volume)` exists because a pod's `volumes` list and a container's `volumeMounts` must agree, and hand-typing both invites drift; it's a method on the resource class for exactly this reason. A raw CRD-generated Pod-shaped spec (a `ScaledJob`, a hand-built sandbox template) has the identical problem. Give the wrapper class the same shape: one method that builds both the volume entry and every mount referencing it, keyed by a name each caller only writes once.
 
+### Only when the API is genuinely incremental
+
+`container.mount()` earns its keep because a pod is built across many separate calls over its lifetime — containers and volumes get added one at a time, sometimes long after construction, and the actual aggregation happens later, at synthesis. Most wrappers aren't built that way: every value the object needs arrives in one constructor call, with no caller ever adding to it afterward. A single-shot wrapper wants a single-shot `__init__` that builds the whole spec immediately — internal mutable state and a deferred synthesis step are overhead with nothing left to defer. Reach for the incremental shape only when real callers actually build the object piece by piece; don't add it speculatively just because a resource elsewhere in the codebase happens to need it.
+
+## Derive a shared identity once, don't ask two objects to agree on a string
+
+Where a wrapper builds two objects (or two parts of one object) that must reference each other by a value with no Kubernetes meaning of its own — a workload's own pod-template labels and its own selector, a generated name a sibling resource must also carry — derive that value once from the construct's own identity and write it everywhere it's needed, rather than a user-supplied string or a hand-rolled hash either side could get subtly wrong. cdk8s's own `Names` helper (`Names.to_label_value(construct)`, `.to_dns_label(scope, extra=[...])`) is the exact primitive `cdk8s_plus_34`'s `Workload` base class uses to keep a resource's selector and its own pod template's labels from ever drifting apart, and it reappears wherever cdk8s-plus needs a stable name with no other natural source (aggregated `ClusterRole` label keys, an auto-generated `Volume` name). Two objects that must agree on a value belong on one shared derivation, never on two independently-typed string constants.
+
 ## Escape hatch stays tiered — don't over-build the wrapper
 
 A new wrapper's `__init__` doesn't need every field on day one. An uncovered field takes the CRD's own generated struct as a raw keyword value (never a bespoke dict) and becomes a named keyword the moment a second caller needs it.
+
+### A factory groups schema variance, not one caller's use of the escape hatch
+
+A `@classmethod` factory (above) earns its place on **real, typed variance the CRD
+schema itself defines** — an enum-discriminated field, alternate typed sub-structs. A
+CRD that leaves a field genuinely untyped (a plugin system's freeform
+`metadata: map[string]string`, an opaque values blob) has no schema-level shape to name
+a factory after. Wrapping one caller's particular use of that field in a factory doesn't
+add cdk8s-plus ergonomics — cdk8s-plus itself never manufactures a shared type for a
+field the schema declined to type. That value is exactly what the escape hatch just
+above is for: the wrapper's `__init__` takes it as a raw keyword, and the one caller
+that needs a specific shape builds it directly, rather than a factory invented to make
+an untyped, single-user value look like reusable schema structure.
 
 ## Don't invent a mechanism cdk8s/Kubernetes doesn't already have
 
@@ -66,7 +87,7 @@ A new wrapper's `__init__` doesn't need every field on day one. An uncovered fie
 
 **Upstream packages:**
 
-- `cdk8s` (PyPI `cdk8s`) — core API: `App`, `Chart`, `ApiObject`, `ApiObjectMetadata`, `Duration`, `Size`, `Testing`, `JsonPatch`.
+- `cdk8s` (PyPI `cdk8s`) — core API: `App`, `Chart`, `ApiObject`, `ApiObjectMetadata`, `Duration`, `Size`, `Names`, `Testing`, `JsonPatch`.
 - `cdk8s_plus_34` (PyPI `cdk8s-plus-34`; ships three Kubernetes minor lines at a time) — tier 1's fluent classes (`Deployment`, `Volume`, `Probe`, `Role`, ...) and tier 2's raw-but-typed layer at `cdk8s_plus_34.k8s`. `dir(cdk8s_plus_34.<Thing>)` / `dir(cdk8s_plus_34.k8s)` in a Python REPL is the fastest existence check.
 - Upstream source of truth for exact semantics and defaults: `github.com/cdk8s-team/cdk8s-plus`, `master` branch, `src/*.ts` — the Python package is jsii-generated from this TypeScript, and the TS doc comments carry detail the generated Python stubs don't. Rendered docs: `cdk8s.io/docs/latest/plus/` (concepts) and `cdk8s.io/docs/latest/reference/` (API reference).
 - `cdk8s_import` — this repo's Bazel macro generating real typed Python bindings for any CRD from its installed schema (tier 3). Per `cluster/cdk8s/AGENTS.md` § Ecosystem (checked 2026-09-18): no maintained external jsii/Python library covers any CRD this cluster uses, so pointing `cdk8s_import` at the deployed CRD — not a package search — is always the right move for new CRD coverage.
