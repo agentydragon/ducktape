@@ -53,17 +53,17 @@ def scoped() -> Scoped:
                 agent_id=actor,
                 account_id=account,
                 asset_id=asset,
-                purchase_month=-24,
+                purchase_month=month,
                 quantity_scale=10,
                 units=units,
                 basis=0,
             )
-            for id_, actor, account, asset, units in (
-                ("half-a", HOUSEHOLD, "checking", "stock", 5),
-                ("half-b", HOUSEHOLD, "checking", "stock", 5),
-                ("second", HOUSEHOLD, "checking", "second", 4),
-                ("reserve", HOUSEHOLD, "savings", "stock", 5),
-                ("other-actor", OTHER, "checking", "stock", 1000),
+            for id_, actor, account, asset, month, units in (
+                ("half-a", HOUSEHOLD, "checking", "stock", -24, 5),
+                ("half-b", HOUSEHOLD, "checking", "stock", -23, 5),
+                ("second", HOUSEHOLD, "checking", "second", -24, 4),
+                ("reserve", HOUSEHOLD, "savings", "stock", -24, 5),
+                ("other-actor", OTHER, "checking", "stock", -24, 1000),
             )
         ),
         series=tuple(

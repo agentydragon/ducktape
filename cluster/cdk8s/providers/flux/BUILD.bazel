@@ -1,13 +1,13 @@
-# gazelle:resolve py flux_kustomize //cluster/cdk8s/crd_bindings/flux:kustomization
-# gazelle:resolve py flux_helm //cluster/cdk8s/crd_bindings/flux:helmrelease
-# gazelle:resolve py flux_source //cluster/cdk8s/crd_bindings/flux:helmrepository
-# gazelle:resolve py flux_imagerepository_crds //cluster/cdk8s/crd_bindings/flux:imagerepository
-# gazelle:resolve py flux_imagepolicy_crds //cluster/cdk8s/crd_bindings/flux:imagepolicy
-# gazelle:resolve py flux_gitrepository_crds //cluster/cdk8s/crd_bindings/flux:gitrepository
-# gazelle:resolve py flux_imageupdateautomation_crds //cluster/cdk8s/crd_bindings/flux:imageupdateautomation
-# gazelle:resolve py flux_receiver_crds //cluster/cdk8s/crd_bindings/flux:receiver
-# gazelle:resolve py flux_provider_crds //cluster/cdk8s/crd_bindings/flux:provider
-# gazelle:resolve py flux_alert_crds //cluster/cdk8s/crd_bindings/flux:alert
+# gazelle:resolve py flux_kustomize //cluster/cdk8s/providers/flux:kustomization
+# gazelle:resolve py flux_helm //cluster/cdk8s/providers/flux:helmrelease
+# gazelle:resolve py flux_source //cluster/cdk8s/providers/flux:helmrepository
+# gazelle:resolve py flux_imagerepository_crds //cluster/cdk8s/providers/flux:imagerepository
+# gazelle:resolve py flux_imagepolicy_crds //cluster/cdk8s/providers/flux:imagepolicy
+# gazelle:resolve py flux_gitrepository_crds //cluster/cdk8s/providers/flux:gitrepository
+# gazelle:resolve py flux_imageupdateautomation_crds //cluster/cdk8s/providers/flux:imageupdateautomation
+# gazelle:resolve py flux_receiver_crds //cluster/cdk8s/providers/flux:receiver
+# gazelle:resolve py flux_provider_crds //cluster/cdk8s/providers/flux:provider
+# gazelle:resolve py flux_alert_crds //cluster/cdk8s/providers/flux:alert
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 load("//devinfra/python:defs.bzl", "py_test")
@@ -99,7 +99,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         "//:conftest",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],
