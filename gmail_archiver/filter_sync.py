@@ -213,22 +213,15 @@ def normalized_to_create_request(normalized: NormalizedFilter, label_name_to_id:
         negated_query=normalized.negated_query,
     )
 
-    # Convert label names to IDs
-    add_label_ids: list[str] | None = None
-    if normalized.add_labels:
-        add_label_ids = [resolve_label_id(name, label_name_to_id) for name in normalized.add_labels]
+    add_label_ids = [resolve_label_id(name, label_name_to_id) for name in normalized.add_labels]
 
-    remove_label_ids: list[str] | None = None
-    if normalized.remove_labels:
-        # Use resolve_label_id but catch errors for removals (ignore unknown labels)
-        remove_label_ids = []
-        for name in normalized.remove_labels:
-            with contextlib.suppress(ValueError):
-                remove_label_ids.append(resolve_label_id(name, label_name_to_id))
+    # Removals of unknown labels are ignored.
+    remove_label_ids = []
+    for name in normalized.remove_labels:
+        with contextlib.suppress(ValueError):
+            remove_label_ids.append(resolve_label_id(name, label_name_to_id))
 
-    action = FilterAction(
-        add_label_ids=add_label_ids or None, remove_label_ids=remove_label_ids or None, forward=normalized.forward
-    )
+    action = FilterAction(add_label_ids=add_label_ids, remove_label_ids=remove_label_ids, forward=normalized.forward)
 
     return CreateFilterRequest(criteria=criteria, action=action)
 
