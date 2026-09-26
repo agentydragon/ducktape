@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import App, Chart, Size
+from cdk8s_plus_34 import Cpu, k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
@@ -492,12 +492,12 @@ def chart(app: App) -> Chart:
         name=_VALKEY,
         namespace=_NAMESPACE,
         description="Replacement OVH Valkey for Tana MCP facade OAuth state",
-        memory_request="64Mi",
-        cpu_limit="200m",
-        memory_limit="128Mi",
+        memory_request=Size.mebibytes(64),
+        cpu_limit=Cpu.millis(200),
+        memory_limit=Size.mebibytes(128),
         max_memory_percent_of_limit=None,
         storage_class="local-path-ovh",
-        storage_size="1Gi",
+        storage_size=Size.gibibytes(1),
     )
     return chart
 
