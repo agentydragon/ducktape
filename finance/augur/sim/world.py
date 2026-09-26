@@ -182,12 +182,11 @@ class World:
         self._composing()
         if not is_quantity_scale(pool.quantity_scale):
             raise ValueError("invalid holding pool quantity scale")
-        if any(
-            (declared.agent_id, declared.account_id, declared.asset_id)
-            == (pool.agent_id, pool.account_id, pool.asset_id)
-            for declared in self.holdings.pools
-        ):
+        slot = (pool.agent_id, pool.account_id, pool.asset_id)
+        if any((declared.agent_id, declared.account_id, declared.asset_id) == slot for declared in self.holdings.pools):
             raise ValueError("duplicate holding pool declaration")
+        if slot in self.holdings.managed:
+            raise ValueError(f"TLH pool {slot!r} must have exactly one component owner and no ordinary holdings")
         if private_issuer(pool.asset_id) is None:
             if f"security:{pool.asset_id}" not in self.market.series:
                 raise ValueError(f"missing public security series for {pool.asset_id!r}")
@@ -211,6 +210,13 @@ class World:
                 raise ValueError(f"lot {holding.lot_id!r} references no declared holding pool")
             if pool.quantity_scale != holding.quantity_scale:
                 raise ValueError(f"lot {holding.lot_id!r} has a mixed quantity scale")
+            bought = (holding.agent_id, holding.account_id, holding.asset_id, holding.purchase_month)
+            for held in self.holdings.lots:
+                if (held.spec.agent_id, held.spec.account_id, held.spec.asset_id, held.spec.purchase_month) == bought:
+                    raise ValueError(
+                        f"lots {held.spec.lot_id!r} and {holding.lot_id!r} share {holding.purchase_month=} in one "
+                        "pool; FIFO sells oldest first, so their order would rest on lot ids alone"
+                    )
             if (issuer := private_issuer(holding.asset_id)) is not None:
                 self._check_issuer(issuer)
                 if self.private_equity is None:
@@ -331,8 +337,12 @@ class World:
             raise ValueError(f"duplicate TLH portfolio {spec.portfolio_id!r}")
         if not any(account.agent_id == spec.owner_agent_id for account in self.accounting.declared):
             raise ValueError(f"TLH portfolio {spec.portfolio_id!r} has an unknown owner")
-        if (spec.owner_agent_id, spec.account_id, spec.asset_id) in self.holdings.managed:
-            raise ValueError(f"TLH pool {(spec.owner_agent_id, spec.account_id, spec.asset_id)!r} has another manager")
+        slot = (spec.owner_agent_id, spec.account_id, spec.asset_id)
+        # The manager settles the slot's distributions, so an ordinary lot beside it would silently earn none.
+        if slot in self.holdings.managed or any(
+            (pool.agent_id, pool.account_id, pool.asset_id) == slot for pool in self.holdings.pools
+        ):
+            raise ValueError(f"TLH pool {slot!r} must have exactly one component owner and no ordinary holdings")
         if f"security:{spec.asset_id}" not in self.market.series:
             raise ValueError(f"missing security series for TLH portfolio {spec.portfolio_id!r}")
         # A managed index may be marked at zero (see `declare_pool`), never below it.
@@ -348,9 +358,9 @@ class World:
         if self.managed is None:
             self.managed = ManagedPortfolios(self.income_sources, self.jurisdictions)
         self.managed.open(self.accounting, spec, self.statement(spec, portfolio, 0))
-        self.holdings.reserve(spec.owner_agent_id, spec.account_id, spec.asset_id)
+        self.holdings.reserve(*slot)
         if self.distributions is not None:
-            self.distributions.managed_slots.add((spec.owner_agent_id, spec.account_id, spec.asset_id))
+            self.distributions.managed_slots.add(slot)
         self.specs[spec.portfolio_id] = spec
         self.portfolios[spec.portfolio_id] = portfolio
 
