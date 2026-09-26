@@ -59,8 +59,8 @@ counterparties, public securities, reduced-form TLH portfolios, cash, due claims
 and held dated bonds, and services a mortgage that exists at month zero as a
 tracked contract. It does not support household housing purchases or PE actions.
 Configured scenario adapters use Python-controlled financial steps while retaining
-their scripted housing/PE events and funding conventions; they do not provide an
-alternative executable policy interface.
+their scripted housing/PE events; they do not provide an alternative executable
+policy interface.
 
 For each active path, the common session:
 

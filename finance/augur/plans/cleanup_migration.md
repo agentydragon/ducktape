@@ -7,9 +7,16 @@ experiment consumers are added meanwhile.
 
 ## Readers
 
-- The PE issuer phase selects recovery, forced and tender lots with `Holdings.fifo`
-  inside the world; PE's migration after GPE replaces that with explicit responses. Do
-  not promote its mixed-scale raw-quantity selection to a generic sleeve helper.
+- `World.declare_housing` (`sim/property.py::Housing`): scripted purchases, sales,
+  residence and rented-share changes and improvements the world executes on schedule,
+  which the app declares from its request. HOUSING's migration after GHOUSE replaces
+  them with household actions.
+- `World.declare_tender_policy` (`sim/prepared.py::_TenderPolicy`): a liquid-net-worth
+  floor the world sells to on the owner's behalf; without one, compulsory recovery is
+  skipped. The PE issuer phase selects recovery, forced and tender lots with
+  `Holdings.fifo` inside the world; PE's migration after GPE replaces both with
+  explicit responses. Do not promote its mixed-scale raw-quantity selection to a
+  generic sleeve helper.
 
 ## Gaps on the app's funding path
 
