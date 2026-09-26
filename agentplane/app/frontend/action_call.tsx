@@ -1,6 +1,7 @@
 import { Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 
+import { renderArguments } from "./action_rendering/index";
 import { serviceAccountKey, type ActionRequestView } from "./client";
 import { JsonView } from "./json_view";
 import { RawSwitch } from "./raw_switch";
@@ -72,6 +73,7 @@ export function ActionCall({
   /** Whether the card's result renders other than as its stored JSON. */
   prettyResult: boolean;
 }): JSX.Element {
+  const prettyArguments = renderArguments(request.action, request.arguments);
   return (
     <Stack gap="sm">
       <Stack gap={2}>
@@ -81,7 +83,7 @@ export function ActionCall({
           </Text>
           <Group gap="xs">
             {status}
-            {prettyResult && <RawSwitch raw={raw} onChange={onRawChange} />}
+            {(prettyArguments !== null || prettyResult) && <RawSwitch raw={raw} onChange={onRawChange} />}
           </Group>
         </Group>
         {/* TODO: the caller's own framing renders verbatim as plain text; markdown rendering is a
@@ -109,7 +111,7 @@ export function ActionCall({
         <Text size="sm" fw={600} mb={4}>
           Exact arguments (unredacted)
         </Text>
-        <JsonView value={request.arguments} />
+        {prettyArguments === null || raw ? <JsonView value={request.arguments} /> : prettyArguments}
       </div>
     </Stack>
   );

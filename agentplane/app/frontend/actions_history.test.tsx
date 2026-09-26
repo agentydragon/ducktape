@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { stateLabel } from "./actions";
 import { ActionHistory } from "./actions_history";
-import { render, request, unmountLast, type View } from "./actions_testing";
+import { render, request, sshExec, unmountLast, type View } from "./actions_testing";
 import {
   actionService,
   type ActionGroupService,
@@ -207,6 +207,27 @@ describe("ActionHistory", () => {
     await act(async () => raw!.click());
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain('"mimeType": "image/png"');
+  });
+
+  it("turns an ssh exec call's request and response to their JSON together, and back", async () => {
+    const container = await render(
+      { list: async () => [sshExec("succeeded")], decide: vi.fn() },
+      historyOver(async () => [group("ssh", "mcp")])
+    );
+    // The request widget shows the command alone in its block, the response widget the exit code.
+    const drawn = (): { request: boolean; response: boolean } => ({
+      request: [...container.querySelectorAll("pre")].some((block) => block.textContent === "echo test-output"),
+      response: container.textContent?.includes("Exit 0") ?? false,
+    });
+    const switches = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    expect(switches).toHaveLength(1);
+    expect(drawn()).toEqual({ request: true, response: true });
+    await act(async () => switches[0].click());
+    expect(drawn()).toEqual({ request: false, response: false });
+    expect(container.textContent).toContain('"command": "echo test-output"');
+    expect(container.textContent).toContain('"structuredContent"');
+    await act(async () => switches[0].click());
+    expect(drawn()).toEqual({ request: true, response: true });
   });
 
   it("offers no Raw switch where the stored JSON is the only rendering", async () => {

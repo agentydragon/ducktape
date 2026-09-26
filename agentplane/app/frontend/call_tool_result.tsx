@@ -70,6 +70,16 @@ export function parseCallToolResult(value: unknown): CallToolResult | null {
   };
 }
 
+/** The tool's own return value: its structured content, else the JSON its one text block holds.
+ * `undefined` when it has none, and for an error result, whose content says what went wrong rather
+ * than returning a value. */
+export function toolValue(result: CallToolResult): unknown {
+  if (result.isError) return undefined;
+  if (result.structuredContent !== undefined) return result.structuredContent;
+  const [only] = result.content;
+  return result.content.length === 1 && only.type === "text" ? parsedJson(only.text) : undefined;
+}
+
 /** A `CallToolResult` the way the tool answered it: its content blocks in order, then its
  * structured content, shown once. A text block that only restates the structured value, as FastMCP
  * writes one for clients that read content alone, is left out. All of it is the tool's untrusted

@@ -491,6 +491,26 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
 const DIAGRAM_PNG =
   "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgAQMAAABJtOi3AAAABlBMVEX///8ii+b/FUc9AAAAFElEQVR42mNg+A+ERBBEKmOgsnkA7b0/wU6R7xwAAAAASUVORK5CYII=";
 
+// What the ssh MCP server's `exec` (x/ssh_mcp_server/server.py) returns for a listing that names one
+// missing path: ls exits 2, and its output runs past the lines the widget shows before "Show all".
+const SSH_EXEC_RESULT = {
+  host: "test-archive-host",
+  user: "test-user",
+  exit_code: 2,
+  stdout: [
+    "/srv/test-archive:",
+    "total 1536",
+    ...Array.from({ length: 30 }, (_, index) => {
+      const day = index + 1;
+      return `-rw-r--r-- 1 test-user test-user 51200 Sep ${String(day).padStart(2)} 03:00 test-backup-2026-09-${String(day).padStart(2, "0")}.tar.zst`;
+    }),
+    "",
+  ].join("\n"),
+  stderr: "ls: cannot access '/srv/test-archive/test-missing': No such file or directory\n",
+  stdout_truncated: false,
+  stderr_truncated: false,
+};
+
 const ACTIONS: ActionRequestView[] = [
   {
     id: "70000000-0000-4000-8000-000000000001",
@@ -516,6 +536,74 @@ const ACTIONS: ActionRequestView[] = [
     updated_at: ago(3 * 60_000),
     decision: null,
     execution: null,
+  },
+  {
+    id: "70000000-0000-4000-8000-000000000006",
+    // The ssh group in MCP_GROUPS: its `exec` Action has widgets of its own (action_rendering/ssh.tsx).
+    action: { group: "ssh", name: "exec" },
+    arguments: {
+      host: "test-archive-host",
+      user: "test-user",
+      command: "systemctl --user restart test-backup.service && systemctl --user status test-backup.service --no-pager",
+      timeout_seconds: 60,
+    },
+    title: "restart the test backup service",
+    description: "Its last run stopped on a stale lock, which a restart clears.",
+    origin: { thread_id: THREADS[0].id },
+    correlation: {},
+    idempotency_key: "visual-ssh-pending",
+    caller: { namespace: "agentplane-visual", name: "demo-a1b2" },
+    state: "decision_pending",
+    version: 1,
+    created_at: ago(2 * 60_000),
+    updated_at: ago(2 * 60_000),
+    decision: null,
+    execution: null,
+  },
+  {
+    id: "70000000-0000-4000-8000-000000000007",
+    action: { group: "ssh", name: "exec" },
+    arguments: {
+      host: "test-archive-host",
+      user: "test-user",
+      command: "ls -l /srv/test-archive /srv/test-archive/test-missing",
+    },
+    title: "list the test backup archive",
+    description: null,
+    origin: { thread_id: THREADS[0].id },
+    correlation: {},
+    idempotency_key: "visual-ssh-completed",
+    caller: { namespace: "agentplane-visual", name: "demo-a1b2" },
+    state: "succeeded",
+    version: 4,
+    created_at: ago(5 * 60_000),
+    updated_at: ago(4 * 60_000),
+    decision: {
+      id: "71000000-0000-4000-8000-000000000007",
+      verdict: "allow",
+      provider: "human_operator",
+      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+      decision_note: null,
+      idempotency_key: "visual-allow-ssh",
+      decided_at: ago(4 * 60_000),
+    },
+    execution: {
+      id: "72000000-0000-4000-8000-000000000007",
+      state: "succeeded",
+      // The whole CallToolResult, as FastMCP answers with the ExecResult: the value as structured
+      // content and again as one JSON text block, and the server's info in `_meta`.
+      result: {
+        _meta: { "io.modelcontextprotocol/serverInfo": { name: "ssh-mcp", version: "4.0.3" } },
+        content: [{ type: "text", text: JSON.stringify(SSH_EXEC_RESULT) }],
+        structuredContent: SSH_EXEC_RESULT,
+        isError: false,
+      },
+      error: null,
+      created_at: ago(4 * 60_000),
+      started_at: ago(4 * 60_000 - 500),
+      completed_at: ago(4 * 60_000 - 1_900),
+      reconciled_at: null,
+    },
   },
   {
     id: "70000000-0000-4000-8000-000000000002",
@@ -1159,6 +1247,14 @@ const MCP_GROUPS: ActionGroupView[] = [
     retry_at: null,
     failures: 0,
   }),
+  mcpGroup("ssh", "Test MCP backend behind a static bearer.", {
+    state: "available",
+    reason: null,
+    detail: null,
+    last_discovery_at: ago(60_000),
+    retry_at: null,
+    failures: 0,
+  }),
 ];
 
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
@@ -1724,14 +1820,15 @@ if (scenario.openSettings) {
   openSettings.observe(document, { childList: true, subtree: true });
 }
 if (scenario.openRaw) {
-  // No URL param toggles a Raw switch; flip the first one the way an operator would.
-  const openRaw = new MutationObserver(() => {
-    const label = [...document.querySelectorAll("label")].find((candidate) => candidate.textContent === "Raw");
-    if (!label) return;
-    openRaw.disconnect();
-    label.click();
-  });
-  openRaw.observe(document, { childList: true, subtree: true });
+  // No URL param toggles a Raw switch; flip each one as it mounts, the way an operator would.
+  const flipped = new WeakSet<HTMLLabelElement>();
+  new MutationObserver(() => {
+    for (const label of document.querySelectorAll("label")) {
+      if (label.textContent !== "Raw" || flipped.has(label)) continue;
+      flipped.add(label);
+      label.click();
+    }
+  }).observe(document, { childList: true, subtree: true });
 }
 if (scenario.openMobileSidebar) {
   // The drawer has no route of its own; open it the way an operator would, by tapping the

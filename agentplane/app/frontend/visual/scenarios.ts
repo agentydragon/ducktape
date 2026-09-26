@@ -22,7 +22,7 @@ export interface Scenario extends ScenarioOptions {
   preselectReconnect?: boolean;
   /** Click the nav's Settings button once it mounts: the modal has no route of its own. */
   openSettings?: boolean;
-  /** Click the first Raw switch once it mounts: no URL param toggles one. */
+  /** Flip every Raw switch as it mounts: no URL param toggles one. */
   openRaw?: boolean;
   /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
   openActionPolicySets?: boolean;
@@ -254,25 +254,34 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 390, height: 1100 },
     readySelectors: ["details"],
   },
+  // Each pending card that draws anything other than its JSON switched to Raw.
+  actions_raw: {
+    element: "#app",
+    route: "/actions",
+    viewport: { width: 1200, height: 1100 },
+    readySelectors: ["details", 'input[type="checkbox"]:checked'],
+    openRaw: true,
+  },
   // The image is an MCP result drawn as the tool answered, which also waits on the Action groups.
   // Each history viewport is tall enough to keep the last card in frame.
   actions_history: {
     element: "#app",
     route: "/actions/history",
-    viewport: { width: 1200, height: 1760 },
+    viewport: { width: 1200, height: 2560 },
     readySelectors: ["details", 'img[src^="data:image/"]'],
   },
   actions_history_phone: {
     element: "#app",
     route: "/actions/history",
-    viewport: { width: 390, height: 2000 },
+    viewport: { width: 390, height: 3200 },
     readySelectors: ["details", 'img[src^="data:image/"]'],
   },
-  // The MCP result's card switched to Raw: the stored CallToolResult, image data and all.
+  // Each card that draws anything other than its JSON switched to Raw: the stored arguments and
+  // CallToolResult, image data and all.
   actions_history_raw: {
     element: "#app",
     route: "/actions/history",
-    viewport: { width: 1200, height: 2000 },
+    viewport: { width: 1200, height: 3720 },
     readySelectors: ["details", 'input[type="checkbox"]:checked'],
     openRaw: true,
   },
@@ -280,7 +289,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   actions_history_groups_unavailable: {
     element: "#app",
     route: "/actions/history",
-    viewport: { width: 1200, height: 2220 },
+    viewport: { width: 1200, height: 3760 },
     actionGroupsUnavailable: true,
     readySelectors: ["details", '[role="alert"]'],
   },
@@ -303,13 +312,13 @@ export const SCENARIOS: Record<string, Scenario> = {
   mcp_servers: {
     element: "#app",
     route: "/mcp-servers",
-    viewport: { width: 1200, height: 1400 },
+    viewport: { width: 1200, height: 1480 },
     readySelectors: ["[data-mcp-server]"],
   },
   mcp_servers_phone: {
     element: "#app",
     route: "/mcp-servers",
-    viewport: { width: 390, height: 1950 },
+    viewport: { width: 390, height: 2040 },
     readySelectors: ["[data-mcp-server]"],
   },
 
