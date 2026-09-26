@@ -17,9 +17,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
-from haku.console.grants.envelope import GrantNotFoundError, GrantStatus, validated_end_batch
-from haku.console.grants.http.models import Grant as HttpGrant, HttpOrigin, HttpRequestCoverage
-from haku.console.grants.http.service import GrantService as HttpGrantService
+from haku.console.grants.envelope import GrantStatus, validated_end_batch
 from haku.console.grants.kubernetes.authorization import (
     AuthorizationRequest,
     KubernetesAuthorizationUnavailableError,
@@ -67,19 +65,7 @@ class KubernetesSarCoverage(BaseModel):
     subject: KubernetesAuthorizationSubject
 
 
-class HttpCoverage(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    kind: Literal["http"] = "http"
-    origins: frozenset[HttpOrigin]
-    coverage: HttpRequestCoverage
-    credential_handles: frozenset[str]
-    allow_prohibited_address: bool
-
-
-type GrantCoverage = Annotated[
-    KubernetesRulesCoverage | KubernetesSarCoverage | HttpCoverage, Field(discriminator="kind")
-]
+type GrantCoverage = Annotated[KubernetesRulesCoverage | KubernetesSarCoverage, Field(discriminator="kind")]
 
 
 class GrantValidity(BaseModel):
@@ -122,14 +108,12 @@ class GrantCatalog:
         self,
         *,
         kubernetes_grants: KubernetesGrantService,
-        http_grants: HttpGrantService,
         kubernetes_config: KubernetesAuthorizationConfig | None = None,
         sar_client: SubjectAccessReviewClient | None = None,
     ) -> None:
         if (kubernetes_config is None) != (sar_client is None):
             raise ValueError("Kubernetes authorization config and SAR client must be configured together")
         self._kubernetes_grants = kubernetes_grants
-        self._http_grants = http_grants
         self._kubernetes_config = kubernetes_config
         self._sar_client = sar_client
 
@@ -138,18 +122,10 @@ class GrantCatalog:
     ) -> tuple[Grant, ...]:
         """List current authority the authenticated principal may exercise, optionally including database history."""
 
-        kubernetes, http = await asyncio.gather(
-            self._kubernetes_grants.list_applicable_grants(
-                request_principal=request_principal, include_inactive=include_inactive
-            ),
-            self._http_grants.list_applicable_grants(
-                request_principal=request_principal, include_inactive=include_inactive
-            ),
+        kubernetes = await self._kubernetes_grants.list_applicable_grants(
+            request_principal=request_principal, include_inactive=include_inactive
         )
-        entries: list[Grant] = [
-            *(self._database_kubernetes_grant(grant) for grant in kubernetes),
-            *(self._database_http_grant(grant) for grant in http),
-        ]
+        entries = [self._database_kubernetes_grant(grant) for grant in kubernetes]
         entries.extend(self._config_kubernetes_grants(request_principal=request_principal))
         return tuple(entries)
 
@@ -158,10 +134,7 @@ class GrantCatalog:
     ) -> tuple[Grant, ...]:
         """List declared authority, optionally for one subject and with database history."""
 
-        kubernetes, http = await asyncio.gather(
-            self._kubernetes_grants.list(principal=principal, include_inactive=include_inactive),
-            self._http_grants.list(principal=principal, include_inactive=include_inactive),
-        )
+        kubernetes = await self._kubernetes_grants.list(principal=principal, include_inactive=include_inactive)
         return (
             *(
                 self._all_config_grants()
@@ -169,7 +142,6 @@ class GrantCatalog:
                 else self._config_grants_for_principal(principal=principal)
             ),
             *(self._database_kubernetes_grant(grant) for grant in kubernetes),
-            *(self._database_http_grant(grant) for grant in http),
         )
 
     async def get_kubernetes_grant(self, *, request_principal: RequestPrincipal, grant_id: UUID) -> Grant:
@@ -179,28 +151,14 @@ class GrantCatalog:
             await self._kubernetes_grants.get_applicable_grant(request_principal=request_principal, grant_id=grant_id)
         )
 
-    async def get_http_grant(self, *, request_principal: RequestPrincipal, grant_id: UUID) -> Grant:
-        """Read one applicable database HTTP grant through the unified surface."""
-
-        return self._database_http_grant(
-            await self._http_grants.get_applicable_grant(request_principal=request_principal, grant_id=grant_id)
-        )
-
     async def end_database_grant(
         self, *, owner_agent_ids: Collection[UUID], grant_id: UUID, reason: str | None
     ) -> Grant:
-        """End one database grant without exposing which domain stores it."""
+        """End one database grant."""
 
-        try:
-            return self._database_kubernetes_grant(
-                await self._kubernetes_grants.end_grant(
-                    owner_agent_ids=owner_agent_ids, grant_id=grant_id, reason=reason
-                )
-            )
-        except GrantNotFoundError:
-            return self._database_http_grant(
-                await self._http_grants.end_grant(owner_agent_ids=owner_agent_ids, grant_id=grant_id, reason=reason)
-            )
+        return self._database_kubernetes_grant(
+            await self._kubernetes_grants.end_grant(owner_agent_ids=owner_agent_ids, grant_id=grant_id, reason=reason)
+        )
 
     async def end_database_grants(
         self, *, owner_agent_ids: Collection[UUID], grant_ids: tuple[UUID, ...], reason: str | None
@@ -257,26 +215,6 @@ class GrantCatalog:
         return Grant(
             subject=grant.principal,
             coverage=KubernetesRulesCoverage(scope=grant.scope, rules=grant.rules),
-            source=DatabaseGrantSource(
-                id=grant.grant_id, tool_call_id=grant.source_tool_call_id, created_at=grant.created_at
-            ),
-            validity=GrantValidity(
-                ends_at=grant.expires_at, status=grant.status, ended_at=grant.ended_at, end_reason=grant.end_reason
-            ),
-        )
-
-    @staticmethod
-    def _database_http_grant(grant: HttpGrant) -> Grant:
-        return Grant(
-            subject=grant.principal,
-            coverage=HttpCoverage(
-                origins=frozenset({grant.spec.origin}),
-                coverage=grant.spec.coverage,
-                credential_handles=(
-                    frozenset({grant.spec.credential_handle}) if grant.spec.credential_handle else frozenset()
-                ),
-                allow_prohibited_address=grant.spec.allow_prohibited_address,
-            ),
             source=DatabaseGrantSource(
                 id=grant.grant_id, tool_call_id=grant.source_tool_call_id, created_at=grant.created_at
             ),

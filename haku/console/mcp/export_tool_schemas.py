@@ -138,8 +138,8 @@ def build_schema_servers() -> dict[str, FastMCP]:
     # touched until a tool executes, and `_InertCollaborator` makes that invariant fail
     # loudly if FastMCP ever changes its registration behavior. gmail/google_calendar builders
     # build their own inert client from a None token; routine needs an inert launcher, and
-    # grants needs inert per-domain grant/enrollment services plus an inert kubernetes
-    # authorization for its `kubernetes_can_i` tool.
+    # grants needs an inert grant/enrollment service plus an inert kubernetes authorization
+    # for its `kubernetes_can_i` tool.
     dependency: Any = inert
     servers = {
         server_id: registration.builder(None)
@@ -148,7 +148,6 @@ def build_schema_servers() -> dict[str, FastMCP]:
                 routine_launcher=dependency,
                 grants=GrantsToolsService(
                     kubernetes=dependency,
-                    http=dependency,
                     catalog=dependency,
                     agents=dependency,
                     can_i=KubernetesToolsService(authorization=dependency),

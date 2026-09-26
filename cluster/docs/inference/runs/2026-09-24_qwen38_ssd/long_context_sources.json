@@ -1,0 +1,50 @@
+{
+  "files": [
+    {
+      "path": "agentplane/acceptance/agent.py",
+      "sha256": "193e0cdcbefb423a17e6c33b0110ea341bdf0bc5129ab09dae9e9a889652a4a3"
+    },
+    {
+      "path": "agentplane/acceptance/conftest.py",
+      "sha256": "84520a1084294da753ad4c0f1873e2a5462d45d724210d6c5bb7ae5c7168b1ae"
+    },
+    {
+      "path": "agentplane/acceptance/dcr.py",
+      "sha256": "9b6d44775f02711c7b8a9d1f3545f2e259a3e65e11dc9f5f39afcbc7eddaf974"
+    },
+    {
+      "path": "agentplane/acceptance/operator_login.py",
+      "sha256": "46e3dde9f76526b039bb4f8fa536793d47a853cf25990cdfe2a3c205142b70ed"
+    },
+    {
+      "path": "agentplane/acceptance/test_agent.py",
+      "sha256": "bcc8668ba7b181b8f5df1fe6ccbceb227172fc51b74e387de8ae7b0c886659f0"
+    },
+    {
+      "path": "agentplane/acceptance/test_dcr.py",
+      "sha256": "daaee02f0caae4cbfc3dd806f45e073f701a6630d5e1991a2bd9e03a6a8f8dbe"
+    },
+    {
+      "path": "agentplane/acceptance/test_egress.py",
+      "sha256": "632d53ed88096d7fa03c90bc66292b150c71085d2dc9721f26a686c2bc1cb493"
+    },
+    {
+      "path": "agentplane/acceptance/test_instructions.py",
+      "sha256": "77351feedb211d901c07a00aa8e65d04b8e5d5693d3af0a5e97aeb47cce1fe75"
+    },
+    {
+      "path": "agentplane/acceptance/test_launch_presets.py",
+      "sha256": "9180bff40c75498968461b7f4db6ca9d52ec3a675033404dad35edde0e8b9d8c"
+    },
+    {
+      "path": "agentplane/acceptance/test_mcp.py",
+      "sha256": "fe6025a5ff0eecfd2b5e8570cf4b1319944bee1a535dc19fa1cb8f4303ebfcbc"
+    },
+    {
+      "path": "agentplane/acceptance/test_operator_login.py",
+      "sha256": "380dcca60a134d668a7ae39eb2b9ac707831b46691f73c8bfefc22d1e2df85d3"
+    }
+  ],
+  "context_tokens": 24000,
+  "request_sha256": "63f1c8afd91c3dfd00879bb99a19212dc8d367157d40937a61b10477d55af541"
+}

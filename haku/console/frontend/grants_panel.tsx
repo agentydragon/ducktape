@@ -130,17 +130,6 @@ function GrantCoverage({ grant }: { grant: Grant }) {
       );
     case "kubernetes_sar":
       return <Text size="sm">SubjectAccessReview · {grant.coverage.subject.username}</Text>;
-    case "http":
-      return (
-        <Stack gap={2}>
-          <Text size="sm" fw={600}>
-            {grant.coverage.origins.map((origin) => `${origin.scheme}://${origin.host}:${origin.port}`).join(", ")}
-          </Text>
-          <Text size="xs">
-            {grant.coverage.coverage.methods.join(", ")} {grant.coverage.coverage.path_regex ?? "all paths"}
-          </Text>
-        </Stack>
-      );
   }
   return <GrantFallback grant={grant} />;
 }

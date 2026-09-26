@@ -37,16 +37,11 @@ from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.grants import routes as grant_routes
 from haku.console.grants.catalog import GrantCatalog
-
-# Both grant domains now define `GrantService`/`PostgresGrantRepository` (§4.1 entity-prefix drop);
-# alias per domain at this one import seam to keep the two straight (STYLE permits collision aliases).
-from haku.console.grants.http.repository import PostgresGrantRepository as PostgresHttpGrantRepository
-from haku.console.grants.http.service import GrantService as HttpGrantService
 from haku.console.grants.kubernetes import proxy_authorization
 from haku.console.grants.kubernetes.authorization import KubernetesSubjectAccessReviewClient
 from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
-from haku.console.grants.kubernetes.repository import PostgresGrantRepository as PostgresKubernetesGrantRepository
-from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
+from haku.console.grants.kubernetes.repository import PostgresGrantRepository
+from haku.console.grants.kubernetes.service import GrantService
 from haku.console.identity import (
     agent_bearer_authority,
     enrollment_routes,
@@ -293,17 +288,12 @@ def create_app(
     )
     actor_resolver = HakuMcpActorResolver(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
 
-    kubernetes_grants = KubernetesGrantService(
-        PostgresKubernetesGrantRepository(db_sessions),
+    kubernetes_grants = GrantService(
+        PostgresGrantRepository(db_sessions),
         max_lifetime=datetime.timedelta(seconds=console_config.kubernetes_grant_max_lifetime_seconds),
-    )
-    http_grants = HttpGrantService(
-        PostgresHttpGrantRepository(db_sessions),
-        max_lifetime=datetime.timedelta(seconds=console_config.http_grant_max_lifetime_seconds),
     )
     grant_catalog = GrantCatalog(
         kubernetes_grants=kubernetes_grants,
-        http_grants=http_grants,
         kubernetes_config=console_config.kubernetes_authorization,
         sar_client=(
             KubernetesSubjectAccessReviewClient() if console_config.kubernetes_authorization is not None else None
@@ -376,13 +366,12 @@ def create_app(
                 recall_access_profiles=tuple(console_config.access_profiles),
                 configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes.values()),
                 sandbox=sandbox_server,
-                # One `grants` server fronts both grant domains plus the kubernetes SAR check
+                # The `grants` server fronts Kubernetes grants plus the kubernetes SAR check
                 # (`kubernetes_can_i`, #4918), so it needs the kubernetes authorization service; it
                 # registers only when that is configured (as it always is in the deployed config).
                 grants=(
                     grants_tools.GrantsToolsService(
                         kubernetes=kubernetes_grants,
-                        http=http_grants,
                         catalog=grant_catalog,
                         agents=agent_authority,
                         can_i=kubernetes_tools.KubernetesToolsService(authorization=kubernetes_authorization),
@@ -501,7 +490,6 @@ def create_app(
     app.state.kubernetes_authorization = kubernetes_authorization
     app.state.grant_catalog = grant_catalog
     app.state.kubernetes_grants = kubernetes_grants
-    app.state.http_grants = http_grants
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the

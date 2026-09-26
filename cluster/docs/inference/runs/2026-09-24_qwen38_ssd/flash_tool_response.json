@@ -1,0 +1,42 @@
+{
+  "choices": [
+    {
+      "finish_reason": "tool_calls",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "I need to read the file.\n",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": { "name": "read_file", "arguments": "{\"path\":\"sanity.txt\"}" },
+            "id": "QOyG4CCTu0w3ugb6aR9qadISJVnK8NRM"
+          }
+        ]
+      }
+    }
+  ],
+  "created": 1790297928,
+  "model": "qwen3.8-flash-next-q4",
+  "system_fingerprint": "b11151-bd4f514db",
+  "object": "chat.completion",
+  "usage": {
+    "completion_tokens": 37,
+    "prompt_tokens": 306,
+    "total_tokens": 343,
+    "prompt_tokens_details": { "cached_tokens": 0 }
+  },
+  "id": "chatcmpl-nXDiWfvpIs24sHSimU1l5yk1YhSz05dJ",
+  "timings": {
+    "cache_n": 0,
+    "prompt_n": 306,
+    "prompt_ms": 5376.272,
+    "prompt_per_token_ms": 17.56951633986928,
+    "prompt_per_second": 56.91676313996018,
+    "predicted_n": 37,
+    "predicted_ms": 1438.03,
+    "predicted_per_token_ms": 39.945277777777775,
+    "predicted_per_second": 25.034248242387157
+  }
+}

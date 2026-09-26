@@ -154,6 +154,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
+        "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/seaweedfs:s3",

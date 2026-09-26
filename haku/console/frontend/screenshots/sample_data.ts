@@ -360,18 +360,6 @@ export const SAMPLE_GRANTS: GrantListResponse = {
         end_reason: "Pilot complete; return to standard diagnostics.",
       },
     },
-    {
-      source: { kind: "config_file", entry_id: "grocy-read" },
-      subject: { kind: "access_profile", access_profile_id: "public-coder" },
-      coverage: {
-        kind: "http",
-        origins: [{ scheme: "https", host: "grocy.example", port: 443 }],
-        coverage: { methods: ["GET"], path_regex: "/api/.*" },
-        credential_handles: ["grocy-readonly"],
-        allow_prohibited_address: false,
-      },
-      validity: { ends_at: null, status: "active", ended_at: null, end_reason: null },
-    },
   ],
 } satisfies GrantListResponse;
 
