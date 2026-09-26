@@ -139,12 +139,18 @@ does not recover the nominal size as physical space.
 
 ## September 26 checkpoint and decision
 
-**Keep pursuing Qwen3.8-Flash-Next, but do not rerun the full Terminal-Bench suite
-as the next experiment.** First establish that the local runtime and a small agent
+**Treat Qwen3.8-Flash-Next as the leading candidate for regular use; do not rerun
+the full Terminal-Bench suite as the next experiment.** First establish that the local runtime and a small agent
 workload behave correctly, then measure context and concurrency. Published quality
 is a useful prior; deployment-specific failures and slow trajectories are the
 questions this machine can answer. Preserve the capability-ceiling lane rather than
 spending the whole program optimizing one candidate.
+
+The operator reports being subjectively happy with Flash-Next during actual use.
+That is direct evidence about this program's goal, even though it is not a blinded
+quality score. Preserve that useful configuration as the reference, prioritize a
+reliable everyday/overnight workflow, and use small checks to investigate regressions
+or choose improvements. The interrupted benchmark is not a reason to reject it.
 
 Completed here:
 
