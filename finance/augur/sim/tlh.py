@@ -133,7 +133,7 @@ class _Cohort:
     # any mark and rides the index ratio without rounding. Money is rounded only where it leaves.
     exposure: Fraction
     basis: int
-    purchase_month: int
+    purchase_month_index: int
 
 
 def _money(amount: Fraction) -> int:
@@ -277,7 +277,7 @@ class TlhPortfolio:
             basis = _money(cohort.basis * share)
             if share != 1:
                 kept.append(replace(cohort, exposure=cohort.exposure * (1 - share), basis=cohort.basis - basis))
-            if self._month - cohort.purchase_month >= 12:
+            if self._month - cohort.purchase_month_index >= 12:
                 long_term += proceeds - basis
             else:
                 short_term += proceeds - basis
