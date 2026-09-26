@@ -2,8 +2,14 @@
 
 from collections import defaultdict
 
-from finance.augur.policy.configured_allocation import PendingBuy, materialize_buy, plan
-from finance.augur.sim.actions import Action, Buy, Liquidate, LotSale, PayClaim, Sell, Withdraw
+from finance.augur.policy.configured_allocation import (
+    PendingBuy,
+    PendingContribution,
+    materialize_buy,
+    materialize_contribution,
+    plan,
+)
+from finance.augur.sim.actions import Action, Buy, Contribute, Liquidate, LotSale, PayClaim, Sell, Withdraw
 from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.money import checked_count, mul_div, position_value
@@ -50,7 +56,7 @@ class ConfiguredHousehold(EconomicAgent):
         actions: list[Action] = [
             self._scheduled(sale, observation) for sale in self.scheduled_sales if sale.month == observation.month
         ]
-        pending: list[PendingBuy] = []
+        pending: list[PendingBuy | PendingContribution] = []
         for index, policy in enumerate(self.policies):
             proposal = plan(
                 observation,
@@ -89,23 +95,26 @@ class ConfiguredHousehold(EconomicAgent):
         actions.extend(self._purchases(observation, pending, cash))
         return actions
 
-    def _purchases(self, observation: Observation, pending: list[PendingBuy], cash: dict[str, int]) -> list[Action]:
+    def _purchases(
+        self, observation: Observation, pending: list[PendingBuy | PendingContribution], cash: dict[str, int]
+    ) -> list[Action]:
         """Exact orders, each sized from the cash left once this batch's sales and payments settle."""
         orders: list[Action] = []
         for buy in pending:
-            key = (buy.policy_index, buy.sleeve_index)
-            order = materialize_buy(
-                observation.model_copy(update={"accounts": tuple(cash.items())}),
-                buy,
-                lot_sequence=self.lot_sequences[key],
-            )
-            if order is None:
-                continue
-            if isinstance(order, Buy):
+            projected = observation.model_copy(update={"accounts": tuple(cash.items())})
+            order: Buy | Contribute | None
+            if isinstance(buy, PendingContribution):
+                order = materialize_contribution(projected, buy)
+                if order is None:
+                    continue
+                spent = order.amount
+            else:
+                key = (buy.policy_index, buy.sleeve_index)
+                order = materialize_buy(projected, buy, lot_sequence=self.lot_sequences[key])
+                if order is None:
+                    continue
                 spent = position_value(buy.price, order.units, buy.quantity_scale)
                 self.lot_sequences[key] += 1
-            else:
-                spent = order.amount
             cash[buy.cash_account_id] = checked_count(cash[buy.cash_account_id] - spent, "projected cash")
             orders.append(order)
         return orders

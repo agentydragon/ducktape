@@ -15,7 +15,7 @@ from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.scenario import InterestIncome, OrdinaryIncome, TransferDeductionCategory, TransferIncomeCategory
-from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 
 
 def _income_source(value: object) -> TransferIncomeCategory:
@@ -226,8 +226,7 @@ class PreparedTlhPortfolio:
     owner_agent_id: str
     account_id: str
     asset_id: str
-    quantity_scale: int
-    initial_cohorts: tuple[PreparedLot, ...]
+    initial_cohorts: tuple[TlhOpeningCohort, ...]
     assumptions: TlhAssumptions
 
 

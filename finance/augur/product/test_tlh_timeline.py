@@ -1,7 +1,7 @@
 """Real component settlement survives dense capture and the product timeline.
 
-Stipulated flat $1 units and a 12% annual reduced-form loss yield give one $1
-modeled loss at month zero. These are trace/accounting controls, not a forecast.
+A flat index and a 12% annual reduced-form loss yield give the $100 opening
+cohort one $1 modeled loss at month zero. These are trace/accounting controls, not a forecast.
 """
 
 from decimal import Decimal
@@ -10,7 +10,6 @@ from typing import Literal
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.product.projection import project_product_rollout
 from finance.augur.product.wire import HoldingSaleEvent, TlhFinancialEffectEvent
@@ -18,21 +17,14 @@ from finance.augur.sim.actions import Contribute, DecisionActions, Liquidate, Wi
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.events import TlhOperation
-from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedSeries,
-    PreparedTlhPortfolio,
-)
+from finance.augur.sim.prepared import PreparedAccount, PreparedJurisdiction, PreparedSeries, PreparedTlhPortfolio
 from finance.augur.sim.results import Finished
 from finance.augur.sim.scenario import ORDINARY_INCOME, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
 ASSET = "test-managed-index"
@@ -42,7 +34,7 @@ FEDERAL = load_jurisdiction("federal_us")
 
 
 def compose(price: int) -> World:
-    """The owner's $10 and a managed index of 100 units bought for $100 two years ago, at `price` throughout."""
+    """The owner's $10 and a managed cohort of 100 index units bought for $100 two years ago, at `price` throughout."""
     world = World(
         MarketPath(
             (PreparedSeries(series_id=f"security:{ASSET}", snapshots=2, values=(price, price)),), 0, rollout_count=1
@@ -64,26 +56,13 @@ def compose(price: int) -> World:
             )
         )
     )
-    scale = quantity_scale_for_asset(SecurityKey(symbol=SecuritySymbol(ASSET)))
     world.declare_portfolio(
         PreparedTlhPortfolio(
             portfolio_id="managed",
             owner_agent_id="owner",
             account_id="checking",
             asset_id=ASSET,
-            quantity_scale=scale,
-            initial_cohorts=(
-                PreparedLot(
-                    lot_id="imported",
-                    agent_id="owner",
-                    account_id="checking",
-                    asset_id=ASSET,
-                    purchase_month=-24,
-                    quantity_scale=scale,
-                    units=int(quantity_to_quanta(100, scale=scale)),
-                    basis=100,
-                ),
-            ),
+            initial_cohorts=(TlhOpeningCohort(value=100 * price, cost_basis=100, purchase_month_index=-24),),
             assumptions=TlhAssumptions(
                 peak_annual_yield=0.12,
                 floor_annual_yield=0,
@@ -171,6 +150,7 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(capture: Lite
 
 
 def test_zero_cash_liquidation_is_still_a_redemption() -> None:
+    # A statement at a zero mark reports every cohort at zero value, its basis intact.
     session = ActionSession({0: compose(price=0)}, "owner", capture="dense")
     try:
         assert not isinstance(session.start(), Finished)

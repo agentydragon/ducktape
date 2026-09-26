@@ -12,7 +12,7 @@ from finance.augur.product.action_projection import metric_arrays
 from finance.augur.sim.actions import Action, Contribute, DecisionActions, Liquidate, Withdraw
 from finance.augur.sim.books import AccountRef, Book, TlhPortfolioState
 from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_scale_for_asset
+from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
@@ -20,29 +20,27 @@ from finance.augur.sim.prepared import (
     PreparedDistribution,
     PreparedDistributionSlice,
     PreparedJurisdiction,
-    PreparedLot,
     PreparedSeries,
     PreparedTlhPortfolio,
 )
-from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction
+from finance.augur.sim.results import Executed, Finished, InvalidRequest, Rejected, RejectedAction
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     Agent,
     Currency,
     InitialAccountBalance,
-    InitialLot,
     InterestIncome,
     Scenario,
     TaxProfile,
+    TlhCohort,
     TlhPortfolioSpec,
 )
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tlh import TlhAssumptions, TlhMarketUpdate, TlhPortfolio
+from finance.augur.sim.tlh import TlhAssumptions, TlhMarketUpdate, TlhOpeningCohort, TlhPortfolio
 from finance.augur.sim.world import Capture, World
 
 ASSET = SecurityKey(symbol=SecuritySymbol("managed-index"))
-SCALE = quantity_scale_for_asset(ASSET)
 # Whole-dollar money, so a portfolio mark is the number the assertions name.
 QUANTUM = Decimal(1)
 OWNER = "owner"
@@ -104,17 +102,8 @@ class Situation:
         return tuple(rows)
 
 
-def cohort() -> PreparedLot:
-    return PreparedLot(
-        lot_id="imported",
-        agent_id=OWNER,
-        account_id=CHECKING,
-        asset_id=str(ASSET.symbol),
-        purchase_month=-24,
-        quantity_scale=SCALE,
-        units=100 * SCALE,
-        basis=100,
-    )
+# $100 of the index bought two years ago at a $100 basis.
+COHORT = TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-24)
 
 
 def compose(case: Situation, rollout_id: int) -> World:
@@ -144,8 +133,7 @@ def compose(case: Situation, rollout_id: int) -> World:
             owner_agent_id=OWNER,
             account_id=CHECKING,
             asset_id=str(ASSET.symbol),
-            quantity_scale=SCALE,
-            initial_cohorts=(cohort(),),
+            initial_cohorts=(COHORT,),
             assumptions=assumptions(harvest=case.harvest),
         )
     )
@@ -336,17 +324,7 @@ def _scenario(*, horizon: int) -> Scenario:
                 owner_agent_id=OWNER,
                 account_id=CHECKING,
                 asset=ASSET,
-                initial_lots=[
-                    InitialLot(
-                        lot_id="imported",
-                        agent_id=OWNER,
-                        account_id=CHECKING,
-                        asset=ASSET,
-                        purchase_month_index=-24,
-                        quantity=100.0,
-                        cost_basis=Decimal(100),
-                    )
-                ],
+                initial_cohorts=[TlhCohort(value=Decimal(100), cost_basis=Decimal(100), purchase_month_index=-24)],
                 assumptions=assumptions(harvest=True),
             )
         ],
@@ -455,6 +433,40 @@ def test_contribution_is_first_harvested_in_the_next_month() -> None:
     assert rollout.trace is not None
     assert portfolios(rollout.trace.books[1])[0].reported_tax_basis == 199
     assert rollout.summary.ending_book.capital_gains[0].short_term_gain == -3
+
+
+def test_a_contribution_into_a_worthless_index_is_rejected_not_parked() -> None:
+    live = session(Situation(cash=10, harvest=False, prices=(1, 0, 0)))
+    try:
+        live.start()
+        live.advance([DecisionActions(0, 0, [])])
+        result = live.advance(
+            [
+                DecisionActions(
+                    0,
+                    1,
+                    [
+                        Contribute(
+                            cause_id="into-nothing",
+                            agent_id=OWNER,
+                            portfolio_id="managed",
+                            cash_account_id=CHECKING,
+                            amount=10,
+                        )
+                    ],
+                )
+            ]
+        )
+        assert isinstance(result, Finished)
+    finally:
+        live.close()
+    [rollout] = result.rollouts
+    assert rollout.stop == RejectedAction(month=1, action_index=0)
+    assert rollout.trace is not None
+    assert rollout.trace.receipts[-1].outcome == Rejected(
+        reason=InvalidRequest(detail="a worthless index takes no TLH contribution")
+    )
+    assert rollout.summary.cash[0].values[-1] == 10
 
 
 def test_removed_or_misplaced_fields_cannot_silently_disable_the_model() -> None:

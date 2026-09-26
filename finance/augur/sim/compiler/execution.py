@@ -116,6 +116,7 @@ from finance.augur.sim.scenario import (
     TargetAllocationPolicy,
     TlhPortfolioSpec,
 )
+from finance.augur.sim.tlh import TlhOpeningCohort
 
 _BASIS_POINT_SCALE = 10_000
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
@@ -401,8 +402,14 @@ def compile_tlh_portfolio(portfolio: TlhPortfolioSpec, *, quantum: Decimal) -> P
         owner_agent_id=portfolio.owner_agent_id,
         account_id=portfolio.account_id,
         asset_id=_asset_id(portfolio.asset),
-        quantity_scale=quantity_scale_for_asset(portfolio.asset),
-        initial_cohorts=compile_lots(portfolio.initial_lots, quantum=quantum),
+        initial_cohorts=tuple(
+            TlhOpeningCohort(
+                value=int(currency_amount_to_quanta(cohort.value, quantum=quantum)),
+                cost_basis=int(currency_amount_to_quanta(cohort.cost_basis, quantum=quantum)),
+                purchase_month_index=cohort.purchase_month_index,
+            )
+            for cohort in portfolio.initial_cohorts
+        ),
         assumptions=portfolio.assumptions,
     )
 

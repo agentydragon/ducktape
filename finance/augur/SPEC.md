@@ -133,7 +133,8 @@ same basis later consumed by redemptions; new contributions do not inherit prior
 loss adjustments. Component value is counted once in household wealth.
 Canonical accounting settles its financial effects and determines household tax.
 The approximation does not reconstruct constituent trades or establish statutory
-TLH fidelity. See <docs/tlh.md> for model and numerical conventions.
+TLH fidelity. A month's harvest stands even if a later payment that month fails.
+Model and numerical conventions: <sim/tlh.py>.
 
 ## Declared housing and private-equity capabilities and limits
 

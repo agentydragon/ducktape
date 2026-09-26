@@ -254,7 +254,6 @@ parallel. Each node leaves this section when it lands.
 
 ```mermaid
 graph TD
-    TLH_MONEY["TLH-MONEY: the managed portfolio is denominated in money, not proxy units"]
     APP_COMPOSE["APP-COMPOSE: product/scenarios.py declares worlds, no authored Scenario"]
     RUN_GONE["RUN: delete CompiledRun, compile_run, from_run, validation.py"]
     OFFERS["OFFERS: Issuer, TenderOffer, Accept/Decline (GPE gate)"]
@@ -268,19 +267,6 @@ graph TD
     RUN_GONE --> VECTOR
 ```
 
-- **TLH-MONEY.** Inside `sim/tlh.py` a cohort's exposure is a whole-unit count of the
-  proxy security on a `quantity_scale` grid, so contributions buy whole units and
-  park the remainder in `_cash`, withdrawals round unit counts up and park the
-  overshoot, basis is apportioned by units and distributions are computed per unit.
-  A direct-indexing account has none of that: a cohort becomes
-  `(exposure, basis, purchase_month)` with exposure exact and carried by the index
-  ratio, money quantized once when it crosses the ledger, a distribution
-  `rate / price × value`, and the opening declaration value, basis and month per
-  cohort instead of proxy lots. The harvest curve already works from embedded-gain
-  fraction, drawdown and cohort age. `quantity_scale`, `_cash` and the round-up
-  loop go; `tlh_test`, `harvest_test`, `tlh_session_test` and
-  `allocation_household_test` update the rounding they pinned. The app declares no
-  managed sleeve, so its output is untouched.
 - **APP-COMPOSE.** `product/scenarios.py` builds an authored `Scenario` that
   `compile_run` lowers; instead it declares accounts, pools, lots, bonds, housing,
   distributions, tender and funding policies on each `World` through the compiler's

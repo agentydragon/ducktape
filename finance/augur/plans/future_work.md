@@ -38,7 +38,7 @@ assumptions remain downstream.
 ## Reduced-form TLH portfolios
 
 **MA3** remains the [paired TLH experiment](managed_portfolio.md). Reuse the
-Python component's [ownership and timing contract](../docs/tlh.md).
+Python component's [ownership and timing contract](../sim/tlh.py).
 
 - Check modeled realized losses and subsequent gain/basis consequences against
   named real-account evidence. Refit decay as longitudinal evidence becomes

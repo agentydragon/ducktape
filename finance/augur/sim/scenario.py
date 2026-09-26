@@ -1003,8 +1003,23 @@ class PrivateEquityTenderPolicy(BaseModel):
     liquid_net_worth_floor: AmountSchedule
 
 
+class TlhCohort(BaseModel):
+    """One tax lot of a direct-indexing statement: what it is worth, its basis and when it was bought."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: NonNegativeCurrencyAmount = Field(description="Market value at the opening mark, month zero's price.")
+    cost_basis: NonNegativeCurrencyAmount = Field(
+        description="Remaining adjusted basis, already net of harvesting before the scenario opens."
+    )
+    purchase_month_index: int
+
+
 class TlhPortfolioSpec(BaseModel):
-    """A separately owned reduced-form portfolio, not an ordinary holding plus a policy."""
+    """A separately owned reduced-form portfolio, not an ordinary holding plus a policy.
+
+    `asset` is the index the portfolio tracks; its price series carries the cohorts' value.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1012,18 +1027,13 @@ class TlhPortfolioSpec(BaseModel):
     owner_agent_id: str
     account_id: str
     asset: AssetKey
-    initial_lots: list[InitialLot]
+    initial_cohorts: list[TlhCohort]
     assumptions: TlhAssumptions
 
     @model_validator(mode="after")
-    def _validate_opening_positions(self) -> TlhPortfolioSpec:
+    def _validate_index(self) -> TlhPortfolioSpec:
         if not isinstance(self.asset, SecurityKey):
             raise ValueError("TLH portfolios require a public security price, not private equity")
-        for lot in self.initial_lots:
-            if (lot.agent_id, lot.account_id, lot.asset) != (self.owner_agent_id, self.account_id, self.asset):
-                raise ValueError("TLH opening lots must match the portfolio owner, account and asset")
-        if len({lot.lot_id for lot in self.initial_lots}) != len(self.initial_lots):
-            raise ValueError("TLH opening lot IDs must be unique within the portfolio")
         return self
 
 
